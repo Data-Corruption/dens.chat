@@ -1,0 +1,120 @@
+// --- FILE template ---
+
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"sprout/internal/cut"
+)
+
+func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	fs := flag.NewFlagSet("cut", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	finalize := fs.Bool("finalize", false, "apply the displayed final-tree plan")
+	modulePath := fs.String("module", "", "rename the Go module in the final tree")
+	root := fs.String("root", "", "repository root (defaults to parent of scripts/ when invoked via scripts/cut)")
+	goimports := fs.String("goimports", "", "goimports binary used to prune imports on --finalize (defaults to PATH)")
+	listFeatures := fs.Bool("list-features-json", false, "print the versioned feature contract as JSON and exit")
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: cut [flags] [feature...]
+
+Plan the final consumer tree: remove optional Sprout features, remove
+template-only tooling, prune directories those removals leave empty, strip
+surviving ownership markers, and optionally rename the Go module. Arguments are
+a union of features to cut; removing a prerequisite also removes its dependents.
+With no feature arguments, every application feature is retained.
+
+The default is a read-only preview. Pass --finalize to apply the same plan,
+then prune unused module requirements with a best-effort go mod tidy.
+
+Valid features:
+`)
+		for _, name := range cut.Features() {
+			fmt.Fprintf(os.Stderr, "  %s", name)
+			if dependencies := cut.Prerequisites(name); len(dependencies) != 0 {
+				fmt.Fprintf(os.Stderr, " (requires %s)", strings.Join(dependencies, ", "))
+			}
+			fmt.Fprintln(os.Stderr)
+		}
+		fmt.Fprintf(os.Stderr, `
+Flags:
+`)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *listFeatures {
+		if *finalize || *modulePath != "" || len(fs.Args()) != 0 {
+			fmt.Fprintln(os.Stderr, "cut: --list-features-json cannot be combined with --finalize, --module, or features")
+			return 2
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(cut.FeatureContract()); err != nil {
+			fmt.Fprintf(os.Stderr, "cut: write feature contract: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	var cuts cut.Set
+	var err error
+	if len(fs.Args()) != 0 {
+		cuts, err = cut.ParseCuts(fs.Args())
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cut: %v\n", err)
+			return 2
+		}
+	}
+
+	repoRoot := *root
+	if repoRoot == "" {
+		repoRoot, err = findRoot()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cut: %v\n", err)
+			return 1
+		}
+	}
+
+	_, err = cut.Run(cut.Options{
+		Root:      repoRoot,
+		Cuts:      cuts,
+		Apply:     *finalize,
+		Module:    *modulePath,
+		Stdout:    os.Stdout,
+		Goimports: *goimports,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cut: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// findRoot walks up from the working directory looking for go.mod. Prefer
+// scripts/cut, which passes --root from the script path.
+func findRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("could not locate repository root from %s (pass --root)", wd)
+		}
+		dir = parent
+	}
+}
