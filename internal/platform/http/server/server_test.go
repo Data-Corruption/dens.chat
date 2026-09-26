@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package server
 
 import (
@@ -11,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"sprout/internal/app"
-	"sprout/pkg/xhttp"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 )
 
 func TestUnknownCertificateLogFilterSuppressesOnlyExpectedHandshakeError(t *testing.T) {

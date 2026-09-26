@@ -1,18 +1,18 @@
-// --- FILE service.https ---
-
 package router
 
 import (
 	"net"
 	"net/http"
 	"net/url"
-	"sprout/internal/app"
-	"sprout/internal/platform/http/middleware"
-	"sprout/internal/platform/http/router/settings"
 	"strings"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/middleware"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/router/settings"
+
 	"github.com/go-chi/chi/v5"
-	"sprout/pkg/xlog"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func New(a *app.App) *chi.Mux {

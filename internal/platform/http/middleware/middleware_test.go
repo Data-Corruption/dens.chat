@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package middleware
 
 import (
@@ -7,18 +5,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sprout/internal/app"
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/database/sessions"
-	"sprout/internal/types"
-	"sprout/pkg/crypto"
 	"testing"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/sessions"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/crypto"
+
 	"golang.org/x/time/rate"
-	"sprout/pkg/xlog"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func newTestApp(t *testing.T) *app.App {

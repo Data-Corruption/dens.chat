@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package middleware implements session-based HTTP auth for the dashboard:
 // sessions stored in the SQLite sessions table keyed by SHA256 of the cookie
 // token, a fixed 30-minute lifetime from login, Argon2id-verified credentials
@@ -17,15 +15,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sprout/internal/app"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/database/sessions"
-	"sprout/internal/platform/http/cookies"
-	"sprout/internal/types"
-	"sprout/pkg/crypto"
 	"time"
 
-	"sprout/pkg/xhttp"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/sessions"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/crypto"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 
 	"golang.org/x/time/rate"
 )

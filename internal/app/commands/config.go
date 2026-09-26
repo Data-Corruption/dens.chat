@@ -8,10 +8,10 @@ import (
 	"os"
 	"strconv"
 
-	"sprout/internal/app"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/urfave/cli/v3"
 )
@@ -41,7 +41,6 @@ func configCommand(a *app.App) *cli.Command {
 						Name:  "log",
 						Usage: "set log level (" + xlog.ValidLevels + ")",
 					},
-					// --- BEGIN service.https ---
 					&cli.StringFlag{
 						Name:  "ui-bind",
 						Usage: `set dashboard HTTPS bind (for example ":8484")`,
@@ -58,17 +57,14 @@ func configCommand(a *app.App) *cli.Command {
 						Name:  "proxy-port",
 						Usage: "set proxy port while preserving its loopback host",
 					},
-					// --- END service.https ---
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
-					// --- BEGIN service.https ---
 					if cmd.IsSet("ui-bind") && cmd.IsSet("port") {
 						return fmt.Errorf("--ui-bind and --port cannot be used together")
 					}
 					if cmd.IsSet("proxy-bind") && cmd.IsSet("proxy-port") {
 						return fmt.Errorf("--proxy-bind and --proxy-port cannot be used together")
 					}
-					// --- END service.https ---
 
 					updated := false
 					cfg, err := config.Update(a.DB, func(cfg *types.Configuration) error {
@@ -76,7 +72,6 @@ func configCommand(a *app.App) *cli.Command {
 							cfg.LogLevel = cmd.String("log")
 							updated = true
 						}
-						// --- BEGIN service.https ---
 						if cmd.IsSet("ui-bind") {
 							cfg.UIBind = cmd.String("ui-bind")
 							updated = true
@@ -101,7 +96,6 @@ func configCommand(a *app.App) *cli.Command {
 							cfg.ProxyBind = bind
 							updated = true
 						}
-						// --- END service.https ---
 						return nil
 					})
 					if err != nil {
@@ -123,17 +117,14 @@ func configCommand(a *app.App) *cli.Command {
 
 func writeSafeConfig(w io.Writer, cfg *types.Configuration) {
 	fmt.Fprintf(w, "log: %s\n", cfg.LogLevel)
-	// --- BEGIN service.https ---
 	fmt.Fprintf(w, "ui-bind: %s\n", cfg.UIBind)
 	proxyBind := cfg.ProxyBind
 	if proxyBind == "" {
 		proxyBind = "disabled"
 	}
 	fmt.Fprintf(w, "proxy-bind: %s\n", proxyBind)
-	// --- END service.https ---
 }
 
-// --- BEGIN service.https ---
 func bindWithPort(bind string, port int, defaultHost string) (string, error) {
 	if port < 1 || port > 65535 {
 		return "", fmt.Errorf("port %d is outside 1-65535", port)
@@ -148,5 +139,3 @@ func bindWithPort(bind string, port int, defaultHost string) (string, error) {
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port)), nil
 }
-
-// --- END service.https ---

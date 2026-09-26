@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package app
 
 import (
@@ -7,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sprout/internal/build"
-	"sprout/internal/layout"
-	"sprout/internal/platform/database"
 	"testing"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 // MockReleaseSource is a mock implementation of ReleaseSource for testing.

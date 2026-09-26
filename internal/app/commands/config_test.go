@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package commands
 
 import (
@@ -7,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"sprout/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
 func TestWriteSafeConfigExposesOnlyEditableValues(t *testing.T) {

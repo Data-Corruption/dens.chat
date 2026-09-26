@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package sessions stores UI login sessions in the SQLite sessions table,
 // keyed by SHA256 of the cookie token. Keeping them in the DB (instead of a
 // process-local map) makes revocation work across processes - the CLI can
@@ -20,8 +18,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"sprout/internal/types"
 	"time"
+
+	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
 // Session is one UI login session. The token itself is never stored, only

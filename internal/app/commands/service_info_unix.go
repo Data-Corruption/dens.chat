@@ -1,14 +1,13 @@
 //go:build !windows
 
-// --- FILE service ---
-
 package commands
 
 import (
 	"fmt"
 	"io"
 	"os"
-	"sprout/internal/app"
+
+	"github.com/Data-Corruption/dens.chat/internal/app"
 )
 
 func printServiceHelp(a *app.App) {

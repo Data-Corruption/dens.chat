@@ -5,9 +5,6 @@
 # Usage:
 #   ./scripts/test.sh                              # race-enabled Go tests
 #   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
-# --- BEGIN template ---
-#   ./scripts/test.sh -cut                         # all 11 source shapes
-# --- END template ---
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -all                         # every available suite
@@ -27,11 +24,6 @@ Usage: ./scripts/test.sh [mode]
 With no argument, run the race-enabled Go test suite.
   -lint     Run the pinned shellcheck over every shell script
 EOF
-  # --- BEGIN template ---
-  cat <<'EOF'
-  -cut      Test every supported source shape
-EOF
-  # --- END template ---
   cat <<'EOF'
   -release  Test the release publication state machine
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
@@ -49,19 +41,6 @@ require_no_args() {
   fi
 }
 
-# --- BEGIN template ---
-# The source-shape matrix finalizes real trees, and finalizing runs goimports.
-ensure_cut_tools() {
-  local resolved
-  resolved=$(./scripts/vendor.sh goimports | sed -n 's/^goimports=//p')
-  if [[ -z "$resolved" || ! -x "$resolved" ]]; then
-    printf "error: vendor.sh returned no executable goimports path\n" >&2
-    exit 1
-  fi
-  PATH="$(dirname "$resolved"):$PATH"
-  export PATH
-}
-# --- END template ---
 
 run_go_tests() {
   command -v go >/dev/null 2>&1 || {
@@ -73,14 +52,12 @@ run_go_tests() {
     exit 1
   }
 
-  # --- BEGIN service.https ---
   # Generated frontend outputs are gitignored. Empty compile-only placeholders
   # keep ordinary Go tests independent of the frontend toolchain.
   [[ -f internal/ui/assets/css/output.css ]] || : > internal/ui/assets/css/output.css
   [[ -f internal/ui/assets/js/output.js ]] || : > internal/ui/assets/js/output.js
   [[ -f internal/ui/assets/manifest.json ]] ||
     printf '{"css/output.css":"test","js/output.js":"test"}' > internal/ui/assets/manifest.json
-  # --- END service.https ---
 
   go test -race ./...
 }
@@ -102,21 +79,11 @@ run_shell_lint() {
     scripts/test-release.sh
     scripts/test-lifecycle-e2e.sh
     scripts/install.sh
-    # --- BEGIN template ---
-    scripts/cut
-    # --- END template ---
   )
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
   printf '🟢 shellcheck passed (%d scripts)\n' "${#scripts[@]}"
 }
 
-# --- BEGIN template ---
-run_cut_tests() {
-  ensure_cut_tools
-  go test -race ./cmd/cut ./cmd/cutmatrix ./internal/cut
-  go run ./cmd/cutmatrix "$@"
-}
-# --- END template ---
 
 run_release_tests() {
   bash scripts/test-release.sh
@@ -138,11 +105,6 @@ case "$mode" in
     require_no_args "-lint" "$@"
     run_shell_lint
     ;;
-  # --- BEGIN template ---
-  -cut)
-    run_cut_tests "$@"
-    ;;
-  # --- END template ---
   -release)
     require_no_args "-release" "$@"
     run_release_tests
@@ -154,9 +116,6 @@ case "$mode" in
     require_no_args "-all" "$@"
     run_go_tests
     run_shell_lint
-    # --- BEGIN template ---
-    run_cut_tests
-    # --- END template ---
     run_release_tests
     run_lifecycle_e2e
     ;;

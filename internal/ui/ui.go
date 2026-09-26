@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package ui provides embedded frontend templates and assets.
 package ui
 

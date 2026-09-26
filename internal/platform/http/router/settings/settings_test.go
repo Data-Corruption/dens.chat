@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package settings
 
 import (
@@ -11,13 +9,13 @@ import (
 	"strings"
 	"testing"
 
-	"sprout/internal/app"
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/http/middleware"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/middleware"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func newSettingsTestApp(t *testing.T) *app.App {
@@ -96,7 +94,6 @@ func TestRestartAcceptedAfterPreparation(t *testing.T) {
 	}
 }
 
-// --- BEGIN update.apply ---
 func TestUpdateRequiresPermission(t *testing.T) {
 	a := newSettingsTestApp(t)
 	checks, launches := 0, 0
@@ -215,5 +212,3 @@ func TestUpdateAcceptedOnlyAfterLaunch(t *testing.T) {
 		t.Fatalf("StartCounter = %d, want 0", cfg.StartCounter)
 	}
 }
-
-// --- END update.apply ---

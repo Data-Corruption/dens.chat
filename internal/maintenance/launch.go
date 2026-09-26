@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sprout/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 )
 
 // Action selects the installer-owned maintenance transaction.

@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package app
 
 import (
@@ -10,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/database/updatelease"
-	"sprout/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/updatelease"
+	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
 const UpdateCheckInterval = 24 * time.Hour

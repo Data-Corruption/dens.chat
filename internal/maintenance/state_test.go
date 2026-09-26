@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"sprout/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 )
 
 const testNonce = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

@@ -1,12 +1,11 @@
 //go:build windows
 
-// --- FILE service ---
-
 package commands
 
 import (
 	"fmt"
-	"sprout/internal/app"
+
+	"github.com/Data-Corruption/dens.chat/internal/app"
 )
 
 // printServiceHelp documents the per-user scheduled task that install.ps1

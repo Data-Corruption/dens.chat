@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"sprout/internal/maintenance"
+	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 )
 
 var ErrDevBuild = errors.New("development build detected, skipping")

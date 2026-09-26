@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sprout/internal/platform/database"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
 	"strings"
+
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 var ErrDatabaseClosed = errors.New("database is closed")
@@ -101,11 +102,9 @@ func normalize(cfg *types.Configuration) {
 	if level, err := xlog.NormalizeLevel(cfg.LogLevel); err == nil {
 		cfg.LogLevel = level
 	}
-	// --- BEGIN service.https ---
 	cfg.UIBind = strings.TrimSpace(cfg.UIBind)
 	cfg.ProxyBind = strings.TrimSpace(cfg.ProxyBind)
 	for i := range cfg.Credentials {
 		cfg.Credentials[i].Username = types.NormalizeUsername(cfg.Credentials[i].Username)
 	}
-	// --- END service.https ---
 }

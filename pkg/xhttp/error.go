@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package xhttp
 
 import (
@@ -9,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 // Err implements the error interface, wrapping the underlying error along with a status code and message safe for HTTP responses.

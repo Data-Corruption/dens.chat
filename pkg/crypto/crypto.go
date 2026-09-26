@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package crypto provides small hashing/token helpers used by the HTTP auth
 // stack (session tokens + Argon2id password hashing).
 package crypto

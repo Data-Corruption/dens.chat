@@ -38,9 +38,6 @@ DEFAULT_DAISYUI_VERSION="v5.6.10"
 DEFAULT_COSIGN_VERSION="v3.1.3"
 DEFAULT_RCLONE_VERSION="v1.75.0"
 DEFAULT_SHELLCHECK_VERSION="v0.11.0"
-# --- BEGIN template ---
-DEFAULT_GOIMPORTS_VERSION="v0.49.0"
-# --- END template ---
 DEFAULT_HUGO_VERSION="0.164.0"
 # Floating majors would let a wrangler release change a deploy silently.
 DEFAULT_WRANGLER_VERSION="4.125.0"
@@ -51,9 +48,6 @@ DAISYUI_VERSION="${DAISYUI_VERSION:-$DEFAULT_DAISYUI_VERSION}"
 COSIGN_VERSION="${COSIGN_VERSION:-$DEFAULT_COSIGN_VERSION}"
 RCLONE_VERSION="${RCLONE_VERSION:-$DEFAULT_RCLONE_VERSION}"
 SHELLCHECK_VERSION="${SHELLCHECK_VERSION:-$DEFAULT_SHELLCHECK_VERSION}"
-# --- BEGIN template ---
-GOIMPORTS_VERSION="${GOIMPORTS_VERSION:-$DEFAULT_GOIMPORTS_VERSION}"
-# --- END template ---
 HUGO_VERSION="${HUGO_VERSION:-$DEFAULT_HUGO_VERSION}"
 WRANGLER_VERSION="${WRANGLER_VERSION:-$DEFAULT_WRANGLER_VERSION}"
 
@@ -106,9 +100,6 @@ VENDOR_COSIGN=""
 VENDOR_RCLONE=""
 VENDOR_SHELLCHECK=""
 VENDOR_HUGO=""
-# --- BEGIN template ---
-VENDOR_GOIMPORTS=""
-# --- END template ---
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -118,9 +109,6 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui cosign rclone shellcheck hugo)
-# --- BEGIN template ---
-VENDOR_FETCHABLE+=(goimports)
-# --- END template ---
 
 # Pin validation --------------------------------------------------------------
 
@@ -338,24 +326,6 @@ vendor_hugo() {
   printf '🟢 Vendored Hugo %s\n' "$HUGO_VERSION"
 }
 
-# --- BEGIN template ---
-vendor_goimports() {
-  local candidate installed
-  if [[ "$VENDOR_REFETCH" != "true" ]] && candidate=$(command -v goimports 2>/dev/null); then
-    installed=$(go version -m "$candidate" | awk '$1=="mod" && $2=="golang.org/x/tools" {print $3}') || true
-    if [[ "$installed" == "$GOIMPORTS_VERSION" ]]; then
-      VENDOR_GOIMPORTS="$candidate"
-      printf '🟢 Using pinned goimports from PATH (%s)\n' "$VENDOR_GOIMPORTS"
-      return 0
-    fi
-    printf '🟡 Ignoring goimports %s from PATH; want %s\n' "${installed:-unknown}" "$GOIMPORTS_VERSION"
-  fi
-  vendor_go_tool goimports \
-    "golang.org/x/tools/cmd/goimports@${GOIMPORTS_VERSION}" \
-    "golang.org/x/tools" "$GOIMPORTS_VERSION"
-  VENDOR_GOIMPORTS="$TOOLS_DIR/goimports"
-}
-# --- END template ---
 
 vendor_ensure() {
   case "$1" in
@@ -366,9 +336,6 @@ vendor_ensure() {
     rclone) vendor_rclone ;;
     shellcheck) vendor_shellcheck ;;
     hugo) vendor_hugo ;;
-    # --- BEGIN template ---
-    goimports) vendor_goimports ;;
-    # --- END template ---
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -386,9 +353,6 @@ vendor_resolved() {
     rclone) printf '%s' "$VENDOR_RCLONE" ;;
     shellcheck) printf '%s' "$VENDOR_SHELLCHECK" ;;
     hugo) printf '%s' "$VENDOR_HUGO" ;;
-    # --- BEGIN template ---
-    goimports) printf '%s' "$VENDOR_GOIMPORTS" ;;
-    # --- END template ---
   esac
 }
 

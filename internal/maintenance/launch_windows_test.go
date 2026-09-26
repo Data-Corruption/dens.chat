@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"sprout/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 )
 
 func TestWindowsMaintenanceTaskIsHiddenInteractiveAndNetworkCapable(t *testing.T) {

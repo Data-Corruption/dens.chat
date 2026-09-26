@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 // Package release resolves the newest published version from a release host.
 //
 // A release host publishes one root `version` object containing a single

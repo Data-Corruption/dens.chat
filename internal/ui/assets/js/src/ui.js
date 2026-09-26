@@ -1,4 +1,3 @@
-// --- FILE service.https ---
 
 // UI Utilities
 // Click blocker, status indicators, and common UI helpers

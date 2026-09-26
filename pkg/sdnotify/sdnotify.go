@@ -1,7 +1,5 @@
 //go:build !windows
 
-// --- FILE service ---
-
 // Package sdnotify implements systemd sd_notify(3).
 //
 // It is a no-op if NOTIFY_SOCKET is unset.

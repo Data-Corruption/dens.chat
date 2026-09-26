@@ -1,18 +1,17 @@
-// --- FILE service.https ---
-
 package commands
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sprout/internal/app"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/database/sessions"
-	"sprout/internal/types"
-	"sprout/pkg/crypto"
-	"sprout/pkg/xterm/prompt"
 	"strings"
+
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/sessions"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/crypto"
+	"github.com/Data-Corruption/dens.chat/pkg/xterm/prompt"
 
 	"github.com/urfave/cli/v3"
 )

@@ -1,5 +1,3 @@
-// --- FILE service ---
-
 package commands
 
 import (
@@ -9,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"sprout/internal/app"
-	"sprout/internal/platform/database/hashrequests"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/hashrequests"
 
 	"github.com/urfave/cli/v3"
 )

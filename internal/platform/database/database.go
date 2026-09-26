@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"sprout/internal/build"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/ncruces/go-sqlite3"
 	_ "github.com/ncruces/go-sqlite3/driver" // registers the "sqlite3" database/sql driver

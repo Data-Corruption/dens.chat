@@ -1,4 +1,3 @@
-// --- FILE service.https ---
 
 // Settings Wiring
 // DOMContentLoaded initialization for all settings controls

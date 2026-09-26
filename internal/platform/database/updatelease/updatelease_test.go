@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package updatelease_test
 
 import (
@@ -11,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/internal/platform/database/updatelease"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/updatelease"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func newLeaseTestDB(t *testing.T) *sql.DB {

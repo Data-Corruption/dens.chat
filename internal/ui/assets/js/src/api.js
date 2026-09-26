@@ -1,4 +1,3 @@
-// --- FILE service.https ---
 
 // API Helpers
 // Unified fetch wrappers with structured error handling

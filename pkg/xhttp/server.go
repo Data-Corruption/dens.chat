@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package xhttp extends net/http with a few independent and opt-in abstractions:
 //   - [Server] wraps [http.Server] with signal-based graceful shutdown, lifecycle hooks, and sensible defaults
 //   - [Err] type and [Error] function for separating internal errors from client-safe messages in HTTP handlers

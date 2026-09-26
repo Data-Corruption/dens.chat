@@ -2,7 +2,7 @@
 package commands
 
 import (
-	"sprout/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/app"
 
 	"github.com/urfave/cli/v3"
 )
@@ -10,18 +10,12 @@ import (
 type constructor func(a *app.App) *cli.Command
 
 var constructors = []constructor{
-	// --- BEGIN update ---
 	updateCommand,
-	// --- END update ---
 	uninstallCommand,
 	configCommand,
-	// --- BEGIN service.https ---
 	usersCommand,
-	// --- END service.https ---
-	// --- BEGIN service ---
 	hashCommand,
 	serviceCommand,
-	// --- END service ---
 }
 
 // All builds the commands enabled for this application.

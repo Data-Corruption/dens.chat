@@ -1,7 +1,5 @@
 //go:build !windows
 
-// --- FILE service.https ---
-
 package app
 
 import (
@@ -11,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sprout/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/build"
 
 	"github.com/urfave/cli/v3"
 )

@@ -1,18 +1,18 @@
-// --- FILE service.https ---
-
 package router
 
 import (
 	"errors"
 	"net/http"
-	"sprout/internal/app"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/http/cookies"
-	"sprout/internal/platform/http/middleware"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/middleware"
+
 	"github.com/go-chi/chi/v5"
-	"sprout/pkg/xhttp"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 )
 
 func RegisterLoginRoutes(a *app.App, auth *middleware.AuthService, r chi.Router) {

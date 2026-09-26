@@ -1,5 +1,3 @@
-// --- FILE service ---
-
 // Package hashrequests implements the deliberately small SQLite IPC example
 // shared by the hash CLI command and service worker.
 package hashrequests

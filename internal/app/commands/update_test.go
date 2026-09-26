@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package commands
 
 import (
@@ -10,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"sprout/internal/app"
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/urfave/cli/v3"
 )
@@ -30,7 +28,6 @@ func TestUpdateCommandHasNoCheckFlag(t *testing.T) {
 	}
 }
 
-// --- BEGIN update.apply ---
 func TestApplyAvailableUpdate(t *testing.T) {
 	t.Run("accepted", func(t *testing.T) {
 		var output bytes.Buffer
@@ -145,8 +142,6 @@ func TestApplyAvailableUpdate(t *testing.T) {
 	})
 }
 
-// --- END update.apply ---
-
 func TestUpdatePreferencesAreExplicitAndIndependent(t *testing.T) {
 	root := t.TempDir()
 	logger, err := xlog.New(filepath.Join(root, "logs"), "error")
@@ -183,17 +178,4 @@ func TestUpdatePreferencesAreExplicitAndIndependent(t *testing.T) {
 	if cfg.BackgroundUpdateChecks {
 		t.Fatal("background checks remained enabled")
 	}
-	// --- BEGIN update.apply.auto ---
-	if cfg.AutomaticUpdates {
-		t.Fatal("automatic application enabled by default")
-	}
-	cfg = run("--automatic=true")
-	if !cfg.AutomaticUpdates || !cfg.BackgroundUpdateChecks || cfg.UpdateNotifications {
-		t.Fatalf("automatic preference affected notices or failed to enable checks: %+v", cfg)
-	}
-	cfg = run("--automatic=false")
-	if cfg.AutomaticUpdates || !cfg.BackgroundUpdateChecks {
-		t.Fatalf("disabling automatic application disabled discovery: %+v", cfg)
-	}
-	// --- END update.apply.auto ---
 }

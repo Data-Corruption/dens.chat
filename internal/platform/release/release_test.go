@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package release
 
 import (

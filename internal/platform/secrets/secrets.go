@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package secrets manages control-plane secrets that live outside the main
 // config blob: currently the self-signed dashboard TLS certificate/key.
 //
@@ -26,7 +24,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"sprout/pkg/xsyscall"
+	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 )
 
 const (

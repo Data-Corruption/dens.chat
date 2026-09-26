@@ -1,4 +1,3 @@
-// --- FILE service.https ---
 
 // Main Entry Point
 // Initializes all modules; controls are wired with event listeners (no window.* globals)

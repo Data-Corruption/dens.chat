@@ -3,7 +3,6 @@
 # This file is sourced by ../build.sh. It owns frontend generation, Go builds,
 # build verification, deterministic installer rendering, and release packaging.
 
-# --- BEGIN service.https ---
 # The generated frontend outputs are gitignored; Go embed needs the files to
 # exist when the installer harness builds directly without the frontend
 # toolchain.
@@ -79,7 +78,6 @@ frontend_hash_assets() {
 
   printf '🟢 Generated asset manifest\n'
 }
-# --- END service.https ---
 
 # make_ldflags <devMode>
 # Prints the -ldflags string for a build with the given devMode value.

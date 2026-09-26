@@ -1,7 +1,5 @@
 //go:build windows
 
-// --- FILE service.https ---
-
 package settings
 
 import (
@@ -11,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"sprout/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/app"
 )
 
 // requestServiceStop asks the service coordinator to cancel every retained

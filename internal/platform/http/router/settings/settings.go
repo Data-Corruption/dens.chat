@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package settings
 
 import (
@@ -7,14 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"sprout/internal/app"
 
-	"sprout/internal/maintenance"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/http/middleware"
-	"sprout/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/app"
 
-	"sprout/pkg/xhttp"
+	"github.com/Data-Corruption/dens.chat/internal/maintenance"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/middleware"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -24,9 +23,7 @@ func Register(a *app.App, r chi.Router) {
 	r.Post("/settings", handleUpdateSettings(a))
 	r.Post("/settings/stop", handleStop(a))
 	r.Post("/settings/restart", handleRestart(a))
-	// --- BEGIN update.apply ---
 	r.Post("/settings/update", handleUpdate(a))
-	// --- END update.apply ---
 	r.Get("/settings/restart-status", handleRestartStatus(a))
 }
 
@@ -39,9 +36,7 @@ func handleGetSettings(a *app.App) http.HandlerFunc {
 		}
 
 		data := a.UI.PageData("Settings", a.BuildInfo().Version)
-		// --- BEGIN update ---
 		data["UpdateAvailable"] = cfg.UpdateNotifications && a.UpdateAvailable(cfg)
-		// --- END update ---
 		data["LogLevel"] = cfg.LogLevel
 		data["UIBind"] = cfg.UIBind
 		data["ProxyBind"] = cfg.ProxyBind
@@ -160,7 +155,6 @@ func handleRestartWith(a *app.App, restart func()) http.HandlerFunc {
 	}
 }
 
-// --- BEGIN update.apply ---
 func handleUpdate(a *app.App) http.HandlerFunc {
 	checkForUpdate := a.CheckForUpdate
 	return handleUpdateWith(a, checkForUpdate, func() error {
@@ -243,8 +237,6 @@ func handleUpdateWith(
 	}
 }
 
-// --- END update.apply ---
-
 func handleRestartStatus(a *app.App) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := middleware.RequirePerm(r, types.PermServerControl); err != nil {
@@ -261,12 +253,10 @@ func handleRestartStatus(a *app.App) http.HandlerFunc {
 		resp := map[string]bool{"restarted": restarted}
 		a.Log.Debugf("Restart status check: StartCounter=%d, Restarted=%t", cfg.StartCounter, restarted)
 
-		// --- BEGIN update.apply ---
 		updated := cfg.LastShutdownVersion != "" && cfg.LastShutdownVersion != a.BuildInfo().Version
 		resp["updated"] = updated
 		a.Log.Debugf("Restart status check: LastShutdownVersion=%q, CurrentVersion=%q, Updated=%t",
 			cfg.LastShutdownVersion, a.BuildInfo().Version, updated)
-		// --- END update.apply ---
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

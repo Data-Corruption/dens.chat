@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sprout/internal/build"
-	"sprout/internal/types"
 	"testing"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func TestMigrate(t *testing.T) {
@@ -77,16 +78,13 @@ func TestMigrate(t *testing.T) {
 
 		// Verify Config Exists with Default Values
 		cfg := readConfig(db)
-		// --- BEGIN service.https ---
 		if want := fmt.Sprintf("127.0.0.1:%d", buildInfo.ServiceDefaultPort); cfg.UIBind != want {
 			t.Errorf("Expected UIBind %s, got %s", want, cfg.UIBind)
 		}
-		// --- END service.https ---
 		if cfg.LogLevel != buildInfo.DefaultLogLevel {
 			t.Errorf("Expected LogLevel %s, got %s", buildInfo.DefaultLogLevel, cfg.LogLevel)
 		}
 
-		// --- BEGIN update ---
 		// Verify the periodic update-check lease table is part of schema v1.
 		if _, err := db.Exec(`
 			INSERT INTO update_check_lease (id, owner_token, expires_at)
@@ -94,18 +92,14 @@ func TestMigrate(t *testing.T) {
 		`); err != nil {
 			t.Errorf("update-check lease table not usable: %v", err)
 		}
-		// --- END update ---
 
-		// --- BEGIN service.https ---
 		// Verify sessions table exists and is usable.
 		if _, err := db.Exec(
 			`INSERT INTO sessions (token_hash, expiry, perms, username) VALUES ('t', 0, 0, 'admin')`,
 		); err != nil {
 			t.Errorf("sessions table not usable: %v", err)
 		}
-		// --- END service.https ---
 
-		// --- BEGIN service ---
 		// Verify the example service IPC table exists in the initial schema.
 		if _, err := db.Exec(`
 			INSERT INTO hash_requests (input, created_at, expires_at)
@@ -113,7 +107,6 @@ func TestMigrate(t *testing.T) {
 		`); err != nil {
 			t.Errorf("hash_requests table not usable: %v", err)
 		}
-		// --- END service ---
 
 		// Verify Version
 		if version := readVersion(db); version != wantVersion {

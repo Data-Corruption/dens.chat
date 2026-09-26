@@ -1,5 +1,3 @@
-// --- FILE service ---
-
 package hashrequests
 
 import (
@@ -11,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func testDB(t *testing.T) *sql.DB {

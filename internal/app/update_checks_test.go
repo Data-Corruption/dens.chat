@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package app
 
 import (
@@ -14,15 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"sprout/internal/build"
-	"sprout/internal/layout"
-	"sprout/internal/maintenance"
-	"sprout/internal/platform/database"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/database/updatelease"
-	"sprout/internal/platform/release"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/updatelease"
+	"github.com/Data-Corruption/dens.chat/internal/platform/release"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func TestCheckForUpdatePersistsResult(t *testing.T) {
@@ -170,7 +167,6 @@ func TestFailedPeriodicUpdateCheckLeavesLease(t *testing.T) {
 	}
 }
 
-// --- BEGIN service ---
 func TestServiceUpdateCheckerKeepsRunningWithInvalidMetadata(t *testing.T) {
 	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
 	if err := os.WriteFile(a.Layout.ReleaseURL, nil, 0o600); err != nil {
@@ -194,102 +190,6 @@ func TestServiceUpdateCheckerKeepsRunningWithInvalidMetadata(t *testing.T) {
 		t.Fatal("checker did not stop after cancellation")
 	}
 }
-
-// --- END service ---
-
-// --- BEGIN update.apply ---
-// --- BEGIN update.apply.auto ---
-func TestFinishedUpdateJobPreservesReleaseObservation(t *testing.T) {
-	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
-	if err := maintenance.WriteState(a.Layout, maintenance.State{
-		Phase:             maintenance.PhaseReady,
-		Version:           a.buildInfo.Version,
-		ChangedAt:         time.Now().UTC().Format(time.RFC3339Nano),
-		InstallationEpoch: "test-installation-epoch",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.CheckForUpdate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	a.maintenanceStarted = true
-	a.maintenanceAction = maintenance.ActionUpdate
-	a.maintenanceJob = filepath.Join(a.Layout.Jobs, "finished-job")
-	a.maintenanceLog = a.Layout.MaintenanceLog
-	running, err := a.refreshMaintenanceLocked()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if running || a.maintenanceStarted {
-		t.Fatal("finished maintenance job remained cached")
-	}
-	cfg, err := config.View(a.DB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !a.UpdateAvailable(cfg) {
-		t.Fatal("failed update was not made eligible for retry")
-	}
-}
-
-// TestOrphanedUpdateJobIsReapedAndRetried covers a runner that died without
-// removing its directory: once the start grace has passed with no identity
-// published, the admitting process reaps the directory itself and treats the
-// job like any other pre-commit failure.
-func TestOrphanedUpdateJobIsReapedAndRetried(t *testing.T) {
-	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
-	if err := maintenance.WriteState(a.Layout, maintenance.State{
-		Phase:             maintenance.PhaseReady,
-		Version:           a.buildInfo.Version,
-		ChangedAt:         time.Now().UTC().Format(time.RFC3339Nano),
-		InstallationEpoch: "test-installation-epoch",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.CheckForUpdate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	jobDir := filepath.Join(a.Layout.Jobs, "orphaned-job")
-	if err := os.MkdirAll(jobDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	a.maintenanceStarted = true
-	a.maintenanceAction = maintenance.ActionUpdate
-	a.maintenanceJob = jobDir
-	a.maintenanceLog = a.Layout.MaintenanceLog
-
-	a.maintenanceAdmitted = time.Now()
-	running, err := a.refreshMaintenanceLocked()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !running {
-		t.Fatal("freshly admitted job without identity was not treated as running")
-	}
-
-	a.maintenanceAdmitted = time.Now().Add(-time.Hour)
-	running, err = a.refreshMaintenanceLocked()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if running || a.maintenanceStarted {
-		t.Fatal("orphaned maintenance job remained cached")
-	}
-	if _, err := os.Stat(jobDir); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("orphaned job directory was not reaped: %v", err)
-	}
-	cfg, err := config.View(a.DB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !a.UpdateAvailable(cfg) {
-		t.Fatal("orphaned update was not made eligible for retry")
-	}
-}
-
-// --- END update.apply.auto ---
-// --- END update.apply ---
 
 type blockingReleaseSource struct {
 	started chan struct{}
@@ -337,129 +237,6 @@ func (s *blockingReleaseSource) GetLatestVersion(ctx context.Context, _ string) 
 		return "", ctx.Err()
 	}
 }
-
-// --- BEGIN update.apply ---
-// --- BEGIN update.apply.auto ---
-func TestContendingPeriodicChecksLaunchOneAutomaticUpdate(t *testing.T) {
-	source := &blockingReleaseSource{
-		started: make(chan struct{}, 2),
-		release: make(chan struct{}),
-	}
-	first := newUpdateTestApp(t, source)
-	second := &App{
-		DB:            first.DB,
-		Log:           first.Log,
-		Layout:        first.Layout,
-		ReleaseSource: source,
-		buildInfo:     first.buildInfo,
-	}
-
-	type result struct {
-		completed bool
-		err       error
-	}
-	results := make(chan result, 2)
-	var launches atomic.Int32
-	run := func(a *App) {
-		available, completed, err := a.checkForPeriodicUpdate(context.Background())
-		if err == nil && completed {
-			err = maybeStartAutomaticUpdate(available, func() error {
-				launches.Add(1)
-				return nil
-			})
-		}
-		results <- result{completed: completed, err: err}
-	}
-
-	go run(first)
-	select {
-	case <-source.started:
-	case <-time.After(time.Second):
-		t.Fatal("first periodic check did not reach release source")
-	}
-
-	go run(second)
-	select {
-	case got := <-results:
-		if got.err != nil {
-			t.Fatal(got.err)
-		}
-		if got.completed {
-			t.Fatal("contending periodic check completed while lease was held")
-		}
-	case <-time.After(time.Second):
-		close(source.release)
-		t.Fatal("contending periodic check did not return")
-	}
-
-	close(source.release)
-	select {
-	case got := <-results:
-		if got.err != nil {
-			t.Fatal(got.err)
-		}
-		if !got.completed {
-			t.Fatal("lease owner did not complete")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("lease owner did not return")
-	}
-
-	if calls := source.calls.Load(); calls != 1 {
-		t.Fatalf("release source calls = %d, want 1", calls)
-	}
-	if got := launches.Load(); got != 1 {
-		t.Fatalf("automatic update launches = %d, want 1", got)
-	}
-	cfg, err := config.View(first.DB)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !first.UpdateAvailable(cfg) || cfg.LastUpdateCheck.IsZero() {
-		t.Fatalf("periodic result not persisted: %+v", cfg)
-	}
-}
-
-func TestMaybeStartAutomaticUpdate(t *testing.T) {
-	t.Run("current does not launch", func(t *testing.T) {
-		launches := 0
-		err := maybeStartAutomaticUpdate(false, func() error {
-			launches++
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if launches != 0 {
-			t.Fatalf("launches = %d, want 0", launches)
-		}
-	})
-
-	t.Run("newer launches detached updater", func(t *testing.T) {
-		launches := 0
-		err := maybeStartAutomaticUpdate(true, func() error {
-			launches++
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if launches != 1 {
-			t.Fatalf("launches = %d, want 1", launches)
-		}
-	})
-
-	t.Run("launch failure is returned for logging", func(t *testing.T) {
-		want := errors.New("launch failed")
-		err := maybeStartAutomaticUpdate(true, func() error { return want })
-		if !errors.Is(err, want) {
-			t.Fatalf("error = %v, want wrapped launch failure", err)
-		}
-	})
-}
-
-// --- END update.apply.auto ---
-// --- END update.apply ---
 
 func TestDiscoveryFollowsMirrorAndInvalidatesOldSource(t *testing.T) {
 	var calls atomic.Int32
@@ -540,23 +317,3 @@ func TestHiddenNoticesDoNotDisableBackgroundChecks(t *testing.T) {
 		t.Fatalf("background preference blocked manual check: %t %v", available, err)
 	}
 }
-
-// --- BEGIN update.apply.auto ---
-func TestAutomaticUpdatesRequireOptInAndBackgroundChecks(t *testing.T) {
-	a := newUpdateTestApp(t, &MockReleaseSource{LatestVersion: "v1.1.0"})
-	if a.runAutomaticUpdate(context.Background(), true) {
-		t.Fatal("automatic update ran without opt-in")
-	}
-	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
-		cfg.AutomaticUpdates = true
-		cfg.BackgroundUpdateChecks = false
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if a.runAutomaticUpdate(context.Background(), true) {
-		t.Fatal("automatic update ran with background checks disabled")
-	}
-}
-
-// --- END update.apply.auto ---

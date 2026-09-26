@@ -22,13 +22,9 @@ $ServiceEnabled = $false
 $ServiceDescription = "test"
 $ServiceArgs = "service run"
 $ServiceDefaultPort = 0
-# --- BEGIN service.https ---
 $ServiceDefaultPort = 8484
-# --- END service.https ---
 $SmokeArgs = @("config", "show")
-# --- BEGIN service.https ---
 $SmokeArgs = @("users", "list")
-# --- END service.https ---
 if (-not [string]::IsNullOrWhiteSpace($InstallerCandidate)) {
     $CandidatePath = (Resolve-Path -LiteralPath $InstallerCandidate).Path
     $Template = [IO.File]::ReadAllText($CandidatePath)

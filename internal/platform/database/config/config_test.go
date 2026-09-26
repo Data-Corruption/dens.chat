@@ -1,18 +1,17 @@
-// --- FILE service.https ---
-
 package config
 
 import (
 	"database/sql"
 	"errors"
 	"path/filepath"
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/internal/types"
 	"strings"
 	"testing"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func newTestDB(t *testing.T) *sql.DB {

@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package server
 
 import (
@@ -7,13 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sprout/internal/app"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/secrets"
-	"sprout/internal/types"
 	"strings"
 
-	"sprout/pkg/xhttp"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/secrets"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 )
 
 // New builds the dashboard's two HTTP listeners, both serving the same handler:

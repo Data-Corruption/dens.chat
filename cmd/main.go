@@ -8,10 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"sprout/internal/app"
-	"sprout/internal/app/commands"
-	"sprout/internal/build"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/app/commands"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/urfave/cli/v3"
 )
@@ -71,7 +71,6 @@ func runMain() int {
 			if err != nil || cmd.Bool("migrate") {
 				return ctx, err
 			}
-			// --- BEGIN update ---
 			// Before receives the root command, whose remaining args name the
 			// selected subcommand. Explicit updates own their own check.
 			if cmd.Args().First() != "update" {
@@ -82,7 +81,6 @@ func runMain() int {
 					application.Log.Errorf("start update check: %v", err)
 				}
 			}
-			// --- END update ---
 			return ctx, nil
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

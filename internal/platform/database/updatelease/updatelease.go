@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 // Package updatelease coordinates periodic update checks across processes.
 package updatelease
 

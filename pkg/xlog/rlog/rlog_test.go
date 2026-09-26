@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"sprout/pkg/xsyscall"
+	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 )
 
 // --- constructor -----------------------------------------------------------

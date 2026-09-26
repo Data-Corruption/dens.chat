@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package commands
 
 import (
@@ -9,11 +7,11 @@ import (
 	"io"
 	"os"
 
-	"sprout/internal/app"
-	"sprout/internal/maintenance"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/types"
-	"sprout/pkg/xterm/prompt"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/maintenance"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xterm/prompt"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
@@ -21,9 +19,7 @@ import (
 
 func updateCommand(a *app.App) *cli.Command {
 	usage := "check for updates"
-	// --- BEGIN update.apply ---
 	usage = "check for and apply updates"
-	// --- END update.apply ---
 	return &cli.Command{
 		Name:  "update",
 		Usage: usage,
@@ -34,22 +30,14 @@ func updateCommand(a *app.App) *cli.Command {
 				Value: true,
 			},
 			&cli.BoolFlag{Name: "background", Value: true, Usage: "check periodically (--background=false to disable)"},
-			// --- BEGIN update.apply.auto ---
-			&cli.BoolFlag{Name: "automatic", Usage: "apply updates unattended from the service (--automatic=false to disable)"},
-			// --- END update.apply.auto ---
-			// --- BEGIN update.apply ---
 			&cli.BoolFlag{
 				Name:    "yes",
 				Aliases: []string{"y"},
 				Usage:   "apply an available update without prompting",
 			},
-			// --- END update.apply ---
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			settingsChanged := cmd.IsSet("notify") || cmd.IsSet("background")
-			// --- BEGIN update.apply.auto ---
-			settingsChanged = settingsChanged || cmd.IsSet("automatic")
-			// --- END update.apply.auto ---
 			if settingsChanged {
 				if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
 					if cmd.IsSet("notify") {
@@ -58,14 +46,6 @@ func updateCommand(a *app.App) *cli.Command {
 					if cmd.IsSet("background") {
 						cfg.BackgroundUpdateChecks = cmd.Bool("background")
 					}
-					// --- BEGIN update.apply.auto ---
-					if cmd.IsSet("automatic") {
-						cfg.AutomaticUpdates = cmd.Bool("automatic")
-						if cfg.AutomaticUpdates && !cmd.IsSet("background") {
-							cfg.BackgroundUpdateChecks = true
-						}
-					}
-					// --- END update.apply.auto ---
 					return nil
 				}); err != nil {
 					return fmt.Errorf("save update preferences: %w", err)
@@ -90,7 +70,6 @@ func updateCommand(a *app.App) *cli.Command {
 			}
 
 			applyHandled := false
-			// --- BEGIN update.apply ---
 			applyHandled = true
 			if err := applyAvailableUpdate(
 				cmd.Bool("yes"),
@@ -103,7 +82,6 @@ func updateCommand(a *app.App) *cli.Command {
 			); err != nil {
 				return err
 			}
-			// --- END update.apply ---
 			if applyHandled {
 				return nil
 			}
@@ -114,7 +92,6 @@ func updateCommand(a *app.App) *cli.Command {
 	}
 }
 
-// --- BEGIN update.apply ---
 func applyAvailableUpdate(
 	yes bool,
 	interactive bool,
@@ -150,5 +127,3 @@ func applyAvailableUpdate(
 	fmt.Fprintf(output, "Update accepted and will now start in the background.\nIt may take a few moments.\nTo view the update logs see: %s\n", logPath)
 	return nil
 }
-
-// --- END update.apply ---

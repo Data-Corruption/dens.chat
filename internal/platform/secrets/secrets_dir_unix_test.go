@@ -1,7 +1,5 @@
 //go:build !windows
 
-// --- FILE service.https ---
-
 package secrets
 
 import (

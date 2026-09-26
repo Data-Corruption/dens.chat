@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func TestNewInvalidLevel(t *testing.T) {

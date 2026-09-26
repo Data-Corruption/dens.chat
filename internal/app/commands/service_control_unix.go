@@ -1,14 +1,12 @@
 //go:build !windows
 
-// --- FILE service ---
-
 package commands
 
 import (
 	"context"
 	"fmt"
 
-	"sprout/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/app"
 )
 
 func controlService(ctx context.Context, a *app.App, action string) (string, error) {

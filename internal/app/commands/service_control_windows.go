@@ -1,7 +1,5 @@
 //go:build windows
 
-// --- FILE service ---
-
 package commands
 
 import (
@@ -11,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"sprout/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/app"
 )
 
 var (

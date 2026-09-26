@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package app
 
 import (
@@ -10,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"sprout/internal/platform/database/config"
-	"sprout/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/types"
 
 	"golang.org/x/mod/semver"
 )

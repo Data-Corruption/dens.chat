@@ -1,4 +1,3 @@
-// --- FILE service.https ---
 
 // Server Actions
 // Stop, restart, update, and shared restart polling functionality
@@ -37,7 +36,6 @@ export async function restartServer() {
     }
 }
 
-// --- BEGIN update.apply ---
 /** Check freshness, then launch an update when one is available. */
 export async function updateServer() {
     blockClicks();
@@ -60,7 +58,6 @@ export async function updateServer() {
     }
 }
 
-// --- END update.apply ---
 
 /** Poll for restart or update completion. */
 export function pollForRestart(action = 'restart') {
@@ -83,13 +80,11 @@ export function pollForRestart(action = 'restart') {
                 return;
             }
 
-            // --- BEGIN update.apply ---
             if (action === 'update' && !data.updated) {
                 unblockClicks();
                 showError('The service restarted, but the update did not apply. Check the update logs.');
                 return;
             }
-            // --- END update.apply ---
 
             window.location.reload();
         } catch {
@@ -123,7 +118,6 @@ export function initServerControls() {
             onCancel: () => {},
         });
     });
-    // --- BEGIN update.apply ---
     document.getElementById('settings-update-btn')?.addEventListener('click', () => {
         showDialog({
             title: 'Update Server',
@@ -134,5 +128,4 @@ export function initServerControls() {
             onCancel: () => {},
         });
     });
-    // --- END update.apply ---
 }

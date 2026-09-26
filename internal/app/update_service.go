@@ -1,15 +1,13 @@
-// --- FILE update ---
-
 package app
 
-// --- BEGIN service ---
 import (
 	"context"
 	"errors"
 	"fmt"
-	"sprout/internal/platform/database/config"
 	"sync"
 	"time"
+
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 )
 
 // RunUpdateChecker is the service-owned update loop. Unlike the root one-shot
@@ -60,12 +58,6 @@ func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 		}
 		retrySoon := false
 		if step.freshAvailability {
-			// --- BEGIN update.apply.auto ---
-			retrySoon = a.runAutomaticUpdate(ctx, true)
-			if ctx.Err() != nil {
-				return nil
-			}
-			// --- END update.apply.auto ---
 			markReady()
 		} else {
 			if ctx.Err() != nil {
@@ -75,12 +67,6 @@ func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 				a.Log.Errorf("update check failed: %v", step.checkErr)
 			} else if step.completed {
 				a.Log.Debugf("service update check complete: available=%t", step.available)
-				// --- BEGIN update.apply.auto ---
-				retrySoon = a.runAutomaticUpdate(ctx, step.available)
-				if ctx.Err() != nil {
-					return nil
-				}
-				// --- END update.apply.auto ---
 			}
 		}
 
@@ -150,5 +136,3 @@ func (a *App) serviceUpdateStep(ctx context.Context, markReady func()) (serviceU
 	step.available, step.completed, step.checkErr = a.checkForPeriodicUpdateLocked(ctx)
 	return step, nil
 }
-
-// --- END service ---

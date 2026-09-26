@@ -1,5 +1,3 @@
-// --- FILE service ---
-
 package commands
 
 import (
@@ -11,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"sprout/internal/app"
-	"sprout/internal/platform/database/config"
-	"sprout/internal/platform/http/router"
-	"sprout/internal/platform/http/server"
-	"sprout/internal/types"
-	"sprout/internal/ui"
-	"sprout/pkg/sdnotify"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/router"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/ui"
+	"github.com/Data-Corruption/dens.chat/pkg/sdnotify"
 
 	"github.com/urfave/cli/v3"
 )
@@ -26,23 +24,18 @@ const serviceControlTimeout = 45 * time.Second
 
 var (
 	runWorkerComponent = runWorker
-	// --- BEGIN service.https ---
-	runHTTPComponent = server.Serve
-	// --- END service.https ---
+	runHTTPComponent   = server.Serve
 )
 
 func serviceCommand(a *app.App) *cli.Command {
 	if !a.BuildInfo().ServiceEnabled {
 		return nil
 	}
-	// --- BEGIN service.https ---
 	var serviceConfig *types.Configuration
 	var portOverride int
-	// --- END service.https ---
 	return &cli.Command{
 		Name:  "service",
 		Usage: "service management commands",
-		// --- BEGIN service.https ---
 		Before: func(ctx context.Context, _ *cli.Command) (context.Context, error) {
 			cfg, err := serviceRunConfiguration(a, portOverride)
 			if err != nil {
@@ -53,7 +46,6 @@ func serviceCommand(a *app.App) *cli.Command {
 			a.Log.Debugf("Base URL: %s", a.BaseURL)
 			return ctx, nil
 		},
-		// --- END service.https ---
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if a.BuildInfo().Name == "" || a.Layout.Storage == "" {
 				return fmt.Errorf("app name or storage path not found")
@@ -70,7 +62,6 @@ func serviceCommand(a *app.App) *cli.Command {
 				Name:        "run",
 				Hidden:      true,
 				Description: "Runs service in foreground. Typically called by systemd. If you need to run it manually/unmanaged, use this command.",
-				// --- BEGIN service.https ---
 				Flags: []cli.Flag{
 					&cli.IntFlag{
 						Name:        "port",
@@ -79,7 +70,6 @@ func serviceCommand(a *app.App) *cli.Command {
 						Destination: &portOverride,
 					},
 				},
-				// --- END service.https ---
 				Action: func(ctx context.Context, cmd *cli.Command) (runErr error) {
 					serviceLock, err := a.AcquireServiceLock()
 					if err != nil {
@@ -89,7 +79,6 @@ func serviceCommand(a *app.App) *cli.Command {
 						runErr = errors.Join(runErr, serviceLock.Close())
 					}()
 
-					// --- BEGIN service.https ---
 					dashboardUI, err := ui.New()
 					if err != nil {
 						return fmt.Errorf("failed to load UI: %w", err)
@@ -104,12 +93,9 @@ func serviceCommand(a *app.App) *cli.Command {
 					if a.ProxyServer != nil {
 						a.Log.Infof("Proxy listener on %s", a.ProxyServer.Addr())
 					}
-					// --- END service.https ---
 
 					return runService(ctx, a,
-						// --- BEGIN service.https ---
 						httpReady,
-						// --- END service.https ---
 					)
 				},
 			},
@@ -234,9 +220,7 @@ func (g *componentGroup) drain(joined error) error {
 func runService(
 	ctx context.Context,
 	a *app.App,
-	// --- BEGIN service.https ---
 	httpReady <-chan struct{},
-	// --- END service.https ---
 ) error {
 	serviceCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -248,10 +232,7 @@ func runService(
 		{name: "service stop watcher", run: func(ctx context.Context, ready func()) error {
 			return a.RunServiceStopWatcher(ctx, cancel, ready)
 		}},
-		// --- BEGIN update ---
 		{name: "update checker", run: a.RunUpdateChecker},
-		// --- END update ---
-		// --- BEGIN service.https ---
 		{name: "dashboard", run: func(ctx context.Context, ready func()) error {
 			go func() {
 				select {
@@ -262,7 +243,6 @@ func runService(
 			}()
 			return runHTTPComponent(ctx, a)
 		}},
-		// --- END service.https ---
 	}
 	group := startComponents(serviceCtx, components)
 
@@ -315,7 +295,6 @@ func unexpectedComponentError(ctx context.Context, result componentResult) error
 	return nil
 }
 
-// --- BEGIN service.https ---
 func serviceRunConfiguration(a *app.App, portOverride int) (*types.Configuration, error) {
 	cfg, err := config.View(a.DB)
 	if err != nil {
@@ -340,5 +319,3 @@ func bindToBaseURL(bind string, defaultPort int) string {
 	}
 	return fmt.Sprintf("https://localhost:%s", port)
 }
-
-// --- END service.https ---

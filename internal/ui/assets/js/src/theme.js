@@ -1,4 +1,3 @@
-// --- FILE service.https ---
 
 // Theme Management
 // Handles dark/light theme switching with localStorage and system preference support

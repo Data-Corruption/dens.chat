@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sprout/internal/build"
-	"sprout/internal/types"
-	"sprout/pkg/migrator"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/migrator"
+
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 // MigrationPolicy controls whether opening a database may change its schema.
@@ -41,7 +42,6 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			return fmt.Errorf("failed to create config table: %w", err)
 		}
 
-		// --- BEGIN update ---
 		// A single renewable lease coordinates periodic update checks across
 		// concurrent processes. Manual checks do not use this table.
 		if _, err := tx.ExecContext(ctx, `
@@ -53,9 +53,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		`); err != nil {
 			return fmt.Errorf("failed to create update-check lease table: %w", err)
 		}
-		// --- END update ---
 
-		// --- BEGIN service.https ---
 		// UI sessions, keyed by SHA256 of the cookie token. Living in the DB
 		// (not memory) makes revocation work across processes (CLI vs service)
 		// and lets sessions survive restarts without any config handoff. Just
@@ -70,9 +68,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		`); err != nil {
 			return fmt.Errorf("failed to create sessions table: %w", err)
 		}
-		// --- END service.https ---
 
-		// --- BEGIN service ---
 		// Small SQLite IPC example used by `app hash` and the service worker.
 		if _, err := tx.ExecContext(ctx, `
 			CREATE TABLE hash_requests (
@@ -91,7 +87,6 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		`); err != nil {
 			return fmt.Errorf("failed to create hash requests table: %w", err)
 		}
-		// --- END service ---
 
 		// Store config with default values
 		cfg := types.DefaultConfig(buildInfo)

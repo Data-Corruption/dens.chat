@@ -39,11 +39,9 @@ umask 077
 # set by build.sh before uploading
 APP_NAME="<APP_NAME>"
 RELEASE_URL="<RELEASE_URL>"
-# --- BEGIN service ---
 SERVICE="<SERVICE>"
 SERVICE_DESC="<SERVICE_DESC>"
 SERVICE_ARGS="<SERVICE_ARGS>"
-# --- END service ---
 # cosign keyless identity of the CI workflow that signed this release
 CERT_IDENTITY="<CERT_IDENTITY>"
 OIDC_ISSUER="<OIDC_ISSUER>"
@@ -75,21 +73,15 @@ CACHED_INSTALLER_BUNDLE="$MAINTENANCE_DIR/install.sh.cosign.bundle"
 JOBS_DIR="$MAINTENANCE_DIR/jobs"
 LOGS_DIR="$STORAGE_DIR/logs"
 MAINTENANCE_LOG="$LOGS_DIR/maintenance.log"
-# --- BEGIN update ---
 RELEASE_URL_FILE="$MAINTENANCE_DIR/release-url"
-# --- END update ---
 
-# --- BEGIN service ---
 SERVICE_NAME="$APP_NAME.service"
 SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE_NAME"
 SERVICE_WANTS_LINK="$HOME/.config/systemd/user/default.target.wants/$SERVICE_NAME"
 SERVICE_READY_TIMEOUT_SECONDS=90
-# --- END service ---
 LOCK_TIMEOUT_SECONDS=300
 
-# --- BEGIN service ---
 USER_NAME="${USER:-$(id -un)}" # $USER is not always exported
-# --- END service ---
 USER_ID=$(id -u)
 
 # Globals used by rollback/cleanup --------------------------------------------
@@ -97,17 +89,13 @@ temp_dir=""
 old_app_bin=""
 app_bin_exists=0
 binary_changed=0
-# --- BEGIN service ---
 old_service_file=""
 service_exists=0
 service_was_enabled=0
 service_was_active=0
 service_touched=0
-# --- END service ---
-# --- BEGIN service.https ---
 fresh_install=1
 default_port=""
-# --- END service.https ---
 migration_nonce=""
 migration_started=0
 state_transition_written=0
@@ -121,19 +109,15 @@ state_changed_at=""
 state_epoch=""
 transaction_phase=""
 transaction_epoch=""
-# --- BEGIN service ---
 recovering_transition=0
-# --- END service ---
 cached_installer_exists=0
 cached_bundle_exists=0
 cached_installer_changed=0
 old_cached_installer=""
 old_cached_bundle=""
-# --- BEGIN update ---
 old_release_url_file=""
 release_url_exists=0
 release_url_changed=0
-# --- END update ---
 
 # stdout colors
 if [ -z "${NO_COLOR:-}" ] && [ -t 1 ]; then
@@ -440,19 +424,16 @@ marked_instances_remain() {
 
 stop_registered_service() {
     :
-    # --- BEGIN service ---
     if [ -f "$SERVICE_FILE" ] && command -v systemctl >/dev/null 2>&1; then
         # --no-block lets the common 15-second drain budget govern the process
         # rather than systemd's usually longer default stop timeout.
         systemctl --user stop --no-block "$SERVICE_NAME" >/dev/null 2>&1 ||
             warnf 'Failed to request service stop; marked instances will still be drained.'
     fi
-    # --- END service ---
 }
 
 remove_registered_service() {
     :
-    # --- BEGIN service ---
     registered_service_present=0
     if [ -f "$SERVICE_FILE" ] || [ -L "$SERVICE_FILE" ]; then
         registered_service_present=1
@@ -474,7 +455,6 @@ remove_registered_service() {
         systemctl --user daemon-reload >/dev/null 2>&1 ||
             warnf 'Failed to reload the user systemd manager after service removal.'
     fi
-    # --- END service ---
 }
 
 drain_instances() {
@@ -602,7 +582,6 @@ run_uninstall() {
     successf 'Retained maintenance state and logs in: %s' "$STORAGE_DIR"
 }
 
-# --- BEGIN service.https ---
 # Check if a port is in use. Returns 0 if in use, 1 if free or unknown.
 # Checks both TCP listeners and bound UDP sockets. This is a preflight
 # courtesy, not a safety property: when no socket-listing tool exists the
@@ -621,13 +600,10 @@ port_in_use() {
         return 1
     fi
 }
-# --- END service.https ---
 
 rollback() {
     rb=0
-    # --- BEGIN service ---
     restart_old_service=0
-    # --- END service ---
     if [ "$binary_changed" -eq 1 ]; then
         printf 'Restoring previous installation ...\n'
         if [ "$app_bin_exists" -eq 1 ] && [ -n "$old_app_bin" ] && [ -s "$old_app_bin" ]; then
@@ -637,7 +613,6 @@ rollback() {
         fi
         rb=1
     fi
-    # --- BEGIN service ---
     if [ "$SERVICE" = "true" ] && [ "$service_touched" -eq 1 ]; then
         systemctl --user stop "$SERVICE_NAME" >/dev/null 2>&1 || :
         systemctl --user reset-failed "$SERVICE_NAME" >/dev/null 2>&1 || :
@@ -659,8 +634,6 @@ rollback() {
             restart_old_service=1
         fi
     fi
-    # --- END service ---
-    # --- BEGIN update ---
     if [ "$release_url_changed" -eq 1 ]; then
         if [ "$release_url_exists" -eq 1 ] && [ -n "$old_release_url_file" ] && [ -s "$old_release_url_file" ]; then
             mv -f "$old_release_url_file" "$RELEASE_URL_FILE" || errf '   Error: Failed to restore release URL file'
@@ -670,7 +643,6 @@ rollback() {
             rb=1
         fi
     fi
-    # --- END update ---
     if [ "$cached_installer_changed" -eq 1 ]; then
         if ! restore_cached_installer; then
             errf '   Error: Failed to restore cached installer'
@@ -683,11 +655,9 @@ rollback() {
     fi
     # Never start a service while holding the exclusive lifecycle lock.
     [ -n "${lifecycle_lock_acquired:-}" ] && release_lifecycle_lock || :
-    # --- BEGIN service ---
     if [ "$restart_old_service" -eq 1 ]; then
         systemctl --user start "$SERVICE_NAME" >/dev/null 2>&1 || :
     fi
-    # --- END service ---
     if [ "$rb" -eq 1 ]; then printf 'Rolled back to previous version.\n'; fi
 }
 
@@ -782,9 +752,7 @@ if [ "$MODE" = "uninstall" ]; then
 fi
 
 [ -f "$APP_BIN" ] && app_bin_exists=1
-# --- BEGIN service.https ---
 [ "$app_bin_exists" -eq 1 ] && fresh_install=0
-# --- END service.https ---
 
 load_state
 if [ "$MODE" = "update" ]; then
@@ -808,9 +776,7 @@ else
             # install/update. Preserve the installation lifetime.
             transaction_phase=$state_phase
             transaction_epoch=$state_epoch
-            # --- BEGIN service ---
             recovering_transition=1
-            # --- END service ---
             ;;
         uninstalling)
             fatalf 'Uninstall is already in progress; run the cached installer with --uninstall to finish it'
@@ -818,7 +784,6 @@ else
     esac
 fi
 
-# --- BEGIN service ---
 # Service pre-checks ----------------------------------------------------------
 # Non-systemd distros (Alpine/openrc, Void/runit, Artix, Devuan, ...) and
 # environments where systemd --user is broken (some WSL setups) degrade
@@ -848,21 +813,16 @@ if [ "$SERVICE" = "true" ]; then
     # track prior state
     if systemctl --user cat "$SERVICE_NAME" >/dev/null 2>&1; then
         service_exists=1
-        # --- BEGIN service.https ---
         fresh_install=0
-        # --- END service.https ---
         if systemctl --user is-enabled --quiet "$SERVICE_NAME"; then service_was_enabled=1; fi
         if systemctl --user is-active  --quiet "$SERVICE_NAME"; then service_was_active=1; fi
     fi
 fi
-# --- END service ---
 
 # Create directories ---------------------------------------------------------
 
 ensure_private_dir "$APP_DATA_DIR" "application data directory"
-# --- BEGIN service ---
 mkdir -p "$(dirname "$SERVICE_FILE")" || { rc=$?; fatalf 'failed to create service dir (rc=%d)' "$rc"; }
-# --- END service ---
 
 # Download -------------------------------------------------------------------
 # fetch [curl args...]: every download shares one retry and timeout policy.
@@ -1052,19 +1012,15 @@ candidate_version=$(printf '%s' "$candidate_build_vars" | sed -n 's/.*"version":
     fatalf 'Staged candidate name %s does not match installer name %s' "$candidate_name" "$APP_NAME"
 [ "$candidate_version" = "$pinned_version" ] ||
     fatalf 'Staged candidate version %s does not match signed version %s' "$candidate_version" "$pinned_version"
-# --- BEGIN service ---
 if [ "$SERVICE" = "true" ]; then
     : # Retain a valid service-only block when service.https is cut.
-    # --- BEGIN service.https ---
     default_port=$(printf '%s' "$candidate_build_vars" | sed -n 's/.*"serviceDefaultPort":\([0-9]*\).*/\1/p')
     [ -n "$default_port" ] ||
         fatalf 'Failed to parse default port from staged candidate build vars:\n%s' "$candidate_build_vars"
     if [ "$fresh_install" -eq 1 ] && port_in_use "$default_port"; then
         fatalf 'Default port %d is already in use.\nFree it for the initial installation. After installation, persist a different listener with:\n    %s config set --ui-bind 127.0.0.1:<port>' "$default_port" "$APP_NAME"
     fi
-    # --- END service.https ---
 fi
-# --- END service ---
 
 # Backup (for rollback) -------------------------------------------------------
 if [ -f "$APP_BIN" ]; then
@@ -1073,21 +1029,17 @@ if [ -f "$APP_BIN" ]; then
     cp -f "$APP_BIN" "$old_app_bin" || { rc=$?; fatalf 'Failed to backup existing binary (rc=%d)' "$rc"; }
 fi
 
-# --- BEGIN service ---
 if [ "$SERVICE" = "true" ] && [ "$service_exists" -eq 1 ]; then
     printf 'Backing up current service ...\n'
     old_service_file="$temp_dir/$SERVICE_NAME.old"
     systemctl --user cat "$SERVICE_NAME" > "$old_service_file" || { rc=$?; fatalf 'Failed to backup existing service unit file (rc=%d)' "$rc"; }
 fi
-# --- END service ---
 
-# --- BEGIN update ---
 if [ -f "$RELEASE_URL_FILE" ]; then
     release_url_exists=1
     old_release_url_file="$temp_dir/release-url.old"
     cp -f "$RELEASE_URL_FILE" "$old_release_url_file" || { rc=$?; fatalf 'Failed to backup existing release URL file (rc=%d)' "$rc"; }
 fi
-# --- END update ---
 
 if [ -L "$CACHED_INSTALLER" ] || [ -L "$CACHED_INSTALLER_BUNDLE" ]; then
     fatalf 'Cached installer paths must not be symlinks'
@@ -1116,13 +1068,11 @@ migration_nonce=$(generate_token) || fatalf 'Failed to generate migration nonce'
 state_transition_written=1
 write_state "$transaction_phase" "$state_version" "$pinned_version" "$migration_nonce" "$transaction_epoch"
 
-# --- BEGIN service ---
 if [ "$SERVICE" = "true" ] && [ "$service_exists" -eq 1 ] && [ "$service_was_active" -eq 1 ]; then
     service_touched=1
     printf 'Stopping active service ...\n'
     systemctl --user stop --no-block "$SERVICE_NAME" || fatalf 'Failed to request active service stop'
 fi
-# --- END service ---
 
 drain_instances
 acquire_lifecycle_lock
@@ -1136,15 +1086,12 @@ printf 'Writing binary to %s ...\n' "$APP_BIN"
 binary_changed=1
 install -Dm755 "$gzip_out" "$APP_BIN" || { rc=$?; fatalf 'Failed to install binary (rc=%d)' "$rc"; }
 
-# --- BEGIN update ---
 # The installer owns the effective source; later processes cannot inherit this
 # invocation's environment. Keep this write inside the rollback transaction.
 printf 'Writing release source to %s ...\n' "$RELEASE_URL_FILE"
 release_url_changed=1
 printf '%s\n' "$RELEASE_URL" > "$RELEASE_URL_FILE" || { rc=$?; fatalf 'Failed to write release URL file (rc=%d)' "$rc"; }
-# --- END update ---
 
-# --- BEGIN service ---
 # Install the service definition before migration so the binary, release
 # source, and service state cross the migration boundary together.
 if [ "$SERVICE" = "true" ]; then
@@ -1194,7 +1141,6 @@ if [ "$SERVICE" = "true" ]; then
         systemctl --user reset-failed "$SERVICE_NAME" || :
     fi
 fi
-# --- END service ---
 
 printf 'Verifying installation (this may take a few moments if migrating) ...\n'
 migration_started=1
@@ -1211,7 +1157,6 @@ state_transition_written=0
 # the lock is released.
 release_lifecycle_lock
 
-# --- BEGIN service ---
 # Start only after releasing the exclusive lifecycle lock.
 if [ "$SERVICE" = "true" ]; then
     if [ "$service_exists" -eq 1 ]; then
@@ -1232,7 +1177,6 @@ if [ "$SERVICE" = "true" ]; then
        warnf '    sudo loginctl enable-linger %s' "$USER_NAME"
     fi
 fi
-# --- END service ---
 
 # Add to PATH -----------------------------------------------------------------
 MARK_OPEN='# >>> PATH bootstrap: ~/.local/bin >>>'
@@ -1319,8 +1263,6 @@ fi
 # shellcheck disable=SC2016 # the $SHELL is advice for the user to type, not to expand here
 warnf    'Open a new terminal or refresh this one with: exec "$SHELL" -l || exec sh -l'
 successf '    Run:       %s -h     # for help' "$APP_NAME"
-# --- BEGIN service ---
 if [ "$SERVICE" = "true" ]; then
   successf '    Run:       %s service  # for service management cheat sheet' "$APP_NAME"
 fi
-# --- END service ---

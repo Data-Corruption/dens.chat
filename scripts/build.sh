@@ -52,18 +52,14 @@ SERVICE_DEFAULT_PORT="0" # fallback for after cut
 # Template adopters normally change values in this section and leave the build
 # implementation alone.
 
-APP_NAME="sprout"
+APP_NAME="dens"
 # The URL path is also the publication prefix inside R2_BUCKET. End with /.
-RELEASE_URL="https://releases.sproutcli.dev/"
-CONTACT_URL="https://sproutcli.dev/"
+RELEASE_URL="https://releases.dens.chat/"
+CONTACT_URL="https://github.com/Data-Corruption/dens.chat"
 DEFAULT_LOG_LEVEL="warn"
 
-# --- BEGIN service ---
-SERVICE_DESC="Sprout daemon"
-# --- END service ---
-# --- BEGIN service.https ---
+SERVICE_DESC="Self-hosted chat app with text, voice and screen share"
 SERVICE_DEFAULT_PORT="8484"
-# --- END service.https ---
 
 # Pinned build inputs ---------------------------------------------------------
 #
@@ -79,11 +75,9 @@ source "$BUILD_SCRIPT_DIR/vendor.sh"
 
 OUT_DIR="out"
 RELEASE_DIR="$OUT_DIR/release"
-# --- BEGIN service.https ---
 JS_DIR="./internal/ui/assets/js"
 CSS_DIR="./internal/ui/assets/css"
 ASSETS_DIR="./internal/ui/assets"
-# --- END service.https ---
 GO_MAIN_PATH="./cmd"
 
 MODE="local" # frontend tool selection; ci.sh uses the pinned CI tools
@@ -102,10 +96,8 @@ VERSION_DIR=""
 
 SERVICE_ENABLED="false"
 SERVICE_ARGS=""
-# --- BEGIN service ---
 SERVICE_ENABLED="true"
 SERVICE_ARGS="service run"
-# --- END service ---
 
 # cosign keyless identity: only releases signed by this exact workflow on main
 # verify. The subject includes the repository, so it is unforgeable without push
@@ -124,10 +116,8 @@ source "$BUILD_SCRIPT_DIR/build/artifacts.sh"
 # Keeping compilation here gives local and published binaries the same inputs.
 build_binaries() {
   dep_check
-  # --- BEGIN service.https ---
   frontend_build
   frontend_hash_assets
-  # --- END service.https ---
   if [[ "$BUILD_KIND" == "dev" ]]; then
     printf "🟢 Skipping tests in dev mode\n"
   else

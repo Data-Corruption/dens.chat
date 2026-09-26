@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"sprout/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 )
 
 func TestUseSystemdMaintenanceLauncherRequiresManagedCaller(t *testing.T) {
@@ -17,12 +17,10 @@ func TestUseSystemdMaintenanceLauncherRequiresManagedCaller(t *testing.T) {
 	if useSystemdMaintenanceLauncher() {
 		t.Fatal("unmanaged caller selected systemd-run")
 	}
-	// --- BEGIN service ---
 	t.Setenv("NOTIFY_SOCKET", "/run/user/1000/notify")
 	if !useSystemdMaintenanceLauncher() {
 		t.Fatal("managed, service-capable caller did not select systemd-run")
 	}
-	// --- END service ---
 }
 
 func TestResolveCosignUnixPrefersManagedCopy(t *testing.T) {

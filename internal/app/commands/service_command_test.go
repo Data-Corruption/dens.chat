@@ -1,12 +1,10 @@
-// --- FILE service ---
-
 package commands
 
 import (
 	"testing"
 
-	"sprout/internal/app"
-	"sprout/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/build"
 )
 
 func TestServiceCommandExposesManagedControlsAndHidesRun(t *testing.T) {

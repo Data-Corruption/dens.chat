@@ -1,7 +1,5 @@
 //go:build windows
 
-// --- FILE service ---
-
 package app
 
 import (
@@ -12,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"sprout/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 )
 
 func TestParseServiceStopLease(t *testing.T) {

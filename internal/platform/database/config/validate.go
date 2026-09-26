@@ -3,10 +3,11 @@ package config
 import (
 	"fmt"
 	"net"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
 	"strconv"
 	"strings"
+
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 // ValidationError reports one or more invalid configuration values. It is a
@@ -43,7 +44,6 @@ func validate(cfg *types.Configuration) error {
 	if _, err := xlog.NormalizeLevel(cfg.LogLevel); err != nil {
 		errs = append(errs, err)
 	}
-	// --- BEGIN service.https ---
 	if err := validateBind(cfg.UIBind); err != nil {
 		errs = append(errs, err)
 	}
@@ -67,14 +67,12 @@ func validate(cfg *types.Configuration) error {
 		}
 		usernames[credential.Username] = struct{}{}
 	}
-	// --- END service.https ---
 	if len(errs) == 0 {
 		return nil
 	}
 	return &ValidationError{errs: errs}
 }
 
-// --- BEGIN service.https ---
 // validateBind checks that bind is a host:port with a valid numeric port,
 // e.g. ":8484" or "0.0.0.0:8484".
 func validateBind(bind string) error {
@@ -107,5 +105,3 @@ func ValidateLoopbackBind(bind string) error {
 	}
 	return nil
 }
-
-// --- END service.https ---
