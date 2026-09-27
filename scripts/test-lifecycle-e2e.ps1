@@ -1,906 +1,382 @@
+#Requires -Version 5.1
+<#
+Windows lifecycle e2e. Installs Dens as a service through install.ps1 from
+fixture releases and runs the flows the Linux harness runs: pair a browser,
+set the password, back up, refuse another account, restart the service,
+update, add a second instance that hosts a den, restore, and uninstall.
+
+It installs the real service and paths, so it refuses to run where Dens is
+installed. From an elevated PowerShell:
+  bash scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
+  powershell -ExecutionPolicy Bypass -File scripts/test-lifecycle-e2e.ps1 -ReleaseDir out/windows-e2e
+
+-InstallerCandidate installs with an exact rendered install.ps1 instead of
+the fixture's. -Backup also restores a backup made elsewhere, such as by the
+Linux harness, with the same test password. -SaveBackup keeps the backup
+this run makes. A restarted service stands in for a reboot.
+#>
+[CmdletBinding()]
 param(
-    [string]$InstallerCandidate = ""
+    [Parameter(Mandatory = $true)][string]$ReleaseDir,
+    [string]$InstallerCandidate = "",
+    [string]$Backup = "",
+    [string]$SaveBackup = ""
 )
 
-$ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
-# Native Windows lifecycle E2E. It builds a production-mode binary, serves the
-# final release layout over loopback, and exercises install, update recovery,
-# detached binary-driven update, fail-closed startup, cached offline uninstall,
-# idempotency, and epoch fencing. Verification bypasses are confined to this
-# unsigned local fixture.
+$Password = "correct horse battery staple"
+$ClientUrl = "http://127.0.0.1:8484"
+$DenHealth = "http://127.0.0.1:8485/healthz"
+$BinaryDir = Join-Path $env:ProgramFiles "Dens"
+$Dens = Join-Path $BinaryDir "dens.exe"
+$DataRoot = Join-Path $env:ProgramData "Dens"
+$RunId = [Guid]::NewGuid().ToString("N").Substring(0, 8)
+# Outside every user profile, so the other-account task can reach it.
+$Work = Join-Path $env:ProgramData "dens-e2e-$RunId"
+$TaskName = "dens-e2e-$RunId"
+$WerKey = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\ExcludedApplications"
+$script:CurrentStep = "setup"
+$script:Session = $null
 
-$Version = "v0.0.0-test"
-$FaultVersion = "v0.0.1-fault-test"
-$NewerVersion = "v0.0.2-detached-test"
-$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).ProviderPath
-$Template = [IO.File]::ReadAllText((Join-Path $Root "scripts/install.ps1"))
-$RunId = [Guid]::NewGuid().ToString("N")
-$AppName = "sprout-lifecycle-test-" + $RunId.Substring(0, 8)
-$ServiceEnabled = $false
-$ServiceDescription = "test"
-$ServiceArgs = "service run"
-$ServiceDefaultPort = 0
-$ServiceDefaultPort = 8484
-$SmokeArgs = @("config", "show")
-$SmokeArgs = @("users", "list")
-if (-not [string]::IsNullOrWhiteSpace($InstallerCandidate)) {
-    $CandidatePath = (Resolve-Path -LiteralPath $InstallerCandidate).Path
-    $Template = [IO.File]::ReadAllText($CandidatePath)
-    $nameMatch = [regex]::Match($Template, '(?m)^\$AppName = "([^"]+)"[ \t]*\r?$')
-    $serviceMatch = [regex]::Match($Template, '(?m)^\$ServiceEnabled = "(true|false)"[ \t]*\r?$')
-    $descriptionMatch = [regex]::Match($Template, '(?m)^\$ServiceDescription = "([^"]*)"[ \t]*\r?$')
-    $argsMatch = [regex]::Match($Template, '(?m)^\$ServiceArgs = "([^"]*)"[ \t]*\r?$')
-    if (-not $nameMatch.Success -or -not $serviceMatch.Success -or
-        -not $descriptionMatch.Success -or -not $argsMatch.Success) {
-        throw "Could not read build settings from rendered installer candidate."
-    }
-    # A release candidate may use the real application's name. Rewrite only
-    # the fixture copy so this destructive E2E can never target a real install.
-    $Template = $Template.Replace(
-        $nameMatch.Value,
-        ('$AppName = "' + $AppName + '"')
-    )
-    $ServiceEnabled = ($serviceMatch.Groups[1].Value -eq "true")
-    $ServiceDescription = $descriptionMatch.Groups[1].Value
-    $ServiceArgs = $argsMatch.Groups[1].Value
+function Step([string]$Name) {
+    $script:CurrentStep = $Name
+    Write-Host ""
+    Write-Host "== $Name"
 }
 
-$Temp = Join-Path ([IO.Path]::GetTempPath()) ("sprout-lifecycle-test-" + $RunId)
-$ReleaseRoot = Join-Path $Temp "release"
-$VersionRoot = Join-Path (Join-Path $ReleaseRoot "releases") $Version
-$ArtifactName = "windows-amd64.exe.gz"
-$BuildPath = Join-Path $Temp "$AppName.exe"
-$FaultBuildPath = Join-Path $Temp "$AppName-fault.exe"
-$NewerBuildPath = Join-Path $Temp "$AppName-newer.exe"
-$CosignStubBuildPath = Join-Path $Temp "cosign-stub.exe"
-$ArtifactPath = Join-Path $VersionRoot $ArtifactName
-$InstallerPath = Join-Path $ReleaseRoot "install.ps1"
-$InstallerBundlePath = Join-Path $ReleaseRoot "install.ps1.cosign.bundle"
-$FaultReleaseRoot = Join-Path $ReleaseRoot "fault"
-$FaultVersionRoot = Join-Path (Join-Path $FaultReleaseRoot "releases") $FaultVersion
-$FaultArtifactPath = Join-Path $FaultVersionRoot $ArtifactName
-$FaultInstallerPath = Join-Path $FaultReleaseRoot "install-fault.ps1"
-$FaultRecoveryInstallerPath = Join-Path $FaultReleaseRoot "install.ps1"
-$FaultInstallerBundlePath = Join-Path $FaultReleaseRoot "install.ps1.cosign.bundle"
-$NewerReleaseRoot = Join-Path $ReleaseRoot "detached"
-$NewerVersionRoot = Join-Path (Join-Path $NewerReleaseRoot "releases") $NewerVersion
-$NewerArtifactPath = Join-Path $NewerVersionRoot $ArtifactName
-$NewerInstallerPath = Join-Path $NewerReleaseRoot "install.ps1"
-$NewerInstallerBundlePath = Join-Path $NewerReleaseRoot "install.ps1.cosign.bundle"
-$Server = $null
-$OriginalUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$OriginalSkipVerify = $env:APP_SKIP_VERIFY
-$OriginalReleaseUrl = $env:APP_RELEASE_URL
-$OriginalExpectedEpoch = $env:APP_MAINTENANCE_EXPECT_EPOCH
-$OriginalExpectedVersion = $env:APP_MAINTENANCE_EXPECT_VERSION
-$PushedLocation = $false
+function Fail([string]$Message) {
+    throw "FAIL ($script:CurrentStep): $Message"
+}
 
-$LocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
-$AppDirName = $AppName.Substring(0, 1).ToUpperInvariant() + $AppName.Substring(1)
-$InstalledDir = Join-Path (Join-Path $LocalAppData "Programs") $AppDirName
-$InstalledBin = Join-Path $InstalledDir "$AppName.exe"
-$StorageDir = Join-Path $LocalAppData $AppDirName
-$DataDir = Join-Path $StorageDir "data"
-$ControlDir = Join-Path $StorageDir "control"
-$MaintenanceDir = Join-Path $StorageDir "maintenance"
-$LogsDir = Join-Path $StorageDir "logs"
-$InstancesDir = Join-Path $ControlDir "instances"
-$OperationLockFile = Join-Path $ControlDir "operation.lock"
-$LifecycleLockFile = Join-Path $ControlDir "lifecycle.lock"
-$StateFile = Join-Path $ControlDir "state.json"
-$CachedInstaller = Join-Path $MaintenanceDir "install.ps1"
-$CachedInstallerBundle = Join-Path $MaintenanceDir "install.ps1.cosign.bundle"
-$ReleaseUrlFile = Join-Path $MaintenanceDir "release-url"
-$MaintenanceLog = Join-Path $LogsDir "maintenance.log"
-$RetainedLog = Join-Path $LogsDir "lifecycle-e2e.log"
-$StopLeaseFile = Join-Path $ControlDir "service.stop"
-$ManagedCosignDir = Join-Path (Join-Path $LocalAppData "Programs") "cosign"
-$ManagedCosignBin = Join-Path $ManagedCosignDir "cosign.exe"
-$ManagedCosignDirExisted = Test-Path -LiteralPath $ManagedCosignDir -PathType Container
-$ManagedCosignExisted = Test-Path -LiteralPath $ManagedCosignBin -PathType Leaf
-$ManagedCosignBackup = Join-Path $Temp "cosign.original.exe"
-$Unrelated = $null
-$OccupiedPortListener = $null
-$InvocationNumber = 0
-
-function Compress-Gzip {
-    param(
-        [Parameter(Mandatory = $true)][string]$Source,
-        [Parameter(Mandatory = $true)][string]$Destination
-    )
-    $sourceStream = [IO.File]::OpenRead($Source)
+# Invoke-Native runs a program, echoes its output, and returns the output and
+# exit code. Windows PowerShell 5.1 turns native stderr into error records,
+# so the exit code decides.
+function Invoke-Native {
+    param([string]$FilePath, [string[]]$Arguments, [string]$Stdin = $null, [switch]$AllowFailure)
+    $saved = $ErrorActionPreference
     try {
-        $output = [IO.File]::Create($Destination)
-        try {
-            $gzip = New-Object IO.Compression.GZipStream(
-                $output, [IO.Compression.CompressionMode]::Compress, $false
-            )
-            try {
-                $sourceStream.CopyTo($gzip)
-            } finally {
-                $gzip.Dispose()
-            }
-        } finally {
-            $output.Dispose()
+        $ErrorActionPreference = "Continue"
+        if ($null -ne $Stdin) {
+            $output = $Stdin | & $FilePath @Arguments 2>&1
+        } else {
+            $output = & $FilePath @Arguments 2>&1
         }
+        $code = $LASTEXITCODE
     } finally {
-        $sourceStream.Dispose()
+        $ErrorActionPreference = $saved
     }
+    $text = (@($output) | ForEach-Object { "$_" }) -join "`n"
+    if ($text) { Write-Host $text }
+    if ($code -ne 0 -and -not $AllowFailure) {
+        Fail "$(Split-Path -Leaf $FilePath) $($Arguments -join ' ') exited with $code"
+    }
+    return [pscustomobject]@{ Code = $code; Output = $text }
+}
+
+function Invoke-Dens {
+    param([string[]]$Arguments, [string]$Stdin = $null, [switch]$AllowFailure)
+    return Invoke-Native -FilePath $Dens -Arguments $Arguments -Stdin $Stdin -AllowFailure:$AllowFailure
 }
 
 function Invoke-Installer {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [string[]]$Arguments = @()
-    )
-
-    $script:InvocationNumber++
-    $stdout = Join-Path $Temp ("installer-{0}.out" -f $InvocationNumber)
-    $stderr = Join-Path $Temp ("installer-{0}.err" -f $InvocationNumber)
-    $processArguments = @(
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy", "Bypass",
-        "-File", "`"$Path`""
-    ) + $Arguments
-    $process = Start-Process -FilePath "powershell" -ArgumentList $processArguments `
-        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -Wait
-    $detail = ((Get-Content -LiteralPath $stdout, $stderr -ErrorAction SilentlyContinue) -join "`n").Trim()
-    return [PSCustomObject]@{
-        ExitCode = $process.ExitCode
-        Detail = $detail
-    }
-}
-
-function Invoke-ConfirmedUninstall {
-    param(
-        [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$Directory
-    )
-
-    $stdin = Join-Path $Directory "detached-uninstall.in"
-    $stdout = Join-Path $Directory "detached-uninstall.out"
-    $stderr = Join-Path $Directory "detached-uninstall.err"
-    # Windows PowerShell's native pipeline can prepend a BOM from Console's
-    # input encoding even when OutputEncoding is BOM-free. Redirect exact bytes.
-    [IO.File]::WriteAllBytes($stdin, [byte[]](0x79, 0x0a)) # y + newline
-    $process = Start-Process -FilePath $Path -ArgumentList "uninstall" `
-        -RedirectStandardInput $stdin -RedirectStandardOutput $stdout `
-        -RedirectStandardError $stderr -PassThru -Wait
-    $detail = ((Get-Content -LiteralPath $stdout, $stderr -Encoding UTF8) -join "`n").Trim()
-    return [PSCustomObject]@{
-        ExitCode = $process.ExitCode
-        Detail = $detail
-    }
-}
-
-function Read-LifecycleState {
-    if (-not (Test-Path -LiteralPath $StateFile -PathType Leaf)) {
-        throw "Lifecycle state is missing: $StateFile"
-    }
-    $state = [IO.File]::ReadAllText($StateFile) | ConvertFrom-Json
-    $required = @("phase", "version", "targetVersion", "nonce", "changedAt", "installationEpoch")
-    $names = @($state.PSObject.Properties.Name)
-    if ($names.Count -ne $required.Count) {
-        throw "Lifecycle state has an unexpected field count."
-    }
-    foreach ($name in $required) {
-        if ($names -cnotcontains $name -or $state.$name -isnot [string]) {
-            throw "Lifecycle state field '$name' is missing or is not a string."
-        }
-    }
-    if ([string]::IsNullOrWhiteSpace($state.changedAt) -or
-        [string]::IsNullOrWhiteSpace($state.installationEpoch)) {
-        throw "Lifecycle state is missing changedAt or installationEpoch."
-    }
-    return $state
-}
-
-function Get-UserPathEntryCount {
-    param([Parameter(Mandatory = $true)][string]$Directory)
-
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace($userPath)) {
-        return 0
-    }
-    $count = 0
-    foreach ($entry in $userPath.Split(";")) {
-        if ([string]::Equals(
-            $entry.Trim().TrimEnd("\"),
-            $Directory.TrimEnd("\"),
-            [StringComparison]::OrdinalIgnoreCase
-        )) {
-            $count++
-        }
-    }
-    return $count
-}
-
-function Assert-ServiceTaskPrincipal {
-    if (-not $ServiceEnabled) {
-        return
-    }
-    $task = Get-ScheduledTask -TaskPath "\" -TaskName $AppName -ErrorAction SilentlyContinue
-    if ($null -eq $task) {
-        throw "Expected scheduled task '$AppName' is missing."
-    }
-    if ($task.Principal.LogonType.ToString() -ne "Interactive" -or
-        $task.Principal.RunLevel.ToString() -ne "Limited") {
-        throw "Scheduled task must use an Interactive, Limited principal."
-    }
-}
-
-try {
-    Remove-Item -LiteralPath $InstalledDir -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $StorageDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $VersionRoot -Force | Out-Null
-
-    Push-Location $Root
-    $PushedLocation = $true
-    $ModulePath = & go list -m
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ModulePath)) {
-        throw "Failed to read the Go module path."
-    }
-    $BuildPackage = "$($ModulePath.Trim())/internal/build"
-    $ldflags = @(
-        "-X '$BuildPackage.name=$AppName'",
-        "-X '$BuildPackage.version=$Version'",
-        "-X '$BuildPackage.contactURL=https://example.invalid'",
-        "-X '$BuildPackage.defaultLogLevel=warn'",
-        "-X '$BuildPackage.serviceEnabled=$($ServiceEnabled.ToString().ToLowerInvariant())'",
-        "-X '$BuildPackage.serviceDesc=$ServiceDescription'",
-        "-X '$BuildPackage.serviceArgs=$ServiceArgs'",
-        "-X '$BuildPackage.serviceDefaultPort=$ServiceDefaultPort'",
-        "-X '$BuildPackage.certIdentity=test-identity'",
-        "-X '$BuildPackage.oidcIssuer=test-issuer'",
-        "-X '$BuildPackage.devMode=false'"
-    ) -join " "
-    & go build -trimpath -buildvcs=false "-ldflags=$ldflags" -o $BuildPath ./cmd
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to build Windows installer fixture."
-    }
-    $faultLdflags = $ldflags.Replace(
-        "-X '$BuildPackage.version=$Version'",
-        "-X '$BuildPackage.version=$FaultVersion'"
-    )
-    & go build -trimpath -buildvcs=false "-ldflags=$faultLdflags" -o $FaultBuildPath ./cmd
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to build Windows post-boundary fault fixture."
-    }
-    $newerLdflags = $ldflags.Replace(
-        "-X '$BuildPackage.version=$Version'",
-        "-X '$BuildPackage.version=$NewerVersion'"
-    )
-    & go build -trimpath -buildvcs=false "-ldflags=$newerLdflags" -o $NewerBuildPath ./cmd
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to build Windows detached-update fixture."
-    }
-    $cosignStubSource = Join-Path $Temp "cosign-stub.go"
-    [IO.File]::WriteAllText($cosignStubSource, "package main`r`nfunc main() {}`r`n")
-    & go build -trimpath -buildvcs=false -o $CosignStubBuildPath $cosignStubSource
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to build the Windows cosign test stub."
-    }
-    Pop-Location
-    $PushedLocation = $false
-
-    Compress-Gzip -Source $BuildPath -Destination $ArtifactPath
-    New-Item -ItemType Directory -Path $FaultVersionRoot -Force | Out-Null
-    Compress-Gzip -Source $FaultBuildPath -Destination $FaultArtifactPath
-    New-Item -ItemType Directory -Path $NewerVersionRoot -Force | Out-Null
-    Compress-Gzip -Source $NewerBuildPath -Destination $NewerArtifactPath
-    [IO.File]::WriteAllText((Join-Path $ReleaseRoot "version"), "$Version`n")
-    [IO.File]::WriteAllText((Join-Path $VersionRoot "version"), "$Version`n")
-    [IO.File]::WriteAllText((Join-Path $FaultReleaseRoot "version"), "$FaultVersion`n")
-    [IO.File]::WriteAllText((Join-Path $FaultVersionRoot "version"), "$FaultVersion`n")
-    [IO.File]::WriteAllText((Join-Path $NewerReleaseRoot "version"), "$NewerVersion`n")
-    [IO.File]::WriteAllText((Join-Path $NewerVersionRoot "version"), "$NewerVersion`n")
-    $artifactHash = (Get-FileHash -LiteralPath $ArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $versionHash = (Get-FileHash -LiteralPath (Join-Path $VersionRoot "version") -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText(
-        (Join-Path $VersionRoot "checksums.txt"),
-        "$artifactHash  $ArtifactName`n$versionHash  version`n"
-    )
-    $faultArtifactHash = (Get-FileHash -LiteralPath $FaultArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $faultVersionHash = (Get-FileHash -LiteralPath (Join-Path $FaultVersionRoot "version") -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText(
-        (Join-Path $FaultVersionRoot "checksums.txt"),
-        "$faultArtifactHash  $ArtifactName`n$faultVersionHash  version`n"
-    )
-    $newerArtifactHash = (Get-FileHash -LiteralPath $NewerArtifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $newerVersionHash = (Get-FileHash -LiteralPath (Join-Path $NewerVersionRoot "version") -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText(
-        (Join-Path $NewerVersionRoot "checksums.txt"),
-        "$newerArtifactHash  $ArtifactName`n$newerVersionHash  version`n"
-    )
-
-    $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
-    $listener.Start()
-    $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
-    $listener.Stop()
-    $ReleaseUrl = "http://127.0.0.1:$port/"
-    $DetachedReleaseUrl = $ReleaseUrl + "detached/"
-
-    $rendered = $Template
-    if ([string]::IsNullOrWhiteSpace($InstallerCandidate)) {
-        $rendered = $rendered.Replace("<APP_NAME>", $AppName)
-        $rendered = $rendered.Replace("<RELEASE_URL>", "https://official.invalid/")
-        $rendered = $rendered.Replace("<SERVICE>", "false")
-        $rendered = $rendered.Replace("<SERVICE_DESC>", $ServiceDescription)
-        $rendered = $rendered.Replace("<SERVICE_ARGS>", $ServiceArgs)
-        $rendered = $rendered.Replace("<CERT_IDENTITY>", "test-identity")
-        $rendered = $rendered.Replace("<OIDC_ISSUER>", "test-issuer")
-        $rendered = $rendered.Replace("<COSIGN_VERSION>", "v0.0.0")
-        $rendered = $rendered.Replace("<COSIGN_SHA_WINDOWS_AMD64>", ("0" * 64))
-    }
-    if ($rendered -match '<[A-Z][A-Z0-9_]*>') {
-        throw "Rendered Windows installer contains an unresolved placeholder."
-    }
-    [IO.File]::WriteAllText($InstallerPath, $rendered)
-    [IO.File]::WriteAllText($InstallerBundlePath, "unsigned test bundle`n")
-    [IO.File]::WriteAllText($FaultRecoveryInstallerPath, $rendered)
-    [IO.File]::WriteAllText($FaultInstallerBundlePath, "unsigned fault test bundle`n")
-    $skipNeedle = '$SkipVerify = ($env:APP_SKIP_VERIFY -eq "true" -or $env:APP_SKIP_VERIFY -eq "1")'
-    $detachedRendered = $rendered.Replace($skipNeedle, '$SkipVerify = $true # unsigned lifecycle E2E fixture')
-    if ($detachedRendered -ceq $rendered) {
-        throw "Could not force verification skip in the detached-update fixture."
-    }
-    # Keep the official default different from the mirror. The detached job
-    # must pass the source persisted by an actual installer invocation.
-    $strictModeNeedle = 'Set-StrictMode -Version Latest'
-    $detachedRendered = $detachedRendered.Replace(
-        $strictModeNeedle,
-        $strictModeNeedle + "`r`nif (`$Update) { Start-Sleep -Seconds 3 } # keep the maintenance task observable"
-    )
-    [IO.File]::WriteAllText($NewerInstallerPath, $detachedRendered)
-    [IO.File]::WriteAllText($NewerInstallerBundlePath, "unsigned detached test bundle`n")
-    $faultNeedle = '        $MigrationStarted = $true'
-    if (-not $rendered.Contains($faultNeedle)) {
-        throw "Could not find the migration boundary in the rendered Windows installer."
-    }
-    $faultRendered = $rendered.Replace(
-        $faultNeedle,
-        $faultNeedle + "`r`n" + '        throw "injected post-migration-boundary failure"'
-    )
-    [IO.File]::WriteAllText($FaultInstallerPath, $faultRendered)
-
-    $serverLog = Join-Path $Temp "server.log"
-    $serverOut = Join-Path $Temp "server.out"
-    $quotedReleaseRoot = '"' + $ReleaseRoot + '"'
-    # Application discovery now uses the same mirror as installers. Record
-    # User-Agent so the pinning assertion counts installer reads independently.
-    $ServerScript = Join-Path $Temp "release-server.py"
-    [IO.File]::WriteAllText($ServerScript, @'
-import functools
-import http.server
-import sys
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        super().log_message(fmt + " user-agent=%s", *args, self.headers.get("User-Agent", ""))
-
-handler = functools.partial(Handler, directory=sys.argv[2])
-http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()
-'@)
-    $quotedServerScript = '"' + $ServerScript + '"'
-    $Server = Start-Process -FilePath "python" -ArgumentList @(
-        "-u", $quotedServerScript, "$port", $quotedReleaseRoot
-    ) -RedirectStandardOutput $serverOut -RedirectStandardError $serverLog -PassThru -WindowStyle Hidden
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        try {
-            Invoke-WebRequest -Uri ($ReleaseUrl + "version") -UseBasicParsing -TimeoutSec 1 | Out-Null
-            break
-        } catch {
-            Start-Sleep -Milliseconds 100
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    if ([DateTime]::UtcNow -ge $deadline) {
-        throw "Local fixture server did not start."
-    }
-
-    $baselineRootReads = @(Select-String -LiteralPath $serverLog -SimpleMatch '"GET /version HTTP/' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Line -notlike "*$AppName/*" }).Count
-    $env:APP_SKIP_VERIFY = "true"
-    $env:APP_RELEASE_URL = $ReleaseUrl
-
-    if ($ServiceEnabled -and $ServiceDefaultPort -gt 0) {
-        $OccupiedPortListener = New-Object Net.Sockets.TcpListener(
-            [Net.IPAddress]::IPv6Any, $ServiceDefaultPort
-        )
-        $OccupiedPortListener.Server.DualMode = $true
-        $OccupiedPortListener.Server.ExclusiveAddressUse = $true
-        $OccupiedPortListener.Start()
-        try {
-            $blockedOut = Join-Path $Temp "blocked-installer.out"
-            $blockedErr = Join-Path $Temp "blocked-installer.err"
-            $blockedProcess = Start-Process -FilePath "powershell" -ArgumentList @(
-                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$InstallerPath`""
-            ) -RedirectStandardOutput $blockedOut -RedirectStandardError $blockedErr -PassThru -Wait
-            $blockedDetail = ((Get-Content -LiteralPath $blockedOut, $blockedErr -ErrorAction SilentlyContinue) -join "`n").Trim()
-            if ($blockedProcess.ExitCode -eq 0) {
-                throw "Fresh Windows install succeeded while default port $ServiceDefaultPort was occupied."
-            }
-            if ($blockedDetail -notmatch "Default port $ServiceDefaultPort is already in use") {
-                throw "Fresh Windows install did not report the occupied default port:`n$blockedDetail"
-            }
-            if ((Test-Path -LiteralPath $InstalledBin) -or
-                $null -ne (Get-ScheduledTask -TaskPath "\" -TaskName $AppName -ErrorAction SilentlyContinue)) {
-                throw "Failed fresh Windows install left application or task state behind."
-            }
-            if (Test-Path -LiteralPath $StateFile) {
-                throw "Failed fresh Windows install published lifecycle state."
-            }
-        } finally {
-            $OccupiedPortListener.Stop()
-            $OccupiedPortListener = $null
-        }
-    }
-
-    $install = Invoke-Installer -Path $InstallerPath
-    if ($install.ExitCode -ne 0) {
-        throw "Windows install failed (exit $($install.ExitCode)):`n$($install.Detail)"
-    }
-    foreach ($path in @(
-        $InstalledBin, $OperationLockFile, $LifecycleLockFile,
-        $StateFile, $CachedInstaller, $CachedInstallerBundle
-    )) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Windows install did not create '$path'."
-        }
-    }
-    foreach ($path in @($DataDir, $ControlDir, $MaintenanceDir, $LogsDir, $InstancesDir)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
-            throw "Windows install did not create '$path'."
-        }
-    }
-    $state = Read-LifecycleState
-    if ($state.phase -cne "ready" -or $state.version -cne $Version -or
-        $state.targetVersion -cne "" -or $state.nonce -cne "") {
-        throw "Fresh install did not publish ready state for $Version."
-    }
-    $InitialEpoch = $state.installationEpoch
-    if ((Get-UserPathEntryCount -Directory $InstalledDir) -ne 1) {
-        throw "Fresh install did not add exactly one application PATH entry."
-    }
-    Assert-ServiceTaskPrincipal
-    $cachedInstallerInitialHash = (Get-FileHash -LiteralPath $CachedInstaller -Algorithm SHA256).Hash
-    $publishedInstallerHash = (Get-FileHash -LiteralPath $InstallerPath -Algorithm SHA256).Hash
-    $cachedBundleInitialHash = (Get-FileHash -LiteralPath $CachedInstallerBundle -Algorithm SHA256).Hash
-    $publishedBundleHash = (Get-FileHash -LiteralPath $InstallerBundlePath -Algorithm SHA256).Hash
-    if ($cachedInstallerInitialHash -cne $publishedInstallerHash -or
-        $cachedBundleInitialHash -cne $publishedBundleHash) {
-        throw "Fresh install did not cache the published maintenance controller and bundle."
-    }
-
-    # A post-boundary fault must retain the new binary and an updating state so
-    # normal startup fails closed until the clean controller completes recovery.
-    $faultReleaseUrl = $ReleaseUrl + "fault/"
-    $env:APP_RELEASE_URL = $faultReleaseUrl
-    $env:APP_MAINTENANCE_EXPECT_EPOCH = $InitialEpoch
-    $env:APP_MAINTENANCE_EXPECT_VERSION = $Version
-    $fault = Invoke-Installer -Path $FaultInstallerPath -Arguments @("-Update")
-    if ($fault.ExitCode -eq 0 -or
-        $fault.Detail -notmatch "injected post-migration-boundary failure") {
-        throw "Windows post-boundary fault did not fail as expected:`n$($fault.Detail)"
-    }
-    $state = Read-LifecycleState
-    if ($state.phase -cne "updating" -or $state.version -cne $Version -or
-        $state.targetVersion -cne $FaultVersion -or
-        $state.nonce -cnotmatch '^[0-9a-f]{64}$' -or
-        $state.installationEpoch -cne $InitialEpoch) {
-        throw "Windows post-boundary fault did not retain the expected updating state."
-    }
-    $installedHash = (Get-FileHash -LiteralPath $InstalledBin -Algorithm SHA256).Hash
-    $faultBuildHash = (Get-FileHash -LiteralPath $FaultBuildPath -Algorithm SHA256).Hash
-    if ($installedHash -cne $faultBuildHash) {
-        throw "Windows post-boundary fault restored or replaced the new binary."
-    }
-
-    $pendingOut = Join-Path $Temp "pending-state.out"
-    $pendingErr = Join-Path $Temp "pending-state.err"
-    $pendingProcess = Start-Process -FilePath $InstalledBin -ArgumentList $SmokeArgs `
-        -RedirectStandardOutput $pendingOut -RedirectStandardError $pendingErr -PassThru -Wait
-    $pendingDetail = ((Get-Content -LiteralPath $pendingOut, $pendingErr -ErrorAction SilentlyContinue) -join "`n").Trim()
-    if ($pendingProcess.ExitCode -eq 0 -or $pendingDetail -notmatch "not ready") {
-        throw "Normal Windows startup did not fail closed on updating state:`n$pendingDetail"
-    }
-
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_VERSION -ErrorAction SilentlyContinue
-    $recovery = Invoke-Installer -Path $FaultRecoveryInstallerPath
-    if ($recovery.ExitCode -ne 0) {
-        throw "Windows lifecycle recovery failed (exit $($recovery.ExitCode)):`n$($recovery.Detail)"
-    }
-    $state = Read-LifecycleState
-    if ($state.phase -cne "ready" -or $state.version -cne $FaultVersion -or
-        $state.targetVersion -cne "" -or $state.nonce -cne "" -or
-        $state.installationEpoch -cne $InitialEpoch) {
-        throw "Windows lifecycle recovery did not publish ready state for $FaultVersion."
-    }
-    if ($ServiceEnabled) {
-        $task = Get-ScheduledTask -TaskPath "\" -TaskName $AppName -ErrorAction SilentlyContinue
-        if ($null -eq $task) {
-            throw "Windows lifecycle recovery lost the scheduled task."
-        }
-        if ($task.State.ToString() -ne "Running") {
-            throw "Recovered scheduled task did not restart automatically."
-        }
-    }
-
-    # Admit a genuinely newer update through the real binary. The detached
-    # maintenance task verifies the controller with this fixture-only cosign
-    # stub, then the controller's baked test switch skips release signatures.
-    New-Item -ItemType Directory -Path $InstancesDir -Force | Out-Null
-    $Unrelated = Start-Process -FilePath "powershell" -ArgumentList @(
-        "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 300"
-    ) -PassThru -WindowStyle Hidden
-    $UnrelatedMarker = Join-Path $InstancesDir $Unrelated.Id.ToString()
-    $DeadMarker = Join-Path $InstancesDir "999999999"
-    $MalformedMarker = Join-Path $InstancesDir "not-a-pid"
-    [IO.File]::WriteAllText($UnrelatedMarker, "")
-    [IO.File]::WriteAllText($DeadMarker, "")
-    [IO.File]::WriteAllText($MalformedMarker, "")
-
-    if ($ManagedCosignExisted) {
-        Copy-Item -LiteralPath $ManagedCosignBin -Destination $ManagedCosignBackup
-    }
-    New-Item -ItemType Directory -Path $ManagedCosignDir -Force | Out-Null
-    Copy-Item -LiteralPath $CosignStubBuildPath -Destination $ManagedCosignBin -Force
-
-    # Install the current version from the mirror before promoting its newer
-    # release. This tests source persistence without injecting metadata by hand.
-    Copy-Item -LiteralPath $FaultVersionRoot -Destination (Join-Path $NewerReleaseRoot "releases") -Recurse
-    [IO.File]::WriteAllText((Join-Path $NewerReleaseRoot "version"), $FaultVersion + "`n")
-    $env:APP_RELEASE_URL = $DetachedReleaseUrl
-    $mirrorInstall = Invoke-Installer -Path $NewerInstallerPath
-    if ($mirrorInstall.ExitCode -ne 0) {
-        throw "Mirror installation failed: $($mirrorInstall.Detail)"
-    }
-    if ([IO.File]::ReadAllText($ReleaseUrlFile).Trim() -cne $DetachedReleaseUrl) {
-        throw "Mirror installation did not persist its effective source."
-    }
-    $nextPointer = Join-Path $NewerReleaseRoot "version.next"
-    [IO.File]::WriteAllText($nextPointer, $NewerVersion + "`n")
-    # PowerShell converts $null to an empty string for this .NET parameter;
-    # pass a real null string so Replace does not try to use an empty backup path.
-    [IO.File]::Replace($nextPointer, (Join-Path $NewerReleaseRoot "version"), [NullString]::Value)
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_VERSION -ErrorAction SilentlyContinue
-    $detachedOut = Join-Path $Temp "detached-update.out"
-    $detachedErr = Join-Path $Temp "detached-update.err"
-    $detachedProcess = Start-Process -FilePath $InstalledBin -ArgumentList @("update", "--yes") `
-        -RedirectStandardOutput $detachedOut -RedirectStandardError $detachedErr -PassThru -Wait
-    $detachedDetail = ((Get-Content -LiteralPath $detachedOut, $detachedErr -ErrorAction SilentlyContinue) -join "`n").Trim()
-    $maintenanceLogPattern = [regex]::Escape($MaintenanceLog)
-    if ($detachedProcess.ExitCode -ne 0 -or
-        $detachedDetail -notmatch "Update accepted" -or
-        $detachedDetail -notmatch $maintenanceLogPattern) {
-        throw "Binary did not admit the detached update:`n$detachedDetail"
-    }
-
-    $maintenanceTask = $null
-    $deadline = [DateTime]::UtcNow.AddSeconds(10)
-    do {
-        $maintenanceTask = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
-            $_.TaskName -like "$AppName Maintenance *"
-        } | Select-Object -First 1)
-        if ($maintenanceTask.Count -gt 0 -and
-            $maintenanceTask[0].State.ToString() -eq "Running") {
-            $maintenanceTask = $maintenanceTask[0]
-            break
-        }
-        Start-Sleep -Milliseconds 100
-    } while ([DateTime]::UtcNow -lt $deadline)
-    if (@($maintenanceTask).Count -eq 0 -or
-        $maintenanceTask.State.ToString() -ne "Running") {
-        throw "Detached update did not expose a running maintenance task."
-    }
-    $maintenanceAction = @($maintenanceTask.Actions)[0]
-    if ([IO.Path]::GetFileName($maintenanceAction.Execute) -ine "powershell.exe" -or
-        $maintenanceAction.Arguments -notmatch '(?i)-WindowStyle\s+Hidden' -or
-        $maintenanceAction.Arguments -notmatch '(?i)-NonInteractive') {
-        throw "Detached maintenance task does not use hidden, non-interactive PowerShell."
-    }
-    if (-not $maintenanceTask.Settings.Hidden -or
-        $maintenanceTask.Settings.ExecutionTimeLimit.ToString() -cne "PT0S" -or
-        $maintenanceTask.Principal.LogonType.ToString() -ne "Interactive" -or
-        $maintenanceTask.Principal.RunLevel.ToString() -ne "Limited") {
-        throw "Detached maintenance task is not hidden and unlimited with an Interactive, Limited principal."
-    }
-
-    $deadline = [DateTime]::UtcNow.AddMinutes(3)
-    $terminalReady = $false
-    do {
-        $state = Read-LifecycleState
-        $remainingMaintenanceTasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
-            $_.TaskName -like "$AppName Maintenance *"
-        })
-        $maintenanceLogText = ""
-        if (Test-Path -LiteralPath $MaintenanceLog -PathType Leaf) {
-            try {
-                $maintenanceLogText = [IO.File]::ReadAllText($MaintenanceLog)
-            } catch [IO.IOException] {
-                # The runner may be between Add-Content open/close operations.
-            }
-        }
-        if ($maintenanceLogText -match "Maintenance update failed") {
-            throw "Detached update failed. Maintenance log:`n$maintenanceLogText"
-        }
-        if ($state.phase -ceq "ready" -and $state.version -ceq $NewerVersion -and
-            $remainingMaintenanceTasks.Count -eq 0 -and
-            $maintenanceLogText -match "Maintenance update job started" -and
-            $maintenanceLogText -match "Maintenance update completed") {
-            $terminalReady = $true
-            break
-        }
-        Start-Sleep -Milliseconds 250
-    } while ([DateTime]::UtcNow -lt $deadline)
-    if (-not $terminalReady) {
-        throw "Detached update did not reach terminal ready state. Maintenance log:`n$maintenanceLogText"
-    }
-    if ($state.targetVersion -cne "" -or $state.nonce -cne "" -or
-        $state.installationEpoch -cne $InitialEpoch) {
-        throw "Detached update changed the installation epoch or retained transition fields."
-    }
-    if (-not (Test-Path -LiteralPath $ReleaseUrlFile -PathType Leaf) -or
-        [IO.File]::ReadAllText($ReleaseUrlFile).Trim() -cne $DetachedReleaseUrl) {
-        throw "Detached update did not preserve its release source."
-    }
-    $installedHash = (Get-FileHash -LiteralPath $InstalledBin -Algorithm SHA256).Hash
-    $newerBuildHash = (Get-FileHash -LiteralPath $NewerBuildPath -Algorithm SHA256).Hash
-    if ($installedHash -cne $newerBuildHash) {
-        throw "Detached update did not install the newer binary."
-    }
-    $Unrelated.Refresh()
-    if ($Unrelated.HasExited) {
-        throw "Windows update stopped an unrelated process from a stale marker."
-    }
-    foreach ($marker in @($UnrelatedMarker, $DeadMarker, $MalformedMarker)) {
-        if (Test-Path -LiteralPath $marker) {
-            throw "Windows update left stale marker '$marker'."
-        }
-    }
-
-    & $InstalledBin @SmokeArgs | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Installed application failed after lifecycle recovery."
-    }
-    if ($ServiceEnabled) {
-        Assert-ServiceTaskPrincipal
-        if ((Get-ScheduledTask -TaskPath "\" -TaskName $AppName).State.ToString() -ne "Running") {
-            throw "Detached update did not restart the scheduled task."
-        }
-        if (Test-Path -LiteralPath $StopLeaseFile -PathType Leaf) {
-            $leaseValue = 0L
-            $leaseText = [IO.File]::ReadAllText($StopLeaseFile).Trim()
-            if (-not [long]::TryParse($leaseText, [ref]$leaseValue) -or
-                $leaseValue -gt [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) {
-                throw "Windows update left an active or malformed service stop lease: '$leaseText'."
-            }
-        }
-    }
-
-    Start-Sleep -Milliseconds 250
-    $rootReads = @(Select-String -LiteralPath $serverLog -SimpleMatch '"GET /version HTTP/' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Line -notlike "*$AppName/*" }).Count - $baselineRootReads
-    $expectedRootReads = 1
-    if ($ServiceEnabled -and $ServiceDefaultPort -gt 0) {
-        $expectedRootReads++
-    }
-    if ($rootReads -ne $expectedRootReads) {
-        throw "Installer read mutable root version $rootReads times; expected $expectedRootReads."
-    }
-
-    # Keep a neighboring PATH entry to prove uninstall removes only the exact
-    # application directory inserted by the installer.
-    $PathSentinel = Join-Path $Temp "path-sentinel"
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $OddPathSegment = "  $PathSentinel  "
-    $pathBeforeUninstall = "$OddPathSegment;;$userPath;"
-    [Environment]::SetEnvironmentVariable("Path", $pathBeforeUninstall, "User")
-    $expectedPathSegments = New-Object System.Collections.Generic.List[string]
-    foreach ($entry in $pathBeforeUninstall.Split([char]";")) {
-        if (-not [string]::Equals(
-            $entry.Trim().TrimEnd("\"),
-            $InstalledDir.TrimEnd("\"),
-            [StringComparison]::OrdinalIgnoreCase
-        )) {
-            $expectedPathSegments.Add($entry)
-        }
-    }
-    $expectedPathAfterUninstall = $expectedPathSegments -join ";"
-    [IO.File]::WriteAllText($RetainedLog, "retain across uninstall`n")
-    $cachedInstallerHash = (Get-FileHash -LiteralPath $CachedInstaller -Algorithm SHA256).Hash
-    $cachedBundleHash = (Get-FileHash -LiteralPath $CachedInstallerBundle -Algorithm SHA256).Hash
-
-    # Take the fixture server offline. The retained cached controller must be
-    # sufficient for uninstall and for an idempotent repeated uninstall.
-    $Server.Refresh()
-    if (-not $Server.HasExited) {
-        Stop-Process -Id $Server.Id -Force
-    }
-    $Server.WaitForExit()
-    $Server = $null
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_VERSION -ErrorAction SilentlyContinue
-    $uninstall = Invoke-ConfirmedUninstall -Path $InstalledBin -Directory $Temp
-    if ($uninstall.ExitCode -ne 0 -or $uninstall.Detail -notmatch "Uninstall accepted") {
-        throw "Detached offline uninstall was not admitted (exit $($uninstall.ExitCode)):`n$($uninstall.Detail)"
-    }
-    $deadline = [DateTime]::UtcNow.AddMinutes(3)
-    do {
-        $state = Read-LifecycleState
-        $maintenanceTasks = @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
-            $_.TaskName -like "$AppName Maintenance *"
-        })
-        if ($state.phase -ceq "uninstalled" -and $maintenanceTasks.Count -eq 0) {
-            break
-        }
-        Start-Sleep -Milliseconds 100
-    } while ([DateTime]::UtcNow -lt $deadline)
-    if ($state.phase -cne "uninstalled" -or $maintenanceTasks.Count -ne 0) {
-        throw "Detached offline uninstall did not finish; see '$MaintenanceLog'."
-    }
-    $maintenanceDetail = [IO.File]::ReadAllText($MaintenanceLog)
-    if ($maintenanceDetail -notmatch "Remote installer selection failed" -or
-        $maintenanceDetail -notmatch "Maintenance uninstall completed") {
-        throw "Detached uninstall did not log remote failure and cached completion."
-    }
-    if ((Test-Path -LiteralPath $DataDir) -or (Test-Path -LiteralPath $InstalledDir)) {
-        throw "Uninstall left application data or binary artifacts behind."
-    }
-    if ($null -ne (Get-ScheduledTask -TaskPath "\" -TaskName $AppName -ErrorAction SilentlyContinue)) {
-        throw "Uninstall left the scheduled task behind."
-    }
-    foreach ($path in @($ControlDir, $MaintenanceDir, $LogsDir)) {
-        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
-            throw "Uninstall removed retained directory '$path'."
-        }
-    }
-    foreach ($path in @(
-        $StateFile, $OperationLockFile, $LifecycleLockFile,
-        $CachedInstaller, $CachedInstallerBundle, $RetainedLog, $ManagedCosignBin
-    )) {
-        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-            throw "Uninstall removed retained maintenance file '$path'."
-        }
-    }
-    if ((Get-FileHash -LiteralPath $CachedInstaller -Algorithm SHA256).Hash -cne $cachedInstallerHash -or
-        (Get-FileHash -LiteralPath $CachedInstallerBundle -Algorithm SHA256).Hash -cne $cachedBundleHash) {
-        throw "Uninstall changed the retained maintenance cache."
-    }
-    $state = Read-LifecycleState
-    if ($state.phase -cne "uninstalled" -or $state.version -cne "" -or
-        $state.targetVersion -cne "" -or $state.nonce -cne "" -or
-        $state.installationEpoch -cne $InitialEpoch) {
-        throw "Uninstall did not publish the expected uninstalled state."
-    }
-    if ((Get-UserPathEntryCount -Directory $InstalledDir) -ne 0 -or
-        (Get-UserPathEntryCount -Directory $PathSentinel) -ne 1) {
-        throw "Uninstall did not remove only the exact application PATH entry."
-    }
-    $actualPathAfterUninstall = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($actualPathAfterUninstall -cne $expectedPathAfterUninstall) {
-        throw "Uninstall rewrote unrelated PATH segments."
-    }
-
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
-    $repeated = Invoke-Installer -Path $CachedInstaller -Arguments @("-Uninstall")
-    if ($repeated.ExitCode -ne 0) {
-        throw "Repeated uninstall was not idempotent (exit $($repeated.ExitCode)):`n$($repeated.Detail)"
-    }
-    if ((Read-LifecycleState).phase -cne "uninstalled") {
-        throw "Repeated uninstall changed the uninstalled lifecycle phase."
-    }
-
-    # Restart the fixture and reinstall. An old detached job fenced by the
-    # previous installation epoch must not affect the replacement install.
-    $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, 0)
-    $listener.Start()
-    $reinstallPort = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
-    $listener.Stop()
-    $ReinstallReleaseUrl = "http://127.0.0.1:$reinstallPort/"
-    $serverOut2 = Join-Path $Temp "server-2.out"
-    $serverLog2 = Join-Path $Temp "server-2.log"
-    $Server = Start-Process -FilePath "python" -ArgumentList @(
-        "-u", $quotedServerScript, "$reinstallPort", $quotedReleaseRoot
-    ) -RedirectStandardOutput $serverOut2 -RedirectStandardError $serverLog2 -PassThru -WindowStyle Hidden
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        try {
-            Invoke-WebRequest -Uri ($ReinstallReleaseUrl + "version") -UseBasicParsing -TimeoutSec 1 | Out-Null
-            break
-        } catch {
-            Start-Sleep -Milliseconds 100
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    if ([DateTime]::UtcNow -ge $deadline) {
-        throw "Local fixture server did not restart."
-    }
-
-    Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
-    $env:APP_RELEASE_URL = $ReinstallReleaseUrl
-    $reinstall = Invoke-Installer -Path $InstallerPath
-    if ($reinstall.ExitCode -ne 0) {
-        throw "Windows reinstall failed (exit $($reinstall.ExitCode)):`n$($reinstall.Detail)"
-    }
-    Assert-ServiceTaskPrincipal
-    $replacementState = Read-LifecycleState
-    if ($replacementState.phase -cne "ready" -or
-        $replacementState.installationEpoch -ceq $InitialEpoch) {
-        throw "Reinstall did not create a new ready installation epoch."
-    }
-    $env:APP_MAINTENANCE_EXPECT_EPOCH = $InitialEpoch
-    $stale = Invoke-Installer -Path $CachedInstaller -Arguments @("-Uninstall")
-    if ($stale.ExitCode -eq 0 -or $stale.Detail -notmatch "different installation epoch") {
-        throw "Stale-epoch uninstall was not rejected:`n$($stale.Detail)"
-    }
-    $replacementState = Read-LifecycleState
-    if ($replacementState.phase -cne "ready" -or
-        -not (Test-Path -LiteralPath $InstalledBin -PathType Leaf) -or
-        -not (Test-Path -LiteralPath $DataDir -PathType Container)) {
-        throw "Stale-epoch uninstall changed the replacement installation."
-    }
-
-    Write-Host "Windows lifecycle E2E passed."
-} finally {
-    if ($PushedLocation) {
-        Pop-Location
-    }
-    Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object {
-        $_.TaskName -like "$AppName Maintenance *"
-    } | ForEach-Object {
-        Stop-ScheduledTask -InputObject $_ -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -InputObject $_ -Confirm:$false -ErrorAction SilentlyContinue
-    }
-    if ($ServiceEnabled) {
-        & schtasks.exe /End /TN $AppName 2>$null | Out-Null
-        & schtasks.exe /Delete /F /TN $AppName 2>$null | Out-Null
-        Get-Process -Name $AppName -ErrorAction SilentlyContinue |
-            Stop-Process -Force -ErrorAction SilentlyContinue
-    }
-    if ($null -ne $Server -and -not $Server.HasExited) {
-        Stop-Process -Id $Server.Id -Force -ErrorAction SilentlyContinue
-    }
-    if ($null -ne $Unrelated -and -not $Unrelated.HasExited) {
-        Stop-Process -Id $Unrelated.Id -Force -ErrorAction SilentlyContinue
-    }
-    if ($null -ne $OccupiedPortListener) {
-        $OccupiedPortListener.Stop()
-    }
-    [Environment]::SetEnvironmentVariable("Path", $OriginalUserPath, "User")
-    if ($null -eq $OriginalSkipVerify) {
-        Remove-Item Env:APP_SKIP_VERIFY -ErrorAction SilentlyContinue
-    } else {
-        $env:APP_SKIP_VERIFY = $OriginalSkipVerify
-    }
-    if ($null -eq $OriginalReleaseUrl) {
+    param([string]$Root, [string[]]$Arguments)
+    $env:APP_RELEASE_URL = ConvertTo-FileUrl $Root
+    try {
+        $script = Join-Path $Root "install.ps1"
+        Invoke-Native -FilePath "powershell.exe" -Arguments (@("-NoProfile", "-NonInteractive",
+                "-ExecutionPolicy", "Bypass", "-File", $script) + $Arguments) | Out-Null
+    } finally {
         Remove-Item Env:APP_RELEASE_URL -ErrorAction SilentlyContinue
-    } else {
-        $env:APP_RELEASE_URL = $OriginalReleaseUrl
     }
-    if ($null -eq $OriginalExpectedEpoch) {
-        Remove-Item Env:APP_MAINTENANCE_EXPECT_EPOCH -ErrorAction SilentlyContinue
-    } else {
-        $env:APP_MAINTENANCE_EXPECT_EPOCH = $OriginalExpectedEpoch
+}
+
+function ConvertTo-FileUrl([string]$Path) {
+    return ([Uri]($Path.TrimEnd("\") + "\")).AbsoluteUri
+}
+
+# Invoke-Api calls the client listener with the paired browser's cookies.
+function Invoke-Api {
+    param([string]$Method, [string]$Path, $Body = $null, [switch]$AllowFailure)
+    $request = @{
+        Uri             = "$ClientUrl$Path"
+        Method          = $Method
+        WebSession      = $script:Session
+        UseBasicParsing = $true
+        Headers         = @{ Origin = $ClientUrl }
+        TimeoutSec      = 30
     }
-    if ($null -eq $OriginalExpectedVersion) {
-        Remove-Item Env:APP_MAINTENANCE_EXPECT_VERSION -ErrorAction SilentlyContinue
-    } else {
-        $env:APP_MAINTENANCE_EXPECT_VERSION = $OriginalExpectedVersion
+    if ($null -ne $Body) {
+        $request.Body = ($Body | ConvertTo-Json -Compress)
+        $request.ContentType = "application/json"
     }
-    if ($ManagedCosignExisted -and (Test-Path -LiteralPath $ManagedCosignBackup -PathType Leaf)) {
-        Copy-Item -LiteralPath $ManagedCosignBackup -Destination $ManagedCosignBin -Force
-    } elseif (-not $ManagedCosignExisted) {
-        Remove-Item -LiteralPath $ManagedCosignBin -Force -ErrorAction SilentlyContinue
-        if (-not $ManagedCosignDirExisted) {
-            Remove-Item -LiteralPath $ManagedCosignDir -Force -ErrorAction SilentlyContinue
+    try {
+        return Invoke-WebRequest @request
+    } catch {
+        if ($AllowFailure) { return $null }
+        Fail "$Method $Path failed: $($_.Exception.Message)"
+    }
+}
+
+# Get-StatusLine sends a request with an arbitrary Host header, which
+# Invoke-WebRequest won't, and returns the response's status line.
+function Get-StatusLine([string]$HostHeader) {
+    $client = New-Object Net.Sockets.TcpClient("127.0.0.1", 8484)
+    try {
+        $stream = $client.GetStream()
+        $request = [Text.Encoding]::ASCII.GetBytes("GET / HTTP/1.1`r`nHost: $HostHeader`r`nConnection: close`r`n`r`n")
+        $stream.Write($request, 0, $request.Length)
+        return (New-Object IO.StreamReader($stream)).ReadLine()
+    } finally {
+        $client.Close()
+    }
+}
+
+function Assert-State([string]$Instance, [string]$Version) {
+    $path = Join-Path $DataRoot "$Instance\control\state.json"
+    $state = [IO.File]::ReadAllText($path)
+    if ($state -notmatch ('"phase":"ready","version":"' + [regex]::Escape($Version) + '"')) {
+        Fail "instance $Instance state is $state, want ready $Version"
+    }
+}
+
+function Assert-Status([string]$Instance, [string]$Pattern) {
+    $status = (Invoke-Dens @("status", "--instance", $Instance)).Output
+    if ($status -notmatch $Pattern) { Fail "dens status for $Instance doesn't match '$Pattern'" }
+}
+
+function Wait-Status([string]$Instance) {
+    $deadline = (Get-Date).AddSeconds(60)
+    while ((Invoke-Dens @("status", "--instance", $Instance) -AllowFailure).Code -ne 0) {
+        if ((Get-Date) -gt $deadline) { Fail "instance $Instance didn't answer within 60 seconds" }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+function Assert-Running([string]$Service) {
+    $svc = Get-Service -Name $Service -ErrorAction SilentlyContinue
+    if ($null -eq $svc -or $svc.Status -ne "Running") { Fail "$Service is not running" }
+}
+
+function Test-Installed {
+    if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { return $true }
+    return (Test-Path -LiteralPath $DataRoot) -or (Test-Path -LiteralPath $Dens)
+}
+
+function Test-OnPath {
+    $path = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    return @($path -split ";" | Where-Object { $_.TrimEnd("\") -ieq $BinaryDir }).Count -gt 0
+}
+
+function Test-WerExcluded {
+    $key = Get-Item -LiteralPath $WerKey -ErrorAction SilentlyContinue
+    return ($null -ne $key) -and ($key.GetValueNames() -contains "dens.exe")
+}
+
+function Get-MediaRules {
+    return @(Get-NetFirewallRule -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like "Dens (*) media *" })
+}
+
+# Invoke-AsLocalService runs dens status as LOCAL SERVICE through a scheduled
+# task: a real second account without creating one.
+function Invoke-AsLocalService {
+    $dir = Join-Path $Work "other"
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    $script = Join-Path $dir "status.cmd"
+    $lines = @(
+        "@echo off",
+        "`"$Dens`" status > `"%~dp0out.txt`" 2>&1",
+        "echo %ERRORLEVEL% > `"%~dp0code.tmp`"",
+        "move /y `"%~dp0code.tmp`" `"%~dp0code.txt`" > nul"
+    )
+    [IO.File]::WriteAllText($script, ($lines -join "`r`n") + "`r`n")
+    Invoke-Native -FilePath "icacls.exe" -Arguments @($dir, "/grant", "*S-1-5-19:(OI)(CI)M") | Out-Null
+    $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$script`""
+    $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\LOCAL SERVICE" -LogonType ServiceAccount
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Principal $principal | Out-Null
+    try {
+        Start-ScheduledTask -TaskName $TaskName
+        $done = Join-Path $dir "code.txt"
+        $deadline = (Get-Date).AddSeconds(60)
+        while (-not (Test-Path -LiteralPath $done)) {
+            if ((Get-Date) -gt $deadline) { Fail "the LOCAL SERVICE task didn't finish" }
+            Start-Sleep -Milliseconds 250
+        }
+    } finally {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    return [pscustomobject]@{
+        Code   = ([IO.File]::ReadAllText($done)).Trim()
+        Output = [IO.File]::ReadAllText((Join-Path $dir "out.txt")).Trim()
+    }
+}
+
+function Remove-Installation {
+    if (-not (Test-Path -LiteralPath $Dens)) { return }
+    foreach ($instance in @("second", "main")) {
+        if (Test-Path -LiteralPath (Join-Path $DataRoot $instance)) {
+            Invoke-Dens @("uninstall", "--instance", $instance, "--yes") -AllowFailure | Out-Null
         }
     }
-    Remove-Item -LiteralPath $InstalledDir -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $StorageDir -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $Temp -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Run the harness from an elevated PowerShell (Run as administrator)."
+}
+if (Test-Installed) {
+    throw "Dens is installed on this machine. The harness installs and removes the real service; run it where Dens isn't installed."
+}
+
+$passed = $false
+try {
+    New-Item -ItemType Directory -Path $Work | Out-Null
+    $Release = Join-Path $Work "release"
+    Copy-Item -LiteralPath (Resolve-Path -LiteralPath $ReleaseDir).ProviderPath -Destination $Release -Recurse
+    $Next = Join-Path $Release "next"
+    if ($InstallerCandidate) {
+        $candidate = (Resolve-Path -LiteralPath $InstallerCandidate).ProviderPath
+        Copy-Item -LiteralPath $candidate -Destination (Join-Path $Release "install.ps1") -Force
+        Copy-Item -LiteralPath $candidate -Destination (Join-Path $Next "install.ps1") -Force
+    }
+    $V1 = ([IO.File]::ReadAllText((Join-Path $Release "version"))).Trim()
+    $V2 = ([IO.File]::ReadAllText((Join-Path $Next "version"))).Trim()
+    $env:APP_SKIP_VERIFY = "true"
+
+    # The installer defaults to the account at the console; name one only
+    # where nobody is signed in there, as on a CI runner.
+    $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $console = (Get-CimInstance Win32_ComputerSystem).UserName
+    $userArgs = @()
+    if (-not $console -or $console -ne $me) { $userArgs = @("-User", $me) }
+
+    Step "install $V1"
+    Invoke-Installer $Release $userArgs
+    Assert-Running "dens-main"
+    Assert-State "main" $V1
+    $config = (Invoke-Native -FilePath "sc.exe" -Arguments @("qc", "dens-main")).Output
+    if ($config -notmatch "SERVICE_START_NAME\s*:\s*NT SERVICE\\dens-main") { Fail "the service doesn't run as its virtual account" }
+    $sidType = (Invoke-Native -FilePath "sc.exe" -Arguments @("qsidtype", "dens-main")).Output
+    if ($sidType -notmatch "SERVICE_SID_TYPE:\s*RESTRICTED") { Fail "the service SID isn't restricted" }
+    $privileges = (Invoke-Native -FilePath "sc.exe" -Arguments @("qprivs", "dens-main")).Output
+    $held = @([regex]::Matches($privileges, "Se[A-Za-z]+Privilege") | ForEach-Object { $_.Value })
+    if ($held.Count -ne 1 -or $held[0] -ne "SeChangeNotifyPrivilege") { Fail "the service keeps privileges: $($held -join ', ')" }
+    # The instance root and its data directory don't inherit from ProgramData;
+    # the control directory inherits the root's, where the service only reads.
+    foreach ($dir in @("main", "main\control", "main\data")) {
+        $acl = Get-Acl -LiteralPath (Join-Path $DataRoot $dir)
+        if ($dir -ne "main\control" -and -not $acl.AreAccessRulesProtected) { Fail "$dir inherits permissions" }
+        $names = @($acl.Access | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)
+        $unexpected = @($names | Where-Object { $_ -notin @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators", "NT SERVICE\dens-main") })
+        if ($unexpected.Count -gt 0) { Fail "$dir grants $($unexpected -join ', ')" }
+        $serviceWrites = @($acl.Access | Where-Object {
+                $_.IdentityReference.Value -eq "NT SERVICE\dens-main" -and
+                ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::WriteData) })
+        if ($dir -ne "main\data" -and $serviceWrites.Count -gt 0) { Fail "the service can write to $dir" }
+    }
+    if (-not (Test-OnPath)) { Fail "$BinaryDir isn't on the system PATH" }
+    if (-not (Test-WerExcluded)) { Fail "dens.exe isn't excluded from Windows Error Reporting" }
+
+    Step "pair a browser and set the local password"
+    Assert-Status "main" "password:\s+not set"
+    $url = (Invoke-Dens @("open", "--print")).Output.Trim()
+    $token = ($url -split "#token=")[-1]
+    $script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    Invoke-Api POST "/api/pair" @{ token = $token } | Out-Null
+    if (Invoke-Api POST "/api/pair" @{ token = $token } -AllowFailure) { Fail "a pairing token worked twice" }
+    Invoke-Api POST "/api/password" @{ password = $Password } | Out-Null
+    $page = Invoke-Api GET "/"
+    if ($page.Content -notmatch "Dens is running") { Fail "home page missing after setup" }
+    $line = Get-StatusLine "attacker.example"
+    if ($line -notmatch " 421 ") { Fail "a foreign Host got '$line'" }
+
+    Step "another account is refused"
+    $other = Invoke-AsLocalService
+    Write-Host $other.Output
+    if ($other.Code -eq "0") { Fail "LOCAL SERVICE reached the control endpoint" }
+    if ($other.Output -notmatch "only answers") { Fail "unexpected refusal: $($other.Output)" }
+
+    Step "back up"
+    $ownBackup = Join-Path $Work "windows.backup"
+    Invoke-Dens @("backup", "--password-stdin", "-o", $ownBackup) -Stdin $Password | Out-Null
+    if ($SaveBackup) { Copy-Item -LiteralPath $ownBackup -Destination $SaveBackup -Force }
+
+    Step "the vault and session survive a service restart"
+    Invoke-Dens @("service", "restart") | Out-Null
+    Wait-Status "main"
+    Assert-Status "main" "password:\s+set"
+    if ((Invoke-Api GET "/api/status").Content -notmatch '"passwordSet":true') { Fail "the browser session didn't survive" }
+
+    Step "update to $V2 through dens update"
+    Invoke-Dens @("update", "--release-url", (ConvertTo-FileUrl $Next)) | Out-Null
+    Assert-State "main" $V2
+    Wait-Status "main"
+    Assert-Status "main" ("version:\s+" + [regex]::Escape($V2))
+    Assert-Status "main" "password:\s+set"
+
+    Step "a second instance that hosts a den"
+    Invoke-Installer $Next (@("-Instance", "second", "-ClientPort", "18484", "-Den") + $userArgs)
+    Assert-Running "dens-second"
+    Assert-State "second" $V2
+    Assert-State "main" $V2
+    Assert-Status "second" "den:\s+hosting a den"
+    $health = Invoke-WebRequest -Uri $DenHealth -UseBasicParsing -TimeoutSec 30
+    if ($health.StatusCode -ne 200) { Fail "the den listener answered $($health.StatusCode)" }
+    if ((Get-MediaRules).Count -ne 2) { Fail "want two media firewall rules for the den" }
+
+    Step "restore a backup into the second instance"
+    $wrong = Invoke-Dens @("restore", $ownBackup, "--instance", "second", "--password-stdin", "--yes") -Stdin "wrong wrong wrong" -AllowFailure
+    if ($wrong.Code -eq 0) { Fail "restore accepted the wrong password" }
+    Invoke-Dens @("restore", $ownBackup, "--instance", "second", "--password-stdin", "--yes") -Stdin $Password | Out-Null
+    Assert-State "second" $V2
+    Wait-Status "second"
+    Assert-Status "second" "password:\s+set"
+    if ($Backup) {
+        Step "restore the backup made elsewhere"
+        $foreign = (Resolve-Path -LiteralPath $Backup).ProviderPath
+        Invoke-Dens @("restore", $foreign, "--instance", "second", "--password-stdin", "--yes") -Stdin $Password | Out-Null
+        Wait-Status "second"
+        Assert-Status "second" "password:\s+set"
+    }
+
+    Step "uninstall both instances"
+    Invoke-Dens @("uninstall", "--instance", "second", "--yes") | Out-Null
+    if (-not (Test-Path -LiteralPath $Dens)) { Fail "uninstalling one instance removed the shared binary" }
+    if ((Get-MediaRules).Count -ne 0) { Fail "the den's firewall rules survived its uninstall" }
+    Invoke-Dens @("uninstall", "--yes") | Out-Null
+    if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { Fail "a service survived uninstall" }
+    if (Test-Path -LiteralPath $DataRoot) { Fail "$DataRoot survived uninstall" }
+    if (Test-Path -LiteralPath $Dens) { Fail "$Dens survived uninstall" }
+    # The uninstaller ran from the binary, so it's set aside for deletion at reboot.
+    $left = @(Get-ChildItem -LiteralPath $BinaryDir -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "dens.exe.old-*" })
+    if ($left.Count -gt 0) { Fail "uninstall left $($left.Name -join ', ') in $BinaryDir" }
+    if (Test-OnPath) { Fail "$BinaryDir is still on the system PATH" }
+    if (Test-WerExcluded) { Fail "dens.exe is still excluded from Windows Error Reporting" }
+    $passed = $true
+} catch {
+    Write-Host ""
+    Write-Host $_.Exception.Message
+    foreach ($instance in @("main", "second")) {
+        $log = Join-Path $DataRoot "$instance\data\logs"
+        if (Test-Path -LiteralPath $log) {
+            Get-ChildItem -LiteralPath $log -File | Sort-Object LastWriteTime | Select-Object -Last 1 |
+                ForEach-Object { Write-Host "--- $($_.FullName)"; Get-Content -LiteralPath $_.FullName -Tail 30 }
+        }
+    }
+} finally {
+    Remove-Installation
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-Item Env:APP_SKIP_VERIFY -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host ""
+if ($passed) {
+    Write-Host "Windows lifecycle e2e: PASSED"
+    exit 0
+}
+Write-Host "Windows lifecycle e2e: FAILED"
+exit 1

@@ -96,6 +96,11 @@ phase_install() {
     pid=$(systemctl show -p MainPID --value dens@main)
     grep -q '^NoNewPrivs:[[:space:]]*1' "/proc/$pid/status" || fail "the service runs without NoNewPrivileges"
     grep -q '^CapEff:[[:space:]]*0000000000000000' "/proc/$pid/status" || fail "the service has capabilities"
+    exposure=$(systemd-analyze security --no-pager dens@main.service 2>/dev/null |
+        sed -n 's/.*Overall exposure level for dens@main.service: \([0-9.]*\).*/\1/p')
+    printf 'systemd-analyze exposure: %s\n' "${exposure:-unknown}"
+    awk -v e="$exposure" 'BEGIN { exit !(e != "" && e + 0 <= 1.5) }' ||
+        fail "systemd-analyze rates the unit ${exposure:-unknown}; keep it at 1.5 or below"
 
     step "pair a browser and set the local password"
     as_alice dens status | grep -q "password:  not set" || fail "fresh install already has a password"
@@ -146,12 +151,14 @@ phase_after_reboot() {
     source_dir=/release
     [ -z "$V2" ] || source_dir=/release/next
 
-    step "a second instance on the same binary"
+    step "a second instance that hosts a den"
     SUDO_UID=$(alice_uid) SUDO_USER=alice APP_SKIP_VERIFY=true APP_RELEASE_URL="file://$source_dir/" \
-        sh "$source_dir/install.sh" --instance second --client-port 18484
+        sh "$source_dir/install.sh" --instance second --client-port 18484 --den
     systemctl is-active --quiet dens@second || fail "dens@second is not running"
     expect_state second "$version"
     expect_state main "$version"
+    as_alice dens status --instance second | grep -q "den:       hosting a den" || fail "the second instance doesn't host a den"
+    curl -sS --fail http://127.0.0.1:8485/healthz >/dev/null || fail "the den listener doesn't answer"
 
     step "restore a backup into the second instance"
     backup=/root/alice.backup

@@ -106,10 +106,11 @@ jobs:
             ./scripts/ci.sh --plan
           fi
 
-  # Native Windows coverage: compiles and runs the Go test suite with the
-  # windows build tags (pure Go, no C toolchain needed), and parses
-  # install.ps1 with real Windows PowerShell 5.1 - the interpreter
-  # `irm | iex` users actually run it with.
+  # Native Windows coverage: runs the Go test suite with the windows build
+  # tags (pure Go, no C toolchain needed), parses the PowerShell scripts with
+  # Windows PowerShell 5.1, which is what users run install.ps1 with, and
+  # runs the lifecycle e2e with the exact installer candidate. The runner is
+  # a throwaway machine, so the e2e installs the real service.
   windows-e2e:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
@@ -125,12 +126,6 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.x"
-
 
       # Generated frontend outputs are intentionally gitignored. The release
       # job builds the real assets; this job only needs embed inputs to compile
@@ -172,15 +167,17 @@ jobs:
           RELEASE_DIR=out/windows-installer-candidate
           package_installers
 
+      - name: Build Windows fixture releases
+        shell: bash
+        run: scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
+
       - name: Test exact Windows installer candidate
         shell: powershell
-        run: scripts/test-lifecycle-e2e.ps1 -InstallerCandidate out/windows-installer-candidate/install.ps1
+        run: scripts/test-lifecycle-e2e.ps1 -ReleaseDir out/windows-e2e -InstallerCandidate out/windows-installer-candidate/install.ps1
 
 
-  # Runs the install/update/uninstall lifecycle end-to-end inside Incus
-  # system containers for a representative distro subset (file:// release dir
-  # + APP_SKIP_VERIFY).
-  # Run ./scripts/test.sh -e2e locally for the full distro list.
+  # Runs the Linux lifecycle e2e in Incus system containers on every
+  # supported distro, from unsigned fixture releases over file:// URLs.
   linux-e2e:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
