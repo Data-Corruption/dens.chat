@@ -49,7 +49,7 @@ func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) e
 	}
 	source := cfg.ReleaseURL
 	if opts.ReleaseURL != "" {
-		source = opts.ReleaseURL
+		source = strings.TrimRight(opts.ReleaseURL, "/") + "/"
 	}
 	if source == "" {
 		return errors.New("this instance has no release source; install a new release with the installer")
@@ -124,7 +124,12 @@ func download(ctx context.Context, rawURL, dest string) error {
 	var body io.ReadCloser
 	switch u.Scheme {
 	case "file":
-		if body, err = os.Open(filepath.FromSlash(u.Path)); err != nil {
+		path := u.Path
+		// file:///C:/dir parses to /C:/dir; drop the slash before a drive letter.
+		if len(path) > 2 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
+		}
+		if body, err = os.Open(filepath.FromSlash(path)); err != nil {
 			return err
 		}
 	case "https":

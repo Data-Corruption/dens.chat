@@ -39,6 +39,11 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 	if errors.As(err, &userErr) {
 		return err
 	}
+	// The Windows pipe's DACL admits only the desktop user, so other
+	// accounts fail to open it rather than getting the service's refusal.
+	if errors.Is(err, fs.ErrPermission) {
+		return fmt.Errorf("instance %s only answers the desktop user it was installed for: %w", l.Instance, err)
+	}
 	var opErr *net.OpError
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.As(err, &opErr) {
 		flag := ""

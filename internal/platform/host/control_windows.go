@@ -414,7 +414,7 @@ func DialControl(name string, server ControlServer, timeout time.Duration) (net.
 			return nil, fmt.Errorf("%w: %s", os.ErrNotExist, name)
 		}
 		if !errors.Is(err, windows.ERROR_PIPE_BUSY) || time.Now().After(deadline) {
-			return nil, err
+			return nil, fmt.Errorf("open %s: %w", name, err)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

@@ -225,7 +225,7 @@ jobs:
         run: ./scripts/test.sh -release
 
       - name: Run lifecycle E2E
-        run: ./scripts/test.sh -e2e --distros "debian ubuntu fedora arch alpine"
+        run: ./scripts/test.sh -e2e
 
       - name: Upload lifecycle E2E logs
         if: ${{ always() }}

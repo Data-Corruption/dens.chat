@@ -549,13 +549,13 @@ test_changed_installers() {
     local current_snapshot="$OUT_DIR/lifecycle-e2e-current"
     make_installer_test_snapshot "$RELEASE_CURRENT_VERSION" "$OUT_DIR/remote-current" "$current_snapshot"
     run_step "Installer works with current release $RELEASE_CURRENT_VERSION" "Installer failed against current release $RELEASE_CURRENT_VERSION" \
-      bash scripts/test-lifecycle-e2e.sh --release-dir "$current_snapshot" --distros "debian" --no-fakes
+      bash scripts/test-lifecycle-e2e.sh --release-dir "$current_snapshot" --distros debian
   fi
 
   local staged_snapshot="$OUT_DIR/lifecycle-e2e-staged"
   make_installer_test_snapshot "$VERSION" "$VERSION_DIR" "$staged_snapshot"
   run_step "Installer works with staged release $VERSION" "Installer failed against staged release $VERSION" \
-    bash scripts/test-lifecycle-e2e.sh --release-dir "$staged_snapshot" --distros "debian" --no-fakes
+    bash scripts/test-lifecycle-e2e.sh --release-dir "$staged_snapshot" --distros debian
 }
 
 publish_installer() {

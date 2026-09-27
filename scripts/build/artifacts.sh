@@ -158,8 +158,8 @@ verify_build() {
 # sed_replacement <value>
 # Escapes a value for use as the replacement side of an s|pattern|value|
 # expression: backslash and ampersand are special to sed there, and the pipe
-# is the delimiter. Free-text values such as SERVICE_DESC would otherwise
-# corrupt the rendered installer silently.
+# is the delimiter. Unescaped values would otherwise corrupt the rendered
+# installer silently.
 sed_replacement() {
   printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'
 }
@@ -172,9 +172,6 @@ render_installer() {
   local output="$2"
   sed -e "s|<APP_NAME>|$(sed_replacement "$APP_NAME")|g" \
       -e "s|<RELEASE_URL>|$(sed_replacement "$RELEASE_URL")|g" \
-      -e "s|<SERVICE>|$(sed_replacement "$SERVICE_ENABLED")|g" \
-      -e "s|<SERVICE_DESC>|$(sed_replacement "$SERVICE_DESC")|g" \
-      -e "s|<SERVICE_ARGS>|$(sed_replacement "$SERVICE_ARGS")|g" \
       -e "s|<CERT_IDENTITY>|$(sed_replacement "$CERT_IDENTITY")|g" \
       -e "s|<OIDC_ISSUER>|$(sed_replacement "$OIDC_ISSUER")|g" \
       -e "s|<COSIGN_VERSION>|$(sed_replacement "$COSIGN_VERSION")|g" \

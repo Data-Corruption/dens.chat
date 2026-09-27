@@ -11,7 +11,7 @@
 #   ./scripts/test.sh -all                         # every available suite
 #
 # Lifecycle options are forwarded to test-lifecycle-e2e.sh, for example:
-#   ./scripts/test.sh -e2e --distros "alpine void"
+#   ./scripts/test.sh -e2e --distros "debian arch"
 
 set -euo pipefail
 
@@ -118,6 +118,7 @@ run_shell_lint() {
     scripts/test.sh
     scripts/test-release.sh
     scripts/test-lifecycle-e2e.sh
+    scripts/test/lifecycle-guest.sh
     scripts/install.sh
   )
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
