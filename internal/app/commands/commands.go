@@ -18,6 +18,10 @@ var constructors = []constructor{
 	statusCommand,
 	backupCommand,
 	serviceCommand,
+	installCommand,
+	updateCommand,
+	uninstallCommand,
+	restoreCommand,
 }
 
 // All builds the commands for this build.

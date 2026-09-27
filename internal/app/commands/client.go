@@ -41,13 +41,14 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 	}
 	var opErr *net.OpError
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.As(err, &opErr) {
-		if l.Dev {
-			return fmt.Errorf("the development service for instance %s isn't running; start it with: %s service run: %w", l.Instance, bi.Name, err)
-		}
-		start := bi.Name + " service start"
+		flag := ""
 		if l.Instance != layout.DefaultInstance {
-			start += " --instance " + l.Instance
+			flag = " --instance " + l.Instance
 		}
+		if l.Dev {
+			return fmt.Errorf("the development service for instance %s isn't running; start it with: %s service run%s: %w", l.Instance, bi.Name, flag, err)
+		}
+		start := bi.Name + " service start" + flag
 		return fmt.Errorf("the Dens service for instance %s isn't running; start it with: %s: %w", l.Instance, host.AdminCommand(start), err)
 	}
 	return err

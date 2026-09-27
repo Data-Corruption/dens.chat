@@ -126,14 +126,23 @@ func ReadState(path string) (State, error) {
 // temporary file's ownership and permissions before it is published; the
 // state is never visible with the wrong ones.
 func WriteState(path string, s State, prepare func(tempPath string) error) error {
-	if err := s.Validate(); err != nil {
-		return err
-	}
-	data, err := json.Marshal(s)
+	data, err := EncodeState(s)
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(path, append(data, '\n'), prepare)
+	return WriteFileAtomic(path, data, prepare)
+}
+
+// EncodeState validates s and returns its file contents.
+func EncodeState(s State) ([]byte, error) {
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 // WriteFileAtomic writes data to a temporary file beside path, syncs it,

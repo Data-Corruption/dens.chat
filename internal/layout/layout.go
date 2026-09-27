@@ -141,3 +141,14 @@ func ValidateInstance(name string) error {
 	}
 	return nil
 }
+
+// WithRoot returns the installed-shape layout of instance with its
+// installation root moved under base, keeping every other path. Tests of
+// maintenance transactions use it to run against a temporary directory.
+func WithRoot(l Layout, base string) Layout {
+	l.Root = filepath.Join(base, l.Instance)
+	hostKey := filepath.Base(l.HostKey)
+	l.derive()
+	l.HostKey = filepath.Join(l.Control, hostKey)
+	return l
+}
