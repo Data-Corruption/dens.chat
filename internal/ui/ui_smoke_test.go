@@ -1,10 +1,9 @@
-// --- FILE service.https ---
-
 package ui
 
 import (
 	"bytes"
 	"html/template"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -15,46 +14,72 @@ func TestTemplatesRender(t *testing.T) {
 		t.Fatalf("ui.New: %v", err)
 	}
 	base := map[string]any{
-		"CSS":     "/assets/css/output.css",
-		"JS":      "/assets/js/output.js",
-		"Favicon": template.URL("data:,"),
-		"Version": "v0.0.0-dev",
+		"CSS":      "/assets/css/output.css",
+		"JS":       "/assets/js/output.js",
+		"Favicon":  template.URL("data:,"),
+		"Version":  "v0.0.0-dev",
+		"Instance": "main",
 	}
-	pages := map[string]map[string]any{
-		"login.html": {
-			"Title":         "Login",
-			"Error":         "invalid password",
-			"NoCredentials": true,
-			"AppName":       "sprout",
-		},
-		"settings.html": {
-			"Title":     "Settings",
-			"LogLevel":  "info",
-			"UIBind":    ":8484",
-			"ProxyBind": "",
-		},
+	pages := []struct {
+		name  string
+		extra map[string]any
+		want  string
+	}{
+		{"index.html", map[string]any{"Title": "Dens"}, "Pair this browser"},
+		{"index.html", map[string]any{"Title": "Dens", "Paired": true}, "Set a local password"},
+		{"index.html", map[string]any{"Title": "Dens", "Paired": true, "PasswordSet": true, "ShowNav": true,
+			"UpdateVersion": "v1.2.3", "UpdateCommand": "sudo dens update"}, "Dens is running"},
+		{"settings.html", map[string]any{"Title": "Settings", "LogLevel": "info", "UpdatesManaged": true, "ShowNav": true}, "Change password"},
 	}
-	for name, extra := range pages {
+	for _, page := range pages {
 		data := map[string]any{}
 		for k, v := range base {
 			data[k] = v
 		}
-		for k, v := range extra {
+		for k, v := range page.extra {
 			data[k] = v
 		}
 		var buf bytes.Buffer
-		if err := u.Execute(&buf, name, data); err != nil {
-			t.Fatalf("render %s: %v", name, err)
+		if err := u.Execute(&buf, page.name, data); err != nil {
+			t.Fatalf("render %s: %v", page.name, err)
 		}
 		out := buf.String()
 		if !strings.Contains(out, "<!DOCTYPE html>") || !strings.Contains(out, "</html>") {
-			t.Fatalf("render %s: missing page shell", name)
+			t.Fatalf("render %s: missing page shell", page.name)
+		}
+		if !strings.Contains(out, page.want) {
+			t.Fatalf("render %s: missing %q", page.name, page.want)
 		}
 		if strings.Count(out, `id="action-dialog"`) != 1 {
-			t.Fatalf("render %s: shared action dialog missing or duplicated", name)
+			t.Fatalf("render %s: shared action dialog missing or duplicated", page.name)
 		}
-		if strings.Contains(out, `id="error-modal"`) || strings.Contains(out, `id="confirm-modal"`) {
-			t.Fatalf("render %s: legacy dialog markup remains", name)
+	}
+}
+
+// TestTemplatesNeedNoInlineCode keeps every page compatible with the CSP,
+// which allows scripts and styles only from files.
+func TestTemplatesNeedNoInlineCode(t *testing.T) {
+	entries, err := templateFS.ReadDir("templates")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inlineHandler := regexp.MustCompile(`\son[a-z]+\s*=`)
+	for _, entry := range entries {
+		source, err := templateFS.ReadFile("templates/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(source)
+		for _, script := range regexp.MustCompile(`<script[^>]*>`).FindAllString(text, -1) {
+			if !strings.Contains(script, "src=") {
+				t.Errorf("%s has an inline script: %s", entry.Name(), script)
+			}
+		}
+		if strings.Contains(text, "<style") || strings.Contains(text, " style=") {
+			t.Errorf("%s has inline styles", entry.Name())
+		}
+		if inlineHandler.MatchString(text) {
+			t.Errorf("%s has an inline event handler", entry.Name())
 		}
 	}
 }

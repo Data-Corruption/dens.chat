@@ -14,7 +14,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 // Operation defines the actual database modification.

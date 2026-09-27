@@ -3,7 +3,6 @@
 # This file is sourced by ../build.sh. It owns frontend generation, Go builds,
 # build verification, deterministic installer rendering, and release packaging.
 
-# --- BEGIN service.https ---
 # The generated frontend outputs are gitignored; Go embed needs the files to
 # exist when the installer harness builds directly without the frontend
 # toolchain.
@@ -79,7 +78,6 @@ frontend_hash_assets() {
 
   printf '🟢 Generated asset manifest\n'
 }
-# --- END service.https ---
 
 # make_ldflags <devMode>
 # Prints the -ldflags string for a build with the given devMode value.
@@ -90,10 +88,7 @@ make_ldflags() {
   ldflags+=" -X '${pkg}.version=$VERSION'"
   ldflags+=" -X '${pkg}.contactURL=$CONTACT_URL'"
   ldflags+=" -X '${pkg}.defaultLogLevel=$DEFAULT_LOG_LEVEL'"
-  ldflags+=" -X '${pkg}.serviceEnabled=$SERVICE_ENABLED'"
-  ldflags+=" -X '${pkg}.serviceDesc=$SERVICE_DESC'"
-  ldflags+=" -X '${pkg}.serviceArgs=$SERVICE_ARGS'"
-  ldflags+=" -X '${pkg}.serviceDefaultPort=$SERVICE_DEFAULT_PORT'"
+  ldflags+=" -X '${pkg}.releaseURL=$RELEASE_URL'"
   ldflags+=" -X '${pkg}.certIdentity=$CERT_IDENTITY'"
   ldflags+=" -X '${pkg}.oidcIssuer=$OIDC_ISSUER'"
   ldflags+=" -X '${pkg}.devMode=$1'"
@@ -150,10 +145,7 @@ verify_build() {
   check_var "version" "$VERSION"
   check_var "contactURL" "$CONTACT_URL"
   check_var "defaultLogLevel" "$DEFAULT_LOG_LEVEL"
-  check_var "serviceEnabled" "$SERVICE_ENABLED"
-  check_var "serviceDesc" "$SERVICE_DESC"
-  check_var "serviceArgs" "$SERVICE_ARGS"
-  check_var "serviceDefaultPort" "$SERVICE_DEFAULT_PORT"
+  check_var "releaseURL" "$RELEASE_URL"
   check_var "devMode" "$DEV_MODE"
   if [[ "$MODE" == "ci" ]]; then
     check_var "certIdentity" "$CERT_IDENTITY"
@@ -166,8 +158,8 @@ verify_build() {
 # sed_replacement <value>
 # Escapes a value for use as the replacement side of an s|pattern|value|
 # expression: backslash and ampersand are special to sed there, and the pipe
-# is the delimiter. Free-text values such as SERVICE_DESC would otherwise
-# corrupt the rendered installer silently.
+# is the delimiter. Unescaped values would otherwise corrupt the rendered
+# installer silently.
 sed_replacement() {
   printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'
 }
@@ -180,9 +172,6 @@ render_installer() {
   local output="$2"
   sed -e "s|<APP_NAME>|$(sed_replacement "$APP_NAME")|g" \
       -e "s|<RELEASE_URL>|$(sed_replacement "$RELEASE_URL")|g" \
-      -e "s|<SERVICE>|$(sed_replacement "$SERVICE_ENABLED")|g" \
-      -e "s|<SERVICE_DESC>|$(sed_replacement "$SERVICE_DESC")|g" \
-      -e "s|<SERVICE_ARGS>|$(sed_replacement "$SERVICE_ARGS")|g" \
       -e "s|<CERT_IDENTITY>|$(sed_replacement "$CERT_IDENTITY")|g" \
       -e "s|<OIDC_ISSUER>|$(sed_replacement "$OIDC_ISSUER")|g" \
       -e "s|<COSIGN_VERSION>|$(sed_replacement "$COSIGN_VERSION")|g" \

@@ -1,5 +1,3 @@
-// --- FILE update ---
-
 package release
 
 import (
@@ -8,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +79,7 @@ func TestGetLatestVersionRequestShape(t *testing.T) {
 
 func TestGetLatestVersionRejectsBadReleaseURLs(t *testing.T) {
 	source := &GenericReleaseSource{}
-	for _, raw := range []string{"", "file:///srv/release/", "ftp://host/", "https:///no-host", "://broken"} {
+	for _, raw := range []string{"", "file://host/share/", "ftp://host/", "https:///no-host", "://broken"} {
 		_, err := source.GetLatestVersion(context.Background(), raw)
 		if !errors.Is(err, ErrInvalidReleaseURL) {
 			t.Fatalf("GetLatestVersion(%q) error = %v, want ErrInvalidReleaseURL", raw, err)
@@ -104,5 +104,24 @@ func TestGetLatestVersionHonorsContext(t *testing.T) {
 	_, err := source.GetLatestVersion(ctx, server.URL)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+func TestGetLatestVersionReadsFileRelease(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "version"), []byte("v1.2.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// file:///tmp/x/ on Linux, file:///C:/Users/x/ on Windows.
+	path := filepath.ToSlash(dir)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	got, err := (&GenericReleaseSource{}).GetLatestVersion(context.Background(), "file://"+path+"/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "v1.2.3" {
+		t.Fatalf("GetLatestVersion = %q, want v1.2.3", got)
 	}
 }

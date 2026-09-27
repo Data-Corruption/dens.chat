@@ -56,6 +56,10 @@ type LockOptions struct {
 	// Perm is the mode for the lock file when it has to be created. Zero means
 	// 0o600, which is what every caller here wants.
 	Perm os.FileMode
+	// ReadOnly opens an existing lock file for reading instead of creating
+	// it. A process can lock a file it may read but not write, which lets a
+	// service hold a lock on a file its installer owns.
+	ReadOnly bool
 }
 
 // Lock is a held OS-level file lock. Close releases it and is safe to call
@@ -88,7 +92,11 @@ func AcquireLock(ctx context.Context, path string, opts LockOptions) (*Lock, err
 	if perm == 0 {
 		perm = 0o600
 	}
-	file, err := OpenNoFollow(path, os.O_CREATE|os.O_RDWR, perm)
+	flag := os.O_CREATE | os.O_RDWR
+	if opts.ReadOnly {
+		flag = os.O_RDONLY
+	}
+	file, err := OpenNoFollow(path, flag, perm)
 	if err != nil {
 		return nil, fmt.Errorf("open lock file %s: %w", path, err)
 	}

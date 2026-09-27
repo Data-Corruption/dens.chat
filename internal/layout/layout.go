@@ -1,4 +1,12 @@
-// Package layout defines every path owned by an installation.
+// Package layout defines every path one instance of Dens owns, and the
+// ownership and permissions each must have. Nothing else resolves paths.
+//
+// An installed instance has a root-owned installation root. Its control
+// directory holds what only elevated maintenance commands may change
+// (lifecycle state, locks, instance config, the host-wrapped data key); the
+// service can read it but not write it. The data directory belongs to the
+// service account. A development instance keeps the same shape under the
+// developer's own data directory, owned by the developer.
 package layout
 
 import (
@@ -6,152 +14,141 @@ import (
 	"path/filepath"
 )
 
+// DefaultInstance is the instance name used when none is given.
+const DefaultInstance = "main"
+
+// File names inside the control directory.
 const (
 	StateFileName          = "state.json"
 	OperationLockFileName  = "operation.lock"
 	LifecycleLockFileName  = "lifecycle.lock"
-	ServiceLockFileName    = "service.lock"
-	ServiceStopFileName    = "service.stop"
-	ReleaseURLFileName     = "release-url"
+	InstanceFileName       = "instance.json"
 	MaintenanceLogFileName = "maintenance.log"
 )
 
-// Layout is the canonical on-disk layout for one installation.
-//
-// Every field is absolute when Layout was returned by New. FromStorage is
-// also exposed for tests and tools that have already resolved the storage
-// root; callers of it are responsible for passing an absolute path.
+// Layout is the canonical set of paths for one instance.
 type Layout struct {
-	Storage string
+	App      string
+	Instance string
+	Dev      bool
+
+	// Root is the installation root.
+	Root string
+
+	Control        string
+	State          string
+	OperationLock  string
+	LifecycleLock  string
+	InstanceConfig string
+	HostKey        string
+	MaintenanceLog string
 
 	Data    string
 	DB      string
-	Secrets string
+	Logs    string
+	Uploads string
 	Temp    string
-	Env     string
 
-	Control       string
-	State         string
-	OperationLock string
-	LifecycleLock string
-	Instances     string
-	ServiceLock   string
-	ServiceStop   string
+	// Runtime is the directory holding the control socket on Linux. It is
+	// empty on Windows, where the control endpoint is a named pipe.
+	Runtime         string
+	ControlEndpoint string
 
-	Maintenance     string
-	CachedInstaller string
-	CachedBundle    string
-	ReleaseURL      string
-	Jobs            string
-
-	Logs           string
-	MaintenanceLog string
+	// System integration. Empty for development instances.
+	Binary      string
+	BinaryDir   string
+	Cosign      string
+	ServiceName string
+	Account     string
+	// UnitFile and SysusersFile are Linux-only.
+	UnitFile     string
+	SysusersFile string
 }
 
-// New resolves the per-user storage root and returns its canonical layout.
-// Development builds receive a separate root, but retain the application
-// name for files such as <app>.env.
-func New(appName string, dev bool) (Layout, error) {
-	if err := validateAppName(appName); err != nil {
+// New returns the layout of instance for application app. Development
+// layouts live under the developer's data directory and have no system
+// integration.
+func New(app, instance string, dev bool) (Layout, error) {
+	if err := ValidateApp(app); err != nil {
 		return Layout{}, err
 	}
-	pathName := appName
-	if dev {
-		pathName += "-dev"
-	}
-	storage, err := storageRoot(pathName)
-	if err != nil {
+	if err := ValidateInstance(instance); err != nil {
 		return Layout{}, err
 	}
-	return FromStorage(storage, appName), nil
-}
-
-// FromStorage derives every installation path from an already-resolved root.
-// It does not touch the filesystem.
-func FromStorage(storage, appName string) Layout {
-	data := filepath.Join(storage, "data")
-	control := filepath.Join(storage, "control")
-	maintenance := filepath.Join(storage, "maintenance")
-	logs := filepath.Join(storage, "logs")
-	installer := installerFileName()
-	return Layout{
-		Storage: storage,
-		Data:    data,
-		DB:      filepath.Join(data, "db"),
-		Secrets: filepath.Join(data, "secrets"),
-		Temp:    filepath.Join(data, "tmp"),
-		Env:     filepath.Join(data, appName+".env"),
-
-		Control:       control,
-		State:         filepath.Join(control, StateFileName),
-		OperationLock: filepath.Join(control, OperationLockFileName),
-		LifecycleLock: filepath.Join(control, LifecycleLockFileName),
-		Instances:     filepath.Join(control, "instances"),
-		ServiceLock:   filepath.Join(control, ServiceLockFileName),
-		ServiceStop:   filepath.Join(control, ServiceStopFileName),
-
-		Maintenance:     maintenance,
-		CachedInstaller: filepath.Join(maintenance, installer),
-		CachedBundle:    filepath.Join(maintenance, installer+".cosign.bundle"),
-		ReleaseURL:      filepath.Join(maintenance, ReleaseURLFileName),
-		Jobs:            filepath.Join(maintenance, "jobs"),
-
-		Logs:           logs,
-		MaintenanceLog: filepath.Join(logs, MaintenanceLogFileName),
+	l := Layout{App: app, Instance: instance, Dev: dev}
+	if err := l.resolve(); err != nil {
+		return Layout{}, err
 	}
+	return l, nil
 }
 
-// Ensure creates and validates all application-owned directories. Callers
-// participating in the lifecycle protocol should use EnsureRetained before
-// taking a lifecycle lease and EnsureData after taking it.
-func (l Layout) Ensure() error {
-	if err := l.EnsureRetained(); err != nil {
-		return err
-	}
-	return l.EnsureData()
+// derive fills every path below Root. resolve sets Root and the platform
+// paths first.
+func (l *Layout) derive() {
+	l.Control = filepath.Join(l.Root, "control")
+	l.State = filepath.Join(l.Control, StateFileName)
+	l.OperationLock = filepath.Join(l.Control, OperationLockFileName)
+	l.LifecycleLock = filepath.Join(l.Control, LifecycleLockFileName)
+	l.InstanceConfig = filepath.Join(l.Control, InstanceFileName)
+	l.MaintenanceLog = filepath.Join(l.Control, MaintenanceLogFileName)
+
+	l.Data = filepath.Join(l.Root, "data")
+	l.DB = filepath.Join(l.Data, "db")
+	l.Logs = filepath.Join(l.Data, "logs")
+	l.Uploads = filepath.Join(l.Data, "uploads")
+	l.Temp = filepath.Join(l.Data, "tmp")
 }
 
-// EnsureRetained prepares directories that survive uninstall. It is safe to
-// call before taking a lifecycle lease because uninstall never removes them.
-func (l Layout) EnsureRetained() error {
-	for _, dir := range []string{
-		l.Storage,
-		l.Control,
-		l.Instances,
-		l.Maintenance,
-		l.Jobs,
-		l.Logs,
-	} {
-		if err := ensurePrivateDir(dir); err != nil {
-			return fmt.Errorf("prepare private directory %q: %w", dir, err)
-		}
-	}
-	return nil
+// DataDirs are the service-owned directories below Data.
+func (l Layout) DataDirs() []string {
+	return []string{l.Data, l.DB, l.Logs, l.Uploads, l.Temp}
 }
 
-// EnsureData prepares the directories removed by uninstall. Normal
-// applications must hold a shared lifecycle lease while calling it so they
-// cannot recreate data during an uninstall transaction.
-func (l Layout) EnsureData() error {
-	for _, dir := range []string{l.Data, l.DB, l.Secrets, l.Temp} {
-		if err := ensurePrivateDir(dir); err != nil {
-			return fmt.Errorf("prepare private directory %q: %w", dir, err)
-		}
-	}
-	return nil
-}
-
-func validateAppName(name string) error {
+// ValidateApp checks an application name used in paths and account names.
+func ValidateApp(name string) error {
 	if name == "" {
 		return fmt.Errorf("application name is empty")
 	}
 	for i := range len(name) {
 		c := name[i]
-		allowed := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
-			c >= '0' && c <= '9' || c == '_' || c == '-' || c == '.'
-		if !allowed || i == 0 && (c == '-' || c == '.') {
-			return fmt.Errorf("application name %q must match [A-Za-z0-9_][A-Za-z0-9._-]*", name)
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' && i > 0) {
+			return fmt.Errorf("application name %q must be lowercase letters and digits, starting with a letter", name)
 		}
 	}
 	return nil
+}
+
+// ValidateInstance checks an instance name. Names become part of account,
+// service and path names, so they are short and conservative: a lowercase
+// letter, then up to 15 lowercase letters, digits or single hyphens, not
+// ending in a hyphen.
+func ValidateInstance(name string) error {
+	if len(name) == 0 || len(name) > 16 {
+		return fmt.Errorf("instance name %q must be 1 to 16 characters", name)
+	}
+	for i := range len(name) {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case i > 0 && c >= '0' && c <= '9':
+		case i > 0 && c == '-' && name[i-1] != '-':
+		default:
+			return fmt.Errorf("instance name %q must start with a lowercase letter and use only lowercase letters, digits and single hyphens", name)
+		}
+	}
+	if name[len(name)-1] == '-' {
+		return fmt.Errorf("instance name %q must not end with a hyphen", name)
+	}
+	return nil
+}
+
+// WithRoot returns the installed-shape layout of instance with its
+// installation root moved under base, keeping every other path. Tests of
+// maintenance transactions use it to run against a temporary directory.
+func WithRoot(l Layout, base string) Layout {
+	l.Root = filepath.Join(base, l.Instance)
+	hostKey := filepath.Base(l.HostKey)
+	l.derive()
+	l.HostKey = filepath.Join(l.Control, hostKey)
+	return l
 }

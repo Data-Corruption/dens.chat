@@ -3,14 +3,18 @@
 # Release automation used by .github/workflows/release.yml.
 #
 #   ./scripts/ci.sh --plan
-#     Check the release host and Git tag, then report which tests are needed.
-#     Does not build binaries or change the release host or Git repository.
+#     Check the release host and Git tag, then report which tests are needed
+#     and whether a release job should run. Does not build binaries or change
+#     the release host or Git repository. Before the first release (no
+#     CHANGELOG.md heading and no version tag) it asks for full validation
+#     and no release, and needs no credentials.
 #
 #   ./scripts/ci.sh --execute
 #     Build and publish the CHANGELOG version, or finish an interrupted release.
 #     The workflow runs this only after the tests requested by --plan pass.
 #
-# Both commands need GITHUB_REPOSITORY, the R2 credentials, and rclone on PATH.
+# Otherwise both commands need GITHUB_REPOSITORY, the R2 credentials, and
+# rclone on PATH.
 # Execution also needs the build toolchain and GitHub's signing/tag permissions.
 # Run from the repository root. Project settings stay in scripts/build.sh.
 
@@ -60,6 +64,17 @@ prepare_release_context() {
   vendor_cosign
 }
 
+# write_plan E2E INSTALLER_TESTS RELEASE reports the plan in the log and to
+# the workflow.
+write_plan() {
+  local plan
+  plan=$(printf 'e2e_required=%s\ninstaller_tests_required=%s\nrelease_required=%s' "$1" "$2" "$3")
+  printf '%s\n' "$plan"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    printf '%s\n' "$plan" >> "$GITHUB_OUTPUT"
+  fi
+}
+
 # The workflow uses these decisions to schedule tests. An upload without a
 # Git tag needs E2E: the earlier attempt may not have passed its tests.
 plan_release() {
@@ -75,12 +90,7 @@ plan_release() {
     fi
   fi
 
-  printf 'e2e_required=%s\ninstaller_tests_required=%s\n' \
-    "$e2e_required" "$installer_tests_required"
-  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    printf 'e2e_required=%s\ninstaller_tests_required=%s\n' \
-      "$e2e_required" "$installer_tests_required" >> "$GITHUB_OUTPUT"
-  fi
+  write_plan "$e2e_required" "$installer_tests_required" true
 }
 
 # Publication order is shared by first attempts and retries. The remote probe
@@ -122,6 +132,15 @@ ci_main() {
   if [[ $# -ne 1 || ( "$1" != "--plan" && "$1" != "--execute" ) ]]; then
     printf 'Usage: ./scripts/ci.sh --plan | --execute\n' >&2
     return 2
+  fi
+
+  # Before the first release there is nothing to publish, so a push to main
+  # gets the pull-request validation and no release job. Once a version tag
+  # exists, a missing heading is a mistake again and planning fails below.
+  if [[ "$1" == --plan && -z "$(changelog_version)" ]] && ! released_before; then
+    echo "No release heading in CHANGELOG.md and no release yet: validating without publishing."
+    write_plan true false false
+    return
   fi
 
   prepare_release_context

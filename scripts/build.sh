@@ -10,14 +10,14 @@
 # Dev (default):
 #   ./scripts/build.sh
 #     Build frontend assets and a DevMode binary for the current host. DevMode
-#     bypasses HTTP auth, uses an isolated storage root (~/.APP_NAME-dev), and
-#     forces debug logging. Doesn't run tests. Never use
-#     as a release build.
+#     runs a development instance: storage under ~/.local/share/APP_NAME-dev
+#     (or %LOCALAPPDATA%\\APP_NAME-dev), no service manager, debug logging.
+#     Doesn't run tests. Never use as a release build.
 #
 # Production (host):
 #   ./scripts/build.sh --prod
-#     Run ./scripts/test.sh, then build a production binary (normal storage
-#     dirs, auth on) for the current host.
+#     Run ./scripts/test.sh, then build a production binary for the current
+#     host.
 #
 # Production (all targets):
 #   ./scripts/build.sh --prod-all
@@ -29,7 +29,6 @@
 # Mirrors: there is no build mode for mirrors. Signed release artifacts are
 # portable - copy the release bucket byte-for-byte and install with
 # APP_RELEASE_URL pointing at the copy; all cosign signatures stay valid.
-# See docs/content/docs/getting-started/mirror.md.
 #
 # Dependencies: go, gcc (only when tests run: go test -race needs cgo), and
 # curl. The build is pure Go (no cgo), so Linux release binaries are fully
@@ -44,26 +43,17 @@
 set -euo pipefail
 umask 022
 export LC_ALL=C
-SERVICE_DESC=""          # fallback for after cut
-SERVICE_DEFAULT_PORT="0" # fallback for after cut
 
 # Project config --------------------------------------------------------------
 #
 # Template adopters normally change values in this section and leave the build
 # implementation alone.
 
-APP_NAME="sprout"
+APP_NAME="dens"
 # The URL path is also the publication prefix inside R2_BUCKET. End with /.
-RELEASE_URL="https://releases.sproutcli.dev/"
-CONTACT_URL="https://sproutcli.dev/"
+RELEASE_URL="https://releases.dens.chat/"
+CONTACT_URL="https://github.com/Data-Corruption/dens.chat"
 DEFAULT_LOG_LEVEL="warn"
-
-# --- BEGIN service ---
-SERVICE_DESC="Sprout daemon"
-# --- END service ---
-# --- BEGIN service.https ---
-SERVICE_DEFAULT_PORT="8484"
-# --- END service.https ---
 
 # Pinned build inputs ---------------------------------------------------------
 #
@@ -79,11 +69,9 @@ source "$BUILD_SCRIPT_DIR/vendor.sh"
 
 OUT_DIR="out"
 RELEASE_DIR="$OUT_DIR/release"
-# --- BEGIN service.https ---
 JS_DIR="./internal/ui/assets/js"
 CSS_DIR="./internal/ui/assets/css"
 ASSETS_DIR="./internal/ui/assets"
-# --- END service.https ---
 GO_MAIN_PATH="./cmd"
 
 MODE="local" # frontend tool selection; ci.sh uses the pinned CI tools
@@ -94,19 +82,8 @@ HOST_GOARCH=""
 BUILD_OUTS=()
 VERSION_DIR=""
 
-# Template wiring -------------------------------------------------------------
+# Release signing -------------------------------------------------------------
 #
-# These values connect feature cuts, generated service commands, and release
-# verification. They are not normal project configuration; changing them means
-# changing Sprout's build/runtime contract.
-
-SERVICE_ENABLED="false"
-SERVICE_ARGS=""
-# --- BEGIN service ---
-SERVICE_ENABLED="true"
-SERVICE_ARGS="service run"
-# --- END service ---
-
 # cosign keyless identity: only releases signed by this exact workflow on main
 # verify. The subject includes the repository, so it is unforgeable without push
 # access. ci.sh derives CERT_IDENTITY for release binaries and installers.
@@ -124,10 +101,8 @@ source "$BUILD_SCRIPT_DIR/build/artifacts.sh"
 # Keeping compilation here gives local and published binaries the same inputs.
 build_binaries() {
   dep_check
-  # --- BEGIN service.https ---
   frontend_build
   frontend_hash_assets
-  # --- END service.https ---
   if [[ "$BUILD_KIND" == "dev" ]]; then
     printf "🟢 Skipping tests in dev mode\n"
   else

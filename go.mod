@@ -1,4 +1,4 @@
-module sprout
+module github.com/Data-Corruption/dens.chat
 
 go 1.26.7
 

@@ -4,10 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"sprout/internal/build"
-	"sprout/internal/platform/database"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func TestUpdateNormalizesAndValidatesBaseLogLevel(t *testing.T) {
@@ -17,8 +17,7 @@ func TestUpdateNormalizesAndValidatesBaseLogLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{
-		DefaultLogLevel:    "warn",
-		ServiceDefaultPort: 8484,
+		DefaultLogLevel: "warn",
 	}, database.ApplyPendingMigrations)
 	if err != nil {
 		logger.Close()

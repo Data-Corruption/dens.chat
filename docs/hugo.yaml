@@ -1,7 +1,7 @@
-baseURL: https://sproutcli.dev/
-title: Sprout
+baseURL: https://dens.chat/
+title: Dens
 description: >-
-  Template for Go CLIs and daemons with signed, transactional updates. Linux + Windows.
+  Self-hosted chat for small communities: text, voice and screen share on a machine you control.
 
 enableRobotsTXT: true
 publishDir: out
@@ -31,19 +31,14 @@ menu:
       params:
         type: search
     - name: GitHub
-      url: https://github.com/Data-Corruption/Sprout
+      url: https://github.com/Data-Corruption/dens.chat
       weight: 3
       params:
         icon: github
 
 params:
   description: >-
-    Template for Go CLIs and daemons with signed, transactional updates. Linux + Windows.
-  # Site-wide social preview. Hextra's opengraph partial and Hugo's embedded
-  # twitter_cards partial both fall back to the first entry when a page sets
-  # no images of its own. Crawlers want JPEG/PNG at 1200x630, not AVIF.
-  images:
-    - images/social-card.jpg
+    Self-hosted chat for small communities: text, voice and screen share on a machine you control.
   navbar:
     displayTitle: true
     displayLogo: false

@@ -1,289 +1,182 @@
-// Package maintenance coordinates application processes with installer-owned
-// install, update, and uninstall transactions.
+// Package maintenance is the lifecycle protocol between the service and the
+// elevated maintenance commands (install, update, restore, uninstall).
+//
+// Only maintenance commands write state.json. The service reads it at start
+// and runs only when it is ready for the service's own version, or migrates
+// first when a transition names its version as the target. Maintenance
+// commands serialize on the operation lock; the service holds the lifecycle
+// lock exclusively for its whole run, so a command that takes it knows the
+// service is down.
 package maintenance
 
 import (
 	"bytes"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"sprout/internal/layout"
+	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 
 	"golang.org/x/mod/semver"
 )
 
-const (
-	// NonceEnv is set by the installer only for its authorized migrator.
-	NonceEnv = "APP_MAINTENANCE_NONCE"
+const maxStateSize = 16 * 1024
 
-	maxStateSize = 16 * 1024
-	nonceBytes   = 32
-)
-
-// Phase is the durable installation lifecycle phase.
+// Phase is the durable lifecycle phase of an installation.
 type Phase string
 
 const (
 	PhaseInstalling   Phase = "installing"
 	PhaseUpdating     Phase = "updating"
+	PhaseRestoring    Phase = "restoring"
 	PhaseReady        Phase = "ready"
 	PhaseUninstalling Phase = "uninstalling"
-	PhaseUninstalled  Phase = "uninstalled"
 )
 
-// State is the installer-owned durable lifecycle state. InstallationEpoch is
-// opaque to Go callers: equality, not its current representation, provides
-// protection against delayed jobs from a prior installation lifetime.
+// State is the durable lifecycle state. Version is the installed version
+// (empty during a first install); TargetVersion is set during transitions
+// that end with the service starting on a new or restored installation.
 type State struct {
-	Phase             Phase  `json:"phase"`
-	Version           string `json:"version"`
-	TargetVersion     string `json:"targetVersion"`
-	Nonce             string `json:"nonce"`
-	ChangedAt         string `json:"changedAt"`
-	InstallationEpoch string `json:"installationEpoch"`
+	Phase         Phase  `json:"phase"`
+	Version       string `json:"version"`
+	TargetVersion string `json:"targetVersion"`
+	ChangedAt     string `json:"changedAt"`
 }
 
-// Expectation checks selected state fields. Empty fields are ignored; Phase's
-// zero value is likewise ignored.
-type Expectation struct {
-	Phase             Phase
-	Version           string
-	TargetVersion     string
-	InstallationEpoch string
+// Transitional reports whether the phase is one the service may migrate in.
+func (p Phase) Transitional() bool {
+	return p == PhaseInstalling || p == PhaseUpdating || p == PhaseRestoring
 }
 
-// Check verifies that state still describes the installation a caller
-// expected to act on.
-func (e Expectation) Check(state State) error {
-	if e.Phase != "" && state.Phase != e.Phase {
-		return fmt.Errorf("maintenance phase is %q, want %q", state.Phase, e.Phase)
+// Validate enforces the state machine's representation.
+func (s State) Validate() error {
+	if _, err := time.Parse(time.RFC3339Nano, s.ChangedAt); err != nil {
+		return fmt.Errorf("changedAt %q is not RFC 3339: %w", s.ChangedAt, err)
 	}
-	if e.Version != "" && state.Version != e.Version {
-		return fmt.Errorf("installed version is %q, want %q", state.Version, e.Version)
+	for name, v := range map[string]string{"version": s.Version, "targetVersion": s.TargetVersion} {
+		if v != "" && !semver.IsValid(v) {
+			return fmt.Errorf("%s %q is not a semantic version", name, v)
+		}
 	}
-	if e.TargetVersion != "" && state.TargetVersion != e.TargetVersion {
-		return fmt.Errorf("target version is %q, want %q", state.TargetVersion, e.TargetVersion)
-	}
-	if e.InstallationEpoch != "" && state.InstallationEpoch != e.InstallationEpoch {
-		return fmt.Errorf("installation epoch changed")
+	switch s.Phase {
+	case PhaseInstalling:
+		if s.TargetVersion == "" {
+			return errors.New("installing requires targetVersion")
+		}
+	case PhaseUpdating, PhaseRestoring:
+		if s.Version == "" || s.TargetVersion == "" {
+			return fmt.Errorf("%s requires version and targetVersion", s.Phase)
+		}
+		if s.Phase == PhaseRestoring && s.Version != s.TargetVersion {
+			return errors.New("restoring must not change the version")
+		}
+	case PhaseReady, PhaseUninstalling:
+		if s.Version == "" {
+			return fmt.Errorf("%s requires version", s.Phase)
+		}
+		if s.TargetVersion != "" {
+			return fmt.Errorf("%s must not have targetVersion", s.Phase)
+		}
+	default:
+		return fmt.Errorf("unknown phase %q", s.Phase)
 	}
 	return nil
 }
 
-// ReadState reads, strictly decodes, and validates state.json without
-// following a symlink or reparse point.
-func ReadState(l layout.Layout) (State, error) {
-	file, err := openStateFile(l.State)
+// NewState returns a state with the current time.
+func NewState(phase Phase, version, target string) State {
+	return State{Phase: phase, Version: version, TargetVersion: target, ChangedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+}
+
+// ReadState reads and strictly validates the state file at path without
+// following a symlink. A missing file is reported as os.ErrNotExist.
+func ReadState(path string) (State, error) {
+	file, err := xsyscall.OpenNoFollow(path, os.O_RDONLY, 0)
 	if err != nil {
 		return State{}, err
 	}
 	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil {
-		return State{}, fmt.Errorf("inspect maintenance state: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return State{}, fmt.Errorf("maintenance state is not a regular file")
-	}
-	if err := validateStateFile(info); err != nil {
-		return State{}, err
-	}
-	if info.Size() > maxStateSize {
-		return State{}, fmt.Errorf("maintenance state exceeds %d bytes", maxStateSize)
-	}
 	data, err := io.ReadAll(io.LimitReader(file, maxStateSize+1))
 	if err != nil {
-		return State{}, fmt.Errorf("read maintenance state: %w", err)
+		return State{}, fmt.Errorf("read lifecycle state: %w", err)
 	}
 	if len(data) > maxStateSize {
-		return State{}, fmt.Errorf("maintenance state exceeds %d bytes", maxStateSize)
+		return State{}, fmt.Errorf("lifecycle state exceeds %d bytes", maxStateSize)
 	}
-
-	var state State
+	var s State
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&state); err != nil {
-		return State{}, fmt.Errorf("decode maintenance state: %w", err)
+	if err := decoder.Decode(&s); err != nil {
+		return State{}, fmt.Errorf("decode lifecycle state: %w", err)
 	}
-	if err := ensureJSONEOF(decoder); err != nil {
-		return State{}, err
+	if decoder.More() {
+		return State{}, errors.New("lifecycle state has trailing data")
 	}
-	if err := state.Validate(); err != nil {
-		return State{}, fmt.Errorf("validate maintenance state: %w", err)
+	if err := s.Validate(); err != nil {
+		return State{}, fmt.Errorf("lifecycle state: %w", err)
 	}
-	return state, nil
+	return s, nil
 }
 
-// WriteState validates and atomically replaces state.json. The control
-// directory must already have been prepared by layout.Ensure or the installer.
-func WriteState(l layout.Layout, state State) error {
-	if err := state.Validate(); err != nil {
-		return fmt.Errorf("validate maintenance state: %w", err)
-	}
-	data, err := json.Marshal(state)
+// WriteState atomically replaces the state file at path. prepare sets the
+// temporary file's ownership and permissions before it is published; the
+// state is never visible with the wrong ones.
+func WriteState(path string, s State, prepare func(tempPath string) error) error {
+	data, err := EncodeState(s)
 	if err != nil {
-		return fmt.Errorf("encode maintenance state: %w", err)
+		return err
 	}
-	data = append(data, '\n')
+	return WriteFileAtomic(path, data, prepare)
+}
 
-	temp, err := os.CreateTemp(l.Control, ".state-*.tmp")
+// EncodeState validates s and returns its file contents.
+func EncodeState(s State) ([]byte, error) {
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(s)
 	if err != nil {
-		return fmt.Errorf("create temporary maintenance state: %w", err)
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+// WriteFileAtomic writes data to a temporary file beside path, syncs it,
+// lets prepare adjust it, and renames it over path.
+func WriteFileAtomic(path string, data []byte, prepare func(tempPath string) error) error {
+	temp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("stage %s: %w", filepath.Base(path), err)
 	}
 	tempPath := temp.Name()
-	keep := false
+	published := false
 	defer func() {
 		_ = temp.Close()
-		if !keep {
+		if !published {
 			_ = os.Remove(tempPath)
 		}
 	}()
-	if err := temp.Chmod(0o600); err != nil {
-		return fmt.Errorf("protect temporary maintenance state: %w", err)
-	}
 	if _, err := temp.Write(data); err != nil {
-		return fmt.Errorf("write temporary maintenance state: %w", err)
+		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
 	if err := temp.Sync(); err != nil {
-		return fmt.Errorf("sync temporary maintenance state: %w", err)
+		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
 	}
 	if err := temp.Close(); err != nil {
-		return fmt.Errorf("close temporary maintenance state: %w", err)
+		return fmt.Errorf("close %s: %w", filepath.Base(path), err)
 	}
-	if err := replaceFile(tempPath, l.State); err != nil {
-		return fmt.Errorf("publish maintenance state: %w", err)
-	}
-	keep = true
-	if err := syncDirectory(filepath.Dir(l.State)); err != nil {
-		return fmt.Errorf("sync maintenance state directory: %w", err)
-	}
-	return nil
-}
-
-// Validate enforces the on-disk state machine's stable representation.
-func (s State) Validate() error {
-	switch s.Phase {
-	case PhaseInstalling, PhaseUpdating, PhaseReady, PhaseUninstalling, PhaseUninstalled:
-	default:
-		return fmt.Errorf("unknown phase %q", s.Phase)
-	}
-	if s.ChangedAt == "" {
-		return fmt.Errorf("changedAt is empty")
-	}
-	if _, err := time.Parse(time.RFC3339Nano, s.ChangedAt); err != nil {
-		return fmt.Errorf("changedAt %q is not RFC3339: %w", s.ChangedAt, err)
-	}
-	if strings.TrimSpace(s.InstallationEpoch) == "" {
-		return fmt.Errorf("installationEpoch is empty")
-	}
-	if len(s.InstallationEpoch) > 256 {
-		return fmt.Errorf("installationEpoch is too long")
-	}
-	if s.Version != "" && !semver.IsValid(s.Version) {
-		return fmt.Errorf("version %q is not valid semantic version", s.Version)
-	}
-	if s.TargetVersion != "" && !semver.IsValid(s.TargetVersion) {
-		return fmt.Errorf("targetVersion %q is not valid semantic version", s.TargetVersion)
-	}
-	if s.Nonce != "" && !validNonce(s.Nonce) {
-		return fmt.Errorf("nonce must be %d lowercase hexadecimal characters", nonceBytes*2)
-	}
-
-	switch s.Phase {
-	case PhaseInstalling:
-		if s.TargetVersion == "" || s.Nonce == "" {
-			return fmt.Errorf("installing requires targetVersion and nonce")
-		}
-	case PhaseUpdating:
-		if s.Version == "" || s.TargetVersion == "" || s.Nonce == "" {
-			return fmt.Errorf("updating requires version, targetVersion, and nonce")
-		}
-	case PhaseReady:
-		if s.Version == "" {
-			return fmt.Errorf("ready requires version")
-		}
-		if s.TargetVersion != "" || s.Nonce != "" {
-			return fmt.Errorf("ready must not contain targetVersion or nonce")
-		}
-	case PhaseUninstalling:
-		if s.Version == "" {
-			return fmt.Errorf("uninstalling requires version")
-		}
-		if s.TargetVersion != "" || s.Nonce != "" {
-			return fmt.Errorf("uninstalling must not contain targetVersion or nonce")
-		}
-	case PhaseUninstalled:
-		if s.Version != "" || s.TargetVersion != "" || s.Nonce != "" {
-			return fmt.Errorf("uninstalled must not contain version, targetVersion, or nonce")
+	if prepare != nil {
+		if err := prepare(tempPath); err != nil {
+			return fmt.Errorf("prepare %s: %w", filepath.Base(path), err)
 		}
 	}
-	return nil
-}
-
-// EnsureDevReady bootstraps or reconciles the isolated development state.
-func EnsureDevReady(l layout.Layout, version string) (State, error) {
-	if !semver.IsValid(version) {
-		return State{}, fmt.Errorf("development version %q is not valid semantic version", version)
+	if err := replaceFile(tempPath, path); err != nil {
+		return fmt.Errorf("publish %s: %w", filepath.Base(path), err)
 	}
-	state, err := ReadState(l)
-	if err == nil && state.Phase == PhaseReady && state.Version == version {
-		return state, nil
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return State{}, err
-	}
-	epoch := state.InstallationEpoch
-	if errors.Is(err, os.ErrNotExist) || state.Phase == PhaseUninstalled {
-		epoch, err = newEpoch()
-		if err != nil {
-			return State{}, err
-		}
-	}
-	state = State{
-		Phase:             PhaseReady,
-		Version:           version,
-		ChangedAt:         time.Now().UTC().Format(time.RFC3339Nano),
-		InstallationEpoch: epoch,
-	}
-	if err := WriteState(l, state); err != nil {
-		return State{}, err
-	}
-	return state, nil
-}
-
-func newEpoch() (string, error) {
-	var bytes [nonceBytes]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
-		return "", fmt.Errorf("generate installation epoch: %w", err)
-	}
-	return hex.EncodeToString(bytes[:]), nil
-}
-
-func validNonce(value string) bool {
-	if len(value) != nonceBytes*2 {
-		return false
-	}
-	decoded, err := hex.DecodeString(value)
-	return err == nil && hex.EncodeToString(decoded) == value
-}
-
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	err := decoder.Decode(&extra)
-	if errors.Is(err, io.EOF) {
-		return nil
-	}
-	if err == nil {
-		return fmt.Errorf("maintenance state contains multiple JSON values")
-	}
-	return fmt.Errorf("decode trailing maintenance state data: %w", err)
+	published = true
+	return syncDir(filepath.Dir(path))
 }

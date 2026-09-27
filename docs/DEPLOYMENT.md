@@ -16,44 +16,17 @@ No Worker script or separate Pages project is needed.
 - `../.github/workflows/docs.yml` verifies modules, builds with warnings treated
   as errors, and deploys when `DOCS_ENABLED` is `true`.
 
-## Set the worker name and site URL
+## Worker name and site URL
 
-Do this before enabling deployment in a new repository. Transplant's `keep`
-option retains the existing site configuration; it does not customize it.
+`wrangler.jsonc` names the Worker `dens-site`, and `hugo.yaml` sets `baseURL`
+to `https://dens.chat/`. Deployments update the Worker with that name, so
+changing the name later targets a different Worker. `baseURL` controls
+generated canonical URLs, sitemap entries and social links; it does not create
+a domain or change Cloudflare routing. Attach the domain to the Worker in the
+Cloudflare dashboard.
 
-1. **Choose your worker name.** In `docs/wrangler.jsonc`, replace the existing
-   `name` value with a name for your project's docs, for example:
-
-   ```jsonc
-   "name": "my-project-docs"
-   ```
-
-   Use a distinct name within your Cloudflare account. Deployments update the
-   Worker with that name; changing the name later targets a different Worker.
-
-2. **Choose the public site URL.** In `docs/hugo.yaml`, replace `baseURL` with
-   the HTTPS URL readers will use, including its trailing slash. For a custom
-   domain:
-
-   ```yaml
-   baseURL: https://docs.example.com/
-   ```
-
-   To use Cloudflare's provided hostname instead, find or set your account's
-   [workers.dev subdomain](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/)
-   in the dashboard and use:
-
-   ```yaml
-   baseURL: https://my-project-docs.your-account-subdomain.workers.dev/
-   ```
-
-   Substitute your actual worker name and account subdomain. `baseURL` controls
-   generated canonical URLs, sitemap entries, and social links; it does not
-   create a domain or change Cloudflare routing.
-
-3. **Review the remaining site identity** listed below, then commit the config
-   changes. Keep `publishDir: out` and `assets.directory: ./out` in sync if you
-   change the output directory.
+Keep `publishDir: out` and `assets.directory: ./out` in sync if you change the
+output directory.
 
 ## Connect Cloudflare and GitHub
 
@@ -107,28 +80,8 @@ shell and directory to upload a version without changing production. Enable
 [preview URL documentation](https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/).
 The generated site still uses the configured `baseURL` for canonical URLs.
 
-## Other values to review when reusing the site
+## Site identity
 
-- `hugo.yaml`: title, both descriptions, GitHub navigation URL, and social image.
-- `content/_index.md` and `content/docs/`: project names, repository links,
-  installation examples, and guides describing the template's features.
+- `hugo.yaml`: title, both descriptions and the GitHub navigation URL.
 - `layouts/_partials/custom/footer.html`: author name and profile link.
-- `static/favicon.svg`, `static/images/`, and
-  `layouts/shortcodes/sprout-hero-image.html`: the inherited branding and artwork.
-- `layouts/_partials/custom/head-end.html`: hardcoded social-image type, size,
-  and alt text, plus the hero image path. It fails the build if the configured
-  social image or the expected hero image is missing. Update this partial when
-  replacing those assets.
-- `go.mod`: the docs site's own module path still names the upstream repository;
-  the app's module rename does not change it. Set it to your repository's docs
-  module path if you want matching project identity.
-
-The worker name, public URL, credentials, and deployment branch determine where
-and when publishing happens. The remaining identity values need editorial
-review; retaining them does not prevent Hugo from building.
-
-## Token rotation
-
-Replace `CLOUDFLARE_API_TOKEN` in the repository secrets to rotate credentials.
-If a token leaks, revoke it in Cloudflare and create a replacement. No site
-configuration change is needed.
+- `static/favicon.svg`: the site icon.

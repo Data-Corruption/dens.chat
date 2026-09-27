@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sprout/internal/platform/database"
-	"sprout/internal/types"
-	"sprout/pkg/xlog"
 	"strings"
+
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 var ErrDatabaseClosed = errors.New("database is closed")
@@ -33,8 +34,8 @@ func View(db *sql.DB) (*types.Configuration, error) {
 
 // Update updates the configuration in the database using the provided update
 // function. The read-modify-write runs in a single immediate write
-// transaction, so concurrent updates (including from other processes)
-// serialize cleanly. If updateFunc returns an error, nothing is persisted.
+// transaction, so concurrent updates serialize cleanly. If updateFunc
+// returns an error, nothing is persisted.
 func Update(db *sql.DB, updateFunc func(cfg *types.Configuration) error) (*types.Configuration, error) {
 	if db == nil {
 		return nil, ErrDatabaseClosed
@@ -101,11 +102,4 @@ func normalize(cfg *types.Configuration) {
 	if level, err := xlog.NormalizeLevel(cfg.LogLevel); err == nil {
 		cfg.LogLevel = level
 	}
-	// --- BEGIN service.https ---
-	cfg.UIBind = strings.TrimSpace(cfg.UIBind)
-	cfg.ProxyBind = strings.TrimSpace(cfg.ProxyBind)
-	for i := range cfg.Credentials {
-		cfg.Credentials[i].Username = types.NormalizeUsername(cfg.Credentials[i].Username)
-	}
-	// --- END service.https ---
 }

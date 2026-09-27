@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 // Package ui provides embedded frontend templates and assets.
 package ui
 
@@ -69,7 +67,7 @@ func (ui *UI) PageData(title, version string) map[string]any {
 	return map[string]any{
 		"CSS":     ui.CSS.URLPath,
 		"JS":      ui.JS.URLPath,
-		"Favicon": template.URL(`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50%' y='.9em' font-size='90' text-anchor='middle'>🌱</text></svg>`),
+		"Favicon": template.URL(`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23c2703d' d='M2 21v-6a10 10 0 0 1 20 0v6h-6v-5a4 4 0 0 0-8 0v5Z'/></svg>`),
 		"Title":   title,
 		"Version": version,
 	}
@@ -138,6 +136,7 @@ func New() (*UI, error) {
 	// Parse templates with helper functions
 	t, err := template.New("").Funcs(template.FuncMap{
 		"assetPath": assetPath,
+		"list":      func(values ...string) []string { return values },
 		"dict": func(values ...any) (map[string]any, error) {
 			if len(values)%2 != 0 {
 				return nil, fmt.Errorf("dict requires an even number of arguments")

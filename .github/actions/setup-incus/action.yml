@@ -25,7 +25,7 @@ runs:
         fi
 
         sudo incus info
-        smoke="sprout-incus-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+        smoke="dens-incus-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
         trap 'sudo incus delete "$smoke" --force >/dev/null 2>&1 || :' EXIT
         sudo incus init images:alpine/3.24 "$smoke"
         sudo incus start "$smoke"

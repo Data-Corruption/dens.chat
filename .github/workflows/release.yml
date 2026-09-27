@@ -2,15 +2,17 @@ name: Release
 
 # On pushes to main, ci.sh --plan checks which tests are needed. After those
 # tests pass, ci.sh --execute publishes the release or finishes an interrupted
-# attempt. PRs always run validation and never publish.
+# attempt. PRs always run validation and never publish. Before the first
+# release (no CHANGELOG.md heading and no version tag), pushes to main get the
+# same validation as PRs and publish nothing.
 #
 # A version that already has a Git tag skips the broad test suites. Changed
 # installers still get tested before publication. Retrying an older release
 # after a newer one went live only finishes the older tag and cleanup.
 #
-# CI is opt-in for fresh template forks. A tiny gate job reports when the
-# CI_ENABLED repository variable is absent or false; every build, test, and
-# publication job stays skipped until it is exactly "true".
+# CI is opt-in. A tiny gate job reports when the CI_ENABLED repository
+# variable is absent or false; every build, test, and publication job stays
+# skipped until it is exactly "true".
 #
 # GitHub's built-in "Re-run jobs" operation uses the original GITHUB_SHA and
 # GITHUB_REF, so interrupted publications resume at the same commit without a
@@ -72,6 +74,7 @@ jobs:
     outputs:
       e2e_required: ${{ steps.plan.outputs.e2e_required }}
       installer_tests_required: ${{ steps.plan.outputs.installer_tests_required }}
+      release_required: ${{ steps.plan.outputs.release_required }}
     steps:
       - name: Checkout
         if: ${{ github.event_name == 'push' }}
@@ -102,14 +105,16 @@ jobs:
             # PRs need neither release credentials nor a changelog heading.
             echo "e2e_required=true" >> "$GITHUB_OUTPUT"
             echo "installer_tests_required=false" >> "$GITHUB_OUTPUT"
+            echo "release_required=false" >> "$GITHUB_OUTPUT"
           else
             ./scripts/ci.sh --plan
           fi
 
-  # Native Windows coverage: compiles and runs the Go test suite with the
-  # windows build tags (pure Go, no C toolchain needed), and parses
-  # install.ps1 with real Windows PowerShell 5.1 - the interpreter
-  # `irm | iex` users actually run it with.
+  # Native Windows coverage: runs the Go test suite with the windows build
+  # tags (pure Go, no C toolchain needed), parses the PowerShell scripts with
+  # Windows PowerShell 5.1, which is what users run install.ps1 with, and
+  # runs the lifecycle e2e with the exact installer candidate. The runner is
+  # a throwaway machine, so the e2e installs the real service.
   windows-e2e:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
@@ -126,33 +131,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.x"
-
-      # --- BEGIN template ---
-      # The Windows source variants finalize real trees and need goimports.
-      # scripts/vendor.sh cannot place a Windows binary, but it remains the
-      # single source for the version.
-      - name: Install pinned goimports
-        shell: bash
-        run: |
-          set -euo pipefail
-          source scripts/vendor.sh
-          go install "golang.org/x/tools/cmd/goimports@${GOIMPORTS_VERSION}"
-          goimports_bin="$(go env GOPATH)\\bin\\goimports.exe"
-          installed=$(go version -m "$goimports_bin" |
-            awk '$1=="mod" && $2=="golang.org/x/tools" {print $3}')
-          [[ "$installed" == "$GOIMPORTS_VERSION" ]] || {
-            echo "goimports reports ${installed:-unknown}, want $GOIMPORTS_VERSION" >&2
-            exit 1
-          }
-          echo "GOIMPORTS_BIN=$goimports_bin" >> "$GITHUB_ENV"
-          echo "$(go env GOPATH)\\bin" >> "$GITHUB_PATH"
-      # --- END template ---
-
-      # --- BEGIN service.https ---
       # Generated frontend outputs are intentionally gitignored. The release
       # job builds the real assets; this job only needs embed inputs to compile
       # and run the Go test suite natively.
@@ -162,73 +140,11 @@ jobs:
           Set-Content internal/ui/assets/css/output.css ""
           Set-Content internal/ui/assets/js/output.js ""
           Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test"}'
-      # --- END service.https ---
 
       - name: Test native Windows build
         shell: pwsh
         run: go test ./...
 
-      # --- BEGIN template ---
-      - name: Test Windows variants and parse all installers
-        shell: pwsh
-        run: |
-          $variants = go run ./cmd/cutmatrix --list-json | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw "Could not enumerate feature variants." }
-          $nativeTests = @(
-            "automatic-https-service",
-            "no-update-https-service",
-            "check-https-service",
-            "manual-https-service",
-            "manual-no-service",
-            "automatic-headless-service"
-          )
-          $archive = Join-Path $env:RUNNER_TEMP "sprout-source.zip"
-          git archive --format=zip -o $archive HEAD
-          foreach ($variant in $variants) {
-            $path = Join-Path $env:RUNNER_TEMP ("sprout-" + $variant.Name)
-            Expand-Archive -Path $archive -DestinationPath $path
-            $cutArgs = @(
-              "run", "./cmd/cut",
-              "--root", $path,
-              "--finalize",
-              "--goimports", $env:GOIMPORTS_BIN,
-              "--module", "example.com/sprout-windows-cut"
-            ) + $variant.Cuts
-            & go @cutArgs
-            if ($LASTEXITCODE -ne 0) {
-              throw "Source cut failed for $($variant.Name)"
-            }
-            if ($variant.Https) {
-              New-Item -ItemType Directory -Force (Join-Path $path "internal/ui/assets/css") | Out-Null
-              New-Item -ItemType Directory -Force (Join-Path $path "internal/ui/assets/js") | Out-Null
-              Set-Content (Join-Path $path "internal/ui/assets/css/output.css") ""
-              Set-Content (Join-Path $path "internal/ui/assets/js/output.js") ""
-              Set-Content (Join-Path $path "internal/ui/assets/manifest.json") '{"css/output.css":"test","js/output.js":"test"}'
-            }
-            Push-Location $path
-            try {
-              if ($nativeTests -contains $variant.Name) {
-                go test ./...
-                if ($LASTEXITCODE -ne 0) {
-                  throw "Go tests failed for $($variant.Name)"
-                }
-              }
-              $tokens = $null
-              $errors = $null
-              [System.Management.Automation.Language.Parser]::ParseFile(
-                (Resolve-Path "scripts/install.ps1"),
-                [ref]$tokens,
-                [ref]$errors
-              ) | Out-Null
-              if ($errors.Count -ne 0) {
-                $errors | ForEach-Object { Write-Error $_.Message }
-                throw "install.ps1 parse failed for $($variant.Name)"
-              }
-            } finally {
-              Pop-Location
-            }
-          }
-      # --- END template ---
 
       - name: Parse install.ps1 (Windows PowerShell 5.1)
         shell: powershell
@@ -255,37 +171,17 @@ jobs:
           RELEASE_DIR=out/windows-installer-candidate
           package_installers
 
+      - name: Build Windows fixture releases
+        shell: bash
+        run: scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
+
       - name: Test exact Windows installer candidate
         shell: powershell
-        run: scripts/test-lifecycle-e2e.ps1 -InstallerCandidate out/windows-installer-candidate/install.ps1
+        run: scripts/test-lifecycle-e2e.ps1 -ReleaseDir out/windows-e2e -InstallerCandidate out/windows-installer-candidate/install.ps1
 
-  # --- BEGIN template ---
-  # Validate all 11 supported update/service source variants in isolated
-  # temporary copies, including shell lint, surviving installer syntax, and frontend states.
-  cut-matrix:
-    needs: release-plan
-    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-
-      - name: Run complete cut matrix
-        run: ./scripts/test.sh -cut
-  # --- END template ---
-
-  # Runs the install/update/uninstall lifecycle end-to-end inside Incus
-  # system containers for a representative distro subset (file:// release dir
-  # + APP_SKIP_VERIFY).
-  # Run ./scripts/test.sh -e2e locally for the full distro list.
+  # Runs the Linux lifecycle e2e in Incus system containers on every
+  # supported distro, from unsigned fixture releases over file:// URLs.
   linux-e2e:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
@@ -330,7 +226,7 @@ jobs:
         run: ./scripts/test.sh -release
 
       - name: Run lifecycle E2E
-        run: ./scripts/test.sh -e2e --distros "debian ubuntu fedora arch alpine"
+        run: ./scripts/test.sh -e2e
 
       - name: Upload lifecycle E2E logs
         if: ${{ always() }}
@@ -342,8 +238,8 @@ jobs:
           retention-days: 14
 
   release:
-    # Pull requests never publish. Template forks must also opt in explicitly
-    # by setting CI_ENABLED=true after R2 secrets are configured.
+    # Pull requests never publish, and a push publishes only when the plan
+    # asks for a release job, which it never does before the first release.
     # A status function permits intentionally skipped dependencies. Required
     # tests must all succeed; missing plan outputs, failures, and cancellation
     # must never open the publication gate.
@@ -352,6 +248,7 @@ jobs:
           github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           needs.ci-gate.outputs.enabled == 'true' &&
           needs.release-plan.result == 'success' &&
+          needs.release-plan.outputs.release_required == 'true' &&
           ((needs.release-plan.outputs.e2e_required == 'true' &&
             !contains(needs.*.result, 'skipped') &&
             needs.windows-e2e.result == 'success' &&
@@ -365,9 +262,6 @@ jobs:
       - ci-gate
       - release-plan
       - windows-e2e
-      # --- BEGIN template ---
-      - cut-matrix
-      # --- END template ---
       - linux-e2e
     # Installer validation runs here too; jobs do not share the E2E daemon.
     runs-on: ubuntu-24.04

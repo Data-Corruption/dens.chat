@@ -1,5 +1,3 @@
-// --- FILE service.https ---
-
 package crypto
 
 import (

@@ -1,8 +1,9 @@
 # Documentation site
 
-This project's documentation site uses [Hugo](https://gohugo.io/) and
+The public site at dens.chat uses [Hugo](https://gohugo.io/) and
 [Hextra](https://imfing.github.io/hextra/). Content, theme configuration, and
-deployment configuration are in this directory.
+deployment configuration are in this directory. Internal developer docs live
+in `dev/`; they are not part of the site.
 
 ## Local development
 
@@ -46,11 +47,6 @@ the modules, inspect the diff, and rebuild.
 `DOCS_ENABLED` is exactly `true`. It runs on pushes to `main` that change the
 site, workflow, or listed build dependencies, and can also be run manually.
 
-Before enabling it in a new repository, set your worker name in
-[`wrangler.jsonc`](wrangler.jsonc), set the public site URL in
-[`hugo.yaml`](hugo.yaml), and add your Cloudflare repository secrets.
-[DEPLOYMENT.md](DEPLOYMENT.md) gives the complete setup, local deployment,
-preview, and customization steps.
-
-Transplant's `keep` docs option retains this site and its workflow. The
-`markdown` and `none` options remove the deployment workflow.
+Before enabling it, add the Cloudflare repository secrets.
+[DEPLOYMENT.md](DEPLOYMENT.md) gives the complete setup, local deployment and
+preview steps.

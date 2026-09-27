@@ -33,8 +33,14 @@ require_distribution_config() {
   fi
 }
 
+# changelog_version prints the version of the first release heading in
+# CHANGELOG.md, or nothing before the first release has one.
+changelog_version() {
+  sed -n 's/^## \[\(.*\)\] - .*/\1/p' CHANGELOG.md | head -n 1
+}
+
 resolve_version() {
-  VERSION=$(sed -n 's/^## \[\(.*\)\] - .*/\1/p' CHANGELOG.md | head -n 1)
+  VERSION=$(changelog_version)
   if [[ -z "$VERSION" ]]; then
     printf "error: no release heading found in CHANGELOG.md\n" >&2
     printf "  The publisher reads its version from the first heading shaped like:\n" >&2
@@ -245,6 +251,17 @@ read_remote_version() {
   rm -f "$tmp"
   validate_version "$value" || return 2
   printf '%s\n' "$value"
+}
+
+# released_before reports whether origin has any version tag, which a
+# published release always leaves behind.
+released_before() {
+  local output
+  if ! output=$(env GIT_TERMINAL_PROMPT=0 git ls-remote --refs --tags origin 'refs/tags/v*' 2>&1); then
+    printf "error: failed to inspect remote tags:\n%s\n" "$output" >&2
+    exit 1
+  fi
+  [[ -n "$output" ]]
 }
 
 remote_tag_exists() {
@@ -549,13 +566,13 @@ test_changed_installers() {
     local current_snapshot="$OUT_DIR/lifecycle-e2e-current"
     make_installer_test_snapshot "$RELEASE_CURRENT_VERSION" "$OUT_DIR/remote-current" "$current_snapshot"
     run_step "Installer works with current release $RELEASE_CURRENT_VERSION" "Installer failed against current release $RELEASE_CURRENT_VERSION" \
-      bash scripts/test-lifecycle-e2e.sh --release-dir "$current_snapshot" --distros "debian" --no-fakes
+      bash scripts/test-lifecycle-e2e.sh --release-dir "$current_snapshot" --distros debian
   fi
 
   local staged_snapshot="$OUT_DIR/lifecycle-e2e-staged"
   make_installer_test_snapshot "$VERSION" "$VERSION_DIR" "$staged_snapshot"
   run_step "Installer works with staged release $VERSION" "Installer failed against staged release $VERSION" \
-    bash scripts/test-lifecycle-e2e.sh --release-dir "$staged_snapshot" --distros "debian" --no-fakes
+    bash scripts/test-lifecycle-e2e.sh --release-dir "$staged_snapshot" --distros debian
 }
 
 publish_installer() {
