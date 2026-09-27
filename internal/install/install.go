@@ -496,11 +496,10 @@ func checkPorts(cfg instance.Config, previous *instance.Config, running bool) er
 					_ = ln.Close()
 				}
 			}
-		case "udp":
-			var conn net.PacketConn
-			if conn, err = net.ListenPacket("udp", address); err == nil {
-				_ = conn.Close()
-			}
+		case "tcp", "udp":
+			// Media ports listen on every interface; checking them by
+			// binding would make Windows Firewall ask about the installer.
+			err = host.PortFree(p.network, p.value)
 		default:
 			var ln net.Listener
 			if ln, err = net.Listen(p.network, address); err == nil {

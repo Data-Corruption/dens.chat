@@ -210,6 +210,15 @@ function Test-WerExcluded {
     return ($null -ne $key) -and ($key.GetValueNames() -contains "dens.exe")
 }
 
+# Get-InstallerRules finds firewall rules for a temporary installer's
+# dens.exe. Windows adds one when it asks the user about a process that
+# listens on a non-loopback address and the user answers, which the
+# installer must never cause.
+function Get-InstallerRules {
+    return @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue |
+            Where-Object { $_.Program -like "*\dens-install-*" })
+}
+
 function Get-MediaRules {
     return @(Get-NetFirewallRule -ErrorAction SilentlyContinue |
             Where-Object { $_.DisplayName -like "Dens (*) media *" })
@@ -287,6 +296,8 @@ try {
     $console = (Get-CimInstance Win32_ComputerSystem).UserName
     $userArgs = @()
     if (-not $console -or $console -ne $me) { $userArgs = @("-User", $me) }
+
+    $installerRules = @(Get-InstallerRules).Count
 
     Step "install $V1"
     $mainArgs = $userArgs
@@ -375,7 +386,8 @@ try {
     Assert-Status "second" "den:\s+hosting a den"
     $health = Invoke-WebRequest -Uri $DenHealth -UseBasicParsing -TimeoutSec 30
     if ($health.StatusCode -ne 200) { Fail "the den listener answered $($health.StatusCode)" }
-    if ((Get-MediaRules).Count -ne 2) { Fail "want two media firewall rules for the den" }
+    if (@(Get-MediaRules).Count -ne 2) { Fail "want two media firewall rules for the den" }
+    if (@(Get-InstallerRules).Count -ne $installerRules) { Fail "Windows Firewall asked about the temporary installer" }
 
     Step "restore a backup into the second instance"
     # A browser paired before the restore must pair again after it.
@@ -410,7 +422,7 @@ try {
     Step "uninstall both instances"
     Invoke-Dens @("uninstall", "--instance", "second", "--yes") | Out-Null
     if (-not (Test-Path -LiteralPath $Dens)) { Fail "uninstalling one instance removed the shared binary" }
-    if ((Get-MediaRules).Count -ne 0) { Fail "the den's firewall rules survived its uninstall" }
+    if (@(Get-MediaRules).Count -ne 0) { Fail "the den's firewall rules survived its uninstall" }
     Invoke-Dens @("uninstall", "--yes") | Out-Null
     if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { Fail "a service survived uninstall" }
     if (Test-Path -LiteralPath $DataRoot) { Fail "$DataRoot survived uninstall" }
