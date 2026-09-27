@@ -407,6 +407,7 @@ Windows 11, current supported releases, Home and Pro. Windows 10 and Windows Ser
 - The SCM service runs as its virtual account with `SERVICE_SID_TYPE_RESTRICTED`. The token is write-restricted, so the service can write only where its service SID is explicitly granted: the state directory.
 - Required privileges are trimmed to `SeChangeNotifyPrivilege`.
 - The state directory gets a protected DACL (inheritance off, since `ProgramData` lets the Users group create files by default) granting SYSTEM and Administrators full control and the service SID modify.
+- `%ProgramData%\Dens`, which holds the instance roots, lets Users list it, as `/var/lib/dens` is 0755 on Linux. Windows path normalization, which the SQLite driver uses, lists every parent of the database, so the service fails to open it otherwise.
 - The host-bound data key is a machine-scope DPAPI blob under that DACL.
 - `dens.exe` is excluded from Windows Error Reporting so crashes don't write memory dumps.
 - A service has no console, so each instance registers an Application event log source under its service name, and the service records there why it stopped.

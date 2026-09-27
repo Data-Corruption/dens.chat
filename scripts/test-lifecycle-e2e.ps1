@@ -301,6 +301,19 @@ try {
     $privileges = (Invoke-Native -FilePath "sc.exe" -Arguments @("qprivs", "dens-main")).Output
     $held = @([regex]::Matches($privileges, "Se[A-Za-z]+Privilege") | ForEach-Object { $_.Value })
     if ($held.Count -ne 1 -or $held[0] -ne "SeChangeNotifyPrivilege") { Fail "the service keeps privileges: $($held -join ', ')" }
+    $writeRights = [Security.AccessControl.FileSystemRights]("WriteData, AppendData, WriteExtendedAttributes, " +
+        "DeleteSubdirectoriesAndFiles, WriteAttributes, Delete, ChangePermissions, TakeOwnership")
+    # The directory holding the instance roots: Users may list it, as with
+    # /var/lib/dens on Linux, and only SYSTEM and Administrators may change it.
+    $baseAcl = Get-Acl -LiteralPath $DataRoot
+    if (-not $baseAcl.AreAccessRulesProtected) { Fail "$DataRoot inherits permissions" }
+    foreach ($rule in $baseAcl.Access) {
+        $name = $rule.IdentityReference.Value
+        if ($name -in @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators")) { continue }
+        if ($name -ne "BUILTIN\Users" -or ($rule.FileSystemRights -band $writeRights)) {
+            Fail "$DataRoot grants $name $($rule.FileSystemRights)"
+        }
+    }
     # The instance root and its data directory don't inherit from ProgramData;
     # the control directory inherits the root's, where the service only reads.
     foreach ($dir in @("main", "main\control", "main\data")) {
@@ -310,8 +323,7 @@ try {
         $unexpected = @($names | Where-Object { $_ -notin @("NT AUTHORITY\SYSTEM", "BUILTIN\Administrators", "NT SERVICE\dens-main") })
         if ($unexpected.Count -gt 0) { Fail "$dir grants $($unexpected -join ', ')" }
         $serviceWrites = @($acl.Access | Where-Object {
-                $_.IdentityReference.Value -eq "NT SERVICE\dens-main" -and
-                ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::WriteData) })
+                $_.IdentityReference.Value -eq "NT SERVICE\dens-main" -and ($_.FileSystemRights -band $writeRights) })
         if ($dir -ne "main\data" -and $serviceWrites.Count -gt 0) { Fail "the service can write to $dir" }
     }
     if (-not (Test-OnPath)) { Fail "$BinaryDir isn't on the system PATH" }

@@ -47,6 +47,7 @@ On Linux:
 
 On Windows:
 
+- `%ProgramData%\Dens` has a protected DACL: SYSTEM and Administrators get full control, and Users may list it (`0x1200a9`, not inherited), as with `/var/lib/dens` on Linux. The service needs that: Windows path normalization (Go's `filepath.EvalSymlinks`, which the SQLite driver uses) lists every parent directory of the database.
 - The instance root has a protected DACL: SYSTEM and Administrators get full control, and the service SID gets read (`0x1200a9`). The control directory and its files inherit it.
 - The data directory has a protected DACL: SYSTEM and Administrators get full control, and the service SID gets modify (`0x1301bf`).
 - The control pipe's DACL grants SYSTEM and the service SID full access, and the desktop user `0x12019b` (read and write data, never `GENERIC_WRITE`). Other accounts can't open it.

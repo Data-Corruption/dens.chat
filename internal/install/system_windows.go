@@ -37,6 +37,12 @@ const eventSourceKey = `SYSTEM\CurrentControlSet\Services\EventLog\Application\`
 // inherit it) and modify its data directory.
 const (
 	rootSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	// baseSDDL is for the directory holding every instance root. Users may
+	// list it, as with /var/lib/dens on Linux: Windows path normalization
+	// (filepath.EvalSymlinks, which the SQLite driver uses) lists every
+	// parent of the database, and the service must pass through here. The
+	// entry isn't inherited; each instance root has its own protected DACL.
+	baseSDDL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;0x1200a9;;;BU)"
 	// serviceReadRights is read and execute: FILE_GENERIC_READ | FILE_EXECUTE.
 	serviceReadRights = "0x1200a9"
 	// serviceModifyRights is read, write, execute and delete.
@@ -135,7 +141,7 @@ func (windowsSystem) PrepareRoot(l layout.Layout) error {
 			return err
 		}
 	}
-	if err := setDACL(filepath.Dir(l.Root), rootSDDL); err != nil {
+	if err := setDACL(filepath.Dir(l.Root), baseSDDL); err != nil {
 		return err
 	}
 	if err := setDACLIfNew(l.Root, rootSDDL); err != nil {
