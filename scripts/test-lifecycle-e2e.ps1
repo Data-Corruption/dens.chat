@@ -15,6 +15,9 @@ the fixture's. -Backup also restores a backup made elsewhere, such as by the
 Linux harness, with the same test password. -SaveBackup keeps the backup
 this run makes. A restarted service stands in for a reboot.
 
+-ClientPort and -SecondClientPort move the two instances' client ports off
+the defaults (8484 and 18484), for a machine where those are taken.
+
 On failure it prints the services' logs and event log entries, then
 uninstalls. -KeepOnFailure leaves the failed installation in place for
 inspection; remove it afterwards with "dens uninstall --yes" (and
@@ -26,6 +29,8 @@ param(
     [string]$InstallerCandidate = "",
     [string]$Backup = "",
     [string]$SaveBackup = "",
+    [int]$ClientPort = 8484,
+    [int]$SecondClientPort = 18484,
     [switch]$KeepOnFailure
 )
 
@@ -34,7 +39,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $Password = "correct horse battery staple"
-$ClientUrl = "http://127.0.0.1:8484"
+$ClientUrl = "http://127.0.0.1:$ClientPort"
 $DenHealth = "http://127.0.0.1:8485/healthz"
 $BinaryDir = Join-Path $env:ProgramFiles "Dens"
 $Dens = Join-Path $BinaryDir "dens.exe"
@@ -129,7 +134,7 @@ function Invoke-Api {
 # Get-StatusLine sends a request with an arbitrary Host header, which
 # Invoke-WebRequest won't, and returns the response's status line.
 function Get-StatusLine([string]$HostHeader) {
-    $client = New-Object Net.Sockets.TcpClient("127.0.0.1", 8484)
+    $client = New-Object Net.Sockets.TcpClient("127.0.0.1", $ClientPort)
     try {
         $stream = $client.GetStream()
         $request = [Text.Encoding]::ASCII.GetBytes("GET / HTTP/1.1`r`nHost: $HostHeader`r`nConnection: close`r`n`r`n")
@@ -284,7 +289,9 @@ try {
     if (-not $console -or $console -ne $me) { $userArgs = @("-User", $me) }
 
     Step "install $V1"
-    Invoke-Installer $Release $userArgs
+    $mainArgs = $userArgs
+    if ($ClientPort -ne 8484) { $mainArgs += @("-ClientPort", $ClientPort) }
+    Invoke-Installer $Release $mainArgs
     Assert-Running "dens-main"
     Assert-State "main" $V1
     $config = (Invoke-Native -FilePath "sc.exe" -Arguments @("qc", "dens-main")).Output
@@ -349,7 +356,7 @@ try {
     Assert-Status "main" "password:\s+set"
 
     Step "a second instance that hosts a den"
-    Invoke-Installer $Next (@("-Instance", "second", "-ClientPort", "18484", "-Den") + $userArgs)
+    Invoke-Installer $Next (@("-Instance", "second", "-ClientPort", $SecondClientPort, "-Den") + $userArgs)
     Assert-Running "dens-second"
     Assert-State "second" $V2
     Assert-State "main" $V2
@@ -360,7 +367,7 @@ try {
 
     Step "restore a backup into the second instance"
     # A browser paired before the restore must pair again after it.
-    $secondUrl = "http://127.0.0.1:18484"
+    $secondUrl = "http://127.0.0.1:$SecondClientPort"
     $secondSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
     $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
     Invoke-WebRequest -Uri "$secondUrl/api/pair" -Method POST -WebSession $secondSession -UseBasicParsing `

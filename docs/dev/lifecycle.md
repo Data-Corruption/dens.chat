@@ -170,7 +170,7 @@ Then, from an elevated PowerShell in the checkout:
 powershell -ExecutionPolicy Bypass -File scripts\test-lifecycle-e2e.ps1 -ReleaseDir out\windows-e2e
 ```
 
-From WSL, build the fixtures into a Windows path such as `%TEMP%`, and copy the harness beside them, since an elevated process may not reach `\\wsl$` paths.
+From WSL, build the fixtures into a Windows path such as `%TEMP%`, and copy the harness beside them, since an elevated process may not reach `\\wsl$` paths. With WSL's mirrored networking, a port that a WSL process listened on (a development instance, say) can stay reserved on the Windows side after the process exits, until WSL restarts. `-ClientPort` and `-SecondClientPort` move the harness off such ports.
 
 ### Across platforms
 
