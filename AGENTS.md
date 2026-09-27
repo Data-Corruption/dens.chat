@@ -10,29 +10,10 @@ share. One Go binary runs as a system-level service under its own account. It
 always acts as a client, serving the chat UI to the desktop user's browser on
 `127.0.0.1` and holding their keys, and it can also host one den (a
 community). Linux (systemd) and Windows 11 (SCM) are supported for both roles.
-The installers (`install.sh`, `install.ps1`) own install, update, restore and
-uninstall.
+The binary's elevated maintenance commands own install, update, restore and
+uninstall; the installer scripts only download, verify and hand off to them.
 
 The target design is [docs/dev/design.md](docs/dev/design.md).
-
-## Current state: M0 in progress
-
-The tree is a fork of the Sprout application template, and milestone M0 is
-turning it into the design. Until M0 lands:
-
-- Everything under "Removed from Sprout" in the design doc is scheduled for
-  deletion. Don't extend it or build on it. That covers the per-user layout, the
-  Scheduled Task and `service.stop` lease, detached maintenance jobs, instance
-  PID markers and draining, dashboard TLS and login, the permission bitmask and
-  the hash worker.
-- Where code and the design doc disagree, the design doc describes where the
-  code is going. If your change shows the design is wrong, fix the design doc in
-  the same change.
-- `spikes/` holds the throwaway experiments that validated the platform layer;
-  see its README. M0 deletes it once `internal/platform/host` exists.
-
-When M0 is done, delete this section and the "Removed from Sprout" list in the
-design doc.
 
 ## Where things live
 
@@ -40,13 +21,19 @@ design doc.
 |------|------|
 | `cmd/main.go` | Process entry, global flags, signal handling, final error print |
 | `internal/app` | `App` composition root, cleanup stack, update checks |
-| `internal/app/commands` | CLI commands and the service coordinator |
-| `internal/maintenance` | Lifecycle state (`state.json`), locks, migration guard |
+| `internal/app/commands` | CLI commands: desktop-user commands talk to the service; maintenance commands run transactions |
+| `internal/service` | The service process: listeners, control handlers, readiness |
+| `internal/install` | Install, update, restore and uninstall transactions with a rollback journal; `system_linux.go` and `system_windows.go` hold every install-time OS step |
+| `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
+| `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
+| `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
+| `internal/control` | CLI-to-service protocol over the control endpoint |
+| `internal/vault` | Data key envelope: host and password wraps, key check value |
+| `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
 | `internal/platform/database` | SQLite open and pool, ordered migrations, focused accessors per table |
-| `internal/platform/http` | Listeners, router, middleware, handlers |
+| `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
-| `internal/platform/secrets` | Dashboard TLS material; removed in M0 |
 | `internal/types` | Configuration shape |
 | `internal/ui` | Embedded templates, vanilla JS modules, Tailwind/DaisyUI source |
 | `internal/build` | Values baked in at build time |
@@ -54,24 +41,27 @@ design doc.
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
-| `scripts/install.sh`, `scripts/install.ps1` | The installers; templated by `build.sh` |
-| `scripts/test.sh`, `scripts/test-*` | Test entrypoints and harnesses |
-| `docs/dev/` | Internal docs: the design and the release process |
+| `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
+| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
+| `docs/dev/` | Internal docs: the design, the lifecycle and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
-| `spikes/` | Throwaway platform experiments; removed in M0 |
 
 ## Documents of record
 
 - [docs/dev/design.md](docs/dev/design.md): processes, platform layer, identity
   and encryption, authentication, den features, media, security checklist,
   milestones.
+- [docs/dev/lifecycle.md](docs/dev/lifecycle.md): paths, lifecycle state,
+  locks, maintenance transactions, development instances, and the lifecycle
+  e2e harnesses.
 - [docs/dev/release.md](docs/dev/release.md): publication order, resume,
   retention, signing identity.
 - `docs/content/`: public docs for people using Dens.
 
 When a reference document and the code disagree, the code is right and the
-document is stale; fix the document in the same change. During M0 the design
-doc is the exception described above.
+document is stale; fix the document in the same change. The design doc also
+covers what isn't built yet; if your change shows the design is wrong, fix it
+in the same change.
 
 ## Rules that are not obvious from the code
 
@@ -94,14 +84,18 @@ den router, which Caddy exposes to the internet.
 IDs and event types. Don't write IP addresses to disk. Deletes remove rows, and
 SQLite `secure_delete` stays on.
 
-**The installer is the only thing that mutates an installation.** The Go
-binary never replaces itself, edits the systemd unit or SCM registration, or
-runs migrations outside the `--migrate` path the installer authorizes with a
-nonce. `dens update` only downloads, verifies and runs the installer.
+**Only the maintenance commands change an installation.** `dens install`,
+`update`, `restore` and `uninstall` run elevated as transactions in
+`internal/install`. The installer scripts only download, verify and run
+`install`, and `dens update` only fetches, verifies and runs the installer.
+The service never replaces its binary, edits its unit or SCM registration, or
+writes lifecycle state; it migrates its data only when `state.json` names its
+version as the target of a transition.
 
-**Invoking migration is the point of no return.** Before it, the installer can
-roll back. After it, failure keeps the transitional state and the operator
-reruns the installer. Do not add code that pretends a downgrade happened.
+**Starting the services is the point of no return.** Until then a
+transaction's journal undoes every step. Once a service may have migrated,
+failure keeps the transitional state and the operator reruns the installer.
+Do not add code that pretends a downgrade happened.
 
 **Migrations are ordered functions in
 `internal/platform/database/migration.go`.** Database steps and the
@@ -121,16 +115,18 @@ installed copies exist.
 types doesn't bump the client-den protocol version, and receivers ignore
 unknown message types. Only breaking changes bump it (see the design doc).
 
-**OS-specific runtime code lives in the platform layer.** It goes in
-`internal/platform/host` (created in M0) as a function pair in `_linux.go` and
-`_windows.go`, and nothing above it gets build tags. A platform difference must
-never reach the protocol, database or HTTP layers; if a feature seems to need
-one, raise it as a design problem.
+**OS-specific code lives in two places.** Runtime seams go in
+`internal/platform/host` as function pairs in `_linux.go` and `_windows.go`;
+install-time steps go behind the `System` interface in `internal/install`.
+Nothing else gets build tags. A platform difference must never reach the
+protocol, database or HTTP layers; if a feature seems to need one, raise it as
+a design problem.
 
 **Windows code compiles only under `GOOS=windows`.** After touching a
 `_windows.go` file, run `GOOS=windows go vet ./...` and
-`GOOS=windows go test -c -o /dev/null ./<pkg>` to catch build breaks; the
-tests themselves run in CI on a Windows runner.
+`GOOS=windows go test -c -o /dev/null ./<pkg>` to catch build breaks. From
+WSL, `./scripts/test.sh -windows` runs the Go tests natively on the Windows
+host; CI runs them on a Windows runner.
 
 **SQLite uses a modest fixed pool (4) per process.** The Wasm driver gives each
 connection its own memory sandbox and SQLite serializes writers anyway.
@@ -158,16 +154,19 @@ PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 ./scripts/test.sh              # go test -race ./... with embed placeholders; run constantly
 ./scripts/test.sh -lint        # pinned shellcheck over the shell scripts; run after touching them
 ./scripts/test.sh -release     # release state machine against a local rclone backend
-./scripts/test.sh -e2e         # install/update/uninstall across distros in Incus containers
-./scripts/build.sh             # dev binary: isolated -dev storage, debug logs, auth bypass, no updates
+./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
+./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
+./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
 ./scripts/build.sh --prod-all  # all release binaries
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
-The `-release` and `-e2e` harnesses run on Linux only. E2E keeps per-case logs
-under `out/lifecycle-e2e-logs/<run>/`. Windows tests and the PowerShell
-installer harness run in CI on a Windows runner.
+The `-release` and `-e2e` harnesses run on Linux only; e2e logs land under
+`out/lifecycle-e2e-logs/<run>/`. The Windows lifecycle e2e
+(`scripts/test-lifecycle-e2e.ps1`) installs the real service, so it runs in CI
+or on a Windows machine without Dens; see
+[docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
 Third-party tools (Tailwind, esbuild, cosign, rclone, shellcheck, goimports,
 Hugo) are pinned by version and SHA-256 in `scripts/vendor.sh` and fetched into
@@ -182,9 +181,10 @@ Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest
 - CLI command: constructor in `internal/app/commands`, registered in
   `commands.go`. A test scans the AST and fails if you forget to register it.
 - Durable state: a migration step, then accessors beside the owning subsystem.
-- HTTP route: a handler package under `internal/platform/http/router`, mounted
-  on the client or den router, never both.
-- OS-specific behavior: a seam in `internal/platform/host`.
+- HTTP route: a handler on the client router (`internal/platform/http/client`)
+  or the den router (`internal/platform/http/den`), never both.
+- OS-specific behavior: a seam in `internal/platform/host`, or a `System`
+  method in `internal/install` for an install-time step.
 - Project values (name, release URL, contact, ports): the block at the top of
   `scripts/build.sh`.
 

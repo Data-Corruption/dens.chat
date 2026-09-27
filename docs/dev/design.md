@@ -75,42 +75,34 @@ The browser never talks to a den over HTTP. All den content reaches the page thr
 - Several installs per machine are separate instances (`dens@<name>` or `dens-<name>`), each with its own account, ports and storage. This is the advanced path for a second den.
 - Each instance's ports are fixed at install and recorded in its config. `main` uses the defaults (client 8484, den listener 8485, media 7881/UDP and 7882/TCP); other instances pass theirs to the installer, which refuses ports already in use.
 - The den role is an install option (`--den`). Turning it on later means rerunning the installer with `--den`, which records the den ports and, on Windows, adds the firewall rules. Creating the den itself (its identity key and owner account) then happens in the app.
-- Sprout's signed releases, SQLite layer, `state.json` phases and nonce-authorized migration carry over. Most of its multi-process lifecycle machinery is removed (see Service lifecycle).
+- Sprout's signed releases, SQLite layer and `state.json` lifecycle phases carry over (see Service lifecycle).
 
 **Privileged steps and updates**
 
 Root or Administrator is used only for install, update, uninstall and restore; the service itself always runs unprivileged and sandboxed.
 
-- Privileged steps: create the service account, install the binary, register the service, create the state directory with private permissions, record the desktop user allowed to pair, generate and host-wrap the data key, and on Windows add firewall rules when the den role is enabled.
-- The privileged part of each installer is small and separate from download logic, so it can be read in a few minutes.
-- `--dry-run` (`-DryRun` on Windows) prints every account, path, service and rule it would create or change, without doing anything.
+- The installer scripts (`install.sh`, `install.ps1`) only download a release, verify its cosign signature and checksums, and run the release binary's `install` command. Every privileged change is made by the binary's maintenance commands (`install`, `update`, `restore`, `uninstall`), so both platforms share one transaction engine (`internal/install`) and the scripts stay short enough to read before running them.
+- Privileged steps: create the service account, install the binary, register the service, create the state directory with private permissions, record the desktop user allowed to pair, and generate and host-wrap the data key. On Windows they also add the binary to the system `PATH`, exclude it from Windows Error Reporting, and add firewall rules when the den role is enabled.
+- Every maintenance command prints its plan before changing anything, and `--dry-run` (`-DryRun` on Windows) prints the plan and stops. Output goes to the terminal and to the instance's `control/maintenance.log`.
 - Docs tell users to download and verify the cosign-signed installer (`install.sh` or `install.ps1`) before running it, never `curl | sudo bash` or `irm | iex`.
-- Updates are manual: `sudo dens update` on Linux, or `dens update` from an elevated terminal on Windows (`sudo dens update` also works where Windows' built-in sudo is enabled). It downloads the latest installer and its cosign bundle, verifies them against the signing identity baked into the binary, and runs the installer in the foreground. The installer stops the service, replaces the binary, runs migrations and restarts it. Output goes to the terminal as well as `maintenance.log`. Sprout's unattended auto-update feature is cut.
-- The service checks for new releases and shows an in-app notice with the update command; it never installs anything itself. Update checks can be turned off (Sprout's existing toggle), and the privacy docs state that a check only asks the release host for the latest version number, which reveals the install's IP to that host.
+- Updates are manual: `sudo dens update` on Linux, or `dens update` from an elevated terminal on Windows (`sudo dens update` also works where Windows' built-in sudo is enabled). It downloads the latest installer and its cosign bundle, verifies them against the signing identity baked into the binary, and runs the installer in the foreground. There is no unattended auto-update.
+- The service checks for new releases and shows an in-app notice with the update command; it never installs anything itself. Update checks can be turned off in settings, and the privacy docs state that a check only asks the release host for the latest version number, which reveals the install's IP to that host.
 
 **Service lifecycle**
 
-Only the service process opens the storage root. The root is private to the service account, so every command a desktop user runs (`dens open`, `dens backup`, admin commands) goes through the control endpoint, and every root or Administrator command is an installer transaction. With one process per install and a service manager that stops it gracefully on both platforms, install, update, restore and uninstall follow the same steps on Linux and Windows:
+Only the service process opens the storage root. The root is private to the service account, so every command a desktop user runs (`dens open`, `dens backup`, admin commands) goes through the control endpoint, and every root or Administrator command is a maintenance transaction. With one process per instance and a service manager that stops it gracefully on both platforms, install, update, restore and uninstall follow the same steps on Linux and Windows:
 
-1. The installer takes `operation.lock` and publishes the transitional phase in `state.json`.
-2. It stops the service through the service manager and waits. systemd escalates to `SIGKILL` after `TimeoutStopSec`; on Windows the installer runs `taskkill /F` on the process ID the SCM reports after the same timeout. (An elevated administrator can't open a virtual-account service's process for termination without the debug privilege; `taskkill /F` and `Stop-Process -Force` enable it themselves.)
+1. The command takes `operation.lock` for each instance it touches, in name order, and publishes a transitional phase (`installing`, `updating`, `restoring` or `uninstalling`) and the target version in `state.json`. Every instance on a machine runs the one installed binary, so install and update move all of them through the transition.
+2. It stops each service through the service manager and waits. systemd escalates to `SIGKILL` after `TimeoutStopSec`; on Windows the command runs `taskkill /F` on the process ID the SCM reports after the same timeout. (An elevated administrator can't open a virtual-account service's process for termination without the debug privilege; `taskkill /F` and `Stop-Process -Force` enable it themselves.)
 3. It takes `lifecycle.lock` exclusively. The service holds that lock exclusively for its whole run, so acquiring it proves the service is down, and the same lock stops a second copy of the service from starting.
-4. It changes the installation, runs the nonce-authorized `--migrate` when needed, publishes `ready` and starts the service.
+4. It changes the installation, journaling how to undo each step. A failure up to here undoes the journal and restores the previous state, including restarting services that were running.
+5. It starts each service. A service whose state is transitional and names its version migrates its data before reporting ready; the command then publishes `ready`. An instance that was stopped before the transaction runs only long enough to migrate.
 
-The service refuses to start unless the phase is `ready` and the version and installation epoch match. Invoking migration remains the point of no return.
+A service starts only when the phase is `ready` with its version, or a transition that targets its version. Otherwise it logs why and exits with status 78, which the unit's `RestartPreventExitStatus=` keeps systemd from retrying. On Windows it stops with a service-specific exit code, which the SCM treats as a stop rather than a crash, so recovery actions don't restart it.
 
-Removed from Sprout on both platforms (the lifecycle items alone are about 2,000 lines of Go, half of it tests, plus the drain and job code in both installers):
+Starting the services is the point of no return: a migrated database can't be opened by the previous binary, so a failure from here keeps the transitional state. The operator fixes the cause and runs the installer again, and the service finishes the migration when it starts.
 
-- Instance PID markers, marker draining and PID-identity revalidation. There are no other processes to drain.
-- The `state.json` watcher as a drain signal. The service manager's stop is the drain signal.
-- The separate `service.lock` singleton, merged into `lifecycle.lock`.
-- Detached maintenance jobs: job directories, runner scripts, `systemd-run`/`setsid` admission, the hidden maintenance Scheduled Task, runner PID probing and orphan reaping. Updates run in the foreground of an elevated terminal.
-- The Windows `service.stop` lease, its watcher, the exit and restart helper, and Scheduled Task state polling. SCM stop replaces all of them.
-- Stop and restart buttons in the dashboard. The unprivileged service can't control its own registration, and service control is an admin action: `systemctl`, `Start-Service`/`Stop-Service`, or a thin `dens service` wrapper over them.
-- Console control-event mapping for the Windows service. The SCM handler cancels the same root context `SIGTERM` does.
-- Dashboard TLS: certificate generation, `internal/platform/secrets` and the HTTPS listener. `http://127.0.0.1` is already a secure context, so `getUserMedia` and `getDisplayMedia` work without it.
-- Dashboard login, credentials, sessions and the permission bitmask. Pairing and the one local user replace them; den roles are a separate, den-side system.
-- The hash worker example and its table.
+Uninstall removes the instance's state directory, service registration, account and firewall rules. The binary, cosign and the unit template on Linux, or the `PATH` entry and error-reporting exclusion on Windows, go with the last instance. Windows can't delete a running executable, so an uninstall run from the installed `dens.exe` renames it and schedules the file for deletion at the next reboot.
 
 **Two listeners, not one**
 
@@ -128,6 +120,7 @@ Keep the client listener and den listener separate. Caddy forwards remote reques
 - The CLI verifies the other end too. On Linux the peer UID must be the service account's. On Windows the pipe's server process ID must match the one the SCM reports for `dens-<name>`, and the service creates the pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`, so it fails closed if another process claimed the name first.
 - The service returns a one-time token and its client port. The CLI opens `http://127.0.0.1:<port>/#token=…` (`xdg-open` on Linux, `ShellExecute` on Windows).
 - The page exchanges it for an `HttpOnly`, `SameSite=Strict` session cookie and clears the fragment. On the first pairing, the page then asks for a new local password before anything else (see Local identity).
+- A paired session lasts 30 days from its last use; the service extends it at most once a day. Its cookie is named for the client port (`dens_session_<port>`), because cookies aren't scoped by port and each instance has its own.
 - The port comes from the authenticated service while it holds that listener on both loopbacks. Neither platform lets another account bind the same address and port, so no separate port-ownership check is needed. On Windows another account can bind the wildcard address on that port, but loopback connections still reach the more specific socket.
 
 **Files in and out**
@@ -164,7 +157,8 @@ Because this is a root-managed system unit on Linux, it avoids the unprivileged 
 **Backup, restore, move**
 
 - `dens backup` writes a consistent SQLite snapshot (`VACUUM INTO`), the uploads directory, and the password-wrapped data key. Never a raw copy of a live WAL database.
-- `dens restore <file>`, run as root or Administrator, asks for the password, unwraps the data key, and re-wraps it for the new host (`systemd-creds` or DPAPI). Data is never re-encrypted. Restore follows the same lifecycle steps as an update.
+- `dens restore <file>`, run as root or Administrator, asks for the password, unwraps the data key, and re-wraps it for the new host (`systemd-creds` or DPAPI). Data is never re-encrypted. Restore follows the same lifecycle steps as an update, and a backup from an older version migrates when the service starts; one from a newer version is refused.
+- Pairing doesn't carry over: the service clears the restored data's browser sessions on its first start, so browsers pair again with `dens open`.
 - Backups have the same format on both platforms, so a client or den can move between Linux and Windows.
 - Changing the password re-wraps the data key only.
 - Lost password and lost machine together means the local data is gone by design. Den accounts can still be recovered with recovery codes.
@@ -398,7 +392,7 @@ These keep immutable and atomic-update distros cheap to support, and are good pr
 - Keep the `/etc` footprint minimal: the unit file, a `sysusers.d` file, nothing else.
 - Define the service user in `/etc/sysusers.d` (creating the directory where the distro only ships `/usr/lib/sysusers.d`, as Debian 13 does) so it's recreated at boot. Don't fix its UID: sysusers silently picks another one when the requested UID is taken. `StateDirectory=` re-owns the state directory to the service account on start, so ownership follows the account.
 - Keep the encrypted credential and all state under `/var/lib/dens/<name>/`; reference the credential by absolute path in `LoadCredentialEncrypted=`.
-- Use `StateDirectory=` and `RuntimeDirectory=` instead of creating and chowning directories by hand or shipping tmpfiles.d files. The installer creates the state directory root-owned to place the encrypted credential before the first start; systemd re-owns it.
+- Use `StateDirectory=` and `RuntimeDirectory=` instead of creating and chowning directories by hand or shipping tmpfiles.d files. The instance root and its `control/` directory (lifecycle state, locks, instance config and the encrypted credential) stay root-owned and readable by the service's group; `StateDirectory=dens/<name>/data` has systemd create the data directory and own it for the service account.
 
 **SteamOS (planned after v1)**
 
@@ -473,52 +467,50 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 **Client page and listener**
 
-- [ ] CSP: `default-src 'self'`, no inline scripts, `connect-src 'self'`, `frame-ancestors 'none'`.
+- [x] CSP: `default-src 'none'`, with scripts, styles, images, fonts and connections limited to `'self'`, no inline scripts, `frame-ancestors 'none'`.
 - [ ] Messages rendered by an escaping markdown subset; usernames, filenames and embeds treated as untrusted text.
-- [ ] Exact `Host` check (`127.0.0.1:<port>` or `localhost:<port>`) against DNS rebinding.
+- [x] Exact `Host` check (`127.0.0.1:<port>`, `[::1]:<port>` or `localhost:<port>`) against DNS rebinding.
 - [ ] `Origin` check on every write and on the WebSocket upgrade.
-- [ ] Session cookie `HttpOnly`, `SameSite=Strict`; pairing tokens single use and short-lived.
-- [ ] Listener bound on both `127.0.0.1` and `::1`.
+- [x] Session cookie `HttpOnly`, `SameSite=Strict`; pairing tokens single use and short-lived.
+- [x] Listener bound on both `127.0.0.1` and `::1`.
 
 **Den listener**
 
-- [ ] Serves only den routes; no client or admin routes compiled into its router.
+- [x] Serves only den routes; no client or admin routes compiled into its router.
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
 
 **Control endpoint**
 
-- [ ] Every connection authorized by OS-reported peer identity against the recorded desktop user.
-- [ ] The CLI verifies the server's identity before trusting a response.
-- [ ] Windows pipe: `FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`, one listening instance at all times, DACL granting SYSTEM and the service SID full access and the recorded user only `0x12019b` (never `GENERIC_WRITE`).
+- [x] Every connection authorized by OS-reported peer identity against the recorded desktop user.
+- [x] The CLI verifies the server's identity before trusting a response.
+- [x] Windows pipe: `FILE_FLAG_FIRST_PIPE_INSTANCE`, `PIPE_REJECT_REMOTE_CLIENTS`, one listening instance at all times, DACL granting SYSTEM and the service SID full access and the recorded user only `0x12019b` (never `GENERIC_WRITE`).
 
 **Service sandbox (Linux)**
 
-- [ ] `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp`, `PrivateDevices`, `RemoveIPC`.
-- [ ] `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `ProtectProc=invisible`, `ProcSubset=pid`.
-- [ ] `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality`, `MemoryDenyWriteExecute`.
-- [ ] Empty `CapabilityBoundingSet` and `AmbientCapabilities`, `SystemCallArchitectures=native`, `SystemCallFilter=@system-service`, `SystemCallErrorNumber=EPERM` so a blocked call fails and is logged instead of killing the service.
-- [ ] `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK`. Netlink is needed for interface enumeration, which Pion's ICE gathering uses; without it `net.Interfaces` fails.
-- [ ] `LimitCORE=0`, `UMask=0077`, `StateDirectory=dens/%i` (mode 0700) and `RuntimeDirectory=dens/%i` (mode 0755, for the socket) as the only writable paths.
-- [ ] `systemd-analyze security` rates the unit about 1.5 ("OK"); keep it there.
+- [x] `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=true`, `PrivateTmp`, `PrivateDevices`, `RemoveIPC`.
+- [x] `ProtectKernelTunables`, `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `ProtectProc=invisible`, `ProcSubset=pid`.
+- [x] `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality`, `MemoryDenyWriteExecute`.
+- [x] Empty `CapabilityBoundingSet` and `AmbientCapabilities`, `SystemCallArchitectures=native`, `SystemCallFilter=@system-service`, `SystemCallErrorNumber=EPERM` so a blocked call fails and is logged instead of killing the service.
+- [x] `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK`. Netlink is needed for interface enumeration, which Pion's ICE gathering uses; without it `net.Interfaces` fails.
+- [x] `LimitCORE=0`, `UMask=0077`, `StateDirectory=dens/%i/data` (mode 0700) and `RuntimeDirectory=dens/%i` (mode 0755, for the socket) as the only writable paths.
+- [x] `systemd-analyze security` rates the unit 1.5 ("OK") on every supported distro; the lifecycle e2e fails above that.
 
 **Service sandbox (Windows)**
 
-- [ ] Virtual account, `SERVICE_SID_TYPE_RESTRICTED`, required privileges limited to `SeChangeNotifyPrivilege`.
-- [ ] Protected DACL on the state directory and data key blob: SYSTEM, Administrators and the service SID only.
-- [ ] `dens.exe` excluded from Windows Error Reporting.
+- [x] Virtual account, `SERVICE_SID_TYPE_RESTRICTED`, required privileges limited to `SeChangeNotifyPrivilege`.
+- [x] Protected DACL on the state directory and data key blob: SYSTEM, Administrators and the service SID only.
+- [x] `dens.exe` excluded from Windows Error Reporting.
 
 **Logs and data**
 
 - [ ] No message content, tokens, keys or IPs in logs; log IDs and event types only.
-- [ ] SQLite `secure_delete=ON`.
-- [ ] Signed updates as in Sprout (cosign), unchanged.
+- [x] SQLite `secure_delete=ON`.
+- [x] Signed releases: the installers and `dens update` verify cosign signatures against the release workflow's identity.
 
 ## Milestones
 
 Each milestone ends usable on its own and is tested on Linux and Windows with all four target browsers. All platform-specific code lands in M0, while the seams are still cheap to change; later milestones are shared code.
-
-M0 starts by deleting everything under "Removed from Sprout", keeping the tests green on the smaller base, before building the new pieces.
 
 | # | Milestone | Done when |
 | --- | --- | --- |

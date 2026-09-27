@@ -143,9 +143,10 @@ existing tag or make an older version current again.
 **Retention.** The publisher keeps the two newest promoted releases, and any
 older release until at least 24 hours after its promotion.
 
-**Release source.** Each installer records its effective release URL, including
-an `APP_RELEASE_URL` override, and updates use that saved source. Missing or
-invalid metadata prevents updating instead of falling back to the public host.
+**Release source.** An install records its effective release URL, including an
+`APP_RELEASE_URL` override, in the instance config, and `dens update` uses that
+saved source. A missing or invalid source prevents updating instead of falling
+back to the public host.
 Signatures cover artifact bytes and the workflow identity, so unchanged
 artifacts also verify when served from a mirror.
 
