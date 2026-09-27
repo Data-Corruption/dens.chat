@@ -238,7 +238,7 @@ EOF
     : > "$GITHUB_OUTPUT"
     cp -a "$plan_root/remote" "$plan_root/before"
     bash "$plan_root/run" "$BUILD_SCRIPT_DIR/ci.sh" "$plan_root/remote"
-    [[ "$(cat "$GITHUB_OUTPUT")" == "$(printf 'e2e_required=%s\ninstaller_tests_required=%s' "$e2e" "$installers")" ]] ||
+    [[ "$(cat "$GITHUB_OUTPUT")" == "$(printf 'e2e_required=%s\ninstaller_tests_required=%s\nrelease_required=true' "$e2e" "$installers")" ]] ||
       fail "unexpected planning outputs: $(cat "$GITHUB_OUTPUT")"
     diff -r "$plan_root/before" "$plan_root/remote" || fail "planning changed remote objects"
     rm -rf "$plan_root/before"
@@ -305,6 +305,45 @@ EOF
   reject_plan 'refusing to move' # no evidence of prior promotion
   git remote set-url origin "$plan_root/missing-origin"
   reject_plan 'failed to inspect remote tag'
+)
+
+# Before the first release, planning asks for full validation and no release,
+# without credentials. Once a version tag exists, a missing heading is a
+# mistake again and planning fails.
+(
+  pre_root="$tmp/prerelease"
+  mkdir -p "$pre_root/work"
+  printf '# Changelog\n\n<!--\n// ## [v0.1.0] - YYYY-MM-DD\n-->\n' > "$pre_root/work/CHANGELOG.md"
+  git init --bare -q "$pre_root/origin"
+  git init -q "$pre_root/work"
+  cd "$pre_root/work"
+  git add .
+  git -c user.name=release-test -c user.email=release-test@example.invalid commit -qm initial
+  git remote add origin "$pre_root/origin"
+  git push -q origin HEAD:main
+  outputs="$pre_root/outputs"
+  # plan ENV_ARGS... runs the planner with only the given environment changes.
+  plan() {
+    # shellcheck disable=SC2016 # $1 belongs to the inner shell
+    env "$@" GITHUB_OUTPUT="$outputs" GITHUB_REPOSITORY=example/prerelease \
+      bash -c 'source "$1"; ci_main --plan' plan "$BUILD_SCRIPT_DIR/ci.sh" > "$pre_root/log" 2>&1
+  }
+
+  : > "$outputs"
+  plan -u R2_ACCESS_KEY_ID -u R2_SECRET_ACCESS_KEY -u R2_ACCOUNT_ID -u R2_BUCKET ||
+    fail "planning before the first release failed: $(cat "$pre_root/log")"
+  [[ "$(cat "$outputs")" == "$(printf 'e2e_required=true\ninstaller_tests_required=false\nrelease_required=false')" ]] ||
+    fail "unexpected pre-release planning outputs: $(cat "$outputs")"
+
+  git tag v0.1.0
+  git push -q origin v0.1.0
+  : > "$outputs"
+  if plan R2_ACCESS_KEY_ID=test R2_SECRET_ACCESS_KEY=test R2_ACCOUNT_ID=test R2_BUCKET=test; then
+    fail "a released project without a CHANGELOG.md heading planned no release"
+  fi
+  [[ "$(cat "$pre_root/log")" == *'no release heading found'* ]] ||
+    fail "unexpected planning error: $(cat "$pre_root/log")"
+  [[ ! -s "$outputs" ]] || fail "failed planning emitted scheduling outputs"
 )
 
 # Without a matching staging transaction, an invalid root pair must fail

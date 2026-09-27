@@ -100,13 +100,19 @@ tests it requests, then runs `--execute`. Upload and recovery code lives under
 `scripts/ci/`.
 
 ```sh
-./scripts/ci.sh --plan     # decide which tests to run
+./scripts/ci.sh --plan     # decide which tests to run, and whether to release
 ./scripts/ci.sh --execute  # publish a release or finish an interrupted attempt
 ```
 
 **Planning.** The plan reads the newest version heading in `CHANGELOG.md`,
 checks the release host and Git tag, and verifies any existing release files
 with their signatures and checksums.
+
+**Before the first release.** While `CHANGELOG.md` has no version heading and
+the repository has no version tag, the plan asks for the same validation a pull
+request gets and no release job, and needs no R2 credentials. Merges to `main`
+are tested and nothing is published. Once a version tag exists, a missing
+heading fails the plan.
 
 - If the version has no Git tag yet, the Linux and Windows E2E jobs run. Files
   left by an interrupted upload do not count as a completed release.
@@ -154,10 +160,10 @@ artifacts also verify when served from a mirror.
 
 | Job | What it does |
 |---|---|
-| `release-plan` | Runs `ci.sh --plan` on pushes to `main`; enables validation on pull requests |
+| `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, asks for validation and no release |
 | `linux-e2e` | Linux Go tests, shell lint, release tests, and installer tests across distros |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
-| `release` | Runs `ci.sh --execute` on pushes to `main` after all requested tests pass |
+| `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass |
 
 A failed plan, failed test or cancellation blocks publication. Tests skipped at
 the plan's request let publication continue.
