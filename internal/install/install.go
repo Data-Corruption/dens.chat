@@ -279,7 +279,7 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 	for _, m := range members {
 		p.printf("Starting %s (this migrates its data if needed) ...", m.l.ServiceName)
 		if err := sys.StartService(m.l); err != nil {
-			return fmt.Errorf("%s did not start: %w\nIts lifecycle state is left for recovery. Check its log in %s, fix the cause, and run the installer again", m.l.ServiceName, err, m.l.Logs)
+			return fmt.Errorf("%s did not start: %w\nIts lifecycle state is left for recovery. Find out why in %s, fix the cause, and run the installer again", m.l.ServiceName, err, host.ServiceLogHint(m.l.ServiceName, m.l.Logs))
 		}
 		if err := writeState(sys, m, maintenance.NewState(maintenance.PhaseReady, bi.Version, "")); err != nil {
 			return err

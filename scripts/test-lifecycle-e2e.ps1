@@ -14,13 +14,19 @@ installed. From an elevated PowerShell:
 the fixture's. -Backup also restores a backup made elsewhere, such as by the
 Linux harness, with the same test password. -SaveBackup keeps the backup
 this run makes. A restarted service stands in for a reboot.
+
+On failure it prints the services' logs and event log entries, then
+uninstalls. -KeepOnFailure leaves the failed installation in place for
+inspection; remove it afterwards with "dens uninstall --yes" (and
+"--instance second" if it exists) from an elevated terminal.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ReleaseDir,
     [string]$InstallerCandidate = "",
     [string]$Backup = "",
-    [string]$SaveBackup = ""
+    [string]$SaveBackup = "",
+    [switch]$KeepOnFailure
 )
 
 Set-StrictMode -Version Latest
@@ -170,6 +176,30 @@ function Test-OnPath {
     return @($path -split ";" | Where-Object { $_.TrimEnd("\") -ieq $BinaryDir }).Count -gt 0
 }
 
+function Test-EventSource([string]$Service) {
+    return Test-Path -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\EventLog\Application\$Service"
+}
+
+# Show-Diagnostics prints what each installed instance and the service
+# manager recorded, before cleanup removes it.
+function Show-Diagnostics {
+    foreach ($instance in @("main", "second")) {
+        $root = Join-Path $DataRoot $instance
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        $files = @(Get-ChildItem -LiteralPath (Join-Path $root "data\logs") -Filter "*.log" -File -ErrorAction SilentlyContinue)
+        $files += @(Get-Item -LiteralPath (Join-Path $root "control\maintenance.log") -ErrorAction SilentlyContinue)
+        foreach ($file in $files) {
+            Write-Host "--- $($file.FullName)"
+            Get-Content -LiteralPath $file.FullName -Tail 40 | ForEach-Object { Write-Host $_ }
+        }
+        Get-WinEvent -FilterHashtable @{ LogName = "Application"; ProviderName = "dens-$instance" } -MaxEvents 5 -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host "--- Application event, dens-$instance, $($_.TimeCreated): $($_.Message)" }
+    }
+    Get-WinEvent -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager" } -MaxEvents 50 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Message -like "*Dens (*" } | Select-Object -First 5 |
+        ForEach-Object { Write-Host "--- System event $($_.Id), $($_.TimeCreated): $($_.Message)" }
+}
+
 function Test-WerExcluded {
     $key = Get-Item -LiteralPath $WerKey -ErrorAction SilentlyContinue
     return ($null -ne $key) -and ($key.GetValueNames() -contains "dens.exe")
@@ -279,6 +309,7 @@ try {
     }
     if (-not (Test-OnPath)) { Fail "$BinaryDir isn't on the system PATH" }
     if (-not (Test-WerExcluded)) { Fail "dens.exe isn't excluded from Windows Error Reporting" }
+    if (-not (Test-EventSource "dens-main")) { Fail "dens-main isn't registered as an event log source" }
 
     Step "pair a browser and set the local password"
     Assert-Status "main" "password:\s+not set"
@@ -370,19 +401,21 @@ try {
     if ($left.Count -gt 0) { Fail "uninstall left $($left.Name -join ', ') in $BinaryDir" }
     if (Test-OnPath) { Fail "$BinaryDir is still on the system PATH" }
     if (Test-WerExcluded) { Fail "dens.exe is still excluded from Windows Error Reporting" }
+    foreach ($service in @("dens-main", "dens-second")) {
+        if (Test-EventSource $service) { Fail "the $service event log source survived uninstall" }
+    }
     $passed = $true
 } catch {
     Write-Host ""
     Write-Host $_.Exception.Message
-    foreach ($instance in @("main", "second")) {
-        $log = Join-Path $DataRoot "$instance\data\logs"
-        if (Test-Path -LiteralPath $log) {
-            Get-ChildItem -LiteralPath $log -File | Sort-Object LastWriteTime | Select-Object -Last 1 |
-                ForEach-Object { Write-Host "--- $($_.FullName)"; Get-Content -LiteralPath $_.FullName -Tail 30 }
-        }
-    }
+    Show-Diagnostics
 } finally {
-    Remove-Installation
+    if ($passed -or -not $KeepOnFailure) {
+        Remove-Installation
+    } else {
+        Write-Host ""
+        Write-Host "Kept the failed installation (-KeepOnFailure)."
+    }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item Env:APP_SKIP_VERIFY -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue

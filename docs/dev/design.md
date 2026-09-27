@@ -409,6 +409,7 @@ Windows 11, current supported releases, Home and Pro. Windows 10 and Windows Ser
 - The state directory gets a protected DACL (inheritance off, since `ProgramData` lets the Users group create files by default) granting SYSTEM and Administrators full control and the service SID modify.
 - The host-bound data key is a machine-scope DPAPI blob under that DACL.
 - `dens.exe` is excluded from Windows Error Reporting so crashes don't write memory dumps.
+- A service has no console, so each instance registers an Application event log source under its service name, and the service records there why it stopped.
 
 **Weaker than Linux, stated in the docs**
 

@@ -62,7 +62,9 @@ When the service starts, `maintenance.AuthorizeStart` compares the state with th
 | --- | --- |
 | `ready`, version `V` | Starts; the database schema must be current |
 | Transitional, target `V` | Applies pending migrations, then starts. In `restoring` it also clears the restored browser sessions. |
-| Anything else | Logs why and exits with status 78 (a service-specific exit code on Windows), which neither service manager retries |
+| Anything else | Records why and exits with status 78 (a service-specific exit code on Windows), which neither service manager retries |
+
+A service that refuses to start, or stops on an error, writes the reason to its log once the log is open. It also goes to the journal on Linux (`journalctl -u dens@<name>`, from the service's error output) and to the Application event log on Windows, under the source `dens-<name>` that install registers. Those two cover failures from before the log opens.
 
 ## Locks
 
@@ -105,7 +107,7 @@ A failure before step 7 undoes the journal in reverse. A failure after it leaves
 
 ### Uninstall
 
-`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service and its firewall rules and deletes the instance root and the account. The last instance also removes the binary, cosign and the unit template on Linux, or the `PATH` entry and error-reporting exclusion on Windows. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
+`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service, its event log source on Windows and its firewall rules, and deletes the instance root and the account. The last instance also removes the binary, cosign and the unit template on Linux, or the `PATH` entry and error-reporting exclusion on Windows. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
 
 Uninstall has no undo. Running it again finishes an interrupted one.
 

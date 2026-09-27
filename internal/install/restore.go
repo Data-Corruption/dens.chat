@@ -15,6 +15,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
@@ -138,7 +139,7 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 	_ = os.Rename(filepath.Join(old, "logs"), target.Logs)
 	p.printf("Starting %s (this migrates the restored data if needed) ...", target.ServiceName)
 	if err := sys.StartService(target); err != nil {
-		return fmt.Errorf("%s did not start with the restored data: %w\nThe previous data is in %s and the previous key in %s; see the service log in %s", target.ServiceName, err, old, oldKey, target.Logs)
+		return fmt.Errorf("%s did not start with the restored data: %w\nThe previous data is in %s and the previous key in %s. Find out why in %s", target.ServiceName, err, old, oldKey, host.ServiceLogHint(target.ServiceName, target.Logs))
 	}
 	if err := writeState(sys, m, maintenance.NewState(maintenance.PhaseReady, bi.Version, "")); err != nil {
 		return err

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
@@ -27,6 +28,9 @@ import (
 const minimumWindowsBuild = 22000
 
 const serviceStopTimeout = 30 * time.Second
+
+// eventSourceKey is where the Application event log registers its sources.
+const eventSourceKey = `SYSTEM\CurrentControlSet\Services\EventLog\Application\`
 
 // DACLs. Administrators and SYSTEM always have full control. The service's
 // own SID may read the installation root (and so the control files, which
@@ -256,7 +260,7 @@ func (windowsSystem) RegisterService(l layout.Layout) (func() error, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create service %s: %w", l.ServiceName, err)
 		}
-		undo = func() error { return deleteService(l.ServiceName) }
+		undo = func() error { return errors.Join(deleteService(l.ServiceName), removeEventSource(l.ServiceName)) }
 	}
 	defer s.Close()
 	if err := setRequiredPrivileges(s.Handle, "SeChangeNotifyPrivilege"); err != nil {
@@ -271,7 +275,29 @@ func (windowsSystem) RegisterService(l layout.Layout) (func() error, error) {
 		_ = undo()
 		return nil, fmt.Errorf("set the service's recovery actions: %w", err)
 	}
+	if err := registerEventSource(l.ServiceName); err != nil {
+		_ = undo()
+		return nil, fmt.Errorf("register the service's event log source: %w", err)
+	}
 	return undo, nil
+}
+
+// registerEventSource lets the service record why it stopped in the
+// Application event log under its own name (see host.RunService).
+func registerEventSource(name string) error {
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, eventSourceKey+name, registry.QUERY_VALUE)
+	if err == nil {
+		key.Close()
+		return nil
+	}
+	return eventlog.InstallAsEventCreate(name, eventlog.Error|eventlog.Warning|eventlog.Info)
+}
+
+func removeEventSource(name string) error {
+	if err := eventlog.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove event log source %s: %w", name, err)
+	}
+	return nil
 }
 
 func (windowsSystem) ServiceAccount(l layout.Layout) (host.Identity, error) {
@@ -353,7 +379,7 @@ func (windowsSystem) UnregisterService(l layout.Layout) error {
 	for _, proto := range []string{"UDP", "TCP"} {
 		_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+firewallRuleName(l, proto)).Run()
 	}
-	return deleteService(l.ServiceName)
+	return errors.Join(deleteService(l.ServiceName), removeEventSource(l.ServiceName))
 }
 
 func (windowsSystem) RemoveShared(l layout.Layout) error {
@@ -401,7 +427,7 @@ func (windowsSystem) Plan(l layout.Layout) []string {
 }
 
 func (windowsSystem) UninstallPlan(l layout.Layout, last bool) []string {
-	lines := []string{fmt.Sprintf("stops and deletes the service %s and its firewall rules", l.ServiceName)}
+	lines := []string{fmt.Sprintf("stops and deletes the service %s, its event log source and its firewall rules", l.ServiceName)}
 	if last {
 		lines = append(lines, fmt.Sprintf("removes %s from the system PATH and deletes it (no instances remain)", l.BinaryDir))
 	}

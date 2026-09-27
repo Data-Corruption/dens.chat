@@ -107,21 +107,35 @@ func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) error
 	return host.RunService(ctx, l.ServiceName, func(ctx context.Context, ready func()) error {
 		a := app.New(bi)
 		defer a.Close()
-		if err := a.Open(app.OpenOptions{
-			Instance:      l.Instance,
-			LogLevel:      cmd.String("log"),
-			DevClientPort: cmd.Int("port"),
-		}); err != nil {
-			return err
+		err := serve(ctx, a, bi, l, cmd, ready)
+		// A Windows service has no stderr, so its own log is where an
+		// operator finds out why it stopped.
+		if err != nil && a.Log != nil {
+			if errors.Is(err, host.ErrRefused) {
+				a.Log.Errorf("%v", err)
+			} else {
+				a.Log.Errorf("Stopped: %v", err)
+			}
 		}
-		pages, err := ui.New()
-		if err != nil {
-			return fmt.Errorf("%w: load pages: %w", host.ErrRefused, err)
-		}
-		a.UI = pages
-		if l.Dev {
-			fmt.Printf("Development instance %s: http://127.0.0.1:%d (pair with: %s open)\n", l.Instance, a.Instance.ClientPort, bi.Name)
-		}
-		return service.Run(ctx, a, ready)
+		return err
 	})
+}
+
+func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout, cmd *cli.Command, ready func()) error {
+	if err := a.Open(app.OpenOptions{
+		Instance:      l.Instance,
+		LogLevel:      cmd.String("log"),
+		DevClientPort: cmd.Int("port"),
+	}); err != nil {
+		return err
+	}
+	pages, err := ui.New()
+	if err != nil {
+		return fmt.Errorf("%w: load pages: %w", host.ErrRefused, err)
+	}
+	a.UI = pages
+	if l.Dev {
+		fmt.Printf("Development instance %s: http://127.0.0.1:%d (pair with: %s open)\n", l.Instance, a.Instance.ClientPort, bi.Name)
+	}
+	return service.Run(ctx, a, ready)
 }
