@@ -213,7 +213,9 @@ run_distro() {
     "${INCUS[@]}" file push -q "$previous" "$name/root/previous.backup" || return
   fi
   guest "$name" install || return
-  "${INCUS[@]}" file pull -q "$name/root/alice.backup" "$RUN_LOG_DIR/$distro.backup" || return
+  # Pull through stdout so this shell creates the file: incus may run under
+  # sudo, and a root-owned 0600 copy is unreadable to the rest of the run.
+  "${INCUS[@]}" file pull -q "$name/root/alice.backup" - > "$RUN_LOG_DIR/$distro.backup" || return
   echo ">> Rebooting $name"
   "${INCUS[@]}" restart --timeout 120 "$name" || return
   wait_for_boot "$name" || return
