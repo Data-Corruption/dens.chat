@@ -34,8 +34,8 @@ func View(db *sql.DB) (*types.Configuration, error) {
 
 // Update updates the configuration in the database using the provided update
 // function. The read-modify-write runs in a single immediate write
-// transaction, so concurrent updates (including from other processes)
-// serialize cleanly. If updateFunc returns an error, nothing is persisted.
+// transaction, so concurrent updates serialize cleanly. If updateFunc
+// returns an error, nothing is persisted.
 func Update(db *sql.DB, updateFunc func(cfg *types.Configuration) error) (*types.Configuration, error) {
 	if db == nil {
 		return nil, ErrDatabaseClosed
@@ -101,10 +101,5 @@ func normalize(cfg *types.Configuration) {
 	cfg.LogLevel = strings.TrimSpace(cfg.LogLevel)
 	if level, err := xlog.NormalizeLevel(cfg.LogLevel); err == nil {
 		cfg.LogLevel = level
-	}
-	cfg.UIBind = strings.TrimSpace(cfg.UIBind)
-	cfg.ProxyBind = strings.TrimSpace(cfg.ProxyBind)
-	for i := range cfg.Credentials {
-		cfg.Credentials[i].Username = types.NormalizeUsername(cfg.Credentials[i].Username)
 	}
 }

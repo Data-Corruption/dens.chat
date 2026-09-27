@@ -17,8 +17,7 @@ func TestUpdateNormalizesAndValidatesBaseLogLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{
-		DefaultLogLevel:    "warn",
-		ServiceDefaultPort: 8484,
+		DefaultLogLevel: "warn",
 	}, database.ApplyPendingMigrations)
 	if err != nil {
 		logger.Close()

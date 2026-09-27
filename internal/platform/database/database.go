@@ -1,14 +1,12 @@
-// Package database provides the embedded SQLite database for the application.
+// Package database provides the embedded SQLite database for the service.
 //
 // The driver is github.com/ncruces/go-sqlite3: SQLite compiled to Wasm and
-// translated to pure Go (wasm2go), so there is no cgo and cross-compiling
-// stays a plain GOOS/GOARCH matter. v0.35.3 is a hard minimum: earlier versions
-// corrupt data under concurrent WAL access on Windows (upstream issue 404). See
-// docs/content/docs/architecture.md before changing the version.
+// translated to pure Go, so there is no cgo and cross-compiling stays a plain
+// GOOS/GOARCH matter. v0.35.3 is a hard minimum: earlier versions corrupt
+// data under concurrent WAL access on Windows (upstream issue 404).
 //
-// The exposed API is plain database/sql, which keeps the driver swappable
-// (e.g. for mattn/go-sqlite3 if you'd rather take the cgo toolchain cost);
-// only the DSN below is driver-specific.
+// The exposed API is plain database/sql; only the DSN below is
+// driver-specific.
 package database
 
 import (
@@ -31,21 +29,8 @@ import (
 // ConfigDataKey is the key of the marshaled config struct in the config table.
 const ConfigDataKey = "data"
 
-/* Schema layout:
-
-config
-    key TEXT PRIMARY KEY -> value TEXT
-    "data" -> marshaled Configuration struct (JSON)
-sessions
-    token_hash TEXT PRIMARY KEY (SHA256 of the cookie token)
-    expiry INTEGER (unix seconds), perms INTEGER, username TEXT
-    (see internal/platform/database/sessions)
-Schema version
-    PRAGMA user_version (managed by pkg/migrator)
-
-Add your own tables in migration.go.
-
-*/
+// The schema lives in migration.go. The schema version is PRAGMA
+// user_version, managed by pkg/migrator.
 
 // FileName is the SQLite database file name inside the db directory.
 // SQLite keeps "-wal" and "-shm" siblings beside it while the DB is open.
@@ -56,15 +41,16 @@ const FileName = "app.db"
 //
 // Connection behavior, applied per pooled connection via the DSN:
 //   - _txlock=immediate: write transactions take the write lock at BEGIN,
-//     avoiding read-to-write upgrade failures under cross-process concurrency.
-//   - busy_timeout(10000): writers wait up to 10s for a competing process
-//     instead of failing with SQLITE_BUSY.
-//   - journal_mode(wal): negotiated once below before migration because
-//     setting it as a per-connection pragma races on concurrent first start.
+//     avoiding read-to-write upgrade failures.
+//   - busy_timeout(10000): writers wait up to 10s for each other instead of
+//     failing with SQLITE_BUSY.
+//   - journal_mode(wal): negotiated once below before migration.
 //   - synchronous(normal): the standard WAL durability tradeoff (atomicity is
 //     preserved on crash; at most the last transactions before an OS crash
 //     may roll back).
 //   - foreign_keys(on): enforce FK constraints (off by default in SQLite).
+//   - secure_delete(on): overwrite deleted content, so a deleted message
+//     doesn't linger in free pages.
 func New(
 	directory string,
 	logger *xlog.Logger,
@@ -80,7 +66,8 @@ func New(
 		"?_txlock=immediate" +
 		"&_pragma=busy_timeout(10000)" +
 		"&_pragma=synchronous(normal)" +
-		"&_pragma=foreign_keys(on)"
+		"&_pragma=foreign_keys(on)" +
+		"&_pragma=secure_delete(on)"
 
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
@@ -104,10 +91,9 @@ func New(
 	return db, nil
 }
 
-// enableWAL negotiates the persistent journal mode before migration. On a
-// fresh database, concurrent processes can briefly contend while one changes
-// the mode or starts its migration. Retrying only SQLite lock errors keeps
-// first start deterministic without hiding malformed DSNs or I/O failures.
+// enableWAL negotiates the persistent journal mode before migration.
+// Retrying only SQLite lock errors keeps a first start deterministic without
+// hiding malformed DSNs or I/O failures.
 func enableWAL(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -133,4 +119,35 @@ func enableWAL(db *sql.DB) error {
 		case <-timer.C:
 		}
 	}
+}
+
+// Snapshot writes a consistent copy of the open database to path with VACUUM
+// INTO, which is safe while the database is in use. path must not exist.
+func Snapshot(ctx context.Context, db *sql.DB, path string) error {
+	if _, err := db.ExecContext(ctx, "VACUUM INTO ?", path); err != nil {
+		return fmt.Errorf("snapshot database: %w", err)
+	}
+	return nil
+}
+
+// OpenReadOnly opens the database file at path without the ability to change
+// it, and without enforcing a schema version. Restore uses it to inspect a
+// backup before installing it.
+func OpenReadOnly(path string) (*sql.DB, error) {
+	dsn := "file:" + filepath.ToSlash(path) + "?mode=ro&_pragma=busy_timeout(10000)"
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	return db, nil
+}
+
+// FileSchemaVersion reads the schema version of an open database.
+func FileSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
+	return schemaVersion(ctx, db)
 }

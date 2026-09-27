@@ -1,17 +1,18 @@
-
 // Main Entry Point
-// Initializes all modules; controls are wired with event listeners (no window.* globals)
+// Initializes every module; controls are wired with event listeners (no inline handlers)
 
 import { initTheme, setupThemeToggle } from './theme.js';
-import { initServerControls } from './server.js';
+import { initPairing } from './pair.js';
+import { initPasswordSetup, initPasswordChange } from './password.js';
 import { initSettings } from './settings.js';
 
-// Initialize theme immediately (before DOM ready) to prevent flash
+// Apply the theme immediately, before the page renders.
 initTheme();
 
-// Setup after DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     setupThemeToggle();
-    initServerControls();
+    initPairing();
+    initPasswordSetup();
+    initPasswordChange();
     initSettings();
 });

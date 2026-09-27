@@ -4,114 +4,102 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 
 	"golang.org/x/mod/semver"
 )
 
-const (
-	// UpdateGuidance deliberately avoids naming an installer or release host.
-	// Managed and mirrored installs may have an administrator-approved source.
-	UpdateGuidance = "Repeat your original installation steps or follow your administrator's update instructions."
-)
+// UpdateCheckInterval is how often the service asks the release host for
+// the latest version.
+const UpdateCheckInterval = 24 * time.Hour
 
-var (
-	ErrUpdatesDisabled = errors.New("updates disabled: no release-url file")
-)
-
-func normalizeReleaseURL(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	trimmed = strings.TrimRight(trimmed, "/")
-	if trimmed == "" {
-		return "", fmt.Errorf("release URL is empty")
+// LatestUpdate returns the newer version the last check found, if any. A
+// result from a different release source never counts.
+func (a *App) LatestUpdate(cfg *types.Configuration) (string, bool) {
+	if a.DevMode() || a.Instance.ReleaseURL == "" || cfg.UpdateCheckSource != a.Instance.ReleaseURL {
+		return "", false
 	}
-	return trimmed + "/", nil
+	latest := cfg.LatestUpdateVersion
+	if semver.IsValid(latest) && semver.Compare(latest, a.buildInfo.Version) > 0 {
+		return latest, true
+	}
+	return "", false
 }
 
-func loadReleaseURL(path string) (string, error) {
-	if path == "" {
-		return "", fmt.Errorf("release URL path is not set")
+// UpdateCommand is what the notice tells the user to run.
+func (a *App) UpdateCommand() string {
+	command := a.buildInfo.Name + " update"
+	if a.Layout.Instance != layout.DefaultInstance {
+		command += " --instance " + a.Layout.Instance
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("%w: missing %s", ErrUpdatesDisabled, path)
-		}
-		return "", fmt.Errorf("read release URL file: %w", err)
-	}
-
-	url, err := normalizeReleaseURL(string(data))
-	if err != nil {
-		return "", fmt.Errorf("invalid release URL in %s: %w", path, err)
-	}
-	return url, nil
+	return host.AdminCommand(command)
 }
 
-func (a *App) releaseURL() (string, error) {
-	return loadReleaseURL(a.Layout.ReleaseURL)
-}
-
-// CheckForUpdate performs a fresh check against the configured release source.
-// The source, version, and check time are persisted for notices and the service.
-// Development builds return [ErrDevBuild]; installs without a release-url
-// return [ErrUpdatesDisabled].
-func (a *App) CheckForUpdate(ctx context.Context) (bool, error) {
+// CheckForUpdate asks the release host for the latest version and records
+// the result. The request reveals only this install's IP address to the
+// release host.
+func (a *App) CheckForUpdate(ctx context.Context) error {
 	a.updateCheckMu.Lock()
 	defer a.updateCheckMu.Unlock()
-	result, err := a.checkForUpdate(ctx)
-	if err != nil {
-		return false, err
+	source := a.Instance.ReleaseURL
+	if source == "" || a.DevMode() {
+		return errors.New("update checks are disabled for this instance")
 	}
-	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
-		setUpdateCheckResult(cfg, result, time.Now())
-		return nil
-	}); err != nil {
-		return false, fmt.Errorf("persist update check: %w", err)
-	}
-	return result.available(a.buildInfo.Version), nil
-}
-
-type updateResult struct{ source, version string }
-
-func (r updateResult) available(current string) bool {
-	return semver.IsValid(r.version) && semver.Compare(r.version, current) > 0
-}
-
-// UpdateAvailable derives availability only from the installation's current
-// source. A source change or successful upgrade cannot leave a stale notice.
-func (a *App) UpdateAvailable(cfg *types.Configuration) bool {
-	source, err := a.releaseURL()
-	return err == nil && !a.buildInfo.DevMode && source == cfg.UpdateCheckSource &&
-		(updateResult{version: cfg.LatestUpdateVersion}).available(a.buildInfo.Version)
-}
-
-func (a *App) checkForUpdate(ctx context.Context) (updateResult, error) {
-	if a.buildInfo.Version == "" {
-		return updateResult{}, fmt.Errorf("app version is not set")
-	}
-	if a.buildInfo.DevMode {
-		return updateResult{}, ErrDevBuild
-	}
-
-	checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-
-	releaseURL, err := a.releaseURL()
+	latest, err := a.ReleaseSource.GetLatestVersion(checkCtx, source)
 	if err != nil {
-		return updateResult{}, err
+		return err
 	}
-	latest, err := a.ReleaseSource.GetLatestVersion(checkCtx, releaseURL)
+	_, err = config.Update(a.DB, func(cfg *types.Configuration) error {
+		cfg.UpdateCheckSource = source
+		cfg.LatestUpdateVersion = latest
+		cfg.LastUpdateCheck = time.Now()
+		return nil
+	})
 	if err != nil {
-		return updateResult{}, err
+		return fmt.Errorf("record update check: %w", err)
 	}
+	a.Log.Debugf("Update check: latest %s, running %s", latest, a.buildInfo.Version)
+	return nil
+}
 
-	updateAvailable := semver.Compare(latest, a.buildInfo.Version) > 0
-	a.Log.Debugf("Latest version: %s, Current version: %s, Update available: %t",
-		latest, a.buildInfo.Version, updateAvailable)
-	return updateResult{source: releaseURL, version: latest}, nil
+// RunUpdateChecker checks once a day while background checks are enabled.
+// Preferences are reread every hour, so turning checks off takes effect
+// without a restart. It never installs anything.
+func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
+	ready()
+	if a.DevMode() || a.Instance.ReleaseURL == "" {
+		<-ctx.Done()
+		return nil
+	}
+	for {
+		delay := time.Hour
+		cfg, err := config.View(a.DB)
+		if err != nil {
+			a.Log.Errorf("read update preferences: %v", err)
+		} else if cfg.BackgroundUpdateChecks {
+			due := cfg.UpdateCheckSource != a.Instance.ReleaseURL ||
+				time.Since(cfg.LastUpdateCheck) >= UpdateCheckInterval
+			if due {
+				if err := a.CheckForUpdate(ctx); err != nil && ctx.Err() == nil {
+					a.Log.Warnf("update check failed: %v", err)
+				}
+			} else if until := time.Until(cfg.LastUpdateCheck.Add(UpdateCheckInterval)); until < delay {
+				delay = max(until, time.Minute)
+			}
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+	}
 }

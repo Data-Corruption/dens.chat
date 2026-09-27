@@ -10,14 +10,14 @@
 # Dev (default):
 #   ./scripts/build.sh
 #     Build frontend assets and a DevMode binary for the current host. DevMode
-#     bypasses HTTP auth, uses an isolated storage root (~/.APP_NAME-dev), and
-#     forces debug logging. Doesn't run tests. Never use
-#     as a release build.
+#     runs a development instance: storage under ~/.local/share/APP_NAME-dev
+#     (or %LOCALAPPDATA%\\APP_NAME-dev), no service manager, debug logging.
+#     Doesn't run tests. Never use as a release build.
 #
 # Production (host):
 #   ./scripts/build.sh --prod
-#     Run ./scripts/test.sh, then build a production binary (normal storage
-#     dirs, auth on) for the current host.
+#     Run ./scripts/test.sh, then build a production binary for the current
+#     host.
 #
 # Production (all targets):
 #   ./scripts/build.sh --prod-all
@@ -29,7 +29,6 @@
 # Mirrors: there is no build mode for mirrors. Signed release artifacts are
 # portable - copy the release bucket byte-for-byte and install with
 # APP_RELEASE_URL pointing at the copy; all cosign signatures stay valid.
-# See docs/content/docs/getting-started/mirror.md.
 #
 # Dependencies: go, gcc (only when tests run: go test -race needs cgo), and
 # curl. The build is pure Go (no cgo), so Linux release binaries are fully
@@ -44,8 +43,6 @@
 set -euo pipefail
 umask 022
 export LC_ALL=C
-SERVICE_DESC=""          # fallback for after cut
-SERVICE_DEFAULT_PORT="0" # fallback for after cut
 
 # Project config --------------------------------------------------------------
 #
@@ -57,9 +54,6 @@ APP_NAME="dens"
 RELEASE_URL="https://releases.dens.chat/"
 CONTACT_URL="https://github.com/Data-Corruption/dens.chat"
 DEFAULT_LOG_LEVEL="warn"
-
-SERVICE_DESC="Self-hosted chat app with text, voice and screen share"
-SERVICE_DEFAULT_PORT="8484"
 
 # Pinned build inputs ---------------------------------------------------------
 #
@@ -88,17 +82,8 @@ HOST_GOARCH=""
 BUILD_OUTS=()
 VERSION_DIR=""
 
-# Template wiring -------------------------------------------------------------
+# Release signing -------------------------------------------------------------
 #
-# These values connect feature cuts, generated service commands, and release
-# verification. They are not normal project configuration; changing them means
-# changing the build/runtime contract.
-
-SERVICE_ENABLED="false"
-SERVICE_ARGS=""
-SERVICE_ENABLED="true"
-SERVICE_ARGS="service run"
-
 # cosign keyless identity: only releases signed by this exact workflow on main
 # verify. The subject includes the repository, so it is unforgeable without push
 # access. ci.sh derives CERT_IDENTITY for release binaries and installers.

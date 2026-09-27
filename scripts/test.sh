@@ -7,6 +7,7 @@
 #   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
+#   ./scripts/test.sh -windows                     # Go tests on the Windows host (WSL only)
 #   ./scripts/test.sh -all                         # every available suite
 #
 # Lifecycle options are forwarded to test-lifecycle-e2e.sh, for example:
@@ -27,6 +28,7 @@ EOF
   cat <<'EOF'
   -release  Test the release publication state machine
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
+  -windows  From WSL, run the Go tests natively on the Windows host
   -all      Run every available suite
 EOF
 }
@@ -52,14 +54,52 @@ run_go_tests() {
     exit 1
   }
 
+  ensure_ui_placeholders
+  go test -race ./...
+}
+
+ensure_ui_placeholders() {
   # Generated frontend outputs are gitignored. Empty compile-only placeholders
   # keep ordinary Go tests independent of the frontend toolchain.
   [[ -f internal/ui/assets/css/output.css ]] || : > internal/ui/assets/css/output.css
   [[ -f internal/ui/assets/js/output.js ]] || : > internal/ui/assets/js/output.js
   [[ -f internal/ui/assets/manifest.json ]] ||
     printf '{"css/output.css":"test","js/output.js":"test"}' > internal/ui/assets/manifest.json
+}
 
-  go test -race ./...
+# run_windows_tests cross-compiles every package's tests and runs them on
+# the Windows host through WSL interop, as the desktop user. The cmd package
+# checks the source tree and scripts, which only exist on the Linux side, so
+# it stays with the Linux suite.
+run_windows_tests() {
+  command -v powershell.exe >/dev/null 2>&1 || {
+    printf "error: -windows needs WSL with Windows interop\n" >&2
+    exit 1
+  }
+  ensure_ui_placeholders
+  local win_temp work pkg name failed=0
+  win_temp=$(powershell.exe -NoProfile -NonInteractive -Command '[IO.Path]::GetTempPath()' | tr -d '\r')
+  work=$(wslpath -u "${win_temp}dens-go-tests")
+  rm -rf "$work"
+  mkdir -p "$work"
+  for pkg in $(go list ./... | grep -v '/cmd$'); do
+    name=$(printf '%s' "${pkg#"$(go list -m)"/}" | tr '/' '_')
+    GOOS=windows go test -c -o "$work/$name.test.exe" "$pkg"
+  done
+  for test_exe in "$work"/*.test.exe; do
+    [[ -e "$test_exe" ]] || continue
+    # The command registry test reads its package source, which the Windows
+    # side can't see.
+    if (cd "$work" && timeout 600 "$test_exe" -test.count=1 -test.skip TestAllCommandConstructorsAreListed >"$test_exe.log" 2>&1); then
+      printf 'ok    %s\n' "$(basename "$test_exe" .test.exe)"
+    else
+      printf 'FAIL  %s\n' "$(basename "$test_exe" .test.exe)"
+      tail -n 20 "$test_exe.log"
+      failed=1
+    fi
+  done
+  rm -rf "$work"
+  return "$failed"
 }
 
 # Entry points only; -x follows the build and CI libraries through `source` so the
@@ -111,6 +151,10 @@ case "$mode" in
     ;;
   -e2e)
     run_lifecycle_e2e "$@"
+    ;;
+  -windows)
+    require_no_args "-windows" "$@"
+    run_windows_tests
     ;;
   -all)
     require_no_args "-all" "$@"

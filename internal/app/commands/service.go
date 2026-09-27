@@ -4,318 +4,124 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
-	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
-	"github.com/Data-Corruption/dens.chat/internal/platform/http/router"
-	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
-	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/service"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
-	"github.com/Data-Corruption/dens.chat/pkg/sdnotify"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/urfave/cli/v3"
 )
 
-const serviceControlTimeout = 45 * time.Second
+const serviceStopTimeout = 20 * time.Second
 
-var (
-	runWorkerComponent = runWorker
-	runHTTPComponent   = server.Serve
-)
-
-func serviceCommand(a *app.App) *cli.Command {
-	if !a.BuildInfo().ServiceEnabled {
-		return nil
+func serviceCommand(bi build.BuildInfo) *cli.Command {
+	control := func(name, usage string, run func(l layout.Layout) error) *cli.Command {
+		return &cli.Command{
+			Name:  name,
+			Usage: usage,
+			Action: func(ctx context.Context, cmd *cli.Command) error {
+				l, err := layout.New(bi.Name, cmd.String("instance"), bi.DevMode)
+				if err != nil {
+					return err
+				}
+				if l.Dev {
+					return fmt.Errorf("development instances have no service manager; run %s service run in a terminal", bi.Name)
+				}
+				return run(l)
+			},
+		}
 	}
-	var serviceConfig *types.Configuration
-	var portOverride int
 	return &cli.Command{
 		Name:  "service",
-		Usage: "service management commands",
-		Before: func(ctx context.Context, _ *cli.Command) (context.Context, error) {
-			cfg, err := serviceRunConfiguration(a, portOverride)
-			if err != nil {
-				return ctx, err
-			}
-			serviceConfig = cfg
-			a.BaseURL = bindToBaseURL(cfg.UIBind, a.BuildInfo().ServiceDefaultPort)
-			a.Log.Debugf("Base URL: %s", a.BaseURL)
-			return ctx, nil
-		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if a.BuildInfo().Name == "" || a.Layout.Storage == "" {
-				return fmt.Errorf("app name or storage path not found")
-			}
-			printServiceHelp(a)
-			return nil
-		},
+		Usage: "control the background service",
 		Commands: []*cli.Command{
-			(serviceCommandBuilder{a: a}).control("start", "start the managed service"),
-			(serviceCommandBuilder{a: a}).control("stop", "stop the managed service"),
-			(serviceCommandBuilder{a: a}).control("restart", "restart the managed service"),
-			(serviceCommandBuilder{a: a}).control("status", "show managed service status"),
 			{
-				Name:        "run",
-				Hidden:      true,
-				Description: "Runs service in foreground. Typically called by systemd. If you need to run it manually/unmanaged, use this command.",
+				Name:   "run",
+				Hidden: true,
+				Usage:  "run the service in the foreground (the service manager does this)",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:        "port",
-						Aliases:     []string{"p"},
-						Usage:       "temporarily override the dashboard port for this run",
-						Destination: &portOverride,
-					},
+					&cli.StringFlag{Name: "log", Usage: "override the log level for this run (" + xlog.ValidLevels + ")"},
+					&cli.IntFlag{Name: "port", Usage: "client port of a new development instance"},
 				},
-				Action: func(ctx context.Context, cmd *cli.Command) (runErr error) {
-					serviceLock, err := a.AcquireServiceLock()
-					if err != nil {
-						return fmt.Errorf("cannot run service: %w", err)
-					}
-					defer func() {
-						runErr = errors.Join(runErr, serviceLock.Close())
-					}()
-
-					dashboardUI, err := ui.New()
-					if err != nil {
-						return fmt.Errorf("failed to load UI: %w", err)
-					}
-					a.UI = dashboardUI
-
-					mux := router.New(a)
-					httpReady := make(chan struct{}, 1)
-					if err := server.New(ctx, a, serviceConfig, mux, func() { httpReady <- struct{}{} }); err != nil {
-						return fmt.Errorf("failed to create server: %w", err)
-					}
-					if a.ProxyServer != nil {
-						a.Log.Infof("Proxy listener on %s", a.ProxyServer.Addr())
-					}
-
-					return runService(ctx, a,
-						httpReady,
-					)
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					return runService(ctx, bi, cmd)
 				},
 			},
-		},
-	}
-}
-
-type serviceCommandBuilder struct {
-	a *app.App
-}
-
-func (b serviceCommandBuilder) control(action, usage string) *cli.Command {
-	return &cli.Command{
-		Name:  action,
-		Usage: usage,
-		Action: func(ctx context.Context, _ *cli.Command) error {
-			ctx, cancel := context.WithTimeout(ctx, serviceControlTimeout)
-			defer cancel()
-			output, err := controlService(ctx, b.a, action)
-			if output != "" {
-				fmt.Println(output)
-			}
-			return err
-		},
-	}
-}
-
-type componentResult struct {
-	name string
-	err  error
-}
-
-// component is one long-running part of the service. run must call ready once
-// its startup preflight is done and return promptly when ctx is cancelled.
-type component struct {
-	name string
-	run  func(ctx context.Context, ready func()) error
-}
-
-// componentGroup runs components concurrently and collects one readiness
-// signal and one result from each. Both channels are sized to the component
-// count and every component signals each at most once, so no send can block
-// after the collector has stopped listening.
-type componentGroup struct {
-	ctx       context.Context
-	readyCh   chan struct{}
-	resultCh  chan componentResult
-	count     int
-	completed int
-}
-
-func startComponents(ctx context.Context, components []component) *componentGroup {
-	g := &componentGroup{
-		ctx:      ctx,
-		readyCh:  make(chan struct{}, len(components)),
-		resultCh: make(chan componentResult, len(components)),
-		count:    len(components),
-	}
-	for _, c := range components {
-		go func() {
-			var readyOnce sync.Once
-			ready := func() {
-				readyOnce.Do(func() { g.readyCh <- struct{}{} })
-			}
-			g.resultCh <- componentResult{name: c.name, err: c.run(ctx, ready)}
-		}()
-	}
-	return g
-}
-
-// awaitReadiness returns once every component has signalled ready, the
-// service context is cancelled, or a component ended first. A result seen
-// here is judged by unexpectedComponentError; a nil return with a cancelled
-// context means the service stopped before readiness could be published.
-func (g *componentGroup) awaitReadiness() error {
-	for ready := 0; ready < g.count; {
-		select {
-		case <-g.ctx.Done():
-			return nil
-		case <-g.readyCh:
-			ready++
-		case result := <-g.resultCh:
-			g.completed++
-			return unexpectedComponentError(g.ctx, result)
-		}
-	}
-	// A component may have stopped in the same instant its last peer became
-	// ready; do not publish readiness over a result that is already waiting.
-	select {
-	case result := <-g.resultCh:
-		g.completed++
-		return unexpectedComponentError(g.ctx, result)
-	default:
-		return nil
-	}
-}
-
-// waitForStop blocks until the service is cancelled or a component ends.
-func (g *componentGroup) waitForStop() error {
-	select {
-	case <-g.ctx.Done():
-		return nil
-	case result := <-g.resultCh:
-		g.completed++
-		return unexpectedComponentError(g.ctx, result)
-	}
-}
-
-// drain waits for every remaining component to return after cancellation and
-// joins any failure that is not the cancellation itself.
-func (g *componentGroup) drain(joined error) error {
-	for g.completed < g.count {
-		result := <-g.resultCh
-		g.completed++
-		if result.err != nil && !errors.Is(result.err, context.Canceled) {
-			joined = errors.Join(joined, fmt.Errorf("%s stopped: %w", result.name, result.err))
-		}
-	}
-	return joined
-}
-
-func runService(
-	ctx context.Context,
-	a *app.App,
-	httpReady <-chan struct{},
-) error {
-	serviceCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	components := []component{
-		{name: "worker", run: func(ctx context.Context, ready func()) error {
-			return runWorkerComponent(ctx, a, ready)
-		}},
-		{name: "service stop watcher", run: func(ctx context.Context, ready func()) error {
-			return a.RunServiceStopWatcher(ctx, cancel, ready)
-		}},
-		{name: "update checker", run: a.RunUpdateChecker},
-		{name: "dashboard", run: func(ctx context.Context, ready func()) error {
-			go func() {
-				select {
-				case <-ctx.Done():
-				case <-httpReady:
-					ready()
+			control("start", "start the service", func(l layout.Layout) error {
+				if err := host.ServiceStart(l.ServiceName); err != nil {
+					return err
 				}
-			}()
-			return runHTTPComponent(ctx, a)
-		}},
+				fmt.Println("Started", l.ServiceName)
+				return nil
+			}),
+			control("stop", "stop the service", func(l layout.Layout) error {
+				if err := host.ServiceStop(l.ServiceName, serviceStopTimeout); err != nil {
+					return err
+				}
+				fmt.Println("Stopped", l.ServiceName)
+				return nil
+			}),
+			control("restart", "restart the service", func(l layout.Layout) error {
+				if err := host.ServiceStop(l.ServiceName, serviceStopTimeout); err != nil {
+					return err
+				}
+				if err := host.ServiceStart(l.ServiceName); err != nil {
+					return err
+				}
+				fmt.Println("Restarted", l.ServiceName)
+				return nil
+			}),
+			control("status", "show whether the service is running", func(l layout.Layout) error {
+				state, err := host.ServiceStatus(l.ServiceName)
+				if errors.Is(err, host.ErrServiceNotInstalled) {
+					fmt.Printf("%s is not installed\n", l.ServiceName)
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if state.Running {
+					fmt.Printf("%s is running (process %d)\n", l.ServiceName, state.PID)
+				} else {
+					fmt.Printf("%s is stopped (last exit code %d)\n", l.ServiceName, state.ExitCode)
+				}
+				return nil
+			}),
+		},
 	}
-	group := startComponents(serviceCtx, components)
-
-	joined := group.awaitReadiness()
-	// Do not publish service readiness if a component stopped or cancelled the
-	// service while readiness notifications were being collected.
-	if joined == nil && serviceCtx.Err() == nil {
-		joined = publishServiceReady(a)
-		if joined == nil {
-			joined = group.waitForStop()
-		}
-	}
-
-	if err := sdnotify.Stopping("Shutting down"); err != nil {
-		a.Log.Debugf("sd_notify STOPPING failed: %v", err)
-	}
-	cancel()
-	joined = group.drain(joined)
-	if joined == nil {
-		a.Log.Info("Service stopped gracefully")
-		fmt.Println("service stopped gracefully")
-	}
-	return joined
 }
 
-func publishServiceReady(a *app.App) error {
-	if _, err := config.Update(a.DB, func(cfg *types.Configuration) error {
-		cfg.StartCounter++
-		return nil
-	}); err != nil {
-		return fmt.Errorf("record service readiness: %w", err)
-	}
-	if err := sdnotify.Ready("Service ready"); err != nil {
-		a.Log.Warnf("sd_notify READY failed: %v", err)
-	}
-	a.Log.Info("Service ready")
-	return nil
-}
-
-func unexpectedComponentError(ctx context.Context, result componentResult) error {
-	if result.err != nil {
-		if errors.Is(result.err, context.Canceled) && ctx.Err() != nil {
-			return nil
-		}
-		return fmt.Errorf("%s stopped: %w", result.name, result.err)
-	}
-	if ctx.Err() == nil {
-		return fmt.Errorf("%s stopped unexpectedly", result.name)
-	}
-	return nil
-}
-
-func serviceRunConfiguration(a *app.App, portOverride int) (*types.Configuration, error) {
-	cfg, err := config.View(a.DB)
+// runService hosts the service under the platform's service manager first,
+// so that even a refused start is reported to it properly, then opens the
+// installation and runs.
+func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) error {
+	l, err := layout.New(bi.Name, cmd.String("instance"), bi.DevMode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service configuration: %w", err)
+		return fmt.Errorf("%w: %w", host.ErrRefused, err)
 	}
-	if portOverride != 0 {
-		cfg.UIBind, err = bindWithPort(cfg.UIBind, portOverride, "")
-		if err != nil {
-			return nil, fmt.Errorf("failed to override service port: %w", err)
+	return host.RunService(ctx, l.ServiceName, func(ctx context.Context, ready func()) error {
+		a := app.New(bi)
+		defer a.Close()
+		if err := a.Open(app.OpenOptions{
+			Instance:      l.Instance,
+			LogLevel:      cmd.String("log"),
+			DevClientPort: cmd.Int("port"),
+		}); err != nil {
+			return err
 		}
-	}
-	return cfg, nil
-}
-
-// bindToBaseURL converts a listen bind like ":8484" or "0.0.0.0:8484" into a
-// human-facing dashboard URL ("https://localhost:8484"). The dashboard always
-// serves self-signed HTTPS on this bind.
-func bindToBaseURL(bind string, defaultPort int) string {
-	port := strconv.Itoa(defaultPort)
-	if i := strings.LastIndex(bind, ":"); i >= 0 && i+1 < len(bind) {
-		port = bind[i+1:]
-	}
-	return fmt.Sprintf("https://localhost:%s", port)
+		pages, err := ui.New()
+		if err != nil {
+			return fmt.Errorf("%w: load pages: %w", host.ErrRefused, err)
+		}
+		a.UI = pages
+		if l.Dev {
+			fmt.Printf("Development instance %s: http://127.0.0.1:%d (pair with: %s open)\n", l.Instance, a.Instance.ClientPort, bi.Name)
+		}
+		return service.Run(ctx, a, ready)
+	})
 }
