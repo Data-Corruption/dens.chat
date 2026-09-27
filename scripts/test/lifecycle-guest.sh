@@ -161,6 +161,12 @@ phase_after_reboot() {
     curl -sS --fail http://127.0.0.1:8485/healthz >/dev/null || fail "the den listener doesn't answer"
 
     step "restore a backup into the second instance"
+    # A browser paired before the restore must pair again after it.
+    second=http://127.0.0.1:18484
+    url=$(as_alice dens open --print --instance second)
+    curl -sS --fail-with-body -c /root/cookies-second -H "Origin: $second" -H "Content-Type: application/json" \
+        -d "{\"token\":\"${url#*#token=}\"}" "$second/api/pair" >/dev/null
+    curl -sS --fail -b /root/cookies-second "$second/api/status" >/dev/null || fail "pairing the second instance failed"
     backup=/root/alice.backup
     if [ -f /root/previous.backup ]; then
         # The previous distro's backup: a restore on another machine.
@@ -172,6 +178,9 @@ phase_after_reboot() {
     printf '%s\n' "$PASSWORD" | dens restore "$backup" --instance second --password-stdin --yes
     expect_state second "$version"
     as_alice dens status --instance second | grep -q "password:  set" || fail "the restored instance has no password"
+    if curl -sS --fail -b /root/cookies-second "$second/api/status" >/dev/null 2>&1; then
+        fail "a browser paired before the restore is still paired"
+    fi
 
     step "uninstall both instances"
     dens uninstall --instance second --yes

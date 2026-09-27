@@ -22,6 +22,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/pairing"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
@@ -178,6 +179,14 @@ func (a *App) open(opts OpenOptions) error {
 	})
 	if err := a.checkVault(lease.Mode); err != nil {
 		return err
+	}
+	if lease.State.Phase == maintenance.PhaseRestoring {
+		// Pairing belongs to a machine's browsers, not to the data: a
+		// restored backup starts with none paired.
+		if err := clientsessions.DeleteAll(context.Background(), a.DB); err != nil {
+			return err
+		}
+		a.Log.Info("Cleared the browser sessions of the restored backup")
 	}
 
 	cfg, err := config.View(a.DB)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/backup"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
@@ -151,7 +152,11 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 	if err := os.RemoveAll(old); err != nil {
 		p.printf("Couldn't remove the replaced data at %s: %v", old, err)
 	}
-	p.printf("Restored instance %s. Browsers paired with the backed-up install are paired here too; run dens open to pair this one.", target.Instance)
+	openCmd := bi.Name + " open"
+	if target.Instance != layout.DefaultInstance {
+		openCmd += " --instance " + target.Instance
+	}
+	p.printf("Restored instance %s. Browsers don't carry over; pair one with: %s", target.Instance, openCmd)
 	return nil
 }
 

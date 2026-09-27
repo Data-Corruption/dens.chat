@@ -119,6 +119,7 @@ run_shell_lint() {
     scripts/test-release.sh
     scripts/test-lifecycle-e2e.sh
     scripts/test/lifecycle-guest.sh
+    scripts/test/fixture-releases.sh
     scripts/install.sh
   )
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"

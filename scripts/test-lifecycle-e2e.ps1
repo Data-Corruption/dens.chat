@@ -328,12 +328,27 @@ try {
     if ((Get-MediaRules).Count -ne 2) { Fail "want two media firewall rules for the den" }
 
     Step "restore a backup into the second instance"
+    # A browser paired before the restore must pair again after it.
+    $secondUrl = "http://127.0.0.1:18484"
+    $secondSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
+    Invoke-WebRequest -Uri "$secondUrl/api/pair" -Method POST -WebSession $secondSession -UseBasicParsing `
+        -Headers @{ Origin = $secondUrl } -ContentType "application/json" `
+        -Body (@{ token = ($pairing -split "#token=")[-1] } | ConvertTo-Json -Compress) | Out-Null
+    Invoke-WebRequest -Uri "$secondUrl/api/status" -WebSession $secondSession -UseBasicParsing | Out-Null
     $wrong = Invoke-Dens @("restore", $ownBackup, "--instance", "second", "--password-stdin", "--yes") -Stdin "wrong wrong wrong" -AllowFailure
     if ($wrong.Code -eq 0) { Fail "restore accepted the wrong password" }
     Invoke-Dens @("restore", $ownBackup, "--instance", "second", "--password-stdin", "--yes") -Stdin $Password | Out-Null
     Assert-State "second" $V2
     Wait-Status "second"
     Assert-Status "second" "password:\s+set"
+    $stillPaired = $true
+    try {
+        Invoke-WebRequest -Uri "$secondUrl/api/status" -WebSession $secondSession -UseBasicParsing | Out-Null
+    } catch {
+        $stillPaired = $false
+    }
+    if ($stillPaired) { Fail "a browser paired before the restore is still paired" }
     if ($Backup) {
         Step "restore the backup made elsewhere"
         $foreign = (Resolve-Path -LiteralPath $Backup).ProviderPath
