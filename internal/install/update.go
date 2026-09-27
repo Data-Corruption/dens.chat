@@ -16,6 +16,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
+	"github.com/Data-Corruption/dens.chat/internal/platform/release"
 )
 
 // SkipVerifyEnv skips cosign verification of the installer, for testing
@@ -124,12 +125,7 @@ func download(ctx context.Context, rawURL, dest string) error {
 	var body io.ReadCloser
 	switch u.Scheme {
 	case "file":
-		path := u.Path
-		// file:///C:/dir parses to /C:/dir; drop the slash before a drive letter.
-		if len(path) > 2 && path[0] == '/' && path[2] == ':' {
-			path = path[1:]
-		}
-		if body, err = os.Open(filepath.FromSlash(path)); err != nil {
+		if body, err = os.Open(release.LocalPath(u)); err != nil {
 			return err
 		}
 	case "https":

@@ -15,6 +15,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -33,7 +35,8 @@ type ReleaseSource interface {
 	GetLatestVersion(ctx context.Context, releaseURL string) (string, error)
 }
 
-// GenericReleaseSource reads the root version pointer over HTTP or HTTPS.
+// GenericReleaseSource reads the root version pointer over HTTP or HTTPS,
+// or from a local release at a file:// URL, which tests install from.
 //
 // It has no timeout of its own. Callers bound each check with their context,
 // and a second, hidden deadline here would only make the effective limit
@@ -50,17 +53,37 @@ type GenericReleaseSource struct {
 	Client *http.Client
 }
 
-// GetLatestVersion fetches `<releaseURL>/version` and returns its trimmed,
+// GetLatestVersion reads `<releaseURL>/version` and returns its trimmed,
 // validated SemVer content.
 func (s *GenericReleaseSource) GetLatestVersion(ctx context.Context, releaseURL string) (string, error) {
 	target, err := versionURL(releaseURL)
 	if err != nil {
 		return "", err
 	}
+	var body []byte
+	if target.Scheme == "file" {
+		body, err = readVersionFile(LocalPath(target))
+	} else {
+		body, err = s.fetch(ctx, target.String())
+	}
+	if err != nil {
+		return "", err
+	}
 
+	version := strings.TrimSpace(string(body))
+	switch {
+	case version == "":
+		return "", fmt.Errorf("version pointer is empty")
+	case !semver.IsValid(version):
+		return "", fmt.Errorf("version pointer %q is not a valid semantic version", version)
+	}
+	return version, nil
+}
+
+func (s *GenericReleaseSource) fetch(ctx context.Context, target string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return "", fmt.Errorf("build version request: %w", err)
+		return nil, fmt.Errorf("build version request: %w", err)
 	}
 	if s.UserAgent != "" {
 		req.Header.Set("User-Agent", s.UserAgent)
@@ -76,50 +99,70 @@ func (s *GenericReleaseSource) GetLatestVersion(ctx context.Context, releaseURL 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetch %s: %w", target, err)
+		return nil, fmt.Errorf("fetch %s: %w", target, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("fetch %s: unexpected status %s", target, resp.Status)
+		return nil, fmt.Errorf("fetch %s: unexpected status %s", target, resp.Status)
 	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxVersionResponseBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("read version pointer: %w", err)
-	}
-	if len(body) > maxVersionResponseBytes {
-		return "", fmt.Errorf("version pointer exceeds %d bytes", maxVersionResponseBytes)
-	}
-
-	version := strings.TrimSpace(string(body))
-	switch {
-	case version == "":
-		return "", fmt.Errorf("version pointer is empty")
-	case !semver.IsValid(version):
-		return "", fmt.Errorf("version pointer %q is not a valid semantic version", version)
-	}
-	return version, nil
+	return readPointer(resp.Body)
 }
 
-// versionURL joins the root pointer name onto a validated release URL.
-// Only http and https are meaningful for a release host; a file or custom
-// scheme reaching this point is a configuration error worth surfacing rather
-// than something to try anyway.
-func versionURL(releaseURL string) (string, error) {
+func readVersionFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read version pointer: %w", err)
+	}
+	defer file.Close()
+	return readPointer(file)
+}
+
+func readPointer(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, maxVersionResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read version pointer: %w", err)
+	}
+	if len(body) > maxVersionResponseBytes {
+		return nil, fmt.Errorf("version pointer exceeds %d bytes", maxVersionResponseBytes)
+	}
+	return body, nil
+}
+
+// LocalPath returns the local file path a file:// URL names. On Windows,
+// file:///C:/dir parses to the path /C:/dir; the slash before the drive
+// letter goes.
+func LocalPath(u *url.URL) string {
+	path := u.Path
+	if len(path) > 2 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return filepath.FromSlash(path)
+}
+
+// versionURL joins the root pointer name onto a validated release URL: an
+// http or https host, or a local file:// release. Any other scheme is a
+// configuration error worth surfacing rather than something to try anyway.
+func versionURL(releaseURL string) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(releaseURL))
 	if err != nil {
-		return "", fmt.Errorf("%w %q: %w", ErrInvalidReleaseURL, releaseURL, err)
+		return nil, fmt.Errorf("%w %q: %w", ErrInvalidReleaseURL, releaseURL, err)
 	}
-	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return "", fmt.Errorf("%w %q: scheme must be http or https", ErrInvalidReleaseURL, releaseURL)
-	}
-	if parsed.Host == "" {
-		return "", fmt.Errorf("%w %q: missing host", ErrInvalidReleaseURL, releaseURL)
+	switch parsed.Scheme {
+	case "https", "http":
+		if parsed.Host == "" {
+			return nil, fmt.Errorf("%w %q: missing host", ErrInvalidReleaseURL, releaseURL)
+		}
+	case "file":
+		if parsed.Host != "" || parsed.Path == "" {
+			return nil, fmt.Errorf("%w %q: want file:///path/", ErrInvalidReleaseURL, releaseURL)
+		}
+	default:
+		return nil, fmt.Errorf("%w %q: scheme must be https, http or file", ErrInvalidReleaseURL, releaseURL)
 	}
 	parsed.Path = strings.TrimSuffix(parsed.Path, "/") + "/version"
 	parsed.RawPath = ""
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
-	return parsed.String(), nil
+	return parsed, nil
 }
