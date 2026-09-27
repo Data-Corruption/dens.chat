@@ -43,7 +43,8 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
-| `docs/dev/` | Internal docs: the design, the lifecycle and the release process |
+| `spikes/` | Throwaway experiments for the current milestone, in their own Go module; removed when it lands |
+| `docs/dev/` | Internal docs: the design, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
 
 ## Documents of record
@@ -54,6 +55,8 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): paths, lifecycle state,
   locks, maintenance transactions, development instances, and the lifecycle
   e2e harnesses.
+- [docs/dev/protocol.md](docs/dev/protocol.md): the client-to-den protocol:
+  authentication, the WebSocket, events, history and limits.
 - [docs/dev/release.md](docs/dev/release.md): publication order, resume,
   retention, signing identity.
 - `docs/content/`: public docs for people using Dens.
