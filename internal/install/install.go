@@ -18,6 +18,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
 	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 
 	"golang.org/x/mod/semver"
@@ -468,7 +469,7 @@ func checkPorts(cfg instance.Config, previous *instance.Config, running bool) er
 	if previous != nil {
 		old = *previous
 	}
-	ports = append(ports, port{"tcp4", "127.0.0.1", cfg.ClientPort, old.ClientPort})
+	ports = append(ports, port{"loopback", "", cfg.ClientPort, old.ClientPort})
 	if cfg.Den.Enabled {
 		oldDen := old.Den
 		if !oldDen.Enabled {
@@ -486,12 +487,21 @@ func checkPorts(cfg instance.Config, previous *instance.Config, running bool) er
 		}
 		address := net.JoinHostPort(p.addr, strconv.Itoa(p.value))
 		var err error
-		if p.network == "udp" {
+		switch p.network {
+		case "loopback":
+			// The client listener binds both loopbacks; check the same way.
+			var lns []net.Listener
+			if lns, err = server.ListenLoopback(p.value); err == nil {
+				for _, ln := range lns {
+					_ = ln.Close()
+				}
+			}
+		case "udp":
 			var conn net.PacketConn
 			if conn, err = net.ListenPacket("udp", address); err == nil {
 				_ = conn.Close()
 			}
-		} else {
+		default:
 			var ln net.Listener
 			if ln, err = net.Listen(p.network, address); err == nil {
 				_ = ln.Close()
