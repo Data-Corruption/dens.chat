@@ -92,6 +92,9 @@ func readPassword(fromStdin bool, label string) (string, error) {
 		if err != nil && line == "" {
 			return "", fmt.Errorf("read password from standard input: %w", err)
 		}
+		// Windows PowerShell 5.1 starts text it pipes to a program with a
+		// byte order mark when $OutputEncoding is UTF-8, as many profiles set.
+		line = strings.TrimPrefix(line, "\ufeff")
 		return strings.TrimRight(line, "\r\n"), nil
 	}
 	return prompt.Secret(label)
