@@ -11,6 +11,7 @@ on:
     branches: [ main ]
     paths:
       - 'docs/**'
+      - '!docs/dev/**'
       - 'scripts/vendor.sh'
       - 'scripts/build/common.sh'
       - '.github/workflows/docs.yml'

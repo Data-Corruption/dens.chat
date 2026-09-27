@@ -3,7 +3,7 @@
 // Before deploying a fork, set name to your own worker name and set baseURL
 // in hugo.yaml to its public HTTPS URL. See DEPLOYMENT.md for setup steps.
 {
-	"name": "sprout-docs",
+	"name": "dens-site",
 	"compatibility_date": "2026-07-01",
 	"assets": {
 		"directory": "./out",

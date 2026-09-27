@@ -92,7 +92,7 @@ VERSION_DIR=""
 #
 # These values connect feature cuts, generated service commands, and release
 # verification. They are not normal project configuration; changing them means
-# changing Sprout's build/runtime contract.
+# changing the build/runtime contract.
 
 SERVICE_ENABLED="false"
 SERVICE_ARGS=""

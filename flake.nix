@@ -5,7 +5,7 @@
   #
   #   nix develop
   #   ./scripts/build.sh
-  description = "Sprout dev shell";
+  description = "Dens dev shell";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

@@ -1,4 +1,4 @@
-module github.com/Data-Corruption/Sprout/docs
+module github.com/Data-Corruption/dens.chat/docs
 
 go 1.26.7
 

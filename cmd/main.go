@@ -42,7 +42,7 @@ func runMain() int {
 	rootCommand := &cli.Command{
 		Name:    application.BuildInfo().Name,
 		Version: application.BuildInfo().Version,
-		Usage:   "Sprout is a template for building Go services / cli apps.",
+		Usage:   "Self-hosted chat with text, voice and screen share.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "log",
