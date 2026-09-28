@@ -169,6 +169,15 @@ func TestMentions(t *testing.T) {
 		"`@alice` in code, @bob outside":              "bob",
 		"```\n@alice in a block\n```\n@carol":         "carol",
 		"@@alice (@dave) @" + strings.Repeat("e", 33): "dave",
+		"**@alice** ~~@bob~~ ||@carol||":              "alice bob carol",
+		"_@alice_ and x@bob":                          "",
+		"https://mastodon.social/@alice says @bob":    "bob",
+		"(https://x.com/@a_b)@carol":                  "",
+		"http:// @alice":                              "alice",
+		"https://x.com/\u00a0@alice":                  "alice",
+		"a lone ` backtick, @alice":                   "alice",
+		"``@alice`` and `` @bob":                      "bob",
+		"> @alice in a quote":                         "alice",
 	} {
 		if got := strings.Join(Mentions(text), " "); got != want {
 			t.Errorf("Mentions(%q) = %q, want %q", text, got, want)

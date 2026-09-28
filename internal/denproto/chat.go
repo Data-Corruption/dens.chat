@@ -228,10 +228,11 @@ func CheckMessage(m Message) error {
 }
 
 // Mentions returns the usernames a text mentions, lowercased and without
-// repeats. The rule is shared with the page's renderer: "@" at the start or
-// after a character that can't be part of a name, then 2 to 32 letters,
-// digits or _, then anything else. Mentions inside code (between backticks,
-// or in a ``` block) don't count.
+// repeats. The page's renderer highlights exactly these: "@" at the start
+// of a line or after a character that is neither part of a name nor "@",
+// then 2 to 32 letters, digits or _, then anything else. Mentions in code
+// (a ``` block, or a span from a backtick to the next with something in
+// between) and in links don't count.
 func Mentions(text string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -244,31 +245,70 @@ func Mentions(text string) []string {
 		if inBlock {
 			continue
 		}
-		inCode := false
 		for i := 0; i < len(line); i++ {
-			c := line[i]
-			if c == '`' {
-				inCode = !inCode
-				continue
-			}
-			if inCode || c != '@' || (i > 0 && isNameByte(line[i-1])) || (i > 0 && line[i-1] == '@') {
-				continue
-			}
-			j := i + 1
-			for j < len(line) && isNameByte(line[j]) {
-				j++
-			}
-			if n := j - i - 1; n >= 2 && n <= 32 {
-				name := strings.ToLower(line[i+1 : j])
-				if !seen[name] {
-					seen[name] = true
-					out = append(out, name)
+			// Formatting marks like * and ~ aren't name characters, so
+			// "**@alice**" mentions alice, as the renderer shows it.
+			free := i == 0 || !isNameByte(line[i-1])
+			switch c := line[i]; {
+			case c == '`':
+				if end := strings.IndexByte(line[i+1:], '`'); end > 0 {
+					i += end + 1
 				}
+			case c == 'h' && free:
+				if n := linkLength(line[i:]); n > 0 {
+					i += n - 1
+				}
+			case c == '@' && free && (i == 0 || line[i-1] != '@'):
+				j := i + 1
+				for j < len(line) && isNameByte(line[j]) {
+					j++
+				}
+				if n := j - i - 1; n >= 2 && n <= 32 {
+					name := strings.ToLower(line[i+1 : j])
+					if !seen[name] {
+						seen[name] = true
+						out = append(out, name)
+					}
+				}
+				i = j - 1
 			}
-			i = j - 1
 		}
 	}
 	return out
+}
+
+// linkLength returns the length of the link s starts with, as the page's
+// renderer finds links: http:// or https://, then everything up to a space
+// or one of <>"'`. It returns 0 if s doesn't start with one.
+func linkLength(s string) int {
+	var rest string
+	switch {
+	case strings.HasPrefix(s, "https://"):
+		rest = s[len("https://"):]
+	case strings.HasPrefix(s, "http://"):
+		rest = s[len("http://"):]
+	default:
+		return 0
+	}
+	n := strings.IndexFunc(rest, endsLink)
+	if n < 0 {
+		n = len(rest)
+	}
+	if n == 0 {
+		return 0
+	}
+	return len(s) - len(rest) + n
+}
+
+// endsLink reports whether r ends a link: a space as JavaScript's \s
+// matches one, or one of <>"'`.
+func endsLink(r rune) bool {
+	switch r {
+	case '<', '>', '"', '\'', '`', '\t', '\n', '\v', '\f', '\r', ' ',
+		0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff:
+		return true
+	}
+	return r >= 0x2000 && r <= 0x200a
 }
 
 func isNameByte(c byte) bool {

@@ -89,8 +89,10 @@ const DELIMITERS = [
 ];
 
 // inline renders one line's inline syntax. Code spans are found first and
-// kept literal; everything else can nest.
-function inline(text, ctx, key) {
+// kept literal; everything else can nest. prev is the character before
+// text in its line, so links and mentions start where denproto.Mentions
+// says they do, nested or not.
+function inline(text, ctx, key, prev = '') {
     const out = [];
     let plain = '';
     let n = 0;
@@ -100,6 +102,7 @@ function inline(text, ctx, key) {
     };
     for (let i = 0; i < text.length;) {
         const c = text[i];
+        const before = i === 0 ? prev : text[i - 1];
         if (c === '`') {
             const end = text.indexOf('`', i + 1);
             if (end > i + 1) {
@@ -112,7 +115,7 @@ function inline(text, ctx, key) {
         if (c === 'h') {
             URL_RE.lastIndex = i;
             const m = URL_RE.exec(text);
-            if (m && (i === 0 || !NAME_CHAR.test(text[i - 1]))) {
+            if (m && !NAME_CHAR.test(before)) {
                 // Trailing punctuation usually ends the sentence, not the URL.
                 const url = m[0].replace(/[.,;:!?)\]]+$/, '');
                 flush();
@@ -129,7 +132,7 @@ function inline(text, ctx, key) {
                 continue;
             }
         }
-        if (c === '@' && (i === 0 || !NAME_CHAR.test(text[i - 1]) && text[i - 1] !== '@')) {
+        if (c === '@' && !NAME_CHAR.test(before) && before !== '@') {
             let j = i + 1;
             while (j < text.length && NAME_CHAR.test(text[j])) j++;
             const name = text.slice(i + 1, j);
@@ -155,7 +158,7 @@ function inline(text, ctx, key) {
             const end = findClose(text, d, i + d.length);
             if (end > i + d.length) {
                 flush();
-                out.push(make(inline(text.slice(i + d.length, end), ctx, `${key}-${n}`), `${key}-${n++}`, ctx));
+                out.push(make(inline(text.slice(i + d.length, end), ctx, `${key}-${n}`, d[d.length - 1]), `${key}-${n++}`, ctx));
                 i = end + d.length;
                 continue;
             }
