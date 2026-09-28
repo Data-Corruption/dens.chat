@@ -346,8 +346,12 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				default:
 				}
 			case denproto.EventFocus:
+				// Each focus looks its channels up, so it shares the member's
+				// budget for writes; one past it is dropped, and the next
+				// change or connection sends focus again.
 				var f denproto.Focus
-				if json.Unmarshal(e.D, &f) == nil && len(f.Channels) <= denproto.MaxFocus {
+				if json.Unmarshal(e.D, &f) == nil && len(f.Channels) <= denproto.MaxFocus &&
+					d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) == nil {
 					d.focus(ctx, sub, f.Channels)
 				}
 			case denproto.EventTyping:

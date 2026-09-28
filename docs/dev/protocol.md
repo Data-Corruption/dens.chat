@@ -342,7 +342,7 @@ A member is online while they have an open socket. `ready` carries `online`, a l
 [{"t": "typing", "d": {"channel_id": "12"}}]
 ```
 
-- `focus` names the channels the client is showing, at most 10; the den keeps those the member can see. It forgets them with each connection and each `ready`, so the client sends `focus` again after either.
+- `focus` names the channels the client is showing, at most 10; the den keeps those the member can see. It forgets them with each connection and each `ready`, so the client sends `focus` again after either. Focus counts toward the member's limit for other writes, and the den drops one past it.
 - `typing` counts only in a channel the connection focuses. The den passes it on as an ephemeral `typing {channel_id, member_id}` to the other connections focused there, at most once every 2 seconds per member and channel, dropping the rest.
 - Clients show a typing notice for about 6 seconds, and clear it when that member's message arrives.
 
