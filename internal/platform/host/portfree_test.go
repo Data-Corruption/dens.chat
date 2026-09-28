@@ -1,6 +1,7 @@
 package host
 
 import (
+	"errors"
 	"net"
 	"testing"
 )
@@ -32,5 +33,21 @@ func TestPortFreeSeesHeldPorts(t *testing.T) {
 	conn.Close()
 	if err := PortFree("udp", udpPort); err != nil {
 		t.Fatalf("UDP port %d after closing its socket: %v", udpPort, err)
+	}
+}
+
+func TestConnRefused(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	_, err = net.Dial("tcp", addr)
+	if err == nil || !ConnRefused(err) {
+		t.Fatalf("dial to a closed port: %v, ConnRefused=%v", err, ConnRefused(err))
+	}
+	if ConnRefused(errors.New("something else")) {
+		t.Fatal("an unrelated error counted as refused")
 	}
 }

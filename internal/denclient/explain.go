@@ -6,7 +6,8 @@ import (
 	"errors"
 	"net"
 	"strings"
-	"syscall"
+
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 )
 
 // Explain describes a failure to reach a den for the member, naming the
@@ -35,7 +36,7 @@ func Explain(err error) string {
 		return "The den's certificate can't be verified."
 	case errors.As(err, &dns):
 		return "Can't find the den's address: the name " + dns.Name + " doesn't resolve."
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case host.ConnRefused(err):
 		return "Nothing is answering at the den's address. The den or its Caddy may be down."
 	case errors.As(err, &netErr) && netErr.Timeout():
 		return "The den didn't answer in time."
