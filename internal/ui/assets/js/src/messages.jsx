@@ -200,7 +200,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
         const box = scroller.current;
         if (!box || typeof ResizeObserver === 'undefined') return;
         const observer = new ResizeObserver(() => {
-            if (atBottom.current && !listRef.current.hasNewer) box.scrollTop = box.scrollHeight;
+            if (!atBottom.current || listRef.current.hasNewer) return;
+            box.scrollTop = box.scrollHeight;
+            // The scroll event this causes can arrive after more layout
+            // changes; it isn't the member moving away from the end.
+            lastTop.current = box.scrollTop;
         });
         observer.observe(box);
         observer.observe(content.current);
@@ -305,7 +309,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
             rows.push(<DayDivider key={`day-${m.id}`} time={m.created_at} />);
         }
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
-            rows.push(<div key="unread" class="divider divider-error my-0 text-xs text-error">New</div>);
+            rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
         const compact = prev && prev.author_id === m.author_id && !m.reply_to && m.created_at - prev.created_at < GROUP_GAP &&
             new Date(prev.created_at).toDateString() === day;
@@ -338,7 +342,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
             <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 py-2" onScroll={checkEdges}>
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
-                        <div class="py-6 text-center text-sm text-base-content/60">This is the start of #{channel.name}.</div>
+                        <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">This is the start of #{channel.name}.</div>
                     )}
                     {list.hasOlder && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
@@ -348,7 +352,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
                 </div>
             </div>
             {(list.hasNewer || newCount > 0) && (
-                <div class="flex items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
+                <div class="flex cursor-default select-none items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
                     <span>
                         {newCount > 0 ? `${newCount} new message${newCount === 1 ? '' : 's'}` : "You're viewing older messages"}
                     </span>
@@ -377,7 +381,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
 }
 
 function DayDivider({ time }) {
-    return <div class="divider my-1 text-xs text-base-content/50">{new Date(time).toLocaleDateString(undefined, { dateStyle: 'medium' })}</div>;
+    return <div class="divider my-1 cursor-default select-none text-xs text-base-content/50">{new Date(time).toLocaleDateString(undefined, { dateStyle: 'medium' })}</div>;
 }
 
 function name(member) {
@@ -428,7 +432,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
             ) : (
                 <div class="break-words">
                     <Markdown text={m.text} me={me} />
-                    {m.edited_at ? <span class="text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                    {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
                 </div>
             )}
             {error && <p class="text-xs text-error">{error}</p>}
@@ -459,7 +463,7 @@ function PendingRow({ p, me, onRetry, onDiscard }) {
         <div class="mt-2 rounded px-2 py-0.5 opacity-60">
             <div class="flex items-baseline gap-2">
                 <span class="font-semibold">{me.display_name}</span>
-                <span class="text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
+                <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
             </div>
             <Markdown text={p.text} me={me} />
             {p.failed && (
@@ -526,7 +530,7 @@ function EditBox({ m, denID, onDone }) {
             <div class="flex gap-2 text-xs">
                 <button type="button" class="btn btn-primary btn-xs" onClick={save} disabled={busy}>Save</button>
                 <button type="button" class="btn btn-ghost btn-xs" onClick={onDone}>Cancel</button>
-                <span class="self-center text-base-content/50">Enter to save, Escape to cancel</span>
+                <span class="cursor-default select-none self-center text-base-content/50">Enter to save, Escape to cancel</span>
             </div>
         </div>
     );
@@ -547,7 +551,7 @@ function Composer({ channel, replyTo, replyAuthor, onCancelReply, onSend, onEdit
     return (
         <div class="border-t border-base-300 px-4 py-2">
             {replyTo && (
-                <div class="mb-1 flex items-center gap-2 text-xs text-base-content/70">
+                <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
                     <span class="min-w-0 truncate">
                         Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Preview text={replyTo.text} />
                     </span>
@@ -573,7 +577,7 @@ function Composer({ channel, replyTo, replyAuthor, onCancelReply, onSend, onEdit
                     }
                 }}
             ></textarea>
-            <div class="flex justify-between text-xs text-base-content/50">
+            <div class="flex cursor-default select-none justify-between text-xs text-base-content/50">
                 <span>Enter to send, Shift+Enter for a new line</span>
                 {length > MAX_TEXT - 500 && <span class={length > MAX_TEXT ? 'text-error' : ''}>{length} / {MAX_TEXT}</span>}
             </div>

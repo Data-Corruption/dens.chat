@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { onEvent } from './events.js';
+import { onConnection, onEvent } from './events.js';
 import { unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane } from './messages.jsx';
@@ -38,6 +38,8 @@ export function Chat({ denID, channelID, navigate }) {
     // On a narrow screen the channel list and the channel take turns.
     const [listOpen, setListOpen] = useState(!channelID);
     const reloadTimer = useRef(null);
+    const [live, setLive] = useState(true);
+    useEffect(() => onConnection(setLive), []);
 
     async function load() {
         try {
@@ -84,6 +86,14 @@ export function Chat({ denID, channelID, navigate }) {
     const members = new Map(view.members.map((m) => [m.id, m]));
     const reads = new Map(view.read_states.map((r) => [r.channel_id, r]));
     const owner = view.role === 'owner';
+    // What waits in other channels, for the channels button on a narrow screen.
+    const elsewhere = { mentions: 0, unread: false };
+    for (const c of text) {
+        const r = reads.get(c.id);
+        if (c.id === channel?.id || !r) continue;
+        elsewhere.mentions += r.mention_count;
+        elsewhere.unread ||= unread(r);
+    }
 
     return (
         <div class="flex h-full min-h-0">
@@ -91,9 +101,9 @@ export function Chat({ denID, channelID, navigate }) {
                 <div class="border-b border-base-300 p-3">
                     <div class="flex items-center justify-between gap-2">
                         <span class="truncate font-semibold">{view.name}</span>
-                        <span class={`badge badge-xs ${view.state === 'connected' ? 'badge-success' : 'badge-warning'}`} title={view.error || view.state}></span>
+                        <span class={`badge badge-xs ${live && view.state === 'connected' ? 'badge-success' : 'badge-warning'}`} title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
                     </div>
-                    {view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
+                    {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
                 </div>
                 <ChannelList view={view} reads={reads} open={channel?.id} owner={owner}
                     onOpen={(id) => {
@@ -112,7 +122,7 @@ export function Chat({ denID, channelID, navigate }) {
             <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
                 {channel ? (
                     <>
-                        <ChannelHeader key={channel.id} channel={channel} me={view.me} owner={owner} onChannels={() => setListOpen(true)}
+                        <ChannelHeader key={channel.id} channel={channel} me={view.me} owner={owner} elsewhere={elsewhere} onChannels={() => setListOpen(true)}
                             onSettings={() => setDialog({ kind: 'channel', channel })} />
                         <MessagePane
                             key={`${denID}:${channel.id}`}
@@ -170,7 +180,7 @@ function ChannelList({ view, reads, open, owner, onOpen, onDialog }) {
             <ul class="flex flex-col">{ungrouped.map(item)}</ul>
             {groups.map((g) => (
                 <div key={g.id}>
-                    <div class="flex items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
+                    <div class="flex cursor-default select-none items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
                         <span class="truncate">{g.name}</span>
                         {owner && (
                             <button type="button" class="btn btn-ghost btn-xs" aria-label={`Group settings for ${g.name}`} onClick={() => onDialog({ kind: 'group', group: g })}>⚙</button>
@@ -185,21 +195,50 @@ function ChannelList({ view, reads, open, owner, onOpen, onDialog }) {
     );
 }
 
-function ChannelHeader({ channel, me, owner, onChannels, onSettings }) {
+// ChannelHeader names the channel and shows its description's first line,
+// which opens the rest when there is more than fits.
+function ChannelHeader({ channel, me, owner, elsewhere, onChannels, onSettings }) {
     const [expanded, setExpanded] = useState(false);
-    const hasMore = channel.description && channel.description.trim() !== firstLine(channel.description).trim();
+    const line = useRef(null);
+    const clipped = useClipped(line, channel.description);
+    const hasMore = !!channel.description && channel.description.trim() !== firstLine(channel.description).trim();
+    const expandable = hasMore || clipped || expanded;
     return (
         <header class="border-b border-base-300 px-4 py-2">
             <div class="flex min-w-0 items-center gap-2">
-                <button type="button" class="btn btn-ghost btn-sm btn-square md:hidden" onClick={onChannels} aria-label="Channels">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm btn-square relative md:hidden"
+                    onClick={onChannels}
+                    aria-label={elsewhere.mentions ? `Channels, ${elsewhere.mentions} unread mentions` : 'Channels'}
+                >
                     <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                         <path d="M2 4h12M2 8h12M2 12h12" />
                     </svg>
+                    {elsewhere.mentions > 0 ? (
+                        <span class="badge badge-error badge-xs absolute -right-1 -top-1">{elsewhere.mentions}</span>
+                    ) : elsewhere.unread ? (
+                        <span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-base-content"></span>
+                    ) : null}
                 </button>
                 <span class="shrink-0 font-semibold"># {channel.name}</span>
-                {channel.description && !expanded && (
-                    <button type="button" class="min-w-0 truncate text-left text-sm text-base-content/60" onClick={() => setExpanded(true)} title={hasMore ? 'Show the full description' : undefined}>
-                        <Preview text={channel.description} me={me} />
+                {channel.description && (
+                    <button
+                        type="button"
+                        class="flex min-w-0 items-center gap-1 rounded px-1 text-left text-sm text-base-content/60 enabled:hover:bg-base-200 enabled:hover:text-base-content disabled:cursor-default"
+                        disabled={!expandable}
+                        aria-expanded={expandable ? expanded : undefined}
+                        title={expandable ? (expanded ? 'Hide the description' : 'Show the whole description') : undefined}
+                        onClick={() => setExpanded(!expanded)}
+                    >
+                        <span ref={line} class="truncate">
+                            <Preview text={channel.description} me={me} more={hasMore} />
+                        </span>
+                        {expandable && (
+                            <svg viewBox="0 0 16 16" class={`h-3 w-3 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M4 6l4 4 4-4" />
+                            </svg>
+                        )}
                     </button>
                 )}
                 {owner && <button type="button" class="btn btn-ghost btn-xs ml-auto" onClick={onSettings} aria-label="Channel settings">⚙</button>}
@@ -207,9 +246,24 @@ function ChannelHeader({ channel, me, owner, onChannels, onSettings }) {
             {expanded && channel.description && (
                 <div class="mt-1 max-h-64 overflow-y-auto rounded bg-base-200 p-2 text-sm">
                     <Markdown text={channel.description} me={me} />
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setExpanded(false)}>Collapse</button>
                 </div>
             )}
         </header>
     );
+}
+
+// useClipped reports whether an element's text runs past its width, so a
+// long first line counts as more to show.
+function useClipped(ref, text) {
+    const [clipped, setClipped] = useState(false);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const check = () => setClipped(el.scrollWidth > el.clientWidth + 1);
+        const observer = new ResizeObserver(check);
+        observer.observe(el);
+        check();
+        return () => observer.disconnect();
+    }, [text]);
+    return clipped;
 }

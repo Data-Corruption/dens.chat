@@ -20,8 +20,11 @@ export function Markdown({ text, me, onMention }) {
 
 // Preview renders a text's first line inline, for places that are already
 // a control, like a reply's quote: nothing in it is a link or a button.
-export function Preview({ text, me }) {
-    return <span>{inline(firstLine(text), { me, preview: true }, 'p')}</span>;
+// With more, the line ends in an ellipsis in place of its punctuation.
+export function Preview({ text, me, more }) {
+    let line = firstLine(text);
+    if (more) line = line.trimEnd().replace(/[.,;:]+$/, '');
+    return <span>{inline(line, { me, preview: true }, 'p')}{more && '…'}</span>;
 }
 
 function blocks(text, ctx) {
