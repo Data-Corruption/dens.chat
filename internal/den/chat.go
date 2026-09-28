@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,10 +21,16 @@ func IsStaff(role string) bool { return role == denproto.RoleModerator || role =
 
 func textAD(id int64) []byte { return []byte("den_messages.text:" + strconv.FormatInt(id, 10)) }
 
+// hasMessages reports whether a channel holds messages: text channels and
+// DMs do; voice channels don't.
+func hasMessages(c denproto.Channel) bool {
+	return c.Kind == denproto.KindText || c.Kind == denproto.KindDM
+}
+
 var (
 	errChannelNotFound = denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such channel")
 	errMessageNotFound = denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such message")
-	errOwnerOnly       = denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner manages channels")
+	errStaffOnly       = denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only moderators and the owner manage channels")
 )
 
 func invalid(format string, args ...any) error {
@@ -37,30 +44,34 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
 	r.Den, _ = d.Info()
-	rows, err := d.db.QueryContext(ctx, `SELECT id, username, display_name, role, joined_at FROM den_members ORDER BY id`)
+	rows, err := d.db.QueryContext(ctx, `SELECT `+memberColumns+` FROM den_members ORDER BY id`)
 	if err != nil {
 		return r, err
 	}
 	for rows.Next() {
-		var m denproto.Member
-		var id int64
-		if err := rows.Scan(&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt); err != nil {
+		m, err := scanMember(rows.Scan)
+		if err != nil {
 			rows.Close()
 			return r, err
 		}
-		m.ID = denproto.FormatID(id)
-		if id == member {
+		if m.ID == denproto.FormatID(member) {
 			r.Me = m
 		}
 		r.Members = append(r.Members, m)
 	}
 	rows.Close()
+	r.Online = d.online()
 	if r.Groups, err = d.groups(ctx, d.db); err != nil {
 		return r, err
 	}
 	if r.Channels, err = d.channels(ctx, d.db, staff); err != nil {
 		return r, err
 	}
+	dms, err := d.dms(ctx, d.db, member)
+	if err != nil {
+		return r, err
+	}
+	r.Channels = append(r.Channels, dms...)
 	last := map[string]string{}
 	rows, err = d.db.QueryContext(ctx, `SELECT channel_id, max(id) FROM den_messages GROUP BY channel_id`)
 	if err != nil {
@@ -109,7 +120,7 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 	}
 	rows.Close()
 	for _, ch := range r.Channels {
-		if ch.Kind != denproto.KindText {
+		if !hasMessages(ch) {
 			continue
 		}
 		r.ReadStates = append(r.ReadStates, denproto.ReadState{
@@ -143,14 +154,17 @@ func (d *Den) groups(ctx context.Context, q querier) ([]denproto.Group, error) {
 	return out, rows.Err()
 }
 
-const channelColumns = `id, group_id, name, description, kind, position, staff_only`
+const channelColumns = `id, group_id, name, description, kind, position, staff_only, dm_low, dm_high`
 
 func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	var c denproto.Channel
 	var id int64
-	var group sql.NullInt64
-	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly)
+	var group, low, high sql.NullInt64
+	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly, &low, &high)
 	c.ID = denproto.FormatID(id)
+	if low.Valid && high.Valid {
+		c.Members = []string{denproto.FormatID(low.Int64), denproto.FormatID(high.Int64)}
+	}
 	if group.Valid {
 		g := denproto.FormatID(group.Int64)
 		c.GroupID = &g
@@ -158,10 +172,20 @@ func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	return c, err
 }
 
-// channels lists the channels a member can see.
+// channels lists the channels a member can see, without DMs.
 func (d *Den) channels(ctx context.Context, q querier, staff bool) ([]denproto.Channel, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+channelColumns+` FROM den_channels
-		WHERE staff_only = 0 OR ? ORDER BY coalesce(group_id, 0), position, id`, staff)
+	return d.queryChannels(ctx, q, `SELECT `+channelColumns+` FROM den_channels
+		WHERE kind != 'dm' AND (staff_only = 0 OR ?) ORDER BY coalesce(group_id, 0), position, id`, staff)
+}
+
+// dms lists a member's DMs.
+func (d *Den) dms(ctx context.Context, q querier, member int64) ([]denproto.Channel, error) {
+	return d.queryChannels(ctx, q, `SELECT `+channelColumns+` FROM den_channels
+		WHERE kind = 'dm' AND (dm_low = ?1 OR dm_high = ?1) ORDER BY id`, member)
+}
+
+func (d *Den) queryChannels(ctx context.Context, q querier, query string, args ...any) ([]denproto.Channel, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -195,14 +219,31 @@ func (d *Den) visibleChannel(ctx context.Context, s *Session, id string) (denpro
 	if err != nil {
 		return c, 0, err
 	}
-	if c.StaffOnly && !IsStaff(s.Role) {
+	if !visible(c, s.MemberID, IsStaff(s.Role)) {
 		return c, 0, errChannelNotFound
 	}
 	return c, cid, nil
 }
 
+// visible reports whether a member can see a channel: a DM only its two
+// members, a staff-only channel only staff, and any other channel anyone.
+func visible(c denproto.Channel, member int64, staff bool) bool {
+	switch {
+	case c.Kind == denproto.KindDM:
+		return slices.Contains(c.Members, denproto.FormatID(member))
+	case c.StaffOnly:
+		return staff
+	}
+	return true
+}
+
 func audienceOf(c denproto.Channel) Audience {
-	if c.StaffOnly {
+	switch {
+	case c.Kind == denproto.KindDM && len(c.Members) == 2:
+		a, _ := denproto.ParseID(c.Members[0])
+		b, _ := denproto.ParseID(c.Members[1])
+		return Pair(a, b)
+	case c.StaffOnly:
 		return Staff
 	}
 	return Everyone
@@ -215,7 +256,7 @@ func siblings(ctx context.Context, tx *sql.Tx, group *int64) ([]int64, error) {
 	var rows *sql.Rows
 	var err error
 	if group == nil {
-		rows, err = tx.QueryContext(ctx, `SELECT id FROM den_channels WHERE group_id IS NULL ORDER BY position, id`)
+		rows, err = tx.QueryContext(ctx, `SELECT id FROM den_channels WHERE group_id IS NULL AND kind != 'dm' ORDER BY position, id`)
 	} else {
 		rows, err = tx.QueryContext(ctx, `SELECT id FROM den_channels WHERE group_id = ? ORDER BY position, id`, *group)
 	}
@@ -351,8 +392,8 @@ func (d *Den) checkChannelFields(ctx context.Context, req denproto.ChannelReques
 
 // CreateChannel adds a channel. Only the owner may until roles land.
 func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.ChannelRequest) (denproto.Channel, error) {
-	if s.Role != denproto.RoleOwner {
-		return denproto.Channel{}, errOwnerOnly
+	if !IsStaff(s.Role) {
+		return denproto.Channel{}, errStaffOnly
 	}
 	kind := req.Kind
 	if kind == "" {
@@ -377,7 +418,7 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 	var order []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_channels`).Scan(&n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_channels WHERE kind != 'dm'`).Scan(&n); err != nil {
 			return err
 		}
 		if n >= denproto.MaxChannels {
@@ -415,8 +456,8 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 // UpdateChannel changes a channel: its name, description, group,
 // position or visibility.
 func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denproto.ChannelRequest) (denproto.Channel, error) {
-	if s.Role != denproto.RoleOwner {
-		return denproto.Channel{}, errOwnerOnly
+	if !IsStaff(s.Role) {
+		return denproto.Channel{}, errStaffOnly
 	}
 	cid, err := denproto.ParseID(id)
 	if err != nil {
@@ -425,6 +466,9 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	before, err := d.channel(ctx, d.db, cid)
 	if err != nil {
 		return before, err
+	}
+	if before.Kind == denproto.KindDM {
+		return denproto.Channel{}, errChannelNotFound
 	}
 	group, err := d.checkChannelFields(ctx, req, before.Kind)
 	if err != nil {
@@ -513,8 +557,8 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 
 // DeleteChannel removes a channel and all its messages.
 func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
-	if s.Role != denproto.RoleOwner {
-		return errOwnerOnly
+	if !IsStaff(s.Role) {
+		return errStaffOnly
 	}
 	cid, err := denproto.ParseID(id)
 	if err != nil {
@@ -523,6 +567,9 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	c, err := d.channel(ctx, d.db, cid)
 	if err != nil {
 		return err
+	}
+	if c.Kind == denproto.KindDM {
+		return errChannelNotFound
 	}
 	var group *int64
 	if c.GroupID != nil {
@@ -588,8 +635,8 @@ func (d *Den) group(ctx context.Context, q querier, id int64) (denproto.Group, e
 
 // CreateGroup adds a channel group.
 func (d *Den) CreateGroup(ctx context.Context, s *Session, req denproto.GroupRequest) (denproto.Group, error) {
-	if s.Role != denproto.RoleOwner {
-		return denproto.Group{}, errOwnerOnly
+	if !IsStaff(s.Role) {
+		return denproto.Group{}, errStaffOnly
 	}
 	if req.Name == nil {
 		return denproto.Group{}, invalid("a group needs a name")
@@ -634,8 +681,8 @@ func (d *Den) CreateGroup(ctx context.Context, s *Session, req denproto.GroupReq
 
 // UpdateGroup renames or moves a group.
 func (d *Den) UpdateGroup(ctx context.Context, s *Session, id string, req denproto.GroupRequest) (denproto.Group, error) {
-	if s.Role != denproto.RoleOwner {
-		return denproto.Group{}, errOwnerOnly
+	if !IsStaff(s.Role) {
+		return denproto.Group{}, errStaffOnly
 	}
 	gid, err := denproto.ParseID(id)
 	if err != nil {
@@ -685,8 +732,8 @@ func (d *Den) UpdateGroup(ctx context.Context, s *Session, id string, req denpro
 // DeleteGroup removes a group. Its channels move to the end of the
 // ungrouped list.
 func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
-	if s.Role != denproto.RoleOwner {
-		return errOwnerOnly
+	if !IsStaff(s.Role) {
+		return errStaffOnly
 	}
 	gid, err := denproto.ParseID(id)
 	if err != nil {
@@ -850,7 +897,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	if err != nil {
 		return denproto.History{}, err
 	}
-	if c.Kind != denproto.KindText {
+	if !hasMessages(c) {
 		return denproto.History{Messages: []denproto.Message{}}, nil
 	}
 	n := q.Limit
@@ -922,8 +969,13 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
-	if c.Kind != denproto.KindText {
-		return denproto.Message{}, invalid("messages go in text channels")
+	if !hasMessages(c) {
+		return denproto.Message{}, invalid("messages go in text channels and DMs")
+	}
+	if c.Kind == denproto.KindDM {
+		if err := d.checkDMOpen(ctx, c, s.MemberID); err != nil {
+			return denproto.Message{}, err
+		}
 	}
 	if err := denproto.Size("nonce", req.Nonce, denproto.NonceBytes); err != nil {
 		return denproto.Message{}, err
@@ -1001,9 +1053,16 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	return m, d.publishReadState(ctx, s.MemberID, cid)
 }
 
-// mentionedMembers resolves a text's mentions to members who can see the
-// channel, leaving out the author.
+// mentionedMembers resolves a text's mentions to members in the den who can
+// see the channel, leaving out the author. In a DM, every message counts
+// for the other member, so their unread count is the messages waiting.
 func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Channel, author int64) ([]int64, error) {
+	if c.Kind == denproto.KindDM {
+		if other, ok := dmPartner(c, author); ok {
+			return []int64{other}, nil
+		}
+		return nil, nil
+	}
 	names := denproto.Mentions(text)
 	if len(names) == 0 {
 		return nil, nil
@@ -1012,7 +1071,7 @@ func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Chan
 	for i, n := range names {
 		args[i] = n
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT id, role FROM den_members WHERE username IN (?`+
+	rows, err := d.db.QueryContext(ctx, `SELECT id, role FROM den_members WHERE left_at IS NULL AND username IN (?`+
 		strings.Repeat(", ?", len(names)-1)+`)`, args...)
 	if err != nil {
 		return nil, err
@@ -1128,8 +1187,9 @@ func Conflict(err error) (denproto.Message, bool) {
 	return denproto.Message{}, false
 }
 
-// Delete removes a message for good: its author may, and the owner may
-// delete anyone's.
+// Delete removes a message for good. Its author may, and so may staff of a
+// higher rank than the author, as with removing members: moderators delete
+// members' messages, and the owner anyone's.
 func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	m, mid, err := d.message(ctx, id)
 	if err != nil {
@@ -1139,8 +1199,14 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return errMessageNotFound
 	}
-	if m.AuthorID != denproto.FormatID(s.MemberID) && s.Role != denproto.RoleOwner {
-		return denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the author or the owner deletes a message")
+	if m.AuthorID != denproto.FormatID(s.MemberID) {
+		var role string
+		if err := d.db.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ?`, m.AuthorID).Scan(&role); err != nil {
+			return err
+		}
+		if !IsStaff(s.Role) || denproto.Rank(role) >= denproto.Rank(s.Role) {
+			return forbidden("only the author, or staff above them, delete a message")
+		}
 	}
 	if _, err := d.db.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
 		return err
@@ -1154,8 +1220,8 @@ func (d *Den) MarkRead(ctx context.Context, s *Session, channelID string, req de
 	if err != nil {
 		return err
 	}
-	if c.Kind != denproto.KindText {
-		return invalid("only text channels have a read position")
+	if !hasMessages(c) {
+		return invalid("only text channels and DMs have a read position")
 	}
 	mid, err := denproto.ParseID(req.MessageID)
 	if err != nil {

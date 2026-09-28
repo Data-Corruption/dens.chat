@@ -76,13 +76,21 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT;
 
 			-- AUTOINCREMENT: a member ID is never reused, even after deletion.
+			-- A member who leaves or is removed keeps their row, with left_at
+			-- set, so their messages keep a name and their username stays
+			-- theirs to reclaim, unless banned_at says it can't come back.
 			CREATE TABLE den_members (
 				id            INTEGER PRIMARY KEY AUTOINCREMENT,
 				username      TEXT NOT NULL UNIQUE,
 				display_name  TEXT NOT NULL,
 				role          TEXT NOT NULL CHECK (role IN ('member', 'moderator', 'owner')),
 				verifier_hash BLOB NOT NULL, -- SHA-256 of the password verifier
-				joined_at     INTEGER NOT NULL
+				bio           BLOB,          -- sealed with the data key
+				joined_at     INTEGER NOT NULL,
+				invite_id     INTEGER REFERENCES den_invites (id) ON DELETE SET NULL,
+				left_at       INTEGER,
+				banned_at     INTEGER,
+				banned_by     INTEGER REFERENCES den_members (id)
 			) STRICT;
 
 			CREATE TABLE den_devices (
@@ -131,16 +139,23 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				position INTEGER NOT NULL
 			) STRICT;
 
+			-- A DM is a channel between two members, dm_low < dm_high, with no
+			-- name, group or position.
 			CREATE TABLE den_channels (
 				id          INTEGER PRIMARY KEY AUTOINCREMENT,
 				group_id    INTEGER REFERENCES den_groups (id) ON DELETE SET NULL,
 				name        TEXT NOT NULL,
 				description TEXT NOT NULL DEFAULT '',
-				kind        TEXT NOT NULL CHECK (kind IN ('text', 'voice')),
+				kind        TEXT NOT NULL CHECK (kind IN ('text', 'voice', 'dm')),
 				position    INTEGER NOT NULL,
 				staff_only  INTEGER NOT NULL DEFAULT 0,
-				created_at  INTEGER NOT NULL
+				dm_low      INTEGER REFERENCES den_members (id),
+				dm_high     INTEGER REFERENCES den_members (id),
+				created_at  INTEGER NOT NULL,
+				CHECK ((kind = 'dm') = (dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high))
 			) STRICT;
+			CREATE UNIQUE INDEX den_channels_dm ON den_channels (dm_low, dm_high) WHERE kind = 'dm';
+			CREATE INDEX den_channels_dm_high ON den_channels (dm_high) WHERE kind = 'dm';
 
 			-- AUTOINCREMENT: message IDs grow with time and are never reused,
 			-- which history paging (before, after, around an ID) relies on.

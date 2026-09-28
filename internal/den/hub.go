@@ -11,8 +11,8 @@ import (
 
 // Audience says which members an event is for.
 type Audience struct {
-	kind   audienceKind
-	member int64
+	kind audienceKind
+	a, b int64
 }
 
 type audienceKind uint8
@@ -21,7 +21,8 @@ const (
 	toEveryone audienceKind = iota
 	toStaff
 	toNonStaff
-	toMember
+	toMembers
+	toNobody
 )
 
 // Audiences.
@@ -29,10 +30,14 @@ var (
 	Everyone = Audience{kind: toEveryone}
 	Staff    = Audience{kind: toStaff}    // moderators and the owner
 	NonStaff = Audience{kind: toNonStaff} // everyone else
+	nobody   = Audience{kind: toNobody}
 )
 
 // OnlyMember is an audience of one.
-func OnlyMember(id int64) Audience { return Audience{kind: toMember, member: id} }
+func OnlyMember(id int64) Audience { return Audience{kind: toMembers, a: id, b: id} }
+
+// Pair is the audience of a DM: its two members.
+func Pair(a, b int64) Audience { return Audience{kind: toMembers, a: a, b: b} }
 
 func (a Audience) includes(member int64, staff bool) bool {
 	switch a.kind {
@@ -40,8 +45,10 @@ func (a Audience) includes(member int64, staff bool) bool {
 		return staff
 	case toNonStaff:
 		return !staff
-	case toMember:
-		return a.member == member
+	case toMembers:
+		return member == a.a || member == a.b
+	case toNobody:
+		return false
 	}
 	return true
 }
@@ -66,9 +73,10 @@ type Hub struct {
 	first uint64 // seq of ring[0]
 	ring  []ringEntry
 	subs  map[*Sub]struct{}
-	// Non-staff members whose resume point is before this seq get a
-	// snapshot instead of a replay: what they can see changed since.
+	// Resume points before these need a fresh snapshot instead of a
+	// replay: what the member could see changed after them.
 	nonStaffRefresh uint64
+	memberRefresh   map[int64]uint64
 }
 
 type ringEntry struct {
@@ -81,9 +89,12 @@ type ringEntry struct {
 // closed when the socket falls too far behind (Slow) or unsubscribes.
 type Sub struct {
 	member int64
-	staff  bool
 	Events chan denproto.Event
 	slow   bool
+
+	// Guarded by Hub.mu.
+	staff bool
+	focus map[string]bool // channels the connection shows
 }
 
 // Slow reports whether the subscription was dropped for falling behind.
@@ -95,13 +106,14 @@ func NewHub() *Hub {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return &Hub{
-		epoch:   hex.EncodeToString(b),
-		maxLen:  50_000,
-		maxAge:  10 * time.Minute,
-		subSize: 1024,
-		now:     time.Now,
-		first:   1,
-		subs:    map[*Sub]struct{}{},
+		epoch:         hex.EncodeToString(b),
+		maxLen:        50_000,
+		maxAge:        10 * time.Minute,
+		subSize:       1024,
+		now:           time.Now,
+		first:         1,
+		subs:          map[*Sub]struct{}{},
+		memberRefresh: map[int64]uint64{},
 	}
 }
 
@@ -117,16 +129,59 @@ func (h *Hub) Publish(t string, data any, audience Audience) error {
 	if err != nil {
 		return err
 	}
-	h.seq++
-	now := h.now()
-	h.ring = append(h.ring, ringEntry{at: now, audience: audience, event: event})
-	h.trim(now)
+	h.record(event, audience)
 	for sub := range h.subs {
 		if audience.includes(sub.member, sub.staff) {
 			h.send(sub, event)
 		}
 	}
 	return nil
+}
+
+// record appends an event to the ring under the next seq; the caller holds
+// h.mu.
+func (h *Hub) record(event denproto.Event, audience Audience) {
+	h.seq++
+	event.Seq = h.seq
+	now := h.now()
+	h.ring = append(h.ring, ringEntry{at: now, audience: audience, event: event})
+	h.trim(now)
+}
+
+// Ephemeral sends an event that isn't numbered or kept for replay, such as
+// presence or typing, to every socket that to accepts. to runs with the
+// hub locked, so it may read a subscription's staff flag and focus.
+func (h *Hub) Ephemeral(t string, data any, to func(*Sub) bool) error {
+	event, err := denproto.NewEvent(t, 0, data)
+	if err != nil {
+		return err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for sub := range h.subs {
+		if to(sub) {
+			h.send(sub, event)
+		}
+	}
+	return nil
+}
+
+// refresh makes the matching sockets start over from a fresh snapshot, and
+// returns the seq it took. The refresh occupies a seq of its own, recorded
+// for nobody, so a client that saw every event before it still resyncs if
+// it disconnected before the snapshot arrived. The caller holds h.mu.
+func (h *Hub) refresh(match func(*Sub) bool) uint64 {
+	h.record(denproto.Event{T: eventRefresh}, nobody)
+	refresh := denproto.Event{T: eventRefresh, Seq: h.seq}
+	for sub := range h.subs {
+		if match(sub) {
+			// Focus is checked against visibility when it's set, so it
+			// starts over too; clients send it again after the snapshot.
+			sub.focus = nil
+			h.send(sub, refresh)
+		}
+	}
+	return h.seq
 }
 
 // RefreshNonStaff tells every non-staff socket to replace its state with a
@@ -136,13 +191,47 @@ func (h *Hub) Publish(t string, data any, audience Audience) error {
 func (h *Hub) RefreshNonStaff() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.nonStaffRefresh = h.seq
-	refresh := denproto.Event{T: eventRefresh, Seq: h.seq}
-	for sub := range h.subs {
-		if !sub.staff {
-			h.send(sub, refresh)
+	h.nonStaffRefresh = h.refresh(func(sub *Sub) bool { return !sub.staff })
+}
+
+// SetStaff changes whether a member's sockets see staff-only channels, after
+// a role change, and starts them over from a fresh snapshot.
+func (h *Hub) SetStaff(member int64, staff bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id, seq := range h.memberRefresh {
+		if seq < h.first {
+			delete(h.memberRefresh, id) // older than the ring; resyncs anyway
 		}
 	}
+	h.memberRefresh[member] = h.refresh(func(sub *Sub) bool {
+		if sub.member != member {
+			return false
+		}
+		sub.staff = staff
+		return true
+	})
+}
+
+// Staff reports whether a subscription currently sees staff-only channels.
+func (h *Hub) Staff(sub *Sub) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return sub.staff
+}
+
+// SetFocus records the channels a subscription's connection shows.
+func (h *Hub) SetFocus(sub *Sub, channels map[string]bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sub.focus = channels
+}
+
+// Focused reports whether a subscription's connection shows a channel.
+func (h *Hub) Focused(sub *Sub, channel string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return sub.focus[channel]
 }
 
 // send queues an event for a subscriber; the caller holds h.mu.
@@ -180,7 +269,7 @@ func (h *Hub) Subscribe(member int64, staff bool, epoch string, after uint64) (s
 	h.trim(h.now())
 	sub = &Sub{member: member, staff: staff, Events: make(chan denproto.Event, h.subSize)}
 	h.subs[sub] = struct{}{}
-	stale := !staff && after < h.nonStaffRefresh
+	stale := (!staff && after < h.nonStaffRefresh) || after < h.memberRefresh[member]
 	if epoch == h.epoch && !stale && after <= h.seq && after+1 >= h.first {
 		for _, e := range h.ring[after+1-h.first:] {
 			if e.audience.includes(member, staff) {

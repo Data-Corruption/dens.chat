@@ -25,6 +25,7 @@ const (
 const (
 	KindText  = "text"
 	KindVoice = "voice"
+	KindDM    = "dm" // a conversation between two members
 )
 
 // Event types for chat.
@@ -44,14 +45,17 @@ const (
 	EventReadStateUpdated  = "read_state.updated"
 )
 
+// Channel is a text or voice channel, or a DM. A DM has no name, group or
+// position, and names its two members, lower ID first.
 type Channel struct {
-	ID          string  `json:"id"`
-	GroupID     *string `json:"group_id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description,omitempty"`
-	Kind        string  `json:"kind"`
-	Position    int     `json:"position"`
-	StaffOnly   bool    `json:"staff_only"`
+	ID          string   `json:"id"`
+	GroupID     *string  `json:"group_id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Kind        string   `json:"kind"`
+	Position    int      `json:"position"`
+	StaffOnly   bool     `json:"staff_only"`
+	Members     []string `json:"members,omitempty"`
 }
 
 type Group struct {

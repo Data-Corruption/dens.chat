@@ -70,6 +70,7 @@ const (
 	LimitSocket           // per IP: WebSocket upgrades
 	LimitWrite            // per member: other writes
 	LimitSend             // per member and channel: messages
+	LimitTyping           // per member and channel: typing notices
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -87,6 +88,8 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.socket
 	case LimitSend:
 		l = d.limits.send
+	case LimitTyping:
+		l = d.limits.typing
 	default:
 		l = d.limits.write
 	}

@@ -331,8 +331,9 @@ func TestHubAudiencesAndRefresh(t *testing.T) {
 	}
 	h.RefreshNonStaff()
 	<-member.Events // "all"
-	if e := <-member.Events; e.T != eventRefresh || e.Seq != 3 {
-		t.Fatalf("member got %+v, want a refresh at seq 3", e)
+	// The refresh takes a seq of its own, after the last event.
+	if e := <-member.Events; e.T != eventRefresh || e.Seq != 4 {
+		t.Fatalf("member got %+v, want a refresh at seq 4", e)
 	}
 	<-staff.Events // "all"
 	select {
@@ -340,12 +341,46 @@ func TestHubAudiencesAndRefresh(t *testing.T) {
 		t.Fatalf("staff got %+v", e)
 	default:
 	}
-	// A non-staff resume point from before the refresh can't be replayed.
-	if _, _, resumed, _ := h.Subscribe(1, false, h.Epoch(), 2); resumed {
+	// A non-staff resume point from before the refresh can't be replayed,
+	// even one that saw every event before it.
+	if _, _, resumed, _ := h.Subscribe(1, false, h.Epoch(), 3); resumed {
 		t.Fatal("resumed across a visibility change")
 	}
-	if _, _, resumed, _ := h.Subscribe(2, true, h.Epoch(), 2); !resumed {
-		t.Fatal("staff couldn't resume")
+	if _, missed, resumed, _ := h.Subscribe(1, false, h.Epoch(), 4); !resumed || len(missed) != 0 {
+		t.Fatalf("couldn't resume after the refresh's snapshot: %v %v", resumed, missed)
+	}
+	if _, missed, resumed, _ := h.Subscribe(2, true, h.Epoch(), 2); !resumed || len(missed) != 1 {
+		t.Fatalf("staff couldn't resume, or got the refresh replayed: %v %+v", resumed, missed)
+	}
+}
+
+// A role change starts the member's sockets over with what they can see
+// now, and their older resume points resync.
+func TestHubRoleChange(t *testing.T) {
+	h := NewHub()
+	sub, _, _, _ := h.Subscribe(1, false, "", 0)
+	other, _, _, _ := h.Subscribe(2, false, "", 0)
+	h.Publish("before", nil, Everyone)
+	<-sub.Events
+	<-other.Events
+	h.SetStaff(1, true)
+	if e := <-sub.Events; e.T != eventRefresh || e.Seq != 2 || !h.Staff(sub) {
+		t.Fatalf("member got %+v, staff %v", e, h.Staff(sub))
+	}
+	select {
+	case e := <-other.Events:
+		t.Fatalf("another member got %+v", e)
+	default:
+	}
+	h.Publish("staff", nil, Staff)
+	if e := <-sub.Events; e.T != "staff" {
+		t.Fatalf("the new moderator got %+v", e)
+	}
+	if _, _, resumed, _ := h.Subscribe(1, true, h.Epoch(), 1); resumed {
+		t.Fatal("resumed across a role change")
+	}
+	if _, _, resumed, _ := h.Subscribe(2, false, h.Epoch(), 1); !resumed {
+		t.Fatal("another member couldn't resume")
 	}
 }
 
