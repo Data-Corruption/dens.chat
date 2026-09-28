@@ -244,16 +244,31 @@ Three fixed roles, one level of channel groups, text and voice channels, and DMs
 | Role | Can |
 | --- | --- |
 | Member | Read and post in visible channels, DM other members, join voice, upload within limits |
-| Moderator | Everything a member can, plus delete messages, kick, ban, create invites, manage channels and groups, see staff-only channels |
+| Moderator | Everything a member can, plus delete members' messages, remove and ban members, create invites, manage channels and groups, see staff-only channels |
 | Owner | Everything a moderator can, plus manage moderators, den settings and limits; transfer ownership via CLI |
 
-Channels can be marked staff-only (moderators and owner). There is no other visibility control.
+Channels can be marked staff-only (moderators and owner). There is no other visibility control. Staff act only on those of a lower rank, so moderators can't remove, ban or delete the messages of other moderators or the owner.
+
+**Leaving, removal and bans**
+
+- Removing a member (a kick) signs them out everywhere at once and takes them off the member list. Their record stays, so their messages keep a name, and nobody else can take their username.
+- A removed member can come back only with a new invite, since invites are the only way in. They come back as themselves, history included, by giving their den password with their old username.
+- A ban does the same and keeps that username out, even with a valid invite. It can also delete their recent messages and revoke the invite they joined with. The UI offers removal and banning as one action with a ban option.
+- A ban can't stop someone from joining under a new name with a new invite: the den keeps no IP addresses, and each join uses a fresh key. Invites are the real door, which is why the removal dialog offers to revoke the one they used.
+- Leaving on your own works like a removal, without the kick.
 
 **Structure**
 
 - Channel groups are one level deep and contain text and voice channels.
 - Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
 - DMs are one-to-one between members of the same den, stored on the den. The UI says the owner can read them.
+
+**Profiles**
+
+- Each den has its own profile for each member, since identity is per den: a display name and a bio of up to 300 characters in the markdown subset. Dens can't link a member's profiles across dens.
+- Bios travel only when a profile card opens, which keeps snapshots small for 500-member dens.
+- Avatars and banners arrive with uploads in M1.4. Until someone sets one, their avatar is a circle colored by their member ID with the first letter or digit of their username, so every device draws the same one without the den storing or sending anything.
+- Profile cards show a role badge only for moderators and the owner.
 
 **Names**
 
@@ -272,7 +287,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 - **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a single toggle, so two people ticking different boxes at once never lose a tick. Everyone else sees them read-only.
 - Delete removes the row and its files; `secure_delete` overwrites the freed pages. A delete event tells clients to purge caches.
 - Optional den-wide retention (for example 30 or 90 days), off by default, shown to members in den info.
-- Ban revokes all of a member's keys, closes their sockets and blocks re-registration with that username.
+- Removal and bans revoke all of a member's keys and close their sockets at once (see Leaving, removal and bans).
 
 **Compact links**
 
@@ -586,7 +601,7 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | --- | --- | --- |
 | M1.1 Join | Den creation and owner account, invites, joining with a keypair and password verifier, key login and sessions, the den WebSocket with renewal and resume, protocol versioning, the Preact shell, Caddy on both platforms | A second machine joins through Caddy, with Linux and Windows dens, and stays connected across a den restart |
 | M1.2 Chat | Channels and groups with descriptions, messages with the markdown subset, edits with revisions, deletes, replies, the windowed message list with jump to message, read positions and mentions | A client that was offline catches up without gaps or duplicates, and a reply jumps 5,000 messages back and returns to the present |
-| M1.3 Community | Roles, staff-only channels, kick and ban, DMs, presence, typing | A ban closes the member's sockets right away |
+| M1.3 Community | Roles, staff-only channels, removal and bans, profiles, DMs, presence, typing | A ban closes the member's sockets right away |
 | M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
 | M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |

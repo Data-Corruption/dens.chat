@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket) and M1.2 (channels and messages) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages) and M1.3 (members, roles, DMs, presence and typing) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -58,7 +58,7 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 
 ```
 den    = {"id": "<den_id>", "name", "url"}
-member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at"}
+member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?}
 ```
 
 `url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it. Den names follow the display name rules, up to 32 characters.
@@ -69,7 +69,7 @@ PATCH /api/den   {"name"?, "url"?}   200 den        (owner only)
 
 A change reaches every member as a `den.updated {den}` event.
 
-From M1.2, `ready` carries every member as `members`, so clients can name authors and resolve mentions, and a new member reaches everyone as `member.joined {member}`.
+`ready` carries `members`: everyone who has been in the den, so clients can name authors and resolve mentions. A member who left or was removed keeps their record with `left_at` set. A new or returning member reaches everyone as `member.joined {member}`; see [Members and roles](#members-and-roles-m13) for the rest.
 
 ## Authentication
 
@@ -116,14 +116,14 @@ POST /api/join
 ### Invites
 
 ```
-POST   /api/invites          {"expires_in": 86400, "max_uses": 1}   201 {"id", "code", "expires_at", "max_uses", "uses"}
+POST   /api/invites          {"expires_in": 86400, "max_uses": 1}   201 {"id", "code", "created_by", "expires_at", "max_uses", "uses"}
 GET    /api/invites                                                 200 {"invites": [… without code …]}
 DELETE /api/invites/{id}                                            204
 ```
 
 - The client builds the invite string from `den.id`, `code` and `den.url`, and shows it once. The den stores only `SHA-256(code)`, so a code can't be shown again, only revoked.
 - `expires_in` is at most 30 days. `max_uses` is 1 to 100 and defaults to 1.
-- Only the owner creates invites until roles land in M1.3.
+- Moderators and the owner create, list and revoke invites. The list names who made each (`created_by`).
 
 ### Sessions
 
@@ -171,7 +171,7 @@ Dens-Protocol: 1
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, and from M1.2 `members`, `channels`, `groups` and `read_states`.
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`.
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
@@ -182,7 +182,7 @@ The client remembers `epoch` and the `seq` of the last durable event it applied,
 
 ### Client frames
 
-The client sends the same array shape. In M1.1 it sends only `auth.renew`. Later steps add `focus` and `typing` (M1.3).
+The client sends the same array shape: `auth.renew`, and `focus` and `typing` (see [Presence and typing](#presence-and-typing)).
 
 ```json
 [{"t": "auth.renew", "d": {"nonce": "…", "proof": "…"}}]
@@ -207,7 +207,7 @@ Each side checks the other with WebSocket pings, since a dead connection can loo
 | 1001 | Going away (a proxy reload or restart) | Reconnect with backoff and resume |
 | 1012 | Den restarting | Reconnect after a random 0.5 to 5 seconds, and resume (it will get `ready`) |
 | 4001 | Session expired | Log in again, then reconnect and resume |
-| 4003 | Key revoked, kicked or banned | Stop. Tell the member, and don't reconnect |
+| 4003 | Key revoked, or the member left, was removed or was banned; the reason says which: `key revoked`, `left`, `removed` or `banned` | Stop. Tell the member, and don't reconnect |
 | 4008 | Too slow | Reconnect and resume |
 | 4029 | Rate limited | Reconnect after the `Retry-After` the close reason carries |
 
@@ -224,7 +224,7 @@ group   = {"id", "name", "position"}
 - Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters. Voice channels have none.
 - A den has at most 500 channels and 100 groups.
 - `ready` carries the channels and groups the member can see. Changes arrive as `channel.created {channel}`, `channel.updated {channel}` and `channel.deleted {id}`, and the same for `group.*`.
-- Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Requests carry the object's fields, and a `PATCH` changes only the ones it names. `"group_id": ""` moves a channel out of its group. Only the owner can manage them until roles land in M1.3.
+- Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Requests carry the object's fields, and a `PATCH` changes only the ones it names. `"group_id": ""` moves a channel out of its group. Moderators and the owner manage them.
 - Deleting a channel deletes its messages. Deleting a group keeps its channels, which move to the end of the ungrouped list.
 
 **Staff-only channels.** Members who can't see a channel get none of its events, and reorder lists leave it out, so the positions they see can have gaps. When a channel becomes staff-only or stops being so, those members get a fresh `ready`.
@@ -277,7 +277,7 @@ DELETE /api/messages/{id}                                                       
 - `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history.
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
-- Only the author edits a message. The author or the owner deletes one, and from M1.3 moderators too.
+- Only the author edits a message. The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id}`. A deleted message is gone for good: clients drop it from memory, and later from their cache.
 
 ### Read state
@@ -291,10 +291,64 @@ PUT /api/channels/{id}/read   {"message_id"}   204
 - The den tells all the member's sessions with `read_state.updated {channel_id, message_id, mention_count}`.
 - `ready` carries `read_states`: each channel's last message ID, the member's read position and their unread mention count.
 
+## Members and roles (M1.3)
+
+Moderators and the owner are **staff**. Staff manage channels, groups and invites, see staff-only channels, and delete the messages of, remove and ban members of a lower rank: moderators act on members, and the owner on anyone else. The owner alone changes the den and roles.
+
+```
+GET   /api/members/{id}                                     200 member, with "bio"
+PATCH /api/me              {"display_name"?, "bio"?}        200 member, with "bio"
+PATCH /api/members/{id}    {"role": "member" | "moderator"} 200 member          (owner only)
+```
+
+- Any member may fetch anyone who has been in the den. `bio` is the markdown subset, up to 300 characters, and an empty one clears it. It comes only in these two responses, never in `ready` or events, which keeps both small.
+- A profile or role change reaches everyone as `member.updated {member}`; a client showing a bio fetches it again.
+- A role change makes the member's sockets start over with a fresh `ready`, since what they can see changed, and their older resume points resync.
+
+### Leaving, removal and bans
+
+```
+POST   /api/me/leave                                                                204
+POST   /api/members/{id}/remove   {"ban"?, "delete_messages"?, "revoke_invite"?}    204
+GET    /api/bans                                                                     200 {"bans": [{"member", "banned_at", "banned_by"?}]}
+DELETE /api/bans/{id}                                                                204
+```
+
+- A member who leaves or is removed keeps their record, with `left_at` set, so their messages keep a name. They lose their role, devices and sessions, recovery codes, read state and the invites they made. Their sockets close with 4003, and everyone gets `member.left {id, left_at}`.
+- The owner can't leave or be removed.
+- `ban` keeps the username out: joining with it is refused with `403 banned`. `delete_messages` also deletes the member's messages from that many seconds back, one of 0, 3600, 86400 or 604800, except in DMs, with a `message.deleted` for each. `revoke_invite` revokes the invite they joined with, if it can still be used. Someone who already left can still be banned.
+- Staff list and lift bans. Lifting one doesn't bring the member back.
+- **Coming back.** A former member who isn't banned can join again with a new invite, as themselves: their username with the right password (the verifier) reclaims their record, history and first join time, with a new device and recovery codes. A wrong password gets `username_taken`, the same as a name in use, so an invite can't reveal who used to be here.
+- The den stores no IP addresses, and a client makes a new key for each join, so a ban can't stop someone who joins under a new name with a valid invite. Invites are the real door.
+
+### DMs
+
+```
+POST /api/dms   {"member_id"}   200 channel
+```
+
+- A DM is a channel of kind `dm` between two members: `{"id", "kind": "dm", "members": [lower ID, higher ID], "group_id": null, "name": "", "position": 0, "staff_only": false}`. Each pair has one; `POST /api/dms` returns it, creating it on first use and sending `channel.created` to both.
+- Only its two members see it, in `ready`, events, history and sends. Staff don't see or moderate DMs. The den's owner can still read them on the den's machine, like everything else there, and clients say so.
+- Messages, edits, deletes, replies and read state work as in channels. Every message counts toward the other member's unread `mention_count`.
+- DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit.
+- A DM whose other member left keeps its history, but nothing more can be sent (`403 forbidden`), and no new DM starts with a former member.
+
+### Presence and typing
+
+A member is online while they have an open socket. `ready` carries `online`, a list of member IDs. Changes go out as ephemeral `presence {online?, offline?}` events, gathered into batches about every 1.5 seconds. Presence isn't replayed, so after `resumed` the den sends `presence {online, full: true}`, which replaces the client's set.
+
+```json
+[{"t": "focus", "d": {"channels": ["12", "40"]}}]
+[{"t": "typing", "d": {"channel_id": "12"}}]
+```
+
+- `focus` names the channels the client is showing, at most 10; the den keeps those the member can see. It forgets them with each connection and each `ready`, so the client sends `focus` again after either.
+- `typing` counts only in a channel the connection focuses. The den passes it on as an ephemeral `typing {channel_id, member_id}` to the other connections focused there, at most once every 2 seconds per member and channel, dropping the rest.
+- Clients show a typing notice for about 6 seconds, and clear it when that member's message arrives.
+
 ## Later steps (outline)
 
-- **M1.3 Community:** the member list and the other `member.*` events, roles, kick and ban (closing sockets with 4003), DMs as two-member channels, presence batches, `focus` and `typing` client frames.
-- **M1.4 Files:** `POST /api/uploads`, which streams, checks size up front, strips metadata and makes a thumbnail. It returns an ID with the type, size and dimensions, to attach to a message within an hour. Files are served by content-addressed ID, originals and thumbnails separately.
+- **M1.4 Files:** `POST /api/uploads`, which streams, checks size up front, strips metadata and makes a thumbnail. It returns an ID with the type, size and dimensions, to attach to a message within an hour. Files are served by content-addressed ID, originals and thumbnails separately. Members gain `avatar` and `banner`, each an uploaded image's ID and dimensions, set with `PATCH /api/me`.
 - **M1.5 Recovery:** the endpoints sketched above, `GET /api/me/devices` and `DELETE /api/me/devices/{key_id}`, and `device.*` events.
 - **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.
 
@@ -309,5 +363,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Sign-in with a device key | 30 per minute per IP |
 | Password sign-in and recovery (M1.5) | 10 per hour per IP and 10 per hour per username, with backoff |
 | Sending messages | 5 per 5 seconds per member, per channel |
+| Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Other writes | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |
