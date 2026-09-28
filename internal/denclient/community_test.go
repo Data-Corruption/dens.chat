@@ -196,18 +196,32 @@ func TestDMsBetweenClients(t *testing.T) {
 	defer stop()
 	send(t, member, denID, dm.ID, "psst")
 	deadline := time.After(5 * time.Second)
-	for {
+	for counted := false; !counted; {
 		select {
 		case e := <-stream:
 			for _, r := range e.Reads {
-				if r.ChannelID == dm.ID && r.MentionCount == 1 {
-					return
-				}
+				counted = counted || (r.ChannelID == dm.ID && r.MentionCount == 1)
 			}
 		case <-deadline:
 			t.Fatal("the DM never counted as unread")
 		}
 	}
+
+	// Closing it lasts until the next message.
+	closed := func(v denclient.View) bool {
+		for _, r := range v.ReadStates {
+			if r.ChannelID == dm.ID {
+				return r.Closed
+			}
+		}
+		return false
+	}
+	if err := owner.CloseDM(ctx, denID, dm.ID); err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, owner, denID, "the DM closed", closed)
+	send(t, member, denID, dm.ID, "still there?")
+	viewOf(t, owner, denID, "the DM reopened", func(v denclient.View) bool { return !closed(v) })
 }
 
 func TestRoleChangeShowsStaffChannels(t *testing.T) {
