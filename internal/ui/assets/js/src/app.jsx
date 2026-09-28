@@ -3,10 +3,18 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { onConnection } from './events.js';
 import { toggleTheme } from './theme.js';
 import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
 import { Home } from './home.jsx';
 import { Settings } from './settings.jsx';
+import { Chat } from './chat.jsx';
+
+// chatRoute reads /den/<den>[/<channel>] from a path.
+function chatRoute(path) {
+    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+))?\/?$/);
+    return m ? { denID: m[1], channelID: m[2] || '' } : null;
+}
 
 // dens open opens the page with a one-time token in the URL fragment,
 // which never reaches the server in the request line. The page takes it,
@@ -22,6 +30,7 @@ function takePairingToken() {
 export function App({ instance, version }) {
     const [state, setState] = useState({ phase: 'loading' });
     const [path, setPath] = useState(window.location.pathname);
+    const [live, setLive] = useState(true);
 
     async function load() {
         try {
@@ -58,6 +67,9 @@ export function App({ instance, version }) {
     }
 
     const passwordSet = state.phase === 'ready' && state.status.passwordSet;
+    const chat = passwordSet ? chatRoute(path) : null;
+    // The event stream needs a paired browser, so it starts only then.
+    useEffect(() => (passwordSet ? onConnection(setLive) : undefined), [passwordSet]);
     let page;
     if (state.phase === 'loading') {
         page = <span class="loading loading-spinner"></span>;
@@ -70,12 +82,12 @@ export function App({ instance, version }) {
     } else if (path === '/settings') {
         page = <Settings />;
     } else {
-        page = <Home status={state.status} />;
+        page = <Home status={state.status} navigate={navigate} />;
     }
 
     return (
-        <>
-            <header class="navbar bg-base-200 px-4">
+        <div class="flex h-screen flex-col">
+            <header class="navbar min-h-12 shrink-0 bg-base-200 px-4">
                 <div class="flex-1 gap-2">
                     <a href="/" class="text-xl font-semibold" onClick={(e) => { e.preventDefault(); navigate('/'); }}>Dens</a>
                     {instance !== 'main' && <span class="badge badge-ghost">{instance}</span>}
@@ -89,11 +101,24 @@ export function App({ instance, version }) {
                     <button type="button" class="btn btn-ghost btn-sm" aria-label="Toggle theme" onClick={toggleTheme}>◐</button>
                 </div>
             </header>
-            <main class="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-                {page}
-                {version && <p class="text-center text-xs text-base-content/50">Dens {version}</p>}
-            </main>
-        </>
+            {passwordSet && !live && (
+                <div role="status" class="alert alert-warning alert-soft shrink-0 rounded-none">
+                    <span>Lost touch with the Dens service on this computer; reconnecting…</span>
+                </div>
+            )}
+            {chat ? (
+                <div class="min-h-0 flex-1">
+                    <Chat key={chat.denID} denID={chat.denID} channelID={chat.channelID} navigate={navigate} />
+                </div>
+            ) : (
+                <main class="min-h-0 flex-1 overflow-y-auto">
+                    <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+                        {page}
+                        {version && <p class="text-center text-xs text-base-content/50">Dens {version}</p>}
+                    </div>
+                </main>
+            )}
+        </div>
     );
 }
 

@@ -5,6 +5,7 @@
 # Usage:
 #   ./scripts/test.sh                              # race-enabled Go tests
 #   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
+#   ./scripts/test.sh -js                          # the page's tests on the pinned Node
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
@@ -25,6 +26,7 @@ Usage: ./scripts/test.sh [mode]
 
 With no argument, run the race-enabled Go test suite.
   -lint     Run the pinned shellcheck over every shell script
+  -js       Run the page's tests on the pinned Node
 EOF
   cat <<'EOF'
   -release  Test the release publication state machine
@@ -124,12 +126,33 @@ run_shell_lint() {
     scripts/test/fixture-releases.sh
     scripts/test-den-e2e.sh
     scripts/test/den-guest.sh
+    scripts/dev/seed-chat.sh
     scripts/install.sh
   )
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
   printf '🟢 shellcheck passed (%d scripts)\n' "${#scripts[@]}"
 }
 
+# The page's tests under internal/ui/test. esbuild bundles each with the
+# page's own Preact, as the build does, and Node's built-in runner runs the
+# bundles, so no npm packages are involved.
+run_js_tests() {
+  local paths esbuild preact node
+  paths=$(./scripts/vendor.sh esbuild preact node)
+  esbuild=$(sed -n 's/^esbuild=//p' <<<"$paths")
+  preact=$(sed -n 's/^preact=//p' <<<"$paths")
+  node=$(sed -n 's/^node=//p' <<<"$paths")
+  rm -rf out/js-tests
+  mkdir -p out/js-tests
+  local test bundle bundles=()
+  for test in internal/ui/test/*.test.js; do
+    bundle="out/js-tests/$(basename "${test%.js}").mjs"
+    NODE_PATH="$preact" "$esbuild" "$test" --bundle --platform=node --format=esm \
+      --jsx=automatic --jsx-import-source=preact --target=es2022 --log-level=warning --outfile="$bundle"
+    bundles+=("$bundle")
+  done
+  "$node" --test --test-reporter=spec "${bundles[@]}"
+}
 
 run_release_tests() {
   bash scripts/test-release.sh
@@ -151,6 +174,10 @@ case "$mode" in
     require_no_args "-lint" "$@"
     run_shell_lint
     ;;
+  -js)
+    require_no_args "-js" "$@"
+    run_js_tests
+    ;;
   -release)
     require_no_args "-release" "$@"
     run_release_tests
@@ -169,6 +196,7 @@ case "$mode" in
     require_no_args "-all" "$@"
     run_go_tests
     run_shell_lint
+    run_js_tests
     run_release_tests
     run_lifecycle_e2e
     bash scripts/test-den-e2e.sh

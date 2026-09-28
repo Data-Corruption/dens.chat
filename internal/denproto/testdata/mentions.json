@@ -1,0 +1,25 @@
+{
+  "about": "Mentions as denproto.Mentions counts them and the page highlights them: each text, and the usernames it mentions in order of first appearance. The Go and page tests both read this file.",
+  "cases": [
+    {"text": "hi @Alice and @bob_2", "mentions": ["alice", "bob_2"]},
+    {"text": "@alice @alice @ALICE", "mentions": ["alice"]},
+    {"text": "mail me@example.com, @x is too short", "mentions": []},
+    {"text": "@al is long enough", "mentions": ["al"]},
+    {"text": "@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb is the longest", "mentions": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]},
+    {"text": "@@alice (@dave) @eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "mentions": ["dave"]},
+    {"text": "@alice's and @bob_", "mentions": ["alice", "bob_"]},
+    {"text": "line one\n@alice on line two", "mentions": ["alice"]},
+    {"text": "`@alice` in code, @bob outside", "mentions": ["bob"]},
+    {"text": "```\n@alice in a block\n```\n@carol", "mentions": ["carol"]},
+    {"text": "```\n@alice in a block that never closes", "mentions": []},
+    {"text": "a lone ` backtick, @alice", "mentions": ["alice"]},
+    {"text": "``@alice`` and `` @bob", "mentions": ["bob"]},
+    {"text": "**@alice** ~~@bob~~ ||@carol|| *@dave*", "mentions": ["alice", "bob", "carol", "dave"]},
+    {"text": "_@alice_ and x@bob", "mentions": []},
+    {"text": "> @alice in a quote", "mentions": ["alice"]},
+    {"text": "https://mastodon.social/@alice says @bob", "mentions": ["bob"]},
+    {"text": "(https://x.com/@a_b)@carol", "mentions": []},
+    {"text": "http:// @alice", "mentions": ["alice"]},
+    {"text": "https://x.com/\u00a0@alice", "mentions": ["alice"]}
+  ]
+}

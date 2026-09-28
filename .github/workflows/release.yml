@@ -232,6 +232,9 @@ jobs:
       - name: Lint shell scripts
         run: ./scripts/test.sh -lint
 
+      - name: Test the page's scripts
+        run: ./scripts/test.sh -js
+
       - name: Test release publication state machine
         run: ./scripts/test.sh -release
 

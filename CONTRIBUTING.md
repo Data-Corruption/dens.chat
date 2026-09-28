@@ -22,13 +22,14 @@ in its output.
 
 ## Development
 
-Linux or WSL on `amd64`/`arm64`, the Go version in `go.mod`, Bash, `curl`, and
-`gcc` (only because `go test -race` needs it). The lifecycle E2E harness also
-needs Incus.
+Linux or WSL on `amd64`/`arm64`, the Go version in `go.mod`, Bash, `curl`,
+`gcc` (only because `go test -race` needs it) and `xz` (for the pinned Node.js
+the page's tests run on). The lifecycle E2E harness also needs Incus.
 
 ```sh
 ./scripts/test.sh            # go test -race ./...; run liberally
 ./scripts/test.sh -lint      # pinned shellcheck; after touching any .sh
+./scripts/test.sh -js        # the page's tests; after touching its scripts
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 

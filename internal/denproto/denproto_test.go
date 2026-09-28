@@ -3,7 +3,10 @@ package denproto
 import (
 	"bytes"
 	"crypto/ed25519"
+	_ "embed"
 	"encoding/hex"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -158,5 +161,79 @@ func TestFrames(t *testing.T) {
 	lo, hi, err := ParseRange(RangeHeader())
 	if err != nil || lo != MinVersion || hi != Version {
 		t.Fatalf("range %d-%d, %v", lo, hi, err)
+	}
+}
+
+// The page highlights mentions by the same rule, and its tests read the
+// same cases. They're embedded, since the Windows test runner doesn't run
+// from the package directory.
+//
+//go:embed testdata/mentions.json
+var mentionCases []byte
+
+func TestMentions(t *testing.T) {
+	var file struct {
+		Cases []struct {
+			Text     string   `json:"text"`
+			Mentions []string `json:"mentions"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(mentionCases, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Cases) == 0 {
+		t.Fatal("no mention cases")
+	}
+	for _, c := range file.Cases {
+		if got := Mentions(c.Text); !slices.Equal(got, c.Mentions) {
+			t.Errorf("Mentions(%q) = %q, want %q", c.Text, got, c.Mentions)
+		}
+	}
+}
+
+func TestChecks(t *testing.T) {
+	for _, bad := range []string{"", "0", "01", "-1", "1a", "99999999999999999999"} {
+		if _, err := ParseID(bad); err == nil {
+			t.Errorf("ParseID(%q) accepted", bad)
+		}
+	}
+	if id, err := ParseID("1000123"); err != nil || id != 1000123 {
+		t.Fatalf("ParseID = %d, %v", id, err)
+	}
+	for _, bad := range []string{"", "   \n", "\xff", strings.Repeat("x", MaxTextRunes+1)} {
+		if CheckText(bad) == nil {
+			t.Errorf("CheckText accepted %q", bad[:min(len(bad), 10)])
+		}
+	}
+	if CheckText(strings.Repeat("é", MaxTextRunes)) != nil {
+		t.Error("CheckText refused the longest message")
+	}
+	m := Message{ID: "5", ChannelID: "2", AuthorID: "3", Revision: 1, Text: "hi", ReplyTo: "x"}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted a bad reply_to")
+	}
+	m.ReplyTo = "4"
+	for _, bad := range []Reply{{AuthorID: "x", Text: "hi"}, {AuthorID: "3", Text: " "}, {AuthorID: "3", Text: strings.Repeat("x", ReplyExcerpt+1)}} {
+		m.Reply = &bad
+		if CheckMessage(m) == nil {
+			t.Errorf("CheckMessage accepted the reply %+v", bad)
+		}
+	}
+	m.ReplyTo, m.Reply = "", &Reply{AuthorID: "3", Text: "hi"}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted a reply preview without reply_to")
+	}
+}
+
+func TestExcerpt(t *testing.T) {
+	long := strings.Repeat("é", ReplyExcerpt)
+	for text, want := range map[string]string{
+		"hi":                 "hi",
+		"\n\n  hello\nworld": "hello\nworld",
+		long + "and more":    long,
+	} {
+		if got := Excerpt(text); got != want {
+			t.Errorf("Excerpt(%q) = %q, want %q", text, got, want)
+		}
 	}
 }

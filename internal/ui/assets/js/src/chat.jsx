@@ -1,0 +1,269 @@
+// A den's chat: the channel sidebar and the open channel.
+
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { api } from './api.js';
+import { onConnection, onEvent } from './events.js';
+import { unread } from './ids.js';
+import { Markdown, Preview, firstLine } from './markdown.jsx';
+import { MessagePane } from './messages.jsx';
+import { ChannelDialog, GroupDialog } from './manage.jsx';
+
+const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
+// Changes to these reload the den's state rather than being applied here.
+const STRUCTURAL = new Set([
+    'member.joined', 'channel.created', 'channel.updated', 'channel.deleted', 'channels.reordered',
+    'group.created', 'group.updated', 'group.deleted', 'groups.reordered',
+]);
+
+function remember(denID, channelID) {
+    try {
+        localStorage.setItem(LAST_CHANNEL + denID, channelID);
+    } catch {
+        // Storage can be unavailable; the first channel opens instead.
+    }
+}
+
+function remembered(denID) {
+    try {
+        return localStorage.getItem(LAST_CHANNEL + denID) || '';
+    } catch {
+        return '';
+    }
+}
+
+export function Chat({ denID, channelID, navigate }) {
+    const [view, setView] = useState(null);
+    const [error, setError] = useState('');
+    const [dialog, setDialog] = useState(null);
+    // On a narrow screen the channel list and the channel take turns.
+    const [listOpen, setListOpen] = useState(!channelID);
+    const reloadTimer = useRef(null);
+    const [live, setLive] = useState(true);
+    useEffect(() => onConnection(setLive), []);
+
+    async function load() {
+        try {
+            setView(await api.get(`/api/dens/${denID}/state`));
+            setError('');
+        } catch (e) {
+            setError(e.message);
+        }
+    }
+
+    function reloadSoon() {
+        clearTimeout(reloadTimer.current);
+        reloadTimer.current = setTimeout(load, 150);
+    }
+
+    useEffect(() => {
+        load();
+        const stop = onEvent((msg) => {
+            if (msg.t === 'reconnected') return reloadSoon();
+            if (msg.t === 'dens') {
+                const status = msg.d.dens.find((d) => d.den_id === denID);
+                if (status) setView((v) => (v ? { ...v, state: status.state, error: status.error, name: status.name } : v));
+                return;
+            }
+            if (msg.t !== 'den' || msg.d.den !== denID) return;
+            if (msg.d.reset) return reloadSoon();
+            if ((msg.d.events || []).some((e) => STRUCTURAL.has(e.t))) reloadSoon();
+            // The local service counts unread messages and mentions.
+            if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
+        });
+        return () => {
+            stop();
+            clearTimeout(reloadTimer.current);
+        };
+    }, [denID]);
+
+    if (error && !view) return <div class="p-6"><div role="alert" class="alert alert-error">{error}</div></div>;
+    if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
+
+    const text = view.channels.filter((c) => c.kind === 'text');
+    let channel = view.channels.find((c) => c.id === channelID) || text.find((c) => c.id === remembered(denID)) || text[0];
+    if (channel && channel.kind !== 'text') channel = text[0];
+    if (channel) remember(denID, channel.id);
+    const members = new Map(view.members.map((m) => [m.id, m]));
+    const reads = new Map(view.read_states.map((r) => [r.channel_id, r]));
+    const owner = view.role === 'owner';
+    // What waits in other channels, for the channels button on a narrow screen.
+    const elsewhere = { mentions: 0, unread: false };
+    for (const c of text) {
+        const r = reads.get(c.id);
+        if (c.id === channel?.id || !r) continue;
+        elsewhere.mentions += r.mention_count;
+        elsewhere.unread ||= unread(r);
+    }
+
+    return (
+        <div class="flex h-full min-h-0">
+            <aside class={`${listOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col overflow-y-auto bg-base-200 md:flex md:w-64`}>
+                <div class="border-b border-base-300 p-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="truncate font-semibold">{view.name}</span>
+                        <span class={`badge badge-xs ${live && view.state === 'connected' ? 'badge-success' : 'badge-warning'}`} title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
+                    </div>
+                    {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
+                </div>
+                <ChannelList view={view} reads={reads} open={channel?.id} owner={owner}
+                    onOpen={(id) => {
+                        setListOpen(false);
+                        navigate(`/den/${denID}/${id}`);
+                    }}
+                    onDialog={setDialog}
+                />
+                {owner && (
+                    <div class="mt-auto flex gap-1 p-2">
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
+                    </div>
+                )}
+            </aside>
+            <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
+                {channel ? (
+                    <>
+                        <ChannelHeader key={channel.id} channel={channel} me={view.me} owner={owner} elsewhere={elsewhere} onChannels={() => setListOpen(true)}
+                            onSettings={() => setDialog({ kind: 'channel', channel })} />
+                        <MessagePane
+                            key={`${denID}:${channel.id}`}
+                            denID={denID}
+                            channel={channel}
+                            me={view.me}
+                            members={members}
+                            readPosition={reads.get(channel.id)?.message_id}
+                            canModerate={owner}
+                        />
+                    </>
+                ) : (
+                    <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
+                        <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Channels</button>
+                        <p>{owner ? 'This den has no text channels yet. Create one to start talking.' : 'This den has no text channels yet.'}</p>
+                    </div>
+                )}
+            </section>
+            {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
+            {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}
+        </div>
+    );
+}
+
+function applyReads(view, reads) {
+    const changed = new Map(reads.map((r) => [r.channel_id, r]));
+    return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
+}
+
+function ChannelList({ view, reads, open, owner, onOpen, onDialog }) {
+    const ungrouped = view.channels.filter((c) => !c.group_id).sort((a, b) => a.position - b.position);
+    const groups = [...view.groups].sort((a, b) => a.position - b.position);
+    const item = (c) => {
+        const r = reads.get(c.id);
+        const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
+        return (
+            <li key={c.id}>
+                <button
+                    type="button"
+                    class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'} ${c.kind !== 'text' ? 'opacity-60' : ''}`}
+                    onClick={() => c.kind === 'text' && onOpen(c.id)}
+                    disabled={c.kind !== 'text'}
+                    title={c.kind === 'voice' ? 'Voice channel' : undefined}
+                >
+                    <span class="text-base-content/50">{c.kind === 'voice' ? '🔊' : '#'}</span>
+                    <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
+                    {c.staff_only && <span class="text-xs text-base-content/50" title="Staff only">🔒</span>}
+                    {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
+                </button>
+            </li>
+        );
+    };
+    return (
+        <nav class="flex flex-col gap-2 p-2">
+            <ul class="flex flex-col">{ungrouped.map(item)}</ul>
+            {groups.map((g) => (
+                <div key={g.id}>
+                    <div class="flex cursor-default select-none items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
+                        <span class="truncate">{g.name}</span>
+                        {owner && (
+                            <button type="button" class="btn btn-ghost btn-xs" aria-label={`Group settings for ${g.name}`} onClick={() => onDialog({ kind: 'group', group: g })}>⚙</button>
+                        )}
+                    </div>
+                    <ul class="flex flex-col">
+                        {view.channels.filter((c) => c.group_id === g.id).sort((a, b) => a.position - b.position).map(item)}
+                    </ul>
+                </div>
+            ))}
+        </nav>
+    );
+}
+
+// ChannelHeader names the channel and shows its description's first line,
+// which opens the rest when there is more than fits.
+function ChannelHeader({ channel, me, owner, elsewhere, onChannels, onSettings }) {
+    const [expanded, setExpanded] = useState(false);
+    const line = useRef(null);
+    const clipped = useClipped(line, channel.description);
+    const hasMore = !!channel.description && channel.description.trim() !== firstLine(channel.description).trim();
+    const expandable = hasMore || clipped || expanded;
+    return (
+        <header class="border-b border-base-300 px-4 py-2">
+            <div class="flex min-w-0 items-center gap-2">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm btn-square relative md:hidden"
+                    onClick={onChannels}
+                    aria-label={elsewhere.mentions ? `Channels, ${elsewhere.mentions} unread mentions` : 'Channels'}
+                >
+                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <path d="M2 4h12M2 8h12M2 12h12" />
+                    </svg>
+                    {elsewhere.mentions > 0 ? (
+                        <span class="badge badge-error badge-xs absolute -right-1 -top-1">{elsewhere.mentions}</span>
+                    ) : elsewhere.unread ? (
+                        <span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-base-content"></span>
+                    ) : null}
+                </button>
+                <span class="shrink-0 font-semibold"># {channel.name}</span>
+                {channel.description && (
+                    <button
+                        type="button"
+                        class="flex min-w-0 items-center gap-1 rounded px-1 text-left text-sm text-base-content/60 enabled:hover:bg-base-200 enabled:hover:text-base-content disabled:cursor-default"
+                        disabled={!expandable}
+                        aria-expanded={expandable ? expanded : undefined}
+                        title={expandable ? (expanded ? 'Hide the description' : 'Show the whole description') : undefined}
+                        onClick={() => setExpanded(!expanded)}
+                    >
+                        <span ref={line} class="truncate">
+                            <Preview text={channel.description} me={me} more={hasMore} />
+                        </span>
+                        {expandable && (
+                            <svg viewBox="0 0 16 16" class={`h-3 w-3 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M4 6l4 4 4-4" />
+                            </svg>
+                        )}
+                    </button>
+                )}
+                {owner && <button type="button" class="btn btn-ghost btn-xs ml-auto" onClick={onSettings} aria-label="Channel settings">⚙</button>}
+            </div>
+            {expanded && channel.description && (
+                <div class="mt-1 max-h-64 overflow-y-auto rounded bg-base-200 p-2 text-sm">
+                    <Markdown text={channel.description} me={me} />
+                </div>
+            )}
+        </header>
+    );
+}
+
+// useClipped reports whether an element's text runs past its width, so a
+// long first line counts as more to show.
+function useClipped(ref, text) {
+    const [clipped, setClipped] = useState(false);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const check = () => setClipped(el.scrollWidth > el.clientWidth + 1);
+        const observer = new ResizeObserver(check);
+        observer.observe(el);
+        check();
+        return () => observer.disconnect();
+    }, [text]);
+    return clipped;
+}

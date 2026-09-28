@@ -69,6 +69,7 @@ const (
 	LimitLogin            // per IP
 	LimitSocket           // per IP: WebSocket upgrades
 	LimitWrite            // per member: other writes
+	LimitSend             // per member and channel: messages
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -84,6 +85,8 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.login
 	case LimitSocket:
 		l = d.limits.socket
+	case LimitSend:
+		l = d.limits.send
 	default:
 		l = d.limits.write
 	}
@@ -91,6 +94,14 @@ func (d *Den) Allow(kind int, key string) error {
 		return denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited, "slow down")
 	}
 	return nil
+}
+
+// RelaxLimits lifts the rate limits, for development instances, where a
+// developer seeds thousands of messages to test the message list.
+func (d *Den) RelaxLimits() {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send} {
+		*l = newLimiter(1_000_000, time.Microsecond, 1000)
+	}
 }
 
 // IPKey is the rate-limit key for a client address.

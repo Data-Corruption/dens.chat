@@ -139,6 +139,35 @@ wait-connected)
 status)
     api GET /api/dens
     ;;
+channel)
+    # channel DEN_ID NAME: create a text channel; print its ID once the
+    # den's event has reached this client.
+    api POST "/api/dens/$1/channels" "{\"name\":\"$2\"}" >/dev/null
+    for _ in $(seq 1 40); do
+        id=$(api GET "/api/dens/$1/state" | json 'next((c["id"] for c in d["channels"] if c["name"] == "'"$2"'"), "")')
+        [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
+        sleep 0.25
+    done
+    fail "channel $2 never appeared"
+    ;;
+wait-channel)
+    # wait-channel DEN_ID: print the first channel's ID once one exists.
+    for _ in $(seq 1 40); do
+        id=$(api GET "/api/dens/$1/state" | json 'd["channels"][0]["id"] if d["channels"] else ""')
+        [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
+        sleep 0.25
+    done
+    fail "no channel reached this client"
+    ;;
+send)
+    # send DEN_ID CHANNEL_ID TEXT: post a message; print its ID.
+    nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+    api POST "/api/dens/$1/channels/$2/messages" "{\"nonce\":\"$nonce\",\"text\":\"$3\"}" | json 'd["id"]'
+    ;;
+history)
+    # history DEN_ID CHANNEL_ID: print the channel's messages, oldest first.
+    api GET "/api/dens/$1/channels/$2/messages?limit=100" | json '"\n".join(m["text"] for m in d["messages"])'
+    ;;
 *)
     printf 'unknown step %s\n' "$step" >&2
     exit 2

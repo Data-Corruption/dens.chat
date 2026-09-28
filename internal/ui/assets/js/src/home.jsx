@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { subscribeEvents } from './events.js';
+import { onEvent } from './events.js';
 import {
     Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction,
 } from './components.jsx';
@@ -12,14 +12,13 @@ const VERIFIER_HINT =
     "You'll need this password to sign in to the den from a new device. The den never sees it: it gets a value derived from " +
     "it that is different for every den, so reusing a password across dens is safe.";
 
-export function Home({ status }) {
+export function Home({ status, navigate }) {
     const [view, setView] = useState(null);
-    const [live, setLive] = useState(true);
     const [codes, setCodes] = useState(null);
 
-    useEffect(() => subscribeEvents((message) => {
+    useEffect(() => onEvent((message) => {
         if (message.t === 'dens') setView(message.d);
-    }, setLive), []);
+    }), []);
 
     if (codes) {
         return <RecoveryCodes denName={codes.name} codes={codes.codes} onDone={() => setCodes(null)} />;
@@ -35,17 +34,12 @@ export function Home({ status }) {
                     </span>
                 </div>
             )}
-            {!live && (
-                <div role="status" class="alert alert-warning alert-soft">
-                    <span>Lost touch with the Dens service on this computer; reconnecting…</span>
-                </div>
-            )}
             {!view ? (
                 <span class="loading loading-spinner"></span>
             ) : (
                 <>
                     {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} />
+                    <DenList dens={view.dens} navigate={navigate} />
                     <JoinDen onJoined={joined} />
                 </>
             )}
@@ -60,7 +54,7 @@ const STATE_BADGES = {
     revoked: ['badge-error', 'Signed out'],
 };
 
-function DenList({ dens }) {
+function DenList({ dens, navigate }) {
     if (dens.length === 0) {
         return (
             <Card title="Your dens">
@@ -71,13 +65,13 @@ function DenList({ dens }) {
     return (
         <Card title="Your dens">
             <ul class="flex flex-col gap-3">
-                {dens.map((den) => <DenItem key={den.den_id} den={den} />)}
+                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} />)}
             </ul>
         </Card>
     );
 }
 
-function DenItem({ den }) {
+function DenItem({ den, navigate }) {
     const [badge, label] = STATE_BADGES[den.state] || ['badge-ghost', den.state];
     return (
         <li class="rounded-box bg-base-100 p-4">
@@ -85,6 +79,11 @@ function DenItem({ den }) {
                 <span class="text-lg font-semibold">{den.name}</span>
                 <span class={`badge ${badge}`}>{label}</span>
                 {den.own && <span class="badge badge-outline">Hosted here</span>}
+                {den.state !== 'revoked' && (
+                    <button type="button" class="btn btn-primary btn-sm ml-auto" onClick={() => navigate(`/den/${den.den_id}`)}>
+                        Open
+                    </button>
+                )}
             </div>
             <p class="text-sm text-base-content/70">
                 {den.url} · you're <span class="font-medium">{den.display_name}</span> (@{den.username}), {den.role}

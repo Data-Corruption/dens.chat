@@ -69,7 +69,49 @@ type Manager struct {
 	ctx     context.Context
 	conns   []*conn
 	watches map[chan struct{}]struct{}
+	streams map[chan PageEvent]struct{}
 	wg      sync.WaitGroup
+}
+
+// PageEvent carries a den's checked events to the page, or tells it to
+// drop what it holds for the den and load it again (Reset). Reads are the
+// read states the events changed, so unread marks and mention counts come
+// from one place.
+type PageEvent struct {
+	DenID  string               `json:"den"`
+	Reset  bool                 `json:"reset,omitempty"`
+	Events []denproto.Event     `json:"events,omitempty"`
+	Reads  []denproto.ReadState `json:"reads,omitempty"`
+}
+
+// Stream returns a channel of page events, and a function to stop. A
+// stream that falls behind is closed; the page then reloads everything.
+func (m *Manager) Stream() (<-chan PageEvent, func()) {
+	ch := make(chan PageEvent, 256)
+	m.mu.Lock()
+	m.streams[ch] = struct{}{}
+	m.mu.Unlock()
+	return ch, func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if _, ok := m.streams[ch]; ok {
+			delete(m.streams, ch)
+			close(ch)
+		}
+	}
+}
+
+func (m *Manager) publish(e PageEvent) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for ch := range m.streams {
+		select {
+		case ch <- e:
+		default:
+			delete(m.streams, ch)
+			close(ch)
+		}
+	}
 }
 
 // New returns a manager; Run starts it.
@@ -86,6 +128,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		PingInterval: 20 * time.Second,
 		PingTimeout:  10 * time.Second,
 		watches:      map[chan struct{}]struct{}{},
+		streams:      map[chan PageEvent]struct{}{},
 	}
 }
 

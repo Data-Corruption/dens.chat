@@ -287,39 +287,72 @@ func mustInt(t *testing.T, s string) int64 {
 
 func TestHubResume(t *testing.T) {
 	h := NewHub()
-	h.Publish("a", nil, Everyone) // seq 1
-	h.Publish("b", nil, 7)        // seq 2, only member 7
-	h.Publish("c", nil, Everyone) // seq 3
+	h.Publish("a", nil, Everyone)      // seq 1
+	h.Publish("b", nil, OnlyMember(7)) // seq 2, only member 7
+	h.Publish("c", nil, Everyone)      // seq 3
 
-	_, missed, resumed, _ := h.Subscribe(8, h.Epoch(), 1)
+	_, missed, resumed, _ := h.Subscribe(8, false, h.Epoch(), 1)
 	if !resumed || len(missed) != 1 || missed[0].Seq != 3 {
 		t.Fatalf("member 8 resumed=%v missed=%+v", resumed, missed)
 	}
-	_, missed, resumed, _ = h.Subscribe(7, h.Epoch(), 1)
+	_, missed, resumed, _ = h.Subscribe(7, false, h.Epoch(), 1)
 	if !resumed || len(missed) != 2 {
 		t.Fatalf("member 7 resumed=%v missed=%+v", resumed, missed)
 	}
-	if _, _, resumed, seq := h.Subscribe(7, "other-epoch", 1); resumed || seq != 3 {
+	if _, _, resumed, seq := h.Subscribe(7, false, "other-epoch", 1); resumed || seq != 3 {
 		t.Fatalf("another epoch resumed=%v seq=%d", resumed, seq)
 	}
-	if _, _, resumed, _ := h.Subscribe(7, h.Epoch(), 9); resumed {
+	if _, _, resumed, _ := h.Subscribe(7, false, h.Epoch(), 9); resumed {
 		t.Fatal("resumed from a seq the den never issued")
 	}
 
 	h.maxLen = 2
 	h.Publish("d", nil, Everyone) // ring now holds seq 3 and 4
-	if _, _, resumed, _ := h.Subscribe(7, h.Epoch(), 1); resumed {
+	if _, _, resumed, _ := h.Subscribe(7, false, h.Epoch(), 1); resumed {
 		t.Fatal("resumed past the end of the ring")
 	}
-	if _, _, resumed, _ := h.Subscribe(7, h.Epoch(), 2); !resumed {
+	if _, _, resumed, _ := h.Subscribe(7, false, h.Epoch(), 2); !resumed {
 		t.Fatal("couldn't resume from the ring's edge")
+	}
+}
+
+func TestHubAudiencesAndRefresh(t *testing.T) {
+	h := NewHub()
+	member, _, _, _ := h.Subscribe(1, false, "", 0)
+	staff, _, _, _ := h.Subscribe(2, true, "", 0)
+	h.Publish("staff", nil, Staff)
+	h.Publish("public", nil, NonStaff)
+	h.Publish("all", nil, Everyone)
+	if e := <-member.Events; e.T != "public" {
+		t.Fatalf("member got %s first", e.T)
+	}
+	if e := <-staff.Events; e.T != "staff" {
+		t.Fatalf("staff got %s first", e.T)
+	}
+	h.RefreshNonStaff()
+	<-member.Events // "all"
+	if e := <-member.Events; e.T != eventRefresh || e.Seq != 3 {
+		t.Fatalf("member got %+v, want a refresh at seq 3", e)
+	}
+	<-staff.Events // "all"
+	select {
+	case e := <-staff.Events:
+		t.Fatalf("staff got %+v", e)
+	default:
+	}
+	// A non-staff resume point from before the refresh can't be replayed.
+	if _, _, resumed, _ := h.Subscribe(1, false, h.Epoch(), 2); resumed {
+		t.Fatal("resumed across a visibility change")
+	}
+	if _, _, resumed, _ := h.Subscribe(2, true, h.Epoch(), 2); !resumed {
+		t.Fatal("staff couldn't resume")
 	}
 }
 
 func TestHubDropsSlowSubscriber(t *testing.T) {
 	h := NewHub()
 	h.subSize = 2
-	sub, _, _, _ := h.Subscribe(1, "", 0)
+	sub, _, _, _ := h.Subscribe(1, false, "", 0)
 	for range 3 {
 		h.Publish("e", nil, Everyone)
 	}

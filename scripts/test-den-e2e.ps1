@@ -7,8 +7,8 @@ Instance main hosts the den. Caddy runs as a Windows service (it supports
 the Service Control Manager natively) and serves https://den.test with its
 internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
-with an invite from the owner, then main's service restarts, and second
-must reconnect.
+with an invite from the owner, the two chat, then main's service restarts;
+second must reconnect and see the whole history.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
@@ -139,6 +139,31 @@ function Wait-Connected($Browser, [long]$After) {
     Fail "the den didn't connect"
 }
 
+function New-Nonce {
+    $bytes = New-Object byte[] 16
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+}
+
+function Send-Message($Browser, [string]$DenID, [string]$Channel, [string]$Text) {
+    Invoke-Api $Browser POST "/api/dens/$DenID/channels/$Channel/messages" @{ nonce = New-Nonce; text = $Text } | Out-Null
+}
+
+function Get-History($Browser, [string]$DenID, [string]$Channel) {
+    $page = Invoke-Api $Browser GET "/api/dens/$DenID/channels/$Channel/messages?limit=100"
+    return (@($page.messages) | ForEach-Object { $_.text }) -join "|"
+}
+
+function Wait-Channel($Browser, [string]$DenID) {
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $state = Invoke-Api $Browser GET "/api/dens/$DenID/state"
+        if (@($state.channels).Count -gt 0) { return @($state.channels)[0].id }
+        Start-Sleep -Milliseconds 250
+    }
+    Fail "no channel reached instance second"
+}
+
 function Test-Installed {
     if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { return $true }
     return (Test-Path -LiteralPath $DataRoot) -or (Test-Path -LiteralPath $Dens)
@@ -264,10 +289,22 @@ den.test:$HttpsPort {
     if ($joined.den.role -ne "member") { Fail "joined as $($joined.den.role)" }
     $since = Wait-Connected $member 0
 
+    Step "chat"
+    Invoke-Api $owner POST "/api/dens/$denID/channels" @{ name = "general" } | Out-Null
+    $channel = Wait-Channel $member $denID
+    Send-Message $member $denID $channel "hello from the member"
+    Send-Message $owner $denID $channel "hello back, @bob"
+    $history = Get-History $owner $denID $channel
+    if ($history -ne "hello from the member|hello back, @bob") { Fail "the owner's history is: $history" }
+
     Step "restart the den's service"
     Invoke-Native -FilePath $Dens -Arguments @("service", "restart") | Out-Null
     $since = Wait-Connected $member $since
     Write-Host "The member reconnected after the restart."
+    Wait-Connected $owner 0 | Out-Null
+    Send-Message $owner $denID $channel "after the restart"
+    $history = Get-History $member $denID $channel
+    if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
     $passed = $true
 } catch {
     Write-Host ""

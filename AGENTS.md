@@ -38,7 +38,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
-| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`), its one shell template, Tailwind/DaisyUI source |
+| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source |
 | `internal/build` | Values baked in at build time |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
@@ -159,9 +159,10 @@ PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 ```sh
 ./scripts/test.sh              # go test -race ./... with embed placeholders; run constantly
 ./scripts/test.sh -lint        # pinned shellcheck over the shell scripts; run after touching them
+./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
-./scripts/test.sh -den-e2e     # a member joins a den through Caddy, in two Incus containers
+./scripts/test.sh -den-e2e     # a member joins a den through Caddy and chats, in two Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
@@ -175,9 +176,10 @@ land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
-cosign, rclone, shellcheck, goimports, Hugo, and Caddy for the den e2e) are
-pinned by version and SHA-256 in `scripts/vendor.sh` and fetched into the
-gitignored `tools/`. Never depend on `tools/` contents directly.
+cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests, and
+Caddy for the den e2e) are pinned by version and SHA-256 in `scripts/vendor.sh`
+and fetched into the gitignored `tools/`. Never depend on `tools/` contents
+directly.
 
 Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest.json}`,
 `out/`, `tools/`, `docs/out/`. Edit sources under
@@ -202,8 +204,10 @@ idempotent close, context cancellation as the cooperative stop everywhere
 (doesn't need handling *everywhere*, e.g. database txns. Just try not to block
 forever). Comments explain why an ordering or check exists, not what the next
 line does. Tests use only the standard `testing` package, open real SQLite in
-`t.TempDir()`, and spawn real subprocesses for cross-process claims. Keep it
-that way.
+`t.TempDir()`, and spawn real subprocesses for cross-process claims. The page's
+tests likewise use only Node's `node:test` and `node:assert`, with no npm
+packages. Where the Go and page code must agree, as on mentions, both test
+against one shared file of cases in a `testdata` directory. Keep it that way.
 
 ## Documentation
 

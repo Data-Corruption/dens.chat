@@ -51,6 +51,7 @@ type conn struct {
 
 	mu      sync.Mutex
 	profile Profile
+	den     *denState // nil until the first ready
 	state   State
 	errMsg  string
 	since   time.Time
@@ -275,10 +276,16 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			ws.Close(websocket.StatusInvalidFramePayloadData, "malformed frame")
 			return connectedAt, -1, err
 		}
+		var forward []denproto.Event
 		for _, e := range events {
-			if err := c.apply(ctx, e); err != nil {
+			out, ok, err := c.apply(ctx, e)
+			if err != nil {
+				c.m.log.Warnf("den protocol violation: %v", err)
 				ws.Close(websocket.StatusPolicyViolation, "protocol violation")
 				return connectedAt, -1, err
+			}
+			if ok {
+				forward = append(forward, out)
 			}
 			if e.T == denproto.EventReady || e.T == denproto.EventResumed {
 				if connectedAt.IsZero() {
@@ -287,30 +294,53 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 				c.setState(StateConnected, "")
 			}
 		}
+		var reads []denproto.ReadState
+		c.mu.Lock()
+		if c.den != nil {
+			reads = c.den.takeTouched()
+		}
+		c.mu.Unlock()
+		if len(forward) > 0 || len(reads) > 0 {
+			c.m.publish(PageEvent{DenID: c.j.denID.String(), Events: forward, Reads: reads})
+		}
 	}
 }
 
-// apply handles one event from the den. Everything a den sends is checked
-// before it is kept: dens are other people's servers.
-func (c *conn) apply(ctx context.Context, e denproto.Event) error {
+// apply handles one event from the den, and returns what to forward to
+// the page, if anything. Everything a den sends is checked before it is
+// kept or forwarded: dens are other people's servers.
+func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, bool, error) {
+	defer func() {
+		if e.Seq > c.seq {
+			c.seq = e.Seq
+		}
+	}()
 	switch e.T {
 	case denproto.EventReady:
 		var r denproto.Ready
 		if err := json.Unmarshal(e.D, &r); err != nil {
-			return fmt.Errorf("malformed ready: %w", err)
+			return e, false, fmt.Errorf("malformed ready: %w", err)
+		}
+		state := newState()
+		if err := state.load(r); err != nil {
+			return e, false, err
 		}
 		c.epoch, c.seq = r.Epoch, r.Seq
 		if err := c.updateProfile(ctx, r.Den, &r.Me); err != nil {
-			return err
+			return e, false, err
 		}
+		c.mu.Lock()
+		c.den = state
+		c.mu.Unlock()
+		// The page drops what it holds for this den and loads it again.
+		c.m.publish(PageEvent{DenID: c.j.denID.String(), Reset: true})
+		return e, false, nil
 	case denproto.EventDenUpdated:
 		var d denproto.Den
 		if err := json.Unmarshal(e.D, &d); err != nil {
-			return fmt.Errorf("malformed den.updated: %w", err)
+			return e, false, fmt.Errorf("malformed den.updated: %w", err)
 		}
-		if err := c.updateProfile(ctx, d, nil); err != nil {
-			return err
-		}
+		return e, false, c.updateProfile(ctx, d, nil)
 	case denproto.EventAuthRenewed:
 		var r denproto.Renewed
 		if json.Unmarshal(e.D, &r) == nil {
@@ -320,11 +350,14 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) error {
 			}
 			c.mu.Unlock()
 		}
+		return e, false, nil
 	}
-	if e.Seq > c.seq {
-		c.seq = e.Seq
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil {
+		return e, false, nil
 	}
-	return nil
+	return c.den.applyEvent(e, c.profile.Member)
 }
 
 // updateProfile keeps the den's name and address, and this member's

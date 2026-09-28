@@ -204,6 +204,9 @@ func (a *App) open(opts OpenOptions) error {
 		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log); err != nil {
 			return err
 		}
+		if a.DevMode() {
+			a.Den.RelaxLimits()
+		}
 		a.AddCleanup(func() error { a.Den.Close(); return nil })
 	}
 

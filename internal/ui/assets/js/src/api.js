@@ -28,7 +28,9 @@ async function request(method, path, body) {
         let message = `Something went wrong (HTTP ${res.status}).`;
         if (data && typeof data === 'object' && typeof data.error === 'string') message = data.error;
         else if (typeof data === 'string' && data.trim()) message = data.trim();
-        throw new APIError(message, res.status);
+        const err = new APIError(message, res.status);
+        err.data = data;
+        throw err;
     }
     return data;
 }
@@ -36,5 +38,7 @@ async function request(method, path, body) {
 export const api = {
     get: (path) => request('GET', path),
     post: (path, body = {}) => request('POST', path, body),
+    put: (path, body = {}) => request('PUT', path, body),
+    patch: (path, body = {}) => request('PATCH', path, body),
     del: (path) => request('DELETE', path),
 };
