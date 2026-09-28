@@ -5,7 +5,7 @@ import { useState } from 'preact/hooks';
 import { api } from './api.js';
 import { ErrorText, Field, SubmitButton, TextInput, useAction } from './components.jsx';
 
-function Dialog({ title, onClose, children }) {
+export function Dialog({ title, onClose, children }) {
     return (
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
             <div role="dialog" aria-label={title} class="card max-h-full w-full max-w-md overflow-y-auto bg-base-100 shadow-xl">

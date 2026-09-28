@@ -11,8 +11,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
+import { Avatar } from './avatar.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { Markdown, Preview } from './markdown.jsx';
+import { rank } from './people.jsx';
 
 const WINDOW = 200;
 const PAGE = 50;
@@ -27,7 +29,10 @@ function mergeIn(messages, incoming) {
     return out;
 }
 
-export function MessagePane({ denID, channel, me, members, readPosition, canModerate }) {
+// MessagePane shows a channel or DM. dm is the other member of a DM;
+// typing lists who is typing here; closed, when set, says why nothing can
+// be sent.
+export function MessagePane({ denID, channel, me, members, readPosition, role, dm, typing, closed, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -326,7 +331,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
                 me={me}
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
-                canDelete={m.author_id === me.id || canModerate}
+                canDelete={m.author_id === me.id || rank(role) > rank(members.get(m.author_id)?.role)}
+                onProfile={onProfile}
                 onReply={() => setReplyTo(m)}
                 onEdit={() => setEditing(m.id)}
                 onEditDone={() => setEditing(null)}
@@ -342,7 +348,16 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
             <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 py-2" onScroll={checkEdges}>
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
-                        <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">This is the start of #{channel.name}.</div>
+                        <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
+                            {dm ? (
+                                <>
+                                    <p>This is the start of your conversation with {dm.display_name}.</p>
+                                    <p class="text-xs">Only the two of you see it here, but the den's owner can read everything on the den, this included.</p>
+                                </>
+                            ) : (
+                                `This is the start of #${channel.name}.`
+                            )}
+                        </div>
                     )}
                     {list.hasOlder && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
@@ -362,14 +377,20 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
                 </div>
             )}
             {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
-            <Composer
-                channel={channel}
-                replyTo={replyTo}
-                replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
-                onCancelReply={() => setReplyTo(null)}
-                onSend={(text) => send(text)}
-                onEditLast={editLast}
-            />
+            {closed ? (
+                <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
+            ) : (
+                <Composer
+                    placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
+                    replyTo={replyTo}
+                    replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
+                    typing={typing}
+                    onCancelReply={() => setReplyTo(null)}
+                    onSend={(text) => send(text)}
+                    onEditLast={editLast}
+                    onTyping={onTyping}
+                />
+            )}
         </div>
     );
 
@@ -392,7 +413,7 @@ function clock(ms) {
     return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canDelete, onReply, onEdit, onEditDone, onJump, denID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canDelete, onReply, onEdit, onEditDone, onJump, onProfile, denID }) {
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState('');
     async function remove() {
@@ -409,33 +430,50 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
             class={`group relative rounded px-2 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : 'hover:bg-base-200'}`}
         >
             {m.reply_to && replied && (
-                <button type="button" class="flex w-full min-w-0 items-center gap-1 text-left text-xs text-base-content/60 hover:text-base-content" onClick={() => onJump(m.reply_to)}>
+                <button type="button" class="flex w-full min-w-0 items-center gap-1 pl-2 text-left text-xs text-base-content/60 hover:text-base-content" onClick={() => onJump(m.reply_to)}>
                     <Spine />
+                    <Avatar member={repliedAuthor} size="sm" />
                     <span class="shrink-0 font-medium">{name(repliedAuthor)}</span>
                     <span class="truncate"><Preview text={replied.text} me={me} /></span>
                 </button>
             )}
             {m.reply_to && !replied && (
-                <div class="flex items-center gap-1 text-xs italic text-base-content/50">
+                <div class="flex items-center gap-1 pl-2 text-xs italic text-base-content/50">
                     <Spine />
                     The original message was deleted.
                 </div>
             )}
-            {!compact && (
-                <div class="flex items-baseline gap-2">
-                    <span class="font-semibold">{name(author)}</span>
-                    <span class="text-xs text-base-content/50" title={new Date(m.created_at).toLocaleString()}>{clock(m.created_at)}</span>
+            <div class="flex gap-3">
+                <div class="relative w-9 shrink-0">
+                    {compact ? (
+                        // Out of the flow, so the time never makes a row taller.
+                        <span class="invisible absolute -inset-x-1 top-1 cursor-default select-none whitespace-nowrap text-center text-[10px] text-base-content/50 group-hover:visible">
+                            {clock(m.created_at)}
+                        </span>
+                    ) : (
+                        <button type="button" class="mt-0.5 rounded-full" onClick={() => author && onProfile(author)} aria-label={`${name(author)}'s profile`}>
+                            <Avatar member={author} />
+                        </button>
+                    )}
                 </div>
-            )}
-            {editing ? (
-                <EditBox m={m} denID={denID} onDone={onEditDone} />
-            ) : (
-                <div class="break-words">
-                    <Markdown text={m.text} me={me} />
-                    {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                <div class="min-w-0 flex-1">
+                    {!compact && (
+                        <div class="flex items-baseline gap-2">
+                            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
+                            <span class="text-xs text-base-content/50" title={new Date(m.created_at).toLocaleString()}>{clock(m.created_at)}</span>
+                        </div>
+                    )}
+                    {editing ? (
+                        <EditBox m={m} denID={denID} onDone={onEditDone} />
+                    ) : (
+                        <div class="break-words">
+                            <Markdown text={m.text} me={me} />
+                            {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                        </div>
+                    )}
+                    {error && <p class="text-xs text-error">{error}</p>}
                 </div>
-            )}
-            {error && <p class="text-xs text-error">{error}</p>}
+            </div>
             {!editing && (
                 <div class="absolute -top-3 right-2 hidden gap-1 rounded bg-base-100 shadow group-hover:flex">
                     <button type="button" class="btn btn-ghost btn-xs" onClick={onReply}>Reply</button>
@@ -460,19 +498,24 @@ function Spine() {
 
 function PendingRow({ p, me, onRetry, onDiscard }) {
     return (
-        <div class="mt-2 rounded px-2 py-0.5 opacity-60">
-            <div class="flex items-baseline gap-2">
-                <span class="font-semibold">{me.display_name}</span>
-                <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
+        <div class="mt-2 flex gap-3 rounded px-2 py-0.5 opacity-60">
+            <div class="w-9 shrink-0">
+                <Avatar member={me} />
             </div>
-            <Markdown text={p.text} me={me} />
-            {p.failed && (
-                <div class="flex items-center gap-2 text-xs text-error">
-                    <span>{p.error}</span>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={onRetry}>Retry</button>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={onDiscard}>Discard</button>
+            <div class="min-w-0 flex-1">
+                <div class="flex items-baseline gap-2">
+                    <span class="font-semibold">{me.display_name}</span>
+                    <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
                 </div>
-            )}
+                <Markdown text={p.text} me={me} />
+                {p.failed && (
+                    <div class="flex items-center gap-2 text-xs text-error">
+                        <span>{p.error}</span>
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={onRetry}>Retry</button>
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={onDiscard}>Discard</button>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
@@ -538,16 +581,40 @@ function EditBox({ m, denID, onDone }) {
 
 const MAX_TEXT = 4000;
 
-function Composer({ channel, replyTo, replyAuthor, onCancelReply, onSend, onEditLast }) {
+// typingLine says who is typing, by display name.
+export function typingLine(names) {
+    if (names.length === 0) return '';
+    if (names.length === 1) return `${names[0]} is typing…`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    if (names.length === 3) return `${names[0]}, ${names[1]} and ${names[2]} are typing…`;
+    return 'Several people are typing…';
+}
+
+// Typing notices go out at most this often while someone types; the den
+// shows them for a little longer than that.
+const TYPING_EVERY = 3000;
+
+function Composer({ placeholder, replyTo, replyAuthor, typing, onCancelReply, onSend, onEditLast, onTyping }) {
     const [text, setText] = useState('');
     const box = useRef(null);
+    const lastTyping = useRef(0);
     useEffect(() => box.current?.focus(), [replyTo]);
     const length = [...text].length;
     function submit() {
         if (!text.trim() || length > MAX_TEXT) return;
         onSend(text);
         setText('');
+        lastTyping.current = 0;
     }
+    function input(value) {
+        setText(value);
+        const now = Date.now();
+        if (value.trim() && now - lastTyping.current > TYPING_EVERY) {
+            lastTyping.current = now;
+            onTyping();
+        }
+    }
+    const typers = typingLine(typing.map((m) => m.display_name));
     return (
         <div class="border-t border-base-300 px-4 py-2">
             {replyTo && (
@@ -562,9 +629,9 @@ function Composer({ channel, replyTo, replyAuthor, onCancelReply, onSend, onEdit
                 ref={box}
                 class="textarea h-auto min-h-0 w-full resize-none"
                 rows={Math.min(8, text.split('\n').length)}
-                placeholder={`Message #${channel.name}`}
+                placeholder={placeholder}
                 value={text}
-                onInput={(e) => setText(e.currentTarget.value)}
+                onInput={(e) => input(e.currentTarget.value)}
                 onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
                         e.preventDefault();
@@ -578,7 +645,7 @@ function Composer({ channel, replyTo, replyAuthor, onCancelReply, onSend, onEdit
                 }}
             ></textarea>
             <div class="flex cursor-default select-none justify-between text-xs text-base-content/50">
-                <span>Enter to send, Shift+Enter for a new line</span>
+                {typers ? <span class="truncate font-medium text-base-content/70" aria-live="polite">{typers}</span> : <span>Enter to send, Shift+Enter for a new line</span>}
                 {length > MAX_TEXT - 500 && <span class={length > MAX_TEXT ? 'text-error' : ''}>{length} / {MAX_TEXT}</span>}
             </div>
         </div>

@@ -52,7 +52,10 @@ const STATE_BADGES = {
     connecting: ['badge-info', 'Connecting'],
     offline: ['badge-warning', 'Offline'],
     revoked: ['badge-error', 'Signed out'],
+    removed: ['badge-error', 'Not a member'],
 };
+
+const ROLES = { owner: 'the owner', moderator: 'a moderator', member: 'a member' };
 
 function DenList({ dens, navigate }) {
     if (dens.length === 0) {
@@ -73,29 +76,111 @@ function DenList({ dens, navigate }) {
 
 function DenItem({ den, navigate }) {
     const [badge, label] = STATE_BADGES[den.state] || ['badge-ghost', den.state];
+    const gone = den.state === 'revoked' || den.state === 'removed';
+    const staff = den.role === 'owner' || den.role === 'moderator';
+    const forget = useAction();
     return (
         <li class="rounded-box bg-base-100 p-4">
             <div class="flex flex-wrap items-center gap-2">
                 <span class="text-lg font-semibold">{den.name}</span>
                 <span class={`badge ${badge}`}>{label}</span>
                 {den.own && <span class="badge badge-outline">Hosted here</span>}
-                {den.state !== 'revoked' && (
+                {gone ? (
+                    <button type="button" class="btn btn-sm ml-auto" disabled={forget.busy}
+                        onClick={() => forget.run(() => api.del(`/api/dens/${den.den_id}`))}>
+                        Remove from this computer
+                    </button>
+                ) : (
                     <button type="button" class="btn btn-primary btn-sm ml-auto" onClick={() => navigate(`/den/${den.den_id}`)}>
                         Open
                     </button>
                 )}
             </div>
             <p class="text-sm text-base-content/70">
-                {den.url} · you're <span class="font-medium">{den.display_name}</span> (@{den.username}), {den.role}
+                {den.url} · you're <span class="font-medium">{den.display_name}</span> (@{den.username}), {ROLES[den.role] || den.role}
             </p>
             {den.error && <p class="text-sm text-warning">{den.error}</p>}
-            {den.role === 'owner' && den.state === 'connected' && (
+            <ErrorText message={forget.error} />
+            {den.state === 'connected' && (
                 <>
-                    <DenSettings den={den} />
-                    <Invites denID={den.den_id} />
+                    {den.role === 'owner' && <DenSettings den={den} />}
+                    {staff && <Invites denID={den.den_id} />}
+                    {staff && <Bans denID={den.den_id} />}
+                    {!den.own && <Leave den={den} />}
                 </>
             )}
         </li>
+    );
+}
+
+// Bans lists who can't come back, and lifts bans.
+function Bans({ denID }) {
+    const [open, setOpen] = useState(false);
+    const [list, setList] = useState(null);
+    const act = useAction();
+
+    function toggle(e) {
+        setOpen(e.currentTarget.open);
+        if (e.currentTarget.open) act.run(async () => setList((await api.get(`/api/dens/${denID}/bans`)).bans));
+    }
+
+    return (
+        <details class="collapse-arrow collapse mt-2 bg-base-200" onToggle={toggle}>
+            <summary class="collapse-title font-medium">Bans</summary>
+            <div class="collapse-content flex flex-col gap-2">
+                <ErrorText message={act.error} />
+                {!open ? null : list === null ? (
+                    <span class="loading loading-dots loading-sm"></span>
+                ) : list.length === 0 ? (
+                    <p class="text-sm text-base-content/70">Nobody is banned.</p>
+                ) : (
+                    <ul class="flex flex-col gap-1">
+                        {list.map((b) => (
+                            <li key={b.member.id} class="flex items-center gap-2 text-sm">
+                                <span class="min-w-0 flex-1 truncate">
+                                    <span class="font-medium">{b.member.display_name}</span> @{b.member.username}, since {new Date(b.banned_at).toLocaleDateString()}
+                                </span>
+                                <button type="button" class="btn btn-ghost btn-xs" disabled={act.busy}
+                                    onClick={() => act.run(async () => {
+                                        await api.del(`/api/dens/${denID}/bans/${b.member.id}`);
+                                        setList((await api.get(`/api/dens/${denID}/bans`)).bans);
+                                    })}>
+                                    Lift ban
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+                <p class="text-xs text-base-content/60">Lifting a ban doesn't bring anyone back; they can join again with a new invite.</p>
+            </div>
+        </details>
+    );
+}
+
+// Leave takes this member out of a den and forgets it on this computer.
+function Leave({ den }) {
+    const [confirming, setConfirming] = useState(false);
+    const act = useAction();
+    return (
+        <div class="mt-2">
+            {!confirming ? (
+                <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirming(true)}>Leave den</button>
+            ) : (
+                <div class="flex flex-col gap-2 rounded bg-base-200 p-3 text-sm">
+                    <p>
+                        Leave {den.name}? You're signed out on every device, and your messages stay. You can come back as @{den.username} if
+                        someone invites you again.
+                    </p>
+                    <ErrorText message={act.error} />
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => act.run(() => api.post(`/api/dens/${den.den_id}/leave`))}>
+                            Leave
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 
