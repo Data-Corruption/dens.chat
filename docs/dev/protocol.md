@@ -37,7 +37,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
 | 403 | `forbidden`, `banned`, `key_revoked` |
 | 404 | `not_found` |
-| 409 | `username_taken` (checked only after the invite, so only invite holders can test names) |
+| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed) |
 | 413 | `too_large` |
 | 426 | `protocol_unsupported` |
@@ -204,22 +204,29 @@ Any other failure reconnects with exponential backoff and full jitter, from 0.5 
 ## Channels and groups (M1.2)
 
 ```
-channel = {"id", "group_id"?, "name", "kind": "text" | "voice", "position", "staff_only"}
+channel = {"id", "group_id"?, "name", "description"?, "kind": "text" | "voice", "position", "staff_only"}
 group   = {"id", "name", "position"}
 ```
 
-- Names are 1 to 32 characters, with the same stripping as display names.
+- Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters.
 - `ready` carries the channels and groups the member can see. Changes arrive as `channel.created`, `channel.updated`, `channel.deleted`, and the same for `group.*`.
 - Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Only the owner can manage them until roles land in M1.3.
+
+**Ordering.** Positions are dense (0, 1, 2, …) among the channels of one group, among ungrouped channels, and among groups.
+
+- A create or edit that gives `position` inserts there, shifting the siblings at and after it down by one. Leaving it out appends to the end. Moving a channel to another group (`group_id` with or without `position`) closes the gap it leaves.
+- The den renumbers in the same transaction, and sends the result as one event per affected list: `channels.reordered {group_id, channel_ids}` (`group_id` is null for ungrouped channels), or `groups.reordered {group_ids}`, in the same frame as the change itself.
 
 ## Messages (M1.2)
 
 ```
-message = {"id", "channel_id", "author_id", "created_at", "edited_at"?, "text",
-           "reply_to"?, "nonce"?, "attachments"? (M1.4)}
+message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
+           "text", "reply_to"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6)}
 ```
 
-`text` is at most 4,000 characters and 16 KiB, and is stored as sent, without normalizing. It is the markdown subset from the design doc, which the client parses and never treats as HTML.
+`text` is at most 4,000 characters and 16 KiB. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
+
+`revision` starts at 1 and increases with every edit. `edited_by` is the member who made the latest edit, which differs from the author on shared messages.
 
 ### History
 
@@ -241,11 +248,12 @@ GET /api/channels/{id}/messages?around=<id>&limit=50     id and about half each 
 
 ```
 POST   /api/channels/{id}/messages   {"nonce": "<16 bytes>", "text", "reply_to"?}   201 message
-PATCH  /api/messages/{id}            {"text"}                                        200 message
+PATCH  /api/messages/{id}            {"revision", "text"}                            200 message
 DELETE /api/messages/{id}                                                            204
 ```
 
 - `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy.
+- An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message, and the client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
 - Members edit and delete their own messages. Moderators and the owner delete anyone's, from M1.3.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id}`. A deleted message is gone for good: clients drop it from memory, and later from their cache.
 
@@ -265,6 +273,7 @@ PUT /api/channels/{id}/read   {"message_id"}   204
 - **M1.3 Community:** the member list and `member.*` events, roles, kick and ban (closing sockets with 4003), DMs as two-member channels, presence batches, `focus` and `typing` client frames.
 - **M1.4 Files:** `POST /api/uploads`, which streams, checks size up front, strips metadata and makes a thumbnail. It returns an ID with the type, size and dimensions, to attach to a message within an hour. Files are served by content-addressed ID, originals and thumbnails separately.
 - **M1.5 Recovery:** the endpoints sketched above, `GET /api/me/devices` and `DELETE /api/me/devices/{key_id}`, and `device.*` events.
+- **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.
 
 ## Rate limits
 

@@ -252,6 +252,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 **Structure**
 
 - Channel groups are one level deep and contain text and voice channels.
+- Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
 - DMs are one-to-one between members of the same den, stored on the den. The UI says the owner can read them.
 
 **Names**
@@ -264,6 +265,9 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 - Plain text with a small markdown subset, attachments, edits, deletes and replies. No raw HTML, ever.
 - The subset: bold, italic, strikethrough, inline code, code blocks, quotes, spoilers, @mentions and bare URLs. There are no `[label](url)` links, so a link always shows where it goes. The browser parses it into a tree and builds the DOM with `createElement` and `textContent`, never `innerHTML`.
 - Each member's read position per channel lives on the den, so it follows them across devices. Channels show unread state and mention counts. Browser notifications come later, and are opt-in.
+- Edits carry the revision they were made against, and the den refuses a stale one. Nobody's edit silently overwrites another's, whether it comes from a second device or a co-editor. The member sees the newer text, with their own draft kept to reapply.
+- **Shared messages (M1.6):** when posting, the author can name other members who may also edit the message. Only the author can delete it or change who may edit. It suits shared lists and plans.
+- **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a single toggle, so two people ticking different boxes at once never lose a tick. Everyone else sees them read-only.
 - Delete removes the row and its files; `secure_delete` overwrites the freed pages. A delete event tells clients to purge caches.
 - Optional den-wide retention (for example 30 or 90 days), off by default, shown to members in den info.
 - Ban revokes all of a member's keys, closes their sockets and blocks re-registration with that username.
@@ -281,7 +285,7 @@ Not in M1. When a message is saved, the den rewrites known links to a site code 
 - Tracking parameters (`si`, `utm_*`, `feature`, share IDs) are dropped.
 - Links are stored as structured spans (site, ID, position) next to the text.
 - Size saving is modest: roughly 40–80 bytes per link, a few MB across 50,000 links. Per-field encryption overhead (nonce and tag, about 40 bytes) is similar in size.
-- No link previews in v1: fetching them would reveal the den's or members' IPs to those sites. Could be an opt-in feature for v2.
+- No link previews in v1: fetching them would reveal the den's or members' IPs to those sites. Could be an opt-in feature for v2. Previews would take a fixed height, with their content scaled to fit, so they never shift the message list.
 
 **Presence at 500 online**
 
@@ -572,21 +576,22 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 
 M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 
-**M1 steps.** M1 lands as five steps, each its own pull request, each ending with a check in the four target browsers:
+**M1 steps.** M1 lands as six steps, each its own pull request, each ending with a check in the four target browsers:
 
 | Step | Scope | Done when |
 | --- | --- | --- |
 | M1.1 Join | Den creation and owner account, invites, joining with a keypair and password verifier, key login and sessions, the den WebSocket with renewal and resume, protocol versioning, the Preact shell, Caddy on both platforms | A second machine joins through Caddy, with Linux and Windows dens, and stays connected across a den restart |
-| M1.2 Chat | Channels and groups, messages with the markdown subset, edits, deletes, replies, the windowed message list with jump to message, read positions and mentions | A client that was offline catches up without gaps or duplicates, and a reply jumps 5,000 messages back and returns to the present |
+| M1.2 Chat | Channels and groups with descriptions, messages with the markdown subset, edits with revisions, deletes, replies, the windowed message list with jump to message, read positions and mentions | A client that was offline catches up without gaps or duplicates, and a reply jumps 5,000 messages back and returns to the present |
 | M1.3 Community | Roles, staff-only channels, kick and ban, DMs, presence, typing | A ban closes the member's sockets right away |
 | M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
 | M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
+| M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
 
 Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness joins the lifecycle harnesses. An Incus container runs a den behind Caddy with Caddy's internal certificate authority, and two client containers join it by name, trusting that authority, and chat. On the Windows runner, one instance hosts a den behind Caddy running as a service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6).
 
-**After v1:** signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
+**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 
 ## Open questions
 
