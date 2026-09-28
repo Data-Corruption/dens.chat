@@ -58,35 +58,13 @@ case "${KEEP_FAILED:-false}" in
   *) echo "error: KEEP_FAILED must be true or false" >&2; exit 1 ;;
 esac
 
-# distro_spec NAME prints "canonical-name image privileged". systemd before
-# 256 can't create its credential host secret in an unprivileged container.
-distro_spec() {
-  case "$1" in
-    debian-12) echo "debian-12 debian/bookworm true" ;;
-    debian|debian-13) echo "debian-13 debian/trixie false" ;;
-    ubuntu-24.04) echo "ubuntu-24.04 ubuntu/noble true" ;;
-    ubuntu|ubuntu-26.04) echo "ubuntu-26.04 ubuntu/resolute false" ;;
-    fedora-43) echo "fedora-43 fedora/43 false" ;;
-    fedora|fedora-44) echo "fedora-44 fedora/44 false" ;;
-    arch) echo "arch archlinux/current false" ;;
-    *) return 1 ;;
-  esac
-}
+# shellcheck source=test/incus.sh
+source scripts/test/incus.sh
 for distro in $DISTROS; do
   distro_spec "$distro" >/dev/null || { echo "error: unknown distro '$distro'" >&2; exit 1; }
 done
 
-command -v incus >/dev/null 2>&1 || { echo "error: incus is required" >&2; exit 1; }
-INCUS=(incus)
-if ! incus info >/dev/null 2>&1 || { [[ "$(id -u)" != 0 ]] && [[ " $(id -nG) " != *" incus-admin "* ]]; }; then
-  if command -v sudo >/dev/null 2>&1 && sudo -n incus info >/dev/null 2>&1; then
-    INCUS=(sudo -n incus)
-  else
-    echo "error: the harness needs admin access to a local Incus daemon" >&2
-    echo "initialize it with 'sudo incus admin init --minimal' and join incus-admin" >&2
-    exit 1
-  fi
-fi
+incus_setup
 
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 RUN_LOG_DIR="$PWD/out/lifecycle-e2e-logs/$RUN_ID"
@@ -158,44 +136,10 @@ fi
 
 # Containers ------------------------------------------------------------------
 
-wait_for_boot() {
-  local name=$1 tries=0
-  while (( tries < 480 )); do
-    # shellcheck disable=SC2016 # evaluated in the guest
-    if "${INCUS[@]}" exec "$name" -- sh -c '
-      state=$(systemctl is-system-running 2>/dev/null || :)
-      [ "$state" = running ] || [ "$state" = degraded ] || exit 1
-      ! command -v ip >/dev/null 2>&1 || ip route show default 2>/dev/null | grep -q .
-    ' >/dev/null 2>&1; then
-      return 0
-    fi
-    tries=$((tries + 1))
-    sleep 0.25
-  done
-  echo "error: timed out waiting for $name to boot" >&2
-  return 1
-}
-
 launch() {
-  local distro=$1 image=$2 privileged=$3 name=$4
-  if "${INCUS[@]}" image info "dens-e2e/$distro" >/dev/null 2>&1; then
-    image="dens-e2e/$distro"
-  else
-    image="images:$image"
-  fi
-  echo ">> Launching $name from $image (privileged=$privileged)"
-  local config=(-c security.privileged="$privileged" -c security.nesting=true)
-  if [[ "$privileged" == true ]]; then
-    # A privileged container gets the host kernel's binfmt_misc table, which
-    # systemd empties at shutdown; on WSL that stops Windows programs from
-    # running until WSL restarts. Mount it read-only in the container.
-    config+=(-c "raw.lxc=lxc.mount.entry = /proc/sys/fs/binfmt_misc proc/sys/fs/binfmt_misc none rbind,ro,create=dir,optional 0 0")
-  fi
-  "${INCUS[@]}" init "$image" "$name" "${config[@]}" >/dev/null || return
-  "${INCUS[@]}" start "$name" || return
-  wait_for_boot "$name" || return
-  "${INCUS[@]}" file push -q -r "$RELEASE" "$name/" || return
-  "${INCUS[@]}" exec "$name" -- chown -R 0:0 /release || return
+  local distro=$1 name=$2
+  launch_container "$distro" "$name" || return
+  push_release "$name" "$RELEASE" || return
   "${INCUS[@]}" file push -q scripts/test/lifecycle-guest.sh "$name/root/lifecycle-guest.sh"
 }
 
@@ -205,10 +149,10 @@ guest() {
     sh /root/lifecycle-guest.sh "$phase"
 }
 
-# run_distro DISTRO IMAGE PRIVILEGED NAME PREVIOUS_BACKUP
+# run_distro DISTRO NAME PREVIOUS_BACKUP
 run_distro() {
-  local distro=$1 image=$2 privileged=$3 name=$4 previous=$5
-  launch "$distro" "$image" "$privileged" "$name" || return
+  local distro=$1 name=$2 previous=$3
+  launch "$distro" "$name" || return
   if [[ -n "$previous" ]]; then
     "${INCUS[@]}" file push -q "$previous" "$name/root/previous.backup" || return
   fi
@@ -230,7 +174,7 @@ if [[ -n "$BACKUP" ]]; then
   previous_distro=${BACKUP##*/}
 fi
 for requested in $DISTROS; do
-  read -r distro image privileged < <(distro_spec "$requested")
+  read -r distro _ _ < <(distro_spec "$requested")
   name="dens-e2e-${distro//./-}-$$"
   log="$RUN_LOG_DIR/$distro.log"
   printf '\n==============================================================\n'
@@ -238,7 +182,7 @@ for requested in $DISTROS; do
   printf '==============================================================\n'
   ACTIVE=$name
   set +e
-  run_distro "$distro" "$image" "$privileged" "$name" "$previous" 2>&1 | tee "$log"
+  run_distro "$distro" "$name" "$previous" 2>&1 | tee "$log"
   status=${PIPESTATUS[0]}
   set -e
   if [[ "$status" -eq 0 ]]; then

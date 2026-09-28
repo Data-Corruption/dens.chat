@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="referrer" content="no-referrer">
+        <title>{{ .Title }}</title>
+        <link rel="icon" href="{{ .Favicon }}">
+        <link rel="stylesheet" href="{{ .CSS }}">
+        <!-- Not deferred: it applies the theme before the first paint, then
+             renders the app once the document has loaded. -->
+        <script src="{{ .JS }}"></script>
+    </head>
+    <body class="min-h-screen bg-base-100">
+        <div id="app" data-instance="{{ .Instance }}" data-version="{{ .Version }}"></div>
+        <noscript><p class="p-6">Dens needs JavaScript in this browser.</p></noscript>
+    </body>
+</html>

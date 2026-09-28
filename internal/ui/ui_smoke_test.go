@@ -8,51 +8,31 @@ import (
 	"testing"
 )
 
-func TestTemplatesRender(t *testing.T) {
+func TestAppShellRenders(t *testing.T) {
 	u, err := New()
 	if err != nil {
 		t.Fatalf("ui.New: %v", err)
 	}
-	base := map[string]any{
+	var buf bytes.Buffer
+	err = u.Execute(&buf, "app.html", map[string]any{
+		"Title":    "Dens",
 		"CSS":      "/assets/css/output.css",
 		"JS":       "/assets/js/output.js",
 		"Favicon":  template.URL("data:,"),
 		"Version":  "v0.0.0-dev",
-		"Instance": "main",
+		"Instance": `second"><script>`,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	pages := []struct {
-		name  string
-		extra map[string]any
-		want  string
-	}{
-		{"index.html", map[string]any{"Title": "Dens"}, "Pair this browser"},
-		{"index.html", map[string]any{"Title": "Dens", "Paired": true}, "Set a local password"},
-		{"index.html", map[string]any{"Title": "Dens", "Paired": true, "PasswordSet": true, "ShowNav": true,
-			"UpdateVersion": "v1.2.3", "UpdateCommand": "sudo dens update"}, "Dens is running"},
-		{"settings.html", map[string]any{"Title": "Settings", "LogLevel": "info", "UpdatesManaged": true, "ShowNav": true}, "Change password"},
+	out := buf.String()
+	for _, want := range []string{"<!DOCTYPE html>", `<div id="app"`, `data-version="v0.0.0-dev"`, `src="/assets/js/output.js"`, "</html>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("app shell lacks %q", want)
+		}
 	}
-	for _, page := range pages {
-		data := map[string]any{}
-		for k, v := range base {
-			data[k] = v
-		}
-		for k, v := range page.extra {
-			data[k] = v
-		}
-		var buf bytes.Buffer
-		if err := u.Execute(&buf, page.name, data); err != nil {
-			t.Fatalf("render %s: %v", page.name, err)
-		}
-		out := buf.String()
-		if !strings.Contains(out, "<!DOCTYPE html>") || !strings.Contains(out, "</html>") {
-			t.Fatalf("render %s: missing page shell", page.name)
-		}
-		if !strings.Contains(out, page.want) {
-			t.Fatalf("render %s: missing %q", page.name, page.want)
-		}
-		if strings.Count(out, `id="action-dialog"`) != 1 {
-			t.Fatalf("render %s: shared action dialog missing or duplicated", page.name)
-		}
+	if strings.Contains(out, `second"><script>`) {
+		t.Error("the instance name reached the page unescaped")
 	}
 }
 
@@ -110,16 +90,25 @@ func TestNewRequiresPageAssets(t *testing.T) {
 	}
 }
 
-func TestSharedDialogUsesTextContentForDynamicMessages(t *testing.T) {
-	source, err := assetsFS.ReadFile("assets/js/src/ui.js")
+// TestScriptsNeverBuildHTMLFromStrings keeps every den-supplied string on
+// the text path: the page is the most valuable target, and anything a den
+// sends is hostile. Preact renders text as text; these are the ways around it.
+func TestScriptsNeverBuildHTMLFromStrings(t *testing.T) {
+	entries, err := assetsFS.ReadDir("assets/js/src")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(source)
-	if !strings.Contains(text, "msgEl.textContent = message") {
-		t.Fatal("shared dialog does not assign dynamic messages through textContent")
-	}
-	if strings.Contains(text, "msgEl.innerHTML") {
-		t.Fatal("shared dialog assigns dynamic messages through innerHTML")
+	banned := []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "dangerouslySetInnerHTML",
+		"document.write", "eval(", "new Function", "createContextualFragment", "srcdoc"}
+	for _, entry := range entries {
+		source, err := assetsFS.ReadFile("assets/js/src/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range banned {
+			if strings.Contains(string(source), b) {
+				t.Errorf("%s uses %s", entry.Name(), b)
+			}
+		}
 	}
 }

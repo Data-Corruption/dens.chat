@@ -54,6 +54,74 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				expires_at   INTEGER NOT NULL, -- unix milliseconds
 				last_seen_at INTEGER NOT NULL  -- unix milliseconds
 			) STRICT;
+
+			-- Dens this install has joined, keyed by den_id. The profile (URL,
+			-- name, account) and the device key are sealed with the data key.
+			CREATE TABLE joined_dens (
+				den_id     BLOB PRIMARY KEY,
+				profile    BLOB NOT NULL,
+				device_key BLOB NOT NULL,
+				joined_at  INTEGER NOT NULL
+			) STRICT;
+
+			-- The den this install hosts, once created. The identity private
+			-- key is sealed with the data key.
+			CREATE TABLE den (
+				id          INTEGER PRIMARY KEY CHECK (id = 1),
+				name        TEXT NOT NULL,
+				url         TEXT NOT NULL,
+				public_key  BLOB NOT NULL,
+				private_key BLOB NOT NULL,
+				created_at  INTEGER NOT NULL
+			) STRICT;
+
+			-- AUTOINCREMENT: a member ID is never reused, even after deletion.
+			CREATE TABLE den_members (
+				id            INTEGER PRIMARY KEY AUTOINCREMENT,
+				username      TEXT NOT NULL UNIQUE,
+				display_name  TEXT NOT NULL,
+				role          TEXT NOT NULL CHECK (role IN ('member', 'moderator', 'owner')),
+				verifier_hash BLOB NOT NULL, -- SHA-256 of the password verifier
+				joined_at     INTEGER NOT NULL
+			) STRICT;
+
+			CREATE TABLE den_devices (
+				key_id       BLOB PRIMARY KEY, -- SHA-256 of the public key
+				member_id    INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE,
+				public_key   BLOB NOT NULL,
+				label        TEXT NOT NULL,
+				created_at   INTEGER NOT NULL,
+				last_seen_at INTEGER NOT NULL
+			) STRICT;
+			CREATE INDEX den_devices_member ON den_devices (member_id);
+
+			CREATE TABLE den_recovery_codes (
+				code_hash BLOB PRIMARY KEY, -- SHA-256 of the raw code
+				member_id INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE
+			) STRICT;
+			CREATE INDEX den_recovery_codes_member ON den_recovery_codes (member_id);
+
+			-- created_by is NULL for the owner bootstrap invite, which grants
+			-- the owner role.
+			CREATE TABLE den_invites (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				code_hash  BLOB NOT NULL UNIQUE,
+				role       TEXT NOT NULL CHECK (role IN ('member', 'owner')),
+				created_by INTEGER REFERENCES den_members (id) ON DELETE CASCADE,
+				created_at INTEGER NOT NULL,
+				expires_at INTEGER NOT NULL,
+				max_uses   INTEGER NOT NULL,
+				uses       INTEGER NOT NULL DEFAULT 0
+			) STRICT;
+
+			CREATE TABLE den_sessions (
+				token_hash BLOB PRIMARY KEY, -- SHA-256 of the bearer token
+				member_id  INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE,
+				key_id     BLOB NOT NULL REFERENCES den_devices (key_id) ON DELETE CASCADE,
+				created_at INTEGER NOT NULL,
+				expires_at INTEGER NOT NULL
+			) STRICT;
+			CREATE INDEX den_sessions_expiry ON den_sessions (expires_at);
 		`); err != nil {
 			return fmt.Errorf("create tables: %w", err)
 		}

@@ -40,7 +40,3 @@ export function toggleTheme() {
 export function initTheme() {
     document.documentElement.setAttribute('data-theme', getTheme());
 }
-
-export function setupThemeToggle() {
-    document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
-}

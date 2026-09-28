@@ -47,6 +47,7 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "log", Usage: "override the log level for this run (" + xlog.ValidLevels + ")"},
 					&cli.IntFlag{Name: "port", Usage: "client port of a new development instance"},
+					&cli.IntFlag{Name: "den-port", Usage: "host a den on this port (development instances only)"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					return runService(ctx, bi, cmd)
@@ -126,6 +127,7 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 		Instance:      l.Instance,
 		LogLevel:      cmd.String("log"),
 		DevClientPort: cmd.Int("port"),
+		DevDenPort:    cmd.Int("den-port"),
 	}); err != nil {
 		return err
 	}

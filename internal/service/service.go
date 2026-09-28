@@ -81,10 +81,15 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	})
 	if denLn != nil {
 		start("den listener", func(ctx context.Context) error {
-			return server.Serve(ctx, den.New(a), errorLog, denLn)
+			err := server.Serve(ctx, den.New(a), errorLog, denLn)
+			// The listener is closed now, so clients told to reconnect
+			// can't reach this process again.
+			a.Den.CloseSockets(3 * time.Second)
+			return err
 		})
 	}
 	start("update checker", func(ctx context.Context) error { return a.RunUpdateChecker(ctx, func() {}) })
+	start("den connections", a.Dens.Run)
 
 	// A development instance has no installer to publish ready for it.
 	if l.Dev && a.Lease.Mode == maintenance.StartMigrate {

@@ -53,10 +53,15 @@ Dens is one static Go binary, forked from Sprout, that always runs the client an
 | --- | --- | --- |
 | Browser ↔ local service | HTTP + WebSocket on 127.0.0.1 (client listener) | UI, local API, signaling relay |
 | Local service ↔ remote den | HTTPS + WSS via the den's Caddy | Auth, messages, presence, files, signaling |
+| Local service ↔ own den | HTTP + WebSocket to the den listener on 127.0.0.1 | The same, for the den this install hosts |
 | Browser ↔ den SFU | UDP (DTLS-SRTP), TCP fallback | Voice and screen share media only |
 | CLI ↔ local service | Unix socket (Linux), named pipe (Windows) | Pairing tokens, admin commands, backups |
 
 The browser never talks to a den over HTTP. All den content reaches the page through the local service, so it only ever runs under the localhost origin.
+
+The owner's client reaches its own den over loopback, not through the public domain. That works before DNS and Caddy are set up, and on routers that can't route to their own public address (no hairpin NAT). The den still proves its identity key at every login, so loopback loses no authentication. The client-to-den protocol is specified in [protocol.md](protocol.md).
+
+**Client UI.** The page is a Preact app (about 10 KB) built by the pinned esbuild into one hashed bundle. Preact injects no scripts or styles at runtime, so the CSP stays `script-src 'self'` with no inline code. WebSockets, both den and local, use `github.com/coder/websocket`: small, context-first and without dependencies, since the standard library has none.
 
 **Install and service account**
 
@@ -138,7 +143,7 @@ Each install has one local user, stored in an encrypted vault, and one random da
 - One Ed25519 keypair per den, plus the current session token for each.
 - Local settings and preferences.
 
-Message content and cached files in SQLite are encrypted with the same data key (XChaCha20-Poly1305 or AES-GCM per field). This is a speed bump against scanners and backup snoopers, not protection from root or a live compromise. Metadata such as timestamps and channel IDs stays plaintext so queries work.
+Sensitive fields in SQLite are encrypted one by one with the same data key (XChaCha20-Poly1305): on a client, the vault and cached den content; on a den, message and DM text. This is a speed bump against scanners and backup snoopers, not protection from root or a live compromise, and it doesn't hide anything from the den owner, whose install holds the den's key. Metadata such as timestamps and IDs stays plaintext so queries work.
 
 **Envelope encryption**
 
@@ -170,7 +175,7 @@ There is no idle lock in v1; the OS screen lock covers someone at an unlocked de
 **Service hygiene**
 
 - The data key and vault stay in memory only in the service process; nothing sensitive goes to logs.
-- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk.
+- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk: the data key, and the seeds of the den's identity key and of each device key. Go's Ed25519 caches expanded keys through weak pointers, which can't point outside the Go heap, so each signature expands a short-lived copy of the key and clears it.
 
 ## Authentication
 
@@ -182,8 +187,17 @@ Members log in to a den by signing a challenge with a per-den Ed25519 key, fully
 
 1. The invite is a versioned string (dens1: plus base64url of the den URL, identity key fingerprint and single-use code) that the member pastes into a Join box. No invite links in v1, so nothing suggests a central account or server.
 2. The client generates a new Ed25519 keypair for this den and pins the den fingerprint.
-3. It sends the code, username, password and public key. The den stores an Argon2id password hash and the key.
+3. It sends the code, username, a password verifier (see below) and the public key, signed with the new key. The den stores a hash of the verifier and the key.
 4. The den returns 10 recovery codes, shown once and stored hashed.
+
+**Password verifiers**
+
+The raw password never leaves the client. For each den, the client derives `verifier = Argon2id(password, salt = SHA-256("dens-den-password-v1" ‖ den_id ‖ username))` (t=3, m=64 MiB, p=4, 32 bytes) and sends that, and the den stores `SHA-256(verifier)`.
+
+- A malicious or breached den learns nothing it can replay at another den, so reusing one password across dens, including the local password, is safe.
+- Offline guessing against a den's database costs a full Argon2id per guess, paid by the attacker.
+- The den never runs Argon2id itself, so login attempts cost it almost no CPU.
+- Usernames can't change after joining, since they salt the verifier. Display names can.
 
 **Normal login (invisible to the user)**
 
@@ -195,8 +209,8 @@ Members log in to a den by signing a challenge with a per-den Ed25519 key, fully
 
 **Fallbacks**
 
-- **New device, no backup:** username and password plus a new public key. The den registers the key, labels it, and notifies the member's other sessions ("new device added").
-- **Forgotten password:** username, one recovery code, new password and a new public key.
+- **New device, no backup:** username and password verifier plus a new public key. The den registers the key, labels it, and notifies the member's other sessions ("new device added").
+- **Forgotten password:** username, one recovery code, a new password verifier and a new public key.
 - **Change password:** from a signed-in session, with the current password or a recovery code.
 
 A **Devices** page lists each registered key with its label, creation date and last-seen time, and can revoke any of them.
@@ -211,13 +225,13 @@ A **Devices** page lists each registered key with its label, creation date and l
 
 **Why cut TOTP**
 
-TOTP protects against a stolen password. Here the password is only used when adding a device, every such login is announced to the member's existing devices, and online guessing is rate-limited against an Argon2id hash. The key, which does daily logins, is unphishable and never leaves the machine. TOTP adds setup friction for little gain; it can be added later with `pquerna/otp` as an option on the password fallback only.
+TOTP protects against a stolen password. Here the password is only used when adding a device, every such login is announced to the member's existing devices, and online guessing is rate-limited, with each guess costing the guesser an Argon2id computation. The key, which does daily logins, is unphishable and never leaves the machine. TOTP adds setup friction for little gain; it can be added later with `pquerna/otp` as an option on the password fallback only.
 
 **Rate limits**
 
 - Password and recovery attempts: per account and per IP, with backoff; IPs held in memory only.
 - Challenge requests and invite redemption: per IP.
-- Unknown usernames get a dummy Argon2id comparison, as Sprout already does.
+- Unknown usernames and wrong passwords get the same error, and the check is a constant-time hash comparison either way, so neither the reply nor its timing shows which usernames exist.
 
 Limiter memory is bounded. Per-IP token buckets live in a fixed-capacity LRU map (for example 100,000 entries, a few MB); an entry is dropped once its bucket has refilled and sat idle, and the least recently used entry is evicted when the map is full. IPv6 addresses are keyed by their /64 prefix so rotating addresses doesn't create new buckets. If eviction churn shows a flood, the endpoint falls back to a global limiter. Per-account backoff is bounded by the member count and never becomes a hard lockout, since lockouts let an attacker lock victims out.
 
@@ -238,18 +252,29 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 **Structure**
 
 - Channel groups are one level deep and contain text and voice channels.
+- Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
 - DMs are one-to-one between members of the same den, stored on the den. The UI says the owner can read them.
+
+**Names**
+
+- Usernames are unique, 2 to 32 characters of `a-z`, `0-9` and `_`, lowercased on entry and fixed at join.
+- Display names are free-form Unicode up to 32 characters. Control, bidi-override and zero-width characters are stripped, so a name can't disguise itself or reorder the text around it.
 
 **Messages**
 
-- Plain text with a small escaped markdown subset, attachments, edits, deletes and replies. No raw HTML, ever.
+- Plain text with a small markdown subset, attachments, edits, deletes and replies. No raw HTML, ever.
+- The subset: bold, italic, strikethrough, inline code, code blocks, quotes, spoilers, @mentions and bare URLs. There are no `[label](url)` links, so a link always shows where it goes. The browser parses it into a tree and builds the DOM with `createElement` and `textContent`, never `innerHTML`.
+- Each member's read position per channel lives on the den, so it follows them across devices. Channels show unread state and mention counts. Browser notifications come later, and are opt-in.
+- Edits carry the revision they were made against, and the den refuses a stale one. Nobody's edit silently overwrites another's, whether it comes from a second device or a co-editor. The member sees the newer text, with their own draft kept to reapply.
+- **Shared messages (M1.6):** when posting, the author can name other members who may also edit the message. Only the author can delete it or change who may edit. It suits shared lists and plans.
+- **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a single toggle, so two people ticking different boxes at once never lose a tick. Everyone else sees them read-only.
 - Delete removes the row and its files; `secure_delete` overwrites the freed pages. A delete event tells clients to purge caches.
 - Optional den-wide retention (for example 30 or 90 days), off by default, shown to members in den info.
 - Ban revokes all of a member's keys, closes their sockets and blocks re-registration with that username.
 
 **Compact links**
 
-When a message is saved, the den rewrites known links to a site code plus ID and expands them at render time. Unknown links are stored unchanged.
+Not in M1. When a message is saved, the den rewrites known links to a site code plus ID and expands them at render time. Unknown links are stored unchanged.
 
 | Site | Stored | Kept | Expands to |
 | --- | --- | --- | --- |
@@ -260,12 +285,33 @@ When a message is saved, the den rewrites known links to a site code plus ID and
 - Tracking parameters (`si`, `utm_*`, `feature`, share IDs) are dropped.
 - Links are stored as structured spans (site, ID, position) next to the text.
 - Size saving is modest: roughly 40–80 bytes per link, a few MB across 50,000 links. Per-field encryption overhead (nonce and tag, about 40 bytes) is similar in size.
-- No link previews in v1: fetching them would reveal the den's or members' IPs to those sites. Could be an opt-in feature for v2.
+- No link previews in v1: fetching them would reveal the den's or members' IPs to those sites. Could be an opt-in feature for v2. Previews would take a fixed height, with their content scaled to fit, so they never shift the message list.
 
 **Presence at 500 online**
 
 - One WebSocket per member; presence changes are coalesced and broadcast in batches every 1 to 2 seconds.
 - Typing indicators are throttled per channel and only sent to members viewing that channel.
+
+## Message list and sync
+
+**Message list**
+
+- A channel view holds one contiguous run of messages, about 200, never the whole channel. Scrolling near either end loads the next page (`before` or `after` the edge message) and trims the far end, so memory stays flat however far back a member scrolls.
+- The view is attached to the live tail while it holds the newest message, and new messages append. Jumping to an old message (a reply's quote, a mention, later search) loads the page `around` it and detaches the view. New messages then only update a "new messages, jump to present" bar, and scrolling forward to the newest page reattaches it.
+- With the window bounded, every loaded message is in the DOM. There is no per-row virtualization unless profiling shows a need.
+- The layout doesn't jump. Images carry their dimensions from upload, so placeholders take their final size, and loading older pages keeps the view anchored on the message being read.
+- Message IDs increase with time within a den and are never reused, so `before`, `after` and `around` are single index lookups.
+
+**Sync and bandwidth**
+
+Dens usually run on home connections, where upload bandwidth is scarce and every message goes out once per online member. The protocol keeps that fan-out small:
+
+- **Resume, don't refetch.** Every change a member can see is an event with a sequence number. A client that reconnects sends the last one it saw and gets only what it missed, from an in-memory ring of recent events. After a den restart, or a gap longer than the ring, the den sends a fresh snapshot instead (a resync), and the client refetches only what's on screen.
+- **Orderly restarts.** A stopping den closes its listener first, then tells every client it is restarting (WebSocket close 1012). Otherwise a quick client reconnects to the dying process, as the M1 spike showed. Clients wait a random delay of up to a few seconds, so 500 of them don't reconnect at once.
+- **Scoped ephemeral traffic.** Presence is coalesced into batches every 1 to 2 seconds, and typing goes only to members viewing that channel.
+- **Thumbnails, not originals.** Uploads get a small preview when they arrive. The message list shows previews, and originals load only when opened. The local service caches both (in memory until M6, then encrypted on disk) and serves them to the browser with `Cache-Control: no-store`, so they never sit unencrypted in the browser's cache.
+- **Compression, measured.** Compressing each message separately (permessage-deflate) saves only 22% on chat events. Context takeover saves 65%, but costs about 820 KB of den memory per connection, around 400 MB at 500 online. A static dictionary shared by client and den, with deflate per frame, reaches 43% of raw with no per-connection memory, and the den compresses each event once for every recipient. Batching events under load brings it to 29%. M1 sends plain JSON. Frames carry arrays of events, so batching and a dictionary encoding can come later without a redesign. History pages over HTTP are gzipped, to 29% of raw.
+- **Persistent cache and delta sync (M6).** An encrypted on-disk cache in the client, per-channel "changes since" queries and cached member lists, so a client restarted after a day away downloads only what changed. Until then, history lives in the client's memory, and a service restart refetches what's on screen.
 
 ## Files and media
 
@@ -357,6 +403,8 @@ On Windows, the installer adds inbound Windows Firewall rules for the media port
 - The guide ships a minimal Caddyfile: the den domain reverse-proxies to the den listener.
 - Access logging stays off (Caddy's default), in line with collecting less.
 - A second den on the same machine is another instance with its own ports and a second site block for its domain or subdomain.
+- Caddy runs as a service on both platforms: its packaged systemd unit on Linux, and on Windows as an SCM service, which Caddy supports natively (`sc.exe create caddy binPath= "…\caddy.exe run --config …"`).
+- Reloading or restarting Caddy closes den WebSockets (close 1001). Clients resume without losing events.
 
 **Den-side trust of proxy headers**
 
@@ -475,12 +523,14 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [ ] `Origin` check on every write and on the WebSocket upgrade.
 - [x] Session cookie `HttpOnly`, `SameSite=Strict`; pairing tokens single use and short-lived.
 - [x] Listener bound on both `127.0.0.1` and `::1`.
+- [ ] Everything from a den is hostile input: the client service checks every den response against the protocol's types and limits before storing or forwarding it.
 
 **Den listener**
 
 - [x] Serves only den routes; no client or admin routes compiled into its router.
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
+- [ ] Bearer tokens only, never cookies, so no web page can make a browser act on a den.
 
 **Control endpoint**
 
@@ -522,13 +572,33 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M3 | Group voice: renegotiation on join and leave, mute, speaking indicators | 10-person call stays stable for an hour |
 | M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
 | M5 | Media retention and compression worker, message retention setting | Old originals replaced, calls unaffected during jobs |
+| M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
 
-**After v1:** signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
+M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
+
+**M1 steps.** M1 lands as six steps, each its own pull request, each ending with a check in the four target browsers:
+
+| Step | Scope | Done when |
+| --- | --- | --- |
+| M1.1 Join | Den creation and owner account, invites, joining with a keypair and password verifier, key login and sessions, the den WebSocket with renewal and resume, protocol versioning, the Preact shell, Caddy on both platforms | A second machine joins through Caddy, with Linux and Windows dens, and stays connected across a den restart |
+| M1.2 Chat | Channels and groups with descriptions, messages with the markdown subset, edits with revisions, deletes, replies, the windowed message list with jump to message, read positions and mentions | A client that was offline catches up without gaps or duplicates, and a reply jumps 5,000 messages back and returns to the present |
+| M1.3 Community | Roles, staff-only channels, kick and ban, DMs, presence, typing | A ban closes the member's sockets right away |
+| M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
+| M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
+| M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
+
+Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
+
+**M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
+
+**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 
 ## Open questions
 
 - [ ] Which ffmpeg builds to vendor for Linux and Windows, and their license terms.
 - [ ] Owner defaults for retention windows, upload limits and screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
-- [ ] Running Caddy as a Windows service: Caddy's own service support or a documented wrapper.
+- [ ] Uploads at rest on the den: encrypted with the data key like message text, or stored plain (decide in M1.4).
+- [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
+- [ ] How the message renderer is tested: a pinned JavaScript runtime for unit tests, or a small Playwright suite.
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.

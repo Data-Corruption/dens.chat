@@ -139,14 +139,16 @@ func TestPairSetPasswordAndBackUp(t *testing.T) {
 	expect(post("/api/password", map[string]string{"password": "correct horse battery"}), http.StatusConflict, "set password twice")
 	expect(post("/api/password/change", map[string]string{"current": "wrong wrong wrong", "next": "new horse battery"}), http.StatusForbidden, "change with wrong password")
 
-	resp, err = browser.Get(base + "/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if !strings.Contains(string(page), "Dens is running") {
-		t.Fatalf("home page after setup:\n%s", page)
+	for path, want := range map[string]string{"/api/status": `"passwordSet":true`, "/api/dens": `"dens":[]`, "/": `<div id="app"`} {
+		resp, err = browser.Get(base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), want) {
+			t.Fatalf("%s after setup: %d %s", path, resp.StatusCode, body)
+		}
 	}
 
 	if err := client.CallBody(control.Request{Op: control.OpBackup, Password: "nope nope nope"}, nil, io.Discard); err == nil {

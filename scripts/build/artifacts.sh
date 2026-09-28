@@ -19,9 +19,13 @@ frontend_build() {
   vendor_esbuild
   vendor_daisyui
   vendor_tailwind
+  vendor_preact
 
   run_step "Tailwind CSS built" "Tailwind CSS failed" "$VENDOR_TAILWIND" -i "$CSS_DIR/input.css" -o "$CSS_DIR/output.css" --minify
-  run_step "JavaScript bundled" "JavaScript bundling failed" "$VENDOR_ESBUILD" "$JS_DIR/src/main.js" --bundle --minify --outfile="$JS_DIR/output.js"
+  # esbuild resolves preact through NODE_PATH, from the vendored package.
+  run_step "JavaScript bundled" "JavaScript bundling failed" \
+    env NODE_PATH="$(vendor_abs "$VENDOR_PREACT")" "$VENDOR_ESBUILD" "$JS_DIR/src/main.jsx" \
+      --bundle --minify --jsx=automatic --jsx-import-source=preact --target=es2022 --outfile="$JS_DIR/output.js"
 }
 
 frontend_hash_assets() {

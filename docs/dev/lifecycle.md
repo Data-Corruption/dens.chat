@@ -136,6 +136,7 @@ Two environment variables, which `dens update` also honors:
 - The data key is a plaintext file, `control/datakey.dev`. Development data isn't protected; don't put real data in it.
 - There are no transactions. The instance marks itself ready for the running version, and migrates whenever the version changes.
 - `--port` sets the client port when the instance is first created; it's recorded in `instance.json` after that.
+- `--den-port` makes the instance host a den on that port. Its owner can give it a loopback address such as `http://127.0.0.1:18485`, so a second development instance can join it without Caddy.
 - It refuses to run as root, and maintenance commands refuse development builds.
 
 The same binary's `open`, `status` and `backup` talk to the development instance.
@@ -178,3 +179,19 @@ From WSL, build the fixtures into a Windows path such as `%TEMP%`, and copy the 
 1. Run the Linux harness; each distro leaves `<distro>.backup` in its log directory.
 2. Run the Windows harness with `-Backup` set to one of them and `-SaveBackup windows.backup`.
 3. Run the Linux harness with `--backup windows.backup`.
+
+## Testing dens
+
+The den e2e harnesses check that a member on another machine can join a den through Caddy and stays connected across a den restart. Each M1 step extends them. They share the fixture releases, and on Linux the container helpers in `scripts/test/incus.sh`, with the lifecycle harnesses.
+
+- **Linux:** `./scripts/test.sh -den-e2e` runs `scripts/test-den-e2e.sh`. A Debian 13 container runs the den behind the pinned Caddy, serving `https://den.test` with Caddy's internal certificate authority. A Fedora 44 container trusts that authority, installs Dens, and joins with an invite from the owner. `--den` and `--client` pick other distros. Logs land in `out/den-e2e-logs/<run>/`.
+- **Windows:** `scripts/test-den-e2e.ps1` runs both ends on one machine. Instance `main` hosts the den behind Caddy running as a Windows service, and instance `second` joins it through `https://den.test:18443`. It trusts Caddy's authority in the machine certificate store and points `den.test` at loopback in the hosts file, and undoes both at the end. Like the lifecycle harness, it installs real services, so it runs in CI or on a Windows machine without Dens, elevated:
+
+```sh
+bash scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
+bash scripts/vendor.sh caddy-windows
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\test-den-e2e.ps1 -ReleaseDir out\windows-e2e -CaddyZip tools\caddy_2.11.4_windows_amd64.zip
+```

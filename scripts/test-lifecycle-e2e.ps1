@@ -350,7 +350,8 @@ try {
     if (Invoke-Api POST "/api/pair" @{ token = $token } -AllowFailure) { Fail "a pairing token worked twice" }
     Invoke-Api POST "/api/password" @{ password = $Password } | Out-Null
     $page = Invoke-Api GET "/"
-    if ($page.Content -notmatch "Dens is running") { Fail "home page missing after setup" }
+    if ($page.Content -notmatch '<div id="app"') { Fail "the page shell is missing" }
+    if ((Invoke-Api GET "/api/status").Content -notmatch '"passwordSet":true') { Fail "the password isn't set after setup" }
     $line = Get-StatusLine "attacker.example"
     if ($line -notmatch " 421 ") { Fail "a foreign Host got '$line'" }
 

@@ -3,6 +3,7 @@ module github.com/Data-Corruption/dens.chat
 go 1.26.7
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/ncruces/go-sqlite3 v0.35.3
 	github.com/urfave/cli/v3 v3.6.1

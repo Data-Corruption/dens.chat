@@ -39,6 +39,9 @@ DEFAULT_COSIGN_VERSION="v3.1.3"
 DEFAULT_RCLONE_VERSION="v1.75.0"
 DEFAULT_SHELLCHECK_VERSION="v0.11.0"
 DEFAULT_HUGO_VERSION="0.164.0"
+DEFAULT_PREACT_VERSION="10.29.8"
+# The den e2e harnesses run dens behind this Caddy on both platforms.
+DEFAULT_CADDY_VERSION="v2.11.4"
 # Floating majors would let a wrangler release change a deploy silently.
 DEFAULT_WRANGLER_VERSION="4.125.0"
 
@@ -49,6 +52,8 @@ COSIGN_VERSION="${COSIGN_VERSION:-$DEFAULT_COSIGN_VERSION}"
 RCLONE_VERSION="${RCLONE_VERSION:-$DEFAULT_RCLONE_VERSION}"
 SHELLCHECK_VERSION="${SHELLCHECK_VERSION:-$DEFAULT_SHELLCHECK_VERSION}"
 HUGO_VERSION="${HUGO_VERSION:-$DEFAULT_HUGO_VERSION}"
+PREACT_VERSION="${PREACT_VERSION:-$DEFAULT_PREACT_VERSION}"
+CADDY_VERSION="${CADDY_VERSION:-$DEFAULT_CADDY_VERSION}"
 WRANGLER_VERSION="${WRANGLER_VERSION:-$DEFAULT_WRANGLER_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
@@ -69,6 +74,10 @@ RCLONE_SHA_LINUX_AMD64_OVERRIDE="${RCLONE_SHA_LINUX_AMD64:-}"
 SHELLCHECK_SHA_LINUX_AMD64_OVERRIDE="${SHELLCHECK_SHA_LINUX_AMD64:-}"
 SHELLCHECK_SHA_LINUX_ARM64_OVERRIDE="${SHELLCHECK_SHA_LINUX_ARM64:-}"
 HUGO_SHA_LINUX_AMD64_OVERRIDE="${HUGO_SHA_LINUX_AMD64:-}"
+PREACT_SHA_OVERRIDE="${PREACT_SHA:-}"
+CADDY_SHA_LINUX_AMD64_OVERRIDE="${CADDY_SHA_LINUX_AMD64:-}"
+CADDY_SHA_LINUX_ARM64_OVERRIDE="${CADDY_SHA_LINUX_ARM64:-}"
+CADDY_SHA_WINDOWS_AMD64_OVERRIDE="${CADDY_SHA_WINDOWS_AMD64:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -83,6 +92,12 @@ SHELLCHECK_SHA_LINUX_ARM64="${SHELLCHECK_SHA_LINUX_ARM64:-68a8133197a50beb8803f8
 # The upstream Hugo checksums file ships from the same release as the archive,
 # so verifying against it would only catch transfer corruption.
 HUGO_SHA_LINUX_AMD64="${HUGO_SHA_LINUX_AMD64:-fea17b8c076f950bb2e9f9486667bdaa29422883888d509d63931c73e8a9b3a4}"
+# The npm tarball; its SHA-512 matched the registry's published integrity.
+PREACT_SHA="${PREACT_SHA:-b18cb0a457f3d43c7bb30391a74ade7d13e03bc6e77915e061c70c0fe1123299}"
+# Release archives; each SHA-512 matched Caddy's checksums file.
+CADDY_SHA_LINUX_AMD64="${CADDY_SHA_LINUX_AMD64:-527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9}"
+CADDY_SHA_LINUX_ARM64="${CADDY_SHA_LINUX_ARM64:-52d42ae12b3462097e9868da6dfed3c9648ae12edd3b3638102312af84cb6904}"
+CADDY_SHA_WINDOWS_AMD64="${CADDY_SHA_WINDOWS_AMD64:-1708333f79e274c7697285afe6d592ab39314e0b131e9ec6bea08ad27df62ebf}"
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -100,6 +115,9 @@ VENDOR_COSIGN=""
 VENDOR_RCLONE=""
 VENDOR_SHELLCHECK=""
 VENDOR_HUGO=""
+VENDOR_PREACT=""
+VENDOR_CADDY=""
+VENDOR_CADDY_WINDOWS=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -108,7 +126,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
-VENDOR_FETCHABLE=(esbuild tailwind daisyui cosign rclone shellcheck hugo)
+VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows)
 
 # Pin validation --------------------------------------------------------------
 
@@ -142,6 +160,9 @@ validate_pins() {
     "$SHELLCHECK_SHA_LINUX_AMD64_OVERRIDE" "$SHELLCHECK_SHA_LINUX_ARM64_OVERRIDE"
   require_hash_overrides "Hugo" "$HUGO_VERSION" "$DEFAULT_HUGO_VERSION" \
     "$HUGO_SHA_LINUX_AMD64_OVERRIDE"
+  require_hash_overrides "Preact" "$PREACT_VERSION" "$DEFAULT_PREACT_VERSION" "$PREACT_SHA_OVERRIDE"
+  require_hash_overrides "Caddy" "$CADDY_VERSION" "$DEFAULT_CADDY_VERSION" \
+    "$CADDY_SHA_LINUX_AMD64_OVERRIDE" "$CADDY_SHA_LINUX_ARM64_OVERRIDE" "$CADDY_SHA_WINDOWS_AMD64_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -154,6 +175,10 @@ validate_pins() {
   validate_sha256 "$SHELLCHECK_SHA_LINUX_AMD64" "SHELLCHECK_SHA_LINUX_AMD64"
   validate_sha256 "$SHELLCHECK_SHA_LINUX_ARM64" "SHELLCHECK_SHA_LINUX_ARM64"
   validate_sha256 "$HUGO_SHA_LINUX_AMD64" "HUGO_SHA_LINUX_AMD64"
+  validate_sha256 "$PREACT_SHA" "PREACT_SHA"
+  validate_sha256 "$CADDY_SHA_LINUX_AMD64" "CADDY_SHA_LINUX_AMD64"
+  validate_sha256 "$CADDY_SHA_LINUX_ARM64" "CADDY_SHA_LINUX_ARM64"
+  validate_sha256 "$CADDY_SHA_WINDOWS_AMD64" "CADDY_SHA_WINDOWS_AMD64"
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -240,6 +265,61 @@ vendor_daisyui() {
     "$DAISYUI_THEME_SHA" "DaisyUI theme module"
   # The theme module is referenced by relative path from input.css.
   VENDOR_DAISYUI="$TOOLS_DIR/daisyui.mjs"
+}
+
+# Preact is bundled into the page. esbuild finds it through NODE_PATH, which
+# is what VENDOR_PREACT names: a node_modules directory holding only preact.
+vendor_preact() {
+  vendor_require_bins tar
+  mkdir -p "$TOOLS_DIR"
+  local archive="$TOOLS_DIR/preact-${PREACT_VERSION}.tgz"
+  download_verified "$archive" \
+    "https://registry.npmjs.org/preact/-/preact-${PREACT_VERSION}.tgz" \
+    "$PREACT_SHA" "Preact module"
+  local dir="$TOOLS_DIR/node_modules/preact"
+  if [[ "$(cat "$dir/.vendored" 2>/dev/null)" != "$PREACT_SHA" ]]; then
+    rm -rf "$dir"
+    mkdir -p "$dir"
+    tar -xzf "$archive" -C "$dir" --strip-components=1
+    printf '%s\n' "$PREACT_SHA" > "$dir/.vendored"
+  fi
+  VENDOR_PREACT="$TOOLS_DIR/node_modules"
+}
+
+# Caddy for this host, extracted from the verified release archive.
+vendor_caddy() {
+  vendor_require_bins tar
+  local arch sha
+  case "$HOST_GOARCH" in
+    amd64) arch="linux_amd64"; sha="$CADDY_SHA_LINUX_AMD64" ;;
+    arm64) arch="linux_arm64"; sha="$CADDY_SHA_LINUX_ARM64" ;;
+    *)
+      printf "error: no Caddy download configured for %s\n" "$HOST_GOARCH" >&2
+      return 1
+      ;;
+  esac
+  mkdir -p "$TOOLS_DIR"
+  local version="${CADDY_VERSION#v}"
+  local archive="$TOOLS_DIR/caddy_${version}_${arch}.tar.gz"
+  download_verified "$archive" \
+    "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_${version}_${arch}.tar.gz" \
+    "$sha" "Caddy $arch"
+  VENDOR_CADDY="$TOOLS_DIR/caddy-${version}-${arch}"
+  if [[ ! -x "$VENDOR_CADDY" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
+    tar -xzf "$archive" -C "$TOOLS_DIR" caddy
+    mv -f "$TOOLS_DIR/caddy" "$VENDOR_CADDY"
+    chmod +x "$VENDOR_CADDY"
+  fi
+}
+
+# The Windows Caddy release zip, for the Windows den e2e to unpack.
+vendor_caddy_windows() {
+  mkdir -p "$TOOLS_DIR"
+  local version="${CADDY_VERSION#v}"
+  VENDOR_CADDY_WINDOWS="$TOOLS_DIR/caddy_${version}_windows_amd64.zip"
+  download_verified "$VENDOR_CADDY_WINDOWS" \
+    "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_${version}_windows_amd64.zip" \
+    "$CADDY_SHA_WINDOWS_AMD64" "Caddy windows_amd64"
 }
 
 # No PATH preference: the whole point of pinning cosign here is that CI signs
@@ -336,6 +416,9 @@ vendor_ensure() {
     rclone) vendor_rclone ;;
     shellcheck) vendor_shellcheck ;;
     hugo) vendor_hugo ;;
+    preact) vendor_preact ;;
+    caddy) vendor_caddy ;;
+    caddy-windows) vendor_caddy_windows ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -353,6 +436,9 @@ vendor_resolved() {
     rclone) printf '%s' "$VENDOR_RCLONE" ;;
     shellcheck) printf '%s' "$VENDOR_SHELLCHECK" ;;
     hugo) printf '%s' "$VENDOR_HUGO" ;;
+    preact) printf '%s' "$VENDOR_PREACT" ;;
+    caddy) printf '%s' "$VENDOR_CADDY" ;;
+    caddy-windows) printf '%s' "$VENDOR_CADDY_WINDOWS" ;;
   esac
 }
 
@@ -400,7 +486,7 @@ vendor_main() {
     local candidate
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
-        arm64:rclone|arm64:hugo) continue ;;
+        arm64:rclone|arm64:hugo|*:caddy-windows) continue ;;
       esac
       tools+=("$candidate")
     done
