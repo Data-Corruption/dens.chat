@@ -44,6 +44,9 @@ DEFAULT_PREACT_VERSION="10.29.8"
 DEFAULT_CADDY_VERSION="v2.11.4"
 # Floating majors would let a wrangler release change a deploy silently.
 DEFAULT_WRANGLER_VERSION="4.125.0"
+# Runs the page's tests (./scripts/test.sh -js) and nothing else. Track the
+# active LTS line.
+DEFAULT_NODE_VERSION="v24.21.0"
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
@@ -55,6 +58,7 @@ HUGO_VERSION="${HUGO_VERSION:-$DEFAULT_HUGO_VERSION}"
 PREACT_VERSION="${PREACT_VERSION:-$DEFAULT_PREACT_VERSION}"
 CADDY_VERSION="${CADDY_VERSION:-$DEFAULT_CADDY_VERSION}"
 WRANGLER_VERSION="${WRANGLER_VERSION:-$DEFAULT_WRANGLER_VERSION}"
+NODE_VERSION="${NODE_VERSION:-$DEFAULT_NODE_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
 #
@@ -78,6 +82,8 @@ PREACT_SHA_OVERRIDE="${PREACT_SHA:-}"
 CADDY_SHA_LINUX_AMD64_OVERRIDE="${CADDY_SHA_LINUX_AMD64:-}"
 CADDY_SHA_LINUX_ARM64_OVERRIDE="${CADDY_SHA_LINUX_ARM64:-}"
 CADDY_SHA_WINDOWS_AMD64_OVERRIDE="${CADDY_SHA_WINDOWS_AMD64:-}"
+NODE_SHA_LINUX_AMD64_OVERRIDE="${NODE_SHA_LINUX_AMD64:-}"
+NODE_SHA_LINUX_ARM64_OVERRIDE="${NODE_SHA_LINUX_ARM64:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -98,6 +104,10 @@ PREACT_SHA="${PREACT_SHA:-b18cb0a457f3d43c7bb30391a74ade7d13e03bc6e77915e061c70c
 CADDY_SHA_LINUX_AMD64="${CADDY_SHA_LINUX_AMD64:-527fbf917c39189a1e3b31d34fa955601680b2d5c8055d2a87b8b9588dec7bb9}"
 CADDY_SHA_LINUX_ARM64="${CADDY_SHA_LINUX_ARM64:-52d42ae12b3462097e9868da6dfed3c9648ae12edd3b3638102312af84cb6904}"
 CADDY_SHA_WINDOWS_AMD64="${CADDY_SHA_WINDOWS_AMD64:-1708333f79e274c7697285afe6d592ab39314e0b131e9ec6bea08ad27df62ebf}"
+# Release tarballs, as listed in the release's SHASUMS256.txt, whose
+# signature verified against a release key named in Node's README.
+NODE_SHA_LINUX_AMD64="${NODE_SHA_LINUX_AMD64:-fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6}"
+NODE_SHA_LINUX_ARM64="${NODE_SHA_LINUX_ARM64:-6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2}"
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -118,6 +128,7 @@ VENDOR_HUGO=""
 VENDOR_PREACT=""
 VENDOR_CADDY=""
 VENDOR_CADDY_WINDOWS=""
+VENDOR_NODE=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -126,7 +137,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
-VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows)
+VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node)
 
 # Pin validation --------------------------------------------------------------
 
@@ -163,6 +174,8 @@ validate_pins() {
   require_hash_overrides "Preact" "$PREACT_VERSION" "$DEFAULT_PREACT_VERSION" "$PREACT_SHA_OVERRIDE"
   require_hash_overrides "Caddy" "$CADDY_VERSION" "$DEFAULT_CADDY_VERSION" \
     "$CADDY_SHA_LINUX_AMD64_OVERRIDE" "$CADDY_SHA_LINUX_ARM64_OVERRIDE" "$CADDY_SHA_WINDOWS_AMD64_OVERRIDE"
+  require_hash_overrides "Node.js" "$NODE_VERSION" "$DEFAULT_NODE_VERSION" \
+    "$NODE_SHA_LINUX_AMD64_OVERRIDE" "$NODE_SHA_LINUX_ARM64_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -179,6 +192,8 @@ validate_pins() {
   validate_sha256 "$CADDY_SHA_LINUX_AMD64" "CADDY_SHA_LINUX_AMD64"
   validate_sha256 "$CADDY_SHA_LINUX_ARM64" "CADDY_SHA_LINUX_ARM64"
   validate_sha256 "$CADDY_SHA_WINDOWS_AMD64" "CADDY_SHA_WINDOWS_AMD64"
+  validate_sha256 "$NODE_SHA_LINUX_AMD64" "NODE_SHA_LINUX_AMD64"
+  validate_sha256 "$NODE_SHA_LINUX_ARM64" "NODE_SHA_LINUX_ARM64"
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -406,6 +421,34 @@ vendor_hugo() {
   printf '🟢 Vendored Hugo %s\n' "$HUGO_VERSION"
 }
 
+# Node runs the page's tests, which esbuild bundles first, so no npm packages
+# are involved. Only the node binary is taken from the release, freshly from
+# the verified archive on every run, like the other extracted tools.
+vendor_node() {
+  vendor_require_bins tar xz install
+  local arch sha
+  case "$HOST_GOARCH" in
+    amd64) arch="linux-x64"; sha="$NODE_SHA_LINUX_AMD64" ;;
+    arm64) arch="linux-arm64"; sha="$NODE_SHA_LINUX_ARM64" ;;
+    *)
+      printf "error: no Node.js download configured for %s\n" "$HOST_GOARCH" >&2
+      return 1
+      ;;
+  esac
+  mkdir -p "$TOOLS_DIR"
+  local base="node-${NODE_VERSION}-${arch}"
+  local archive="$TOOLS_DIR/${base}.tar.xz"
+  download_verified "$archive" \
+    "https://nodejs.org/dist/${NODE_VERSION}/${base}.tar.xz" \
+    "$sha" "Node.js $arch"
+  local extract="$TOOLS_DIR/.node-extract"
+  rm -rf "$extract" && mkdir -p "$extract"
+  tar --no-same-owner -xJf "$archive" -C "$extract" "$base/bin/node"
+  install -m 0755 "$extract/$base/bin/node" "$TOOLS_DIR/node"
+  rm -rf "$extract"
+  VENDOR_NODE="$TOOLS_DIR/node"
+  printf '🟢 Vendored Node.js %s\n' "$NODE_VERSION"
+}
 
 vendor_ensure() {
   case "$1" in
@@ -419,6 +462,7 @@ vendor_ensure() {
     preact) vendor_preact ;;
     caddy) vendor_caddy ;;
     caddy-windows) vendor_caddy_windows ;;
+    node) vendor_node ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -439,6 +483,7 @@ vendor_resolved() {
     preact) printf '%s' "$VENDOR_PREACT" ;;
     caddy) printf '%s' "$VENDOR_CADDY" ;;
     caddy-windows) printf '%s' "$VENDOR_CADDY_WINDOWS" ;;
+    node) printf '%s' "$VENDOR_NODE" ;;
   esac
 }
 

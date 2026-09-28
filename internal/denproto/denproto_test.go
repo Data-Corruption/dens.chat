@@ -3,7 +3,10 @@ package denproto
 import (
 	"bytes"
 	"crypto/ed25519"
+	_ "embed"
 	"encoding/hex"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -161,26 +164,29 @@ func TestFrames(t *testing.T) {
 	}
 }
 
+// The page highlights mentions by the same rule, and its tests read the
+// same cases. They're embedded, since the Windows test runner doesn't run
+// from the package directory.
+//
+//go:embed testdata/mentions.json
+var mentionCases []byte
+
 func TestMentions(t *testing.T) {
-	for text, want := range map[string]string{
-		"hi @Alice and @bob_2":                        "alice bob_2",
-		"@alice @alice @ALICE":                        "alice",
-		"mail me@example.com, @x is too short":        "",
-		"`@alice` in code, @bob outside":              "bob",
-		"```\n@alice in a block\n```\n@carol":         "carol",
-		"@@alice (@dave) @" + strings.Repeat("e", 33): "dave",
-		"**@alice** ~~@bob~~ ||@carol||":              "alice bob carol",
-		"_@alice_ and x@bob":                          "",
-		"https://mastodon.social/@alice says @bob":    "bob",
-		"(https://x.com/@a_b)@carol":                  "",
-		"http:// @alice":                              "alice",
-		"https://x.com/\u00a0@alice":                  "alice",
-		"a lone ` backtick, @alice":                   "alice",
-		"``@alice`` and `` @bob":                      "bob",
-		"> @alice in a quote":                         "alice",
-	} {
-		if got := strings.Join(Mentions(text), " "); got != want {
-			t.Errorf("Mentions(%q) = %q, want %q", text, got, want)
+	var file struct {
+		Cases []struct {
+			Text     string   `json:"text"`
+			Mentions []string `json:"mentions"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(mentionCases, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Cases) == 0 {
+		t.Fatal("no mention cases")
+	}
+	for _, c := range file.Cases {
+		if got := Mentions(c.Text); !slices.Equal(got, c.Mentions) {
+			t.Errorf("Mentions(%q) = %q, want %q", c.Text, got, c.Mentions)
 		}
 	}
 }

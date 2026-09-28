@@ -145,6 +145,7 @@ function inline(text, ctx, key, prev = '') {
                 out.push(
                     <span
                         key={`${key}-${n++}`}
+                        data-mention={name.toLowerCase()}
                         class={`rounded px-0.5 font-medium ${self ? 'bg-warning/30' : 'bg-primary/15 text-primary'}`}
                         onClick={ctx.onMention && !ctx.preview ? () => ctx.onMention(name.toLowerCase()) : undefined}
                     >
