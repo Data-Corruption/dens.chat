@@ -337,10 +337,14 @@ type DenUpdateRequest struct {
 // Ready is the snapshot that starts a connection, or replaces the client's
 // state mid-stream.
 type Ready struct {
-	Epoch string `json:"epoch"`
-	Seq   uint64 `json:"seq"`
-	Den   Den    `json:"den"`
-	Me    Member `json:"me"`
+	Epoch      string      `json:"epoch"`
+	Seq        uint64      `json:"seq"`
+	Den        Den         `json:"den"`
+	Me         Member      `json:"me"`
+	Members    []Member    `json:"members"`
+	Groups     []Group     `json:"groups"`
+	Channels   []Channel   `json:"channels"`
+	ReadStates []ReadState `json:"read_states"`
 }
 
 type Renew struct {

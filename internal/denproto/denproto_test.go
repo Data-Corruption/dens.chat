@@ -160,3 +160,41 @@ func TestFrames(t *testing.T) {
 		t.Fatalf("range %d-%d, %v", lo, hi, err)
 	}
 }
+
+func TestMentions(t *testing.T) {
+	for text, want := range map[string]string{
+		"hi @Alice and @bob_2":                        "alice bob_2",
+		"@alice @alice @ALICE":                        "alice",
+		"mail me@example.com, @x is too short":        "",
+		"`@alice` in code, @bob outside":              "bob",
+		"```\n@alice in a block\n```\n@carol":         "carol",
+		"@@alice (@dave) @" + strings.Repeat("e", 33): "dave",
+	} {
+		if got := strings.Join(Mentions(text), " "); got != want {
+			t.Errorf("Mentions(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
+func TestChecks(t *testing.T) {
+	for _, bad := range []string{"", "0", "01", "-1", "1a", "99999999999999999999"} {
+		if _, err := ParseID(bad); err == nil {
+			t.Errorf("ParseID(%q) accepted", bad)
+		}
+	}
+	if id, err := ParseID("1000123"); err != nil || id != 1000123 {
+		t.Fatalf("ParseID = %d, %v", id, err)
+	}
+	for _, bad := range []string{"", "   \n", "\xff", strings.Repeat("x", MaxTextRunes+1)} {
+		if CheckText(bad) == nil {
+			t.Errorf("CheckText accepted %q", bad[:min(len(bad), 10)])
+		}
+	}
+	if CheckText(strings.Repeat("é", MaxTextRunes)) != nil {
+		t.Error("CheckText refused the longest message")
+	}
+	m := Message{ID: "5", ChannelID: "2", AuthorID: "3", Revision: 1, Text: "hi", ReplyTo: "x"}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted a bad reply_to")
+	}
+}

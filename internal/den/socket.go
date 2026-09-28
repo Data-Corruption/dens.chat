@@ -161,7 +161,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	defer cancel()
 
 	epoch, after := parseResume(r.URL.Query().Get("resume"))
-	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, epoch, after)
+	staff := IsStaff(s.Role)
+	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, staff, epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 
 	write := func(events ...denproto.Event) bool {
@@ -172,6 +173,20 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		wctx, wcancel := context.WithTimeout(ctx, writeTimeout)
 		defer wcancel()
 		return c.Write(wctx, websocket.MessageText, frame) == nil
+	}
+	// sendReady sends a snapshot starting at seq. Subscribing first means
+	// nothing published after the snapshot is lost; an event racing it may
+	// repeat state the snapshot already has, and applying one twice is
+	// harmless.
+	sendReady := func(seq uint64) bool {
+		snap, err := d.snapshot(ctx, s.MemberID, staff, seq)
+		if err != nil {
+			d.log.Errorf("den snapshot: %v", err)
+			c.Close(websocket.StatusInternalError, "")
+			return false
+		}
+		ready, err := denproto.NewEvent(denproto.EventReady, 0, snap)
+		return err == nil && write(ready)
 	}
 
 	if resumed {
@@ -189,20 +204,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		if len(batch) > 0 && !write(batch...) {
 			return
 		}
-	} else {
-		// Subscribing first means nothing published after the snapshot is
-		// lost; an event racing the snapshot may repeat state it already
-		// has, and applying one twice is harmless.
-		me, err := d.Member(ctx, s.MemberID)
-		if err != nil {
-			c.Close(websocket.StatusInternalError, "")
-			return
-		}
-		info, _ := d.Info()
-		ready, _ := denproto.NewEvent(denproto.EventReady, 0, denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Den: info, Me: me})
-		if !write(ready) {
-			return
-		}
+	} else if !sendReady(seq) {
+		return
 	}
 
 	var expires atomic.Int64
@@ -244,21 +247,35 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 				}
 				return
 			}
-			// Under load, send everything already queued as one frame.
-			batch := []denproto.Event{e}
-		drain:
-			for len(batch) < eventsPerSend {
-				select {
-				case e, ok := <-sub.Events:
-					if !ok {
-						break drain
+			// Under load, send everything already queued as one frame. A
+			// refresh ends the batch: it replaces the client's state, so
+			// events before it go first and the snapshot follows.
+			var batch []denproto.Event
+			for {
+				if e.T == eventRefresh {
+					if len(batch) > 0 && !write(batch...) {
+						return
 					}
+					batch = nil
+					if !sendReady(e.Seq) {
+						return
+					}
+				} else {
 					batch = append(batch, e)
+				}
+				if len(batch) >= eventsPerSend {
+					break
+				}
+				var more bool
+				select {
+				case e, more = <-sub.Events:
 				default:
-					break drain
+				}
+				if !more {
+					break
 				}
 			}
-			if !write(batch...) {
+			if len(batch) > 0 && !write(batch...) {
 				return
 			}
 		case e := <-ephemeral:

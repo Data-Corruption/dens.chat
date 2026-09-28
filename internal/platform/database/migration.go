@@ -122,6 +122,59 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				expires_at INTEGER NOT NULL
 			) STRICT;
 			CREATE INDEX den_sessions_expiry ON den_sessions (expires_at);
+
+			-- Positions are dense (0, 1, 2, ...) within each list: the
+			-- groups, the ungrouped channels, and each group's channels.
+			CREATE TABLE den_groups (
+				id       INTEGER PRIMARY KEY AUTOINCREMENT,
+				name     TEXT NOT NULL,
+				position INTEGER NOT NULL
+			) STRICT;
+
+			CREATE TABLE den_channels (
+				id          INTEGER PRIMARY KEY AUTOINCREMENT,
+				group_id    INTEGER REFERENCES den_groups (id) ON DELETE SET NULL,
+				name        TEXT NOT NULL,
+				description TEXT NOT NULL DEFAULT '',
+				kind        TEXT NOT NULL CHECK (kind IN ('text', 'voice')),
+				position    INTEGER NOT NULL,
+				staff_only  INTEGER NOT NULL DEFAULT 0,
+				created_at  INTEGER NOT NULL
+			) STRICT;
+
+			-- AUTOINCREMENT: message IDs grow with time and are never reused,
+			-- which history paging (before, after, around an ID) relies on.
+			-- The text is sealed with the data key; reply_to may name a
+			-- deleted message.
+			CREATE TABLE den_messages (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
+				author_id  INTEGER NOT NULL REFERENCES den_members (id),
+				created_at INTEGER NOT NULL,
+				revision   INTEGER NOT NULL DEFAULT 1,
+				edited_at  INTEGER,
+				edited_by  INTEGER,
+				text       BLOB NOT NULL,
+				reply_to   INTEGER,
+				nonce      BLOB NOT NULL -- the author's idempotency key
+			) STRICT;
+			CREATE INDEX den_messages_channel ON den_messages (channel_id, id);
+			CREATE INDEX den_messages_nonce ON den_messages (author_id, nonce);
+
+			CREATE TABLE den_mentions (
+				member_id  INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE,
+				channel_id INTEGER NOT NULL,
+				message_id INTEGER NOT NULL REFERENCES den_messages (id) ON DELETE CASCADE,
+				PRIMARY KEY (member_id, channel_id, message_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_mentions_message ON den_mentions (message_id);
+
+			CREATE TABLE den_read_states (
+				member_id  INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE,
+				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
+				message_id INTEGER NOT NULL,
+				PRIMARY KEY (member_id, channel_id)
+			) STRICT;
 		`); err != nil {
 			return fmt.Errorf("create tables: %w", err)
 		}

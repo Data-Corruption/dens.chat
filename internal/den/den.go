@@ -58,7 +58,7 @@ type Den struct {
 	nonces  map[string]time.Time
 
 	limits struct {
-		challenge, join, login, socket, write *limiter
+		challenge, join, login, socket, write, send *limiter
 	}
 	sockets *socketSet
 }
@@ -86,6 +86,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger) (*D
 	d.limits.login = newLimiter(30, 2*time.Second, 100_000)
 	d.limits.socket = newLimiter(20, 3*time.Second, 100_000)
 	d.limits.write = newLimiter(30, time.Second/3, 100_000)
+	d.limits.send = newLimiter(5, time.Second, 100_000)
 
 	var name, url string
 	var pub, sealed []byte
@@ -427,6 +428,9 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		shown[i] = denproto.FormatRecoveryCode(code)
 	}
 	d.log.Infof("Member %s joined", member.ID)
+	if err := d.Hub.Publish(denproto.EventMemberJoined, member, Everyone); err != nil {
+		return denproto.JoinResponse{}, err
+	}
 	return denproto.JoinResponse{Member: member, Token: token, ExpiresAt: now.Add(d.TokenLifetime).UnixMilli(), RecoveryCodes: shown}, nil
 }
 
