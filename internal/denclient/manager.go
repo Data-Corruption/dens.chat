@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"sync"
 	"time"
 
@@ -71,6 +72,10 @@ type Manager struct {
 	watches map[chan struct{}]struct{}
 	streams map[chan PageEvent]struct{}
 	wg      sync.WaitGroup
+
+	// focus is the channel each page shows in each den: page, den, channel.
+	focusMu sync.Mutex
+	focus   map[string]map[string]string
 }
 
 // PageEvent carries a den's checked events to the page, or tells it to
@@ -129,6 +134,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		PingTimeout:  10 * time.Second,
 		watches:      map[chan struct{}]struct{}{},
 		streams:      map[chan PageEvent]struct{}{},
+		focus:        map[string]map[string]string{},
 	}
 }
 
@@ -174,14 +180,35 @@ func (m *Manager) Run(ctx context.Context) error {
 
 // startLocked starts a connection. The caller holds m.mu.
 func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time) {
-	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires}
+	ctx, stop := context.WithCancel(m.ctx)
+	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
+		stop: stop, done: make(chan struct{})}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		c.run(m.ctx)
+		defer close(c.done)
+		c.run(ctx)
 	}()
+}
+
+// forget stops a den's connection and deletes what this install keeps for
+// it, its device key and profile.
+func (m *Manager) forget(ctx context.Context, c *conn) error {
+	m.mu.Lock()
+	m.conns = slices.DeleteFunc(m.conns, func(x *conn) bool { return x == c })
+	m.mu.Unlock()
+	c.stop()
+	<-c.done
+	c.j.key.Close()
+	m.dropDenFocus(c.j.denID.String())
+	m.notify()
+	if _, err := m.db.ExecContext(ctx, `DELETE FROM joined_dens WHERE den_id = ?`, []byte(c.j.denID)); err != nil {
+		return fmt.Errorf("forget den: %w", err)
+	}
+	m.log.Infof("Forgot a den")
+	return nil
 }
 
 // apiFor reaches the den this install hosts over loopback, and any other
@@ -315,14 +342,20 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 	if !started {
 		return Status{}, nil, ErrNotStarted
 	}
-	if _, err := m.find(denproto.Bytes(denID).String()); err == nil {
+	if c, err := m.find(denproto.Bytes(denID).String()); err == nil && !gone(c) {
 		return Status{}, nil, ErrAlreadyJoined
 	}
 	// Two joins of one den at once would both pass the check above.
 	m.joinMu.Lock()
 	defer m.joinMu.Unlock()
-	if _, err := m.find(denproto.Bytes(denID).String()); err == nil {
-		return Status{}, nil, ErrAlreadyJoined
+	if c, err := m.find(denproto.Bytes(denID).String()); err == nil {
+		if !gone(c) {
+			return Status{}, nil, ErrAlreadyJoined
+		}
+		// This device is out of the den; joining again replaces it.
+		if err := m.forget(ctx, c); err != nil {
+			return Status{}, nil, err
+		}
 	}
 
 	a, _ := m.apiFor(denID, url)

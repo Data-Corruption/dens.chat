@@ -64,7 +64,6 @@ const (
 	CodeProtocolUnsupported = "protocol_unsupported"
 	CodeRateLimited         = "rate_limited"
 	CodeDenNotCreated       = "den_not_created"
-	CodeRemoved             = "removed"
 )
 
 // WebSocket close codes beyond the standard ones.

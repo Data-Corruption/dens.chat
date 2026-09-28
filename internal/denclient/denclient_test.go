@@ -80,6 +80,7 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 		h.t.Fatal(err)
 	}
 	d.TokenLifetime = lifetime
+	d.PresenceDelay = 50 * time.Millisecond
 	h.d = d
 	handler := denhttp.New(&app.App{Den: d, Log: h.s.log})
 	h.public = httptest.NewUnstartedServer(handler)

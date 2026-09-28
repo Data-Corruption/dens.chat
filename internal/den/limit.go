@@ -102,7 +102,7 @@ func (d *Den) Allow(kind int, key string) error {
 // RelaxLimits lifts the rate limits, for development instances, where a
 // developer seeds thousands of messages to test the message list.
 func (d *Den) RelaxLimits() {
-	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send} {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing} {
 		*l = newLimiter(1_000_000, time.Microsecond, 1000)
 	}
 }
