@@ -57,7 +57,7 @@ func (d *Den) Profile(ctx context.Context, id string) (denproto.Member, error) {
 	if err != nil {
 		return m, err
 	}
-	if sealed != nil {
+	if len(sealed) > 0 {
 		bio, err := d.v.Open(sealed, bioAD(mid))
 		if err != nil {
 			return m, err
@@ -82,14 +82,16 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 		if err := denproto.CheckBio(*req.Bio); err != nil {
 			return denproto.Member{}, invalid("bio: %v", err)
 		}
-		var sealed []byte
-		if *req.Bio != "" {
-			var err error
-			if sealed, err = d.v.Seal([]byte(*req.Bio), bioAD(s.MemberID)); err != nil {
+		if *req.Bio == "" {
+			// NULL itself: a nil slice can be stored as an empty blob.
+			sets = append(sets, "bio = NULL")
+		} else {
+			sealed, err := d.v.Seal([]byte(*req.Bio), bioAD(s.MemberID))
+			if err != nil {
 				return denproto.Member{}, err
 			}
+			sets, args = append(sets, "bio = ?"), append(args, sealed)
 		}
-		sets, args = append(sets, "bio = ?"), append(args, sealed)
 	}
 	if len(sets) > 0 {
 		query := "UPDATE den_members SET "
