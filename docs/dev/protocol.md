@@ -289,7 +289,7 @@ PUT /api/channels/{id}/read   {"message_id"}   204
 - The position only moves forward: a lower `message_id` is ignored.
 - Clients send it once a message has been on screen, at most once every few seconds per channel.
 - The den tells all the member's sessions with `read_state.updated {channel_id, message_id, mention_count}`.
-- `ready` carries `read_states`: each channel's last message ID, the member's read position and their unread mention count.
+- `ready` carries `read_states`: each channel's last message ID, the member's read position and their unread mention count, and for a DM, whether they closed it (M1.3).
 
 ## Members and roles (M1.3)
 
@@ -324,7 +324,8 @@ DELETE /api/bans/{id}                                                           
 ### DMs
 
 ```
-POST /api/dms   {"member_id"}   200 channel
+POST /api/dms              {"member_id"}   200 channel
+POST /api/dms/{id}/close                   204
 ```
 
 - A DM is a channel of kind `dm` between two members: `{"id", "kind": "dm", "members": [lower ID, higher ID], "group_id": null, "name": "", "position": 0, "staff_only": false}`. Each pair has one; `POST /api/dms` returns it, creating it on first use and sending `channel.created` to both.
@@ -332,6 +333,7 @@ POST /api/dms   {"member_id"}   200 channel
 - Messages, edits, deletes, replies and read state work as in channels. Every message counts toward the other member's unread `mention_count`.
 - DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit.
 - A DM whose other member left keeps its history, but nothing more can be sent (`403 forbidden`), and no new DM starts with a former member.
+- Closing a DM takes it out of the member's list on all their devices: their read state for it gets `"closed": true`, sent as `read_state.updated`. A new message in it, from either member, or opening it again with `POST /api/dms`, reopens it the same way.
 
 ### Presence and typing
 

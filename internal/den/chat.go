@@ -87,17 +87,23 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 	}
 	rows.Close()
 	read := map[string]string{}
-	rows, err = d.db.QueryContext(ctx, `SELECT channel_id, message_id FROM den_read_states WHERE member_id = ?`, member)
+	closed := map[string]bool{}
+	rows, err = d.db.QueryContext(ctx, `SELECT channel_id, message_id, closed FROM den_read_states WHERE member_id = ?`, member)
 	if err != nil {
 		return r, err
 	}
 	for rows.Next() {
 		var ch, id int64
-		if err := rows.Scan(&ch, &id); err != nil {
+		var shut bool
+		if err := rows.Scan(&ch, &id, &shut); err != nil {
 			rows.Close()
 			return r, err
 		}
-		read[denproto.FormatID(ch)] = denproto.FormatID(id)
+		// A DM closed before it was read has a position of 0: none yet.
+		if id > 0 {
+			read[denproto.FormatID(ch)] = denproto.FormatID(id)
+		}
+		closed[denproto.FormatID(ch)] = shut
 	}
 	rows.Close()
 	mentions := map[string]int{}
@@ -124,7 +130,7 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 			continue
 		}
 		r.ReadStates = append(r.ReadStates, denproto.ReadState{
-			ChannelID: ch.ID, LastMessage: last[ch.ID], ReadPosition: read[ch.ID], MentionCount: mentions[ch.ID],
+			ChannelID: ch.ID, LastMessage: last[ch.ID], ReadPosition: read[ch.ID], MentionCount: mentions[ch.ID], Closed: closed[ch.ID],
 		})
 	}
 	return r, nil
@@ -1015,6 +1021,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		return denproto.Message{}, err
 	}
 	var id int64
+	var reopened []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce)
 			VALUES (?, ?, ?, x'', ?, ?)`, cid, s.MemberID, now.UnixMilli(), replyTo, []byte(req.Nonce))
@@ -1036,8 +1043,14 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			return err
 		}
 		// A member has read what they wrote.
-		_, err = tx.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id) VALUES (?, ?, ?)
-			ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = max(message_id, excluded.message_id)`, s.MemberID, cid, id)
+		if _, err = tx.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id) VALUES (?, ?, ?)
+			ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = max(message_id, excluded.message_id)`, s.MemberID, cid, id); err != nil {
+			return err
+		}
+		if c.Kind == denproto.KindDM {
+			// A new message brings a closed DM back for both members.
+			reopened, err = reopen(ctx, tx, cid, 0)
+		}
 		return err
 	})
 	if err != nil {
@@ -1049,6 +1062,13 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	}
 	if err := d.Hub.Publish(denproto.EventMessageCreated, m, audienceOf(c)); err != nil {
 		return m, err
+	}
+	for _, member := range reopened {
+		if member != s.MemberID {
+			if err := d.publishReadState(ctx, member, cid); err != nil {
+				return m, err
+			}
+		}
 	}
 	return m, d.publishReadState(ctx, s.MemberID, cid)
 }
@@ -1243,11 +1263,12 @@ func (d *Den) MarkRead(ctx context.Context, s *Session, channelID string, req de
 func (d *Den) publishReadState(ctx context.Context, member, channel int64) error {
 	st := denproto.ReadState{ChannelID: denproto.FormatID(channel)}
 	var pos sql.NullInt64
-	err := d.db.QueryRowContext(ctx, `SELECT message_id FROM den_read_states WHERE member_id = ? AND channel_id = ?`, member, channel).Scan(&pos)
+	err := d.db.QueryRowContext(ctx, `SELECT message_id, closed FROM den_read_states WHERE member_id = ? AND channel_id = ?`, member, channel).
+		Scan(&pos, &st.Closed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	if pos.Valid {
+	if pos.Int64 > 0 {
 		st.ReadPosition = denproto.FormatID(pos.Int64)
 	}
 	if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM den_mentions WHERE member_id = ? AND channel_id = ? AND message_id > ?`,

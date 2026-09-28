@@ -99,12 +99,14 @@ func Excerpt(text string) string {
 	return text
 }
 
-// ReadState is one channel's unread state for a member.
+// ReadState is one channel's unread state for a member. Closed marks a DM
+// they closed, which stays out of their list until it has a new message.
 type ReadState struct {
 	ChannelID    string `json:"channel_id"`
 	LastMessage  string `json:"last_message_id,omitempty"`
 	ReadPosition string `json:"message_id,omitempty"`
 	MentionCount int    `json:"mention_count"`
+	Closed       bool   `json:"closed,omitempty"`
 }
 
 type MessageDeleted struct {

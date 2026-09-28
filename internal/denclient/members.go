@@ -151,6 +151,19 @@ func (m *Manager) OpenDM(ctx context.Context, denID, memberID string) (denproto.
 	return ch, nil
 }
 
+// CloseDM takes a DM out of this member's list until it has a new message
+// or is opened again.
+func (m *Manager) CloseDM(ctx context.Context, denID, channelID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("channel", channelID); err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPost, "/api/dms/"+channelID+"/close", nil, nil)
+}
+
 // Leave takes this member out of a den and forgets it here.
 func (m *Manager) Leave(ctx context.Context, denID string) error {
 	c, err := m.find(denID)

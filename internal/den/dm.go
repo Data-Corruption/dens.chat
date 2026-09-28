@@ -49,10 +49,56 @@ func (d *Den) OpenDM(ctx context.Context, s *Session, req denproto.DMRequest) (d
 		c, err = d.channel(ctx, tx, id)
 		return err
 	})
-	if err != nil || !created {
+	if err != nil {
 		return c, err
 	}
+	if !created {
+		// Opening a DM the member closed brings it back to their list.
+		cid, _ := denproto.ParseID(c.ID)
+		reopened, err := reopen(ctx, d.db, cid, s.MemberID)
+		if err != nil || len(reopened) == 0 {
+			return c, err
+		}
+		return c, d.publishReadState(ctx, s.MemberID, cid)
+	}
 	return c, d.Hub.Publish(denproto.EventChannelCreated, c, Pair(low, high))
+}
+
+// CloseDM takes a DM out of the member's list, on all their devices,
+// until either member sends a message in it or the member opens it again.
+func (d *Den) CloseDM(ctx context.Context, s *Session, channelID string) error {
+	c, cid, err := d.visibleChannel(ctx, s, channelID)
+	if err != nil {
+		return err
+	}
+	if c.Kind != denproto.KindDM {
+		return invalid("only DMs close")
+	}
+	if _, err := d.db.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (?, ?, 0, 1)
+		ON CONFLICT (member_id, channel_id) DO UPDATE SET closed = 1`, s.MemberID, cid); err != nil {
+		return err
+	}
+	return d.publishReadState(ctx, s.MemberID, cid)
+}
+
+// reopen marks a closed DM open again, for one member or, with member 0,
+// both, and returns whose it reopened.
+func reopen(ctx context.Context, q querier, channel, member int64) ([]int64, error) {
+	rows, err := q.QueryContext(ctx, `UPDATE den_read_states SET closed = 0
+		WHERE channel_id = ?1 AND closed = 1 AND (?2 = 0 OR member_id = ?2) RETURNING member_id`, channel, member)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // dmPartner returns the other member of a DM.

@@ -41,14 +41,21 @@ function store(key, value) {
 
 const hasMessages = (c) => c && (c.kind === 'text' || c.kind === 'dm');
 
+// closedDMs is the set of DMs this member closed.
+function closedDMs(view) {
+    return new Set(view.read_states.filter((r) => r.closed).map((r) => r.channel_id));
+}
+
 // pick chooses the channel to show: the one in the address, else the last
-// one shown in this den, else the first text channel.
+// one shown in this den unless it's a DM since closed, else the first text
+// channel.
 function pick(view, denID, channelID) {
     if (!view) return null;
     const shown = view.channels.find((c) => c.id === channelID);
     if (hasMessages(shown)) return shown;
     const last = view.channels.find((c) => c.id === stored(LAST_CHANNEL + denID));
-    return hasMessages(last) ? last : view.channels.find((c) => c.kind === 'text') || null;
+    if (hasMessages(last) && !closedDMs(view).has(last.id)) return last;
+    return view.channels.find((c) => c.kind === 'text') || null;
 }
 
 function applyPresence(online, p) {
@@ -195,6 +202,14 @@ export function Chat({ denID, channelID, navigate }) {
         openChannel(opened.id);
     }
 
+    async function closeDM(c) {
+        await api.post(`/api/dens/${denID}/dms/${c.id}/close`);
+        if (c.id === channel?.id) {
+            const first = view.channels.find((x) => x.kind === 'text');
+            navigate(first ? `/den/${denID}/${first.id}` : `/den/${denID}`);
+        }
+    }
+
     async function forget() {
         await api.del(`/api/dens/${denID}`);
         navigate('/');
@@ -211,7 +226,8 @@ export function Chat({ denID, channelID, navigate }) {
                     {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
                 </div>
                 <ChannelList view={view} reads={reads} open={channel?.id} staff={staff} onOpen={openChannel} onDialog={setDialog} />
-                <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online} onOpen={openChannel} />
+                <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
+                    onOpen={openChannel} onClose={closeDM} />
                 <div class="mt-auto flex items-center gap-1 border-t border-base-300 p-2">
                     <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
                         onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
@@ -341,10 +357,12 @@ function ChannelList({ view, reads, open, staff, onOpen, onDialog }) {
     );
 }
 
-// DMList shows this member's DMs, the most recently active first.
-function DMList({ dms, reads, open, partner, online, onOpen }) {
-    if (dms.length === 0) return null;
-    const sorted = [...dms].sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
+// DMList shows this member's DMs, the most recently active first. A closed
+// one stays out of it until it has a new message, unless it's open.
+function DMList({ dms, reads, open, partner, online, onOpen, onClose }) {
+    const shown = dms.filter((c) => !reads.get(c.id)?.closed || c.id === open);
+    if (shown.length === 0) return null;
+    const sorted = shown.sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
     return (
         <nav aria-label="Direct messages" class="flex flex-col p-2 pt-0">
             <h3 class="cursor-default select-none px-2 pb-1 text-xs font-semibold uppercase text-base-content/60">Direct messages</h3>
@@ -354,15 +372,25 @@ function DMList({ dms, reads, open, partner, online, onOpen }) {
                     const r = reads.get(c.id);
                     const isUnread = unread(r) && c.id !== open;
                     return (
-                        <li key={c.id}>
+                        <li key={c.id} class="group relative">
                             <button
                                 type="button"
-                                class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'} ${other?.left_at ? 'opacity-60' : ''}`}
+                                class={`flex w-full items-center gap-2 rounded px-2 py-1 pr-8 text-left ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'} ${other?.left_at ? 'opacity-60' : ''}`}
                                 onClick={() => onOpen(c.id)}
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
                                 <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{other ? other.display_name : 'Unknown member'}</span>
                                 {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
+                            </button>
+                            {/* Touch screens have no hover, so there the X always shows. */}
+                            <button
+                                type="button"
+                                class="btn btn-ghost btn-xs btn-square absolute right-1 top-1/2 -translate-y-1/2 md:invisible md:group-hover:visible md:focus:visible"
+                                aria-label={`Close the DM with ${other ? other.display_name : 'this member'}`}
+                                title="Close"
+                                onClick={() => onClose(c)}
+                            >
+                                ✕
                             </button>
                         </li>
                     );

@@ -347,3 +347,72 @@ func TestProfiles(t *testing.T) {
 		t.Fatalf("clearing the bio: %+v %v", m, err)
 	}
 }
+
+func (f *fixture) readState(member int64, channel string) denproto.ReadState {
+	f.t.Helper()
+	snap, err := f.d.snapshot(context.Background(), member, false, 0)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, r := range snap.ReadStates {
+		if r.ChannelID == channel {
+			return r
+		}
+	}
+	f.t.Fatalf("no read state for channel %s", channel)
+	return denproto.ReadState{}
+}
+
+func TestClosingDMs(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	dm, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(member.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, f.d.CloseDM(ctx, owner, general.ID), denproto.CodeInvalidField)
+
+	// Closing a DM nobody has read yet reports no read position at all.
+	sub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
+	if err := f.d.CloseDM(ctx, owner, dm.ID); err != nil {
+		t.Fatal(err)
+	}
+	var st denproto.ReadState
+	if e := <-sub.Events; e.T != denproto.EventReadStateUpdated || json.Unmarshal(e.D, &st) != nil || !st.Closed || st.ReadPosition != "" {
+		t.Fatalf("closing: %+v %s", e, e.D)
+	}
+	if r := f.readState(owner.MemberID, dm.ID); !r.Closed || r.ReadPosition != "" {
+		t.Fatalf("the owner's snapshot: %+v", r)
+	}
+	if f.readState(member.MemberID, dm.ID).Closed {
+		t.Fatal("closing it closed it for the other member too")
+	}
+
+	// A message from the other member brings it back.
+	f.send(member, dm.ID, "you there?")
+	for {
+		e := <-sub.Events
+		var reopened denproto.ReadState
+		if e.T == denproto.EventReadStateUpdated && json.Unmarshal(e.D, &reopened) == nil && reopened.ChannelID == dm.ID {
+			if reopened.Closed {
+				t.Fatalf("still closed after a message: %+v", reopened)
+			}
+			break
+		}
+	}
+	if f.readState(owner.MemberID, dm.ID).Closed {
+		t.Fatal("the snapshot still has it closed")
+	}
+
+	// So does opening it again.
+	if err := f.d.CloseDM(ctx, owner, dm.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(member.MemberID)}); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.readState(owner.MemberID, dm.ID); r.Closed || r.ReadPosition == "0" {
+		t.Fatalf("after opening again: %+v", r)
+	}
+}

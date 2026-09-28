@@ -261,7 +261,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 
 - Channel groups are one level deep and contain text and voice channels.
 - Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
-- DMs are one-to-one between members of the same den, stored on the den. The UI says the owner can read them.
+- DMs are one-to-one between members of the same den, stored on the den. The UI says the owner can read them. Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
 
 **Profiles**
 

@@ -184,10 +184,12 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT, WITHOUT ROWID;
 			CREATE INDEX den_mentions_message ON den_mentions (message_id);
 
+			-- closed is a DM the member closed; a new message reopens it.
 			CREATE TABLE den_read_states (
 				member_id  INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE,
 				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
 				message_id INTEGER NOT NULL,
+				closed     INTEGER NOT NULL DEFAULT 0,
 				PRIMARY KEY (member_id, channel_id)
 			) STRICT;
 		`); err != nil {

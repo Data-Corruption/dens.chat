@@ -360,6 +360,9 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 		r.LastMessage = m.ID
 	}
 	dm := s.channels[m.ChannelID].Kind == denproto.KindDM
+	if dm {
+		r.Closed = false // a new message reopens a closed DM, as on the den
+	}
 	if m.AuthorID == me.ID {
 		r.ReadPosition = m.ID
 	} else if dm || slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {

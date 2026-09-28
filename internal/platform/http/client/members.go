@@ -16,6 +16,7 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Get("/api/dens/{den}/bans", rt.handleBans)
 	r.Delete("/api/dens/{den}/bans/{member}", rt.handleUnban)
 	r.Post("/api/dens/{den}/dms", rt.handleOpenDM)
+	r.Post("/api/dens/{den}/dms/{channel}/close", rt.handleCloseDM)
 	r.Post("/api/dens/{den}/leave", rt.handleLeave)
 	r.Delete("/api/dens/{den}", rt.handleForget)
 }
@@ -94,6 +95,14 @@ func (rt *router) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, c)
+}
+
+func (rt *router) handleCloseDM(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.CloseDM(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (rt *router) handleLeave(w http.ResponseWriter, r *http.Request) {

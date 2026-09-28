@@ -95,6 +95,17 @@ func (h *handler) unban(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *handler) closeDM(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	if err := h.d.CloseDM(r.Context(), session(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handler) openDM(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

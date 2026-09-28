@@ -77,6 +77,7 @@ func New(a *app.App) http.Handler {
 			r.Get("/bans", h.bans)
 			r.Delete("/bans/{id}", h.unban)
 			r.Post("/dms", h.openDM)
+			r.Post("/dms/{id}/close", h.closeDM)
 		})
 	})
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
