@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { onConnection, onEvent } from './events.js';
+import { onEvent } from './events.js';
 import {
     Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction,
 } from './components.jsx';
@@ -14,19 +14,11 @@ const VERIFIER_HINT =
 
 export function Home({ status, navigate }) {
     const [view, setView] = useState(null);
-    const [live, setLive] = useState(true);
     const [codes, setCodes] = useState(null);
 
-    useEffect(() => {
-        const stopEvents = onEvent((message) => {
-            if (message.t === 'dens') setView(message.d);
-        });
-        const stopConnection = onConnection(setLive);
-        return () => {
-            stopEvents();
-            stopConnection();
-        };
-    }, []);
+    useEffect(() => onEvent((message) => {
+        if (message.t === 'dens') setView(message.d);
+    }), []);
 
     if (codes) {
         return <RecoveryCodes denName={codes.name} codes={codes.codes} onDone={() => setCodes(null)} />;
@@ -40,11 +32,6 @@ export function Home({ status, navigate }) {
                     <span>
                         Dens {status.updateVersion} is available. To update, run: <code>{status.updateCommand}</code>
                     </span>
-                </div>
-            )}
-            {!live && (
-                <div role="status" class="alert alert-warning alert-soft">
-                    <span>Lost touch with the Dens service on this computer; reconnecting…</span>
                 </div>
             )}
             {!view ? (

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { onConnection } from './events.js';
 import { toggleTheme } from './theme.js';
 import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
 import { Home } from './home.jsx';
@@ -29,6 +30,7 @@ function takePairingToken() {
 export function App({ instance, version }) {
     const [state, setState] = useState({ phase: 'loading' });
     const [path, setPath] = useState(window.location.pathname);
+    const [live, setLive] = useState(true);
 
     async function load() {
         try {
@@ -66,6 +68,8 @@ export function App({ instance, version }) {
 
     const passwordSet = state.phase === 'ready' && state.status.passwordSet;
     const chat = passwordSet ? chatRoute(path) : null;
+    // The event stream needs a paired browser, so it starts only then.
+    useEffect(() => (passwordSet ? onConnection(setLive) : undefined), [passwordSet]);
     let page;
     if (state.phase === 'loading') {
         page = <span class="loading loading-spinner"></span>;
@@ -97,6 +101,11 @@ export function App({ instance, version }) {
                     <button type="button" class="btn btn-ghost btn-sm" aria-label="Toggle theme" onClick={toggleTheme}>◐</button>
                 </div>
             </header>
+            {passwordSet && !live && (
+                <div role="status" class="alert alert-warning alert-soft shrink-0 rounded-none">
+                    <span>Lost touch with the Dens service on this computer; reconnecting…</span>
+                </div>
+            )}
             {chat ? (
                 <div class="min-h-0 flex-1">
                     <Chat key={chat.denID} denID={chat.denID} channelID={chat.channelID} navigate={navigate} />
