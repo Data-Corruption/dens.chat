@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 
-# Fills a development den's first text channel with messages, for testing
-# the message list: an anchor message, COUNT filler messages, then a reply
-# to the anchor, so clicking the reply jumps COUNT messages back.
+# Fills a development den's text channel with messages, for testing the
+# message list: an anchor message, COUNT filler messages, then a reply to
+# the anchor, so clicking the reply jumps COUNT messages back.
 #
-# Usage: scripts/dev/seed-chat.sh INSTANCE [COUNT]
+# Usage: scripts/dev/seed-chat.sh INSTANCE [COUNT] [CHANNEL]
 #
 # The instance must be a running development instance that hosts a den
-# (service run --den-port) with at least one text channel. The script pairs
-# itself like a browser would, through dens open --print. Development
-# builds relax the den's rate limits, which is what makes this quick.
+# (service run --den-port) with at least one text channel. CHANNEL names
+# the channel to fill, and defaults to the first. The script pairs itself
+# like a browser would, through dens open --print. Development builds
+# relax the den's rate limits, which is what makes this quick.
 
 set -euo pipefail
 
-instance=${1:?usage: seed-chat.sh INSTANCE [COUNT]}
+instance=${1:?usage: seed-chat.sh INSTANCE [COUNT] [CHANNEL]}
 count=${2:-5000}
+name=${3:-}
 cd "$(dirname "$0")/../.."
 bin=out/linux-amd64
 [[ -x "$bin" ]] || { echo "error: build a development binary first: ./scripts/build.sh" >&2; exit 1; }
@@ -30,7 +32,9 @@ api() {
 api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
 
 den=$(api GET /api/dens | python3 -c 'import json, sys; print(next(d["den_id"] for d in json.load(sys.stdin)["dens"] if d["own"]))')
-channel=$(api GET "/api/dens/$den/state" | python3 -c 'import json, sys; print(next(c["id"] for c in json.load(sys.stdin)["channels"] if c["kind"] == "text"))')
+channel=$(api GET "/api/dens/$den/state" | NAME=$name python3 -c 'import json, os, sys
+name = os.environ["NAME"]
+print(next(c["id"] for c in json.load(sys.stdin)["channels"] if c["kind"] == "text" and name in ("", c["name"])))')
 
 nonce() { head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
 send() { # TEXT [REPLY_TO] prints the new message's ID

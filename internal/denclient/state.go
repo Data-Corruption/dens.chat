@@ -1,6 +1,7 @@
 package denclient
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -66,8 +67,9 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		v.ReadStates = append(v.ReadStates, r)
 	}
 	slices.SortFunc(v.Members, func(a, b denproto.Member) int { return compareIDs(a.ID, b.ID) })
-	slices.SortFunc(v.Groups, func(a, b denproto.Group) int { return a.Position - b.Position })
-	slices.SortFunc(v.Channels, func(a, b denproto.Channel) int { return a.Position - b.Position })
+	// Positions count within a group, so IDs break ties between groups.
+	slices.SortFunc(v.Groups, func(a, b denproto.Group) int { return cmp.Or(a.Position-b.Position, compareIDs(a.ID, b.ID)) })
+	slices.SortFunc(v.Channels, func(a, b denproto.Channel) int { return cmp.Or(a.Position-b.Position, compareIDs(a.ID, b.ID)) })
 	slices.SortFunc(v.ReadStates, func(a, b denproto.ReadState) int { return compareIDs(a.ChannelID, b.ChannelID) })
 	return v
 }
