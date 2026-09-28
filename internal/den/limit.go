@@ -70,6 +70,7 @@ const (
 	LimitSocket           // per IP: WebSocket upgrades
 	LimitWrite            // per member: other writes
 	LimitSend             // per member and channel: messages
+	LimitTyping           // per member and channel: typing notices
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -87,6 +88,8 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.socket
 	case LimitSend:
 		l = d.limits.send
+	case LimitTyping:
+		l = d.limits.typing
 	default:
 		l = d.limits.write
 	}
@@ -99,7 +102,7 @@ func (d *Den) Allow(kind int, key string) error {
 // RelaxLimits lifts the rate limits, for development instances, where a
 // developer seeds thousands of messages to test the message list.
 func (d *Den) RelaxLimits() {
-	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send} {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing} {
 		*l = newLimiter(1_000_000, time.Microsecond, 1000)
 	}
 }

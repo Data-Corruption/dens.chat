@@ -1,7 +1,8 @@
 // The local event stream, shared by every view: one WebSocket to the
-// service, which pushes den statuses and den events. The service is on this
-// computer, so a lost stream retries quickly; after a reconnect, views
-// reload, since events may have been missed while it was down.
+// service, which pushes den statuses and den events. The page sends on it
+// too: the channel it shows in each den, and typing. The service is on
+// this computer, so a lost stream retries quickly; after a reconnect,
+// views reload, since events may have been missed while it was down.
 
 const MIN_DELAY = 250;
 const MAX_DELAY = 3000;
@@ -17,6 +18,9 @@ let retry = null;
 // The service sends den statuses when the stream opens and when they
 // change, so a view that starts listening later gets the latest from here.
 let latestDens = null;
+// The channel shown in each den, sent again after a reconnect, since the
+// service forgets it when the stream closes.
+const focus = new Map();
 
 function start() {
     if (started) return;
@@ -40,6 +44,7 @@ function connect() {
     socket = new WebSocket(`${scheme}//${window.location.host}/api/events`);
     socket.addEventListener('open', () => {
         delay = MIN_DELAY;
+        focus.forEach((channel, den) => send({ t: 'focus', d: { den, channel } }));
         if (down) {
             down = false;
             connectionListeners.forEach((fn) => fn(true));
@@ -72,6 +77,26 @@ function connect() {
 
 function dispatch(message) {
     listeners.forEach((fn) => fn(message));
+}
+
+// send writes to the service if the stream is up; these messages are
+// hints, so one lost while it's down doesn't matter.
+function send(message) {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
+// showChannel tells the service which channel of a den this page shows,
+// '' for none, so typing there reaches this member.
+export function showChannel(den, channel) {
+    if ((focus.get(den) || '') === channel) return;
+    if (channel) focus.set(den, channel);
+    else focus.delete(den);
+    send({ t: 'focus', d: { den, channel } });
+}
+
+// sendTyping tells a den this member is typing in a channel.
+export function sendTyping(den, channel) {
+    send({ t: 'typing', d: { den, channel } });
 }
 
 // onEvent calls fn with every message from the service, starting with the

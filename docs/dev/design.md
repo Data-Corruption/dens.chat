@@ -17,7 +17,7 @@ Dens is a self-hosted chat app for Linux and Windows with text, voice and screen
 
 **Non-goals**
 
-- End-to-end encryption. The den owner can read everything, and the docs say so.
+- End-to-end encryption for channels. The den owner can read channel messages and files, and the docs say so. DMs are the exception: from M1.7 they're end-to-end encrypted (see End-to-end encrypted DMs).
 - Protection from targeted investigations or state actors.
 - macOS support, multi-tenancy, federation between dens.
 - Custom permission systems, forums, threads, bots or other feature rabbit holes in v1.
@@ -28,11 +28,12 @@ Dens offers living-room privacy: a closed door, not a bunker. The branding pilla
 
 | Protects against | Does not protect against |
 | --- | --- |
-| Platforms mining or monetizing conversations | The den owner, who can read all messages, DMs and media |
+| Platforms mining or monetizing conversations | The den owner, who can read channel messages and files, and sees who DMs whom and when |
 | Data brokers and ad profiling | Members screenshotting or repeating things |
 | Bulk data requests to a large provider | A compromised device (client or den) |
 | History disappearing when a company changes its terms | A targeted investigation or state actor |
 | Casual filesystem scanners and backup snoopers (local encryption) | Traffic analysis: the den sees member IPs |
+| The den owner reading DMs and the photos in them (end-to-end encrypted from M1.7) | An owner who tampers with DM keys, where members never compare safety codes |
 
 The public docs include a short philosophy section: being able to say dumb things, joke, vent and make art without a permanent searchable record is part of being human. They recommend Linux over Windows, LibreWolf, and not posting identifying details for low-stakes use, and point to Signal, Qubes OS and similar tools for higher-stakes threat models, noting that none of them are bulletproof.
 
@@ -244,16 +245,31 @@ Three fixed roles, one level of channel groups, text and voice channels, and DMs
 | Role | Can |
 | --- | --- |
 | Member | Read and post in visible channels, DM other members, join voice, upload within limits |
-| Moderator | Everything a member can, plus delete messages, kick, ban, create invites, manage channels and groups, see staff-only channels |
+| Moderator | Everything a member can, plus delete members' messages, remove and ban members, create invites, manage channels and groups, see staff-only channels |
 | Owner | Everything a moderator can, plus manage moderators, den settings and limits; transfer ownership via CLI |
 
-Channels can be marked staff-only (moderators and owner). There is no other visibility control.
+Channels can be marked staff-only (moderators and owner). There is no other visibility control. Staff act only on those of a lower rank, so moderators can't remove, ban or delete the messages of other moderators or the owner.
+
+**Leaving, removal and bans**
+
+- Removing a member (a kick) signs them out everywhere at once and takes them off the member list. Their record stays, so their messages keep a name, and nobody else can take their username.
+- A removed member can come back only with a new invite, since invites are the only way in. They come back as themselves, history included, by giving their den password with their old username.
+- A ban does the same and keeps that username out, even with a valid invite. It can also delete their recent messages and revoke the invite they joined with. The UI offers removal and banning as one action with a ban option.
+- A ban can't stop someone from joining under a new name with a new invite: the den keeps no IP addresses, and each join uses a fresh key. Invites are the real door, which is why the removal dialog offers to revoke the one they used.
+- Leaving on your own works like a removal, without the kick.
 
 **Structure**
 
 - Channel groups are one level deep and contain text and voice channels.
 - Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
-- DMs are one-to-one between members of the same den, stored on the den. The UI says the owner can read them.
+- DMs are one-to-one between members of the same den, stored on the den. Until M1.7 the UI says the owner can read them; from M1.7 they're end-to-end encrypted. Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
+
+**Profiles**
+
+- Each den has its own profile for each member, since identity is per den: a display name and a bio of up to 300 characters in the markdown subset. Dens can't link a member's profiles across dens.
+- Bios travel only when a profile card opens, which keeps snapshots small for 500-member dens.
+- Avatars and banners arrive with uploads in M1.4. Until someone sets one, their avatar is a circle colored by their member ID with the first letter or digit of their username, so every device draws the same one without the den storing or sending anything.
+- Profile cards show a role badge only for moderators and the owner.
 
 **Names**
 
@@ -272,7 +288,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 - **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a single toggle, so two people ticking different boxes at once never lose a tick. Everyone else sees them read-only.
 - Delete removes the row and its files; `secure_delete` overwrites the freed pages. A delete event tells clients to purge caches.
 - Optional den-wide retention (for example 30 or 90 days), off by default, shown to members in den info.
-- Ban revokes all of a member's keys, closes their sockets and blocks re-registration with that username.
+- Removal and bans revoke all of a member's keys and close their sockets at once (see Leaving, removal and bans).
 
 **Compact links**
 
@@ -318,7 +334,7 @@ Dens usually run on home connections, where upload bandwidth is scarce and every
 
 ## Files and media
 
-Uploads are stored as-is except for stripped metadata, capped by owner-set limits; images and video are recompressed after an owner-set window.
+Uploads are stored as-is except for stripped metadata, capped by owner-set limits; images and video are recompressed after an owner-set window. Files in DMs are the exception from M1.7: the sender's service strips and encrypts them before upload, and the den stores only opaque blobs (see End-to-end encrypted DMs).
 
 **Limits (owner settings)**
 
@@ -343,6 +359,46 @@ Uploads are stored as-is except for stripped metadata, capped by owner-set limit
 - Inline previews only for a fixed list of raster image and video types. SVG and HTML are never rendered.
 
 The vendored ffmpeg builds (Linux and Windows) must be LGPL-compatible or the project must meet GPL terms; pick the builds deliberately.
+
+## End-to-end encrypted DMs
+
+From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores and relays them but can't read them. Channels stay readable by the den, since staff moderate them and the den does the work that needs their text: mentions, reply previews and, later, compact links.
+
+**What it protects**
+
+- The den's owner, and anyone holding the den's disk or backups, can't read DMs or see the photos in them.
+- Metadata stays visible: the den still sees who DMs whom, when, and how much.
+- An owner who tampers with the keys the den hands out can't read along unnoticed: a new key for a DM partner shows in the DM. Members who compare a safety code once rule out an owner in the middle entirely (see Trust).
+
+**Keys**
+
+All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already seals data at rest.
+
+- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. New devices get it from an existing device during the M1.5 new-device flow, or from the key backup.
+- Every device has an encryption key pair for each den, beside the signing key it logs in with: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer. The member's identity key signs it.
+- Each DM has a conversation key. The sending service creates it and seals a copy for every device of both members with that device's encryption key; the den stores the sealed copies as opaque blobs and hands each device its own.
+- The conversation key changes when either member removes a device, so a removed device can't read what follows. Older keys stay, sealed for the current devices, so history stays readable.
+
+**Messages and photos**
+
+- The local service encrypts a DM's text with the current conversation key, bound to the channel, the author and the message's nonce, before sending, and decrypts what arrives before the page sees it. The browser never holds a key.
+- The den keeps doing everything that doesn't need the text: ordering, history pages, edits with revisions, deletes, read state and unread counts (in a DM every message counts, so the den needn't read one), typing and closing.
+- Photos: the sending service strips metadata and makes the thumbnail itself, with the same code the den uses for channel uploads, then encrypts the original and the thumbnail with a fresh key per file. The file's key, dimensions and type travel inside the encrypted message. The den stores two opaque blobs and counts their size against the upload limits.
+- Work that moves to the client: reply quotes (the client decrypts the original itself), search, and compact links. Task checkboxes (M1.6) tick as an ordinary edit against the current revision. Media recompression (M5) skips DM files, which the den can't open; the sending service compresses before upload instead.
+- Calls aren't covered. Voice and screen share pass through the den's SFU, which can decrypt media hop by hop; end-to-end encrypted calls would need SFrame (insertable streams), after v1.
+
+**History and recovery**
+
+- A new device gets the conversation keys from the member's other devices, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
+- Recovery after losing every device (M1.5) restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
+- Keeping history costs some forward secrecy: whoever gets a device's keys can read what that device could. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
+
+**Trust**
+
+- The first time a client sees a member's identity key, it trusts it. A device key the identity didn't sign is refused, and a new identity key, as after a reset without the backup, shows in the DM.
+- Each DM offers a safety code: a short fingerprint of both members' identity keys, which two people compare in person or over another channel. Matching codes rule out an owner in the middle.
+
+**In the app.** DMs say they're end-to-end encrypted; channels say the den's owner can read them.
 
 ## Voice and screen share
 
@@ -571,7 +627,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | # | Milestone | Done when |
 | --- | --- | --- |
 | M0 | Foundation: Sprout fork trimmed to the single-process lifecycle, elevated installers for Linux and Windows, `dens@`/`dens-<name>` service, platform layer, two listeners, vault with envelope encryption, `dens open` pairing | On both platforms: browser pairs, vault survives reboot, backup restores on a second machine, including Linux to Windows and back |
-| M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping | Two machines chat through a Caddy-fronted den |
+| M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
 | M2 | 1:1 voice: Pion SFU with UDP mux, ICE-TCP, signaling relay | Clear two-person call across two home networks |
 | M3 | Group voice: renegotiation on join and leave, mute, speaking indicators | 10-person call stays stable for an hour |
 | M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
@@ -580,16 +636,17 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 
 M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 
-**M1 steps.** M1 lands as six steps, each its own pull request, each ending with a check in the four target browsers:
+**M1 steps.** M1 lands as seven steps, each its own pull request, each ending with a check in the four target browsers:
 
 | Step | Scope | Done when |
 | --- | --- | --- |
 | M1.1 Join | Den creation and owner account, invites, joining with a keypair and password verifier, key login and sessions, the den WebSocket with renewal and resume, protocol versioning, the Preact shell, Caddy on both platforms | A second machine joins through Caddy, with Linux and Windows dens, and stays connected across a den restart |
 | M1.2 Chat | Channels and groups with descriptions, messages with the markdown subset, edits with revisions, deletes, replies, the windowed message list with jump to message, read positions and mentions | A client that was offline catches up without gaps or duplicates, and a reply jumps 5,000 messages back and returns to the present |
-| M1.3 Community | Roles, staff-only channels, kick and ban, DMs, presence, typing | A ban closes the member's sockets right away |
+| M1.3 Community | Roles, staff-only channels, removal and bans, profiles, DMs, presence, typing | A ban closes the member's sockets right away |
 | M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
 | M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
+| M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, and a new identity key shows in the DM |
 
 Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
 
@@ -604,5 +661,5 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] Uploads at rest on the den: encrypted with the data key like message text, or stored plain (decide in M1.4).
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
-- [ ] How the message renderer is tested: a pinned JavaScript runtime for unit tests, or a small Playwright suite.
+- [ ] How long a DM's conversation key lives before it changes on its own, besides when a device is removed (M1.7).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.

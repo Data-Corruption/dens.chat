@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -196,9 +197,14 @@ func TestSocketResumeAndClose(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Presence isn't replayed, so who's online comes right after "resumed".
 	c, events := f.dial(token, ready.Epoch+"."+strconv.FormatUint(ready.Seq, 10))
-	if len(events) != 4 || events[0].T != denproto.EventResumed || events[3].Seq != ready.Seq+3 {
+	if len(events) != 5 || events[0].T != denproto.EventResumed || events[1].T != denproto.EventPresence || events[4].Seq != ready.Seq+3 {
 		t.Fatalf("resume frame %+v", events)
+	}
+	var online denproto.Presence
+	if json.Unmarshal(events[1].D, &online); !online.Full || len(online.Online) != 1 {
+		t.Fatalf("presence on resume %+v", online)
 	}
 	c.CloseNow()
 
@@ -229,4 +235,65 @@ func TestSocketClosesOnExpiry(t *testing.T) {
 	if websocket.CloseStatus(err) != denproto.CloseSessionExpired {
 		t.Fatalf("close status %v", err)
 	}
+}
+
+// member joins a second member with an invite from the owner, and returns
+// their token.
+func (f *fixture) member(ownerToken denproto.Bytes, username string) denproto.Bytes {
+	f.t.Helper()
+	owner, err := f.d.Authenticate(context.Background(), ownerToken)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	inv, err := f.d.CreateInvite(context.Background(), owner, denproto.InviteCreateRequest{})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	_, key, _ := ed25519.GenerateKey(nil)
+	info, _ := f.d.Info()
+	resp, err := f.d.Challenge(denproto.Random(denproto.NonceSize))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	joined, err := f.d.Join(context.Background(), denproto.JoinRequest{
+		Invite: inv.Code, Username: username, DisplayName: username, Verifier: denproto.Random(32),
+		PublicKey: denproto.Bytes(key.Public().(ed25519.PublicKey)), DeviceLabel: "test",
+		Nonce: resp.Nonce, Proof: denproto.Prove(key, info.ID, resp.Nonce),
+	})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return joined.Token
+}
+
+// waitPresence reads frames until a presence event matches.
+func waitPresence(t *testing.T, c *websocket.Conn, match func(denproto.Presence) bool) {
+	t.Helper()
+	for {
+		for _, e := range read(t, c) {
+			var p denproto.Presence
+			if e.T == denproto.EventPresence && json.Unmarshal(e.D, &p) == nil && match(p) {
+				return
+			}
+		}
+	}
+}
+
+func TestPresence(t *testing.T) {
+	f := newFixture(t)
+	f.d.PresenceDelay = 50 * time.Millisecond
+	alice, _ := f.owner()
+	bob := f.member(alice, "bob")
+	c, first := f.dial(alice, "")
+	var ready denproto.Ready
+	if json.Unmarshal(first[0].D, &ready); !slices.Contains(ready.Online, ready.Me.ID) {
+		t.Fatalf("alice isn't online in her own snapshot: %v", ready.Online)
+	}
+	defer c.CloseNow()
+	b, first := f.dial(bob, "")
+	json.Unmarshal(first[0].D, &ready)
+	bobID := ready.Me.ID
+	waitPresence(t, c, func(p denproto.Presence) bool { return slices.Contains(p.Online, bobID) })
+	b.Close(websocket.StatusNormalClosure, "")
+	waitPresence(t, c, func(p denproto.Presence) bool { return slices.Contains(p.Offline, bobID) })
 }

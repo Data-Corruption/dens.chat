@@ -18,6 +18,7 @@ type denState struct {
 	groups   map[string]denproto.Group
 	channels map[string]denproto.Channel
 	reads    map[string]denproto.ReadState
+	online   map[string]bool
 	// touched holds the channels whose read state changed since the page
 	// was last told, so the page shows the counts counted here.
 	touched map[string]bool
@@ -31,11 +32,13 @@ type View struct {
 	Groups     []denproto.Group     `json:"groups"`
 	Channels   []denproto.Channel   `json:"channels"`
 	ReadStates []denproto.ReadState `json:"read_states"`
+	Online     []string             `json:"online"`
 }
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
-		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, touched: map[string]bool{}}
+		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
+		touched: map[string]bool{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -53,7 +56,11 @@ func (s *denState) takeTouched() []denproto.ReadState {
 
 func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
-		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
+		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}}
+	for id := range s.online {
+		v.Online = append(v.Online, id)
+	}
+	slices.SortFunc(v.Online, compareIDs)
 	for _, m := range s.members {
 		v.Members = append(v.Members, m)
 	}
@@ -94,13 +101,27 @@ func validID(id string) bool {
 }
 
 func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
+	if !validID(c.ID) || c.Position < 0 {
+		return c, false
+	}
+	if c.Kind == denproto.KindDM {
+		ok := len(c.Members) == 2 && validID(c.Members[0]) && validID(c.Members[1]) && c.Members[0] != c.Members[1] &&
+			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly
+		return c, ok
+	}
 	name, err := denproto.CleanName(c.Name, denproto.MaxNameRunes)
-	if err != nil || !validID(c.ID) || (c.GroupID != nil && !validID(*c.GroupID)) ||
-		(c.Kind != denproto.KindText && c.Kind != denproto.KindVoice) || denproto.CheckDescription(c.Description) != nil || c.Position < 0 {
+	if err != nil || len(c.Members) != 0 || (c.GroupID != nil && !validID(*c.GroupID)) ||
+		(c.Kind != denproto.KindText && c.Kind != denproto.KindVoice) || denproto.CheckDescription(c.Description) != nil {
 		return c, false
 	}
 	c.Name = name
 	return c, true
+}
+
+// hasMessages reports whether a channel holds messages, as text channels
+// and DMs do.
+func hasMessages(c denproto.Channel) bool {
+	return c.Kind == denproto.KindText || c.Kind == denproto.KindDM
 }
 
 func cleanGroup(g denproto.Group) (denproto.Group, bool) {
@@ -150,7 +171,19 @@ func (s *denState) load(r denproto.Ready) error {
 		}
 		next.reads[rs.ChannelID] = rs
 	}
-	if len(next.channels) > denproto.MaxChannels || len(next.groups) > denproto.MaxGroups {
+	for _, id := range r.Online {
+		if !validID(id) {
+			return errMalformed
+		}
+		next.online[id] = true
+	}
+	channels := 0
+	for _, c := range next.channels {
+		if c.Kind != denproto.KindDM {
+			channels++
+		}
+	}
+	if channels > denproto.MaxChannels || len(next.groups) > denproto.MaxGroups {
 		return errMalformed
 	}
 	*s = *next
@@ -164,17 +197,57 @@ func (s *denState) load(r denproto.Ready) error {
 func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Event, bool, error) {
 	var data any
 	switch e.T {
-	case denproto.EventMemberJoined:
+	case denproto.EventMemberJoined, denproto.EventMemberUpdated:
 		var m denproto.Member
 		if json.Unmarshal(e.D, &m) != nil {
 			return e, false, errMalformed
 		}
 		m, ok := cleanMember(m)
-		if !ok || !validID(m.ID) {
+		if !ok {
 			return e, false, errMalformed
 		}
 		s.members[m.ID] = m
 		data = m
+	case denproto.EventMemberLeft:
+		var l denproto.MemberLeft
+		if json.Unmarshal(e.D, &l) != nil || !validID(l.ID) || l.LeftAt <= 0 {
+			return e, false, errMalformed
+		}
+		if m, ok := s.members[l.ID]; ok {
+			m.LeftAt, m.Role = l.LeftAt, denproto.RoleMember
+			s.members[l.ID] = m
+		}
+		delete(s.online, l.ID)
+		data = l
+	case denproto.EventPresence:
+		var p denproto.Presence
+		if json.Unmarshal(e.D, &p) != nil {
+			return e, false, errMalformed
+		}
+		for _, id := range append(slices.Clip(p.Online), p.Offline...) {
+			if !validID(id) {
+				return e, false, errMalformed
+			}
+		}
+		if p.Full {
+			clear(s.online)
+		}
+		for _, id := range p.Online {
+			s.online[id] = true
+		}
+		for _, id := range p.Offline {
+			delete(s.online, id)
+		}
+		data = p
+	case denproto.EventTyping:
+		var t denproto.Typing
+		if json.Unmarshal(e.D, &t) != nil || !validID(t.ChannelID) || !validID(t.MemberID) {
+			return e, false, errMalformed
+		}
+		if _, ok := s.channels[t.ChannelID]; !ok {
+			return e, false, nil
+		}
+		data = t
 	case denproto.EventChannelCreated, denproto.EventChannelUpdated:
 		var c denproto.Channel
 		if json.Unmarshal(e.D, &c) != nil {
@@ -185,7 +258,7 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 			return e, false, errMalformed
 		}
 		s.channels[c.ID] = c
-		if _, ok := s.reads[c.ID]; !ok && c.Kind == denproto.KindText {
+		if _, ok := s.reads[c.ID]; !ok && hasMessages(c) {
 			s.reads[c.ID] = denproto.ReadState{ChannelID: c.ID}
 		}
 		data = c
@@ -275,8 +348,9 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 
 // noteMessage keeps unread state current as messages arrive: the channel's
 // last message moves, and a mention of this member counts unless it's
-// their own message. A page showing the channel marks it read, and the
-// den's read_state.updated resets the count.
+// their own message; in a DM, as the den counts, every message does. A
+// page showing the channel marks it read, and the den's read_state.updated
+// resets the count.
 func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	r, ok := s.reads[m.ChannelID]
 	if !ok {
@@ -285,9 +359,13 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	if compareIDs(m.ID, r.LastMessage) > 0 {
 		r.LastMessage = m.ID
 	}
+	dm := s.channels[m.ChannelID].Kind == denproto.KindDM
+	if dm {
+		r.Closed = false // a new message reopens a closed DM, as on the den
+	}
 	if m.AuthorID == me.ID {
 		r.ReadPosition = m.ID
-	} else if slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {
+	} else if dm || slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {
 		r.MentionCount++
 	}
 	s.reads[m.ChannelID] = r

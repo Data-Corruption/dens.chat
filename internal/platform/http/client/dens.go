@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -30,6 +31,7 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Post("/api/dens/{den}/settings", rt.handleDenSettings)
 	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
 	rt.mountChat(r)
+	rt.mountMembers(r)
 }
 
 // hosting describes the den this install hosts, if the den role is on.
@@ -72,7 +74,11 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.CloseNow()
-	ctx := c.CloseRead(r.Context())
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	page := hex.EncodeToString(denproto.Random(8))
+	defer rt.a.Dens.DropFocus(page)
+	go rt.readPage(ctx, cancel, c, page)
 	changes, stop := rt.a.Dens.Watch()
 	defer stop()
 	stream, stopStream := rt.a.Dens.Stream()
@@ -123,6 +129,38 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
+		}
+	}
+}
+
+// pageMessage is what the page sends on its event stream: the channel it
+// shows in a den ("focus", with an empty channel for none) and typing.
+type pageMessage struct {
+	T string `json:"t"`
+	D struct {
+		Den     string `json:"den"`
+		Channel string `json:"channel"`
+	} `json:"d"`
+}
+
+// readPage handles the page's messages until the stream closes.
+func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, page string) {
+	defer cancel()
+	c.SetReadLimit(4 << 10)
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			return
+		}
+		var msg pageMessage
+		if json.Unmarshal(data, &msg) != nil {
+			continue
+		}
+		switch msg.T {
+		case "focus":
+			rt.a.Dens.SetFocus(page, msg.D.Den, msg.D.Channel)
+		case "typing":
+			_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 		}
 	}
 }
@@ -344,7 +382,9 @@ func denMessage(e *denproto.Error) string {
 	case denproto.CodeDenNotCreated:
 		return "That den isn't set up yet."
 	case denproto.CodeForbidden:
-		return "Only the den's owner can do that."
+		return "You're not allowed to do that on this den."
+	case denproto.CodeBanned:
+		return "You're banned from this den."
 	case denproto.CodeInvalidField:
 		return "The den rejected one of the details you entered."
 	case denproto.CodeNotFound:

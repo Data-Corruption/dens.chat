@@ -1,14 +1,17 @@
 #Requires -Version 5.1
 <#
-Den e2e on Windows: an instance joins a den through Caddy and stays
-connected across a den restart, with both ends on one machine.
+Den e2e on Windows: an instance joins a den through Caddy, chats, and
+stays connected across a den restart; then a ban shuts it out. Both ends
+run on one machine.
 
 Instance main hosts the den. Caddy runs as a Windows service (it supports
 the Service Control Manager natively) and serves https://den.test with its
 internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
-second must reconnect and see the whole history.
+second must reconnect and see the whole history. The owner then sends a
+DM and bans second's member, whose connection must close at once and who
+can't join again under the same name.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
@@ -305,6 +308,46 @@ den.test:$HttpsPort {
     Send-Message $owner $denID $channel "after the restart"
     $history = Get-History $member $denID $channel
     if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
+
+    Step "a direct message"
+    $state = Invoke-Api $owner GET "/api/dens/$denID/state"
+    $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
+    $dm = (Invoke-Api $owner POST "/api/dens/$denID/dms" @{ member_id = $bob }).id
+    Send-Message $owner $denID $dm "a private word"
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $memberState = Invoke-Api $member GET "/api/dens/$denID/state"
+        if (@($memberState.channels) | Where-Object { $_.id -eq $dm }) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $history = Get-History $member $denID $dm
+    if ($history -ne "a private word") { Fail "the member's DM reads: $history" }
+
+    Step "ban the member"
+    $started = Get-Date
+    Invoke-Api $owner POST "/api/dens/$denID/members/$bob/remove" @{ ban = $true } | Out-Null
+    $reason = ""
+    while (((Get-Date) - $started).TotalSeconds -lt 10) {
+        $den = @((Invoke-Api $member GET "/api/dens").dens)[0]
+        if ($den.state -eq "removed") { $reason = $den.error; break }
+        Start-Sleep -Milliseconds 100
+    }
+    $took = [int]((Get-Date) - $started).TotalMilliseconds
+    if ($reason -ne "You were banned from this den.") { Fail "after $took ms the member was told: '$reason'" }
+    if ($took -gt 5000) { Fail "the ban took $took ms to reach the member" }
+    Write-Host "The ban closed the member's connection within $took ms."
+    $invite = (Invoke-Api $owner POST "/api/dens/$denID/invites" @{ expires_in = 3600; max_uses = 1 }).invite
+    $refused = $null
+    try {
+        $body = @{ invite = $invite; username = "bob"; display_name = "Bob"; password = "bob password" } | ConvertTo-Json -Compress
+        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/join" -Method POST -WebSession $member.Session -UseBasicParsing `
+            -Headers @{ Origin = $member.Origin } -ContentType "application/json" -Body $body -TimeoutSec 60 | Out-Null
+    } catch {
+        $refused = "$($_.ErrorDetails.Message)"
+    }
+    if ($null -eq $refused) { Fail "joining again after the ban was accepted" }
+    if ($refused -notmatch "banned") { Fail "rejoining after the ban: $refused" }
+    Write-Host "The banned member can't come back as bob."
     $passed = $true
 } catch {
     Write-Host ""

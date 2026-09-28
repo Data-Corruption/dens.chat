@@ -9,6 +9,7 @@ package den
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -58,9 +59,14 @@ type Den struct {
 	nonces  map[string]time.Time
 
 	limits struct {
-		challenge, join, login, socket, write, send *limiter
+		challenge, join, login, socket, write, send, typing *limiter
 	}
-	sockets *socketSet
+	sockets  *socketSet
+	presence *presence
+
+	// PresenceDelay is how long presence changes gather before they're
+	// announced; tests shorten it.
+	PresenceDelay time.Duration
 }
 
 // Session is an authenticated session.
@@ -80,6 +86,8 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger) (*D
 		now:           time.Now,
 		nonces:        map[string]time.Time{},
 		sockets:       newSocketSet(),
+		presence:      newPresence(),
+		PresenceDelay: defaultPresenceDelay,
 	}
 	d.limits.challenge = newLimiter(30, 2*time.Second, 100_000)
 	d.limits.join = newLimiter(10, 6*time.Minute, 100_000)
@@ -87,6 +95,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger) (*D
 	d.limits.socket = newLimiter(20, 3*time.Second, 100_000)
 	d.limits.write = newLimiter(30, time.Second/3, 100_000)
 	d.limits.send = newLimiter(5, time.Second, 100_000)
+	d.limits.typing = newLimiter(1, 2*time.Second, 100_000)
 
 	var name, url string
 	var pub, sealed []byte
@@ -332,7 +341,9 @@ func (d *Den) Preview(ctx context.Context, code []byte) (denproto.Den, error) {
 }
 
 // Join redeems an invite: it creates the member and their first device,
-// and returns a session and the member's recovery codes.
+// and returns a session and the member's recovery codes. A former member
+// who gives their username and password comes back as themselves, with
+// their history, unless they were banned.
 func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.JoinResponse, error) {
 	for _, f := range []struct {
 		name  string
@@ -383,22 +394,27 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		if err != nil {
 			return err
 		}
-		var taken int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_members WHERE username = ?`, username).Scan(&taken); err != nil {
-			return err
-		}
-		if taken > 0 {
-			return denproto.Errorf(http.StatusConflict, denproto.CodeUsernameTaken, "that username is taken")
-		}
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO den_members (username, display_name, role, verifier_hash, joined_at) VALUES (?, ?, ?, ?, ?)`,
-			username, displayName, role, denproto.Hash(req.Verifier), now.UnixMilli())
+		id, joinedAt, err := claimUsername(ctx, tx, username, req.Verifier)
 		if err != nil {
 			return err
 		}
-		id, err := res.LastInsertId()
-		if err != nil {
-			return err
+		if id != 0 {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE den_members SET display_name = ?, role = ?, invite_id = ?, left_at = NULL WHERE id = ?`,
+				displayName, role, inviteID, id); err != nil {
+				return err
+			}
+		} else {
+			joinedAt = now.UnixMilli()
+			res, err := tx.ExecContext(ctx,
+				`INSERT INTO den_members (username, display_name, role, verifier_hash, joined_at, invite_id) VALUES (?, ?, ?, ?, ?, ?)`,
+				username, displayName, role, denproto.Hash(req.Verifier), joinedAt, inviteID)
+			if err != nil {
+				return err
+			}
+			if id, err = res.LastInsertId(); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO den_devices (key_id, member_id, public_key, label, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -417,7 +433,7 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		if err := insertSession(ctx, tx, token, id, keyID, now, now.Add(d.TokenLifetime)); err != nil {
 			return err
 		}
-		member = denproto.Member{ID: strconv.FormatInt(id, 10), Username: username, DisplayName: displayName, Role: role, JoinedAt: now.UnixMilli()}
+		member = denproto.Member{ID: strconv.FormatInt(id, 10), Username: username, DisplayName: displayName, Role: role, JoinedAt: joinedAt}
 		return nil
 	})
 	if err != nil {
@@ -432,6 +448,33 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		return denproto.JoinResponse{}, err
 	}
 	return denproto.JoinResponse{Member: member, Token: token, ExpiresAt: now.Add(d.TokenLifetime).UnixMilli(), RecoveryCodes: shown}, nil
+}
+
+var errUsernameTaken = denproto.Errorf(http.StatusConflict, denproto.CodeUsernameTaken, "that username is taken")
+
+// claimUsername checks whether a joining member may take a username. It
+// returns 0 for a free username, or the ID and first join time of the
+// former member it belongs to, when the verifier proves the joiner is them.
+// A wrong verifier gets the same answer as a taken name, so an invite
+// can't be used to learn who used to be here.
+func claimUsername(ctx context.Context, tx *sql.Tx, username string, verifier []byte) (id, joinedAt int64, err error) {
+	var hash []byte
+	var left, banned sql.NullInt64
+	err = tx.QueryRowContext(ctx, `SELECT id, verifier_hash, joined_at, left_at, banned_at FROM den_members WHERE username = ?`, username).
+		Scan(&id, &hash, &joinedAt, &left, &banned)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, 0, nil
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	if banned.Valid {
+		return 0, 0, denproto.Errorf(http.StatusForbidden, denproto.CodeBanned, "that username is banned from this den")
+	}
+	if !left.Valid || subtle.ConstantTimeCompare(hash, denproto.Hash(verifier)) != 1 {
+		return 0, 0, errUsernameTaken
+	}
+	return id, joinedAt, nil
 }
 
 // Login starts a session for a registered device.
@@ -537,18 +580,10 @@ func (d *Den) Logout(ctx context.Context, s *Session) error {
 	return nil
 }
 
-// Member returns a member by ID.
-func (d *Den) Member(ctx context.Context, id int64) (denproto.Member, error) {
-	m := denproto.Member{ID: strconv.FormatInt(id, 10)}
-	err := d.db.QueryRowContext(ctx, `SELECT username, display_name, role, joined_at FROM den_members WHERE id = ?`, id).
-		Scan(&m.Username, &m.DisplayName, &m.Role, &m.JoinedAt)
-	return m, err
-}
-
-// CreateInvite makes an invite. Only the owner may until roles land.
+// CreateInvite makes an invite. Moderators and the owner may.
 func (d *Den) CreateInvite(ctx context.Context, s *Session, req denproto.InviteCreateRequest) (denproto.Invite, error) {
-	if s.Role != denproto.RoleOwner {
-		return denproto.Invite{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner creates invites")
+	if !IsStaff(s.Role) {
+		return denproto.Invite{}, forbidden("only moderators and the owner create invites")
 	}
 	expiry := defaultInviteExpiry
 	if req.ExpiresIn != 0 {
@@ -577,18 +612,18 @@ func (d *Den) CreateInvite(ctx context.Context, s *Session, req denproto.InviteC
 		return denproto.Invite{}, err
 	}
 	return denproto.Invite{
-		ID: strconv.FormatInt(id, 10), Code: code, CreatedAt: now.UnixMilli(),
+		ID: strconv.FormatInt(id, 10), Code: code, CreatedBy: denproto.FormatID(s.MemberID), CreatedAt: now.UnixMilli(),
 		ExpiresAt: now.Add(expiry).UnixMilli(), MaxUses: uses,
 	}, nil
 }
 
 // Invites lists the invites that can still be used, without their codes.
 func (d *Den) Invites(ctx context.Context, s *Session) ([]denproto.Invite, error) {
-	if s.Role != denproto.RoleOwner {
-		return nil, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner manages invites")
+	if !IsStaff(s.Role) {
+		return nil, forbidden("only moderators and the owner manage invites")
 	}
 	rows, err := d.db.QueryContext(ctx, `
-		SELECT id, created_at, expires_at, max_uses, uses FROM den_invites
+		SELECT id, created_by, created_at, expires_at, max_uses, uses FROM den_invites
 		WHERE role = 'member' AND expires_at > ? AND uses < max_uses ORDER BY id`, d.now().UnixMilli())
 	if err != nil {
 		return nil, err
@@ -598,10 +633,14 @@ func (d *Den) Invites(ctx context.Context, s *Session) ([]denproto.Invite, error
 	for rows.Next() {
 		var inv denproto.Invite
 		var id int64
-		if err := rows.Scan(&id, &inv.CreatedAt, &inv.ExpiresAt, &inv.MaxUses, &inv.Uses); err != nil {
+		var by sql.NullInt64
+		if err := rows.Scan(&id, &by, &inv.CreatedAt, &inv.ExpiresAt, &inv.MaxUses, &inv.Uses); err != nil {
 			return nil, err
 		}
 		inv.ID = strconv.FormatInt(id, 10)
+		if by.Valid {
+			inv.CreatedBy = denproto.FormatID(by.Int64)
+		}
 		invites = append(invites, inv)
 	}
 	return invites, rows.Err()
@@ -609,8 +648,8 @@ func (d *Den) Invites(ctx context.Context, s *Session) ([]denproto.Invite, error
 
 // RevokeInvite deletes an invite.
 func (d *Den) RevokeInvite(ctx context.Context, s *Session, id int64) error {
-	if s.Role != denproto.RoleOwner {
-		return denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner manages invites")
+	if !IsStaff(s.Role) {
+		return forbidden("only moderators and the owner manage invites")
 	}
 	res, err := d.db.ExecContext(ctx, `DELETE FROM den_invites WHERE id = ? AND role = 'member'`, id)
 	if err != nil {

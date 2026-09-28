@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ const (
 	StateConnected  State = "connected"
 	StateOffline    State = "offline" // retrying
 	StateRevoked    State = "revoked" // this device can't sign in any more
+	StateRemoved    State = "removed" // left, removed or banned from the den
 )
 
 // Status describes a joined den and its connection, for the page.
@@ -59,6 +61,14 @@ type conn struct {
 	expires time.Time
 
 	loginMu sync.Mutex
+
+	// ws is the open socket, for frames to the den; focus is the channels
+	// pages here show, which the den hears on every (re)connection.
+	ws    *websocket.Conn
+	focus []string
+
+	stop context.CancelFunc // ends run, when the den is forgotten
+	done chan struct{}      // closed when run has returned
 
 	// Only the run goroutine touches these.
 	epoch string
@@ -121,7 +131,7 @@ func (c *conn) run(ctx context.Context) {
 			c.dropToken()
 			wait = b.next()
 		case code == denproto.CloseRevoked:
-			c.setState(StateRevoked, "This den no longer accepts this device.")
+			c.setState(farewell(err))
 			return
 		case code == denproto.CloseTooSlow:
 		case code == denproto.CloseRateLimited:
@@ -132,6 +142,22 @@ func (c *conn) run(ctx context.Context) {
 		c.setState(StateOffline, msg)
 		sleep(ctx, wait)
 	}
+}
+
+// farewell describes a den closing the socket for good, by its reason.
+func farewell(err error) (State, string) {
+	var ce websocket.CloseError
+	if errors.As(err, &ce) {
+		switch ce.Reason {
+		case denproto.CloseReasonBanned:
+			return StateRemoved, "You were banned from this den."
+		case denproto.CloseReasonRemoved:
+			return StateRemoved, "You were removed from this den."
+		case denproto.CloseReasonLeft:
+			return StateRemoved, "You left this den."
+		}
+	}
+	return StateRevoked, "This den no longer accepts this device."
 }
 
 func revoked(err error) bool {
@@ -261,6 +287,14 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	}
 	defer ws.CloseNow()
 	ws.SetReadLimit(denproto.MaxBody)
+	c.mu.Lock()
+	c.ws = ws
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		c.ws = nil
+		c.mu.Unlock()
+	}()
 
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -277,6 +311,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			return connectedAt, -1, err
 		}
 		var forward []denproto.Event
+		fresh := false
 		for _, e := range events {
 			out, ok, err := c.apply(ctx, e)
 			if err != nil {
@@ -292,7 +327,15 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 					connectedAt = time.Now()
 				}
 				c.setState(StateConnected, "")
+				fresh = true
 			}
+		}
+		// The den forgets focus with each connection and snapshot.
+		if fresh {
+			c.mu.Lock()
+			focus := c.focus
+			c.mu.Unlock()
+			c.send(ws, denproto.EventFocus, denproto.Focus{Channels: append([]string{}, focus...)})
 		}
 		var reads []denproto.ReadState
 		c.mu.Lock()
@@ -353,11 +396,77 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		return e, false, nil
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.den == nil {
+		c.mu.Unlock()
 		return e, false, nil
 	}
-	return c.den.applyEvent(e, c.profile.Member)
+	out, ok, err := c.den.applyEvent(e, c.profile.Member)
+	me := c.profile.Member.ID
+	c.mu.Unlock()
+	if err == nil && ok && out.T == denproto.EventMemberUpdated {
+		var m denproto.Member
+		if json.Unmarshal(out.D, &m) == nil && m.ID == me {
+			return out, ok, c.updateMe(ctx, m)
+		}
+	}
+	return out, ok, err
+}
+
+// updateMe keeps this member's own account current as the den reports a
+// change to it, such as a new role.
+func (c *conn) updateMe(ctx context.Context, m denproto.Member) error {
+	c.mu.Lock()
+	p := c.profile
+	p.Member = m
+	changed := p != c.profile
+	c.profile = p
+	c.mu.Unlock()
+	if !changed {
+		return nil
+	}
+	c.m.notify()
+	return updateProfile(ctx, c.m.db, c.m.v, c.j.denID, p)
+}
+
+// send writes one client frame to the den. Frames are hints the den
+// repeats on its side as needed, so a failed write is only dropped.
+func (c *conn) send(ws *websocket.Conn, t string, data any) {
+	e, err := denproto.NewEvent(t, 0, data)
+	if err != nil {
+		return
+	}
+	frame, err := denproto.EncodeFrame(e)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = ws.Write(ctx, websocket.MessageText, frame)
+}
+
+// setFocus records the channels the pages show and tells the den.
+func (c *conn) setFocus(channels []string) {
+	c.mu.Lock()
+	if slices.Equal(c.focus, channels) {
+		c.mu.Unlock()
+		return
+	}
+	c.focus = channels
+	ws := c.ws
+	c.mu.Unlock()
+	if ws != nil {
+		c.send(ws, denproto.EventFocus, denproto.Focus{Channels: channels})
+	}
+}
+
+// typing tells the den this member is typing in a channel.
+func (c *conn) typing(channel string) {
+	c.mu.Lock()
+	ws := c.ws
+	c.mu.Unlock()
+	if ws != nil {
+		c.send(ws, denproto.EventTyping, denproto.Typing{ChannelID: channel})
+	}
 }
 
 // updateProfile keeps the den's name and address, and this member's
@@ -391,7 +500,7 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 
 func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	username, err := denproto.NormalizeUsername(m.Username)
-	if err != nil {
+	if err != nil || !validID(m.ID) || m.JoinedAt < 0 || m.LeftAt < 0 || denproto.CheckBio(m.Bio) != nil {
 		return m, false
 	}
 	display, err := denproto.CleanName(m.DisplayName, denproto.MaxNameRunes)

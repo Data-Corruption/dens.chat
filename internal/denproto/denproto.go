@@ -257,13 +257,17 @@ const (
 	RoleOwner     = "owner"
 )
 
-// Member is an account on a den.
+// Member is an account on a den. A member who left or was removed keeps
+// their record, with LeftAt set, so their messages still have a name. Bio
+// comes only with GET /api/members/{id}, to keep snapshots small.
 type Member struct {
 	ID          string `json:"id"`
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
 	Role        string `json:"role"`
 	JoinedAt    int64  `json:"joined_at"`
+	LeftAt      int64  `json:"left_at,omitempty"`
+	Bio         string `json:"bio,omitempty"`
 }
 
 // Requests and responses ------------------------------------------------------
@@ -323,6 +327,7 @@ type InviteCreateRequest struct {
 type Invite struct {
 	ID        string `json:"id"`
 	Code      Bytes  `json:"code,omitempty"`
+	CreatedBy string `json:"created_by,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 	ExpiresAt int64  `json:"expires_at"`
 	MaxUses   int    `json:"max_uses"`
@@ -349,6 +354,7 @@ type Ready struct {
 	Groups     []Group     `json:"groups"`
 	Channels   []Channel   `json:"channels"`
 	ReadStates []ReadState `json:"read_states"`
+	Online     []string    `json:"online"`
 }
 
 type Renew struct {

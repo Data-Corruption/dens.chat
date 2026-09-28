@@ -160,6 +160,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	}
 	defer c.CloseNow()
 	c.SetReadLimit(denproto.MaxClientFrame)
+	d.socketsChanged(s.MemberID, 1)
+	defer d.socketsChanged(s.MemberID, -1)
 
 	// The request context ends when the service stops. The socket outlives
 	// it until the den closes it with 1012, after the listener has closed.
@@ -167,8 +169,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	defer cancel()
 
 	epoch, after := parseResume(r.URL.Query().Get("resume"))
-	staff := IsStaff(s.Role)
-	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, staff, epoch, after)
+	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, IsStaff(s.Role), epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 
 	write := func(events ...denproto.Event) bool {
@@ -185,7 +186,9 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	// repeat state the snapshot already has, and applying one twice is
 	// harmless.
 	sendReady := func(seq uint64) bool {
-		snap, err := d.snapshot(ctx, s.MemberID, staff, seq)
+		// The role can change while the socket is open; the hub knows the
+		// current one.
+		snap, err := d.snapshot(ctx, s.MemberID, d.Hub.Staff(sub), seq)
 		if err != nil {
 			d.log.Errorf("den snapshot: %v", err)
 			c.Close(websocket.StatusInternalError, "")
@@ -196,8 +199,10 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	}
 
 	if resumed {
+		// Presence isn't replayed, so a resumed client gets who's online now.
 		first, _ := denproto.NewEvent(denproto.EventResumed, 0, nil)
-		batch := []denproto.Event{first}
+		online, _ := denproto.NewEvent(denproto.EventPresence, 0, denproto.Presence{Online: d.online(), Full: true})
+		batch := []denproto.Event{first, online}
 		for len(missed) > 0 {
 			n := min(replayChunk-len(batch), len(missed))
 			batch = append(batch, missed[:n]...)
@@ -217,7 +222,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	var expires atomic.Int64
 	expires.Store(s.ExpiresAt.UnixMilli())
 	ephemeral := make(chan denproto.Event, 8)
-	go d.readClient(ctx, cancel, c, s, sock, &expires, ephemeral)
+	go d.readClient(ctx, cancel, c, s, sock, sub, &expires, ephemeral)
 	go func() {
 		t := time.NewTicker(pingInterval)
 		defer t.Stop()
@@ -301,7 +306,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 
 // readClient handles frames from the client until the socket closes.
 func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, s *Session,
-	sock *socket, expires *atomic.Int64, ephemeral chan<- denproto.Event) {
+	sock *socket, sub *Sub, expires *atomic.Int64, ephemeral chan<- denproto.Event) {
 	defer cancel()
 	for {
 		_, data, err := c.Read(ctx)
@@ -322,7 +327,7 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				}
 				until, err := d.Renew(ctx, s, req.Nonce, req.Proof)
 				if denproto.IsCode(err, denproto.CodeKeyRevoked) {
-					sock.requestClose(denproto.CloseRevoked, "key revoked")
+					sock.requestClose(denproto.CloseRevoked, denproto.CloseReasonKeyRevoked)
 					return
 				}
 				if err != nil {
@@ -339,6 +344,20 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				select {
 				case ephemeral <- renewed:
 				default:
+				}
+			case denproto.EventFocus:
+				// Each focus looks its channels up, so it shares the member's
+				// budget for writes; one past it is dropped, and the next
+				// change or connection sends focus again.
+				var f denproto.Focus
+				if json.Unmarshal(e.D, &f) == nil && len(f.Channels) <= denproto.MaxFocus &&
+					d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) == nil {
+					d.focus(ctx, sub, f.Channels)
+				}
+			case denproto.EventTyping:
+				var t denproto.Typing
+				if json.Unmarshal(e.D, &t) == nil {
+					d.typing(sub, t.ChannelID)
 				}
 			}
 			// Unknown event types are ignored, as the protocol requires.
