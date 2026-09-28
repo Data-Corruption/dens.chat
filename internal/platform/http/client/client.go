@@ -60,6 +60,7 @@ func New(a *app.App) http.Handler {
 	// 401s and shows how to pair.
 	r.Get("/", rt.handlePage)
 	r.Get("/settings", rt.handlePage)
+	r.Get("/den/*", rt.handlePage)
 	r.Post("/api/pair", rt.handlePair)
 	r.Group(func(r chi.Router) {
 		r.Use(rt.requireSession)

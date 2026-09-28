@@ -132,10 +132,25 @@ run() {
   [[ "$role" == member ]] || { echo "error: joined as $role" >&2; return 1; }
   since=$(guest "$CLIENT" wait-connected 0)
 
+  echo ">> Chatting"
+  local channel history
+  channel=$(guest "$DEN" channel "$den_id" general)
+  [[ "$(guest "$CLIENT" wait-channel "$den_id")" == "$channel" ]] || { echo "error: the member sees another channel" >&2; return 1; }
+  guest "$CLIENT" send "$den_id" "$channel" "hello from the member" >/dev/null
+  guest "$DEN" send "$den_id" "$channel" "hello back, @bob" >/dev/null
+  history=$(guest "$DEN" history "$den_id" "$channel")
+  [[ "$history" == $'hello from the member\nhello back, @bob' ]] || { echo "error: the owner's history is: $history" >&2; return 1; }
+
   echo ">> Restarting the den's service"
   "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
   since=$(guest "$CLIENT" wait-connected "$since")
   echo ">> The member reconnected after the restart"
+  guest "$DEN" wait-connected 0 >/dev/null
+  guest "$DEN" send "$den_id" "$channel" "after the restart" >/dev/null
+  history=$(guest "$CLIENT" history "$den_id" "$channel")
+  [[ "$history" == $'hello from the member\nhello back, @bob\nafter the restart' ]] ||
+    { echo "error: the member's history after the restart is: $history" >&2; return 1; }
+  echo ">> The member's history is complete after the restart"
   guest "$CLIENT" status
   echo
   "${INCUS[@]}" exec "$DEN" -- journalctl -u dens@main -b --no-pager -o cat | tail -n 20
