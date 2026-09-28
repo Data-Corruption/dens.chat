@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 
-# Den e2e on Linux: a second machine joins a den through Caddy and stays
-# connected across a den restart.
+# Den e2e on Linux: a second machine joins a den through Caddy, chats, and
+# stays connected across a den restart; then a ban shuts it out.
 #
 # One Incus container hosts the den behind the pinned Caddy, serving
 # https://den.test with Caddy's internal certificate authority. Another,
 # on a different distro, trusts that authority, installs Dens and joins
-# with an invite from the owner. The den's service then restarts, and the
-# member must reconnect. Both install from unsigned fixture releases
-# through install.sh, like the lifecycle harness; the guest steps are in
-# scripts/test/den-guest.sh.
+# with an invite from the owner. The two chat, the den's service restarts,
+# and the member must reconnect with the whole history. The owner then
+# sends a DM and bans the member, whose connection must close at once and
+# who can't join again under the same name. Both install from unsigned
+# fixture releases through install.sh, like the lifecycle harness; the
+# guest steps are in scripts/test/den-guest.sh.
 #
 # Usage:
 #   ./scripts/test-den-e2e.sh
@@ -151,7 +153,33 @@ run() {
   [[ "$history" == $'hello from the member\nhello back, @bob\nafter the restart' ]] ||
     { echo "error: the member's history after the restart is: $history" >&2; return 1; }
   echo ">> The member's history is complete after the restart"
+
+  echo ">> A direct message"
+  local bob dm
+  bob=$(guest "$DEN" member-id "$den_id" bob)
+  dm=$(guest "$DEN" dm "$den_id" "$bob")
+  guest "$DEN" send "$den_id" "$dm" "a private word" >/dev/null
+  [[ "$(guest "$CLIENT" wait-dm "$den_id")" == "$dm" ]] || { echo "error: the DM didn't reach the member" >&2; return 1; }
+  history=$(guest "$CLIENT" history "$den_id" "$dm")
+  [[ "$history" == "a private word" ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
+
+  echo ">> Banning the member"
+  local started took reason refusal
   guest "$CLIENT" status
+  echo
+  started=$(date +%s%3N)
+  guest "$DEN" ban "$den_id" "$bob"
+  reason=$(guest "$CLIENT" wait-removed)
+  took=$(( $(date +%s%3N) - started ))
+  [[ "$reason" == "You were banned from this den." ]] || { echo "error: the member was told: $reason" >&2; return 1; }
+  # The limit covers two container execs; the den closes the socket itself
+  # within milliseconds.
+  (( took < 5000 )) || { echo "error: the ban took ${took} ms to reach the member" >&2; return 1; }
+  echo ">> The ban closed the member's connection within ${took} ms"
+  invite=$(guest "$DEN" invite "$den_id")
+  refusal=$(guest "$CLIENT" join-refused "$invite")
+  [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }
+  echo ">> The banned member can't come back as bob"
   echo
   "${INCUS[@]}" exec "$DEN" -- journalctl -u dens@main -b --no-pager -o cat | tail -n 20
 }

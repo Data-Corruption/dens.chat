@@ -168,6 +168,46 @@ history)
     # history DEN_ID CHANNEL_ID: print the channel's messages, oldest first.
     api GET "/api/dens/$1/channels/$2/messages?limit=100" | json '"\n".join(m["text"] for m in d["messages"])'
     ;;
+member-id)
+    # member-id DEN_ID USERNAME: print a member's ID.
+    api GET "/api/dens/$1/state" | json 'next(m["id"] for m in d["members"] if m["username"] == "'"$2"'")'
+    ;;
+dm)
+    # dm DEN_ID MEMBER_ID: open the DM with a member; print its ID.
+    api POST "/api/dens/$1/dms" "{\"member_id\":\"$2\"}" | json 'd["id"]'
+    ;;
+wait-dm)
+    # wait-dm DEN_ID: print this member's DM's ID once it has arrived.
+    for _ in $(seq 1 40); do
+        id=$(api GET "/api/dens/$1/state" | json 'next((c["id"] for c in d["channels"] if c["kind"] == "dm"), "")')
+        [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
+        sleep 0.25
+    done
+    fail "no DM reached this client"
+    ;;
+ban)
+    # ban DEN_ID MEMBER_ID: remove a member and keep them out.
+    api POST "/api/dens/$1/members/$2/remove" '{"ban":true}' >/dev/null
+    ;;
+wait-removed)
+    # wait-removed: wait until the only den has closed this member out;
+    # print the reason it gives.
+    for _ in $(seq 1 100); do
+        reason=$(api GET /api/dens | json 'd["dens"][0]["error"] if d["dens"][0]["state"] == "removed" else ""')
+        [ -n "$reason" ] && { printf '%s\n' "$reason"; exit 0; }
+        sleep 0.1
+    done
+    api GET /api/dens >&2
+    fail "the den never closed this member out"
+    ;;
+join-refused)
+    # join-refused INVITE: try to join as bob again; print the refusal.
+    status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \
+        -d "{\"invite\":\"$1\",\"username\":\"bob\",\"display_name\":\"Bob\",\"password\":\"bob password\"}" \
+        -o /root/join.json -w '%{http_code}' "$BASE/api/dens/join")
+    [ "$status" -ge 400 ] || fail "joining again was accepted"
+    json 'd["error"]' < /root/join.json
+    ;;
 *)
     printf 'unknown step %s\n' "$step" >&2
     exit 2
