@@ -17,6 +17,7 @@ import { Markdown, Preview } from './markdown.jsx';
 const WINDOW = 200;
 const PAGE = 50;
 const EDGE = 600; // px from an end at which the next page loads
+const READ_EVERY = 2000; // ms between read position updates
 const GROUP_GAP = 5 * 60 * 1000;
 
 function mergeIn(messages, incoming) {
@@ -45,6 +46,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
     listRef.current = list;
     const readUpTo = useRef(readPosition || '');
     const readTimer = useRef(null);
+    const unsentRead = useRef('');
     const highlightTimer = useRef(null);
     const base = `/api/dens/${denID}/channels/${channel.id}/messages`;
 
@@ -156,16 +158,24 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
         highlightTimer.current = setTimeout(() => setHighlight(null), 2500);
     }
 
+    // markRead moves the read position to the newest message once it's on
+    // screen. Updates go out at most every READ_EVERY, so a busy channel
+    // costs the den one small write every few seconds, not one per message.
     function markRead() {
         const l = listRef.current;
         if (l.hasNewer || !atBottom.current || document.visibilityState !== 'visible' || !l.messages.length) return;
         const last = l.messages[l.messages.length - 1].id;
         if (compareIds(last, readUpTo.current) <= 0) return;
-        clearTimeout(readTimer.current);
-        readTimer.current = setTimeout(() => {
-            readUpTo.current = last;
-            api.put(`/api/dens/${denID}/channels/${channel.id}/read`, { message_id: last }).catch(() => {});
-        }, 800);
+        unsentRead.current = last;
+        if (!readTimer.current) readTimer.current = setTimeout(sendRead, READ_EVERY);
+    }
+
+    function sendRead() {
+        readTimer.current = null;
+        const id = unsentRead.current;
+        if (compareIds(id, readUpTo.current) <= 0) return;
+        readUpTo.current = id;
+        api.put(`/api/dens/${denID}/channels/${channel.id}/read`, { message_id: id }).catch(() => {});
     }
 
     function checkEdges() {
@@ -212,7 +222,9 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
         return () => {
             stop();
             document.removeEventListener('visibilitychange', onVisible);
+            // Leaving the channel sends what was read without waiting.
             clearTimeout(readTimer.current);
+            sendRead();
             clearTimeout(highlightTimer.current);
         };
     }, []);
@@ -223,6 +235,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
         if (e.t === 'message.created') {
             if (d.nonce) setPending((p) => p.filter((x) => x.nonce !== d.nonce));
             const mine = d.author_id === me.id;
+            // The den moves the read position past a member's own message.
+            if (mine && compareIds(d.id, readUpTo.current) > 0) readUpTo.current = d.id;
             const l = listRef.current;
             if (l.hasNewer) {
                 if (mine) loadNewest();
@@ -265,6 +279,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, canMode
         try {
             const m = await api.post(base, { nonce: entry.nonce, text: entry.text, reply_to: entry.reply_to || undefined });
             setPending((p) => p.filter((x) => x.nonce !== entry.nonce));
+            if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
             if (!listRef.current.hasNewer) {
                 anchor.current = { bottom: true };
                 setList((cur) => ({ ...cur, messages: mergeIn(cur.messages, [m]) }));
