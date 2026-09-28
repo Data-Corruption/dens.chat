@@ -353,6 +353,7 @@ A member is online while they have an open socket. `ready` carries `online`, a l
 - **M1.4 Files:** `POST /api/uploads`, which streams, checks size up front, strips metadata and makes a thumbnail. It returns an ID with the type, size and dimensions, to attach to a message within an hour. Files are served by content-addressed ID, originals and thumbnails separately. Members gain `avatar` and `banner`, each an uploaded image's ID and dimensions, set with `PATCH /api/me`.
 - **M1.5 Recovery:** the endpoints sketched above, `GET /api/me/devices` and `DELETE /api/me/devices/{key_id}`, and `device.*` events.
 - **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.
+- **M1.7 Private DMs:** members publish their identity key and each device's signed encryption key, and clients fetch a DM partner's. DM messages carry sealed text with the ID of the conversation key it was sealed with, and each device fetches the conversation keys sealed for it. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. The key backup is stored and fetched as an opaque blob. `device.*` events tell DM partners when a member's devices change. See the design doc.
 
 ## Rate limits
 
