@@ -154,7 +154,10 @@ func describe(err error) string {
 		}
 		return "The den refused the connection (" + perr.Code + ")."
 	}
-	return "Can't reach the den: " + err.Error()
+	if errors.Is(err, denproto.ErrWrongIdentity) {
+		return "The server at the den's address can't prove it is this den."
+	}
+	return Explain(err)
 }
 
 // session returns a token that is valid for at least a minute, signing in

@@ -369,6 +369,19 @@ func (m *Manager) RevokeInvite(ctx context.Context, denID, inviteID string) erro
 	return c.call(ctx, http.MethodDelete, "/api/invites/"+inviteID, nil, nil)
 }
 
+// CheckAddress reaches a den at its public address, even when this install
+// hosts it and normally uses loopback, and checks it proves its identity
+// there. It is how an owner finds out whether members can reach the den.
+func (m *Manager) CheckAddress(ctx context.Context, denID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	a := &api{base: c.status().URL, client: m.HTTP, agent: m.agent}
+	_, err = a.challenge(ctx, c.j.denID)
+	return err
+}
+
 // UpdateDen changes the name or address of a den this member owns.
 func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenUpdateRequest) error {
 	c, err := m.find(denID)

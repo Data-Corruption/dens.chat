@@ -90,8 +90,91 @@ function DenItem({ den }) {
                 {den.url} · you're <span class="font-medium">{den.display_name}</span> (@{den.username}), {den.role}
             </p>
             {den.error && <p class="text-sm text-warning">{den.error}</p>}
-            {den.role === 'owner' && den.state === 'connected' && <Invites denID={den.den_id} />}
+            {den.role === 'owner' && den.state === 'connected' && (
+                <>
+                    <DenSettings den={den} />
+                    <Invites denID={den.den_id} />
+                </>
+            )}
         </li>
+    );
+}
+
+// DenSettings changes a den's name and public address, and tests whether
+// the address reaches the den from this computer.
+function DenSettings({ den }) {
+    const [name, setName] = useState(den.name);
+    const [url, setURL] = useState(den.url);
+    const [saved, setSaved] = useState(false);
+    const [reached, setReached] = useState(false);
+    const save = useAction();
+    const check = useAction();
+
+    function submit(e) {
+        e.preventDefault();
+        setSaved(false);
+        setReached(false);
+        const body = {};
+        if (name !== den.name) body.name = name;
+        if (url !== den.url) body.url = url;
+        save.run(async () => {
+            await api.post(`/api/dens/${den.den_id}/settings`, body);
+            setSaved(true);
+        });
+    }
+
+    function test() {
+        setReached(false);
+        check.run(async () => {
+            await api.post(`/api/dens/${den.den_id}/check`);
+            setReached(true);
+        });
+    }
+
+    return (
+        <details class="collapse-arrow collapse mt-2 bg-base-200">
+            <summary class="collapse-title font-medium">Den settings</summary>
+            <div class="collapse-content flex flex-col gap-3">
+                <form class="flex flex-col gap-2" onSubmit={submit}>
+                    <Field label="Den name">
+                        <TextInput value={name} onInput={setName} required maxlength="32" />
+                    </Field>
+                    <Field
+                        label="Public address"
+                        hint="Where members reach the den. New invites carry it; invites already sent keep the old one."
+                    >
+                        <TextInput type="url" value={url} onInput={setURL} required />
+                    </Field>
+                    <ErrorText message={save.error} />
+                    {saved && <p class="text-sm text-success">Saved.</p>}
+                    <div>
+                        <SubmitButton busy={save.busy}>Save</SubmitButton>
+                    </div>
+                </form>
+                <div class="flex flex-col gap-2">
+                    <div>
+                        <button type="button" class="btn btn-sm" onClick={test} disabled={check.busy}>
+                            {check.busy && <span class="loading loading-spinner loading-sm"></span>}
+                            Test the address
+                        </button>
+                    </div>
+                    {reached && (
+                        <p class="text-sm text-success">This computer reached the den at {den.url}, and it proved its identity there.</p>
+                    )}
+                    {check.error && (
+                        <>
+                            <ErrorText message={check.error} />
+                            {den.own && (
+                                <p class="text-sm text-base-content/70">
+                                    Some routers can't reach their own public address from inside the network, so members may
+                                    still get through. If you're unsure, test from a phone or another network.
+                                </p>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
+        </details>
     );
 }
 
@@ -313,7 +396,10 @@ function HostDen({ hosting, onJoined }) {
                         <Field label="Den name">
                             <TextInput value={form.name} onInput={(v) => set('name', v)} required maxlength="32" />
                         </Field>
-                        <Field label="Public address" hint="Where members reach the den, such as https://den.example.com.">
+                        <Field
+                            label="Public address"
+                            hint="Where members reach the den through Caddy, such as https://den.example.com. You can test and change it later in the den's settings."
+                        >
                             <TextInput type="url" value={form.url} onInput={(v) => set('url', v)} required />
                         </Field>
                     </>

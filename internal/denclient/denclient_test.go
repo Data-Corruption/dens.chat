@@ -307,3 +307,55 @@ func TestPinnedIdentityMismatch(t *testing.T) {
 		t.Fatalf("preview of a den with another identity: %v", err)
 	}
 }
+
+// An https:// address in front of the plain den listener, which the owner
+// can't notice (their own client uses loopback), is explained, caught by
+// the address test, and fixed by changing the address.
+func TestAddressProblems(t *testing.T) {
+	h := startDen(t, newStore(t), time.Hour)
+	wrong := strings.Replace(h.loopback.URL, "http:", "https:", 1)
+	code, err := h.d.Create(context.Background(), "Misaddressed", wrong)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := h.client(t, h.own())
+	var joined denclient.Status
+	for range 100 {
+		joined, _, err = owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		if err != denclient.ErrNotStarted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, owner, "owner connected over loopback", connected)
+
+	invite, _, err := owner.CreateInvite(context.Background(), joined.DenID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := h.client(t, noOwnDen)
+	_, err = member.Preview(context.Background(), invite)
+	if msg := denclient.Explain(err); !strings.Contains(msg, "answers plain HTTP") {
+		t.Fatalf("preview through the wrong scheme explained as %q (%v)", msg, err)
+	}
+	if msg := denclient.Explain(owner.CheckAddress(context.Background(), joined.DenID)); !strings.Contains(msg, "answers plain HTTP") {
+		t.Fatalf("the owner's address test explained %q", msg)
+	}
+
+	right := h.loopback.URL
+	if err := owner.UpdateDen(context.Background(), joined.DenID, denproto.DenUpdateRequest{URL: &right}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, owner, "the new address", func(s denclient.Status) bool { return s.URL == right })
+	if err := owner.CheckAddress(context.Background(), joined.DenID); err != nil {
+		t.Fatalf("address test after the fix: %v", err)
+	}
+	invite, _, err = owner.CreateInvite(context.Background(), joined.DenID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	join(t, member, invite, "bob")
+}

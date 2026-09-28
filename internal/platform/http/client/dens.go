@@ -27,6 +27,8 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Post("/api/dens/{den}/invites", rt.handleCreateInvite)
 	r.Get("/api/dens/{den}/invites", rt.handleInvites)
 	r.Delete("/api/dens/{den}/invites/{invite}", rt.handleRevokeInvite)
+	r.Post("/api/dens/{den}/settings", rt.handleDenSettings)
+	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
 }
 
 // hosting describes the den this install hosts, if the den role is on.
@@ -238,6 +240,41 @@ func (rt *router) handleRevokeInvite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// handleDenSettings changes the name or public address of a den the member
+// owns. Invites made afterwards carry the new address.
+func (rt *router) handleDenSettings(w http.ResponseWriter, r *http.Request) {
+	var body denproto.DenUpdateRequest
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if body.Name != nil {
+		if _, err := denproto.CleanName(*body.Name, denproto.MaxNameRunes); err != nil {
+			jsonError(w, http.StatusBadRequest, "Den name: "+err.Error())
+			return
+		}
+	}
+	if body.URL != nil {
+		if _, err := denproto.NormalizeDenURL(*body.URL); err != nil {
+			jsonError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if err := rt.a.Dens.UpdateDen(r.Context(), chi.URLParam(r, "den"), body); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleCheckAddress reaches a den at its public address from here.
+func (rt *router) handleCheckAddress(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.CheckAddress(r.Context(), chi.URLParam(r, "den")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 func jsonError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -268,7 +305,7 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &perr):
 		jsonError(w, http.StatusBadGateway, denMessage(perr))
 	case errors.As(err, &netErr), errors.As(err, &urlErr):
-		jsonError(w, http.StatusBadGateway, "Can't reach the den. Check the address and your connection, and try again.")
+		jsonError(w, http.StatusBadGateway, denclient.Explain(err))
 	default:
 		xhttp.Error(r.Context(), w, err)
 	}
