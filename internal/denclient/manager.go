@@ -74,11 +74,14 @@ type Manager struct {
 }
 
 // PageEvent carries a den's checked events to the page, or tells it to
-// drop what it holds for the den and load it again (Reset).
+// drop what it holds for the den and load it again (Reset). Reads are the
+// read states the events changed, so unread marks and mention counts come
+// from one place.
 type PageEvent struct {
-	DenID  string           `json:"den"`
-	Reset  bool             `json:"reset,omitempty"`
-	Events []denproto.Event `json:"events,omitempty"`
+	DenID  string               `json:"den"`
+	Reset  bool                 `json:"reset,omitempty"`
+	Events []denproto.Event     `json:"events,omitempty"`
+	Reads  []denproto.ReadState `json:"reads,omitempty"`
 }
 
 // Stream returns a channel of page events, and a function to stop. A

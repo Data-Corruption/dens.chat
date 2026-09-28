@@ -294,8 +294,14 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 				c.setState(StateConnected, "")
 			}
 		}
-		if len(forward) > 0 {
-			c.m.publish(PageEvent{DenID: c.j.denID.String(), Events: forward})
+		var reads []denproto.ReadState
+		c.mu.Lock()
+		if c.den != nil {
+			reads = c.den.takeTouched()
+		}
+		c.mu.Unlock()
+		if len(forward) > 0 || len(reads) > 0 {
+			c.m.publish(PageEvent{DenID: c.j.denID.String(), Events: forward, Reads: reads})
 		}
 	}
 }

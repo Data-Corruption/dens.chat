@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { compareIds, unread } from './ids.js';
+import { unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane } from './messages.jsx';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
@@ -31,24 +31,6 @@ function remembered(denID) {
     }
 }
 
-// mentions reports whether text mentions username, by the same rule the
-// den counts mentions with (see denproto.Mentions).
-function mentions(text, username) {
-    let inBlock = false;
-    for (const line of text.split('\n')) {
-        if (line.trim().startsWith('```')) {
-            inBlock = !inBlock;
-            continue;
-        }
-        if (inBlock) continue;
-        const outside = line.split('`').filter((_, i) => i % 2 === 0).join(' ');
-        for (const m of outside.matchAll(/(^|[^A-Za-z0-9_@])@([A-Za-z0-9_]{2,32})(?![A-Za-z0-9_])/g)) {
-            if (m[2].toLowerCase() === username) return true;
-        }
-    }
-    return false;
-}
-
 export function Chat({ denID, channelID, navigate }) {
     const [view, setView] = useState(null);
     const [error, setError] = useState('');
@@ -56,7 +38,6 @@ export function Chat({ denID, channelID, navigate }) {
     // On a narrow screen the channel list and the channel take turns.
     const [listOpen, setListOpen] = useState(!channelID);
     const reloadTimer = useRef(null);
-    const openRef = useRef(channelID);
 
     async function load() {
         try {
@@ -83,13 +64,9 @@ export function Chat({ denID, channelID, navigate }) {
             }
             if (msg.t !== 'den' || msg.d.den !== denID) return;
             if (msg.d.reset) return reloadSoon();
-            for (const e of msg.d.events || []) {
-                if (STRUCTURAL.has(e.t)) {
-                    reloadSoon();
-                } else if (e.t === 'message.created' || e.t === 'read_state.updated') {
-                    setView((v) => (v ? applyRead(v, e, openRef.current) : v));
-                }
-            }
+            if ((msg.d.events || []).some((e) => STRUCTURAL.has(e.t))) reloadSoon();
+            // The local service counts unread messages and mentions.
+            if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
         });
         return () => {
             stop();
@@ -103,7 +80,6 @@ export function Chat({ denID, channelID, navigate }) {
     const text = view.channels.filter((c) => c.kind === 'text');
     let channel = view.channels.find((c) => c.id === channelID) || text.find((c) => c.id === remembered(denID)) || text[0];
     if (channel && channel.kind !== 'text') channel = text[0];
-    openRef.current = channel?.id;
     if (channel) remember(denID, channel.id);
     const members = new Map(view.members.map((m) => [m.id, m]));
     const reads = new Map(view.read_states.map((r) => [r.channel_id, r]));
@@ -161,18 +137,9 @@ export function Chat({ denID, channelID, navigate }) {
     );
 }
 
-// applyRead keeps unread marks and mention counts current between reloads.
-function applyRead(view, e, openChannel) {
-    const reads = view.read_states.map((r) => {
-        if (r.channel_id !== e.d.channel_id) return r;
-        if (e.t === 'read_state.updated') return { ...r, message_id: e.d.message_id, mention_count: e.d.mention_count };
-        const next = { ...r };
-        if (compareIds(e.d.id, next.last_message_id) > 0) next.last_message_id = e.d.id;
-        if (e.d.author_id === view.me.id) next.message_id = e.d.id;
-        else if (e.d.channel_id !== openChannel && mentions(e.d.text, view.me.username)) next.mention_count++;
-        return next;
-    });
-    return { ...view, read_states: reads };
+function applyReads(view, reads) {
+    const changed = new Map(reads.map((r) => [r.channel_id, r]));
+    return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
 }
 
 function ChannelList({ view, reads, open, owner, onOpen, onDialog }) {

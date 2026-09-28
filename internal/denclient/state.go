@@ -17,6 +17,9 @@ type denState struct {
 	groups   map[string]denproto.Group
 	channels map[string]denproto.Channel
 	reads    map[string]denproto.ReadState
+	// touched holds the channels whose read state changed since the page
+	// was last told, so the page shows the counts counted here.
+	touched map[string]bool
 }
 
 // View is a joined den as the page sees it.
@@ -31,7 +34,20 @@ type View struct {
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
-		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}}
+		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, touched: map[string]bool{}}
+}
+
+// takeTouched returns the read states that changed since the last call.
+func (s *denState) takeTouched() []denproto.ReadState {
+	var out []denproto.ReadState
+	for id := range s.touched {
+		if r, ok := s.reads[id]; ok {
+			out = append(out, r)
+		}
+	}
+	clear(s.touched)
+	slices.SortFunc(out, func(a, b denproto.ReadState) int { return compareIDs(a.ChannelID, b.ChannelID) })
+	return out
 }
 
 func (s *denState) view(status Status, me denproto.Member) View {
@@ -245,6 +261,7 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		if old, ok := s.reads[r.ChannelID]; ok {
 			r.LastMessage = old.LastMessage
 			s.reads[r.ChannelID] = r
+			s.touched[r.ChannelID] = true
 		}
 		data = r
 	default:
@@ -272,4 +289,5 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 		r.MentionCount++
 	}
 	s.reads[m.ChannelID] = r
+	s.touched[m.ChannelID] = true
 }

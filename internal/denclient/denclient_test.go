@@ -512,7 +512,21 @@ func TestChatEditsAndMentions(t *testing.T) {
 		t.Fatalf("the reply's preview in history: %+v %v", page, err)
 	}
 
+	stream, stop := member.Stream()
+	defer stop()
 	mention := send(t, owner, denID, channelID, "hey @bob")
+	// The page gets the counted read state with the event.
+	timeout := time.After(5 * time.Second)
+	for counted := false; !counted; {
+		select {
+		case e := <-stream:
+			for _, r := range e.Reads {
+				counted = counted || (r.ChannelID == channelID && r.MentionCount == 1 && r.LastMessage == mention.ID)
+			}
+		case <-timeout:
+			t.Fatal("the page never got the mention's read state")
+		}
+	}
 	readState := func() denproto.ReadState {
 		v, _ := member.View(denID)
 		for _, r := range v.ReadStates {
