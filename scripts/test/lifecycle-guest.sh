@@ -111,7 +111,8 @@ phase_install() {
         fail "a pairing token worked twice"
     fi
     api POST /api/password "{\"password\":\"$PASSWORD\"}" >/dev/null
-    api GET / | grep -q "Dens is running" || fail "home page missing after setup"
+    api GET /api/status | grep -q '"passwordSet":true' || fail "the password isn't set after setup"
+    api GET / | grep -q '<div id="app"' || fail "the page shell is missing"
     if curl -sS --fail -H "Host: attacker.example" "$CLIENT/" >/dev/null 2>&1; then
         fail "the client listener answered a foreign Host"
     fi

@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base32"
 	"errors"
+	"fmt"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -69,17 +70,20 @@ func Prove(key ed25519.PrivateKey, denID, nonce []byte) Bytes {
 	return ed25519.Sign(key, ProofMessage(denID, ID(pub), nonce))
 }
 
-// VerifyDen checks a challenge response against the pinned den_id. It
-// returns the den's public key.
+// ErrWrongIdentity reports a den that can't prove the identity key pinned
+// for it: another server at its address, or one pretending to be it.
+var ErrWrongIdentity = errors.New("the den can't prove its identity key")
+
+// VerifyDen checks a challenge response against the pinned den_id.
 func VerifyDen(denID []byte, clientNonce []byte, resp ChallengeResponse) error {
 	if len(resp.DenKey) != PublicKeySize || len(resp.Nonce) != NonceSize || len(resp.DenSig) != SignatureSize {
-		return errors.New("the den's challenge response is malformed")
+		return fmt.Errorf("%w: its challenge response is malformed", ErrWrongIdentity)
 	}
 	if !Equal(ID(ed25519.PublicKey(resp.DenKey)), denID) {
-		return errors.New("the den's identity key doesn't match the one pinned for it")
+		return fmt.Errorf("%w: it holds another identity key than the one pinned for it", ErrWrongIdentity)
 	}
 	if !ed25519.Verify(ed25519.PublicKey(resp.DenKey), DenChallengeMessage(clientNonce, resp.Nonce), resp.DenSig) {
-		return errors.New("the den's signature doesn't verify")
+		return fmt.Errorf("%w: its signature doesn't verify", ErrWrongIdentity)
 	}
 	return nil
 }

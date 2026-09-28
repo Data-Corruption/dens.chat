@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -302,7 +303,7 @@ func TestPinnedIdentityMismatch(t *testing.T) {
 	}
 	m := h.client(t, noOwnDen)
 	forged := denproto.EncodeInvite(denproto.Random(denproto.IDSize), denproto.Random(denproto.InviteCodeSize), "https://example.com")
-	if _, err := m.Preview(context.Background(), forged); err == nil || !strings.Contains(err.Error(), "identity key") {
+	if _, err := m.Preview(context.Background(), forged); !errors.Is(err, denproto.ErrWrongIdentity) {
 		t.Fatalf("preview of a den with another identity: %v", err)
 	}
 }

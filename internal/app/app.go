@@ -12,12 +12,15 @@ import (
 	"fmt"
 	"io/fs"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/den"
+	"github.com/Data-Corruption/dens.chat/internal/denclient"
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
@@ -51,6 +54,8 @@ type App struct {
 	Lease    *maintenance.Lease
 	// Den is the den this instance hosts; nil when the den role is off.
 	Den *den.Den
+	// Dens keeps the dens this instance has joined connected.
+	Dens *denclient.Manager
 
 	ReleaseSource release.ReleaseSource
 	UserAgent     string
@@ -94,6 +99,9 @@ type OpenOptions struct {
 	LogLevel string
 	// DevClientPort is the client port of a new development instance.
 	DevClientPort int
+	// DevDenPort, when set, makes a development instance host a den on
+	// that port. Installed instances get the den role from the installer.
+	DevDenPort int
 }
 
 // Open prepares the service. Every failure wraps host.ErrRefused: a service
@@ -217,7 +225,19 @@ func (a *App) open(opts OpenOptions) error {
 	mmVer := strings.TrimPrefix(semver.MajorMinor(bi.Version), "v")
 	a.UserAgent = fmt.Sprintf("Mozilla/5.0 (compatible; %s/%s; +%s)", bi.Name, mmVer, bi.ContactURL)
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
+	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
 	return nil
+}
+
+// OwnDen describes the den this instance hosts, and where its own client
+// reaches it: the den listener on loopback, not the public address, so it
+// works before DNS and Caddy do and behind routers without hairpin NAT.
+func (a *App) OwnDen() (denproto.Den, string, bool) {
+	if a.Den == nil {
+		return denproto.Den{}, "", false
+	}
+	info, ok := a.Den.Info()
+	return info, "http://127.0.0.1:" + strconv.Itoa(a.Instance.Den.Port), ok
 }
 
 func (a *App) loadKey() ([]byte, error) {
@@ -258,16 +278,27 @@ func (a *App) prepareDev(opts OpenOptions) error {
 	if err := l.EnsureDev(); err != nil {
 		return err
 	}
-	if _, err := instance.Read(l.InstanceConfig); errors.Is(err, fs.ErrNotExist) {
+	cfg, err := instance.Read(l.InstanceConfig)
+	changed := false
+	if errors.Is(err, fs.ErrNotExist) {
 		me, err := host.CurrentUser()
 		if err != nil {
 			return err
 		}
-		cfg := instance.Default(l.Instance)
+		cfg = instance.Default(l.Instance)
 		cfg.DesktopUser = me
 		if opts.DevClientPort != 0 {
 			cfg.ClientPort = opts.DevClientPort
 		}
+		changed = true
+	} else if err != nil {
+		return err
+	}
+	if opts.DevDenPort != 0 && (!cfg.Den.Enabled || cfg.Den.Port != opts.DevDenPort) {
+		cfg.Den.Enabled, cfg.Den.Port = true, opts.DevDenPort
+		changed = true
+	}
+	if changed {
 		data, err := instance.Encode(cfg)
 		if err != nil {
 			return err
@@ -275,8 +306,6 @@ func (a *App) prepareDev(opts OpenOptions) error {
 		if err := maintenance.WriteFileAtomic(l.InstanceConfig, data, nil); err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
 	}
 	// Create the key now so the control directory checks find it.
 	key, err := host.LoadOrCreateDevKey(l.HostKey)

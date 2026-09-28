@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
@@ -55,16 +56,20 @@ func New(a *app.App) http.Handler {
 
 	r.Get("/healthz", handleHealth)
 	r.Get("/assets/*", a.UI.ServeAsset)
-	r.Get("/", rt.handleIndex)
+	// The page decides what to show from the API; an unpaired browser gets
+	// 401s and shows how to pair.
+	r.Get("/", rt.handlePage)
+	r.Get("/settings", rt.handlePage)
 	r.Post("/api/pair", rt.handlePair)
 	r.Group(func(r chi.Router) {
 		r.Use(rt.requireSession)
-		r.Get("/settings", rt.handleSettings)
 		r.Get("/api/status", rt.handleStatus)
 		r.Post("/api/password", rt.handleSetPassword)
 		r.Post("/api/password/change", rt.handleChangePassword)
+		r.Get("/api/settings", rt.handleSettings)
 		r.Post("/api/settings", rt.handleSettingsUpdate)
 		r.Post("/api/logout", rt.handleLogout)
+		rt.mountDens(r)
 	})
 	return r
 }
@@ -128,68 +133,23 @@ func (rt *router) pageData(title string) map[string]any {
 	return data
 }
 
-func (rt *router) handleIndex(w http.ResponseWriter, r *http.Request) {
-	hash, err := rt.session(w, r)
-	if err != nil {
-		xhttp.Error(r.Context(), w, err)
-		return
-	}
-	data := rt.pageData("Dens")
-	data["Paired"] = hash != ""
-	if hash != "" {
-		passwordSet, err := rt.a.PasswordSet(r.Context())
-		if err != nil {
-			xhttp.Error(r.Context(), w, err)
-			return
-		}
-		data["PasswordSet"] = passwordSet
-		data["ShowNav"] = passwordSet
-		if err := rt.addUpdateNotice(data); err != nil {
-			xhttp.Error(r.Context(), w, err)
-			return
-		}
-	}
-	rt.render(w, r, "index.html", data)
+func (rt *router) handlePage(w http.ResponseWriter, r *http.Request) {
+	rt.render(w, r, "app.html", rt.pageData("Dens"))
 }
 
 func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
-	passwordSet, err := rt.a.PasswordSet(r.Context())
-	if err != nil {
-		xhttp.Error(r.Context(), w, err)
-		return
-	}
-	if !passwordSet {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
 	cfg, err := config.View(rt.a.DB)
 	if err != nil {
 		xhttp.Error(r.Context(), w, err)
 		return
 	}
-	data := rt.pageData("Settings")
-	data["ShowNav"] = true
-	data["LogLevel"] = cfg.LogLevel
-	data["UpdateNotifications"] = cfg.UpdateNotifications
-	data["BackgroundUpdateChecks"] = cfg.BackgroundUpdateChecks
-	data["UpdatesManaged"] = rt.a.Instance.ReleaseURL != "" && !rt.a.DevMode()
-	if err := rt.addUpdateNotice(data); err != nil {
-		xhttp.Error(r.Context(), w, err)
-		return
-	}
-	rt.render(w, r, "settings.html", data)
-}
-
-func (rt *router) addUpdateNotice(data map[string]any) error {
-	cfg, err := config.View(rt.a.DB)
-	if err != nil {
-		return err
-	}
-	if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
-		data["UpdateVersion"] = latest
-		data["UpdateCommand"] = rt.a.UpdateCommand()
-	}
-	return nil
+	writeJSON(w, map[string]any{
+		"logLevel":               cfg.LogLevel,
+		"logLevels":              strings.Split(xlog.ValidLevels, "|"),
+		"updateNotifications":    cfg.UpdateNotifications,
+		"backgroundUpdateChecks": cfg.BackgroundUpdateChecks,
+		"updatesManaged":         rt.a.Instance.ReleaseURL != "" && !rt.a.DevMode(),
+	})
 }
 
 func (rt *router) render(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
@@ -254,12 +214,22 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 		xhttp.Error(r.Context(), w, err)
 		return
 	}
-	writeJSON(w, map[string]any{
+	cfg, err := config.View(rt.a.DB)
+	if err != nil {
+		xhttp.Error(r.Context(), w, err)
+		return
+	}
+	status := map[string]any{
 		"version":     rt.a.BuildInfo().Version,
 		"instance":    rt.a.Layout.Instance,
 		"passwordSet": passwordSet,
 		"denEnabled":  rt.a.Instance.Den.Enabled,
-	})
+	}
+	if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
+		status["updateVersion"] = latest
+		status["updateCommand"] = rt.a.UpdateCommand()
+	}
+	writeJSON(w, status)
 }
 
 // handleSetPassword sets the first local password. Changing it later needs

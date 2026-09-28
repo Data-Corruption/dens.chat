@@ -194,6 +194,33 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	return code, nil
 }
 
+// OwnerInvite issues a fresh owner invite while the den has no owner, so
+// setup can finish if the owner's first join failed.
+func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) {
+	if _, ok := d.Info(); !ok {
+		return nil, errors.New("the den hasn't been created")
+	}
+	code := denproto.Random(denproto.InviteCodeSize)
+	now := d.now()
+	err := d.tx(ctx, func(tx *sql.Tx) error {
+		var owners int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_members WHERE role = 'owner'`).Scan(&owners); err != nil {
+			return err
+		}
+		if owners > 0 {
+			return errors.New("the den already has an owner")
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO den_invites (code_hash, role, created_by, created_at, expires_at, max_uses) VALUES (?, 'owner', NULL, ?, ?, 1)`,
+			denproto.Hash(code), now.UnixMilli(), now.Add(ownerInviteLifetime).UnixMilli())
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return code, nil
+}
+
 // Update changes the den's name or address. Only the owner may.
 func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequest) (denproto.Den, error) {
 	if s.Role != denproto.RoleOwner {

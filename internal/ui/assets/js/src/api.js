@@ -1,56 +1,40 @@
+// Calls to the local service. Errors carry the service's message, which is
+// written for the member, and the HTTP status.
 
-// API Helpers
-// Unified fetch wrappers with structured error handling
-
-async function parseResponse(res) {
-    const text = await res.text();
-    if (!text) return null;
-    try {
-        return JSON.parse(text);
-    } catch {
-        return text;
+export class APIError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.status = status;
     }
 }
 
-async function getErrorMessage(res) {
-    const parsed = await parseResponse(res);
-    if (parsed && typeof parsed === 'object') {
-        if (typeof parsed.error === 'string') return parsed.error;
-        if (typeof parsed.message === 'string') return parsed.message;
-    }
-    if (typeof parsed === 'string' && parsed) return parsed;
-    return `HTTP ${res.status}`;
-}
-
-export async function requestJSON(endpoint, { method = 'GET', body, signal } = {}) {
-    const res = await fetch(endpoint, {
+async function request(method, path, body) {
+    const res = await fetch(path, {
         method,
         headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
         body: body !== undefined ? JSON.stringify(body) : undefined,
-        signal,
+        credentials: 'same-origin',
     });
-    if (!res.ok) {
-        throw new Error(await getErrorMessage(res));
+    const text = await res.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        } catch {
+            data = text;
+        }
     }
-    return parseResponse(res);
+    if (!res.ok) {
+        let message = `Something went wrong (HTTP ${res.status}).`;
+        if (data && typeof data === 'object' && typeof data.error === 'string') message = data.error;
+        else if (typeof data === 'string' && data.trim()) message = data.trim();
+        throw new APIError(message, res.status);
+    }
+    return data;
 }
 
-export function getJSON(endpoint, signal) {
-    return requestJSON(endpoint, { method: 'GET', signal });
-}
-
-export function postJSON(endpoint, body, signal) {
-    return requestJSON(endpoint, { method: 'POST', body, signal });
-}
-
-export function patchJSON(endpoint, body, signal) {
-    return requestJSON(endpoint, { method: 'PATCH', body, signal });
-}
-
-export function putJSON(endpoint, body, signal) {
-    return requestJSON(endpoint, { method: 'PUT', body, signal });
-}
-
-export function deleteJSON(endpoint, body, signal) {
-    return requestJSON(endpoint, { method: 'DELETE', body, signal });
-}
+export const api = {
+    get: (path) => request('GET', path),
+    post: (path, body = {}) => request('POST', path, body),
+    del: (path) => request('DELETE', path),
+};

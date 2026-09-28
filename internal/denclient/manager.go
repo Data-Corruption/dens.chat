@@ -34,6 +34,15 @@ var ErrAlreadyJoined = errors.New("you've already joined this den")
 // ErrUnknownDen reports a den this install hasn't joined.
 var ErrUnknownDen = errors.New("you haven't joined that den")
 
+// InputError is a problem with what the member entered. Its message is
+// written for them and safe to show as is.
+type InputError struct{ Err error }
+
+func (e *InputError) Error() string { return e.Err.Error() }
+func (e *InputError) Unwrap() error { return e.Err }
+
+func inputError(err error) error { return &InputError{Err: err} }
+
 // Manager holds a connection to every joined den.
 type Manager struct {
 	db    *sql.DB
@@ -53,6 +62,8 @@ type Manager struct {
 	RenewRetry   time.Duration
 	PingInterval time.Duration
 	PingTimeout  time.Duration
+
+	joinMu sync.Mutex
 
 	mu      sync.Mutex
 	ctx     context.Context
@@ -121,8 +132,7 @@ func (m *Manager) Run(ctx context.Context) error {
 // startLocked starts a connection. The caller holds m.mu.
 func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time) {
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires}
-	c.api = m.apiFor(j.denID, j.profile.URL)
-	c.own = c.api.base != j.profile.URL
+	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
 	go func() {
@@ -132,13 +142,13 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 }
 
 // apiFor reaches the den this install hosts over loopback, and any other
-// den at its address.
-func (m *Manager) apiFor(denID []byte, url string) *api {
+// den at its address. own reports which it is.
+func (m *Manager) apiFor(denID []byte, url string) (a *api, own bool) {
 	base := url
-	if own, loopback, ok := m.own(); ok && denproto.Equal(own.ID, denID) {
-		base = loopback
+	if info, loopback, ok := m.own(); ok && denproto.Equal(info.ID, denID) {
+		base, own = loopback, true
 	}
-	return &api{base: base, client: m.HTTP, agent: m.agent}
+	return &api{base: base, client: m.HTTP, agent: m.agent}, own
 }
 
 // Watch returns a channel that receives after any den's status changes,
@@ -193,9 +203,9 @@ func (m *Manager) find(denID string) (*conn, error) {
 func (m *Manager) Preview(ctx context.Context, invite string) (denproto.Den, error) {
 	inv, err := denproto.DecodeInvite(invite)
 	if err != nil {
-		return denproto.Den{}, err
+		return denproto.Den{}, inputError(err)
 	}
-	a := m.apiFor(inv.DenID, inv.URL)
+	a, _ := m.apiFor(inv.DenID, inv.URL)
 	if _, err := a.challenge(ctx, inv.DenID); err != nil {
 		return denproto.Den{}, err
 	}
@@ -230,7 +240,7 @@ type JoinRequest struct {
 func (m *Manager) Join(ctx context.Context, invite string, req JoinRequest) (Status, []string, error) {
 	inv, err := denproto.DecodeInvite(invite)
 	if err != nil {
-		return Status{}, nil, err
+		return Status{}, nil, inputError(err)
 	}
 	return m.join(ctx, inv.DenID, inv.Code, inv.URL, req)
 }
@@ -247,14 +257,14 @@ func (m *Manager) JoinOwn(ctx context.Context, code []byte, req JoinRequest) (St
 func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req JoinRequest) (Status, []string, error) {
 	username, err := denproto.NormalizeUsername(req.Username)
 	if err != nil {
-		return Status{}, nil, err
+		return Status{}, nil, inputError(err)
 	}
 	displayName, err := denproto.CleanName(req.DisplayName, denproto.MaxNameRunes)
 	if err != nil {
-		return Status{}, nil, fmt.Errorf("display name: %w", err)
+		return Status{}, nil, inputError(fmt.Errorf("display name: %w", err))
 	}
 	if err := vault.ValidatePassword(req.Password); err != nil {
-		return Status{}, nil, err
+		return Status{}, nil, inputError(err)
 	}
 	m.mu.Lock()
 	started := m.ctx != nil
@@ -265,8 +275,14 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 	if _, err := m.find(denproto.Bytes(denID).String()); err == nil {
 		return Status{}, nil, ErrAlreadyJoined
 	}
+	// Two joins of one den at once would both pass the check above.
+	m.joinMu.Lock()
+	defer m.joinMu.Unlock()
+	if _, err := m.find(denproto.Bytes(denID).String()); err == nil {
+		return Status{}, nil, ErrAlreadyJoined
+	}
 
-	a := m.apiFor(denID, url)
+	a, _ := m.apiFor(denID, url)
 	nonce, err := a.challenge(ctx, denID)
 	if err != nil {
 		return Status{}, nil, err
