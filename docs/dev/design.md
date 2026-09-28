@@ -263,8 +263,10 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 **Messages**
 
 - Plain text with a small markdown subset, attachments, edits, deletes and replies. No raw HTML, ever.
-- The subset: bold, italic, strikethrough, inline code, code blocks, quotes, spoilers, @mentions and bare URLs. There are no `[label](url)` links, so a link always shows where it goes. The browser parses it into a tree and builds the DOM with `createElement` and `textContent`, never `innerHTML`.
+- The subset: bold, italic, strikethrough, inline code, code blocks, quotes, spoilers, @mentions and bare URLs. There are no `[label](url)` links, so a link always shows where it goes. The page parses it into Preact nodes whose text is always text, never markup, and a test fails on any script that uses `innerHTML` or another way to turn a string into markup.
+- A reply quotes its original, with the author and first line, and a click jumps there. The den sends that preview with the reply, so the quote reads without the original loaded, however far back it is. Once the original is deleted, the reply says so.
 - Each member's read position per channel lives on the den, so it follows them across devices. Channels show unread state and mention counts. Browser notifications come later, and are opt-in.
+- The den counts mentions and the page highlights them by one rule, written out in `protocol.md`. Mentions in code or inside links don't count, so a link to someone's profile doesn't ping them.
 - Edits carry the revision they were made against, and the den refuses a stale one. Nobody's edit silently overwrites another's, whether it comes from a second device or a co-editor. The member sees the newer text, with their own draft kept to reapply.
 - **Shared messages (M1.6):** when posting, the author can name other members who may also edit the message. Only the author can delete it or change who may edit. It suits shared lists and plans.
 - **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a single toggle, so two people ticking different boxes at once never lose a tick. Everyone else sees them read-only.
@@ -299,7 +301,8 @@ Not in M1. When a message is saved, the den rewrites known links to a site code 
 - A channel view holds one contiguous run of messages, about 200, never the whole channel. Scrolling near either end loads the next page (`before` or `after` the edge message) and trims the far end, so memory stays flat however far back a member scrolls.
 - The view is attached to the live tail while it holds the newest message, and new messages append. Jumping to an old message (a reply's quote, a mention, later search) loads the page `around` it and detaches the view. New messages then only update a "new messages, jump to present" bar, and scrolling forward to the newest page reattaches it.
 - With the window bounded, every loaded message is in the DOM. There is no per-row virtualization unless profiling shows a need.
-- The layout doesn't jump. Images carry their dimensions from upload, so placeholders take their final size, and loading older pages keeps the view anchored on the message being read.
+- The layout doesn't jump. Images carry their dimensions from upload, so placeholders take their final size, and loading older pages keeps the view anchored on the message being read. At the newest message, the view stays there while its box resizes or its text rewraps: a growing composer, a rotated phone.
+- The read position moves once the newest message has been on screen, at most every two seconds per channel, and at once when the member leaves the channel. A busy channel costs the den one small write every few seconds, not one per message.
 - Message IDs increase with time within a den and are never reused, so `before`, `after` and `around` are single index lookups.
 
 **Sync and bandwidth**
@@ -518,12 +521,13 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 **Client page and listener**
 
 - [x] CSP: `default-src 'none'`, with scripts, styles, images, fonts and connections limited to `'self'`, no inline scripts, `frame-ancestors 'none'`.
-- [ ] Messages rendered by an escaping markdown subset; usernames, filenames and embeds treated as untrusted text.
+- [x] Messages rendered by an escaping markdown subset; names and channel descriptions treated as untrusted text.
+- [ ] Filenames and embeds treated as untrusted text (M1.4).
 - [x] Exact `Host` check (`127.0.0.1:<port>`, `[::1]:<port>` or `localhost:<port>`) against DNS rebinding.
-- [ ] `Origin` check on every write and on the WebSocket upgrade.
+- [x] `Origin` check on every write and on the WebSocket upgrade.
 - [x] Session cookie `HttpOnly`, `SameSite=Strict`; pairing tokens single use and short-lived.
 - [x] Listener bound on both `127.0.0.1` and `::1`.
-- [ ] Everything from a den is hostile input: the client service checks every den response against the protocol's types and limits before storing or forwarding it.
+- [x] Everything from a den is hostile input: the client service checks every den response against the protocol's types and limits before storing or forwarding it.
 
 **Den listener**
 

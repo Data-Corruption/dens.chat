@@ -69,6 +69,8 @@ PATCH /api/den   {"name"?, "url"?}   200 den        (owner only)
 
 A change reaches every member as a `den.updated {den}` event.
 
+From M1.2, `ready` carries every member as `members`, so clients can name authors and resolve mentions, and a new member reaches everyone as `member.joined {member}`.
+
 ## Authentication
 
 Every sign-in starts with a challenge, in which the den proves its identity key and hands out a nonce:
@@ -169,12 +171,12 @@ Dens-Protocol: 1
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, and from M1.2 `channels`, `groups` and `read_states`.
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, and from M1.2 `members`, `channels`, `groups` and `read_states`.
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
 
-The den may also send `ready` mid-stream when what the member can see changes, such as a role change or a channel becoming staff-only. The client handles it the same way: drop and replace.
+The den may also send `ready` mid-stream when what the member can see changes, such as a role change or a channel becoming staff-only. The client handles it the same way: drop and replace. A member whose view changed that way while they were offline gets `ready` on reconnect too, rather than a resume that skips the change.
 
 The client remembers `epoch` and the `seq` of the last durable event it applied, and sends them on every reconnect. After a `ready`, it keeps nothing from before, and refetches only what's on screen.
 
@@ -214,29 +216,39 @@ Any other failure reconnects with exponential backoff and full jitter, from 0.5 
 ## Channels and groups (M1.2)
 
 ```
-channel = {"id", "group_id"?, "name", "description"?, "kind": "text" | "voice", "position", "staff_only"}
+channel = {"id", "group_id", "name", "description"?, "kind": "text" | "voice", "position", "staff_only"}
 group   = {"id", "name", "position"}
 ```
 
-- Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters.
-- `ready` carries the channels and groups the member can see. Changes arrive as `channel.created`, `channel.updated`, `channel.deleted`, and the same for `group.*`.
-- Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Only the owner can manage them until roles land in M1.3.
+- `group_id` is null for a channel outside any group.
+- Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters. Voice channels have none.
+- A den has at most 500 channels and 100 groups.
+- `ready` carries the channels and groups the member can see. Changes arrive as `channel.created {channel}`, `channel.updated {channel}` and `channel.deleted {id}`, and the same for `group.*`.
+- Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Requests carry the object's fields, and a `PATCH` changes only the ones it names. `"group_id": ""` moves a channel out of its group. Only the owner can manage them until roles land in M1.3.
+- Deleting a channel deletes its messages. Deleting a group keeps its channels, which move to the end of the ungrouped list.
+
+**Staff-only channels.** Members who can't see a channel get none of its events, and reorder lists leave it out, so the positions they see can have gaps. When a channel becomes staff-only or stops being so, those members get a fresh `ready`.
 
 **Ordering.** Positions are dense (0, 1, 2, …) among the channels of one group, among ungrouped channels, and among groups.
 
 - A create or edit that gives `position` inserts there, shifting the siblings at and after it down by one. Leaving it out appends to the end. Moving a channel to another group (`group_id` with or without `position`) closes the gap it leaves.
 - The den renumbers in the same transaction, and sends the result as one event per affected list: `channels.reordered {group_id, channel_ids}` (`group_id` is null for ungrouped channels), or `groups.reordered {group_ids}`, in the same frame as the change itself.
+- A reorder list also says which group each listed channel is in. Deleting a group sends `group.deleted`, then `channels.reordered` for the ungrouped list with the group's channels at its end, then `groups.reordered`.
 
 ## Messages (M1.2)
 
 ```
 message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
-           "text", "reply_to"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6)}
+           "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6)}
 ```
 
-`text` is at most 4,000 characters and 16 KiB. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
+`text` is at most 4,000 characters and 16 KiB, and not only spaces. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
 
 `revision` starts at 1 and increases with every edit. `edited_by` is the member who made the latest edit, which differs from the author on shared messages.
+
+`reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`.
+
+**Mentions.** `@` then 2 to 32 letters, digits or `_`, matching a username without regard to case. It counts at the start of a line, or after a character that is neither one of those nor `@`, when none of them follows. It doesn't count inside code (a ``` block, or a span from one backtick to the next with something between) or inside a link (`http://` or `https://` at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick). The den counts by this rule (`denproto.Mentions`), and the page highlights by the same one. A mention adds to the unread mention count of the member it names, if they can see the channel and aren't the author. An edit recounts.
 
 ### History
 
@@ -262,9 +274,10 @@ PATCH  /api/messages/{id}            {"revision", "text"}                       
 DELETE /api/messages/{id}                                                            204
 ```
 
-- `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy.
-- An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message, and the client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
-- Members edit and delete their own messages. Moderators and the owner delete anyone's, from M1.3.
+- `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history.
+- Sending moves the author's read position to their new message.
+- An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
+- Only the author edits a message. The author or the owner deletes one, and from M1.3 moderators too.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id}`. A deleted message is gone for good: clients drop it from memory, and later from their cache.
 
 ### Read state
@@ -275,12 +288,12 @@ PUT /api/channels/{id}/read   {"message_id"}   204
 
 - The position only moves forward: a lower `message_id` is ignored.
 - Clients send it once a message has been on screen, at most once every few seconds per channel.
-- The den tells the member's other sessions with `read_state.updated {channel_id, message_id, mention_count}`.
+- The den tells all the member's sessions with `read_state.updated {channel_id, message_id, mention_count}`.
 - `ready` carries `read_states`: each channel's last message ID, the member's read position and their unread mention count.
 
 ## Later steps (outline)
 
-- **M1.3 Community:** the member list and `member.*` events, roles, kick and ban (closing sockets with 4003), DMs as two-member channels, presence batches, `focus` and `typing` client frames.
+- **M1.3 Community:** the member list and the other `member.*` events, roles, kick and ban (closing sockets with 4003), DMs as two-member channels, presence batches, `focus` and `typing` client frames.
 - **M1.4 Files:** `POST /api/uploads`, which streams, checks size up front, strips metadata and makes a thumbnail. It returns an ID with the type, size and dimensions, to attach to a message within an hour. Files are served by content-addressed ID, originals and thumbnails separately.
 - **M1.5 Recovery:** the endpoints sketched above, `GET /api/me/devices` and `DELETE /api/me/devices/{key_id}`, and `device.*` events.
 - **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.

@@ -161,7 +161,7 @@ PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 ./scripts/test.sh -lint        # pinned shellcheck over the shell scripts; run after touching them
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
-./scripts/test.sh -den-e2e     # a member joins a den through Caddy, in two Incus containers
+./scripts/test.sh -den-e2e     # a member joins a den through Caddy and chats, in two Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
