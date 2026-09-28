@@ -7,6 +7,7 @@
 #   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
+#   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
 #   ./scripts/test.sh -windows                     # Go tests on the Windows host (WSL only)
 #   ./scripts/test.sh -all                         # every available suite
 #
@@ -28,6 +29,7 @@ EOF
   cat <<'EOF'
   -release  Test the release publication state machine
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
+  -den-e2e  Test joining a den through Caddy; remaining arguments go to test-den-e2e.sh
   -windows  From WSL, run the Go tests natively on the Windows host
   -all      Run every available suite
 EOF
@@ -120,6 +122,8 @@ run_shell_lint() {
     scripts/test-lifecycle-e2e.sh
     scripts/test/lifecycle-guest.sh
     scripts/test/fixture-releases.sh
+    scripts/test-den-e2e.sh
+    scripts/test/den-guest.sh
     scripts/install.sh
   )
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
@@ -154,6 +158,9 @@ case "$mode" in
   -e2e)
     run_lifecycle_e2e "$@"
     ;;
+  -den-e2e)
+    bash scripts/test-den-e2e.sh "$@"
+    ;;
   -windows)
     require_no_args "-windows" "$@"
     run_windows_tests
@@ -164,6 +171,7 @@ case "$mode" in
     run_shell_lint
     run_release_tests
     run_lifecycle_e2e
+    bash scripts/test-den-e2e.sh
     ;;
   -h|--help)
     require_no_args "$mode" "$@"

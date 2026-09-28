@@ -149,7 +149,7 @@ jobs:
       - name: Parse install.ps1 (Windows PowerShell 5.1)
         shell: powershell
         run: |
-          foreach ($path in @("scripts/install.ps1", "scripts/test-lifecycle-e2e.ps1")) {
+          foreach ($path in @("scripts/install.ps1", "scripts/test-lifecycle-e2e.ps1", "scripts/test-den-e2e.ps1")) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -178,6 +178,16 @@ jobs:
       - name: Test exact Windows installer candidate
         shell: powershell
         run: scripts/test-lifecycle-e2e.ps1 -ReleaseDir out/windows-e2e -InstallerCandidate out/windows-installer-candidate/install.ps1
+
+      - name: Fetch pinned Caddy for Windows
+        shell: bash
+        run: |
+          zip=$(./scripts/vendor.sh caddy-windows | sed -n 's/^caddy-windows=//p')
+          echo "CADDY_ZIP=$(cygpath -w "$zip")" >> "$GITHUB_ENV"
+
+      - name: Test a den on Windows behind Caddy
+        shell: powershell
+        run: scripts/test-den-e2e.ps1 -ReleaseDir out/windows-e2e -CaddyZip $env:CADDY_ZIP
 
 
   # Runs the Linux lifecycle e2e in Incus system containers on every
@@ -228,12 +238,17 @@ jobs:
       - name: Run lifecycle E2E
         run: ./scripts/test.sh -e2e
 
+      - name: Run den E2E
+        run: ./scripts/test.sh -den-e2e
+
       - name: Upload lifecycle E2E logs
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: lifecycle-e2e-logs
-          path: out/lifecycle-e2e-logs
+          path: |
+            out/lifecycle-e2e-logs
+            out/den-e2e-logs
           if-no-files-found: ignore
           retention-days: 14
 

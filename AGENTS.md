@@ -27,15 +27,18 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
+| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules |
+| `internal/den` | The den this install hosts: identity key, members, invites, sessions, the event hub and sockets |
+| `internal/denclient` | The dens this install has joined: joining, and keeping each one connected |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
 | `internal/control` | CLI-to-service protocol over the control endpoint |
-| `internal/vault` | Data key envelope: host and password wraps, key check value |
+| `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
 | `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
 | `internal/platform/database` | SQLite open and pool, ordered migrations, focused accessors per table |
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
-| `internal/ui` | Embedded templates, vanilla JS modules, Tailwind/DaisyUI source |
+| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`), its one shell template, Tailwind/DaisyUI source |
 | `internal/build` | Values baked in at build time |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
@@ -158,6 +161,7 @@ PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 ./scripts/test.sh -lint        # pinned shellcheck over the shell scripts; run after touching them
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
+./scripts/test.sh -den-e2e     # a member joins a den through Caddy, in two Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
@@ -165,15 +169,15 @@ PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
-The `-release` and `-e2e` harnesses run on Linux only; e2e logs land under
-`out/lifecycle-e2e-logs/<run>/`. The Windows lifecycle e2e
-(`scripts/test-lifecycle-e2e.ps1`) installs the real service, so it runs in CI
-or on a Windows machine without Dens; see
-[docs/dev/lifecycle.md](docs/dev/lifecycle.md).
+The `-release`, `-e2e` and `-den-e2e` harnesses run on Linux only; their logs
+land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
+`scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
+Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
-Third-party tools (Tailwind, esbuild, cosign, rclone, shellcheck, goimports,
-Hugo) are pinned by version and SHA-256 in `scripts/vendor.sh` and fetched into
-the gitignored `tools/`. Never depend on `tools/` contents directly.
+Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
+cosign, rclone, shellcheck, goimports, Hugo, and Caddy for the den e2e) are
+pinned by version and SHA-256 in `scripts/vendor.sh` and fetched into the
+gitignored `tools/`. Never depend on `tools/` contents directly.
 
 Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest.json}`,
 `out/`, `tools/`, `docs/out/`. Edit sources under

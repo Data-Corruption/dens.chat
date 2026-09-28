@@ -175,7 +175,7 @@ There is no idle lock in v1; the OS screen lock covers someone at an unlocked de
 **Service hygiene**
 
 - The data key and vault stay in memory only in the service process; nothing sensitive goes to logs.
-- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk.
+- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk: the data key, and the seeds of the den's identity key and of each device key. Go's Ed25519 caches expanded keys through weak pointers, which can't point outside the Go heap, so each signature expands a short-lived copy of the key and clears it.
 
 ## Authentication
 
@@ -589,7 +589,7 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 
 Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
 
-**M1 testing.** A den e2e harness joins the lifecycle harnesses. An Incus container runs a den behind Caddy with Caddy's internal certificate authority, and two client containers join it by name, trusting that authority, and chat. On the Windows runner, one instance hosts a den behind Caddy running as a service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6).
+**M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
 **After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 

@@ -41,6 +41,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed) |
 | 413 | `too_large` |
 | 426 | `protocol_unsupported` |
+| 503 | `den_not_created` (the install hosts a den, but it hasn't been set up yet) |
 | 429 | `rate_limited`, with a `Retry-After` header in seconds |
 
 Login and recovery failures use `401 unauthorized` whether the username exists or not.
@@ -60,7 +61,13 @@ den    = {"id": "<den_id>", "name", "url"}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at"}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it.
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it. Den names follow the display name rules, up to 32 characters.
+
+```
+PATCH /api/den   {"name"?, "url"?}   200 den        (owner only)
+```
+
+A change reaches every member as a `den.updated {den}` event.
 
 ## Authentication
 
@@ -102,7 +109,7 @@ POST /api/join
 
 - The client runs the challenge before preview, so a member never sees a name from a den that failed its identity check.
 - The invite is consumed only by a successful join.
-- **Owner bootstrap:** creating a den also creates a one-use owner invite, which the owner's own client redeems over loopback. The den makes the first member to redeem it the owner. There is no second path for creating the owner account.
+- **Owner bootstrap:** creating a den also creates a one-use owner invite, which the owner's own client redeems over loopback. The den makes the first member to redeem it the owner. There is no second path for creating the owner account. If that first join fails, the install can issue a fresh owner invite, but only while the den has no owner.
 
 ### Invites
 
@@ -148,7 +155,7 @@ Authorization: Bearer <token>
 Dens-Protocol: 1
 ```
 
-`resume` is left out on a first connection. The den accepts without compression. Frames are JSON text of at most 1 MiB, and each frame is an array of one or more events:
+`resume` is left out on a first connection. The den accepts without compression. Frames are JSON text, each an array of one or more events, of at most 1 MiB from the den and 64 KiB from the client:
 
 ```json
 [{"t": "message.created", "seq": 5021, "d": {…}}, {"t": "read_state.updated", "seq": 5022, "d": {…}}]
@@ -183,9 +190,12 @@ To renew, the client gets a nonce from `/api/auth/challenge` and sends `auth.ren
 
 ### Liveness
 
-- The client sends a WebSocket ping every 20 seconds.
-- The den closes a connection that has been silent for 60 seconds.
+Each side checks the other with WebSocket pings, since a dead connection can look open for a long time:
+
+- The den pings every 30 seconds, and drops a connection that doesn't answer within 15.
+- The client pings every 20 seconds, and reconnects if the den doesn't answer within 10.
 - Each connection has a bounded send queue. A client that falls behind is closed with 4008 and resumes on reconnect.
+- Events queued for a connection go out together, up to 256 per frame, so a busy den sends fewer, larger frames.
 
 ### Close codes
 
@@ -282,7 +292,9 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | What | Limit |
 | --- | --- |
 | Challenges | 30 per minute per IP |
-| Join, password sign-in, recovery | 10 per hour per IP and 10 per hour per username, with backoff |
+| Join and join preview | 10 per hour per IP |
+| Sign-in with a device key | 30 per minute per IP |
+| Password sign-in and recovery (M1.5) | 10 per hour per IP and 10 per hour per username, with backoff |
 | Sending messages | 5 per 5 seconds per member, per channel |
 | Other writes | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |
