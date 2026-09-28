@@ -1,0 +1,324 @@
+package den
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
+
+	"github.com/coder/websocket"
+)
+
+const (
+	pingInterval  = 30 * time.Second
+	pingTimeout   = 15 * time.Second
+	writeTimeout  = 10 * time.Second
+	eventsPerSend = 256
+	replayChunk   = 500
+)
+
+type closeRequest struct {
+	code   websocket.StatusCode
+	reason string
+}
+
+type socket struct {
+	member    int64
+	tokenHash []byte
+	closeReq  chan closeRequest
+}
+
+// requestClose asks the socket's writer to close it. The first request
+// wins; later ones are dropped rather than blocking.
+func (sock *socket) requestClose(code websocket.StatusCode, reason string) {
+	select {
+	case sock.closeReq <- closeRequest{code, reason}:
+	default:
+	}
+}
+
+// socketSet tracks open sockets, so the den can close them on shutdown, and
+// a session's or member's sockets when access ends.
+type socketSet struct {
+	mu      sync.Mutex
+	open    map[*socket]struct{}
+	closing bool
+	empty   *sync.Cond
+}
+
+func newSocketSet() *socketSet {
+	s := &socketSet{open: map[*socket]struct{}{}}
+	s.empty = sync.NewCond(&s.mu)
+	return s
+}
+
+func (s *socketSet) add(sock *socket) (ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return false
+	}
+	n := 0
+	for other := range s.open {
+		if other.member == sock.member {
+			n++
+		}
+	}
+	if n >= maxSocketsPerMember {
+		return false
+	}
+	s.open[sock] = struct{}{}
+	return true
+}
+
+func (s *socketSet) remove(sock *socket) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.open, sock)
+	if len(s.open) == 0 {
+		s.empty.Broadcast()
+	}
+}
+
+func (s *socketSet) closeWhere(match func(*socket) bool, code websocket.StatusCode, reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for sock := range s.open {
+		if match(sock) {
+			sock.requestClose(code, reason)
+		}
+	}
+}
+
+func (s *socketSet) closeSession(tokenHash []byte, code websocket.StatusCode, reason string) {
+	s.closeWhere(func(sock *socket) bool { return bytes.Equal(sock.tokenHash, tokenHash) }, code, reason)
+}
+
+// CloseSockets tells every client the den is restarting (close 1012) and
+// waits up to timeout for the sockets to close. The caller must have closed
+// the den listener first, so no client reconnects to this process.
+func (d *Den) CloseSockets(timeout time.Duration) {
+	s := d.sockets
+	s.mu.Lock()
+	s.closing = true
+	s.mu.Unlock()
+	s.closeWhere(func(*socket) bool { return true }, websocket.StatusServiceRestart, "den restarting")
+	done := make(chan struct{})
+	go func() {
+		s.mu.Lock()
+		for len(s.open) > 0 {
+			s.empty.Wait()
+		}
+		s.mu.Unlock()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
+}
+
+// parseResume reads "<epoch>.<seq>"; anything else means no resume point.
+func parseResume(v string) (string, uint64) {
+	epoch, seqText, ok := strings.Cut(v, ".")
+	if !ok {
+		return "", 0
+	}
+	seq, err := strconv.ParseUint(seqText, 10, 64)
+	if err != nil {
+		return "", 0
+	}
+	return epoch, seq
+}
+
+// ServeSocket upgrades an authenticated request to the event stream.
+func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
+	sock := &socket{member: s.MemberID, tokenHash: s.TokenHash, closeReq: make(chan closeRequest, 1)}
+	if !d.sockets.add(sock) {
+		denproto.WriteError(w, denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited,
+			"too many connections for this member, or the den is stopping"))
+		return
+	}
+	defer d.sockets.remove(sock)
+	c, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer c.CloseNow()
+	c.SetReadLimit(denproto.MaxClientFrame)
+
+	// The request context ends when the service stops. The socket outlives
+	// it until the den closes it with 1012, after the listener has closed.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+	defer cancel()
+
+	epoch, after := parseResume(r.URL.Query().Get("resume"))
+	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, epoch, after)
+	defer d.Hub.Unsubscribe(sub)
+
+	write := func(events ...denproto.Event) bool {
+		frame, err := denproto.EncodeFrame(events...)
+		if err != nil {
+			return false
+		}
+		wctx, wcancel := context.WithTimeout(ctx, writeTimeout)
+		defer wcancel()
+		return c.Write(wctx, websocket.MessageText, frame) == nil
+	}
+
+	if resumed {
+		first, _ := denproto.NewEvent(denproto.EventResumed, 0, nil)
+		batch := []denproto.Event{first}
+		for len(missed) > 0 {
+			n := min(replayChunk-len(batch), len(missed))
+			batch = append(batch, missed[:n]...)
+			missed = missed[n:]
+			if !write(batch...) {
+				return
+			}
+			batch = batch[:0]
+		}
+		if len(batch) > 0 && !write(batch...) {
+			return
+		}
+	} else {
+		// Subscribing first means nothing published after the snapshot is
+		// lost; an event racing the snapshot may repeat state it already
+		// has, and applying one twice is harmless.
+		me, err := d.Member(ctx, s.MemberID)
+		if err != nil {
+			c.Close(websocket.StatusInternalError, "")
+			return
+		}
+		info, _ := d.Info()
+		ready, _ := denproto.NewEvent(denproto.EventReady, 0, denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Den: info, Me: me})
+		if !write(ready) {
+			return
+		}
+	}
+
+	var expires atomic.Int64
+	expires.Store(s.ExpiresAt.UnixMilli())
+	ephemeral := make(chan denproto.Event, 8)
+	go d.readClient(ctx, cancel, c, s, sock, &expires, ephemeral)
+	go func() {
+		t := time.NewTicker(pingInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				pctx, pcancel := context.WithTimeout(ctx, pingTimeout)
+				err := c.Ping(pctx)
+				pcancel()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	expiry := time.NewTimer(time.Until(time.UnixMilli(expires.Load())))
+	defer expiry.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case req := <-sock.closeReq:
+			c.Close(req.code, req.reason)
+			return
+		case e, ok := <-sub.Events:
+			if !ok {
+				if sub.Slow() {
+					c.Close(denproto.CloseTooSlow, "too slow")
+				}
+				return
+			}
+			// Under load, send everything already queued as one frame.
+			batch := []denproto.Event{e}
+		drain:
+			for len(batch) < eventsPerSend {
+				select {
+				case e, ok := <-sub.Events:
+					if !ok {
+						break drain
+					}
+					batch = append(batch, e)
+				default:
+					break drain
+				}
+			}
+			if !write(batch...) {
+				return
+			}
+		case e := <-ephemeral:
+			if !write(e) {
+				return
+			}
+		case <-expiry.C:
+			left := time.Until(time.UnixMilli(expires.Load()))
+			if left <= 0 {
+				c.Close(denproto.CloseSessionExpired, "session expired")
+				return
+			}
+			expiry.Reset(left)
+		}
+	}
+}
+
+// readClient handles frames from the client until the socket closes.
+func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, s *Session,
+	sock *socket, expires *atomic.Int64, ephemeral chan<- denproto.Event) {
+	defer cancel()
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			return
+		}
+		events, err := denproto.DecodeFrame(data)
+		if err != nil {
+			sock.requestClose(websocket.StatusInvalidFramePayloadData, "malformed frame")
+			return
+		}
+		for _, e := range events {
+			switch e.T {
+			case denproto.EventAuthRenew:
+				var req denproto.Renew
+				if json.Unmarshal(e.D, &req) != nil {
+					continue
+				}
+				until, err := d.Renew(ctx, s, req.Nonce, req.Proof)
+				if denproto.IsCode(err, denproto.CodeKeyRevoked) {
+					sock.requestClose(denproto.CloseRevoked, "key revoked")
+					return
+				}
+				if err != nil {
+					// The client retries; if the token expires first, the
+					// socket closes with 4001 and the client logs in again.
+					var perr *denproto.Error
+					if !errors.As(err, &perr) {
+						d.log.Warnf("renew session: %v", err)
+					}
+					continue
+				}
+				expires.Store(until.UnixMilli())
+				renewed, _ := denproto.NewEvent(denproto.EventAuthRenewed, 0, denproto.Renewed{ExpiresAt: until.UnixMilli()})
+				select {
+				case ephemeral <- renewed:
+				default:
+				}
+			}
+			// Unknown event types are ignored, as the protocol requires.
+		}
+	}
+}

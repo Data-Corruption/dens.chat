@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
@@ -48,6 +49,8 @@ type App struct {
 	UI       *ui.UI
 	Pairing  *pairing.Store
 	Lease    *maintenance.Lease
+	// Den is the den this instance hosts; nil when the den role is off.
+	Den *den.Den
 
 	ReleaseSource release.ReleaseSource
 	UserAgent     string
@@ -187,6 +190,13 @@ func (a *App) open(opts OpenOptions) error {
 			return err
 		}
 		a.Log.Info("Cleared the browser sessions of the restored backup")
+	}
+
+	if a.Instance.Den.Enabled {
+		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log); err != nil {
+			return err
+		}
+		a.AddCleanup(func() error { a.Den.Close(); return nil })
 	}
 
 	cfg, err := config.View(a.DB)
