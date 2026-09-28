@@ -215,7 +215,7 @@ func TestSendEditDelete(t *testing.T) {
 		t.Fatalf("retry posted %s, want the original %s (%v)", again.ID, m.ID, err)
 	}
 	reply, err := f.d.Send(ctx, owner, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "hi bob", ReplyTo: m.ID})
-	if err != nil || reply.ReplyTo != m.ID {
+	if err != nil || reply.ReplyTo != m.ID || reply.Reply == nil || reply.Reply.Text != "hello @alice" || reply.Reply.AuthorID != m.AuthorID {
 		t.Fatalf("reply: %+v %v", reply, err)
 	}
 
@@ -226,6 +226,9 @@ func TestSendEditDelete(t *testing.T) {
 		t.Fatal("message text is stored in the clear")
 	}
 
+	if _, err := f.d.Send(ctx, owner, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "x", ReplyTo: "999999"}); !denproto.IsCode(err, denproto.CodeInvalidField) {
+		t.Fatalf("a reply to a missing message: %v", err)
+	}
 	if _, err := f.d.Edit(ctx, owner, m.ID, denproto.EditRequest{Revision: 1, Text: "x"}); !denproto.IsCode(err, denproto.CodeForbidden) {
 		t.Fatalf("the owner edited bob's message: %v", err)
 	}
@@ -237,6 +240,10 @@ func TestSendEditDelete(t *testing.T) {
 	if current, ok := Conflict(err); !ok || current.Text != "hello everyone" || current.Revision != 2 {
 		t.Fatalf("stale edit: %+v %v", current, err)
 	}
+	page, _ := f.d.History(ctx, member, c.ID, HistoryQuery{})
+	if r := page.Messages[1].Reply; r == nil || r.Text != "hello everyone" {
+		t.Fatalf("the reply's preview after an edit: %+v", r)
+	}
 
 	if err := f.d.Delete(ctx, member, reply.ID); !denproto.IsCode(err, denproto.CodeForbidden) {
 		t.Fatalf("bob deleted alice's message: %v", err)
@@ -244,8 +251,8 @@ func TestSendEditDelete(t *testing.T) {
 	if err := f.d.Delete(ctx, owner, m.ID); err != nil {
 		t.Fatalf("the owner deleting a message: %v", err)
 	}
-	page, _ := f.d.History(ctx, member, c.ID, HistoryQuery{})
-	if texts(page) != "hi bob" || page.Messages[0].ReplyTo != m.ID {
+	page, _ = f.d.History(ctx, member, c.ID, HistoryQuery{})
+	if texts(page) != "hi bob" || page.Messages[0].ReplyTo != m.ID || page.Messages[0].Reply != nil {
 		t.Fatalf("after delete: %+v", page)
 	}
 }

@@ -197,4 +197,28 @@ func TestChecks(t *testing.T) {
 	if CheckMessage(m) == nil {
 		t.Error("CheckMessage accepted a bad reply_to")
 	}
+	m.ReplyTo = "4"
+	for _, bad := range []Reply{{AuthorID: "x", Text: "hi"}, {AuthorID: "3", Text: " "}, {AuthorID: "3", Text: strings.Repeat("x", ReplyExcerpt+1)}} {
+		m.Reply = &bad
+		if CheckMessage(m) == nil {
+			t.Errorf("CheckMessage accepted the reply %+v", bad)
+		}
+	}
+	m.ReplyTo, m.Reply = "", &Reply{AuthorID: "3", Text: "hi"}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted a reply preview without reply_to")
+	}
+}
+
+func TestExcerpt(t *testing.T) {
+	long := strings.Repeat("é", ReplyExcerpt)
+	for text, want := range map[string]string{
+		"hi":                 "hi",
+		"\n\n  hello\nworld": "hello\nworld",
+		long + "and more":    long,
+	} {
+		if got := Excerpt(text); got != want {
+			t.Errorf("Excerpt(%q) = %q, want %q", text, got, want)
+		}
+	}
 }

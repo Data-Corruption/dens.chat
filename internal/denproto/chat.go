@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -17,6 +18,7 @@ const (
 	NonceBytes     = 16 // message idempotency key
 	MaxChannels    = 500
 	MaxGroups      = 100
+	ReplyExcerpt   = 100 // characters of a replied-to message a reply carries
 )
 
 // Channel kinds.
@@ -68,7 +70,29 @@ type Message struct {
 	EditedBy  string `json:"edited_by,omitempty"`
 	Text      string `json:"text"`
 	ReplyTo   string `json:"reply_to,omitempty"`
+	Reply     *Reply `json:"reply,omitempty"`
 	Nonce     Bytes  `json:"nonce,omitempty"`
+}
+
+// Reply previews the message another one replies to, so a reply reads
+// without that message loaded. It's left out once that message is deleted.
+type Reply struct {
+	AuthorID string `json:"author_id"`
+	Text     string `json:"text"`
+}
+
+// Excerpt is the start of a text for a reply's preview: from the first
+// character that isn't a space, at most ReplyExcerpt characters.
+func Excerpt(text string) string {
+	text = strings.TrimLeftFunc(text, unicode.IsSpace)
+	n := 0
+	for i := range text {
+		if n == ReplyExcerpt {
+			return text[:i]
+		}
+		n++
+	}
+	return text
 }
 
 // ReadState is one channel's unread state for a member.
@@ -191,6 +215,14 @@ func CheckMessage(m Message) error {
 	}
 	if m.Revision < 1 || len(m.Nonce) > NonceBytes {
 		return errors.New("message has an invalid revision or nonce")
+	}
+	if r := m.Reply; r != nil {
+		if _, err := ParseID(r.AuthorID); err != nil || m.ReplyTo == "" {
+			return errors.New("message has an invalid reply")
+		}
+		if CheckText(r.Text) != nil || utf8.RuneCountInString(r.Text) > ReplyExcerpt {
+			return errors.New("message has an invalid reply")
+		}
 	}
 	return CheckText(m.Text)
 }

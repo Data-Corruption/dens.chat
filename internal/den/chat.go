@@ -760,7 +760,62 @@ func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	return m, nil
 }
 
+// queryMessages returns the messages a query selects, with previews of the
+// messages they reply to.
 func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]denproto.Message, error) {
+	ms, err := d.scanMessages(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for _, m := range ms {
+		if id, err := denproto.ParseID(m.ReplyTo); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	replies, err := d.replies(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range ms {
+		ms[i].Reply = replies[ms[i].ReplyTo]
+	}
+	return ms, nil
+}
+
+// replies returns previews of the messages with the given IDs, by ID.
+// Deleted messages have none.
+func (d *Den) replies(ctx context.Context, ids []int64) (map[string]*denproto.Reply, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := d.db.QueryContext(ctx, `SELECT id, author_id, text FROM den_messages WHERE id IN (?`+
+		strings.Repeat(", ?", len(ids)-1)+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]*denproto.Reply, len(ids))
+	for rows.Next() {
+		var id, author int64
+		var sealed []byte
+		if err := rows.Scan(&id, &author, &sealed); err != nil {
+			return nil, err
+		}
+		text, err := d.v.Open(sealed, textAD(id))
+		if err != nil {
+			return nil, err
+		}
+		out[denproto.FormatID(id)] = &denproto.Reply{AuthorID: denproto.FormatID(author), Text: denproto.Excerpt(string(text))}
+	}
+	return out, rows.Err()
+}
+
+func (d *Den) scanMessages(ctx context.Context, query string, args ...any) ([]denproto.Message, error) {
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -877,19 +932,21 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		return denproto.Message{}, invalid("text: %v", err)
 	}
 	var replyTo *int64
+	var reply *denproto.Reply
 	if req.ReplyTo != "" {
 		r, err := denproto.ParseID(req.ReplyTo)
 		if err != nil {
 			return denproto.Message{}, invalid("reply_to: no such message")
 		}
-		var n int
-		if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM den_messages WHERE id = ? AND channel_id = ?`, r, cid).Scan(&n); err != nil {
+		replied, err := d.scanMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id = ? AND channel_id = ?`, r, cid)
+		if err != nil {
 			return denproto.Message{}, err
 		}
-		if n == 0 {
+		if len(replied) == 0 {
 			return denproto.Message{}, invalid("reply_to: no such message in this channel")
 		}
 		replyTo = &r
+		reply = &denproto.Reply{AuthorID: replied[0].AuthorID, Text: denproto.Excerpt(replied[0].Text)}
 	}
 	now := d.now()
 	existing, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
@@ -936,7 +993,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	}
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
-		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Nonce: req.Nonce,
+		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
 	}
 	if err := d.Hub.Publish(denproto.EventMessageCreated, m, audienceOf(c)); err != nil {
 		return m, err

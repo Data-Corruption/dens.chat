@@ -503,6 +503,15 @@ func TestChatEditsAndMentions(t *testing.T) {
 		t.Fatalf("stale edit: %v", err)
 	}
 
+	reply, err := owner.Send(context.Background(), denID, channelID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "a reply", ReplyTo: msg.ID})
+	if err != nil || reply.Reply == nil || reply.Reply.Text != "second draft" {
+		t.Fatalf("reply: %+v %v", reply, err)
+	}
+	page, err := member.History(context.Background(), denID, channelID, denclient.HistoryQuery{})
+	if err != nil || len(page.Messages) != 2 || page.Messages[1].Reply == nil || page.Messages[1].Reply.AuthorID != msg.AuthorID {
+		t.Fatalf("the reply's preview in history: %+v %v", page, err)
+	}
+
 	mention := send(t, owner, denID, channelID, "hey @bob")
 	readState := func() denproto.ReadState {
 		v, _ := member.View(denID)
