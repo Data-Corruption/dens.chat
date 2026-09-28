@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -358,4 +360,197 @@ func TestAddressProblems(t *testing.T) {
 		t.Fatal(err)
 	}
 	join(t, member, invite, "bob")
+}
+
+// chatDen starts a den with an owner (alice) and a member (bob), both
+// connected, and a channel.
+func chatDen(t *testing.T) (h *denHost, owner, member *denclient.Manager, denID, channelID string) {
+	t.Helper()
+	h = startDen(t, newStore(t), time.Hour)
+	h.d.RelaxLimits() // the tests send faster than members may
+	code, err := h.d.Create(context.Background(), "Chat Den", "https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner = h.client(t, h.own())
+	var joined denclient.Status
+	for range 100 {
+		joined, _, err = owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		if err != denclient.ErrNotStarted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	denID = joined.DenID
+	waitFor(t, owner, "owner connected", connected)
+	invite, _, err := owner.CreateInvite(context.Background(), denID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member = h.client(t, noOwnDen)
+	join(t, member, invite, "bob")
+	name := "general"
+	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name}); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []*denclient.Manager{owner, member} {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			v, err := m.View(denID)
+			if err == nil && len(v.Channels) == 1 {
+				channelID = v.Channels[0].ID
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the channel never reached a client: %+v %v", v, err)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	return h, owner, member, denID, channelID
+}
+
+func send(t *testing.T, m *denclient.Manager, denID, channelID, text string) denproto.Message {
+	t.Helper()
+	msg, err := m.Send(context.Background(), denID, channelID, denproto.SendRequest{Nonce: denproto.Random(16), Text: text})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return msg
+}
+
+// collect reads message.created events from a page stream until it has
+// want distinct messages, failing on a duplicate.
+func collect(t *testing.T, stream <-chan denclient.PageEvent, want int) []string {
+	t.Helper()
+	var ids []string
+	seen := map[string]bool{}
+	timeout := time.After(10 * time.Second)
+	for len(ids) < want {
+		select {
+		case e, ok := <-stream:
+			if !ok {
+				t.Fatal("the page stream closed")
+			}
+			for _, ev := range e.Events {
+				if ev.T != denproto.EventMessageCreated {
+					continue
+				}
+				var m denproto.Message
+				json.Unmarshal(ev.D, &m)
+				if seen[m.ID] {
+					t.Fatalf("message %s arrived twice", m.ID)
+				}
+				seen[m.ID] = true
+				ids = append(ids, m.ID)
+			}
+		case <-timeout:
+			t.Fatalf("got %d of %d messages: %v", len(ids), want, ids)
+		}
+	}
+	return ids
+}
+
+// A member whose connection drops catches up on reconnect without gaps or
+// duplicates: the den replays what they missed.
+func TestChatCatchUp(t *testing.T) {
+	h, owner, member, denID, channelID := chatDen(t)
+	stream, stop := member.Stream()
+	defer stop()
+	var sent []string
+	for i := range 3 {
+		sent = append(sent, send(t, owner, denID, channelID, fmt.Sprintf("before %d", i)).ID)
+	}
+	got := collect(t, stream, 3)
+
+	view, _ := member.View(denID)
+	bob, _ := denproto.ParseID(view.Me.ID)
+	h.d.CloseMemberSockets(bob, denproto.CloseTooSlow, "too slow")
+	for i := range 5 {
+		sent = append(sent, send(t, owner, denID, channelID, fmt.Sprintf("while away %d", i)).ID)
+	}
+	got = append(got, collect(t, stream, 5)...)
+	if strings.Join(got, ",") != strings.Join(sent, ",") {
+		t.Fatalf("the member got %v, want %v", got, sent)
+	}
+
+	page, err := member.History(context.Background(), denID, channelID, denclient.HistoryQuery{Limit: 3})
+	if err != nil || len(page.Messages) != 3 || page.Messages[2].ID != sent[7] || !page.HasOlder {
+		t.Fatalf("history: %+v %v", page, err)
+	}
+	older, err := member.History(context.Background(), denID, channelID, denclient.HistoryQuery{Before: page.Messages[0].ID})
+	if err != nil || len(older.Messages) != 5 || older.HasOlder {
+		t.Fatalf("older: %+v %v", older, err)
+	}
+	if _, err := member.History(context.Background(), denID, "../den", denclient.HistoryQuery{}); err == nil {
+		t.Fatal("a path in place of a channel ID was passed on")
+	}
+}
+
+func TestChatEditsAndMentions(t *testing.T) {
+	h, owner, member, denID, channelID := chatDen(t)
+	msg := send(t, member, denID, channelID, "first draft")
+	edited, err := member.Edit(context.Background(), denID, msg.ID, denproto.EditRequest{Revision: 1, Text: "second draft"})
+	if err != nil || edited.Revision != 2 {
+		t.Fatalf("edit: %+v %v", edited, err)
+	}
+	_, err = member.Edit(context.Background(), denID, msg.ID, denproto.EditRequest{Revision: 1, Text: "stale"})
+	var conflict *denclient.ErrEditConflict
+	if !errors.As(err, &conflict) || conflict.Current.Text != "second draft" {
+		t.Fatalf("stale edit: %v", err)
+	}
+
+	mention := send(t, owner, denID, channelID, "hey @bob")
+	readState := func() denproto.ReadState {
+		v, _ := member.View(denID)
+		for _, r := range v.ReadStates {
+			if r.ChannelID == channelID {
+				return r
+			}
+		}
+		return denproto.ReadState{}
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for readState().MentionCount != 1 || readState().LastMessage != mention.ID {
+		if time.Now().After(deadline) {
+			t.Fatalf("the mention wasn't counted: %+v", readState())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err := member.MarkRead(context.Background(), denID, channelID, mention.ID); err != nil {
+		t.Fatal(err)
+	}
+	for readState().MentionCount != 0 || readState().ReadPosition != mention.ID {
+		if time.Now().After(deadline) {
+			t.Fatalf("reading didn't clear the mention: %+v", readState())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = h
+}
+
+// A den restart resyncs: the page is told to reload, and history still
+// pages from the den.
+func TestChatResetAfterRestart(t *testing.T) {
+	h, owner, member, denID, channelID := chatDen(t)
+	send(t, owner, denID, channelID, "before the restart")
+	stream, stop := member.Stream()
+	defer stop()
+	h.restart()
+	timeout := time.After(10 * time.Second)
+	for reset := false; !reset; {
+		select {
+		case e := <-stream:
+			reset = e.Reset
+		case <-timeout:
+			t.Fatal("no reset after the den restarted")
+		}
+	}
+	page, err := member.History(context.Background(), denID, channelID, denclient.HistoryQuery{})
+	if err != nil || len(page.Messages) != 1 {
+		t.Fatalf("history after the restart: %+v %v", page, err)
+	}
 }

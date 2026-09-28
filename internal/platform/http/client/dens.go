@@ -29,6 +29,7 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Delete("/api/dens/{den}/invites/{invite}", rt.handleRevokeInvite)
 	r.Post("/api/dens/{den}/settings", rt.handleDenSettings)
 	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
+	rt.mountChat(r)
 }
 
 // hosting describes the den this install hosts, if the den role is on.
@@ -74,6 +75,8 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	ctx := c.CloseRead(r.Context())
 	changes, stop := rt.a.Dens.Watch()
 	defer stop()
+	stream, stopStream := rt.a.Dens.Stream()
+	defer stopStream()
 	send := func() bool {
 		data, err := json.Marshal(map[string]any{"t": "dens", "d": rt.densView()})
 		if err != nil {
@@ -94,6 +97,23 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-changes:
 			if !send() {
+				return
+			}
+		case e, ok := <-stream:
+			if !ok {
+				// The page fell behind; it reloads everything when it
+				// reconnects.
+				c.Close(websocket.StatusTryAgainLater, "fell behind")
+				return
+			}
+			data, err := json.Marshal(map[string]any{"t": "den", "d": e})
+			if err != nil {
+				return
+			}
+			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err = c.Write(wctx, websocket.MessageText, data)
+			cancel()
+			if err != nil {
 				return
 			}
 		case <-ping.C:
@@ -327,6 +347,8 @@ func denMessage(e *denproto.Error) string {
 		return "Only the den's owner can do that."
 	case denproto.CodeInvalidField:
 		return "The den rejected one of the details you entered."
+	case denproto.CodeNotFound:
+		return "That doesn't exist on the den any more."
 	}
 	return "The den refused the request (" + e.Code + ")."
 }

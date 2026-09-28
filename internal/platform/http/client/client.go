@@ -161,7 +161,13 @@ func (rt *router) render(w http.ResponseWriter, r *http.Request, name string, da
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+	return decodeJSONLimit(w, r, v, maxJSONBody)
+}
+
+// decodeJSONLimit decodes a body of at most limit bytes. Messages need
+// more room than other requests: their text alone can be 16 KiB.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(v); err != nil {
@@ -174,8 +180,10 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(v)
+	writeBody(w, v)
 }
+
+func writeBody(w http.ResponseWriter, v any) { _ = json.NewEncoder(w).Encode(v) }
 
 // handlePair redeems a pairing token for a new session.
 func (rt *router) handlePair(w http.ResponseWriter, r *http.Request) {

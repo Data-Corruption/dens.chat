@@ -89,6 +89,9 @@ type Error struct {
 	Status  int    `json:"-"`
 	Code    string `json:"code"`
 	Message string `json:"message,omitempty"`
+	// Body is the whole response, for errors that carry more, such as
+	// edit_conflict's current message.
+	Body []byte `json:"-"`
 }
 
 func (e *Error) Error() string {
@@ -138,6 +141,7 @@ func ReadError(resp *http.Response) error {
 	var parsed errorBody
 	if json.Unmarshal(body, &parsed) == nil && parsed.Error != nil && parsed.Error.Code != "" {
 		parsed.Error.Status = resp.StatusCode
+		parsed.Error.Body = body
 		if len(parsed.Error.Message) > 200 {
 			parsed.Error.Message = parsed.Error.Message[:200]
 		}

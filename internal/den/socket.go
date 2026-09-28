@@ -102,6 +102,12 @@ func (s *socketSet) closeSession(tokenHash []byte, code websocket.StatusCode, re
 	s.closeWhere(func(sock *socket) bool { return bytes.Equal(sock.tokenHash, tokenHash) }, code, reason)
 }
 
+// CloseMemberSockets closes a member's sockets with a code: 4003 when
+// their access ends, or 4008 to make them reconnect and resume.
+func (d *Den) CloseMemberSockets(member int64, code websocket.StatusCode, reason string) {
+	d.sockets.closeWhere(func(sock *socket) bool { return sock.member == member }, code, reason)
+}
+
 // CloseSockets tells every client the den is restarting (close 1012) and
 // waits up to timeout for the sockets to close. The caller must have closed
 // the den listener first, so no client reconnects to this process.
