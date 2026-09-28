@@ -126,7 +126,7 @@ function Bans({ denID }) {
 
     return (
         <details class="collapse-arrow collapse mt-2 bg-base-200" onToggle={toggle}>
-            <summary class="collapse-title font-medium">Bans</summary>
+            <summary class="collapse-title cursor-pointer select-none font-medium">Bans</summary>
             <div class="collapse-content flex flex-col gap-2">
                 <ErrorText message={act.error} />
                 {!open ? null : list === null ? (
@@ -215,9 +215,20 @@ function DenSettings({ den }) {
         });
     }
 
+    // Closing the section drops unsaved edits and old results.
+    function toggle(e) {
+        if (e.currentTarget.open) return;
+        setName(den.name);
+        setURL(den.url);
+        setSaved(false);
+        setReached(false);
+        save.setError('');
+        check.setError('');
+    }
+
     return (
-        <details class="collapse-arrow collapse mt-2 bg-base-200">
-            <summary class="collapse-title font-medium">Den settings</summary>
+        <details class="collapse-arrow collapse mt-2 bg-base-200" onToggle={toggle}>
+            <summary class="collapse-title cursor-pointer select-none font-medium">Den settings</summary>
             <div class="collapse-content flex flex-col gap-3">
                 <form class="flex flex-col gap-2" onSubmit={submit}>
                     <Field label="Den name">
@@ -291,9 +302,19 @@ function Invites({ denID }) {
         });
     }
 
+    // Closing the section clears the invite shown once, so it doesn't sit
+    // on the page.
+    function toggle(e) {
+        if (e.currentTarget.open) return;
+        setCreated(null);
+        setList(null);
+        create.setError('');
+        manage.setError('');
+    }
+
     return (
-        <details class="collapse-arrow collapse mt-2 bg-base-200">
-            <summary class="collapse-title font-medium">Invite people</summary>
+        <details class="collapse-arrow collapse mt-2 bg-base-200" onToggle={toggle}>
+            <summary class="collapse-title cursor-pointer select-none font-medium">Invite people</summary>
             <div class="collapse-content flex flex-col gap-3">
                 <form class="flex flex-wrap items-end gap-3" onSubmit={submit}>
                     <Field label="Expires after">
@@ -397,6 +418,14 @@ function JoinDen({ onJoined }) {
         });
     }
 
+    // back starts over, from an empty invite.
+    function back() {
+        setPreview(null);
+        setInvite('');
+        setForm(EMPTY_ACCOUNT);
+        setError('');
+    }
+
     function join(e) {
         e.preventDefault();
         const problem = checkPasswords(form.password, form.confirm);
@@ -442,7 +471,7 @@ function JoinDen({ onJoined }) {
                 <ErrorText message={error} />
                 <div class="flex gap-2">
                     <SubmitButton busy={busy}>Join</SubmitButton>
-                    <button type="button" class="btn btn-ghost" onClick={() => setPreview(null)} disabled={busy}>
+                    <button type="button" class="btn btn-ghost" onClick={back} disabled={busy}>
                         Back
                     </button>
                 </div>
