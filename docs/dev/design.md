@@ -351,7 +351,7 @@ Members attach files to messages and put pictures on their profiles. Images lose
 
 - EXIF, GPS and similar metadata are stripped by the uploading member's own service, as the file streams to the den, so the den never receives a photo's location, and neither does its owner. The den runs the same check and refuses an image that still has any, which holds other clients to it.
 - Images: removal without re-encoding, the same code on both sides (`internal/media`). JPEG, PNG, GIF and WebP keep only what decoding, color and animation need, and a JPEG keeps its orientation in a minimal EXIF block of its own; the protocol lists what stays. Pixels are never touched, so nothing loses quality.
-- Video and audio need ffmpeg (`ffmpeg -map_metadata -1 -c copy`), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out.
+- Video and audio need ffmpeg (`ffmpeg -map_metadata -1 -c copy`), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out. Dens doesn't strip video containers with code of its own. MP4 and Matroska hide metadata in many places, and ffmpeg already handles them, so there's one stripper to get right, not two.
 - Other files, such as documents and archives, are sent as they are, with whatever they carry inside; the docs say so.
 - The member sees on each attached image when metadata came out. There is no opt-out in v1.
 
@@ -369,8 +369,8 @@ Members attach files to messages and put pictures on their profiles. Images lose
 **Retention and compression**
 
 1. Originals are kept for an owner-set window (for example 14 days), shown on each attachment with a download button.
-2. After the window, a worker job recompresses with the vendored ffmpeg and keeps the result only if it is smaller.
-3. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that forks ffmpeg (then discards that thread), and every ffmpeg thread inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
+2. After the window, a worker job recompresses with ffmpeg and keeps the result only if it is smaller.
+3. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that starts the worker process (then discards that thread), and every thread the worker starts inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
 
 **Serving**
 
@@ -378,7 +378,14 @@ Members attach files to messages and put pictures on their profiles. Images lose
 - The den serves every file as bytes to download, and never states a type a browser would act on.
 - A file's name is text from a den: shown as text, and cleaned before it names a download.
 
-The vendored ffmpeg builds (Linux and Windows) must be LGPL-compatible or the project must meet GPL terms; pick the builds deliberately.
+**ffmpeg (after M1)**
+
+- ffmpeg is compiled to WebAssembly and translated to Go with wasm2go, the way the SQLite driver is built. One pure-Go build serves Linux and Windows, with no native binaries to vendor, and it runs under `MemoryDenyWriteExecute`, which rules out a WebAssembly JIT.
+- The module is its own sandbox. It sees only its linear memory and the few functions Dens gives it: the input's bytes in and the output's bytes out, with no files, network or processes. A hostile file that takes over a decoder is stuck in the module's memory, which matters for a library parsing this many formats.
+- It runs in a worker process, a hidden command of the same binary, at the lowest priority (see Retention and compression), with a memory cap and a time limit, so a decoder that loops or balloons ends its job and not the service.
+- Media work is rare and can wait for a quiet moment, so running slower than native ffmpeg is fine. Large files are the open question.
+- The build leaves out GPL-only parts such as x264, so ffmpeg's terms stay LGPL beside Dens's MIT. Its source and build script ship with Dens, which lets anyone rebuild the binary with a changed ffmpeg, as the LGPL requires.
+- It starts as a spike after M1: build size, speed on large files, memory, and which codecs an LGPL build keeps.
 
 ## End-to-end encrypted DMs
 
@@ -547,7 +554,7 @@ Windows 11, current supported releases, Home and Pro. Windows 10 and Windows Ser
 
 **Known risks**
 
-- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID. Pion itself and a real ffmpeg build are still untested there.
+- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID. Pion itself is still untested there.
 
 ### Platform layer
 
@@ -669,7 +676,7 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
 | M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, and a new identity key shows in the DM |
 
-Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
+Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg, which starts as a spike after M1), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
@@ -677,7 +684,7 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 
 ## Open questions
 
-- [ ] Which ffmpeg builds to vendor for Linux and Windows, and their license terms.
+- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, and which codecs an LGPL build keeps (the spike after M1).
 - [ ] Owner defaults for retention windows and screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
