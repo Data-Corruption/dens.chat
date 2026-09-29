@@ -358,6 +358,19 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		}
 		s.gone = append(s.gone, d.Files...)
 		data = d
+	case denproto.EventDeviceAdded:
+		var d denproto.Device
+		if json.Unmarshal(e.D, &d) != nil || denproto.CheckDevice(d) != nil {
+			return e, false, errMalformed
+		}
+		d.Current = false
+		data = d
+	case denproto.EventDeviceRemoved:
+		var r denproto.DeviceRemoved
+		if json.Unmarshal(e.D, &r) != nil || len(r.KeyID) != denproto.IDSize {
+			return e, false, errMalformed
+		}
+		data = r
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState
 		if json.Unmarshal(e.D, &r) != nil {

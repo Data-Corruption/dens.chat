@@ -50,6 +50,8 @@ func New(a *app.App) http.Handler {
 		r.Post("/join/preview", h.preview)
 		r.Post("/join", h.join)
 		r.Post("/auth/login", h.login)
+		r.Post("/auth/password", h.passwordLogin)
+		r.Post("/auth/recover", h.recover)
 		r.Group(func(r chi.Router) {
 			r.Use(h.authenticate)
 			r.Post("/auth/logout", h.logout)
@@ -82,6 +84,10 @@ func New(a *app.App) http.Handler {
 			r.Get("/files/{id}", h.file(false))
 			r.Get("/files/{id}/thumb", h.file(true))
 			r.Get("/me/storage", h.storage)
+			r.Post("/me/password", h.changePassword)
+			r.Post("/me/recovery-codes", h.newRecoveryCodes)
+			r.Get("/me/devices", h.devices)
+			r.Delete("/me/devices/{key}", h.revokeDevice)
 		})
 	})
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {

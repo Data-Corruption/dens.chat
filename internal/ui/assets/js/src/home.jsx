@@ -1,11 +1,12 @@
 // The home page: the dens this install has joined, joining another,
 // hosting one, and inviting people to a den you own.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import {
-    Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction,
+    Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, day, useAction,
+    useLater,
 } from './components.jsx';
 
 const VERIFIER_HINT =
@@ -15,6 +16,8 @@ const VERIFIER_HINT =
 export function Home({ status, navigate }) {
     const [view, setView] = useState(null);
     const [codes, setCodes] = useState(null);
+    // signIn fills the sign-in form for a den this device was signed out of.
+    const [signIn, setSignIn] = useState(null);
 
     useEffect(() => {
         // The list comes over plain HTTP first: the event stream's socket
@@ -35,6 +38,7 @@ export function Home({ status, navigate }) {
         return <RecoveryCodes denName={codes.name} codes={codes.codes} onDone={() => setCodes(null)} />;
     }
     const joined = (result) => setCodes({ name: result.den.name, codes: result.recovery_codes });
+    const showCodes = (name, list) => setCodes({ name, codes: list });
 
     return (
         <>
@@ -50,8 +54,10 @@ export function Home({ status, navigate }) {
             ) : (
                 <>
                     {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} navigate={navigate} />
+                    <DenList dens={view.dens} navigate={navigate} onCodes={showCodes}
+                        onSignIn={(den) => setSignIn({ den: den.url, username: den.username, key: Date.now() })} />
                     <JoinDen onJoined={joined} />
+                    <SignInDen key={signIn?.key} prefill={signIn} />
                 </>
             )}
         </>
@@ -68,7 +74,7 @@ const STATE_BADGES = {
 
 const ROLES = { owner: 'the owner', moderator: 'a moderator', member: 'a member' };
 
-function DenList({ dens, navigate }) {
+function DenList({ dens, navigate, onCodes, onSignIn }) {
     if (dens.length === 0) {
         return (
             <Card title="Your dens">
@@ -79,13 +85,13 @@ function DenList({ dens, navigate }) {
     return (
         <Card title="Your dens">
             <ul class="flex flex-col gap-3">
-                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} />)}
+                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} onCodes={onCodes} onSignIn={onSignIn} />)}
             </ul>
         </Card>
     );
 }
 
-function DenItem({ den, navigate }) {
+function DenItem({ den, navigate, onCodes, onSignIn }) {
     const [badge, label] = STATE_BADGES[den.state] || ['badge-ghost', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
     const staff = den.role === 'owner' || den.role === 'moderator';
@@ -97,10 +103,15 @@ function DenItem({ den, navigate }) {
                 <span class={`badge ${badge}`}>{label}</span>
                 {den.own && <span class="badge badge-outline">Hosted here</span>}
                 {gone ? (
-                    <button type="button" class="btn btn-sm ml-auto" disabled={forget.busy}
-                        onClick={() => forget.run(() => api.del(`/api/dens/${den.den_id}`))}>
-                        Remove from this computer
-                    </button>
+                    <div class="ml-auto flex gap-2">
+                        {den.state === 'revoked' && (
+                            <button type="button" class="btn btn-primary btn-sm" onClick={() => onSignIn(den)}>Sign in again</button>
+                        )}
+                        <button type="button" class="btn btn-sm" disabled={forget.busy}
+                            onClick={() => forget.run(() => api.del(`/api/dens/${den.den_id}`))}>
+                            Remove from this computer
+                        </button>
+                    </div>
                 ) : (
                     <button type="button" class="btn btn-primary btn-sm ml-auto" onClick={() => navigate(`/den/${den.den_id}`)}>
                         Open
@@ -110,13 +121,18 @@ function DenItem({ den, navigate }) {
             <p class="text-sm text-base-content/70">
                 {den.url} · you're <span class="font-medium">{den.display_name}</span> (@{den.username}), {ROLES[den.role] || den.role}
             </p>
+            <p class="text-xs text-base-content/60" title="The start of the den's identity. Everyone in this den sees the same one.">
+                Den ID <span class="font-mono">{den.fingerprint}</span>
+            </p>
             {den.error && <p class="text-sm text-warning">{den.error}</p>}
             <ErrorText message={forget.error} />
+            {den.state === 'offline' && !den.own && <NewAddress den={den} />}
             {den.state === 'connected' && (
                 <>
                     {den.role === 'owner' && <DenSettings den={den} />}
                     {staff && <Invites denID={den.den_id} />}
                     {staff && <Bans denID={den.den_id} />}
+                    <Devices den={den} onCodes={onCodes} />
                     {!den.own && <Leave den={den} />}
                 </>
             )}
@@ -164,6 +180,232 @@ function Bans({ denID }) {
                 )}
                 <p class="text-xs text-base-content/60">Lifting a ban doesn't bring anyone back; they can join again with a new invite.</p>
             </div>
+        </details>
+    );
+}
+
+// Devices lists this member's devices on a den and signs any of them out,
+// and changes the den password and recovery codes.
+function Devices({ den, onCodes }) {
+    const [open, setOpen] = useState(false);
+    const [list, setList] = useState(null);
+    const [confirm, setConfirm] = useState('');
+    const act = useAction();
+    const load = async () => setList(await api.get(`/api/dens/${den.den_id}/devices`));
+    // The list usually arrives at once; the dots show only if it's slow.
+    const slow = useLater(open && list === null && !act.error, 1000);
+
+    // Closing the section forgets what it showed; opening loads it afresh.
+    function toggle(e) {
+        setOpen(e.currentTarget.open);
+        setConfirm('');
+        act.setError('');
+        if (e.currentTarget.open) act.run(load);
+        else setList(null);
+    }
+
+    function signOut(d) {
+        act.run(async () => {
+            await api.del(`/api/dens/${den.den_id}/devices/${d.key_id}`);
+            setConfirm('');
+            if (!d.current) await load();
+        });
+    }
+
+    return (
+        <details class="collapse-arrow collapse mt-2 bg-base-200" onToggle={toggle}>
+            <summary class="collapse-title cursor-pointer select-none font-medium">Devices and password</summary>
+            <div class="collapse-content flex flex-col gap-4">
+                <div class="flex flex-col gap-2">
+                    <ErrorText message={act.error} />
+                    {list === null ? (
+                        slow && <span class="loading loading-dots loading-sm"></span>
+                    ) : (
+                        <ul class="flex flex-col gap-2">
+                            {list.devices.map((d) => (
+                                <li key={d.key_id} class="flex flex-wrap items-center gap-2 text-sm">
+                                    <span class="min-w-0 flex-1">
+                                        <span class="font-medium">{d.label}</span>
+                                        {d.current && <span class="badge badge-soft badge-success badge-sm ml-2">This device</span>}
+                                        <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
+                                    </span>
+                                    {confirm === d.key_id ? (
+                                        <span class="flex gap-1">
+                                            <button type="button" class="btn btn-error btn-xs" disabled={act.busy} onClick={() => signOut(d)}>
+                                                {d.current ? 'Sign this device out' : 'Sign it out'}
+                                            </button>
+                                            <button type="button" class="btn btn-ghost btn-xs" onClick={() => setConfirm('')}>Cancel</button>
+                                        </span>
+                                    ) : (
+                                        <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirm(d.key_id)}>Sign out</button>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    <p class="text-xs text-base-content/60">
+                        Signing a device out ends its access at once. Signing in again takes your den password. Every new device shows
+                        on your others, so if one appears that isn't yours, change your password below: that signs out every device but
+                        this one.
+                    </p>
+                </div>
+                <ChangePassword den={den} onDone={load} />
+                {list !== null && <NewCodes den={den} left={list.recovery_codes_left} onCodes={onCodes} onDone={load} />}
+            </div>
+        </details>
+    );
+}
+
+// signedOut says how many of the member's other devices a new den password
+// signed out.
+function signedOut(n) {
+    if (!n) return '';
+    return n === 1 ? ' 1 other device was signed out.' : ` ${n} other devices were signed out.`;
+}
+
+// LocalPasswordHelp names the local password, with a tooltip that tells it
+// apart from a den password.
+function LocalPasswordHelp({ id }) {
+    return (
+        <span class="tooltip">
+            <span id={id} role="tooltip" class="tooltip-content rounded-lg px-3 py-2 text-left">
+                Your local password protects Dens on this computer: its backups, and the keys it holds for every den. A den
+                password signs you in to one den on a new device, and that den never sees it.
+            </span>
+            <button type="button" class="cursor-help underline decoration-dotted" aria-describedby={id}>local password</button>
+        </span>
+    );
+}
+
+// ChangePassword sets the member's den password, with the current one or a
+// recovery code, which signs out their other devices.
+function ChangePassword({ den, onDone }) {
+    const [form, set, setForm] = useForm({ current: '', code: '', password: '', confirm: '' });
+    const [withCode, setWithCode] = useState(false);
+    const [saved, setSaved] = useState('');
+    const act = useAction();
+
+    function submit(e) {
+        e.preventDefault();
+        setSaved('');
+        const problem = checkPasswords(form.password, form.confirm);
+        if (problem) return act.setError(problem);
+        act.run(async () => {
+            const result = await api.post(`/api/dens/${den.den_id}/password`, {
+                current: withCode ? '' : form.current, recovery_code: withCode ? form.code : '', password: form.password,
+            });
+            setForm({ current: '', code: '', password: '', confirm: '' });
+            setSaved(`Password changed.${signedOut(result.signed_out)}`);
+            await onDone();
+        });
+    }
+
+    return (
+        <form class="flex flex-col gap-2 border-t border-base-300 pt-3" onSubmit={submit}>
+            <h3 class="font-medium">Change your den password</h3>
+            <p class="text-xs text-base-content/60">
+                Your den password signs you in to {den.name} on a new device. Changing it signs out every other device you have
+                there, and each signs in again with the new one.
+            </p>
+            <p class="text-xs text-base-content/60">
+                It's separate from your <LocalPasswordHelp id={`local-password-${den.den_id}`} />.
+            </p>
+            {withCode ? (
+                <Field label="Recovery code" hint="One of the codes you saved. It works once.">
+                    <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" />
+                </Field>
+            ) : (
+                <Field label="Current password">
+                    <TextInput type="password" value={form.current} onInput={(v) => set('current', v)} autocomplete="current-password" required />
+                </Field>
+            )}
+            <PasswordFields password={form.password} setPassword={(v) => set('password', v)} confirm={form.confirm} setConfirm={(v) => set('confirm', v)} />
+            <ErrorText message={act.error} />
+            {saved && <p class="text-sm text-success">{saved}</p>}
+            <div class="flex flex-wrap items-center gap-2">
+                <SubmitButton busy={act.busy}>Change password</SubmitButton>
+                <button type="button" class="btn btn-ghost btn-sm" onClick={() => setWithCode(!withCode)}>
+                    {withCode ? 'Use my current password' : 'Use a recovery code instead'}
+                </button>
+            </div>
+        </form>
+    );
+}
+
+// NewCodes replaces the member's recovery codes, which takes their den
+// password.
+function NewCodes({ den, left, onCodes, onDone }) {
+    const [asking, setAsking] = useState(false);
+    const [password, setPassword] = useState('');
+    const act = useAction();
+
+    function submit(e) {
+        e.preventDefault();
+        act.run(async () => {
+            const result = await api.post(`/api/dens/${den.den_id}/recovery-codes`, { password });
+            setPassword('');
+            setAsking(false);
+            await onDone();
+            onCodes(den.name, result.recovery_codes);
+        });
+    }
+
+    return (
+        <form class="flex flex-col gap-2 border-t border-base-300 pt-3" onSubmit={submit}>
+            <h3 class="font-medium">Recovery codes</h3>
+            <p class={`text-sm ${left <= 3 ? 'text-warning' : 'text-base-content/70'}`}>
+                {left === 1 ? 'You have 1 recovery code left.' : `You have ${left} recovery codes left.`} New codes replace all the old
+                ones.
+            </p>
+            {asking && (
+                <Field label="Den password">
+                    <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
+                </Field>
+            )}
+            <ErrorText message={act.error} />
+            <div class="flex gap-2">
+                {asking ? (
+                    <>
+                        <SubmitButton busy={act.busy}>Make new codes</SubmitButton>
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setAsking(false)}>Cancel</button>
+                    </>
+                ) : (
+                    <button type="button" class="btn btn-sm" onClick={() => setAsking(true)}>Make new codes</button>
+                )}
+            </div>
+        </form>
+    );
+}
+
+// NewAddress gives a den that can't be reached the new address its owner
+// moved it to. The service uses it only if the den there proves it's the
+// same one.
+function NewAddress({ den }) {
+    const [url, setURL] = useState('');
+    const act = useAction();
+
+    function submit(e) {
+        e.preventDefault();
+        act.run(async () => {
+            await api.post(`/api/dens/${den.den_id}/address`, { url });
+            setURL('');
+        });
+    }
+
+    return (
+        <details class="collapse-arrow collapse mt-2 bg-base-200">
+            <summary class="collapse-title cursor-pointer select-none font-medium">Den moved?</summary>
+            <form class="collapse-content flex flex-col gap-2" onSubmit={submit}>
+                <p class="text-xs text-base-content/60">
+                    If the owner gave {den.name} a new address, enter it here. Dens only uses it if the den there proves it's the
+                    same one.
+                </p>
+                <Field label="New address">
+                    <TextInput value={url} onInput={setURL} placeholder="https://den.example.com" autocomplete="off" required />
+                </Field>
+                <ErrorText message={act.error} />
+                <SubmitButton busy={act.busy}>Use this address</SubmitButton>
+            </form>
         </details>
     );
 }
@@ -249,7 +491,7 @@ function DenSettings({ den }) {
                     </Field>
                     <Field
                         label="Public address"
-                        hint="Where members reach the den. New invites carry it; invites already sent keep the old one."
+                        hint="Where members reach the den. After changing it, keep the old address pointing at the den for a while: members who were offline, and invites already sent, find the new one through it."
                     >
                         <TextInput type="url" value={url} onInput={setURL} required />
                     </Field>
@@ -554,6 +796,88 @@ function JoinDen({ onJoined }) {
                 </div>
             </form>
         </Card>
+    );
+}
+
+// SignInDen signs this computer in to a den the member is in already: with
+// the den password, or with a recovery code that sets a new one.
+function SignInDen({ prefill }) {
+    const empty = { den: prefill?.den || '', username: prefill?.username || '', password: '', code: '', confirm: '' };
+    const [form, set, setForm] = useForm(empty);
+    const [recovering, setRecovering] = useState(false);
+    const [done, setDone] = useState('');
+    const act = useAction();
+    const card = useRef(null);
+    useEffect(() => {
+        if (prefill) card.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, []);
+
+    function submit(e) {
+        e.preventDefault();
+        setDone('');
+        if (recovering) {
+            const problem = checkPasswords(form.password, form.confirm);
+            if (problem) return act.setError(problem);
+        }
+        act.run(async () => {
+            const result = await api.post('/api/dens/signin', {
+                den: form.den, username: form.username, password: form.password, recovery_code: recovering ? form.code : '',
+            });
+            setForm({ ...empty, den: '', username: '' });
+            setRecovering(false);
+            const left = result.recovery_codes_left;
+            setDone(
+                recovering
+                    ? `Signed in to ${result.den.name}.${signedOut(result.signed_out)} You have ${left} recovery code${left === 1 ? '' : 's'} left; you can make new ones under Devices and password.`
+                    : `Signed in to ${result.den.name}.`,
+            );
+        });
+    }
+
+    return (
+        <div ref={card}>
+            <Card title="Sign in to a den you're in">
+                <p class="text-sm text-base-content/70">
+                    For a den you joined on another computer, or one that signed this device out. Your other devices will see that
+                    this one was added.
+                </p>
+                <form class="flex flex-col gap-2" onSubmit={submit}>
+                    <Field
+                        label="Invite or den address"
+                        hint="Any invite from the den works, even a used one: it names the den exactly. An address like https://den.example.com works too; the den ID it shows afterwards should match another member's."
+                    >
+                        <TextInput value={form.den} onInput={(v) => set('den', v)} required />
+                    </Field>
+                    <Field label="Username">
+                        <TextInput value={form.username} onInput={(v) => set('username', v)} autocomplete="username" required />
+                    </Field>
+                    {recovering ? (
+                        <>
+                            <Field label="Recovery code" hint="One of the codes you saved when you joined. It works once.">
+                                <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" />
+                            </Field>
+                            <PasswordFields password={form.password} setPassword={(v) => set('password', v)} confirm={form.confirm}
+                                setConfirm={(v) => set('confirm', v)} hint="Your new password for this den." />
+                        </>
+                    ) : (
+                        <Field label="Den password">
+                            <TextInput type="password" value={form.password} onInput={(v) => set('password', v)} autocomplete="current-password" required />
+                        </Field>
+                    )}
+                    <ErrorText message={act.error} />
+                    {done && <p class="text-sm text-success">{done}</p>}
+                    <div class="flex flex-wrap items-center gap-2">
+                        <SubmitButton busy={act.busy}>{recovering ? 'Recover and sign in' : 'Sign in'}</SubmitButton>
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                            setRecovering(!recovering);
+                            act.setError('');
+                        }}>
+                            {recovering ? 'I know my password' : 'Forgot your password?'}
+                        </button>
+                    </div>
+                </form>
+            </Card>
+        </div>
     );
 }
 

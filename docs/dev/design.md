@@ -202,7 +202,7 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 **Normal login (invisible to the user)**
 
-1. Client sends its own random nonce and requests a challenge. The den returns a 32-byte nonce for the client (60 seconds, single use) and signs the client's nonce with the den identity key; the client aborts if the signature doesn't match the pinned fingerprint.
+1. Client sends its own random nonce and requests a challenge. The den returns a 32-byte nonce for the client (60 seconds, single use) and signs both nonces and its own public address with the den identity key. The client aborts if the signature doesn't match the pinned fingerprint, and sends nothing more to an address the den didn't sign (see Den identity and moving domains).
 2. Client signs `"dens-auth-v1" ‖ den_id ‖ key_id ‖ nonce`. The context string and den ID stop a signature being replayed elsewhere.
 3. The den verifies the signature and issues an opaque 256-bit session token (stored as SHA-256), valid for 1 hour.
 4. The WebSocket upgrade carries the token. Before expiry the client re-signs and sends an `auth.renew` frame on the open socket.
@@ -210,31 +210,48 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 **Fallbacks**
 
-- **New device, no backup:** username and password verifier plus a new public key. The den registers the key, labels it, and notifies the member's other sessions ("new device added").
-- **Forgotten password:** username, one recovery code, a new password verifier and a new public key.
-- **Change password:** from a signed-in session, with the current password or a recovery code.
+- **New device:** username and password verifier plus a new public key. The den registers the key, labels it, and tells the member's other sessions, whose chat shows that a new device signed in. From M1.7, one of the member's other devices must also approve it (see Approving new devices).
+- **Forgotten password:** username, one recovery code, a new password verifier and a new public key. The code is spent, the new password replaces the old one, and every other device is signed out.
+- **Change password:** from a signed-in session, with the current password or a recovery code. It signs out every other device: a device key outlives the password that added it, so anyone who had the old password may still hold one.
+- **New recovery codes:** from a signed-in session, with the password, so a stolen session can't make codes to keep the account with.
 
-A **Devices** page lists each registered key with its label, creation date and last-seen time, and can revoke any of them.
+A new device names the den with any invite from it, even a used one, which pins its identity, or with its address, which trusts the key the den proves there. Trusting an address is safe for the password, since a verifier made for one den is worthless at another. The page shows each den's ID, the start of its identity, so a member can compare it with someone else's.
+
+Each den on the home page has a **Devices and password** section. It lists each registered key with its label, when it was added and when it last signed in, and signs any of them out, this one included, closing their sockets at once. It also changes the password, which signs out every other device, and makes new recovery codes. A device that was signed out says so and offers to sign in again.
+
+**Approving new devices (M1.7)**
+
+From M1.7, a password alone doesn't add a device: one of the member's other devices approves it, which makes their own devices a second factor with no authenticator app.
+
+1. The new device signs in with the username and password as now. The den holds it as pending for 10 minutes and asks the member's other sessions.
+2. The new device shows a six-digit code. Dens on the member's other devices shows the request with the new device's label, and asks for that code. Typing the code, not pressing a button, is what approves it: someone who stole the password can make requests, but the code for theirs shows only on their own screen, so the member can't approve one by accident.
+3. The approving device signs the new device's keys with the member's identity key and seals the DM keys for it (see End-to-end encrypted DMs). Only then does the den register the new device and start its session.
+4. Refusing a request, or letting it expire, keeps the device out. A refusal also tells the member to change their password, since someone has it.
+
+- The code is random and never reaches the den: the request carries only a commitment to it and the new device's key, so the den can't swap in a key of its own, and a code can't approve any other request.
+- The device that joins with an invite needs no approval. A member with no other device signs in with a recovery code, which needs none: the codes are the one way in without a device. With neither devices nor codes, the account can't be recovered.
+- The approval is signed with the member's identity key, which only their devices hold, so DM partners can check every device of theirs, and even the den's owner can't add one.
 
 **Den identity and moving domains**
 
 - Creating a den generates its Ed25519 identity key. It is stored encrypted with the den's data key and included in den backups.
-- Clients store each den under its key fingerprint; the URL is an editable field.
-- Manual migration in v1: the owner announces the new address, members edit the URL, and the client connects only if the den proves the pinned key.
+- Clients store each den under its key fingerprint; its address can change.
+- The den signs its public address into every challenge answer. A client that reached it at another address sends nothing more there: it runs the challenge again at the signed address, and moves there only if the den proves the same key.
+- So an owner moves a den by changing its address in the den's settings, and keeps the old name pointing at the den for a while. A connected client moves as soon as the den announces the new address and proves itself there; one that was off moves at its next start, through the old name. A member whose install was off for longer enters the new address by hand, where the same check applies.
+- The signed address also stops a relay. A server at an address the den left, or any other, can pass the den's answers along, but the address in them sends the client to the den itself before it sends a proof, a password verifier or a token.
 - A passing check means the new server runs from the den's backup, unlocked with its local password. Normally that's the owner; it cannot rule out someone who stole both.
-- A signed "moved" notice that updates the URL automatically is post-v1.
 
 **Why cut TOTP**
 
-TOTP protects against a stolen password. Here the password is only used when adding a device, every such login is announced to the member's existing devices, and online guessing is rate-limited, with each guess costing the guesser an Argon2id computation. The key, which does daily logins, is unphishable and never leaves the machine. TOTP adds setup friction for little gain; it can be added later with `pquerna/otp` as an option on the password fallback only.
+TOTP protects against a stolen password. Here the password is only used when adding a device, every such login is announced to the member's existing devices, and online guessing is rate-limited, with each guess costing the guesser an Argon2id computation. From M1.7 a new device also needs approval from one of the member's other devices, which are a second factor already. The key, which does daily logins, is unphishable and never leaves the machine. TOTP adds setup friction for little gain; it can be added later with `pquerna/otp` as an option on the password fallback only.
 
 **Rate limits**
 
-- Password and recovery attempts: per account and per IP, with backoff; IPs held in memory only.
+- Password and recovery attempts: per account and per IP, 10 and then one every 6 minutes; IPs held in memory only. A signed-in member's password checks, to change it or make new codes, count against the account's.
 - Challenge requests and invite redemption: per IP.
 - Unknown usernames and wrong passwords get the same error, and the check is a constant-time hash comparison either way, so neither the reply nor its timing shows which usernames exist.
 
-Limiter memory is bounded. Per-IP token buckets live in a fixed-capacity LRU map (for example 100,000 entries, a few MB); an entry is dropped once its bucket has refilled and sat idle, and the least recently used entry is evicted when the map is full. IPv6 addresses are keyed by their /64 prefix so rotating addresses doesn't create new buckets. If eviction churn shows a flood, the endpoint falls back to a global limiter. Per-account backoff is bounded by the member count and never becomes a hard lockout, since lockouts let an attacker lock victims out.
+Limiter memory is bounded. Per-IP token buckets live in a fixed-capacity LRU map (for example 100,000 entries, a few MB); an entry is dropped once its bucket has refilled and sat idle, and the least recently used entry is evicted when the map is full. IPv6 addresses are keyed by their /64 prefix so rotating addresses doesn't create new buckets. If eviction churn shows a flood, the endpoint falls back to a global limiter. The per-account limit is keyed by username, bounded the same way, and refills on its own, so it never locks an account, since lockouts let an attacker lock victims out: a stream of guesses can hold up the member's own password sign-ins, but never their devices, which sign in with keys.
 
 ## Den features
 
@@ -347,7 +364,7 @@ Members attach files to messages and put pictures on their profiles. Images lose
 
 - EXIF, GPS and similar metadata are stripped by the uploading member's own service, as the file streams to the den, so the den never receives a photo's location, and neither does its owner. The den runs the same check and refuses an image that still has any, which holds other clients to it.
 - Images: removal without re-encoding, the same code on both sides (`internal/media`). JPEG, PNG, GIF and WebP keep only what decoding, color and animation need, and a JPEG keeps its orientation in a minimal EXIF block of its own; the protocol lists what stays. Pixels are never touched, so nothing loses quality.
-- Video and audio need ffmpeg (`ffmpeg -map_metadata -1 -c copy`), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out.
+- Video and audio need ffmpeg (`ffmpeg -map_metadata -1 -c copy`), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out. Dens doesn't strip video containers with code of its own. MP4 and Matroska hide metadata in many places, and ffmpeg already handles them, so there's one stripper to get right, not two.
 - Other files, such as documents and archives, are sent as they are, with whatever they carry inside; the docs say so.
 - The member sees on each attached image when metadata came out. There is no opt-out in v1.
 
@@ -365,8 +382,8 @@ Members attach files to messages and put pictures on their profiles. Images lose
 **Retention and compression**
 
 1. Originals are kept for an owner-set window (for example 14 days), shown on each attachment with a download button.
-2. After the window, a worker job recompresses with the vendored ffmpeg and keeps the result only if it is smaller.
-3. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that forks ffmpeg (then discards that thread), and every ffmpeg thread inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
+2. After the window, a worker job recompresses with ffmpeg and keeps the result only if it is smaller.
+3. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that starts the worker process (then discards that thread), and every thread the worker starts inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
 
 **Serving**
 
@@ -374,7 +391,14 @@ Members attach files to messages and put pictures on their profiles. Images lose
 - The den serves every file as bytes to download, and never states a type a browser would act on.
 - A file's name is text from a den: shown as text, and cleaned before it names a download.
 
-The vendored ffmpeg builds (Linux and Windows) must be LGPL-compatible or the project must meet GPL terms; pick the builds deliberately.
+**ffmpeg (after M1)**
+
+- ffmpeg is compiled to WebAssembly and translated to Go with wasm2go, the way the SQLite driver is built. One pure-Go build serves Linux and Windows, with no native binaries to vendor, and it runs under `MemoryDenyWriteExecute`, which rules out a WebAssembly JIT.
+- The module is its own sandbox. It sees only its linear memory and the few functions Dens gives it: the input's bytes in and the output's bytes out, with no files, network or processes. A hostile file that takes over a decoder is stuck in the module's memory, which matters for a library parsing this many formats.
+- It runs in a worker process, a hidden command of the same binary, at the lowest priority (see Retention and compression), with a memory cap and a time limit, so a decoder that loops or balloons ends its job and not the service.
+- Media work is rare and can wait for a quiet moment, so running slower than native ffmpeg is fine. Large files are the open question.
+- The build leaves out GPL-only parts such as x264, so ffmpeg's terms stay LGPL beside Dens's MIT. Its source and build script ship with Dens, which lets anyone rebuild the binary with a changed ffmpeg, as the LGPL requires.
+- It starts as a spike after M1: build size, speed on large files, memory, and which codecs an LGPL build keeps.
 
 ## End-to-end encrypted DMs
 
@@ -384,13 +408,13 @@ From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores a
 
 - The den's owner, and anyone holding the den's disk or backups, can't read DMs or see the photos in them.
 - Metadata stays visible: the den still sees who DMs whom, when, and how much.
-- An owner who tampers with the keys the den hands out can't read along unnoticed: a new key for a DM partner shows in the DM. Members who compare a safety code once rule out an owner in the middle entirely (see Trust).
+- Keys pass through the den, so an owner can hand out keys of their own and sit in the middle of a DM. A swap after a member has seen their partner's real key shows in the DM, and members who compare a safety code once rule it out entirely (see Trust). An owner in the middle from a DM's first message, between members who never compare codes, goes unnoticed.
 
 **Keys**
 
 All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already seals data at rest.
 
-- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. New devices get it from an existing device during the M1.5 new-device flow, or from the key backup.
+- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. A new device gets it from the device that approves it (see Approving new devices), or from the key backup when it signs in with a recovery code.
 - Every device has an encryption key pair for each den, beside the signing key it logs in with: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer. The member's identity key signs it.
 - Each DM has a conversation key. The sending service creates it and seals a copy for every device of both members with that device's encryption key; the den stores the sealed copies as opaque blobs and hands each device its own.
 - The conversation key changes when either member removes a device, so a removed device can't read what follows. Older keys stay, sealed for the current devices, so history stays readable.
@@ -405,8 +429,8 @@ All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already s
 
 **History and recovery**
 
-- A new device gets the conversation keys from the member's other devices, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
-- Recovery after losing every device (M1.5) restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
+- A new device gets the conversation keys from the device that approves it, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
+- Recovery after losing every device restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
 - Keeping history costs some forward secrecy: whoever gets a device's keys can read what that device could. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
 
 **Trust**
@@ -543,7 +567,7 @@ Windows 11, current supported releases, Home and Pro. Windows 10 and Windows Ser
 
 **Known risks**
 
-- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID. Pion itself and a real ffmpeg build are still untested there.
+- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID. Pion itself is still untested there.
 
 ### Platform layer
 
@@ -604,6 +628,8 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 **Den listener**
 
 - [x] Serves only den routes; no client or admin routes compiled into its router.
+- [x] Challenge answers sign the den's address, and clients send nothing to an address the den didn't sign, so no relay can pass a sign-in through (M1.5).
+- [ ] A password alone doesn't add a device: another of the member's devices approves it, or a recovery code stands in (M1.7).
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
 - [ ] Bearer tokens only, never cookies, so no web page can make a browser act on a den.
@@ -662,19 +688,23 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
 | M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
-| M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, and a new identity key shows in the DM |
+| M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes, and approving new devices from an existing one | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, a new identity key shows in the DM, and the password alone can't add a device |
 
-Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
+Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg, which starts as a spike after M1), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
-**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
+**Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes, den IDs, approving new devices, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
+
+**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 
 ## Open questions
 
-- [ ] Which ffmpeg builds to vendor for Linux and Windows, and their license terms.
+- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, and which codecs an LGPL build keeps (the spike after M1).
 - [ ] Owner defaults for retention windows and screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
 - [ ] How long a DM's conversation key lives before it changes on its own, besides when a device is removed (M1.7).
+- [ ] Whether DM keys have a backup on the den at all, and what seals it: the den password can be guessed offline by the den, and recovering with a code replaces it; the recovery codes can't be guessed; with no backup, a member who loses every device loses their DMs (M1.7).
+- [ ] How members verify each other's keys beyond safety codes, such as with the inviter's key fingerprint and a secret carried in the invite, which the den never sees (M1.7).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.

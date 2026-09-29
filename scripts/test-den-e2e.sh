@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 
 # Den e2e on Linux: a second machine joins a den through Caddy, chats, and
-# stays connected across a den restart; then a ban shuts it out.
+# stays connected across a den restart; the member recovers their account
+# on a fresh install and signs the old one out; then a ban shuts them out.
 #
 # One Incus container hosts the den behind the pinned Caddy, serving
 # https://den.test with Caddy's internal certificate authority. Another,
 # on a different distro, trusts that authority, installs Dens and joins
 # with an invite from the owner. The two chat, the den's service restarts,
-# and the member must reconnect with the whole history. The owner then
-# sends a DM and bans the member, whose connection must close at once and
+# and the member must reconnect with the whole history. The owner sends a
+# DM, and the member a phone photo that must arrive stripped. A second
+# instance on the member's machine stands in for a fresh one: it signs in
+# by the den's address with a recovery code, whose new password must sign
+# the first install out at once. Signed in again with it, the first install
+# is signed out once more from the fresh one's device list.
+# The owner then bans the member, whose connections must close at once and
 # who can't join again under the same name. Both install from unsigned
 # fixture releases through install.sh, like the lifecycle harness; the
 # guest steps are in scripts/test/den-guest.sh.
@@ -86,6 +92,12 @@ guest() {
   local name=$1
   shift
   timeout 600 "${INCUS[@]}" exec "$name" -- sh /root/den-guest.sh "$@"
+}
+
+# fresh runs a step as instance fresh on the member's machine: the member's
+# new install, with its own keys and none of the first one's data.
+fresh() {
+  timeout 600 "${INCUS[@]}" exec "$CLIENT" --env INSTANCE=fresh --env PORT=18484 -- sh /root/den-guest.sh "$@"
 }
 
 run() {
@@ -181,19 +193,58 @@ run() {
   stored=$(guest "$DEN" sealed)
   echo ">> The photo arrived stripped, upright and with a preview; the den holds ${stored} sealed files"
 
+  echo ">> Recovering the member's account on a fresh install"
+  local code left signed_out fingerprint key started took reason refusal
+  code=$(guest "$CLIENT" code 0)
+  guest "$CLIENT" install --instance fresh --client-port 18484
+  fresh pair
+  started=$(date +%s%3N)
+  # By address, as someone with no invite would, and in the wrong case.
+  read -r left signed_out fingerprint <<<"$(fresh recover https://den.test Bob "$code" "new bob password")"
+  [[ "$left $signed_out" == "9 1" ]] ||
+    { echo "error: recovering left $left codes and signed out $signed_out devices" >&2; return 1; }
+  [[ "$fingerprint" == "$(guest "$DEN" fingerprint)" ]] ||
+    { echo "error: the fresh install found den $fingerprint, not the owner's" >&2; return 1; }
+  reason=$(guest "$CLIENT" wait-out revoked)
+  took=$(( $(date +%s%3N) - started ))
+  [[ "$reason" == "Your den password was changed on another device"* ]] ||
+    { echo "error: the first install was told: $reason" >&2; return 1; }
+  # The limit covers container execs; the den closes the socket itself
+  # within milliseconds.
+  (( took < 5000 )) || { echo "error: the new password took ${took} ms to sign the first install out" >&2; return 1; }
+  fresh wait-connected 0 >/dev/null
+  echo ">> The fresh install signed in with a recovery code, shows the owner's den ID, and signed the first install out within ${took} ms"
+  refusal=$(guest "$CLIENT" sign-in-refused https://den.test bob "bob password")
+  [[ "$refusal" == *"don't match"* ]] || { echo "error: signing in with the old password: $refusal" >&2; return 1; }
+  guest "$CLIENT" sign-in https://den.test bob "new bob password"
+  guest "$CLIENT" wait-connected 0 >/dev/null
+  echo ">> The old password is gone, and the new one signs the first install in again"
+
+  echo ">> Signing the first install out from the fresh one"
+  key=$(fresh other-device "$den_id")
+  started=$(date +%s%3N)
+  fresh revoke "$den_id" "$key"
+  reason=$(guest "$CLIENT" wait-out revoked)
+  took=$(( $(date +%s%3N) - started ))
+  [[ "$reason" == "This device was signed out of this den. Sign in again with your den password." ]] ||
+    { echo "error: the first install was told: $reason" >&2; return 1; }
+  (( took < 5000 )) || { echo "error: signing out took ${took} ms to reach the first install" >&2; return 1; }
+  guest "$CLIENT" sign-in https://den.test bob "new bob password"
+  guest "$CLIENT" wait-connected 0 >/dev/null
+  echo ">> The first install was signed out within ${took} ms, and signed in again"
+
   echo ">> Banning the member"
-  local started took reason refusal
   guest "$CLIENT" status
   echo
   started=$(date +%s%3N)
   guest "$DEN" ban "$den_id" "$bob"
-  reason=$(guest "$CLIENT" wait-removed)
+  reason=$(guest "$CLIENT" wait-out removed)
   took=$(( $(date +%s%3N) - started ))
   [[ "$reason" == "You were banned from this den." ]] || { echo "error: the member was told: $reason" >&2; return 1; }
-  # The limit covers two container execs; the den closes the socket itself
-  # within milliseconds.
   (( took < 5000 )) || { echo "error: the ban took ${took} ms to reach the member" >&2; return 1; }
-  echo ">> The ban closed the member's connection within ${took} ms"
+  reason=$(fresh wait-out removed)
+  [[ "$reason" == "You were banned from this den." ]] || { echo "error: the fresh install was told: $reason" >&2; return 1; }
+  echo ">> The ban closed the member's connections within ${took} ms"
   invite=$(guest "$DEN" invite "$den_id")
   refusal=$(guest "$CLIENT" join-refused "$invite")
   [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }

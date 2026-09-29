@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,7 +156,14 @@ func (h *denHost) own() denclient.OwnDen {
 // reaches example.com at the den's public server.
 func (h *denHost) client(t *testing.T, own denclient.OwnDen) *denclient.Manager {
 	t.Helper()
-	s := newStore(t)
+	m, _ := h.clientFrom(t, newStore(t), own)
+	return m
+}
+
+// clientFrom starts a Manager on an install's store, as the service does
+// at every start, and returns a function that stops it.
+func (h *denHost) clientFrom(t *testing.T, s store, own denclient.OwnDen) (*denclient.Manager, func()) {
+	t.Helper()
 	m := denclient.New(s.db, s.v, s.log, "dens-test", own)
 	public := h.public
 	transport := public.Client().Transport.(*http.Transport).Clone()
@@ -178,8 +186,10 @@ func (h *denHost) client(t *testing.T, own denclient.OwnDen) *denclient.Manager 
 			t.Error(err)
 		}
 	}()
-	t.Cleanup(func() { cancel(); <-done })
-	return m
+	var once sync.Once
+	stop := func() { once.Do(func() { cancel(); <-done }) }
+	t.Cleanup(stop)
+	return m, stop
 }
 
 func noOwnDen() (denproto.Den, string, bool) { return denproto.Den{}, "", false }

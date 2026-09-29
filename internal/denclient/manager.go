@@ -14,6 +14,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -189,7 +190,7 @@ func (m *Manager) Run(ctx context.Context) error {
 func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time) {
 	ctx, stop := context.WithCancel(m.ctx)
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
-		stop: stop, done: make(chan struct{})}
+		stop: stop, done: make(chan struct{}), wake: make(chan struct{}, 1)}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
@@ -225,7 +226,7 @@ func (m *Manager) apiFor(denID []byte, url string) (a *api, own bool) {
 	if info, loopback, ok := m.own(); ok && denproto.Equal(info.ID, denID) {
 		base, own = loopback, true
 	}
-	return &api{base: base, client: m.HTTP, agent: m.agent}, own
+	return &api{base: base, client: m.HTTP, agent: m.agent, own: own}, own
 }
 
 // Watch returns a channel that receives after any den's status changes,
@@ -283,7 +284,8 @@ func (m *Manager) Preview(ctx context.Context, invite string) (denproto.Den, err
 		return denproto.Den{}, inputError(err)
 	}
 	a, _ := m.apiFor(inv.DenID, inv.URL)
-	if _, err := a.challenge(ctx, inv.DenID); err != nil {
+	a, _, _, err = a.reach(ctx, inv.DenID)
+	if err != nil {
 		return denproto.Den{}, err
 	}
 	return preview(ctx, a, inv.DenID, inv.Code)
@@ -366,9 +368,13 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 	}
 
 	a, _ := m.apiFor(denID, url)
-	nonce, err := a.challenge(ctx, denID)
+	// An invite made before the den moved leads to where it is now.
+	a, nonce, _, err := a.reach(ctx, denID)
 	if err != nil {
 		return Status{}, nil, err
+	}
+	if !a.own {
+		url = a.base
 	}
 	info, err := preview(ctx, a, denID, code)
 	if err != nil {
@@ -461,8 +467,35 @@ func (m *Manager) CheckAddress(ctx context.Context, denID string) error {
 		return err
 	}
 	a := &api{base: c.status().URL, client: m.HTTP, agent: m.agent}
-	_, err = a.challenge(ctx, c.j.denID)
+	_, _, err = a.challenge(ctx, c.j.denID)
 	return err
+}
+
+// Relocate gives a den a new address, for one that moved while this
+// install was away and whose old address no longer answers. The den must
+// prove its pinned identity there, and sign that address, before this
+// install uses it.
+func (m *Manager) Relocate(ctx context.Context, denID, address string) (Status, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return Status{}, err
+	}
+	if c.own {
+		return Status{}, inputError(errors.New("this computer hosts that den, and reaches it without an address"))
+	}
+	url, err := denproto.NormalizeDenURL(strings.TrimSpace(address))
+	if err != nil {
+		return Status{}, inputError(errors.New("enter the den's address, such as https://den.example.com"))
+	}
+	a := &api{base: url, client: m.HTTP, agent: m.agent}
+	if a, _, _, err = a.reach(ctx, c.j.denID); err != nil {
+		return Status{}, err
+	}
+	if err := c.moveTo(ctx, a); err != nil {
+		return Status{}, err
+	}
+	c.poke()
+	return c.status(), nil
 }
 
 // UpdateDen changes the name, address or upload limits of a den this

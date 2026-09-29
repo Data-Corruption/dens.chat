@@ -3,15 +3,17 @@
 # Runs inside a den e2e container as root, one step per call; see
 # test-den-e2e.sh for the flow. The desktop user is alice, and every call to
 # the local API goes through her paired browser session (a cookie jar).
+# INSTANCE and PORT pick another instance on the machine than main on 8484.
 
 set -eu
 
-JAR=/root/cookies
-BASE=http://127.0.0.1:8484
+INSTANCE=${INSTANCE:-main}
+JAR=/root/cookies-$INSTANCE
+BASE=http://127.0.0.1:${PORT:-8484}
 
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
-    for unit in dens@main caddy-e2e; do
+    for unit in "dens@$INSTANCE" caddy-e2e; do
         systemctl status "$unit" --no-pager 2>/dev/null | head -n 15 >&2 || :
         journalctl -u "$unit" -b --no-pager -o cat 2>/dev/null | tail -n 30 >&2 || :
     done
@@ -65,7 +67,7 @@ install)
         sh /release/install.sh "$@"
     ;;
 pair)
-    url=$(runuser -u alice -- dens open --print)
+    url=$(runuser -u alice -- dens open --print --instance "$INSTANCE")
     api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
     api POST /api/password '{"password":"local password"}' >/dev/null
     ;;
@@ -117,10 +119,53 @@ invite)
     api POST "/api/dens/$1/invites" '{"expires_in":3600,"max_uses":1}' | json 'd["invite"]'
     ;;
 join)
+    # join INVITE: join as bob; print the role, and keep the recovery codes.
     name=$(api POST /api/dens/preview "{\"invite\":\"$1\"}" | json 'd["den"]["name"]')
     [ "$name" = "E2E Den" ] || fail "the preview named the den $name"
-    api POST /api/dens/join "{\"invite\":\"$1\",\"username\":\"bob\",\"display_name\":\"Bob\",\"password\":\"bob password\"}" |
-        json 'd["den"]["role"]'
+    api POST /api/dens/join "{\"invite\":\"$1\",\"username\":\"bob\",\"display_name\":\"Bob\",\"password\":\"bob password\"}" \
+        > /root/join.json
+    json 'd["den"]["role"] if len(d["recovery_codes"]) == 10 else "no codes"' < /root/join.json
+    ;;
+code)
+    # code N: print the Nth recovery code from joining.
+    json "d['recovery_codes'][$1]" < /root/join.json
+    ;;
+fingerprint)
+    # fingerprint: print the only den's ID as the page shows it.
+    api GET /api/dens | json 'd["dens"][0]["fingerprint"]'
+    ;;
+recover)
+    # recover DEN USERNAME CODE PASSWORD: sign this instance in to a den it's
+    # new to with a recovery code, which sets a new password; print how many
+    # codes are left, how many other devices it signed out, and the den's ID
+    # as the page shows it.
+    api POST /api/dens/signin "{\"den\":\"$1\",\"username\":\"$2\",\"recovery_code\":\"$3\",\"password\":\"$4\"}" |
+        json '"%d %d %s" % (d["recovery_codes_left"], d["signed_out"], d["den"]["fingerprint"])'
+    ;;
+sign-in)
+    # sign-in DEN USERNAME PASSWORD: sign this instance in with the den
+    # password.
+    api POST /api/dens/signin "{\"den\":\"$1\",\"username\":\"$2\",\"password\":\"$3\"}" >/dev/null
+    ;;
+sign-in-refused)
+    # sign-in-refused DEN USERNAME PASSWORD: print why signing in failed.
+    status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \
+        -d "{\"den\":\"$1\",\"username\":\"$2\",\"password\":\"$3\"}" \
+        -o /root/signin.json -w '%{http_code}' "$BASE/api/dens/signin")
+    [ "$status" -ge 400 ] || fail "signing in was accepted"
+    json 'd["error"]' < /root/signin.json
+    ;;
+other-device)
+    # other-device DEN_ID: print the key ID of this member's other device,
+    # failing unless they have exactly two.
+    key=$(api GET "/api/dens/$1/devices" |
+        json '[x["key_id"] for x in d["devices"] if not x.get("current")][0] if len(d["devices"]) == 2 else ""')
+    [ -n "$key" ] || fail "the member doesn't have exactly two devices"
+    printf '%s\n' "$key"
+    ;;
+revoke)
+    # revoke DEN_ID KEY_ID: sign one of this member's devices out.
+    api DELETE "/api/dens/$1/devices/$2" >/dev/null
     ;;
 wait-connected)
     # wait-connected SINCE: wait until the only den is connected, with a
@@ -189,16 +234,16 @@ ban)
     # ban DEN_ID MEMBER_ID: remove a member and keep them out.
     api POST "/api/dens/$1/members/$2/remove" '{"ban":true}' >/dev/null
     ;;
-wait-removed)
-    # wait-removed: wait until the only den has closed this member out;
-    # print the reason it gives.
+wait-out)
+    # wait-out STATE: wait until the only den has closed this device out,
+    # as revoked or removed; print the reason it gives.
     for _ in $(seq 1 100); do
-        reason=$(api GET /api/dens | json 'd["dens"][0]["error"] if d["dens"][0]["state"] == "removed" else ""')
+        reason=$(api GET /api/dens | json 'd["dens"][0]["error"] if d["dens"][0]["state"] == "'"$1"'" else ""')
         [ -n "$reason" ] && { printf '%s\n' "$reason"; exit 0; }
         sleep 0.1
     done
     api GET /api/dens >&2
-    fail "the den never closed this member out"
+    fail "the den never closed this device out as $1"
     ;;
 upload)
     # upload DEN_ID FILE NAME: upload a file as the page does; print its ID,

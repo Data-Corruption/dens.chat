@@ -102,6 +102,10 @@ function ChangePassword() {
 
     return (
         <Card title="Local password">
+            <p class="text-sm text-base-content/70">
+                It protects Dens on this computer: its backups, and the keys it holds for every den. It isn't a den password, which
+                signs you in to one den on a new device.
+            </p>
             <form class="flex flex-col gap-2" onSubmit={submit}>
                 <Field label="Current password">
                     <TextInput type="password" value={current} onInput={setCurrent} autocomplete="current-password" required />

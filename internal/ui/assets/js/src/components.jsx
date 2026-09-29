@@ -43,6 +43,11 @@ export function useLater(active, ms) {
 
 // Waiting is a spinner that says what it waits for once it has taken a
 // while, so a slow start doesn't look like a hang.
+// day shows a time as a date, in the reader's locale.
+export function day(ms) {
+    return new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+
 export function Waiting({ label }) {
     const slow = useLater(true, 1500);
     return (

@@ -30,9 +30,11 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Delete("/api/dens/{den}/invites/{invite}", rt.handleRevokeInvite)
 	r.Post("/api/dens/{den}/settings", rt.handleDenSettings)
 	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
+	r.Post("/api/dens/{den}/address", rt.handleAddress)
 	rt.mountChat(r)
 	rt.mountMembers(r)
 	rt.mountFiles(r)
+	rt.mountDevices(r)
 }
 
 // hosting describes the den this install hosts, if the den role is on.
@@ -334,6 +336,26 @@ func (rt *router) handleCheckAddress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// handleAddress gives a den that moved its new address.
+func (rt *router) handleAddress(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		URL string `json:"url"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	status, err := rt.a.Dens.Relocate(r.Context(), chi.URLParam(r, "den"), body.URL)
+	if errors.Is(err, denproto.ErrWrongIdentity) {
+		jsonError(w, http.StatusBadGateway, "The server at that address can't prove it is this den.")
+		return
+	}
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, status)
+}
+
 func jsonError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -345,6 +367,7 @@ func jsonError(w http.ResponseWriter, status int, msg string) {
 // messages are never shown verbatim: dens are other people's servers.
 func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 	var input *denclient.InputError
+	var moved *denclient.MovedError
 	var perr *denproto.Error
 	var netErr net.Error
 	var urlErr *url.Error
@@ -352,13 +375,15 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &input):
 		jsonError(w, http.StatusBadRequest, input.Error())
 	case errors.Is(err, denclient.ErrAlreadyJoined):
-		jsonError(w, http.StatusConflict, "You've already joined this den.")
+		jsonError(w, http.StatusConflict, "You're already in this den on this computer.")
 	case errors.Is(err, denclient.ErrUnknownDen):
 		jsonError(w, http.StatusNotFound, "You haven't joined that den.")
 	case errors.Is(err, denclient.ErrNotStarted):
 		jsonError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, denclient.ErrTooLarge):
 		jsonError(w, http.StatusRequestEntityTooLarge, "This file is larger than this den allows.")
+	case errors.As(err, &moved):
+		jsonError(w, http.StatusBadGateway, "This den moved to "+moved.URL+", which can't be reached from here right now.")
 	case errors.Is(err, denproto.ErrWrongIdentity):
 		rt.a.Log.Warnf("den identity check failed: %v", err)
 		jsonError(w, http.StatusBadGateway, "This server can't prove it is the den the invite was made for. "+
@@ -400,6 +425,11 @@ func denMessage(e *denproto.Error) string {
 		return "You've used all the upload space this den gives each member. Deleting messages with files makes room."
 	case denproto.CodeDenFull:
 		return "This den is out of space for uploads. Its owner can make room."
+	case denproto.CodeWrongPassword:
+		return "That password or recovery code isn't right."
+	}
+	if msg, ok := denclient.ExplainStatus(e); ok {
+		return msg
 	}
 	return "The den refused the request (" + e.Code + ")."
 }
