@@ -163,6 +163,24 @@ run() {
   history=$(guest "$CLIENT" history "$den_id" "$dm")
   [[ "$history" == "a private word" ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
 
+  echo ">> A phone photo with GPS data, through Caddy"
+  local upload file stripped size preview kind stored
+  "${INCUS[@]}" file push -q scripts/test/gps-photo.jpg "$CLIENT/root/gps-photo.jpg"
+  upload=$(guest "$CLIENT" upload "$den_id" /root/gps-photo.jpg IMG_0001.jpg)
+  read -r file stripped size preview <<<"$upload"
+  # Orientation 6 turns the 400x300 photo a quarter: it shows 300x400.
+  [[ "$stripped $size $preview" == "true 300x400 preview" ]] || { echo "error: the upload came back as: $upload" >&2; return 1; }
+  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/photo.jpg)
+  [[ "$kind" == image/jpeg ]] || { echo "error: the photo came as $kind" >&2; return 1; }
+  [[ "$(guest "$DEN" jpeg /root/photo.jpg)" == "400x300 JFIF,orientation 6" ]] ||
+    { echo "error: the photo arrived as: $(guest "$DEN" jpeg /root/photo.jpg)" >&2; return 1; }
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/preview.jpg thumb)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/preview.jpg)" == "300x400 nothing" ]] ||
+    { echo "error: the preview is $kind $(guest "$DEN" jpeg /root/preview.jpg)" >&2; return 1; }
+  stored=$(guest "$DEN" sealed)
+  echo ">> The photo arrived stripped, upright and with a preview; the den holds ${stored} sealed files"
+
   echo ">> Banning the member"
   local started took reason refusal
   guest "$CLIENT" status

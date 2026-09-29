@@ -1,8 +1,8 @@
 #Requires -Version 5.1
 <#
-Den e2e on Windows: an instance joins a den through Caddy, chats, and
-stays connected across a den restart; then a ban shuts it out. Both ends
-run on one machine.
+Den e2e on Windows: an instance joins a den through Caddy, chats, sends a
+photo, and stays connected across a den restart; then a ban shuts it out.
+Both ends run on one machine.
 
 Instance main hosts the den. Caddy runs as a Windows service (it supports
 the Service Control Manager natively) and serves https://den.test with its
@@ -10,8 +10,10 @@ internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
 second must reconnect and see the whole history. The owner then sends a
-DM and bans second's member, whose connection must close at once and who
-can't join again under the same name.
+DM, the member sends a phone photo with GPS data, which must reach the
+owner without it, and the owner bans second's member, whose connection must
+close at once and who can't join again under the same name. The photo is
+scripts\test\gps-photo.jpg, next to this script.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
@@ -322,6 +324,38 @@ den.test:$HttpsPort {
     }
     $history = Get-History $member $denID $dm
     if ($history -ne "a private word") { Fail "the member's DM reads: $history" }
+
+    Step "a phone photo with GPS data"
+    $photo = Join-Path $PSScriptRoot "test\gps-photo.jpg"
+    try {
+        $upload = Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/uploads" -Method POST -WebSession $member.Session `
+            -UseBasicParsing -Headers @{ Origin = $member.Origin; "Dens-Filename" = "IMG_0001.jpg" } `
+            -ContentType "application/octet-stream" -InFile $photo -TimeoutSec 60
+    } catch {
+        Fail "the upload failed: $($_.ErrorDetails.Message) $($_.Exception.Message)"
+    }
+    $file = $upload.Content | ConvertFrom-Json
+    # Orientation 6 turns the 400x300 photo a quarter: it shows 300x400.
+    if (-not $file.stripped -or $file.width -ne 300 -or $file.height -ne 400 -or -not $file.thumb) {
+        Fail "the upload came back as $($upload.Content)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $latin1 = [Text.Encoding]::GetEncoding(28591)
+    foreach ($variant in @("", "/thumb")) {
+        $got = Join-Path $Work "photo.jpg"
+        $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$variant" -WebSession $owner.Session `
+            -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+        if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the photo$variant came as $($resp.Headers['Content-Type'])" }
+        $text = $latin1.GetString([IO.File]::ReadAllBytes($got))
+        foreach ($marker in @("TestPhone", "GPSLatitude", "Taken at home", "ns.adobe.com")) {
+            if ($text.Contains($marker)) { Fail "the photo$variant arrived with '$marker'" }
+        }
+    }
+    $stored = @(Get-ChildItem -File (Join-Path $DataRoot "main\data\uploads"))
+    foreach ($f in $stored) {
+        if ($latin1.GetString([IO.File]::ReadAllBytes($f.FullName)).Contains("JFIF")) { Fail "$($f.Name) is stored in the clear" }
+    }
+    Write-Host "The photo arrived stripped, with a preview; the den holds $($stored.Count) sealed files."
 
     Step "ban the member"
     $started = Get-Date
