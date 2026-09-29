@@ -1,8 +1,9 @@
 #Requires -Version 5.1
 <#
 Den e2e on Windows: an instance joins a den through Caddy, chats, sends a
-photo, and stays connected across a den restart; then a ban shuts it out.
-Both ends run on one machine.
+photo, and stays connected across a den restart; the member recovers their
+account on a fresh instance and signs the old one out; then a ban shuts
+them out. Every end runs on one machine.
 
 Instance main hosts the den. Caddy runs as a Windows service (it supports
 the Service Control Manager natively) and serves https://den.test with its
@@ -10,9 +11,13 @@ internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
 second must reconnect and see the whole history. The owner then sends a
-DM, the member sends a phone photo with GPS data, which must reach the
-owner without it, and the owner bans second's member, whose connection must
-close at once and who can't join again under the same name. The photo is
+DM, and the member sends a phone photo with GPS data, which must reach the
+owner without it. Instance fresh stands in for the member's new machine: it
+signs in by the den's address with a recovery code, whose new password must
+sign second out at once. Signed in again with it, second is signed out once
+more from fresh's device list. The owner then bans the member, whose
+connections must close at once and who can't join again under the same
+name. The photo is
 scripts\test\gps-photo.jpg, next to this script.
 
 It installs real services and changes the machine's certificate store and
@@ -22,9 +27,9 @@ is installed. From an elevated PowerShell:
   bash scripts/vendor.sh caddy-windows
   powershell -ExecutionPolicy Bypass -File scripts\test-den-e2e.ps1 -ReleaseDir out\windows-e2e -CaddyZip tools\caddy_2.11.4_windows_amd64.zip
 
--ClientPort and -SecondClientPort move the instances' client ports off 8484
-and 18484 where those are taken. -KeepOnFailure leaves a failed setup in
-place for inspection.
+-ClientPort, -SecondClientPort and -FreshClientPort move the instances'
+client ports off 8484, 18484 and 18486 where those are taken.
+-KeepOnFailure leaves a failed setup in place for inspection.
 #>
 [CmdletBinding()]
 param(
@@ -32,6 +37,7 @@ param(
     [Parameter(Mandatory = $true)][string]$CaddyZip,
     [int]$ClientPort = 8484,
     [int]$SecondClientPort = 18484,
+    [int]$FreshClientPort = 18486,
     [int]$HttpsPort = 18443,
     [int]$HttpPort = 18080,
     [switch]$KeepOnFailure
@@ -128,6 +134,32 @@ function Invoke-Api {
     return $null
 }
 
+# Wait-Out waits until the instance's only den has closed it out, as
+# revoked or removed, and returns the reason it gives and how long it took.
+function Wait-Out($Browser, [string]$State, [datetime]$Started) {
+    while (((Get-Date) - $Started).TotalSeconds -lt 10) {
+        $den = @((Invoke-Api $Browser GET "/api/dens").dens)[0]
+        if ($den.state -eq $State) {
+            return [pscustomobject]@{ Reason = $den.error; Took = [int]((Get-Date) - $Started).TotalMilliseconds }
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    Write-Host ((Invoke-Api $Browser GET "/api/dens") | ConvertTo-Json -Depth 5)
+    Fail "the den never closed $($Browser.Origin) out as $State"
+}
+
+# Invoke-Refused makes a request that must fail, and returns why.
+function Invoke-Refused($Browser, [string]$Path, $Body) {
+    try {
+        Invoke-WebRequest -Uri "$($Browser.Origin)$Path" -Method POST -WebSession $Browser.Session -UseBasicParsing `
+            -Headers @{ Origin = $Browser.Origin } -ContentType "application/json" -Body ($Body | ConvertTo-Json -Compress) `
+            -TimeoutSec 60 | Out-Null
+    } catch {
+        return "$($_.ErrorDetails.Message)"
+    }
+    Fail "POST $Path was accepted"
+}
+
 # Wait-Connected waits until the instance's only den is connected with a
 # state newer than $After (ms), and returns when it connected.
 function Wait-Connected($Browser, [long]$After) {
@@ -175,7 +207,7 @@ function Test-Installed {
 }
 
 function Show-Diagnostics {
-    foreach ($instance in @("main", "second")) {
+    foreach ($instance in @("main", "second", "fresh")) {
         $log = Join-Path $DataRoot "$instance\data\logs\latest.log"
         if (Test-Path -LiteralPath $log) {
             Write-Host "--- $log"
@@ -191,7 +223,7 @@ function Show-Diagnostics {
 
 function Remove-Setup {
     if (Test-Path -LiteralPath $Dens) {
-        foreach ($instance in @("second", "main")) {
+        foreach ($instance in @("fresh", "second", "main")) {
             if (Test-Path -LiteralPath (Join-Path $DataRoot $instance)) {
                 Invoke-Native -FilePath $Dens -Arguments @("uninstall", "--instance", $instance, "--yes") -AllowFailure | Out-Null
             }
@@ -357,29 +389,56 @@ den.test:$HttpsPort {
     }
     Write-Host "The photo arrived stripped, with a preview; the den holds $($stored.Count) sealed files."
 
+    Step "recover the member's account on instance fresh"
+    Invoke-Installer (@("-Instance", "fresh", "-ClientPort", $FreshClientPort) + $userArgs)
+    $fresh = New-Browser "fresh" $FreshClientPort
+    $started = Get-Date
+    # By address, as someone with no invite would, and in the wrong case.
+    $recovered = Invoke-Api $fresh POST "/api/dens/signin" @{
+        den = $DenURL; username = "Bob"; recovery_code = @($joined.recovery_codes)[0]; password = "new bob password"
+    }
+    if ($recovered.recovery_codes_left -ne 9 -or $recovered.signed_out -ne 1) {
+        Fail "recovering left $($recovered.recovery_codes_left) codes and signed out $($recovered.signed_out) devices"
+    }
+    $ownerDen = @((Invoke-Api $owner GET "/api/dens").dens)[0]
+    if ($recovered.den.fingerprint -ne $ownerDen.fingerprint) { Fail "instance fresh found den $($recovered.den.fingerprint), not the owner's" }
+    $out = Wait-Out $member "revoked" $started
+    if (-not $out.Reason.StartsWith("Your den password was changed on another device")) { Fail "instance second was told: '$($out.Reason)'" }
+    if ($out.Took -gt 5000) { Fail "the new password took $($out.Took) ms to sign instance second out" }
+    Wait-Connected $fresh 0 | Out-Null
+    Write-Host "Instance fresh signed in with a recovery code, shows the owner's den ID, and signed second out within $($out.Took) ms."
+    $refused = Invoke-Refused $member "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "bob password" }
+    if ($refused -notmatch "don't match") { Fail "signing in with the old password: $refused" }
+    Invoke-Api $member POST "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "new bob password" } | Out-Null
+    Wait-Connected $member 0 | Out-Null
+    Write-Host "The old password is gone, and the new one signs instance second in again."
+
+    Step "sign instance second out from instance fresh"
+    $devices = @((Invoke-Api $fresh GET "/api/dens/$denID/devices").devices)
+    if ($devices.Count -ne 2) { Fail "the member has $($devices.Count) devices" }
+    $old = @($devices | Where-Object { -not $_.PSObject.Properties["current"] -or -not $_.current })[0]
+    $started = Get-Date
+    Invoke-Api $fresh DELETE "/api/dens/$denID/devices/$($old.key_id)" | Out-Null
+    $out = Wait-Out $member "revoked" $started
+    if ($out.Reason -ne "This device was signed out of this den. Sign in again with your den password.") {
+        Fail "instance second was told: '$($out.Reason)'"
+    }
+    if ($out.Took -gt 5000) { Fail "signing out took $($out.Took) ms to reach instance second" }
+    Invoke-Api $member POST "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "new bob password" } | Out-Null
+    Wait-Connected $member 0 | Out-Null
+    Write-Host "Instance second was signed out within $($out.Took) ms, and signed in again."
+
     Step "ban the member"
     $started = Get-Date
     Invoke-Api $owner POST "/api/dens/$denID/members/$bob/remove" @{ ban = $true } | Out-Null
-    $reason = ""
-    while (((Get-Date) - $started).TotalSeconds -lt 10) {
-        $den = @((Invoke-Api $member GET "/api/dens").dens)[0]
-        if ($den.state -eq "removed") { $reason = $den.error; break }
-        Start-Sleep -Milliseconds 100
-    }
-    $took = [int]((Get-Date) - $started).TotalMilliseconds
-    if ($reason -ne "You were banned from this den.") { Fail "after $took ms the member was told: '$reason'" }
-    if ($took -gt 5000) { Fail "the ban took $took ms to reach the member" }
-    Write-Host "The ban closed the member's connection within $took ms."
+    $out = Wait-Out $member "removed" $started
+    if ($out.Reason -ne "You were banned from this den.") { Fail "after $($out.Took) ms the member was told: '$($out.Reason)'" }
+    if ($out.Took -gt 5000) { Fail "the ban took $($out.Took) ms to reach the member" }
+    $freshOut = Wait-Out $fresh "removed" $started
+    if ($freshOut.Reason -ne "You were banned from this den.") { Fail "instance fresh was told: '$($freshOut.Reason)'" }
+    Write-Host "The ban closed the member's connections within $($out.Took) ms."
     $invite = (Invoke-Api $owner POST "/api/dens/$denID/invites" @{ expires_in = 3600; max_uses = 1 }).invite
-    $refused = $null
-    try {
-        $body = @{ invite = $invite; username = "bob"; display_name = "Bob"; password = "bob password" } | ConvertTo-Json -Compress
-        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/join" -Method POST -WebSession $member.Session -UseBasicParsing `
-            -Headers @{ Origin = $member.Origin } -ContentType "application/json" -Body $body -TimeoutSec 60 | Out-Null
-    } catch {
-        $refused = "$($_.ErrorDetails.Message)"
-    }
-    if ($null -eq $refused) { Fail "joining again after the ban was accepted" }
+    $refused = Invoke-Refused $member "/api/dens/join" @{ invite = $invite; username = "bob"; display_name = "Bob"; password = "bob password" }
     if ($refused -notmatch "banned") { Fail "rejoining after the ban: $refused" }
     Write-Host "The banned member can't come back as bob."
     $passed = $true
