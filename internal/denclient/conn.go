@@ -29,8 +29,10 @@ const (
 )
 
 // Status describes a joined den and its connection, for the page.
+// Fingerprint is the start of the den's ID, for members to compare.
 type Status struct {
 	DenID       string `json:"den_id"`
+	Fingerprint string `json:"fingerprint"`
 	Name        string `json:"name"`
 	URL         string `json:"url"`
 	Username    string `json:"username"`
@@ -69,6 +71,7 @@ type conn struct {
 
 	stop context.CancelFunc // ends run, when the den is forgotten
 	done chan struct{}      // closed when run has returned
+	wake chan struct{}      // cuts a wait between reconnects short
 
 	// Only the run goroutine touches these.
 	epoch string
@@ -79,7 +82,7 @@ func (c *conn) status() Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return Status{
-		DenID: c.j.denID.String(), Name: c.profile.Name, URL: c.profile.URL,
+		DenID: c.j.denID.String(), Fingerprint: denproto.Fingerprint(c.j.denID), Name: c.profile.Name, URL: c.profile.URL,
 		Username: c.profile.Member.Username, DisplayName: c.profile.Member.DisplayName, Role: c.profile.Member.Role,
 		Own: c.own, State: c.state, Error: c.errMsg, Since: c.since.UnixMilli(),
 	}
@@ -110,7 +113,7 @@ func (c *conn) run(ctx context.Context) {
 				return
 			}
 			c.setState(StateOffline, describe(err))
-			sleep(ctx, b.next())
+			c.pause(ctx, b.next())
 			continue
 		}
 		connectedAt, code, err := c.stream(ctx)
@@ -140,7 +143,27 @@ func (c *conn) run(ctx context.Context) {
 			wait = b.next()
 		}
 		c.setState(StateOffline, msg)
-		sleep(ctx, wait)
+		c.pause(ctx, wait)
+	}
+}
+
+// pause waits between reconnects, or until poked.
+func (c *conn) pause(ctx context.Context, d time.Duration) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	case <-c.wake:
+	}
+}
+
+// poke has the den reconnect now rather than after its backoff, as when
+// the member gives it a new address.
+func (c *conn) poke() {
+	select {
+	case c.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -155,9 +178,14 @@ func farewell(err error) (State, string) {
 			return StateRemoved, "You were removed from this den."
 		case denproto.CloseReasonLeft:
 			return StateRemoved, "You left this den."
+		case denproto.CloseReasonKeyRevoked:
+			return StateRevoked, "This device was signed out of this den. Sign in again with your den password."
+		case denproto.CloseReasonPasswordChanged:
+			return StateRevoked, "Your den password was changed on another device, which signed this one out. " +
+				"Sign in again with the new password; if you didn't change it, use a recovery code."
 		}
 	}
-	return StateRevoked, "This den no longer accepts this device."
+	return StateRevoked, "This den no longer accepts this device. Sign in again with your den password."
 }
 
 func revoked(err error) bool {
@@ -169,6 +197,10 @@ func describe(err error) string {
 	if err == nil {
 		return ""
 	}
+	var moved *MovedError
+	if errors.As(err, &moved) {
+		return "The den moved to " + moved.URL + ". " + describe(moved.Err)
+	}
 	var perr *denproto.Error
 	if errors.As(err, &perr) {
 		switch perr.Code {
@@ -178,6 +210,9 @@ func describe(err error) string {
 			return "The den asked us to slow down."
 		case denproto.CodeDenNotCreated:
 			return "The den isn't set up yet."
+		}
+		if msg, ok := ExplainStatus(perr); ok {
+			return msg
 		}
 		return "The den refused the connection (" + perr.Code + ")."
 	}
@@ -206,13 +241,13 @@ func (c *conn) session(ctx context.Context) (denproto.Bytes, error) {
 	if t := valid(); t != nil {
 		return t, nil
 	}
-	nonce, err := c.api.challenge(ctx, c.j.denID)
+	a, nonce, err := c.challenge(ctx)
 	if err != nil {
 		return nil, err
 	}
 	keyID := denproto.ID(c.j.key.Public())
 	var resp denproto.SessionResponse
-	err = c.api.call(ctx, http.MethodPost, "/api/auth/login", nil, denproto.LoginRequest{
+	err = a.call(ctx, http.MethodPost, "/api/auth/login", nil, denproto.LoginRequest{
 		KeyID: keyID, Nonce: nonce, Proof: c.j.key.Sign(denproto.ProofMessage(c.j.denID, keyID, nonce)),
 	}, &resp)
 	if err != nil {
@@ -243,6 +278,37 @@ func (c *conn) expiry() time.Time {
 	return c.expires
 }
 
+// remote is where the den is reached, which changes when it moves.
+func (c *conn) remote() *api {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.api
+}
+
+// challenge gets a nonce from the den, following it to a new address it
+// signs and keeping that address from then on.
+func (c *conn) challenge(ctx context.Context) (*api, denproto.Bytes, error) {
+	old := c.remote()
+	a, nonce, _, err := old.reach(ctx, c.j.denID)
+	if err != nil || a == old {
+		return a, nonce, err
+	}
+	return a, nonce, c.moveTo(ctx, a)
+}
+
+// moveTo keeps a den's new address, where it has just proven itself.
+func (c *conn) moveTo(ctx context.Context, a *api) error {
+	c.mu.Lock()
+	c.api = a
+	p := c.profile
+	p.URL = a.base
+	c.profile = p
+	c.mu.Unlock()
+	c.m.log.Infof("A den moved to a new address")
+	c.m.notify()
+	return updateProfile(ctx, c.m.db, c.m.v, c.j.denID, p)
+}
+
 // call makes an authenticated request, signing in again once if the den
 // no longer accepts the token.
 func (c *conn) call(ctx context.Context, method, path string, req, resp any) error {
@@ -250,13 +316,13 @@ func (c *conn) call(ctx context.Context, method, path string, req, resp any) err
 	if err != nil {
 		return err
 	}
-	err = c.api.call(ctx, method, path, token, req, resp)
+	err = c.remote().call(ctx, method, path, token, req, resp)
 	if denproto.IsCode(err, denproto.CodeUnauthorized) {
 		c.dropToken()
 		if token, err = c.session(ctx); err != nil {
 			return err
 		}
-		err = c.api.call(ctx, method, path, token, req, resp)
+		err = c.remote().call(ctx, method, path, token, req, resp)
 	}
 	return err
 }
@@ -268,14 +334,15 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	if err != nil {
 		return time.Time{}, -1, err
 	}
-	u := c.api.base + "/api/ws"
+	a := c.remote()
+	u := a.base + "/api/ws"
 	if c.epoch != "" {
 		u += "?resume=" + c.epoch + "." + strconv.FormatUint(c.seq, 10)
 	}
 	h := http.Header{}
-	c.api.headers(h, token)
+	a.headers(h, token)
 	c.setState(StateConnecting, "")
-	ws, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: c.api.client, HTTPHeader: h})
+	ws, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: a.client, HTTPHeader: h})
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return time.Time{}, -1, errDialUnauthorized
@@ -514,13 +581,28 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 		}
 	}
 	changed := p != c.profile
+	follow := !c.own && p.URL != c.api.base
 	c.profile = p
 	c.mu.Unlock()
+	if follow {
+		go c.follow(ctx, p.URL)
+	}
 	if !changed {
 		return nil
 	}
 	c.m.notify()
 	return updateProfile(ctx, c.m.db, c.m.v, c.j.denID, p)
+}
+
+// follow moves to the address the den announced once it proves itself
+// there, so this session's token stops going to the old one. If it can't
+// be reached yet, the den stays where it is, and the next challenge there
+// sends it on.
+func (c *conn) follow(ctx context.Context, url string) {
+	a := &api{base: url, client: c.m.HTTP, agent: c.m.agent}
+	if a, _, _, err := a.reach(ctx, c.j.denID); err == nil {
+		_ = c.moveTo(ctx, a)
+	}
 }
 
 func cleanMember(m denproto.Member) (denproto.Member, bool) {
@@ -575,7 +657,7 @@ func (c *conn) renew(ctx context.Context, ws *websocket.Conn) {
 			}
 			continue
 		}
-		if nonce, err := c.api.challenge(ctx, c.j.denID); err == nil {
+		if _, nonce, err := c.challenge(ctx); err == nil {
 			keyID := denproto.ID(c.j.key.Public())
 			e, _ := denproto.NewEvent(denproto.EventAuthRenew, 0, denproto.Renew{
 				Nonce: nonce, Proof: c.j.key.Sign(denproto.ProofMessage(c.j.denID, keyID, nonce)),

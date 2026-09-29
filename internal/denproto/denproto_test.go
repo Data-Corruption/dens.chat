@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -38,8 +39,9 @@ func TestSignedLayouts(t *testing.T) {
 	if !bytes.HasPrefix(proof, []byte("dens-auth-v1")) || len(proof) != len("dens-auth-v1")+3*32 {
 		t.Fatalf("proof message layout: %x", proof)
 	}
-	msg := DenChallengeMessage(keyID, nonce)
-	if !bytes.HasPrefix(msg, []byte("dens-den-v1")) || len(msg) != len("dens-den-v1")+64 {
+	msg := DenChallengeMessage(keyID, nonce, "https://den.test")
+	if !bytes.HasPrefix(msg, []byte("dens-den-v1")) || !bytes.HasSuffix(msg, []byte("https://den.test")) ||
+		len(msg) != len("dens-den-v1")+64+len("https://den.test") {
 		t.Fatalf("den challenge layout: %x", msg)
 	}
 }
@@ -47,16 +49,60 @@ func TestSignedLayouts(t *testing.T) {
 func TestVerifyDen(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	clientNonce, nonce := Random(NonceSize), Random(NonceSize)
-	resp := ChallengeResponse{Nonce: nonce, DenKey: Bytes(pub), DenSig: ed25519.Sign(priv, DenChallengeMessage(clientNonce, nonce))}
-	if err := VerifyDen(ID(pub), clientNonce, resp); err != nil {
+	answer := func(url string) ChallengeResponse {
+		return ChallengeResponse{Nonce: nonce, DenKey: Bytes(pub), URL: url, DenSig: ed25519.Sign(priv, DenChallengeMessage(clientNonce, nonce, url))}
+	}
+	resp := answer("https://den.test")
+	if id, err := VerifyDen(ID(pub), clientNonce, resp); err != nil || !bytes.Equal(id, ID(pub)) {
+		t.Fatal(err)
+	}
+	// Signing in by address pins nothing and learns the den's ID.
+	if id, err := VerifyDen(nil, clientNonce, resp); err != nil || !bytes.Equal(id, ID(pub)) {
 		t.Fatal(err)
 	}
 	other, _, _ := ed25519.GenerateKey(nil)
-	if VerifyDen(ID(other), clientNonce, resp) == nil {
+	if _, err := VerifyDen(ID(other), clientNonce, resp); err == nil {
 		t.Fatal("accepted a den whose key isn't the pinned one")
 	}
-	if VerifyDen(ID(pub), Random(NonceSize), resp) == nil {
+	if _, err := VerifyDen(ID(pub), Random(NonceSize), resp); err == nil {
 		t.Fatal("accepted a signature over another client nonce")
+	}
+	forged := resp
+	forged.URL = "https://old.test"
+	if _, err := VerifyDen(ID(pub), clientNonce, forged); err == nil {
+		t.Fatal("accepted a signature over another address")
+	}
+	if _, err := VerifyDen(ID(pub), clientNonce, answer("https://Den.Test/")); err == nil {
+		t.Fatal("accepted an address that isn't in its normal form")
+	}
+}
+
+// A relay at an old address passes on the den's answer, signed with the
+// den's own address, which doesn't match where the client reached it.
+func TestCheckDenURL(t *testing.T) {
+	if err := CheckDenURL("https://den.test", "https://DEN.test/"); err != nil {
+		t.Fatalf("the same address: %v", err)
+	}
+	var moved *MovedError
+	if err := CheckDenURL("https://new.test", "https://old.test"); !errors.As(err, &moved) || moved.URL != "https://new.test" {
+		t.Fatalf("another address: %v", err)
+	}
+	if err := CheckDenURL("https://den.test", "https://den.test:8443"); !errors.As(err, &moved) {
+		t.Fatalf("another port: %v", err)
+	}
+}
+
+func TestFingerprint(t *testing.T) {
+	id := bytes.Repeat([]byte{0xAB}, IDSize)
+	fp := Fingerprint(id)
+	if len(fp) != 19 || strings.Count(fp, "-") != 3 {
+		t.Fatalf("fingerprint %q", fp)
+	}
+	if code, err := ParseRecoveryCode(fp); err != nil || !bytes.Equal(code, id[:RecoveryCodeSize]) {
+		t.Fatalf("the fingerprint doesn't read back: %v", err)
+	}
+	if Fingerprint(nil) != "" {
+		t.Fatal("a missing ID has a fingerprint")
 	}
 }
 

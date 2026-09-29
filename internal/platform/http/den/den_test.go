@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -375,4 +376,84 @@ type zeros struct{}
 func (zeros) Read(p []byte) (int, error) {
 	clear(p)
 	return len(p), nil
+}
+
+// Revoking a device closes its sockets at once, and only its.
+// Signing a device out, by revoking its key or by changing the password,
+// closes its sockets at once with the reason, and the member's other
+// devices hear it's gone.
+func TestSigningOutClosesThatDevicesSockets(t *testing.T) {
+	for _, tc := range []struct {
+		reason  string
+		signOut func(d *dens.Den, s *dens.Session, laptop []byte, verifier denproto.Bytes) error
+	}{
+		{denproto.CloseReasonKeyRevoked, func(d *dens.Den, s *dens.Session, laptop []byte, _ denproto.Bytes) error {
+			return d.RevokeDevice(context.Background(), s, laptop)
+		}},
+		{denproto.CloseReasonPasswordChanged, func(d *dens.Den, s *dens.Session, _ []byte, verifier denproto.Bytes) error {
+			_, err := d.ChangePassword(context.Background(), s, denproto.PasswordChangeRequest{Verifier: verifier, NewVerifier: verifier})
+			return err
+		}},
+	} {
+		t.Run(tc.reason, func(t *testing.T) {
+			f := newFixture(t)
+			ctx := context.Background()
+			code, err := f.d.Create(ctx, "Den", "https://den.test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, _ := f.d.Info()
+			verifier := denproto.Verifier("password", info.ID, "alice")
+			signIn := func(key ed25519.PrivateKey) denproto.Bytes {
+				resp, err := f.d.Challenge(denproto.Random(denproto.NonceSize))
+				if err != nil {
+					t.Fatal(err)
+				}
+				pub := denproto.Bytes(key.Public().(ed25519.PublicKey))
+				proof := denproto.Prove(key, info.ID, resp.Nonce)
+				if code != nil {
+					joined, err := f.d.Join(ctx, denproto.JoinRequest{Invite: code, Username: "alice", DisplayName: "Alice", Verifier: verifier,
+						PublicKey: pub, DeviceLabel: "desktop", Nonce: resp.Nonce, Proof: proof})
+					if err != nil {
+						t.Fatal(err)
+					}
+					code = nil
+					return joined.Token
+				}
+				in, err := f.d.PasswordLogin(ctx, denproto.PasswordLoginRequest{Username: "alice", Verifier: verifier,
+					PublicKey: pub, DeviceLabel: "laptop", Nonce: resp.Nonce, Proof: proof})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return in.Token
+			}
+			_, desktopKey, _ := ed25519.GenerateKey(nil)
+			_, laptopKey, _ := ed25519.GenerateKey(nil)
+			desktopToken, laptopToken := signIn(desktopKey), signIn(laptopKey)
+			desktop, _ := f.dial(desktopToken, "")
+			laptop, _ := f.dial(laptopToken, "")
+			s, _ := f.d.Authenticate(ctx, desktopToken)
+			if err := tc.signOut(f.d, s, denproto.ID(laptopKey.Public().(ed25519.PublicKey)), verifier); err != nil {
+				t.Fatal(err)
+			}
+			rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			for {
+				_, _, err := laptop.Read(rctx)
+				if err == nil {
+					continue // the event about its own removal can come first
+				}
+				var ce websocket.CloseError
+				if !errors.As(err, &ce) || ce.Code != denproto.CloseRevoked || ce.Reason != tc.reason {
+					t.Fatalf("the laptop's socket ended with %v", err)
+				}
+				break
+			}
+			// The desktop hears that the laptop is gone, and stays connected.
+			events := read(t, desktop)
+			if len(events) != 1 || events[0].T != denproto.EventDeviceRemoved {
+				t.Fatalf("the desktop got %+v", events)
+			}
+		})
+	}
 }

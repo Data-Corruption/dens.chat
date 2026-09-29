@@ -114,12 +114,13 @@ func (m *Manager) Upload(ctx context.Context, denID, name string, size int64, bo
 	if err != nil {
 		return Uploaded{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.api.base+"/api/uploads", send)
+	a := c.remote()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.base+"/api/uploads", send)
 	if err != nil {
 		return Uploaded{}, err
 	}
 	req.ContentLength = length
-	c.api.headers(req.Header, token)
+	a.headers(req.Header, token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set(denproto.HeaderFilename, url.PathEscape(denproto.CleanFilename(name)))
 	res, err := m.Transfer.Do(req)
@@ -264,11 +265,12 @@ func (c *conn) transfer(ctx context.Context, path string) (*http.Response, error
 		if err != nil {
 			return nil, err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.api.base+path, nil)
+		a := c.remote()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.base+path, nil)
 		if err != nil {
 			return nil, err
 		}
-		c.api.headers(req.Header, token)
+		a.headers(req.Header, token)
 		res, err := c.m.Transfer.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("reach the den: %w", err)

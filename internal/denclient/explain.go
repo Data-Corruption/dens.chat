@@ -4,9 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"strings"
 
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 )
 
@@ -42,4 +45,17 @@ func Explain(err error) string {
 		return "The den didn't answer in time."
 	}
 	return "Can't reach the den. Check its address and your connection."
+}
+
+// ExplainStatus describes an answer at a den's address that isn't the
+// protocol's: a proxy with no den behind it, or a server that isn't a den.
+func ExplainStatus(e *denproto.Error) (string, bool) {
+	if !strings.HasPrefix(e.Code, "http_") {
+		return "", false
+	}
+	switch e.Status {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return fmt.Sprintf("Something answers at the den's address, but the den behind it doesn't (HTTP %d). It may be down or restarting.", e.Status), true
+	}
+	return fmt.Sprintf("The server at that address doesn't answer like a den (HTTP %d). Check the address.", e.Status), true
 }

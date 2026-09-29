@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,10 @@ type api struct {
 	base   string // scheme://host[:port], no trailing slash
 	client *http.Client
 	agent  string
+	// own is the den this install hosts, reached on loopback: it signs its
+	// public address, not the one it's reached at here, and nothing can
+	// sit between the two.
+	own bool
 }
 
 // call sends req (unless nil) as JSON and decodes the response into resp
@@ -75,16 +80,45 @@ func (a *api) headers(h http.Header, token denproto.Bytes) {
 	}
 }
 
-// challenge checks the den holds the identity key pinned as denID, and
-// returns a fresh nonce to prove a device key with.
-func (a *api) challenge(ctx context.Context, denID []byte) (denproto.Bytes, error) {
+// challenge checks that the den holds the identity key pinned as denID,
+// or any key when denID is nil, and that it answers at this address. It
+// returns a fresh nonce to prove a device key with, and the den's ID. A den
+// that signs another address returns its ID with a *denproto.MovedError,
+// and nothing more is sent here.
+func (a *api) challenge(ctx context.Context, denID []byte) (nonce, id denproto.Bytes, err error) {
 	clientNonce := denproto.Random(denproto.NonceSize)
 	var resp denproto.ChallengeResponse
 	if err := a.call(ctx, http.MethodPost, "/api/auth/challenge", nil, denproto.ChallengeRequest{ClientNonce: clientNonce}, &resp); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := denproto.VerifyDen(denID, clientNonce, resp); err != nil {
-		return nil, err
+	if id, err = denproto.VerifyDen(denID, clientNonce, resp); err != nil {
+		return nil, nil, err
 	}
-	return resp.Nonce, nil
+	if !a.own {
+		if err := denproto.CheckDenURL(resp.URL, a.base); err != nil {
+			return nil, id, err
+		}
+	}
+	return resp.Nonce, id, nil
+}
+
+// reach runs a challenge at a den's address. A den that signs another
+// address is followed there, once: it must prove the same key at the new
+// address, and answer there as itself, before anything more is sent. It
+// returns where the den answered, a nonce and the den's ID.
+func (a *api) reach(ctx context.Context, denID []byte) (*api, denproto.Bytes, denproto.Bytes, error) {
+	nonce, id, err := a.challenge(ctx, denID)
+	var moved *denproto.MovedError
+	if !errors.As(err, &moved) {
+		return a, nonce, id, err
+	}
+	next := &api{base: moved.URL, client: a.client, agent: a.agent}
+	nonce, _, err = next.challenge(ctx, id)
+	if errors.As(err, &moved) {
+		return nil, nil, nil, errors.New("the den gives one address at another, and then another")
+	}
+	if err != nil {
+		return nil, nil, nil, &MovedError{URL: next.base, Err: err}
+	}
+	return next, nonce, id, nil
 }

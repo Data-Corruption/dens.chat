@@ -25,10 +25,11 @@ const (
 
 // Reasons a den gives when it closes a member's sockets with CloseRevoked.
 const (
-	CloseReasonKeyRevoked = "key revoked"
-	CloseReasonRemoved    = "removed"
-	CloseReasonBanned     = "banned"
-	CloseReasonLeft       = "left"
+	CloseReasonKeyRevoked      = "key revoked"
+	CloseReasonPasswordChanged = "password changed" // the key was revoked by a new den password
+	CloseReasonRemoved         = "removed"
+	CloseReasonBanned          = "banned"
+	CloseReasonLeft            = "left"
 )
 
 // DeleteWindows are the spans of a removed member's recent messages the den

@@ -60,7 +60,7 @@ type Den struct {
 	nonces  map[string]time.Time
 
 	limits struct {
-		challenge, join, login, socket, write, send, typing, upload *limiter
+		challenge, join, login, socket, write, send, typing, upload, password, passwordName *limiter
 	}
 	sockets  *socketSet
 	presence *presence
@@ -104,6 +104,8 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	d.limits.send = newLimiter(5, time.Second, 100_000)
 	d.limits.typing = newLimiter(1, 2*time.Second, 100_000)
 	d.limits.upload = newLimiter(20, 3*time.Second, 100_000)
+	d.limits.password = newLimiter(10, 6*time.Minute, 100_000)
+	d.limits.passwordName = newLimiter(10, 6*time.Minute, 100_000)
 
 	var name, url string
 	var pub, sealed []byte
@@ -311,7 +313,8 @@ func (d *Den) Challenge(clientNonce []byte) (denproto.ChallengeResponse, error) 
 	return denproto.ChallengeResponse{
 		Nonce:  nonce,
 		DenKey: denproto.Bytes(d.key.Public()),
-		DenSig: d.key.Sign(denproto.DenChallengeMessage(clientNonce, nonce)),
+		DenSig: d.key.Sign(denproto.DenChallengeMessage(clientNonce, nonce, d.info.URL)),
+		URL:    d.info.URL,
 	}, nil
 }
 

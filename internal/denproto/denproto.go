@@ -64,6 +64,7 @@ const (
 	CodeProtocolUnsupported = "protocol_unsupported"
 	CodeRateLimited         = "rate_limited"
 	CodeDenNotCreated       = "den_not_created"
+	CodeWrongPassword       = "wrong_password"
 )
 
 // WebSocket close codes beyond the standard ones.
@@ -281,10 +282,13 @@ type ChallengeRequest struct {
 	ClientNonce Bytes `json:"client_nonce"`
 }
 
+// ChallengeResponse proves the den's identity key, and says where the den
+// is: URL is the den's own address, which the signature covers.
 type ChallengeResponse struct {
-	Nonce  Bytes `json:"nonce"`
-	DenKey Bytes `json:"den_key"`
-	DenSig Bytes `json:"den_sig"`
+	Nonce  Bytes  `json:"nonce"`
+	DenKey Bytes  `json:"den_key"`
+	DenSig Bytes  `json:"den_sig"`
+	URL    string `json:"url"`
 }
 
 type JoinPreviewRequest struct {

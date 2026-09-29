@@ -32,6 +32,7 @@ type closeRequest struct {
 
 type socket struct {
 	member    int64
+	keyID     []byte
 	tokenHash []byte
 	closeReq  chan closeRequest
 }
@@ -102,6 +103,11 @@ func (s *socketSet) closeSession(tokenHash []byte, code websocket.StatusCode, re
 	s.closeWhere(func(sock *socket) bool { return bytes.Equal(sock.tokenHash, tokenHash) }, code, reason)
 }
 
+// closeKey closes the sockets of every session a device key started.
+func (s *socketSet) closeKey(keyID []byte, code websocket.StatusCode, reason string) {
+	s.closeWhere(func(sock *socket) bool { return bytes.Equal(sock.keyID, keyID) }, code, reason)
+}
+
 // CloseMemberSockets closes a member's sockets with a code: 4003 when
 // their access ends, or 4008 to make them reconnect and resume.
 func (d *Den) CloseMemberSockets(member int64, code websocket.StatusCode, reason string) {
@@ -147,7 +153,7 @@ func parseResume(v string) (string, uint64) {
 
 // ServeSocket upgrades an authenticated request to the event stream.
 func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
-	sock := &socket{member: s.MemberID, tokenHash: s.TokenHash, closeReq: make(chan closeRequest, 1)}
+	sock := &socket{member: s.MemberID, keyID: s.KeyID, tokenHash: s.TokenHash, closeReq: make(chan closeRequest, 1)}
 	if !d.sockets.add(sock) {
 		denproto.WriteError(w, denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited,
 			"too many connections for this member, or the den is stopping"))

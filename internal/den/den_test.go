@@ -111,7 +111,10 @@ func (f *fixture) proof(dev device) (nonce, proof denproto.Bytes) {
 		f.t.Fatal(err)
 	}
 	info, _ := f.d.Info()
-	if err := denproto.VerifyDen(info.ID, clientNonce, resp); err != nil {
+	if _, err := denproto.VerifyDen(info.ID, clientNonce, resp); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := denproto.CheckDenURL(resp.URL, info.URL); err != nil {
 		f.t.Fatal(err)
 	}
 	return resp.Nonce, denproto.Prove(dev.key, info.ID, resp.Nonce)

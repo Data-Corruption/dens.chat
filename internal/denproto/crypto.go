@@ -52,10 +52,13 @@ func Random(n int) Bytes {
 	return b
 }
 
-// DenChallengeMessage is what the den signs to prove its identity key:
-// "dens-den-v1" ‖ client_nonce ‖ nonce.
-func DenChallengeMessage(clientNonce, nonce []byte) []byte {
-	return join([]byte(denSigContext), clientNonce, nonce)
+// DenChallengeMessage is what the den signs to prove its identity key and
+// say where it is: "dens-den-v1" ‖ client_nonce ‖ nonce ‖ url. The address
+// comes last, so it needs no length. Without it, anything that could relay
+// a den's answers from another address, such as whoever holds a domain
+// the den left, would pass for the den.
+func DenChallengeMessage(clientNonce, nonce []byte, url string) []byte {
+	return join([]byte(denSigContext), clientNonce, nonce, []byte(url))
 }
 
 // ProofMessage is what a device signs to prove its key for one nonce:
@@ -74,18 +77,52 @@ func Prove(key ed25519.PrivateKey, denID, nonce []byte) Bytes {
 // for it: another server at its address, or one pretending to be it.
 var ErrWrongIdentity = errors.New("the den can't prove its identity key")
 
-// VerifyDen checks a challenge response against the pinned den_id.
-func VerifyDen(denID []byte, clientNonce []byte, resp ChallengeResponse) error {
+// VerifyDen checks a challenge response: the den's signature over the
+// client's nonce, its own and its address, and that its key is the one
+// pinned for it. A nil denID pins nothing and trusts the key the den
+// presents, for signing in to a den by its address. It returns the den's
+// ID. Callers also check the signed address with CheckDenURL.
+func VerifyDen(denID []byte, clientNonce []byte, resp ChallengeResponse) (Bytes, error) {
 	if len(resp.DenKey) != PublicKeySize || len(resp.Nonce) != NonceSize || len(resp.DenSig) != SignatureSize {
-		return fmt.Errorf("%w: its challenge response is malformed", ErrWrongIdentity)
+		return nil, fmt.Errorf("%w: its challenge response is malformed", ErrWrongIdentity)
 	}
-	if !Equal(ID(ed25519.PublicKey(resp.DenKey)), denID) {
-		return fmt.Errorf("%w: it holds another identity key than the one pinned for it", ErrWrongIdentity)
+	if url, err := NormalizeDenURL(resp.URL); err != nil || url != resp.URL {
+		return nil, fmt.Errorf("%w: it gave an invalid address", ErrWrongIdentity)
 	}
-	if !ed25519.Verify(ed25519.PublicKey(resp.DenKey), DenChallengeMessage(clientNonce, resp.Nonce), resp.DenSig) {
-		return fmt.Errorf("%w: its signature doesn't verify", ErrWrongIdentity)
+	id := ID(ed25519.PublicKey(resp.DenKey))
+	if denID != nil && !Equal(id, denID) {
+		return nil, fmt.Errorf("%w: it holds another identity key than the one pinned for it", ErrWrongIdentity)
 	}
-	return nil
+	if !ed25519.Verify(ed25519.PublicKey(resp.DenKey), DenChallengeMessage(clientNonce, resp.Nonce, resp.URL), resp.DenSig) {
+		return nil, fmt.Errorf("%w: its signature doesn't verify", ErrWrongIdentity)
+	}
+	return id, nil
+}
+
+// MovedError is a den that proved its key at one address but signed
+// another. Either it moved there, or something at the old address is
+// passing its answers along; a client goes on only at URL, and sends
+// nothing more where it was.
+type MovedError struct{ URL string }
+
+func (e *MovedError) Error() string { return "the den says its address is " + e.URL }
+
+// CheckDenURL returns a *MovedError unless the address a den signed is the
+// one it was reached at.
+func CheckDenURL(signed, reached string) error {
+	if u, err := NormalizeDenURL(reached); err == nil && u == signed {
+		return nil
+	}
+	return &MovedError{URL: signed}
+}
+
+// Fingerprint shows the start of a den's ID for people to compare, as
+// XXXX-XXXX-XXXX-XXXX: 80 bits, like a recovery code.
+func Fingerprint(denID []byte) string {
+	if len(denID) < RecoveryCodeSize {
+		return ""
+	}
+	return FormatRecoveryCode(denID[:RecoveryCodeSize])
 }
 
 // Verifier derives the value a den stores (hashed) instead of a password:
