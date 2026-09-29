@@ -55,7 +55,9 @@ func Host(allowed map[string]bool) func(http.Handler) http.Handler {
 
 // SameOrigin rejects state-changing requests that don't come from the page
 // itself: they must carry an Origin equal to the request's own origin, must
-// not be marked cross-site by Sec-Fetch-Site, and must send JSON.
+// not be marked cross-site by Sec-Fetch-Site, and must send JSON, or raw
+// bytes for an upload. Neither is a type a form can send, and both make
+// another site's script ask permission first, which it never gets.
 func SameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -72,7 +74,7 @@ func SameOrigin(next http.Handler) http.Handler {
 			http.Error(w, "cross-site request rejected", http.StatusForbidden)
 			return
 		}
-		if r.ContentLength != 0 && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		if ct := r.Header.Get("Content-Type"); r.ContentLength != 0 && !strings.HasPrefix(ct, "application/json") && ct != "application/octet-stream" {
 			http.Error(w, "expected application/json", http.StatusUnsupportedMediaType)
 			return
 		}

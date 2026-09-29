@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -19,16 +20,28 @@ func forbidden(format string, args ...any) error {
 
 func bioAD(id int64) []byte { return []byte("den_members.bio:" + strconv.FormatInt(id, 10)) }
 
-const memberColumns = `id, username, display_name, role, joined_at, left_at`
+// memberColumns selects a member from den_members, with the size of the
+// pictures on their profile.
+const memberColumns = `id, username, display_name, role, joined_at, left_at,
+	avatar_id, (SELECT width FROM den_files WHERE den_files.id = den_members.avatar_id),
+	(SELECT height FROM den_files WHERE den_files.id = den_members.avatar_id),
+	banner_id, (SELECT width FROM den_files WHERE den_files.id = den_members.banner_id),
+	(SELECT height FROM den_files WHERE den_files.id = den_members.banner_id)`
 
 func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) {
 	var m denproto.Member
 	var id int64
-	var left sql.NullInt64
-	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left}, extra...)...)
+	var left, avatar, aw, ah, banner, bw, bh sql.NullInt64
+	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &banner, &bw, &bh}, extra...)...)
 	m.ID = denproto.FormatID(id)
 	if left.Valid {
 		m.LeftAt = left.Int64
+	}
+	if avatar.Valid {
+		m.Avatar = denproto.Image{ID: denproto.FormatID(avatar.Int64), Width: int(aw.Int64), Height: int(ah.Int64)}
+	}
+	if banner.Valid {
+		m.Banner = denproto.Image{ID: denproto.FormatID(banner.Int64), Width: int(bw.Int64), Height: int(bh.Int64)}
 	}
 	return m, err
 }
@@ -67,7 +80,9 @@ func (d *Den) Profile(ctx context.Context, id string) (denproto.Member, error) {
 	return m, nil
 }
 
-// UpdateProfile changes the member's own display name or bio.
+// UpdateProfile changes the member's own display name, bio, avatar or
+// banner. A picture is an upload of theirs waiting to be used; the one it
+// replaces is deleted.
 func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.ProfileRequest) (denproto.Member, error) {
 	var sets []string
 	var args []any
@@ -93,20 +108,52 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 			sets, args = append(sets, "bio = ?"), append(args, sealed)
 		}
 	}
-	if len(sets) > 0 {
-		query := "UPDATE den_members SET "
-		for i, set := range sets {
-			if i > 0 {
-				query += ", "
+	var replaced [][]byte
+	now := d.now()
+	err := d.tx(ctx, func(tx *sql.Tx) error {
+		for _, pic := range []struct {
+			id     *string
+			column string
+			banner bool
+		}{{req.Avatar, "avatar_id", false}, {req.Banner, "banner_id", true}} {
+			if pic.id == nil {
+				continue
 			}
-			query += set
+			var next any // NULL clears it
+			if *pic.id != "" {
+				fid, err := checkPicture(ctx, tx, s.MemberID, *pic.id, pic.banner, now)
+				if err != nil {
+					return err
+				}
+				next = fid
+			}
+			var old sql.NullInt64
+			if err := tx.QueryRowContext(ctx, `SELECT `+pic.column+` FROM den_members WHERE id = ?`, s.MemberID).Scan(&old); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE den_members SET `+pic.column+` = ? WHERE id = ?`, next, s.MemberID); err != nil {
+				return err
+			}
+			if old.Valid {
+				blobs, err := deleteFiles(ctx, tx, `id = ?`, old.Int64)
+				if err != nil {
+					return err
+				}
+				replaced = append(replaced, blobs...)
+			}
 		}
-		if _, err := d.db.ExecContext(ctx, query+" WHERE id = ?", append(args, s.MemberID)...); err != nil {
-			return denproto.Member{}, err
+		if len(sets) > 0 {
+			_, err := tx.ExecContext(ctx, "UPDATE den_members SET "+strings.Join(sets, ", ")+" WHERE id = ?", append(args, s.MemberID)...)
+			return err
 		}
+		return nil
+	})
+	if err != nil {
+		return denproto.Member{}, err
 	}
+	d.files.remove(replaced)
 	m, err := d.Profile(ctx, denproto.FormatID(s.MemberID))
-	if err != nil || len(sets) == 0 {
+	if err != nil || (len(sets) == 0 && req.Avatar == nil && req.Banner == nil) {
 		return m, err
 	}
 	// Bios travel only on request; an update tells clients to fetch again.
@@ -154,8 +201,10 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // depart takes a member out of the den within tx. Their row stays, so
 // their messages keep a name and a returning member can reclaim it, but
 // they lose their role, devices and sessions, recovery codes, read state,
-// and any invites they made.
-func depart(ctx context.Context, tx *sql.Tx, id, now int64) error {
+// any invites they made, the pictures on their profile and the uploads
+// they hadn't sent. It returns those files' blobs, to remove once tx
+// commits.
+func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 	for _, stmt := range []string{
 		`UPDATE den_members SET left_at = ?1, role = 'member' WHERE id = ?2`,
 		`DELETE FROM den_devices WHERE member_id = ?2`, // and, through them, sessions
@@ -165,10 +214,10 @@ func depart(ctx context.Context, tx *sql.Tx, id, now int64) error {
 		`DELETE FROM den_invites WHERE created_by = ?2 AND role = 'member'`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, now, id); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL`, id)
 }
 
 // Remove takes a member out of the den, and with Ban keeps their username
@@ -192,6 +241,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	now := d.now().UnixMilli()
 	var left bool
 	var deleted []deletedMessage
+	var blobs [][]byte
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var role string
 		var leftAt, bannedAt, inviteID sql.NullInt64
@@ -218,7 +268,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		}
 		if req.DeleteMessages > 0 {
 			// DMs stay: staff can't see them, so they don't clean them up.
-			if deleted, err = deleteRecent(ctx, tx, mid, now-req.DeleteMessages*1000); err != nil {
+			if deleted, blobs, err = deleteRecent(ctx, tx, mid, now-req.DeleteMessages*1000); err != nil {
 				return err
 			}
 		}
@@ -226,11 +276,14 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			return nil
 		}
 		left = true
-		return depart(ctx, tx, mid, now)
+		kept, err := depart(ctx, tx, mid, now)
+		blobs = append(blobs, kept...)
+		return err
 	})
 	if err != nil {
 		return err
 	}
+	d.files.remove(blobs)
 	reason := denproto.CloseReasonRemoved
 	if req.Ban {
 		reason = denproto.CloseReasonBanned
@@ -245,31 +298,40 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	return d.publishDeleted(ctx, deleted)
 }
 
-type deletedMessage struct{ id, channel int64 }
+type deletedMessage struct {
+	id, channel int64
+	files       []string
+}
 
 // deleteRecent deletes a member's messages in channels, not DMs, from since
-// on, and returns what it deleted.
-func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64) ([]deletedMessage, error) {
-	const where = `author_id = ? AND created_at >= ? AND channel_id IN (SELECT id FROM den_channels WHERE kind != 'dm')`
-	rows, err := tx.QueryContext(ctx, `SELECT id, channel_id FROM den_messages WHERE `+where, member, since)
+// on, and returns what it deleted, and the blobs of their files to remove
+// once tx commits.
+func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64) ([]deletedMessage, [][]byte, error) {
+	const where = `m.author_id = ? AND m.created_at >= ? AND m.channel_id IN (SELECT id FROM den_channels WHERE kind != 'dm')`
+	files, blobs, err := filesOf(ctx, tx, where, member, since)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT m.id, m.channel_id FROM den_messages m WHERE `+where, member, since)
+	if err != nil {
+		return nil, nil, err
 	}
 	var out []deletedMessage
 	for rows.Next() {
 		var m deletedMessage
 		if err := rows.Scan(&m.id, &m.channel); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, nil, err
 		}
+		m.files = files[m.id]
 		out = append(out, m)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	_, err = tx.ExecContext(ctx, `DELETE FROM den_messages WHERE `+where, member, since)
-	return out, err
+	_, err = tx.ExecContext(ctx, `DELETE FROM den_messages AS m WHERE `+where, member, since)
+	return out, blobs, err
 }
 
 func (d *Den) publishDeleted(ctx context.Context, deleted []deletedMessage) error {
@@ -284,7 +346,7 @@ func (d *Den) publishDeleted(ctx context.Context, deleted []deletedMessage) erro
 			audience = audienceOf(c)
 			audiences[m.channel] = audience
 		}
-		event := denproto.MessageDeleted{ID: denproto.FormatID(m.id), ChannelID: denproto.FormatID(m.channel)}
+		event := denproto.MessageDeleted{ID: denproto.FormatID(m.id), ChannelID: denproto.FormatID(m.channel), Files: m.files}
 		if err := d.Hub.Publish(denproto.EventMessageDeleted, event, audience); err != nil {
 			return err
 		}
@@ -299,9 +361,15 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 		return forbidden("the owner can't leave the den")
 	}
 	now := d.now().UnixMilli()
-	if err := d.tx(ctx, func(tx *sql.Tx) error { return depart(ctx, tx, s.MemberID, now) }); err != nil {
+	var blobs [][]byte
+	err := d.tx(ctx, func(tx *sql.Tx) (err error) {
+		blobs, err = depart(ctx, tx, s.MemberID, now)
+		return err
+	})
+	if err != nil {
 		return err
 	}
+	d.files.remove(blobs)
 	d.CloseMemberSockets(s.MemberID, denproto.CloseRevoked, denproto.CloseReasonLeft)
 	d.log.Infof("Member %d left", s.MemberID)
 	return d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(s.MemberID), LeftAt: now}, Everyone)

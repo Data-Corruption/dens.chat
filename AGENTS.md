@@ -28,8 +28,9 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules |
-| `internal/den` | The den this install hosts: identity key, members, invites, sessions, the event hub and sockets |
-| `internal/denclient` | The dens this install has joined: joining, and keeping each one connected |
+| `internal/den` | The den this install hosts: identity key, members, invites, sessions, the event hub and sockets, and uploads, sealed on disk |
+| `internal/denclient` | The dens this install has joined: joining, keeping each one connected, uploading, and caching files for the page |
+| `internal/media` | What a file is, taking image metadata out without re-encoding, and previews; the client strips with it and the den checks with it |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
 | `internal/control` | CLI-to-service protocol over the control endpoint |
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |

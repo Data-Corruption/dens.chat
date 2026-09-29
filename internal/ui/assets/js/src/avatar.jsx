@@ -1,7 +1,14 @@
-// A member's avatar. Until members can upload pictures, everyone gets the
-// default: a colored circle with the first letter or digit of their
-// username. The color comes from the member's ID, so every device shows
-// the same one without the den storing or sending anything.
+// A member's avatar: the picture on their profile, or the default, a
+// colored circle with the first letter or digit of their username. The
+// color comes from the member's ID, so every device shows the same one
+// without the den storing or sending anything.
+
+import { createContext } from 'preact';
+import { useContext, useState } from 'preact/hooks';
+
+// DenContext names the den a view shows, so pictures can be fetched from
+// it wherever they appear.
+export const DenContext = createContext('');
 
 // Colors that keep white text readable in both themes. Written out in
 // full so Tailwind finds them.
@@ -39,12 +46,21 @@ const DOTS = {
 };
 
 // Avatar shows a member's picture. online, when given, adds a presence dot.
+// A picture that fails to load gives way to the default.
 export function Avatar({ member, size = 'md', online }) {
+    const denID = useContext(DenContext);
+    const [failed, setFailed] = useState('');
+    const picture = denID && member?.avatar?.id && member.avatar.id !== failed ? member.avatar.id : '';
     return (
         <span class={`relative inline-flex shrink-0 ${SIZES[size]}`} aria-hidden="true">
-            <span class={`flex h-full w-full select-none items-center justify-center rounded-full font-semibold text-white ${avatarColor(member?.id)}`}>
-                {avatarLetter(member?.username)}
-            </span>
+            {picture ? (
+                <img src={`/api/dens/${denID}/files/${picture}`} alt="" draggable={false} onError={() => setFailed(picture)}
+                    class="h-full w-full select-none rounded-full bg-base-300 object-cover" />
+            ) : (
+                <span class={`flex h-full w-full select-none items-center justify-center rounded-full font-semibold text-white ${avatarColor(member?.id)}`}>
+                    {avatarLetter(member?.username)}
+                </span>
+            )}
             {online !== undefined && (
                 <span class={`absolute -bottom-0.5 -right-0.5 rounded-full ring-base-200 ${DOTS[size]} ${online ? 'bg-success' : 'bg-base-content/30'}`}></span>
             )}

@@ -200,6 +200,61 @@ wait-removed)
     api GET /api/dens >&2
     fail "the den never closed this member out"
     ;;
+upload)
+    # upload DEN_ID FILE NAME: upload a file as the page does; print its ID,
+    # whether metadata came out, its size and whether it has a preview.
+    curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
+        -H "Content-Type: application/octet-stream" -H "Dens-Filename: $3" \
+        --data-binary "@$2" "$BASE/api/dens/$1/uploads" |
+        json 'd["id"] + " " + str(d.get("stripped", False)).lower() + " %dx%d " % (d["width"], d["height"]) + ("preview" if d.get("thumb") else "none")'
+    ;;
+send-file)
+    # send-file DEN_ID CHANNEL_ID FILE_ID: send an upload with no text; print
+    # the message's ID.
+    nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+    api POST "/api/dens/$1/channels/$2/messages" "{\"nonce\":\"$nonce\",\"text\":\"\",\"attachments\":[\"$3\"]}" | json 'd["id"]'
+    ;;
+fetch)
+    # fetch DEN_ID FILE_ID OUT [thumb]: save a file, or its preview, as the
+    # page gets it; print the type it came as.
+    path="/api/dens/$1/files/$2"
+    [ "${4:-}" = thumb ] && path="$path/thumb"
+    curl -sS --fail-with-body -b "$JAR" -o "$3" -D /root/headers "$BASE$path"
+    sed -n 's/^[Cc]ontent-[Tt]ype: *\([^;\r]*\).*/\1/p' /root/headers
+    ;;
+jpeg)
+    # jpeg FILE: print a JPEG's stored size and what it carries besides the
+    # image, failing if anything of the phone photo's metadata is left.
+    python3 - "$1" <<'PY'
+import struct, sys
+d = open(sys.argv[1], "rb").read()
+for marker in (b"TestPhone", b"GPSLatitude", b"Taken at home", b"ns.adobe.com"):
+    if marker in d:
+        sys.exit("the file still carries " + marker.decode())
+i, kept, size = 2, [], None
+while i + 4 <= len(d) and d[i] == 0xFF and d[i + 1] != 0xDA:
+    m = d[i + 1]
+    n = struct.unpack(">H", d[i + 2:i + 4])[0]
+    p = d[i + 4:i + 2 + n]
+    if p.startswith(b"Exif\0\0"):
+        kept.append("orientation %d" % p[25])
+    elif 0xE0 <= m <= 0xEF or m == 0xFE:
+        kept.append(p.split(b"\0")[0].decode("latin-1"))
+    elif 0xC0 <= m <= 0xC3:
+        size = (struct.unpack(">H", p[3:5])[0], struct.unpack(">H", p[1:3])[0])
+    i += 2 + n
+print("%dx%d %s" % (size[0], size[1], ",".join(kept) or "nothing"))
+PY
+    ;;
+sealed)
+    # sealed: fail if any stored upload holds a JPEG in the clear.
+    for f in /var/lib/dens/main/data/uploads/*; do
+        if grep -q JFIF "$f"; then
+            fail "$f is stored in the clear"
+        fi
+    done
+    find /var/lib/dens/main/data/uploads -type f | wc -l
+    ;;
 join-refused)
     # join-refused INVITE: try to join as bob again; print the refusal.
     status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \

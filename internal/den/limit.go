@@ -71,6 +71,7 @@ const (
 	LimitWrite            // per member: other writes
 	LimitSend             // per member and channel: messages
 	LimitTyping           // per member and channel: typing notices
+	LimitUpload           // per member: uploads
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -90,6 +91,8 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.send
 	case LimitTyping:
 		l = d.limits.typing
+	case LimitUpload:
+		l = d.limits.upload
 	default:
 		l = d.limits.write
 	}
@@ -102,7 +105,7 @@ func (d *Den) Allow(kind int, key string) error {
 // RelaxLimits lifts the rate limits, for development instances, where a
 // developer seeds thousands of messages to test the message list.
 func (d *Den) RelaxLimits() {
-	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing} {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload} {
 		*l = newLimiter(1_000_000, time.Microsecond, 1000)
 	}
 }

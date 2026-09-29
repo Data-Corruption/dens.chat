@@ -78,6 +78,10 @@ func New(a *app.App) http.Handler {
 			r.Delete("/bans/{id}", h.unban)
 			r.Post("/dms", h.openDM)
 			r.Post("/dms/{id}/close", h.closeDM)
+			r.Post("/uploads", h.upload)
+			r.Get("/files/{id}", h.file(false))
+			r.Get("/files/{id}/thumb", h.file(true))
+			r.Get("/me/storage", h.storage)
 		})
 	})
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {

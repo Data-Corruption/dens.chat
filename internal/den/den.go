@@ -42,10 +42,11 @@ var ErrAlreadyCreated = errors.New("this install's den already exists")
 
 // Den is the den hosted by this install.
 type Den struct {
-	db  *sql.DB
-	v   *vault.Vault
-	log *xlog.Logger
-	Hub *Hub
+	db    *sql.DB
+	v     *vault.Vault
+	log   *xlog.Logger
+	Hub   *Hub
+	files *fileStore
 
 	// TokenLifetime is how long a session token lasts before renewal.
 	TokenLifetime time.Duration
@@ -59,7 +60,7 @@ type Den struct {
 	nonces  map[string]time.Time
 
 	limits struct {
-		challenge, join, login, socket, write, send, typing *limiter
+		challenge, join, login, socket, write, send, typing, upload *limiter
 	}
 	sockets  *socketSet
 	presence *presence
@@ -78,10 +79,16 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+// Storage is where the den keeps uploads: Dir holds them sealed, and
+// Temp, on the same filesystem, holds uploads still arriving.
+type Storage struct {
+	Dir, Temp string
+}
+
 // Open loads the den, if this install has created one.
-func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger) (*Den, error) {
+func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, storage Storage) (*Den, error) {
 	d := &Den{
-		db: db, v: v, log: log, Hub: NewHub(),
+		db: db, v: v, log: log, Hub: NewHub(), files: newFileStore(storage),
 		TokenLifetime: DefaultTokenLifetime,
 		now:           time.Now,
 		nonces:        map[string]time.Time{},
@@ -96,11 +103,13 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger) (*D
 	d.limits.write = newLimiter(30, time.Second/3, 100_000)
 	d.limits.send = newLimiter(5, time.Second, 100_000)
 	d.limits.typing = newLimiter(1, 2*time.Second, 100_000)
+	d.limits.upload = newLimiter(20, 3*time.Second, 100_000)
 
 	var name, url string
 	var pub, sealed []byte
-	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key FROM den WHERE id = 1`).
-		Scan(&name, &url, &pub, &sealed)
+	var limits denproto.Limits
+	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key, file_size, member_storage, den_storage FROM den WHERE id = 1`).
+		Scan(&name, &url, &pub, &sealed, &limits.FileSize, &limits.MemberStorage, &limits.DenStorage)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, nil
 	}
@@ -115,7 +124,11 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger) (*D
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits}
+	if err := d.tidyFiles(ctx); err != nil {
+		d.key.Close()
+		return nil, fmt.Errorf("tidy uploads: %w", err)
+	}
 	return d, nil
 }
 
@@ -134,8 +147,9 @@ func (d *Den) holdKey(seed, pub []byte) error {
 	return nil
 }
 
-// Close releases the identity key.
+// Close stops sweeping uploads and releases the identity key.
 func (d *Den) Close() {
+	d.files.stop()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.key != nil {
@@ -182,10 +196,11 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	}
 	code := denproto.Random(denproto.InviteCodeSize)
 	now := d.now()
+	limits := denproto.Limits{FileSize: denproto.DefaultFileSize, MemberStorage: denproto.DefaultMemberStorage, DenStorage: denproto.DefaultDenStorage}
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO den (id, name, url, public_key, private_key, created_at) VALUES (1, ?, ?, ?, ?, ?)`,
-			name, url, []byte(pub), sealed, now.UnixMilli()); err != nil {
+			`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			name, url, []byte(pub), sealed, now.UnixMilli(), limits.FileSize, limits.MemberStorage, limits.DenStorage); err != nil {
 			return fmt.Errorf("store den: %w", err)
 		}
 		_, err := tx.ExecContext(ctx,
@@ -199,7 +214,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits}
 	d.log.Infof("Den created")
 	return code, nil
 }
@@ -231,7 +246,8 @@ func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) {
 	return code, nil
 }
 
-// Update changes the den's name or address. Only the owner may.
+// Update changes the den's name, address or upload limits. Only the owner
+// may.
 func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequest) (denproto.Den, error) {
 	if s.Role != denproto.RoleOwner {
 		return denproto.Den{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner changes the den")
@@ -251,7 +267,15 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "url: %v", err)
 		}
 	}
-	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ? WHERE id = 1`, info.Name, info.URL); err != nil {
+	if req.Limits != nil {
+		if err := denproto.CheckLimits(*req.Limits); err != nil {
+			d.mu.Unlock()
+			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "limits: %v", err)
+		}
+		info.Limits = *req.Limits
+	}
+	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ? WHERE id = 1`,
+		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage); err != nil {
 		d.mu.Unlock()
 		return denproto.Den{}, err
 	}
@@ -337,6 +361,7 @@ func (d *Den) Preview(ctx context.Context, code []byte) (denproto.Den, error) {
 		return denproto.Den{}, errInviteInvalid
 	}
 	info, _ := d.Info()
+	info.Limits = denproto.Limits{}
 	return info, nil
 }
 

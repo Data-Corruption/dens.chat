@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages) and M1.3 (members, roles, DMs, presence and typing) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing) and M1.4 (files) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -14,7 +14,7 @@ Terms used below:
 - IDs are decimal strings (`"1000123"`). They come from the den, increase with time within a den, and are never reused.
 - Times are integers: milliseconds since the Unix epoch, in the den's clock.
 - Keys, nonces, signatures and tokens are base64url without padding.
-- Every request and response is at most 1 MiB, except uploads (M1.4).
+- Every request and response is at most 1 MiB, except uploads and files (see [Files](#files-m14)).
 - `‖` means byte concatenation. Every field it joins has a fixed length, so the result is unambiguous.
 
 ## Versioning
@@ -40,9 +40,11 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed) |
 | 413 | `too_large` |
+| 415 | `unsupported_type` |
 | 426 | `protocol_unsupported` |
 | 503 | `den_not_created` (the install hosts a den, but it hasn't been set up yet) |
 | 429 | `rate_limited`, with a `Retry-After` header in seconds |
+| 507 | `quota_exceeded` (the member's space), `den_full` (the den's space, or its disk) |
 
 Login and recovery failures use `401 unauthorized` whether the username exists or not.
 
@@ -57,14 +59,15 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 ## Objects
 
 ```
-den    = {"id": "<den_id>", "name", "url"}
-member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?}
+den    = {"id": "<den_id>", "name", "url", "limits"?}
+member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
+          "avatar"?, "banner"?}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it. Den names follow the display name rules, up to 32 characters.
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it. Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)); it comes in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
 
 ```
-PATCH /api/den   {"name"?, "url"?}   200 den        (owner only)
+PATCH /api/den   {"name"?, "url"?, "limits"?}   200 den        (owner only)
 ```
 
 A change reaches every member as a `den.updated {den}` event.
@@ -242,11 +245,11 @@ message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at
            "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6)}
 ```
 
-`text` is at most 4,000 characters and 16 KiB, and not only spaces. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
+`text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
 
 `revision` starts at 1 and increases with every edit. `edited_by` is the member who made the latest edit, which differs from the author on shared messages.
 
-`reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`.
+`reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. The text is empty when the original has only files. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`.
 
 **Mentions.** `@` then 2 to 32 letters, digits or `_`, matching a username without regard to case. It counts at the start of a line, or after a character that is neither one of those nor `@`, when none of them follows. It doesn't count inside code (a ``` block, or a span from one backtick to the next with something between) or inside a link (`http://` or `https://` at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick). The den counts by this rule (`denproto.Mentions`), and the page highlights by the same one; both are tested against the cases in `internal/denproto/testdata/mentions.json`. A mention adds to the unread mention count of the member it names, if they can see the channel and aren't the author. An edit recounts.
 
@@ -278,7 +281,7 @@ DELETE /api/messages/{id}                                                       
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
 - Only the author edits a message. The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
-- Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id}`. A deleted message is gone for good: clients drop it from memory, and later from their cache.
+- Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache.
 
 ### Read state
 
@@ -314,7 +317,7 @@ GET    /api/bans                                                                
 DELETE /api/bans/{id}                                                                204
 ```
 
-- A member who leaves or is removed keeps their record, with `left_at` set, so their messages keep a name. They lose their role, devices and sessions, recovery codes, read state and the invites they made. Their sockets close with 4003, and everyone gets `member.left {id, left_at}`.
+- A member who leaves or is removed keeps their record, with `left_at` set, so their messages keep a name. They lose their role, devices and sessions, recovery codes, read state, the invites they made, the pictures on their profile and the uploads they hadn't used. Their sockets close with 4003, and everyone gets `member.left {id, left_at}`.
 - The owner can't leave or be removed.
 - `ban` keeps the username out: joining with it is refused with `403 banned`. `delete_messages` also deletes the member's messages from that many seconds back, one of 0, 3600, 86400 or 604800, except in DMs, with a `message.deleted` for each. `revoke_invite` revokes the invite they joined with, if it can still be used. Someone who already left can still be banned.
 - Staff list and lift bans. Lifting one doesn't bring the member back.
@@ -348,9 +351,81 @@ A member is online while they have an open socket. `ready` carries `online`, a l
 - `typing` counts only in a channel the connection focuses. The den passes it on as an ephemeral `typing {channel_id, member_id}` to the other connections focused there, at most once every 2 seconds per member and channel, dropping the rest.
 - Clients show a typing notice for about 6 seconds, and clear it when that member's message arrives.
 
+## Files (M1.4)
+
+```
+file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "thumb"?: {"width", "height"}}
+image = {"id", "width", "height"}
+```
+
+A file is an upload: an attachment on a message, or a picture on a profile. `type` is what the den found the file to be from its first bytes, never what its name says. `width` and `height` are set for images, as they display, so a client lays out the space an image takes before it loads. `thumb` is there when the den made a preview.
+
+### Uploading
+
+```
+POST /api/uploads      (body: the file's bytes)      201 file
+Content-Type: application/octet-stream
+Dens-Filename: <the file's name, UTF-8, percent-encoded>
+```
+
+- `Content-Length`, when given, lets the den refuse a file over the size limit before reading it. Without it the den reads up to the limit and refuses the file once it passes it.
+- The den reads the file's first bytes to decide what it is:
+  - JPEG, PNG, GIF and WebP are images. They get their size as they display (after a JPEG's orientation), `animated` when they have more than one frame, and a preview: a JPEG, or a PNG when it has transparency, fitting a 640 × 640 square, never enlarged, upright. An image too large to decode within the den's memory budget, 256 MiB, goes without one and downloads like any other file.
+  - Video, audio, and photos in formats Dens can't clean yet (HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop) are refused with `415 unsupported_type`, rather than stored with metadata nobody took out.
+  - Anything else is a file to download, with the media type the den sniffed, for clients to pick an icon.
+- The name is cleaned: control, bidi and zero-width characters are dropped, `/` and `\` become `_`, spaces and dots are trimmed from both ends, and it is cut to 255 bytes without splitting a character. An empty name becomes `file`.
+- An upload waits an hour for a message or a profile to use it, and is then deleted. Until it's used, only the member who uploaded it can fetch it.
+- Uploads are limited per member (see [Rate limits](#rate-limits)).
+
+### Metadata
+
+Clients take metadata out of images before uploading, so a den never receives it, and the den checks: an image that still has any is refused with `400 invalid_field`. Nothing is re-encoded. What an image keeps:
+
+| Kind | Kept | Everything else goes, including |
+| --- | --- | --- |
+| JPEG | Frame headers, tables, scans, the JFIF header with no thumbnail, the ICC profile, Adobe's color transform (12 bytes), and the orientation | EXIF and its GPS, XMP, IPTC, comments, other application segments, and everything after the image's end, where the Multi-Picture Format stores extra images such as gain maps |
+| PNG | `IHDR`, `PLTE`, `IDAT`, `IEND`, `tRNS`, `cHRM`, `gAMA`, `iCCP`, `sBIT`, `sRGB`, `cICP`, `mDCV`, `cLLI`, `bKGD`, `hIST`, `pHYs`, and the animation chunks `acTL`, `fcTL` and `fdAT` | `eXIf` (with its orientation, which browsers don't agree on), text chunks, time stamps, private chunks, anything after `IEND`. An unknown critical chunk refuses the file. |
+| GIF | Images, their graphic control extensions, and the `NETSCAPE2.0` or `ANIMEXTS1.0` loop extension | Comments, plain text blocks, other application extensions (XMP among them), anything after the trailer |
+| WebP | `VP8X` with its EXIF and XMP flags cleared, `VP8 `, `VP8L`, `ALPH`, `ANIM`, `ANMF` (keeping only `ALPH`, `VP8 ` and `VP8L` inside) and `ICCP` | `EXIF`, `XMP `, unknown chunks, anything past the RIFF size |
+
+A JPEG that isn't upright keeps its orientation as the smallest EXIF block that holds it, and the den accepts it only in exactly this form: `Exif\0\0`, then a big-endian TIFF header (`MM`, 42, the directory at 8), one directory with one entry, orientation (`0x0112`, type SHORT, count 1, the value 2 to 8), and no next directory, 32 bytes in all. An upright JPEG keeps no EXIF.
+
+### Attachments
+
+```
+POST /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …]}
+GET  /api/files/{id}               200 the file's bytes
+GET  /api/files/{id}/thumb         200 the preview's bytes
+GET  /api/me/storage               200 {"used", "den_used"}
+```
+
+- A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent. An edit changes only the text.
+- A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image.
+- A member may fetch a file when they can see the message it's on, any member may fetch a picture on a profile, and only its uploader may fetch an upload waiting to be used. Anyone else gets `404 not_found`.
+- A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, and `channel.deleted` and a fresh `ready` can leave anything unreachable.
+- `GET /api/me/storage` says how much space the member's files take and how much everyone's do, in bytes, previews included.
+
+### Pictures on a profile
+
+```
+PATCH /api/me   {"avatar"?: "<upload id>" | "", "banner"?: "<upload id>" | ""}   200 member, with "bio"
+```
+
+- An avatar is a square still image, 64 to 1,024 pixels a side. A banner is a still image 300 to 3,000 pixels wide and three times as wide as it is high, give or take 3%. Clients crop pictures to these shapes before uploading them.
+- `""` takes a picture off. The picture a change replaces is deleted.
+- A member who leaves or is removed loses their pictures and the uploads they hadn't used.
+
+### Limits
+
+```
+limits = {"file_size", "member_storage", "den_storage"}   (bytes)
+```
+
+- A new den allows files of 25 MiB, 2 GiB of files per member and 20 GiB for the whole den. The owner changes them with `PATCH /api/den`: a file limit of 1 MiB to 1 GiB, room for at least one file per member, and for at least one member in the den.
+- A file over the size limit gets `413 too_large`. One that would take a member past their space gets `507 quota_exceeded`; past the den's space, or with less than 1 GiB left free on the den's disk, `507 den_full`. Space counts files and their previews.
+
 ## Later steps (outline)
 
-- **M1.4 Files:** `POST /api/uploads`, which streams, checks size up front, strips metadata and makes a thumbnail. It returns an ID with the type, size and dimensions, to attach to a message within an hour. Files are served by content-addressed ID, originals and thumbnails separately. Members gain `avatar` and `banner`, each an uploaded image's ID and dimensions, set with `PATCH /api/me`.
 - **M1.5 Recovery:** the endpoints sketched above, `GET /api/me/devices` and `DELETE /api/me/devices/{key_id}`, and `device.*` events.
 - **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.
 - **M1.7 Private DMs:** members publish their identity key and each device's signed encryption key, and clients fetch a DM partner's. DM messages carry sealed text with the ID of the conversation key it was sealed with, and each device fetches the conversation keys sealed for it. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. The key backup is stored and fetched as an opaque blob. `device.*` events tell DM partners when a member's devices change. See the design doc.
@@ -367,5 +442,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Password sign-in and recovery (M1.5) | 10 per hour per IP and 10 per hour per username, with backoff |
 | Sending messages | 5 per 5 seconds per member, per channel |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
+| Uploads | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | Other writes | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

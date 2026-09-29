@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -102,7 +103,15 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 	if len(req.Nonce) != denproto.NonceBytes {
 		return denproto.Message{}, inputError(errors.New("a message needs a 16-byte nonce"))
 	}
-	if err := denproto.CheckText(req.Text); err != nil {
+	if len(req.Attachments) > denproto.MaxAttachments {
+		return denproto.Message{}, inputError(fmt.Errorf("a message has at most %d files", denproto.MaxAttachments))
+	}
+	for _, id := range req.Attachments {
+		if err := checkID("upload", id); err != nil {
+			return denproto.Message{}, err
+		}
+	}
+	if err := denproto.CheckMessageText(req.Text, len(req.Attachments) > 0); err != nil {
 		return denproto.Message{}, inputError(err)
 	}
 	var msg denproto.Message
@@ -130,7 +139,9 @@ func (m *Manager) Edit(ctx context.Context, denID, messageID string, req denprot
 	if err := checkID("message", messageID); err != nil {
 		return denproto.Message{}, err
 	}
-	if err := denproto.CheckText(req.Text); err != nil {
+	// The den knows whether the message has files, which may leave it
+	// without text.
+	if err := denproto.CheckMessageText(req.Text, true); err != nil {
 		return denproto.Message{}, inputError(err)
 	}
 	var msg denproto.Message

@@ -62,10 +62,13 @@ type Focus struct {
 }
 
 // ProfileRequest changes the member's own profile; nil fields stay as they
-// are, and an empty bio clears it.
+// are, and an empty bio clears it. Avatar and Banner name an upload to
+// show, or "" for none.
 type ProfileRequest struct {
 	DisplayName *string `json:"display_name,omitempty"`
 	Bio         *string `json:"bio,omitempty"`
+	Avatar      *string `json:"avatar,omitempty"`
+	Banner      *string `json:"banner,omitempty"`
 }
 
 type RoleRequest struct {

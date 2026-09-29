@@ -52,6 +52,10 @@ func TestSameOriginGuard(t *testing.T) {
 		{"null origin", http.MethodPost, "null", "", "application/json", "{}", true},
 		{"cross-site fetch", http.MethodPost, "http://127.0.0.1:8484", "cross-site", "application/json", "{}", true},
 		{"form post", http.MethodPost, "http://127.0.0.1:8484", "same-origin", "application/x-www-form-urlencoded", "a=b", true},
+		{"upload", http.MethodPost, "http://127.0.0.1:8484", "same-origin", "application/octet-stream", "\xff\xd8", false},
+		{"multipart form", http.MethodPost, "http://127.0.0.1:8484", "same-origin", "multipart/form-data; boundary=x", "--x", true},
+		{"text form", http.MethodPost, "http://127.0.0.1:8484", "same-origin", "text/plain", "hi", true},
+		{"upload from elsewhere", http.MethodPost, "http://evil.example", "cross-site", "application/octet-stream", "x", true},
 	}
 	for _, c := range cases {
 		r := httptest.NewRequest(c.method, "/api/x", strings.NewReader(c.body))

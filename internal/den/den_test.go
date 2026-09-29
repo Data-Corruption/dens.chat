@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -17,12 +18,13 @@ import (
 )
 
 type fixture struct {
-	t     *testing.T
-	db    *sql.DB
-	v     *vault.Vault
-	log   *xlog.Logger
-	d     *Den
-	clock time.Time
+	t       *testing.T
+	db      *sql.DB
+	v       *vault.Vault
+	log     *xlog.Logger
+	d       *Den
+	clock   time.Time
+	storage Storage
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -40,7 +42,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, db: db, v: v, log: log, clock: time.UnixMilli(1_759_000_000_000)}
+	f := &fixture{t: t, db: db, v: v, log: log, clock: time.UnixMilli(1_759_000_000_000), storage: testStorage(t)}
 	t.Cleanup(func() {
 		if f.d != nil {
 			f.d.Close()
@@ -58,13 +60,25 @@ func (f *fixture) open() {
 	if f.d != nil {
 		f.d.Close()
 	}
-	d, err := Open(context.Background(), f.db, f.v, f.log)
+	d, err := Open(context.Background(), f.db, f.v, f.log, f.storage)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	d.now = func() time.Time { return f.clock }
 	d.Hub.now = d.now
 	f.d = d
+}
+
+// testStorage makes the directories a den keeps uploads in.
+func testStorage(t *testing.T) Storage {
+	t.Helper()
+	s := Storage{Dir: filepath.Join(t.TempDir(), "uploads"), Temp: filepath.Join(t.TempDir(), "tmp")}
+	for _, dir := range []string{s.Dir, s.Temp} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return s
 }
 
 func (f *fixture) create() []byte {

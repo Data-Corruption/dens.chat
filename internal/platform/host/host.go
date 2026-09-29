@@ -3,7 +3,7 @@
 // nothing above this package needs build tags: running under the service
 // manager, the host-bound data key, the local control endpoint and its peer
 // identity, locked memory for key material, low-priority child processes,
-// service control, and opening a URL.
+// service control, opening a URL, and free disk space.
 package host
 
 import (

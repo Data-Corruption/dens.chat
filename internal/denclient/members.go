@@ -37,7 +37,8 @@ func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto
 	return member, nil
 }
 
-// UpdateProfile changes this member's display name or bio in a den.
+// UpdateProfile changes this member's display name, bio or pictures in a
+// den.
 func (m *Manager) UpdateProfile(ctx context.Context, denID string, req denproto.ProfileRequest) (denproto.Member, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -53,6 +54,13 @@ func (m *Manager) UpdateProfile(ctx context.Context, denID string, req denproto.
 	if req.Bio != nil {
 		if err := denproto.CheckBio(*req.Bio); err != nil {
 			return denproto.Member{}, inputError(err)
+		}
+	}
+	for _, pic := range []*string{req.Avatar, req.Banner} {
+		if pic != nil && *pic != "" {
+			if err := checkID("upload", *pic); err != nil {
+				return denproto.Member{}, err
+			}
 		}
 	}
 	var member denproto.Member

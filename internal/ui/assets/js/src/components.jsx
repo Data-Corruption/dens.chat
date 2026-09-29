@@ -1,7 +1,7 @@
 // Small shared pieces. Everything shown here goes through Preact's text
 // rendering; nothing sets HTML from a string.
 
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 
 export function Card({ title, children, class: extra = '' }) {
     return (
@@ -26,6 +26,31 @@ export function Field({ label, hint, children }) {
 
 export function TextInput({ value, onInput, type = 'text', ...rest }) {
     return <input class="input w-full" type={type} value={value} onInput={(e) => onInput(e.currentTarget.value)} {...rest} />;
+}
+
+// useLater reports whether active has stayed true for ms, so a wait that
+// ends quickly never flashes a spinner.
+export function useLater(active, ms) {
+    const [later, setLater] = useState(false);
+    useEffect(() => {
+        setLater(false);
+        if (!active) return undefined;
+        const timer = setTimeout(() => setLater(true), ms);
+        return () => clearTimeout(timer);
+    }, [active, ms]);
+    return active && later;
+}
+
+// Waiting is a spinner that says what it waits for once it has taken a
+// while, so a slow start doesn't look like a hang.
+export function Waiting({ label }) {
+    const slow = useLater(true, 1500);
+    return (
+        <div class="flex items-center gap-2 text-sm text-base-content/70" role="status">
+            <span class="loading loading-spinner"></span>
+            {slow && <span>{label}</span>}
+        </div>
+    );
 }
 
 export function ErrorText({ message }) {

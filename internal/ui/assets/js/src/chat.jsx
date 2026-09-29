@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { Avatar } from './avatar.jsx';
+import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
@@ -18,7 +18,7 @@ const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
 const TYPING_SHOWN = 6000;
 // Changes to these reload the den's state rather than being applied here.
 const STRUCTURAL = new Set([
-    'member.joined', 'member.updated', 'member.left', 'channel.created', 'channel.updated', 'channel.deleted',
+    'den.updated', 'member.joined', 'member.updated', 'member.left', 'channel.created', 'channel.updated', 'channel.deleted',
     'channels.reordered', 'group.created', 'group.updated', 'group.deleted', 'groups.reordered',
 ]);
 
@@ -216,95 +216,98 @@ export function Chat({ denID, channelID, navigate }) {
     }
 
     return (
-        <div class="flex h-full min-h-0">
-            <aside class={`${listOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col overflow-y-auto bg-base-200 md:flex md:w-64`}>
-                <div class="border-b border-base-300 p-3">
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="truncate font-semibold">{view.name}</span>
-                        <span class={`badge badge-xs ${live && view.state === 'connected' ? 'badge-success' : 'badge-warning'}`} title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
+        <DenContext.Provider value={denID}>
+            <div class="flex h-full min-h-0">
+                <aside class={`${listOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col overflow-y-auto bg-base-200 md:flex md:w-64`}>
+                    <div class="border-b border-base-300 p-3">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="truncate font-semibold">{view.name}</span>
+                            <span class={`badge badge-xs ${live && view.state === 'connected' ? 'badge-success' : 'badge-warning'}`} title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
+                        </div>
+                        {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
                     </div>
-                    {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
-                </div>
-                <ChannelList view={view} reads={reads} open={channel?.id} staff={staff} onOpen={openChannel} onDialog={setDialog} />
-                <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
-                    onOpen={openChannel} onClose={closeDM} />
-                <div class="mt-auto flex items-center gap-1 border-t border-base-300 p-2">
-                    <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
-                        onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
-                        <Avatar member={view.me} size="sm" online={live && view.state === 'connected'} />
-                        <span class="truncate text-sm">{view.me.display_name}</span>
-                    </button>
-                    {staff && !gone && (
-                        <>
-                            <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
-                            <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
-                        </>
-                    )}
-                </div>
-            </aside>
-            <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
-                {gone && (
-                    <div role="status" class="alert alert-warning alert-soft m-2 flex flex-wrap">
-                        <span>{closed}</span>
-                        <button type="button" class="btn btn-sm" onClick={forget}>Remove from this computer</button>
+                    <ChannelList view={view} reads={reads} open={channel?.id} staff={staff} onOpen={openChannel} onDialog={setDialog} />
+                    <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
+                        onOpen={openChannel} onClose={closeDM} />
+                    <div class="mt-auto flex items-center gap-1 border-t border-base-300 p-2">
+                        <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
+                            onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
+                            <Avatar member={view.me} size="sm" online={live && view.state === 'connected'} />
+                            <span class="truncate text-sm">{view.me.display_name}</span>
+                        </button>
+                        {staff && !gone && (
+                            <>
+                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
+                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
+                            </>
+                        )}
                     </div>
-                )}
-                {channel ? (
-                    <>
-                        <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} staff={staff && !gone} elsewhere={elsewhere}
-                            online={dm && online.has(dm.id)} membersOpen={membersOpen}
-                            onChannels={() => setListOpen(true)} onMembers={toggleMembers}
-                            onProfile={(m) => setDialog({ kind: 'profile', member: m })}
-                            onSettings={() => setDialog({ kind: 'channel', channel })} />
-                        <MessagePane
-                            key={`${denID}:${channel.id}`}
-                            denID={denID}
-                            channel={channel}
-                            me={view.me}
-                            members={members}
-                            readPosition={reads.get(channel.id)?.message_id}
-                            role={view.role}
-                            dm={dm}
-                            typing={typers}
-                            closed={closed}
-                            onProfile={(m) => setDialog({ kind: 'profile', member: m })}
-                            onTyping={() => sendTyping(denID, channel.id)}
-                        />
-                    </>
-                ) : (
-                    <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
-                        <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Channels</button>
-                        <p>{staff ? 'This den has no text channels yet. Create one to start talking.' : 'This den has no text channels yet.'}</p>
-                    </div>
-                )}
-            </section>
-            {membersOpen && (
-                <aside class="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-base-200 md:static md:z-auto md:w-60 md:shrink-0">
-                    <div class="flex items-center justify-between border-b border-base-300 p-3">
-                        <span class="font-semibold">Members</span>
-                        <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={toggleMembers} aria-label="Close the member list">✕</button>
-                    </div>
-                    <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                 </aside>
-            )}
-            {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
-            {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}
-            {dialog?.kind === 'profile' && (
-                <ProfileCard
-                    denID={denID}
-                    member={members.get(dialog.member.id) || dialog.member}
-                    me={view.me}
-                    role={gone ? 'member' : view.role}
-                    online={online.has(dialog.member.id)}
-                    onClose={() => setDialog(null)}
-                    onMessage={message}
-                    onEdit={() => setDialog({ kind: 'edit' })}
-                    onRemove={(m) => setDialog({ kind: 'remove', member: m })}
-                />
-            )}
-            {dialog?.kind === 'edit' && <EditProfile denID={denID} me={view.me} onClose={() => setDialog(null)} />}
-            {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
-        </div>
+                <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
+                    {gone && (
+                        <div role="status" class="alert alert-warning alert-soft m-2 flex flex-wrap">
+                            <span>{closed}</span>
+                            <button type="button" class="btn btn-sm" onClick={forget}>Remove from this computer</button>
+                        </div>
+                    )}
+                    {channel ? (
+                        <>
+                            <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} staff={staff && !gone} elsewhere={elsewhere}
+                                online={dm && online.has(dm.id)} membersOpen={membersOpen}
+                                onChannels={() => setListOpen(true)} onMembers={toggleMembers}
+                                onProfile={(m) => setDialog({ kind: 'profile', member: m })}
+                                onSettings={() => setDialog({ kind: 'channel', channel })} />
+                            <MessagePane
+                                key={`${denID}:${channel.id}`}
+                                denID={denID}
+                                channel={channel}
+                                me={view.me}
+                                members={members}
+                                readPosition={reads.get(channel.id)?.message_id}
+                                role={view.role}
+                                dm={dm}
+                                typing={typers}
+                                closed={closed}
+                                limits={view.limits}
+                                onProfile={(m) => setDialog({ kind: 'profile', member: m })}
+                                onTyping={() => sendTyping(denID, channel.id)}
+                            />
+                        </>
+                    ) : (
+                        <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
+                            <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Channels</button>
+                            <p>{staff ? 'This den has no text channels yet. Create one to start talking.' : 'This den has no text channels yet.'}</p>
+                        </div>
+                    )}
+                </section>
+                {membersOpen && (
+                    <aside class="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-base-200 md:static md:z-auto md:w-60 md:shrink-0">
+                        <div class="flex items-center justify-between border-b border-base-300 p-3">
+                            <span class="font-semibold">Members</span>
+                            <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={toggleMembers} aria-label="Close the member list">✕</button>
+                        </div>
+                        <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                    </aside>
+                )}
+                {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'profile' && (
+                    <ProfileCard
+                        denID={denID}
+                        member={members.get(dialog.member.id) || dialog.member}
+                        me={view.me}
+                        role={gone ? 'member' : view.role}
+                        online={online.has(dialog.member.id)}
+                        onClose={() => setDialog(null)}
+                        onMessage={message}
+                        onEdit={() => setDialog({ kind: 'edit' })}
+                        onRemove={(m) => setDialog({ kind: 'remove', member: m })}
+                    />
+                )}
+                {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
+            </div>
+        </DenContext.Provider>
     );
 }
 

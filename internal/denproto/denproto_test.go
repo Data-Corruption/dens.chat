@@ -219,9 +219,82 @@ func TestChecks(t *testing.T) {
 			t.Errorf("CheckMessage accepted the reply %+v", bad)
 		}
 	}
+	m.Reply = &Reply{AuthorID: "3"}
+	if CheckMessage(m) != nil {
+		t.Error("CheckMessage refused a reply to a message with only files")
+	}
 	m.ReplyTo, m.Reply = "", &Reply{AuthorID: "3", Text: "hi"}
 	if CheckMessage(m) == nil {
 		t.Error("CheckMessage accepted a reply preview without reply_to")
+	}
+}
+
+func TestFileChecks(t *testing.T) {
+	photo := File{ID: "7", Name: "cat.jpg", Type: "image/jpeg", Size: 1234, Width: 800, Height: 600, Thumb: &Thumb{Width: 640, Height: 480}}
+	m := Message{ID: "5", ChannelID: "2", AuthorID: "3", Revision: 1, Attachments: []File{photo}}
+	if err := CheckMessage(m); err != nil {
+		t.Errorf("a message with only a photo: %v", err)
+	}
+	m.Attachments = nil
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted a message with neither text nor files")
+	}
+	m.Attachments = []File{photo, photo}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted a file twice")
+	}
+	m.Attachments = make([]File, MaxAttachments+1)
+	for i := range m.Attachments {
+		m.Attachments[i] = photo
+		m.Attachments[i].ID = FormatID(int64(i + 1))
+	}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted too many files")
+	}
+	for _, bad := range []File{
+		{ID: "x", Name: "a", Type: "text/plain"},
+		{ID: "1", Name: "", Type: "text/plain"},
+		{ID: "1", Name: "../etc/passwd", Type: "text/plain"},
+		{ID: "1", Name: "a‮gnp.exe", Type: "text/plain"},
+		{ID: "1", Name: "a", Type: "text/html; charset=utf-8"},
+		{ID: "1", Name: "a", Type: "Image/PNG"},
+		{ID: "1", Name: "a", Type: "text/plain", Size: -1},
+		{ID: "1", Name: "a", Type: "image/png", Width: 10},
+		{ID: "1", Name: "a", Type: "image/png", Width: 10, Height: 10, Thumb: &Thumb{Width: 0, Height: 5}},
+		{ID: "1", Name: "a", Type: "text/plain", Thumb: &Thumb{Width: 5, Height: 5}},
+	} {
+		if CheckFile(bad) == nil {
+			t.Errorf("CheckFile accepted %+v", bad)
+		}
+	}
+	for in, want := range map[string]string{
+		"photo.jpg":               "photo.jpg",
+		"../../etc/passwd":        "_.._etc_passwd",
+		"C:\\Windows\\evil.exe":   "C:_Windows_evil.exe",
+		"a‮gnp.exe":               "agnp.exe",
+		"  spaced   out  .txt ":   "spaced out .txt",
+		"...":                     "file",
+		"":                        "file",
+		"\x00\x01":                "file",
+		strings.Repeat("é", 200):  strings.Repeat("é", 127),
+		"[strangly named 𓂃꙳⋆.jpg": "[strangly named 𓂃꙳⋆.jpg",
+	} {
+		if got := CleanFilename(in); got != want {
+			t.Errorf("CleanFilename(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if CheckLimits(Limits{FileSize: DefaultFileSize, MemberStorage: DefaultMemberStorage, DenStorage: DefaultDenStorage}) != nil {
+		t.Error("the default limits don't check")
+	}
+	for _, bad := range []Limits{
+		{FileSize: 10, MemberStorage: 1 << 30, DenStorage: 1 << 31},
+		{FileSize: 2 << 30, MemberStorage: 4 << 30, DenStorage: 8 << 30},
+		{FileSize: 10 << 20, MemberStorage: 5 << 20, DenStorage: 1 << 30},
+		{FileSize: 10 << 20, MemberStorage: 1 << 30, DenStorage: 5 << 20},
+	} {
+		if CheckLimits(bad) == nil {
+			t.Errorf("CheckLimits accepted %+v", bad)
+		}
 	}
 }
 

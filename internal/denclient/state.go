@@ -19,9 +19,13 @@ type denState struct {
 	channels map[string]denproto.Channel
 	reads    map[string]denproto.ReadState
 	online   map[string]bool
+	limits   denproto.Limits
 	// touched holds the channels whose read state changed since the page
 	// was last told, so the page shows the counts counted here.
 	touched map[string]bool
+	// gone holds files the den deleted since it was last taken, so they
+	// leave the cache.
+	gone []string
 }
 
 // View is a joined den as the page sees it.
@@ -33,6 +37,7 @@ type View struct {
 	Channels   []denproto.Channel   `json:"channels"`
 	ReadStates []denproto.ReadState `json:"read_states"`
 	Online     []string             `json:"online"`
+	Limits     denproto.Limits      `json:"limits"`
 }
 
 func newState() *denState {
@@ -56,7 +61,7 @@ func (s *denState) takeTouched() []denproto.ReadState {
 
 func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
-		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}}
+		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -139,10 +144,20 @@ func cleanRead(r denproto.ReadState) (denproto.ReadState, bool) {
 	return r, ok
 }
 
+// cleanLimits checks a den's upload limits. The den checked them when
+// they were set, so any that don't check are the den misbehaving.
+func cleanLimits(l denproto.Limits) bool {
+	return denproto.CheckLimits(l) == nil
+}
+
 // load replaces the state with a snapshot. Anything malformed in it is a
 // protocol violation.
 func (s *denState) load(r denproto.Ready) error {
 	next := newState()
+	if !cleanLimits(r.Den.Limits) {
+		return errMalformed
+	}
+	next.limits = r.Den.Limits
 	for _, m := range r.Members {
 		m, ok := cleanMember(m)
 		if !ok || !validID(m.ID) {
@@ -206,6 +221,13 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		if !ok {
 			return e, false, errMalformed
 		}
+		if old, ok := s.members[m.ID]; ok {
+			for _, pic := range [][2]denproto.Image{{old.Avatar, m.Avatar}, {old.Banner, m.Banner}} {
+				if pic[0].ID != "" && pic[0].ID != pic[1].ID {
+					s.gone = append(s.gone, pic[0].ID) // replaced, so deleted
+				}
+			}
+		}
 		s.members[m.ID] = m
 		data = m
 	case denproto.EventMemberLeft:
@@ -214,7 +236,13 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 			return e, false, errMalformed
 		}
 		if m, ok := s.members[l.ID]; ok {
-			m.LeftAt, m.Role = l.LeftAt, denproto.RoleMember
+			// Leaving takes the pictures on a profile with it.
+			for _, pic := range []denproto.Image{m.Avatar, m.Banner} {
+				if pic.ID != "" {
+					s.gone = append(s.gone, pic.ID)
+				}
+			}
+			m.LeftAt, m.Role, m.Avatar, m.Banner = l.LeftAt, denproto.RoleMember, denproto.Image{}, denproto.Image{}
 			s.members[l.ID] = m
 		}
 		delete(s.online, l.ID)
@@ -320,9 +348,15 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		data = m
 	case denproto.EventMessageDeleted:
 		var d denproto.MessageDeleted
-		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) || !validID(d.ChannelID) {
+		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) || !validID(d.ChannelID) || len(d.Files) > denproto.MaxAttachments {
 			return e, false, errMalformed
 		}
+		for _, f := range d.Files {
+			if !validID(f) {
+				return e, false, errMalformed
+			}
+		}
+		s.gone = append(s.gone, d.Files...)
 		data = d
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState

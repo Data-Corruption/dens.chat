@@ -248,6 +248,9 @@ type Den struct {
 	ID   Bytes  `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
+	// Limits come to members, in ready and den.updated, and not in a
+	// join preview.
+	Limits Limits `json:"limits,omitzero"`
 }
 
 // Roles.
@@ -268,6 +271,8 @@ type Member struct {
 	JoinedAt    int64  `json:"joined_at"`
 	LeftAt      int64  `json:"left_at,omitempty"`
 	Bio         string `json:"bio,omitempty"`
+	Avatar      Image  `json:"avatar,omitzero"`
+	Banner      Image  `json:"banner,omitzero"`
 }
 
 // Requests and responses ------------------------------------------------------
@@ -339,8 +344,9 @@ type InviteList struct {
 }
 
 type DenUpdateRequest struct {
-	Name *string `json:"name,omitempty"`
-	URL  *string `json:"url,omitempty"`
+	Name   *string `json:"name,omitempty"`
+	URL    *string `json:"url,omitempty"`
+	Limits *Limits `json:"limits,omitempty"`
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's
