@@ -32,6 +32,7 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
 	rt.mountChat(r)
 	rt.mountMembers(r)
+	rt.mountFiles(r)
 }
 
 // hosting describes the den this install hosts, if the den role is on.
@@ -356,6 +357,8 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 		jsonError(w, http.StatusNotFound, "You haven't joined that den.")
 	case errors.Is(err, denclient.ErrNotStarted):
 		jsonError(w, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, denclient.ErrTooLarge):
+		jsonError(w, http.StatusRequestEntityTooLarge, "This file is larger than this den allows.")
 	case errors.Is(err, denproto.ErrWrongIdentity):
 		rt.a.Log.Warnf("den identity check failed: %v", err)
 		jsonError(w, http.StatusBadGateway, "This server can't prove it is the den the invite was made for. "+
@@ -389,6 +392,14 @@ func denMessage(e *denproto.Error) string {
 		return "The den rejected one of the details you entered."
 	case denproto.CodeNotFound:
 		return "That doesn't exist on the den any more."
+	case denproto.CodeTooLarge:
+		return "This file is larger than this den allows."
+	case denproto.CodeUnsupportedType:
+		return "This den won't take this kind of file."
+	case denproto.CodeQuotaExceeded:
+		return "You've used all the upload space this den gives each member. Deleting messages with files makes room."
+	case denproto.CodeDenFull:
+		return "This den is out of space for uploads. Its owner can make room."
 	}
 	return "The den refused the request (" + e.Code + ")."
 }

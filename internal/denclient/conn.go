@@ -375,7 +375,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.mu.Lock()
 		c.den = state
 		c.mu.Unlock()
-		// The page drops what it holds for this den and loads it again.
+		// What the member can see may have changed, so cached files go
+		// too, and the page drops what it holds for this den and loads it
+		// again.
+		c.m.files.drop(c.j.denID.String())
 		c.m.publish(PageEvent{DenID: c.j.denID.String(), Reset: true})
 		return e, false, nil
 	case denproto.EventDenUpdated:
@@ -383,7 +386,21 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if err := json.Unmarshal(e.D, &d); err != nil {
 			return e, false, fmt.Errorf("malformed den.updated: %w", err)
 		}
-		return e, false, c.updateProfile(ctx, d, nil)
+		if !cleanLimits(d.Limits) {
+			return e, false, errMalformed
+		}
+		c.mu.Lock()
+		if c.den != nil {
+			c.den.limits = d.Limits
+		}
+		c.mu.Unlock()
+		if err := c.updateProfile(ctx, d, nil); err != nil {
+			return e, false, err
+		}
+		// The page shows the den's name and limits; the address is this
+		// install's business.
+		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits})
+		return out, err == nil, err
 	case denproto.EventAuthRenewed:
 		var r denproto.Renewed
 		if json.Unmarshal(e.D, &r) == nil {
@@ -402,7 +419,15 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	}
 	out, ok, err := c.den.applyEvent(e, c.profile.Member)
 	me := c.profile.Member.ID
+	gone := c.den.gone
+	c.den.gone = nil
 	c.mu.Unlock()
+	if len(gone) > 0 {
+		c.m.files.drop(c.j.denID.String(), gone...)
+	}
+	if err == nil && e.T == denproto.EventChannelDeleted {
+		c.m.files.drop(c.j.denID.String())
+	}
 	if err == nil && ok && out.T == denproto.EventMemberUpdated {
 		var m denproto.Member
 		if json.Unmarshal(out.D, &m) == nil && m.ID == me {
@@ -500,7 +525,8 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 
 func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	username, err := denproto.NormalizeUsername(m.Username)
-	if err != nil || !validID(m.ID) || m.JoinedAt < 0 || m.LeftAt < 0 || denproto.CheckBio(m.Bio) != nil {
+	if err != nil || !validID(m.ID) || m.JoinedAt < 0 || m.LeftAt < 0 || denproto.CheckBio(m.Bio) != nil ||
+		denproto.CheckImage(m.Avatar) != nil || denproto.CheckImage(m.Banner) != nil {
 		return m, false
 	}
 	display, err := denproto.CleanName(m.DisplayName, denproto.MaxNameRunes)

@@ -166,6 +166,7 @@ func (h *denHost) client(t *testing.T, own denclient.OwnDen) *denclient.Manager 
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
 	m.HTTP = &http.Client{Timeout: 10 * time.Second, Transport: transport}
+	m.Transfer = &http.Client{Transport: transport}
 	m.MinTokenLife = 200 * time.Millisecond
 	m.RenewLead = 600 * time.Millisecond
 	m.RenewRetry = 100 * time.Millisecond

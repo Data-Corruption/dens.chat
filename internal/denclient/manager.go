@@ -55,6 +55,11 @@ type Manager struct {
 
 	// HTTP reaches dens; it trusts the system's certificate authorities.
 	HTTP *http.Client
+	// Transfer carries files to and from dens, over HTTP's connections
+	// but without its time limit, since a large file can take minutes on
+	// a home connection. A transfer ends with its request instead.
+	Transfer *http.Client
+	files    *fileCache
 
 	// Timings from protocol.md; tests shorten them. A token is used only
 	// while it has MinTokenLife left, and renewed RenewLead before expiry.
@@ -121,12 +126,14 @@ func (m *Manager) publish(e PageEvent) {
 
 // New returns a manager; Run starts it.
 func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own OwnDen) *Manager {
+	// A den answers within ResponseHeaderTimeout of hearing a whole
+	// request, uploads included; a file's body then takes what it takes.
+	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, ResponseHeaderTimeout: requestTimeout}
 	return &Manager{
 		db: db, v: v, log: log, own: own, agent: userAgent, label: deviceLabel(),
-		HTTP: &http.Client{
-			Timeout:   requestTimeout,
-			Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}},
-		},
+		HTTP:         &http.Client{Timeout: requestTimeout, Transport: transport},
+		Transfer:     &http.Client{Transport: transport},
+		files:        newFileCache(),
 		MinTokenLife: time.Minute,
 		RenewLead:    10 * time.Minute,
 		RenewRetry:   30 * time.Second,
@@ -458,11 +465,17 @@ func (m *Manager) CheckAddress(ctx context.Context, denID string) error {
 	return err
 }
 
-// UpdateDen changes the name or address of a den this member owns.
+// UpdateDen changes the name, address or upload limits of a den this
+// member owns.
 func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenUpdateRequest) error {
 	c, err := m.find(denID)
 	if err != nil {
 		return err
+	}
+	if req.Limits != nil {
+		if err := denproto.CheckLimits(*req.Limits); err != nil {
+			return inputError(err)
+		}
 	}
 	var info denproto.Den
 	return c.call(ctx, http.MethodPatch, "/api/den", req, &info)
