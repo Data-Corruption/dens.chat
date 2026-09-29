@@ -408,7 +408,7 @@ From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores a
 
 - The den's owner, and anyone holding the den's disk or backups, can't read DMs or see the photos in them.
 - Metadata stays visible: the den still sees who DMs whom, when, and how much.
-- An owner who tampers with the keys the den hands out can't read along unnoticed: a new key for a DM partner shows in the DM. Members who compare a safety code once rule out an owner in the middle entirely (see Trust).
+- Keys pass through the den, so an owner can hand out keys of their own and sit in the middle of a DM. A swap after a member has seen their partner's real key shows in the DM, and members who compare a safety code once rule it out entirely (see Trust). An owner in the middle from a DM's first message, between members who never compare codes, goes unnoticed.
 
 **Keys**
 
@@ -705,5 +705,6 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
 - [ ] How long a DM's conversation key lives before it changes on its own, besides when a device is removed (M1.7).
-- [ ] Whether the recovery codes also seal the DM key backup, which the password seals. Recovering with a code sets a new password, so a member who forgot their password and lost every device can't open a backup sealed with the old one (M1.7).
+- [ ] Whether DM keys have a backup on the den at all, and what seals it: the den password can be guessed offline by the den, and recovering with a code replaces it; the recovery codes can't be guessed; with no backup, a member who loses every device loses their DMs (M1.7).
+- [ ] How members verify each other's keys beyond safety codes, such as with the inviter's key fingerprint and a secret carried in the invite, which the den never sees (M1.7).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.
