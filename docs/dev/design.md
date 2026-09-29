@@ -131,7 +131,7 @@ Keep the client listener and den listener separate. Caddy forwards remote reques
 
 **Files in and out**
 
-- Uploads come from the browser's file picker; downloads use `Content-Disposition: attachment` so the browser saves them as the desktop user.
+- Uploads come from the browser's file picker, drag and drop, or a paste; downloads use `Content-Disposition: attachment` so the browser saves them as the desktop user.
 - The service never needs write access to the user's home directory, which removes the Downloads permission step from install.
 
 ## Local identity and encryption
@@ -144,7 +144,7 @@ Each install has one local user, stored in an encrypted vault, and one random da
 - One Ed25519 keypair per den, plus the current session token for each.
 - Local settings and preferences.
 
-Sensitive fields in SQLite are encrypted one by one with the same data key (XChaCha20-Poly1305): on a client, the vault and cached den content; on a den, message and DM text. This is a speed bump against scanners and backup snoopers, not protection from root or a live compromise, and it doesn't hide anything from the den owner, whose install holds the den's key. Metadata such as timestamps and IDs stays plaintext so queries work.
+Sensitive fields in SQLite are encrypted one by one with the same data key (XChaCha20-Poly1305): on a client, the vault and cached den content; on a den, message and DM text, and the names of uploads. A den's uploads are encrypted with it too (see Files and media). This is a speed bump against scanners and backup snoopers, not protection from root or a live compromise, and it doesn't hide anything from the den owner, whose install holds the den's key. Metadata such as timestamps and IDs stays plaintext so queries work.
 
 **Envelope encryption**
 
@@ -268,7 +268,8 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 
 - Each den has its own profile for each member, since identity is per den: a display name and a bio of up to 300 characters in the markdown subset. Dens can't link a member's profiles across dens.
 - Bios travel only when a profile card opens, which keeps snapshots small for 500-member dens.
-- Avatars and banners arrive with uploads in M1.4. Until someone sets one, their avatar is a circle colored by their member ID with the first letter or digit of their username, so every device draws the same one without the den storing or sending anything.
+- A profile can carry a picture and a banner: uploads the member crops in the page to a square and to three times as wide as high, zooming and dragging the image in a frame. The page draws the framed part into a new image, which leaves the original's metadata behind, and uploads that like any other image. Until someone sets a picture, their avatar is a circle colored by their member ID with the first letter or digit of their username, so every device draws the same one without the den storing or sending anything.
+- A member who leaves or is removed loses their pictures along with their devices, so staff removing someone also takes down what they had on their profile.
 - Profile cards show a role badge only for moderators and the owner.
 
 **Names**
@@ -334,18 +335,32 @@ Dens usually run on home connections, where upload bandwidth is scarce and every
 
 ## Files and media
 
-Uploads are stored as-is except for stripped metadata, capped by owner-set limits; images and video are recompressed after an owner-set window. Files in DMs are the exception from M1.7: the sender's service strips and encrypts them before upload, and the den stores only opaque blobs (see End-to-end encrypted DMs).
+Members attach files to messages and put pictures on their profiles. Images lose their metadata before they leave the member's machine, and are stored as they were otherwise, capped by owner-set limits; images and video are recompressed after an owner-set window (M5). Files in DMs are the exception from M1.7: the sender's service strips and encrypts them before upload, and the den stores only opaque blobs (see End-to-end encrypted DMs).
 
 **Limits (owner settings)**
 
-- Max size per file, per member total, and den total. When a limit is hit, uploading is disabled with a clear message.
+- Max size per file, per member total, and den total. A new den starts at 25 MiB per file, 2 GiB per member and 20 GiB for the den. The page checks a file's size before uploading it, and says why when the den refuses one.
+- Uploads also stop while the den's disk has less than 1 GiB free, so they never fill the disk the database lives on.
 - Screen share and media settings live in the same place (see Voice and screen share).
 
 **Metadata stripping**
 
-- EXIF, GPS and similar metadata are stripped from images and video on upload, before anything is stored.
-- Images: re-encode-free removal where the format allows; video: `ffmpeg -map_metadata -1 -c copy`.
-- Members can see that stripping happened. There is no opt-out in v1.
+- EXIF, GPS and similar metadata are stripped by the uploading member's own service, as the file streams to the den, so the den never receives a photo's location, and neither does its owner. The den runs the same check and refuses an image that still has any, which holds other clients to it.
+- Images: removal without re-encoding, the same code on both sides (`internal/media`). JPEG, PNG, GIF and WebP keep only what decoding, color and animation need, and a JPEG keeps its orientation in a minimal EXIF block of its own; the protocol lists what stays. Pixels are never touched, so nothing loses quality.
+- Video and audio need ffmpeg (`ffmpeg -map_metadata -1 -c copy`), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out.
+- Other files, such as documents and archives, are sent as they are, with whatever they carry inside; the docs say so.
+- The member sees on each attached image when metadata came out. There is no opt-out in v1.
+
+**Previews**
+
+- The den makes an image's preview from what it stored: a JPEG, or a PNG with transparency, fitting 640 × 640, upright, from an animated image's first frame. One image decodes at a time, within a 256 MiB budget that fits a 50-megapixel phone photo; a larger image goes without a preview and downloads like any other file.
+- Uploads state an image's size as it displays, so the message list gives a preview its final box before it loads (see Message list).
+
+**Storage**
+
+- A den encrypts uploads with its data key, like message text: 64 KiB chunks of XChaCha20-Poly1305 in the STREAM construction, so files of any size stream in and out in bounded memory, and a file cut short, reordered or swapped for another doesn't open. They sit under random names that only their database rows know, in the data directory's `uploads`, which backups include.
+- A file's ID is a den ID like any other, and its bytes never change under it, so clients can cache it by ID. IDs are not content hashes, which would let a member test whether a file they have is somewhere they can't see.
+- An upload waits an hour for a message or a profile to use it. Deleting a message, a channel or a member's messages deletes their files, and a member who leaves loses their pictures and unused uploads.
 
 **Retention and compression**
 
@@ -355,8 +370,9 @@ Uploads are stored as-is except for stripped metadata, capped by owner-set limit
 
 **Serving**
 
-- Everything downloads through the local service with `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
-- Inline previews only for a fixed list of raster image and video types. SVG and HTML are never rendered.
+- Everything downloads through the local service. It serves a file inline only when its own look at the bytes finds an image of one of the four kinds, and then as exactly that type; anything else, SVG and HTML included, goes out as `application/octet-stream` with `Content-Disposition: attachment`. Every file carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so even one opened on its own can't run anything.
+- The den serves every file as bytes to download, and never states a type a browser would act on.
+- A file's name is text from a den: shown as text, and cleaned before it names a download.
 
 The vendored ffmpeg builds (Linux and Windows) must be LGPL-compatible or the project must meet GPL terms; pick the builds deliberately.
 
@@ -578,7 +594,7 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 - [x] CSP: `default-src 'none'`, with scripts, styles, images, fonts and connections limited to `'self'`, no inline scripts, `frame-ancestors 'none'`.
 - [x] Messages rendered by an escaping markdown subset; names and channel descriptions treated as untrusted text.
-- [ ] Filenames and embeds treated as untrusted text (M1.4).
+- [x] Filenames treated as untrusted text, and files shown inline only as the image type the local service found them to be, sandboxed and never cached by the browser (M1.4).
 - [x] Exact `Host` check (`127.0.0.1:<port>`, `[::1]:<port>` or `localhost:<port>`) against DNS rebinding.
 - [x] `Origin` check on every write and on the WebSocket upgrade.
 - [x] Session cookie `HttpOnly`, `SameSite=Strict`; pairing tokens single use and short-lived.
@@ -657,9 +673,8 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 ## Open questions
 
 - [ ] Which ffmpeg builds to vendor for Linux and Windows, and their license terms.
-- [ ] Owner defaults for retention windows, upload limits and screen share caps.
+- [ ] Owner defaults for retention windows and screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
-- [ ] Uploads at rest on the den: encrypted with the data key like message text, or stored plain (decide in M1.4).
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
 - [ ] How long a DM's conversation key lives before it changes on its own, besides when a device is removed (M1.7).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.
