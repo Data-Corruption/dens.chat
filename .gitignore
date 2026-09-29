@@ -24,3 +24,6 @@
 *.pem
 *.p12
 *.pfx
+
+# Local files for trying uploads by hand; tests generate their own
+/test-files/
