@@ -210,7 +210,7 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 **Fallbacks**
 
-- **New device:** username and password verifier plus a new public key. The den registers the key, labels it, and tells the member's other sessions, whose chat shows that a new device signed in.
+- **New device:** username and password verifier plus a new public key. The den registers the key, labels it, and tells the member's other sessions, whose chat shows that a new device signed in. From M1.7, one of the member's other devices must also approve it (see Approving new devices).
 - **Forgotten password:** username, one recovery code, a new password verifier and a new public key. The code is spent, the new password replaces the old one, and every other device is signed out.
 - **Change password:** from a signed-in session, with the current password or a recovery code. It signs out every other device: a device key outlives the password that added it, so anyone who had the old password may still hold one.
 - **New recovery codes:** from a signed-in session, with the password, so a stolen session can't make codes to keep the account with.
@@ -218,6 +218,19 @@ The raw password never leaves the client. For each den, the client derives `veri
 A new device names the den with any invite from it, even a used one, which pins its identity, or with its address, which trusts the key the den proves there. Trusting an address is safe for the password, since a verifier made for one den is worthless at another. The page shows each den's ID, the start of its identity, so a member can compare it with someone else's.
 
 Each den on the home page has a **Devices and password** section. It lists each registered key with its label, when it was added and when it last signed in, and signs any of them out, this one included, closing their sockets at once. It also changes the password, which signs out every other device, and makes new recovery codes. A device that was signed out says so and offers to sign in again.
+
+**Approving new devices (M1.7)**
+
+From M1.7, a password alone doesn't add a device: one of the member's other devices approves it, which makes their own devices a second factor with no authenticator app.
+
+1. The new device signs in with the username and password as now. The den holds it as pending for 10 minutes and asks the member's other sessions.
+2. The new device shows a six-digit code. Dens on the member's other devices shows the request with the new device's label, and asks for that code. Typing the code, not pressing a button, is what approves it: someone who stole the password can make requests, but the code for theirs shows only on their own screen, so the member can't approve one by accident.
+3. The approving device signs the new device's keys with the member's identity key and seals the DM keys for it (see End-to-end encrypted DMs). Only then does the den register the new device and start its session.
+4. Refusing a request, or letting it expire, keeps the device out. A refusal also tells the member to change their password, since someone has it.
+
+- The code is random and never reaches the den: the request carries only a commitment to it and the new device's key, so the den can't swap in a key of its own, and a code can't approve any other request.
+- The device that joins with an invite needs no approval. A member with no other device signs in with a recovery code, which needs none: the codes are the one way in without a device. With neither devices nor codes, the account can't be recovered.
+- The approval is signed with the member's identity key, which only their devices hold, so DM partners can check every device of theirs, and even the den's owner can't add one.
 
 **Den identity and moving domains**
 
@@ -230,7 +243,7 @@ Each den on the home page has a **Devices and password** section. It lists each 
 
 **Why cut TOTP**
 
-TOTP protects against a stolen password. Here the password is only used when adding a device, every such login is announced to the member's existing devices, and online guessing is rate-limited, with each guess costing the guesser an Argon2id computation. The key, which does daily logins, is unphishable and never leaves the machine. TOTP adds setup friction for little gain; it can be added later with `pquerna/otp` as an option on the password fallback only.
+TOTP protects against a stolen password. Here the password is only used when adding a device, every such login is announced to the member's existing devices, and online guessing is rate-limited, with each guess costing the guesser an Argon2id computation. From M1.7 a new device also needs approval from one of the member's other devices, which are a second factor already. The key, which does daily logins, is unphishable and never leaves the machine. TOTP adds setup friction for little gain; it can be added later with `pquerna/otp` as an option on the password fallback only.
 
 **Rate limits**
 
@@ -401,7 +414,7 @@ From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores a
 
 All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already seals data at rest.
 
-- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. A new device gets it from one of the member's other devices, or from the key backup.
+- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. A new device gets it from the device that approves it (see Approving new devices), or from the key backup when it signs in with a recovery code.
 - Every device has an encryption key pair for each den, beside the signing key it logs in with: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer. The member's identity key signs it.
 - Each DM has a conversation key. The sending service creates it and seals a copy for every device of both members with that device's encryption key; the den stores the sealed copies as opaque blobs and hands each device its own.
 - The conversation key changes when either member removes a device, so a removed device can't read what follows. Older keys stay, sealed for the current devices, so history stays readable.
@@ -416,7 +429,7 @@ All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already s
 
 **History and recovery**
 
-- A new device gets the conversation keys from the member's other devices, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
+- A new device gets the conversation keys from the device that approves it, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
 - Recovery after losing every device restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
 - Keeping history costs some forward secrecy: whoever gets a device's keys can read what that device could. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
 
@@ -616,6 +629,7 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 - [x] Serves only den routes; no client or admin routes compiled into its router.
 - [x] Challenge answers sign the den's address, and clients send nothing to an address the den didn't sign, so no relay can pass a sign-in through (M1.5).
+- [ ] A password alone doesn't add a device: another of the member's devices approves it, or a recovery code stands in (M1.7).
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
 - [ ] Bearer tokens only, never cookies, so no web page can make a browser act on a den.
@@ -674,11 +688,13 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
 | M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
-| M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, and a new identity key shows in the DM |
+| M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes, and approving new devices from an existing one | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, a new identity key shows in the DM, and the password alone can't add a device |
 
 Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg, which starts as a spike after M1), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
+
+**Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes, den IDs, approving new devices, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
 
 **After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 
