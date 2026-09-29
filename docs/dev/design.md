@@ -202,7 +202,7 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 **Normal login (invisible to the user)**
 
-1. Client sends its own random nonce and requests a challenge. The den returns a 32-byte nonce for the client (60 seconds, single use) and signs the client's nonce with the den identity key; the client aborts if the signature doesn't match the pinned fingerprint.
+1. Client sends its own random nonce and requests a challenge. The den returns a 32-byte nonce for the client (60 seconds, single use) and signs both nonces and its own public address with the den identity key. The client aborts if the signature doesn't match the pinned fingerprint, and sends nothing more to an address the den didn't sign (see Den identity and moving domains).
 2. Client signs `"dens-auth-v1" ‖ den_id ‖ key_id ‖ nonce`. The context string and den ID stop a signature being replayed elsewhere.
 3. The den verifies the signature and issues an opaque 256-bit session token (stored as SHA-256), valid for 1 hour.
 4. The WebSocket upgrade carries the token. Before expiry the client re-signs and sends an `auth.renew` frame on the open socket.
@@ -210,19 +210,23 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 **Fallbacks**
 
-- **New device, no backup:** username and password verifier plus a new public key. The den registers the key, labels it, and notifies the member's other sessions ("new device added").
-- **Forgotten password:** username, one recovery code, a new password verifier and a new public key.
-- **Change password:** from a signed-in session, with the current password or a recovery code.
+- **New device:** username and password verifier plus a new public key. The den registers the key, labels it, and tells the member's other sessions, whose chat shows that a new device signed in.
+- **Forgotten password:** username, one recovery code, a new password verifier and a new public key. The code is spent, the new password replaces the old one, and every other device is signed out.
+- **Change password:** from a signed-in session, with the current password or a recovery code. It signs out every other device: a device key outlives the password that added it, so anyone who had the old password may still hold one.
+- **New recovery codes:** from a signed-in session, with the password, so a stolen session can't make codes to keep the account with.
 
-A **Devices** page lists each registered key with its label, creation date and last-seen time, and can revoke any of them.
+A new device names the den with any invite from it, even a used one, which pins its identity, or with its address, which trusts the key the den proves there. Trusting an address is safe for the password, since a verifier made for one den is worthless at another. The page shows each den's ID, the start of its identity, so a member can compare it with someone else's.
+
+Each den on the home page has a **Devices and password** section. It lists each registered key with its label, when it was added and when it last signed in, and signs any of them out, this one included, closing their sockets at once. It also changes the password, which signs out every other device, and makes new recovery codes. A device that was signed out says so and offers to sign in again.
 
 **Den identity and moving domains**
 
 - Creating a den generates its Ed25519 identity key. It is stored encrypted with the den's data key and included in den backups.
-- Clients store each den under its key fingerprint; the URL is an editable field.
-- Manual migration in v1: the owner announces the new address, members edit the URL, and the client connects only if the den proves the pinned key.
+- Clients store each den under its key fingerprint; its address can change.
+- The den signs its public address into every challenge answer. A client that reached it at another address sends nothing more there: it runs the challenge again at the signed address, and moves there only if the den proves the same key.
+- So an owner moves a den by changing its address in the den's settings, and keeps the old name pointing at the den for a while. A connected client moves as soon as the den announces the new address and proves itself there; one that was off moves at its next start, through the old name. A member whose install was off for longer enters the new address by hand, where the same check applies.
+- The signed address also stops a relay. A server at an address the den left, or any other, can pass the den's answers along, but the address in them sends the client to the den itself before it sends a proof, a password verifier or a token.
 - A passing check means the new server runs from the den's backup, unlocked with its local password. Normally that's the owner; it cannot rule out someone who stole both.
-- A signed "moved" notice that updates the URL automatically is post-v1.
 
 **Why cut TOTP**
 
@@ -230,11 +234,11 @@ TOTP protects against a stolen password. Here the password is only used when add
 
 **Rate limits**
 
-- Password and recovery attempts: per account and per IP, with backoff; IPs held in memory only.
+- Password and recovery attempts: per account and per IP, 10 and then one every 6 minutes; IPs held in memory only. A signed-in member's password checks, to change it or make new codes, count against the account's.
 - Challenge requests and invite redemption: per IP.
 - Unknown usernames and wrong passwords get the same error, and the check is a constant-time hash comparison either way, so neither the reply nor its timing shows which usernames exist.
 
-Limiter memory is bounded. Per-IP token buckets live in a fixed-capacity LRU map (for example 100,000 entries, a few MB); an entry is dropped once its bucket has refilled and sat idle, and the least recently used entry is evicted when the map is full. IPv6 addresses are keyed by their /64 prefix so rotating addresses doesn't create new buckets. If eviction churn shows a flood, the endpoint falls back to a global limiter. Per-account backoff is bounded by the member count and never becomes a hard lockout, since lockouts let an attacker lock victims out.
+Limiter memory is bounded. Per-IP token buckets live in a fixed-capacity LRU map (for example 100,000 entries, a few MB); an entry is dropped once its bucket has refilled and sat idle, and the least recently used entry is evicted when the map is full. IPv6 addresses are keyed by their /64 prefix so rotating addresses doesn't create new buckets. If eviction churn shows a flood, the endpoint falls back to a global limiter. The per-account limit is keyed by username, bounded the same way, and refills on its own, so it never locks an account, since lockouts let an attacker lock victims out: a stream of guesses can hold up the member's own password sign-ins, but never their devices, which sign in with keys.
 
 ## Den features
 
@@ -390,7 +394,7 @@ From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores a
 
 All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already seals data at rest.
 
-- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. New devices get it from an existing device during the M1.5 new-device flow, or from the key backup.
+- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. A new device gets it from one of the member's other devices, or from the key backup.
 - Every device has an encryption key pair for each den, beside the signing key it logs in with: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer. The member's identity key signs it.
 - Each DM has a conversation key. The sending service creates it and seals a copy for every device of both members with that device's encryption key; the den stores the sealed copies as opaque blobs and hands each device its own.
 - The conversation key changes when either member removes a device, so a removed device can't read what follows. Older keys stay, sealed for the current devices, so history stays readable.
@@ -406,7 +410,7 @@ All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already s
 **History and recovery**
 
 - A new device gets the conversation keys from the member's other devices, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
-- Recovery after losing every device (M1.5) restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
+- Recovery after losing every device restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
 - Keeping history costs some forward secrecy: whoever gets a device's keys can read what that device could. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
 
 **Trust**
@@ -604,6 +608,7 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 **Den listener**
 
 - [x] Serves only den routes; no client or admin routes compiled into its router.
+- [x] Challenge answers sign the den's address, and clients send nothing to an address the den didn't sign, so no relay can pass a sign-in through (M1.5).
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
 - [ ] Bearer tokens only, never cookies, so no web page can make a browser act on a den.
@@ -668,7 +673,7 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
-**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), signed den move notices, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
+**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 
 ## Open questions
 
@@ -677,4 +682,5 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
 - [ ] How long a DM's conversation key lives before it changes on its own, besides when a device is removed (M1.7).
+- [ ] Whether the recovery codes also seal the DM key backup, which the password seals. Recovering with a code sets a new password, so a member who forgot their password and lost every device can't open a backup sealed with the old one (M1.7).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.

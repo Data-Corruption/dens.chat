@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing) and M1.4 (files) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files) and M1.5 (new devices and recovery) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -15,7 +15,7 @@ Terms used below:
 - Times are integers: milliseconds since the Unix epoch, in the den's clock.
 - Keys, nonces, signatures and tokens are base64url without padding.
 - Every request and response is at most 1 MiB, except uploads and files (see [Files](#files-m14)).
-- `‖` means byte concatenation. Every field it joins has a fixed length, so the result is unambiguous.
+- `‖` means byte concatenation. Every field it joins has a fixed length, except a URL at the end, so the result is unambiguous.
 
 ## Versioning
 
@@ -35,7 +35,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | --- | --- |
 | 400 | `malformed`, `invalid_field` |
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
-| 403 | `forbidden`, `banned`, `key_revoked` |
+| 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code) |
 | 404 | `not_found` |
 | 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed) |
@@ -55,6 +55,7 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 - **Invite string:** `dens1:` followed by base64url of `den_id (32) ‖ code (16) ‖ den URL (UTF-8, the rest)`. The client pins `den_id` and refuses a den that can't prove it.
 - **Password verifier:** `Argon2id(password, salt = SHA-256("dens-den-password-v1" ‖ den_id ‖ username))`, with t=3, m=64 MiB, p=4 and a 32-byte output. `username` is lowercase ASCII, per the name rules in the design doc. The den stores `SHA-256(verifier)` and compares in constant time.
 - **Recovery codes:** 10 per member, each 10 random bytes (80 bits) shown as 16 base32 characters in four groups, such as `K7QM-2XRD-9HVT-LC4P`. The den stores `SHA-256` of each. A code works once.
+- **Den ID as shown:** the first 10 bytes of `den_id`, written like a recovery code. Members compare it to check they reached the same den, as after signing in by address.
 
 ## Objects
 
@@ -64,7 +65,7 @@ member = {"id", "username", "display_name", "role": "member" | "moderator" | "ow
           "avatar"?, "banner"?}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it. Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)); it comes in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)); it comes in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
 
 ```
 PATCH /api/den   {"name"?, "url"?, "limits"?}   200 den        (owner only)
@@ -82,12 +83,19 @@ Every sign-in starts with a challenge, in which the den proves its identity key 
 POST /api/auth/challenge
 {"client_nonce": "<32 bytes>"}
 
-200 {"nonce": "<32 bytes>", "den_key": "<Ed25519 public key>", "den_sig": "<64 bytes>"}
+200 {"nonce": "<32 bytes>", "den_key": "<Ed25519 public key>", "den_sig": "<64 bytes>", "url": "https://den.example.com"}
 ```
 
-- `den_sig = Sign(den_key, "dens-den-v1" ‖ client_nonce ‖ nonce)`.
-- The client checks `SHA-256(den_key) == den_id` and the signature before sending anything else, and stops if either fails.
+- `den_sig = Sign(den_key, "dens-den-v1" ‖ client_nonce ‖ nonce ‖ url)`, where `url` is the den's public URL in UTF-8. It comes last, so it needs no length.
+- Before sending anything else, the client checks `SHA-256(den_key) == den_id`, the signature, and that `url` is the address it sent the challenge to. Addresses compare after normalizing: lowercase host, no trailing slash. A client signing in by address, with no invite to pin `den_id`, takes the key the den proves (see [Password and recovery](#password-and-recovery-m15)).
 - `nonce` is valid for 60 seconds and one use. The den holds outstanding nonces in memory, with a bounded count.
+
+**Following a move.** A signed `url` other than the address the client reached means the den has moved, or that a server at another address is passing the den's answers along. Either way the client sends nothing more there. It runs the challenge again at `url`, and goes on only if the den proves the same key there and signs that same address. It keeps the new address from then on, and follows one move per challenge: a den whose new address signs yet another is refused.
+
+- A server can pass a den's challenge answer through, but can't change the address signed into it, so a proof, verifier or token never goes to an address the den didn't sign.
+- A client that reaches the den its own install hosts over loopback skips the address check: that den signs its public address, and nothing sits between the two.
+- A connected client that gets `den.updated` with a new `url` runs the challenge there at once, and moves if the den proves itself there, so its token stops going to the old address. If the new address doesn't answer yet, the client stays where it is until its next challenge sends it on.
+- A den that moved keeps answering members at its old address only while the owner keeps that address pointing at it. A member whose install was away longer enters the new address by hand, where the same checks apply.
 
 Requests that use a nonce prove the device key with:
 
@@ -142,15 +150,54 @@ POST /api/auth/login
 
 ### Password and recovery (M1.5)
 
+A member signs in on a device new to the den with their den password, or with a recovery code if they forgot it. Both start with a challenge, and prove the new device's key over its nonce, as join does.
+
 ```
-POST /api/auth/password   {"username", "verifier", "public_key", "device_label", "nonce", "proof"}
-POST /api/auth/recover    {"username", "recovery_code", "new_verifier", "public_key", "device_label", "nonce", "proof"}
-POST /api/me/password     {"verifier" or "recovery_code", "new_verifier"}        (authenticated)
+POST /api/auth/password
+{"username": "alice", "verifier": "<32 bytes>", "public_key": "<32 bytes>", "device_label": "Pearl (Windows)",
+ "nonce": "<32 bytes>", "proof": "<64 bytes>"}
+200 {"token": "<32 bytes>", "expires_at": …, "den": {…}, "member": {…}, "recovery_codes_left": 10}
+
+POST /api/auth/recover
+{"username", "recovery_code": "K7QM-2XRD-9HVT-LC4P", "new_verifier", "public_key", "device_label", "nonce", "proof"}
+200 {…as for the password…, "signed_out": 1}
 ```
 
-- Password sign-in and recovery register the new key and return a session like login does. The den announces the new device to the member's other sessions with a `device.added` event.
-- Recovery consumes the code and reports how many are left.
-- Changing the password leaves keys and sessions as they are.
+- Both register the new key under its label and start its session. The den tells the member's other sessions with `device.added {device}`, so a sign-in the member didn't make shows on the devices they have.
+- Recovery spends the code and makes `new_verifier` the password, so the old one stops working. The den takes a code in any case, with or without its dashes.
+- A new password, set by recovery or by a change, signs out every other device of the member, since anyone who had the old password may have signed one in with it. The den deletes their keys and sessions and closes their sockets with 4003 `password changed`, and `signed_out` says how many there were.
+- Only a member in the den now signs in this way. One who left or was removed comes back with an invite; a banned one can't.
+- Every failure is the same `401 unauthorized`: an unknown username, a wrong password or code, or a member who left.
+- The client lowercases the username before deriving the verifier, as at join, so the member can type it in any case.
+
+Signed in, a member changes their password or replaces their recovery codes:
+
+```
+POST /api/me/password
+{"verifier": "<32 bytes>", "new_verifier": "<32 bytes>"}  or  {"recovery_code", "new_verifier"}
+200 {"recovery_codes_left": 9, "signed_out": 1}
+
+POST /api/me/recovery-codes
+{"verifier": "<32 bytes>"}
+200 {"recovery_codes": ["ABCD-EFGH-…", …]}
+```
+
+- A password change takes the current password's verifier or a recovery code, which it spends, but not both. The device making it stays signed in, and every other one is signed out.
+- New codes take the password, so a stolen session can't make codes to keep the account with. They replace every old code, and the client shows them once.
+- A wrong password or code gets `403 wrong_password`. It counts against the username's guesses like a sign-in (see [Rate limits](#rate-limits)).
+
+### Devices (M1.5)
+
+```
+GET    /api/me/devices            200 {"devices": [device, …], "recovery_codes_left": 9}
+DELETE /api/me/devices/{key_id}   204
+
+device = {"key_id", "label", "created_at", "last_seen_at", "current"?}
+```
+
+- `last_seen_at` is the key's last sign-in. `current` marks the device making the request.
+- Revoking a key ends its sessions and closes its sockets at once, with 4003 `key revoked`. Revoking the current device signs it out. A key that isn't the member's gets `404 not_found`.
+- The member's own sessions get `device.removed {"key_id"}`, for a revoked key and for each one a new password signs out. Both `device.*` events are durable, and go to nobody else.
 
 ## The WebSocket
 
@@ -210,7 +257,7 @@ Each side checks the other with WebSocket pings, since a dead connection can loo
 | 1001 | Going away (a proxy reload or restart) | Reconnect with backoff and resume |
 | 1012 | Den restarting | Reconnect after a random 0.5 to 5 seconds, and resume (it will get `ready`) |
 | 4001 | Session expired | Log in again, then reconnect and resume |
-| 4003 | Key revoked, or the member left, was removed or was banned; the reason says which: `key revoked`, `left`, `removed` or `banned` | Stop. Tell the member, and don't reconnect |
+| 4003 | Key revoked, or the member left, was removed or was banned; the reason says which: `key revoked`, `password changed` (a new password signed the device out), `left`, `removed` or `banned` | Stop. Tell the member, and don't reconnect. After `key revoked` or `password changed`, offer to sign in again with the password |
 | 4008 | Too slow | Reconnect and resume |
 | 4029 | Rate limited | Reconnect after the `Retry-After` the close reason carries |
 
@@ -426,7 +473,6 @@ limits = {"file_size", "member_storage", "den_storage"}   (bytes)
 
 ## Later steps (outline)
 
-- **M1.5 Recovery:** the endpoints sketched above, `GET /api/me/devices` and `DELETE /api/me/devices/{key_id}`, and `device.*` events.
 - **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.
 - **M1.7 Private DMs:** members publish their identity key and each device's signed encryption key, and clients fetch a DM partner's. DM messages carry sealed text with the ID of the conversation key it was sealed with, and each device fetches the conversation keys sealed for it. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. The key backup is stored and fetched as an opaque blob. `device.*` events tell DM partners when a member's devices change. See the design doc.
 
@@ -439,7 +485,7 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Challenges | 30 per minute per IP |
 | Join and join preview | 10 per hour per IP |
 | Sign-in with a device key | 30 per minute per IP |
-| Password sign-in and recovery (M1.5) | 10 per hour per IP and 10 per hour per username, with backoff |
+| Password sign-in and recovery | 10, then 1 every 6 minutes, per IP and per username. A signed-in member's password checks count against the username's |
 | Sending messages | 5 per 5 seconds per member, per channel |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
