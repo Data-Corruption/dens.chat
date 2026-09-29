@@ -5,7 +5,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import {
-    Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction,
+    Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction,
 } from './components.jsx';
 
 const VERIFIER_HINT =
@@ -16,9 +16,20 @@ export function Home({ status, navigate }) {
     const [view, setView] = useState(null);
     const [codes, setCodes] = useState(null);
 
-    useEffect(() => onEvent((message) => {
-        if (message.t === 'dens') setView(message.d);
-    }), []);
+    useEffect(() => {
+        // The list comes over plain HTTP first: the event stream's socket
+        // can open late, since Firefox holds back sockets to an address
+        // that recently refused them. What the stream sends is newer.
+        let fresh = true;
+        api.get('/api/dens').then((v) => fresh && setView((cur) => cur || v), () => {});
+        const stop = onEvent((message) => {
+            if (message.t === 'dens') setView(message.d);
+        });
+        return () => {
+            fresh = false;
+            stop();
+        };
+    }, []);
 
     if (codes) {
         return <RecoveryCodes denName={codes.name} codes={codes.codes} onDone={() => setCodes(null)} />;
@@ -35,7 +46,7 @@ export function Home({ status, navigate }) {
                 </div>
             )}
             {!view ? (
-                <span class="loading loading-spinner"></span>
+                <Waiting label="Waiting for Dens on this computer…" />
             ) : (
                 <>
                     {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}

@@ -41,6 +41,18 @@ export function useLater(active, ms) {
     return active && later;
 }
 
+// Waiting is a spinner that says what it waits for once it has taken a
+// while, so a slow start doesn't look like a hang.
+export function Waiting({ label }) {
+    const slow = useLater(true, 1500);
+    return (
+        <div class="flex items-center gap-2 text-sm text-base-content/70" role="status">
+            <span class="loading loading-spinner"></span>
+            {slow && <span>{label}</span>}
+        </div>
+    );
+}
+
 export function ErrorText({ message }) {
     if (!message) return null;
     return (

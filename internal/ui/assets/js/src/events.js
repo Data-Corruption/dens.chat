@@ -3,6 +3,12 @@
 // too: the channel it shows in each den, and typing. The service is on
 // this computer, so a lost stream retries quickly; after a reconnect,
 // views reload, since events may have been missed while it was down.
+//
+// While the stream is down, the page asks the service over plain HTTP
+// whether it's back before opening another socket. Firefox holds back a
+// socket to an address whose last ones failed, longer after each failure,
+// up to a minute, so retrying sockets while the service restarts would
+// keep this page, and new ones, waiting long after it's back.
 
 const MIN_DELAY = 250;
 const MAX_DELAY = 3000;
@@ -36,7 +42,28 @@ function retryNow() {
     if (!retry) return;
     clearTimeout(retry);
     retry = null;
-    connect();
+    reconnect();
+}
+
+// reconnect opens the socket again once the service answers, and tries
+// again later if it doesn't.
+async function reconnect() {
+    let up = false;
+    try {
+        up = (await fetch('/healthz', { cache: 'no-store' })).ok;
+    } catch {
+        // Not back yet.
+    }
+    if (up) connect();
+    else schedule();
+}
+
+function schedule() {
+    retry = setTimeout(() => {
+        retry = null;
+        reconnect();
+    }, delay * (0.5 + Math.random() / 2));
+    delay = Math.min(delay * 2, MAX_DELAY);
 }
 
 function connect() {
@@ -67,11 +94,7 @@ function connect() {
             down = true;
             connectionListeners.forEach((fn) => fn(false));
         }
-        retry = setTimeout(() => {
-            retry = null;
-            connect();
-        }, delay * (0.5 + Math.random() / 2));
-        delay = Math.min(delay * 2, MAX_DELAY);
+        schedule();
     });
 }
 
