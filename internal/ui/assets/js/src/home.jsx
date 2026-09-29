@@ -191,6 +191,8 @@ function DenSettings({ den }) {
     const [url, setURL] = useState(den.url);
     const [saved, setSaved] = useState(false);
     const [reached, setReached] = useState(false);
+    // Each opening loads the limits afresh.
+    const [opened, setOpened] = useState(0);
     const save = useAction();
     const check = useAction();
 
@@ -217,7 +219,7 @@ function DenSettings({ den }) {
 
     // Closing the section drops unsaved edits and old results.
     function toggle(e) {
-        if (e.currentTarget.open) return;
+        if (e.currentTarget.open) return setOpened((n) => n + 1);
         setName(den.name);
         setURL(den.url);
         setSaved(false);
@@ -268,8 +270,72 @@ function DenSettings({ den }) {
                         </>
                     )}
                 </div>
+                <UploadLimits key={opened} denID={den.den_id} />
             </div>
         </details>
+    );
+}
+
+const MB = 1 << 20;
+const GB = 1 << 30;
+
+// UploadLimits sets how large a file may be, and how much space each
+// member's files and the whole den's may take.
+function UploadLimits({ denID }) {
+    const [limits, setLimits] = useState(null);
+    const [saved, setSaved] = useState(false);
+    const save = useAction();
+    useEffect(() => {
+        api.get(`/api/dens/${denID}/state`).then((v) => setLimits({
+            file: String(Math.round(v.limits.file_size / MB)),
+            member: String(+(v.limits.member_storage / GB).toFixed(2)),
+            den: String(+(v.limits.den_storage / GB).toFixed(2)),
+        }), (e) => save.setError(e.message));
+    }, [denID]);
+    if (!limits) return save.error ? <ErrorText message={save.error} /> : null;
+    const set = (key) => (value) => {
+        setSaved(false);
+        setLimits({ ...limits, [key]: value });
+    };
+
+    function submit(e) {
+        e.preventDefault();
+        setSaved(false);
+        save.run(async () => {
+            await api.post(`/api/dens/${denID}/settings`, {
+                limits: {
+                    file_size: Math.round(Number(limits.file) * MB),
+                    member_storage: Math.round(Number(limits.member) * GB),
+                    den_storage: Math.round(Number(limits.den) * GB),
+                },
+            });
+            setSaved(true);
+        });
+    }
+
+    return (
+        <form class="flex flex-col gap-2 border-t border-base-300 pt-3" onSubmit={submit}>
+            <h3 class="font-medium">Uploads</h3>
+            <p class="text-sm text-base-content/70">
+                Files are stored encrypted on this den's computer. Dens also stops taking uploads when its disk has less than 1 GB free.
+            </p>
+            <div class="grid gap-2 sm:grid-cols-3">
+                <Field label="Largest file (MB)">
+                    <TextInput type="number" min="1" max="1024" step="1" value={limits.file} onInput={set('file')} required />
+                </Field>
+                <Field label="Space per member (GB)">
+                    <TextInput type="number" min="0.01" step="0.01" value={limits.member} onInput={set('member')} required />
+                </Field>
+                <Field label="Space for the den (GB)">
+                    <TextInput type="number" min="0.01" step="0.01" value={limits.den} onInput={set('den')} required />
+                </Field>
+            </div>
+            <ErrorText message={save.error} />
+            {saved && <p class="text-sm text-success">Saved.</p>}
+            <div>
+                <SubmitButton busy={save.busy}>Save upload limits</SubmitButton>
+            </div>
+        </form>
     );
 }
 

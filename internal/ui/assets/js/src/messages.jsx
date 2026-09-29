@@ -12,6 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
+import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, formatSize, isImageFile, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { rank } from './people.jsx';
@@ -29,10 +30,12 @@ function mergeIn(messages, incoming) {
     return out;
 }
 
+let nextKey = 1;
+
 // MessagePane shows a channel or DM. dm is the other member of a DM;
 // typing lists who is typing here; closed, when set, says why nothing can
-// be sent.
-export function MessagePane({ denID, channel, me, members, readPosition, role, dm, typing, closed, onProfile, onTyping }) {
+// be sent; limits are the den's upload limits.
+export function MessagePane({ denID, channel, me, members, readPosition, role, dm, typing, closed, limits, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -40,6 +43,12 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const [replyTo, setReplyTo] = useState(null);
     const [editing, setEditing] = useState(null);
     const [error, setError] = useState('');
+    // files are the attachments the member is getting ready to send.
+    const [files, setFiles] = useState([]);
+    const filesRef = useRef(files);
+    filesRef.current = files;
+    const [viewing, setViewing] = useState(null);
+    const [dragging, setDragging] = useState(false);
     const [divider] = useState(readPosition || '');
     const scroller = useRef(null);
     const content = useRef(null);
@@ -235,6 +244,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             clearTimeout(readTimer.current);
             sendRead();
             clearTimeout(highlightTimer.current);
+            filesRef.current.forEach((f) => f.abort?.());
         };
     }, []);
 
@@ -272,6 +282,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 messages: cur.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)),
             }));
         } else if (e.t === 'message.deleted') {
+            setViewing((v) => (v && (d.files || []).includes(v.id) ? null : v));
             setList((cur) => ({
                 ...cur,
                 messages: cur.messages.filter((m) => m.id !== d.id).map((m) => (m.reply_to === d.id ? { ...m, reply: undefined } : m)),
@@ -279,14 +290,56 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         }
     }
 
+    // addFiles starts uploading files the member picked, dropped or pasted,
+    // up to what a message holds. Uploads go ahead while they write.
+    function addFiles(list) {
+        const picked = [...list];
+        const room = MAX_ATTACHMENTS - filesRef.current.length;
+        if (picked.length > room) setError(`A message holds at most ${MAX_ATTACHMENTS} files.`);
+        const added = picked.slice(0, Math.max(0, room)).map((file) => {
+            const entry = { key: nextKey++, file, name: file.name || 'pasted image.png', size: file.size, progress: 0 };
+            if (limits?.file_size && file.size > limits.file_size) {
+                entry.error = `This file is larger than this den allows (${formatSize(limits.file_size)}).`;
+            }
+            return entry;
+        });
+        setFiles((cur) => [...cur, ...added]);
+        for (const entry of added) {
+            if (entry.error) continue;
+            const up = upload(denID, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }));
+            entry.abort = up.abort;
+            up.done.then(
+                (result) => updateFile(entry.key, { result, progress: 1 }),
+                (e) => updateFile(entry.key, { error: e.message }),
+            );
+        }
+    }
+
+    function updateFile(key, changes) {
+        setFiles((cur) => cur.map((f) => (f.key === key ? { ...f, ...changes } : f)));
+    }
+
+    function removeFile(key) {
+        filesRef.current.find((f) => f.key === key)?.abort?.();
+        setFiles((cur) => cur.filter((f) => f.key !== key));
+    }
+
     async function send(text, pendingEntry) {
         if (listRef.current.hasNewer) loadNewest();
-        const entry = pendingEntry || { nonce: newNonce(), text, reply_to: replyTo?.id || '', failed: false };
+        const entry = pendingEntry || {
+            nonce: newNonce(), text, reply_to: replyTo?.id || '', attachments: files.map((f) => f.result), failed: false,
+        };
         setPending((p) => [...p.filter((x) => x.nonce !== entry.nonce), { ...entry, failed: false }]);
-        if (!pendingEntry) setReplyTo(null);
+        if (!pendingEntry) {
+            setReplyTo(null);
+            setFiles([]);
+        }
         anchor.current = { bottom: true };
         try {
-            const m = await api.post(base, { nonce: entry.nonce, text: entry.text, reply_to: entry.reply_to || undefined });
+            const m = await api.post(base, {
+                nonce: entry.nonce, text: entry.text, reply_to: entry.reply_to || undefined,
+                attachments: entry.attachments.length ? entry.attachments.map((f) => f.id) : undefined,
+            });
             setPending((p) => p.filter((x) => x.nonce !== entry.nonce));
             if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
             if (!listRef.current.hasNewer) {
@@ -337,14 +390,36 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 onEdit={() => setEditing(m.id)}
                 onEditDone={() => setEditing(null)}
                 onJump={jumpTo}
+                onView={setViewing}
                 denID={denID}
             />,
         );
         prev = m;
     }
 
+    // Files dragged over the pane attach to the message being written.
+    const withFiles = (e) => !closed && [...(e.dataTransfer?.types || [])].includes('Files');
     return (
-        <div class="flex min-h-0 flex-1 flex-col">
+        <div
+            class="relative flex min-h-0 flex-1 flex-col"
+            onDragOver={(e) => {
+                if (!withFiles(e)) return;
+                e.preventDefault();
+                setDragging(true);
+            }}
+            onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget) && setDragging(false)}
+            onDrop={(e) => {
+                if (!withFiles(e)) return;
+                e.preventDefault();
+                setDragging(false);
+                addFiles(e.dataTransfer.files);
+            }}
+        >
+            {dragging && (
+                <div class="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-primary bg-base-100/80 text-lg font-semibold">
+                    Drop to attach
+                </div>
+            )}
             <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 py-2" onScroll={checkEdges}>
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
@@ -385,12 +460,16 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     replyTo={replyTo}
                     replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
                     typing={typing}
+                    files={files}
+                    onAddFiles={addFiles}
+                    onRemoveFile={removeFile}
                     onCancelReply={() => setReplyTo(null)}
                     onSend={(text) => send(text)}
                     onEditLast={editLast}
                     onTyping={onTyping}
                 />
             )}
+            {viewing && <Viewer denID={denID} file={viewing} onClose={() => setViewing(null)} />}
         </div>
     );
 
@@ -413,7 +492,13 @@ function clock(ms) {
     return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canDelete, onReply, onEdit, onEditDone, onJump, onProfile, denID }) {
+// Quoted shows the first line of a message a reply quotes, or that it has
+// only files.
+function Quoted({ text, me }) {
+    return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
+}
+
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canDelete, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID }) {
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState('');
     async function remove() {
@@ -434,7 +519,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     <Spine />
                     <Avatar member={repliedAuthor} size="sm" />
                     <span class="shrink-0 font-medium">{name(repliedAuthor)}</span>
-                    <span class="truncate"><Preview text={replied.text} me={me} /></span>
+                    <span class="truncate"><Quoted text={replied.text} me={me} /></span>
                 </button>
             )}
             {m.reply_to && !replied && (
@@ -466,11 +551,14 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     {editing ? (
                         <EditBox m={m} denID={denID} onDone={onEditDone} />
                     ) : (
-                        <div class="break-words">
-                            <Markdown text={m.text} me={me} />
-                            {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
-                        </div>
+                        (m.text.trim() || m.edited_at) && (
+                            <div class="break-words">
+                                {m.text.trim() && <Markdown text={m.text} me={me} />}
+                                {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                            </div>
+                        )
                     )}
+                    {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
                     {error && <p class="text-xs text-error">{error}</p>}
                 </div>
             </div>
@@ -507,7 +595,12 @@ function PendingRow({ p, me, onRetry, onDiscard }) {
                     <span class="font-semibold">{me.display_name}</span>
                     <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
                 </div>
-                <Markdown text={p.text} me={me} />
+                {p.text.trim() && <Markdown text={p.text} me={me} />}
+                {p.attachments?.length > 0 && (
+                    <ul class="text-xs text-base-content/70">
+                        {p.attachments.map((f) => <li key={f.id} class="truncate">{f.name} · {formatSize(f.size)}</li>)}
+                    </ul>
+                )}
                 {p.failed && (
                     <div class="flex items-center gap-2 text-xs text-error">
                         <span>{p.error}</span>
@@ -594,14 +687,17 @@ export function typingLine(names) {
 // shows them for a little longer than that.
 const TYPING_EVERY = 3000;
 
-function Composer({ placeholder, replyTo, replyAuthor, typing, onCancelReply, onSend, onEditLast, onTyping }) {
+function Composer({ placeholder, replyTo, replyAuthor, typing, files, onAddFiles, onRemoveFile, onCancelReply, onSend, onEditLast, onTyping }) {
     const [text, setText] = useState('');
     const box = useRef(null);
+    const picker = useRef(null);
     const lastTyping = useRef(0);
     useEffect(() => box.current?.focus(), [replyTo]);
     const length = [...text].length;
+    const uploading = files.some((f) => !f.result && !f.error);
+    const failed = files.some((f) => f.error);
     function submit() {
-        if (!text.trim() || length > MAX_TEXT) return;
+        if ((!text.trim() && files.length === 0) || length > MAX_TEXT || uploading || failed) return;
         onSend(text);
         setText('');
         lastTyping.current = 0;
@@ -620,34 +716,90 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, onCancelReply, on
             {replyTo && (
                 <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
                     <span class="min-w-0 truncate">
-                        Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Preview text={replyTo.text} />
+                        Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} />
                     </span>
                     <button type="button" class="btn btn-ghost btn-xs" onClick={onCancelReply} aria-label="Cancel reply">✕</button>
                 </div>
             )}
-            <textarea
-                ref={box}
-                class="textarea h-auto min-h-0 w-full resize-none"
-                rows={Math.min(8, text.split('\n').length)}
-                placeholder={placeholder}
-                value={text}
-                onInput={(e) => input(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-                        e.preventDefault();
-                        submit();
-                    } else if (e.key === 'Escape' && replyTo) {
-                        onCancelReply();
-                    } else if (e.key === 'ArrowUp' && !text) {
-                        e.preventDefault();
-                        onEditLast();
-                    }
-                }}
-            ></textarea>
+            {files.length > 0 && (
+                <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
+                    {files.map((f) => <FileChip key={f.key} f={f} onRemove={() => onRemoveFile(f.key)} />)}
+                </ul>
+            )}
+            <div class="flex items-end gap-2">
+                <button type="button" class="btn btn-ghost btn-square" aria-label="Attach files" title="Attach files"
+                    disabled={files.length >= MAX_ATTACHMENTS} onClick={() => picker.current?.click()}>
+                    <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
+                    </svg>
+                </button>
+                <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {
+                    onAddFiles(e.currentTarget.files);
+                    e.currentTarget.value = '';
+                }} />
+                <textarea
+                    ref={box}
+                    class="textarea h-auto min-h-0 w-full resize-none"
+                    rows={Math.min(8, text.split('\n').length)}
+                    placeholder={placeholder}
+                    value={text}
+                    onPaste={(e) => {
+                        if (e.clipboardData?.files?.length) {
+                            e.preventDefault();
+                            onAddFiles(e.clipboardData.files);
+                        }
+                    }}
+                    onInput={(e) => input(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                            e.preventDefault();
+                            submit();
+                        } else if (e.key === 'Escape' && replyTo) {
+                            onCancelReply();
+                        } else if (e.key === 'ArrowUp' && !text) {
+                            e.preventDefault();
+                            onEditLast();
+                        }
+                    }}
+                ></textarea>
+            </div>
             <div class="flex cursor-default select-none justify-between text-xs text-base-content/50">
-                {typers ? <span class="truncate font-medium text-base-content/70" aria-live="polite">{typers}</span> : <span>Enter to send, Shift+Enter for a new line</span>}
+                {typers ? (
+                    <span class="truncate font-medium text-base-content/70" aria-live="polite">{typers}</span>
+                ) : uploading ? (
+                    <span>Uploading… the message sends once the files are up.</span>
+                ) : failed ? (
+                    <span class="text-error">Remove the files that couldn't be sent to send the rest.</span>
+                ) : (
+                    <span>Enter to send, Shift+Enter for a new line</span>
+                )}
                 {length > MAX_TEXT - 500 && <span class={length > MAX_TEXT ? 'text-error' : ''}>{length} / {MAX_TEXT}</span>}
             </div>
         </div>
+    );
+}
+
+// FileChip is a file waiting to go with the message: its preview or icon,
+// how far its upload is, and whether its metadata came out.
+function FileChip({ f, onRemove }) {
+    const done = !!f.result;
+    return (
+        <li class={`flex w-60 max-w-full items-center gap-2 rounded border bg-base-200 p-1.5 ${f.error ? 'border-error' : 'border-base-300'}`}>
+            {isImageFile(f.file) ? <Thumb file={f.file} size={40} /> : <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>}
+            <div class="min-w-0 flex-1 text-xs">
+                <p class="truncate font-medium" title={f.name}>{f.name}</p>
+                {f.error ? (
+                    <p class="text-error" role="alert">{f.error}</p>
+                ) : done ? (
+                    <p class="text-base-content/60">
+                        {formatSize(f.result.size)}
+                        {f.result.stripped && <span class="block text-success">Location and camera details removed</span>}
+                    </p>
+                ) : (
+                    <progress class="progress progress-primary h-1.5 w-full" value={Math.round(f.progress * 100)} max="100"></progress>
+                )}
+            </div>
+            <button type="button" class="btn btn-ghost btn-xs btn-square" onClick={onRemove} aria-label={`Remove ${f.name}`}>✕</button>
+        </li>
     );
 }

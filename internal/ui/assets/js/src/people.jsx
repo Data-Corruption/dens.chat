@@ -1,10 +1,12 @@
 // Members: the member list, profile cards, editing your own profile, and
 // staff removing someone.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, SubmitButton, TextInput, useAction } from './components.jsx';
+import { ErrorText, Field, SubmitButton, TextInput, useAction, useLater } from './components.jsx';
+import { CropDialog } from './crop.jsx';
+import { fileURL, formatSize, upload } from './files.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
 
@@ -71,6 +73,8 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
     const [bio, setBio] = useState(null);
     const [error, setError] = useState('');
     const act = useAction();
+    // A bio usually arrives at once; the dots show only if it's slow.
+    const slow = useLater(bio === null && !error, 1000);
     useEffect(() => {
         api.get(`/api/dens/${denID}/members/${member.id}`).then((p) => setBio(p.bio || ''), (e) => setError(e.message));
     }, [member.id, member.display_name]);
@@ -84,6 +88,7 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
 
     return (
         <Dialog title="Profile" onClose={onClose}>
+            {member.banner?.id && <Banner denID={denID} image={member.banner} />}
             <div class="flex items-center gap-4">
                 <Avatar member={member} size="lg" online={left ? undefined : online} />
                 <div class="flex min-w-0 flex-col items-start gap-1">
@@ -93,7 +98,7 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
                 </div>
             </div>
             <p class="text-xs text-base-content/60">{left ? `No longer in this den since ${day(member.left_at)}` : `Member since ${day(member.joined_at)}`}</p>
-            {bio === null && !error && <span class="loading loading-dots loading-sm"></span>}
+            {slow && <span class="loading loading-dots loading-sm"></span>}
             {bio && (
                 <div class="max-h-48 overflow-y-auto rounded bg-base-200 p-2 text-sm">
                     <Markdown text={bio} me={me} />
@@ -119,15 +124,58 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
     );
 }
 
-// EditProfile changes the member's own display name and bio in this den.
-export function EditProfile({ denID, me, onClose }) {
+// Banner shows the wide picture on a profile, three times as wide as it
+// is high, at its final size before it loads.
+function Banner({ denID, image }) {
+    return (
+        <div class="aspect-[3/1] w-full overflow-hidden rounded bg-base-300">
+            <img src={fileURL(denID, image.id)} alt="" draggable={false} class="h-full w-full select-none object-cover" />
+        </div>
+    );
+}
+
+// EditProfile changes the member's own display name, bio and pictures in
+// this den.
+export function EditProfile({ denID, me, limits, onClose }) {
     const [name, setName] = useState(me.display_name);
     const [bio, setBio] = useState(null);
+    const [cropping, setCropping] = useState(null);
+    const [storage, setStorage] = useState(null);
     const save = useAction();
+    const picture = useAction();
+    const pickAvatar = useRef(null);
+    const pickBanner = useRef(null);
     useEffect(() => {
         api.get(`/api/dens/${denID}/members/${me.id}`).then((p) => setBio(p.bio || ''), () => setBio(''));
+        api.get(`/api/dens/${denID}/storage`).then(setStorage, () => {});
     }, [me.id]);
     const length = [...(bio || '')].length;
+
+    function pick(shape) {
+        return (e) => {
+            const file = e.currentTarget.files[0];
+            e.currentTarget.value = '';
+            if (file) {
+                picture.setError('');
+                setCropping({ shape, file });
+            }
+        };
+    }
+
+    // savePicture uploads a cropped picture and puts it on the profile; the
+    // den deletes the one it replaces.
+    function savePicture(blob) {
+        const { shape } = cropping;
+        picture.run(async () => {
+            const up = await upload(denID, blob, `${shape}.${blob.type === 'image/webp' ? 'webp' : 'png'}`).done;
+            await api.patch(`/api/dens/${denID}/me`, { [shape]: up.id });
+            setCropping(null);
+        });
+    }
+
+    function removePicture(shape) {
+        picture.run(() => api.patch(`/api/dens/${denID}/me`, { [shape]: '' }));
+    }
 
     function submit(e) {
         e.preventDefault();
@@ -140,26 +188,56 @@ export function EditProfile({ denID, me, onClose }) {
     return (
         <Dialog title="Your profile in this den" onClose={onClose}>
             <p class="text-sm text-base-content/70">Each den has its own profile. Everyone in this den can see it.</p>
-            {bio === null ? (
-                <span class="loading loading-dots loading-sm"></span>
-            ) : (
-                <form class="flex flex-col gap-2" onSubmit={submit}>
-                    <Field label="Display name">
-                        <TextInput value={name} onInput={setName} required maxlength="32" />
-                    </Field>
-                    <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
-                        <textarea class="textarea w-full" rows="4" value={bio} onInput={(e) => setBio(e.currentTarget.value)}></textarea>
-                    </Field>
-                    {length > MAX_BIO - 50 && (
-                        <p class={`cursor-default select-none text-right text-xs ${length > MAX_BIO ? 'text-error' : 'text-base-content/60'}`}>
-                            {length} / {MAX_BIO}
-                        </p>
-                    )}
-                    <ErrorText message={save.error} />
-                    <div>
-                        <SubmitButton busy={save.busy}>Save</SubmitButton>
+            <form class="flex flex-col gap-2" onSubmit={submit}>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Picture</legend>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <Avatar member={me} size="lg" />
+                        <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickAvatar.current?.click()}>
+                            {me.avatar?.id ? 'Change' : 'Add a picture'}
+                        </button>
+                        {me.avatar?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('avatar')}>Remove</button>}
                     </div>
-                </form>
+                </fieldset>
+                <fieldset class="fieldset">
+                    <legend class="fieldset-legend">Banner</legend>
+                    {me.banner?.id ? <Banner denID={denID} image={me.banner} /> : <p class="label whitespace-normal">A wide picture across the top of your profile.</p>}
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickBanner.current?.click()}>
+                            {me.banner?.id ? 'Change' : 'Add a banner'}
+                        </button>
+                        {me.banner?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('banner')}>Remove</button>}
+                    </div>
+                    <input ref={pickAvatar} type="file" accept="image/*" class="hidden" onChange={pick('avatar')} />
+                    <input ref={pickBanner} type="file" accept="image/*" class="hidden" onChange={pick('banner')} />
+                    {!cropping && <ErrorText message={picture.error} />}
+                </fieldset>
+                <Field label="Display name">
+                    <TextInput value={name} onInput={setName} required maxlength="32" />
+                </Field>
+                <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
+                    {/* The form shows at once; only the bio waits for the den. */}
+                    <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
+                        placeholder={bio === null ? 'Loading…' : ''} onInput={(e) => setBio(e.currentTarget.value)}></textarea>
+                </Field>
+                {length > MAX_BIO - 50 && (
+                    <p class={`cursor-default select-none text-right text-xs ${length > MAX_BIO ? 'text-error' : 'text-base-content/60'}`}>
+                        {length} / {MAX_BIO}
+                    </p>
+                )}
+                <ErrorText message={save.error} />
+                <div>
+                    <SubmitButton busy={save.busy}>Save</SubmitButton>
+                </div>
+                {storage && limits?.member_storage > 0 && (
+                    <p class="cursor-default select-none text-xs text-base-content/60">
+                        Your files here take {formatSize(storage.used)} of the {formatSize(limits.member_storage)} each member can use.
+                    </p>
+                )}
+            </form>
+            {cropping && (
+                <CropDialog file={cropping.file} shape={cropping.shape} busy={picture.busy} error={picture.error}
+                    onCrop={savePicture} onClose={() => setCropping(null)} />
             )}
         </Dialog>
     );
