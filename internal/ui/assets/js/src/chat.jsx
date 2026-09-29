@@ -99,6 +99,8 @@ export function Chat({ denID, channelID, navigate }) {
     const [typing, setTyping] = useState(() => new Map());
     const [visible, setVisible] = useState(document.visibilityState === 'visible');
     const [live, setLive] = useState(true);
+    // newDevice is a device that just signed in to this member's account.
+    const [newDevice, setNewDevice] = useState(null);
     const reloadTimer = useRef(null);
     useEffect(() => onConnection(setLive), []);
 
@@ -134,6 +136,7 @@ export function Chat({ denID, channelID, navigate }) {
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
                 else if (e.t === 'typing') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.member_id, Date.now() + TYPING_SHOWN));
                 else if (e.t === 'message.created') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.author_id, 0));
+                else if (e.t === 'device.added') setNewDevice(e.d);
             }
             // The local service counts unread messages and mentions.
             if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
@@ -247,7 +250,20 @@ export function Chat({ denID, channelID, navigate }) {
                     {gone && (
                         <div role="status" class="alert alert-warning alert-soft m-2 flex flex-wrap">
                             <span>{closed}</span>
+                            {view.state === 'revoked' && (
+                                <button type="button" class="btn btn-primary btn-sm" onClick={() => navigate('/')}>Sign in again</button>
+                            )}
                             <button type="button" class="btn btn-sm" onClick={forget}>Remove from this computer</button>
+                        </div>
+                    )}
+                    {newDevice && !gone && (
+                        <div role="status" class="alert alert-info alert-soft m-2 flex flex-wrap">
+                            <span>
+                                A new device signed in to your account here: <span class="font-medium">{newDevice.label}</span>. If it wasn't
+                                you, change your den password under Devices and password on the home page, which signs out every other
+                                device.
+                            </span>
+                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => setNewDevice(null)}>Dismiss</button>
                         </div>
                     )}
                     {channel ? (

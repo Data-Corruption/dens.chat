@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, SubmitButton, TextInput, useAction, useLater } from './components.jsx';
+import { ErrorText, Field, SubmitButton, TextInput, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, upload } from './files.jsx';
 import { Dialog } from './manage.jsx';
@@ -24,10 +24,6 @@ export function isStaff(role) {
 function RoleBadge({ role, size = 'badge-sm' }) {
     if (!isStaff(role)) return null;
     return <span class={`badge badge-soft ${role === 'owner' ? 'badge-warning' : 'badge-info'} ${size}`}>{role === 'owner' ? 'Owner' : 'Moderator'}</span>;
-}
-
-function day(ms) {
-    return new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
 }
 
 const byName = (a, b) => a.display_name.localeCompare(b.display_name);
