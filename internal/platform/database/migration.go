@@ -65,14 +65,17 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT;
 
 			-- The den this install hosts, once created. The identity private
-			-- key is sealed with the data key.
+			-- key is sealed with the data key. The upload limits are bytes.
 			CREATE TABLE den (
-				id          INTEGER PRIMARY KEY CHECK (id = 1),
-				name        TEXT NOT NULL,
-				url         TEXT NOT NULL,
-				public_key  BLOB NOT NULL,
-				private_key BLOB NOT NULL,
-				created_at  INTEGER NOT NULL
+				id             INTEGER PRIMARY KEY CHECK (id = 1),
+				name           TEXT NOT NULL,
+				url            TEXT NOT NULL,
+				public_key     BLOB NOT NULL,
+				private_key    BLOB NOT NULL,
+				created_at     INTEGER NOT NULL,
+				file_size      INTEGER NOT NULL,
+				member_storage INTEGER NOT NULL,
+				den_storage    INTEGER NOT NULL
 			) STRICT;
 
 			-- AUTOINCREMENT: a member ID is never reused, even after deletion.
@@ -90,8 +93,12 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				invite_id     INTEGER REFERENCES den_invites (id) ON DELETE SET NULL,
 				left_at       INTEGER,
 				banned_at     INTEGER,
-				banned_by     INTEGER REFERENCES den_members (id)
+				banned_by     INTEGER REFERENCES den_members (id),
+				avatar_id     INTEGER REFERENCES den_files (id) ON DELETE SET NULL,
+				banner_id     INTEGER REFERENCES den_files (id) ON DELETE SET NULL
 			) STRICT;
+			CREATE INDEX den_members_avatar ON den_members (avatar_id) WHERE avatar_id IS NOT NULL;
+			CREATE INDEX den_members_banner ON den_members (banner_id) WHERE banner_id IS NOT NULL;
 
 			CREATE TABLE den_devices (
 				key_id       BLOB PRIMARY KEY, -- SHA-256 of the public key
@@ -183,6 +190,32 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				PRIMARY KEY (member_id, channel_id, message_id)
 			) STRICT, WITHOUT ROWID;
 			CREATE INDEX den_mentions_message ON den_mentions (message_id);
+
+			-- Uploads. Each is stored sealed with the data key under a random
+			-- name (blob) only its row knows, and its name is sealed too. A
+			-- file is pending until a message or a profile uses it; pending
+			-- files are deleted after an hour. Sizes are bytes, as uploaded;
+			-- the thumb columns are set when the den made a preview.
+			CREATE TABLE den_files (
+				id           INTEGER PRIMARY KEY AUTOINCREMENT,
+				blob         BLOB NOT NULL UNIQUE,
+				uploader_id  INTEGER NOT NULL REFERENCES den_members (id),
+				message_id   INTEGER REFERENCES den_messages (id) ON DELETE CASCADE,
+				position     INTEGER NOT NULL DEFAULT 0, -- its place on the message
+				name         BLOB NOT NULL,
+				type         TEXT NOT NULL,
+				size         INTEGER NOT NULL,
+				width        INTEGER,
+				height       INTEGER,
+				animated     INTEGER NOT NULL DEFAULT 0,
+				thumb_width  INTEGER,
+				thumb_height INTEGER,
+				thumb_size   INTEGER,
+				created_at   INTEGER NOT NULL
+			) STRICT;
+			CREATE INDEX den_files_message ON den_files (message_id, position);
+			CREATE INDEX den_files_uploader ON den_files (uploader_id);
+			CREATE INDEX den_files_pending ON den_files (created_at) WHERE message_id IS NULL;
 
 			-- closed is a DM the member closed; a new message reopens it.
 			CREATE TABLE den_read_states (

@@ -5,8 +5,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -45,7 +48,13 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := dens.Open(context.Background(), db, v, log)
+	storage := dens.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp")}
+	for _, d := range []string{storage.Dir, storage.Temp} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d, err := dens.Open(context.Background(), db, v, log, storage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,4 +305,74 @@ func TestPresence(t *testing.T) {
 	waitPresence(t, c, func(p denproto.Presence) bool { return slices.Contains(p.Online, bobID) })
 	b.Close(websocket.StatusNormalClosure, "")
 	waitPresence(t, c, func(p denproto.Presence) bool { return slices.Contains(p.Offline, bobID) })
+}
+
+// upload sends a file's bytes as a client does, with the given length, or
+// chunked when it's -1.
+func (f *fixture) upload(token denproto.Bytes, name string, body io.Reader, length int64) *http.Response {
+	f.t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, f.srv.URL+"/api/uploads", body)
+	req.ContentLength = length
+	req.Header.Set(denproto.HeaderVersion, "1")
+	req.Header.Set("Authorization", "Bearer "+token.String())
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set(denproto.HeaderFilename, url.PathEscape(name))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return resp
+}
+
+func TestUploadsOverHTTP(t *testing.T) {
+	f := newFixture(t)
+	token, _ := f.owner()
+	text := []byte("notes, of a sort\n")
+	resp := f.upload(token, "ünïcode notes.txt", bytes.NewReader(text), int64(len(text)))
+	var file denproto.File
+	json.NewDecoder(resp.Body).Decode(&file)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated || file.Name != "ünïcode notes.txt" || file.Type != "text/plain" || file.Size != int64(len(text)) {
+		t.Fatalf("%d %+v", resp.StatusCode, file)
+	}
+
+	req, _ := http.NewRequest(http.MethodGet, f.srv.URL+"/api/files/"+file.ID, nil)
+	req.Header.Set(denproto.HeaderVersion, "1")
+	req.Header.Set("Authorization", "Bearer "+token.String())
+	got, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(got.Body)
+	got.Body.Close()
+	if !bytes.Equal(body, text) || got.Header.Get("Content-Type") != "application/octet-stream" ||
+		got.Header.Get("Content-Disposition") != "attachment" || got.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatalf("serving: %q %v", body, got.Header)
+	}
+	req.URL.Path += "/thumb"
+	got, _ = http.DefaultClient.Do(req)
+	wantError(t, got, http.StatusNotFound, denproto.CodeNotFound)
+
+	// A chunked body is refused once it passes the limit. (A stated length
+	// over it is refused before the body is read, which the den's own tests
+	// cover: over HTTP the client may still be sending when the den hangs
+	// up.)
+	resp = f.upload(token, "big", io.LimitReader(zeros{}, denproto.DefaultFileSize+1), -1)
+	wantError(t, resp, http.StatusRequestEntityTooLarge, denproto.CodeTooLarge)
+
+	resp = f.upload(token, "x", bytes.NewReader(text), int64(len(text)))
+	resp.Body.Close()
+	req, _ = http.NewRequest(http.MethodPost, f.srv.URL+"/api/uploads", bytes.NewReader(text))
+	req.Header.Set(denproto.HeaderVersion, "1")
+	req.Header.Set("Authorization", "Bearer "+token.String())
+	req.Header.Set(denproto.HeaderFilename, "%zz")
+	resp, _ = http.DefaultClient.Do(req)
+	wantError(t, resp, http.StatusBadRequest, denproto.CodeInvalidField)
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }

@@ -76,10 +76,13 @@ type Message struct {
 	ReplyTo   string `json:"reply_to,omitempty"`
 	Reply     *Reply `json:"reply,omitempty"`
 	Nonce     Bytes  `json:"nonce,omitempty"`
+	// Attachments are the message's files, in the order they were sent.
+	Attachments []File `json:"attachments,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
 // without that message loaded. It's left out once that message is deleted.
+// Its text is empty when that message has only files.
 type Reply struct {
 	AuthorID string `json:"author_id"`
 	Text     string `json:"text"`
@@ -109,9 +112,12 @@ type ReadState struct {
 	Closed       bool   `json:"closed,omitempty"`
 }
 
+// MessageDeleted names a deleted message, and the files that went with
+// it, so clients drop them from their caches.
 type MessageDeleted struct {
-	ID        string `json:"id"`
-	ChannelID string `json:"channel_id"`
+	ID        string   `json:"id"`
+	ChannelID string   `json:"channel_id"`
+	Files     []string `json:"files,omitempty"`
 }
 
 type ChannelDeleted struct {
@@ -137,6 +143,8 @@ type SendRequest struct {
 	Nonce   Bytes  `json:"nonce"`
 	Text    string `json:"text"`
 	ReplyTo string `json:"reply_to,omitempty"`
+	// Attachments are uploads to send with the message.
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 type EditRequest struct {
@@ -181,11 +189,15 @@ func FormatID(id int64) string { return strconv.FormatInt(id, 10) }
 
 // CheckText checks a message's text: valid UTF-8, not blank, and within
 // the length limits. It is stored as sent.
-func CheckText(text string) error {
+func CheckText(text string) error { return CheckMessageText(text, false) }
+
+// CheckMessageText checks a message's text, which may be blank when the
+// message has files.
+func CheckMessageText(text string, files bool) error {
 	if !utf8.ValidString(text) {
 		return errors.New("text must be valid UTF-8")
 	}
-	if strings.TrimSpace(text) == "" {
+	if !files && strings.TrimSpace(text) == "" {
 		return errors.New("a message can't be empty")
 	}
 	if len(text) > MaxTextBytes || utf8.RuneCountInString(text) > MaxTextRunes {
@@ -226,11 +238,25 @@ func CheckMessage(m Message) error {
 		if _, err := ParseID(r.AuthorID); err != nil || m.ReplyTo == "" {
 			return errors.New("message has an invalid reply")
 		}
-		if CheckText(r.Text) != nil || utf8.RuneCountInString(r.Text) > ReplyExcerpt {
+		// The text is empty when the original has only files.
+		if (r.Text != "" && CheckText(r.Text) != nil) || utf8.RuneCountInString(r.Text) > ReplyExcerpt {
 			return errors.New("message has an invalid reply")
 		}
 	}
-	return CheckText(m.Text)
+	if len(m.Attachments) > MaxAttachments {
+		return errors.New("message has too many files")
+	}
+	seen := map[string]bool{}
+	for _, f := range m.Attachments {
+		if err := CheckFile(f); err != nil {
+			return err
+		}
+		if seen[f.ID] {
+			return errors.New("message has a file twice")
+		}
+		seen[f.ID] = true
+	}
+	return CheckMessageText(m.Text, len(m.Attachments) > 0)
 }
 
 // Mentions returns the usernames a text mentions, lowercased and without

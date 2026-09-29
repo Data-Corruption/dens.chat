@@ -583,7 +583,11 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 		group = &g
 	}
 	var order []int64
+	var blobs [][]byte
 	err = d.tx(ctx, func(tx *sql.Tx) error {
+		if _, blobs, err = filesOf(ctx, tx, `m.channel_id = ?`, cid); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM den_channels WHERE id = ?`, cid); err != nil {
 			return err
 		}
@@ -597,6 +601,7 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return err
 	}
+	d.files.remove(blobs)
 	if err := d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: c.ID}, audienceOf(c)); err != nil {
 		return err
 	}
@@ -830,8 +835,17 @@ func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]d
 	if err != nil {
 		return nil, err
 	}
+	mids := make([]int64, len(ms))
+	for i, m := range ms {
+		mids[i], _ = denproto.ParseID(m.ID)
+	}
+	files, err := d.attachments(ctx, d.db, mids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range ms {
 		ms[i].Reply = replies[ms[i].ReplyTo]
+		ms[i].Attachments = files[mids[i]]
 	}
 	return ms, nil
 }
@@ -986,7 +1000,11 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err := denproto.Size("nonce", req.Nonce, denproto.NonceBytes); err != nil {
 		return denproto.Message{}, err
 	}
-	if err := denproto.CheckText(req.Text); err != nil {
+	files, err := parseAttachments(req.Attachments)
+	if err != nil {
+		return denproto.Message{}, err
+	}
+	if err := denproto.CheckMessageText(req.Text, len(files) > 0); err != nil {
 		return denproto.Message{}, invalid("text: %v", err)
 	}
 	var replyTo *int64
@@ -1042,6 +1060,9 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		if err := insertMentions(ctx, tx, id, cid, mentioned); err != nil {
 			return err
 		}
+		if err := attach(ctx, tx, id, s.MemberID, files, now); err != nil {
+			return err
+		}
 		// A member has read what they wrote.
 		if _, err = tx.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id) VALUES (?, ?, ?)
 			ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = max(message_id, excluded.message_id)`, s.MemberID, cid, id); err != nil {
@@ -1056,9 +1077,14 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
+	attached, err := d.attachments(ctx, d.db, []int64{id})
+	if err != nil {
+		return denproto.Message{}, err
+	}
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
 		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
+		Attachments: attached[id],
 	}
 	if err := d.Hub.Publish(denproto.EventMessageCreated, m, audienceOf(c)); err != nil {
 		return m, err
@@ -1148,7 +1174,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if m.AuthorID != denproto.FormatID(s.MemberID) {
 		return m, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the author edits a message")
 	}
-	if err := denproto.CheckText(req.Text); err != nil {
+	if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
 		return m, invalid("text: %v", err)
 	}
 	if req.Revision != m.Revision {
@@ -1228,10 +1254,15 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 			return forbidden("only the author, or staff above them, delete a message")
 		}
 	}
+	files, blobs, err := filesOf(ctx, d.db, `m.id = ?`, mid)
+	if err != nil {
+		return err
+	}
 	if _, err := d.db.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
 		return err
 	}
-	return d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID}, audienceOf(c))
+	d.files.remove(blobs)
+	return d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid]}, audienceOf(c))
 }
 
 // MarkRead moves a member's read position in a channel forward.

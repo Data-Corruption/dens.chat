@@ -201,7 +201,7 @@ func (a *App) open(opts OpenOptions) error {
 	}
 
 	if a.Instance.Den.Enabled {
-		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log); err != nil {
+		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, den.Storage{Dir: l.Uploads, Temp: l.Temp}); err != nil {
 			return err
 		}
 		if a.DevMode() {

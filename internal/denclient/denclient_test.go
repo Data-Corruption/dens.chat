@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,9 +29,10 @@ import (
 
 // store is one install's database, vault and log.
 type store struct {
-	db  *sql.DB
-	v   *vault.Vault
-	log *xlog.Logger
+	db      *sql.DB
+	v       *vault.Vault
+	log     *xlog.Logger
+	storage den.Storage
 }
 
 func newStore(t *testing.T) store {
@@ -49,7 +51,13 @@ func newStore(t *testing.T) store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close(); v.Close(); log.Close() })
-	return store{db, v, log}
+	storage := den.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp")}
+	for _, d := range []string{storage.Dir, storage.Temp} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return store{db, v, log, storage}
 }
 
 // denHost runs a den the way an install does: a public TLS address (Caddy's
@@ -75,7 +83,7 @@ func startDen(t *testing.T, s store, lifetime time.Duration) *denHost {
 // restart, or on fresh ones.
 func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr, loopbackAddr string) {
 	h.t.Helper()
-	d, err := den.Open(context.Background(), h.s.db, h.s.v, h.s.log)
+	d, err := den.Open(context.Background(), h.s.db, h.s.v, h.s.log, h.s.storage)
 	if err != nil {
 		h.t.Fatal(err)
 	}
