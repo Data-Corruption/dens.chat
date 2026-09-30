@@ -15,13 +15,30 @@ import { Avatar } from './avatar.jsx';
 import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, formatSize, isImageFile, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { Markdown, Preview } from './markdown.jsx';
-import { rank } from './people.jsx';
+import { isStaff, rank } from './people.jsx';
 
 const WINDOW = 200;
 const PAGE = 50;
 const EDGE = 600; // px from an end at which the next page loads
 const READ_EVERY = 2000; // ms between read position updates
 const GROUP_GAP = 5 * 60 * 1000;
+
+// MAX_EDITORS is how many others may edit a message with its author.
+const MAX_EDITORS = 20;
+
+// withUpdate puts a changed message into the list. A tick's answer can
+// arrive after a newer update, so the higher revision wins.
+function withUpdate(list, d) {
+    const held = list.messages.find((m) => m.id === d.id);
+    if (held && held.revision > d.revision) return list;
+    const reply = { author_id: d.author_id, text: d.text };
+    return { ...list, messages: list.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)) };
+}
+
+// joinNames lists names in a sentence.
+function joinNames(names) {
+    return names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
 
 function mergeIn(messages, incoming) {
     const seen = new Set(messages.map((m) => m.id));
@@ -41,6 +58,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const [highlight, setHighlight] = useState(null);
     const [newCount, setNewCount] = useState(0);
     const [replyTo, setReplyTo] = useState(null);
+    // editors may edit the message being written, besides its author.
+    const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
     const [error, setError] = useState('');
     // files are the attachments the member is getting ready to send.
@@ -63,6 +82,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const unsentRead = useRef('');
     const highlightTimer = useRef(null);
     const base = `/api/dens/${denID}/channels/${channel.id}/messages`;
+    // candidates could edit a message here with its author: the members
+    // who can see the channel, besides this one.
+    const candidates = [...members.values()]
+        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : !channel.staff_only || isStaff(x.role)))
+        .sort((a, b) => name(a).localeCompare(name(b)));
 
     // captureAnchor remembers where the topmost visible message sits, so
     // content added or trimmed around it doesn't move what's being read.
@@ -276,11 +300,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             });
             if (follow) setTimeout(markRead, 0);
         } else if (e.t === 'message.updated') {
-            const reply = { author_id: d.author_id, text: d.text };
-            setList((cur) => ({
-                ...cur,
-                messages: cur.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)),
-            }));
+            setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
             setViewing((v) => (v && (d.files || []).includes(v.id) ? null : v));
             setList((cur) => ({
@@ -327,18 +347,20 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     async function send(text, pendingEntry) {
         if (listRef.current.hasNewer) loadNewest();
         const entry = pendingEntry || {
-            nonce: newNonce(), text, reply_to: replyTo?.id || '', attachments: files.map((f) => f.result), failed: false,
+            nonce: newNonce(), text, reply_to: replyTo?.id || '', attachments: files.map((f) => f.result), editors, failed: false,
         };
         setPending((p) => [...p.filter((x) => x.nonce !== entry.nonce), { ...entry, failed: false }]);
         if (!pendingEntry) {
             setReplyTo(null);
             setFiles([]);
+            setEditors([]);
         }
         anchor.current = { bottom: true };
         try {
             const m = await api.post(base, {
                 nonce: entry.nonce, text: entry.text, reply_to: entry.reply_to || undefined,
                 attachments: entry.attachments.length ? entry.attachments.map((f) => f.id) : undefined,
+                editors: entry.editors.length ? entry.editors : undefined,
             });
             setPending((p) => p.filter((x) => x.nonce !== entry.nonce));
             if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
@@ -384,7 +406,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 me={me}
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
+                canEdit={m.author_id === me.id || (m.editors || []).includes(me.id)}
                 canDelete={m.author_id === me.id || rank(role) > rank(members.get(m.author_id)?.role)}
+                editorNames={(m.editors || []).map((id) => name(members.get(id)))}
+                candidates={candidates}
+                onUpdated={(u) => setList((cur) => withUpdate(cur, u))}
                 onProfile={onProfile}
                 onReply={() => setReplyTo(m)}
                 onEdit={() => setEditing(m.id)}
@@ -464,6 +490,9 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     onAddFiles={addFiles}
                     onRemoveFile={removeFile}
                     onCancelReply={() => setReplyTo(null)}
+                    candidates={candidates}
+                    editors={editors}
+                    onEditors={setEditors}
                     onSend={(text) => send(text)}
                     onEditLast={editLast}
                     onTyping={onTyping}
@@ -498,9 +527,20 @@ function Quoted({ text, me }) {
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canDelete, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID }) {
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState('');
+    async function tick(n, checked, text) {
+        setError('');
+        try {
+            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/tasks/${n}`, { checked, text }));
+        } catch (e) {
+            // A list that changed meanwhile shows as it is now.
+            if (e.status === 409 && e.data?.message) onUpdated(e.data.message);
+            else setError(e.message);
+            throw e;
+        }
+    }
     async function remove() {
         try {
             await api.del(`/api/dens/${denID}/messages/${m.id}`);
@@ -549,12 +589,15 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         </div>
                     )}
                     {editing ? (
-                        <EditBox m={m} denID={denID} onDone={onEditDone} />
+                        <EditBox m={m} denID={denID} mine={m.author_id === me.id} candidates={candidates} onDone={onEditDone} />
                     ) : (
                         (m.text.trim() || m.edited_at) && (
                             <div class="break-words">
-                                {m.text.trim() && <Markdown text={m.text} me={me} />}
+                                {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
                                 {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                                {editorNames.length > 0 && (
+                                    <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
+                                )}
                             </div>
                         )
                     )}
@@ -565,7 +608,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
             {!editing && (
                 <div class="absolute -top-3 right-2 hidden gap-1 rounded bg-base-100 shadow group-hover:flex">
                     <button type="button" class="btn btn-ghost btn-xs" onClick={onReply}>Reply</button>
-                    {m.author_id === me.id && <button type="button" class="btn btn-ghost btn-xs" onClick={onEdit}>Edit</button>}
+                    {canEdit && <button type="button" class="btn btn-ghost btn-xs" onClick={onEdit}>Edit</button>}
                     {canDelete && !confirming && <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirming(true)}>Delete</button>}
                     {confirming && (
                         <>
@@ -615,18 +658,24 @@ function PendingRow({ p, me, onRetry, onDiscard }) {
 
 // EditBox edits a message against the revision it started from. If the
 // message changed meanwhile, it shows the newer text and keeps the draft.
-function EditBox({ m, denID, onDone }) {
+// Its author also changes who else may edit it.
+function EditBox({ m, denID, mine, candidates, onDone }) {
     const [text, setText] = useState(m.text);
+    const [editors, setEditors] = useState(m.editors || []);
+    const [sharing, setSharing] = useState(false);
     const [base, setBase] = useState(m);
     const [conflict, setConflict] = useState(null);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
+    const was = base.editors || [];
+    const shared = mine && (editors.length !== was.length || editors.some((id) => !was.includes(id)));
+    const names = editors.map((id) => name(candidates.find((c) => c.id === id)));
     async function save() {
-        if (text === base.text) return onDone();
+        if (text === base.text && !shared) return onDone();
         setBusy(true);
         setError('');
         try {
-            await api.patch(`/api/dens/${denID}/messages/${m.id}`, { revision: base.revision, text });
+            await api.patch(`/api/dens/${denID}/messages/${m.id}`, { revision: base.revision, text, editors: shared ? editors : undefined });
             onDone();
         } catch (e) {
             if (e.status === 409 && e.data?.message) {
@@ -662,6 +711,17 @@ function EditBox({ m, denID, onDone }) {
                 }}
                 autofocus
             ></textarea>
+            {mine && (sharing ? (
+                <div class="flex flex-col gap-1 rounded border border-base-300 p-2">
+                    <span class="text-xs text-base-content/70">Who else can edit this message and tick its boxes?</span>
+                    <EditorList candidates={candidates} selected={editors} onChange={setEditors} />
+                </div>
+            ) : (
+                <div class="flex items-center gap-2 text-xs text-base-content/70">
+                    <span>{editors.length ? `${joinNames(names)} can edit this too.` : 'Only you can edit this.'}</span>
+                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setSharing(true)}>Change</button>
+                </div>
+            ))}
             {error && <p class="text-xs text-error">{error}</p>}
             <div class="flex gap-2 text-xs">
                 <button type="button" class="btn btn-primary btn-xs" onClick={save} disabled={busy}>Save</button>
@@ -687,8 +747,41 @@ export function typingLine(names) {
 // shows them for a little longer than that.
 const TYPING_EVERY = 3000;
 
-function Composer({ placeholder, replyTo, replyAuthor, typing, files, onAddFiles, onRemoveFile, onCancelReply, onSend, onEditLast, onTyping }) {
+// EditorList picks, among the members who could, who else may edit a
+// message.
+function EditorList({ candidates, selected, onChange }) {
+    const [filter, setFilter] = useState('');
+    const wanted = filter.trim().toLowerCase();
+    const shown = candidates.filter((c) => !wanted || `${c.display_name} ${c.username}`.toLowerCase().includes(wanted));
+    const full = selected.length >= MAX_EDITORS;
+    if (candidates.length === 0) return <p class="text-xs text-base-content/60">Nobody else here can see this channel.</p>;
+    return (
+        <div class="flex flex-col gap-1">
+            {candidates.length > 8 && (
+                <input class="input input-sm w-full" placeholder="Find someone" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
+            )}
+            <ul class="flex max-h-32 flex-wrap gap-x-4 gap-y-1 overflow-y-auto" aria-label="Members who can edit">
+                {shown.map((c) => {
+                    const on = selected.includes(c.id);
+                    return (
+                        <li key={c.id}>
+                            <label class="flex cursor-pointer items-center gap-1.5 text-sm">
+                                <input type="checkbox" class="checkbox checkbox-xs" checked={on} disabled={!on && full}
+                                    onChange={() => onChange(on ? selected.filter((id) => id !== c.id) : [...selected, c.id])} />
+                                {c.display_name}
+                            </label>
+                        </li>
+                    );
+                })}
+            </ul>
+            {full && <p class="text-xs text-base-content/60">At most {MAX_EDITORS} others can edit a message.</p>}
+        </div>
+    );
+}
+
+function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCancelReply, onSend, onEditLast, onTyping }) {
     const [text, setText] = useState('');
+    const [sharing, setSharing] = useState(false);
     const box = useRef(null);
     const picker = useRef(null);
     const lastTyping = useRef(0);
@@ -700,6 +793,7 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, onAddFiles
         if ((!text.trim() && files.length === 0) || length > MAX_TEXT || uploading || failed) return;
         onSend(text);
         setText('');
+        setSharing(false);
         lastTyping.current = 0;
     }
     function input(value) {
@@ -726,11 +820,35 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, onAddFiles
                     {files.map((f) => <FileChip key={f.key} f={f} onRemove={() => onRemoveFile(f.key)} />)}
                 </ul>
             )}
+            {sharing ? (
+                <div class="mb-2 flex flex-col gap-1 rounded border border-base-300 p-2">
+                    <div class="flex items-center justify-between gap-2 text-xs text-base-content/70">
+                        <span>Who else can edit this message? They can also tick its boxes: lines that start with [ ].</span>
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={() => setSharing(false)}>Done</button>
+                    </div>
+                    <EditorList candidates={candidates} selected={editors} onChange={onEditors} />
+                </div>
+            ) : editors.length > 0 && (
+                <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
+                    <span class="min-w-0 truncate">{joinNames(editors.map((id) => name(candidates.find((c) => c.id === id))))} can edit this too</span>
+                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setSharing(true)}>Change</button>
+                </div>
+            )}
             <div class="flex items-end gap-2">
                 <button type="button" class="btn btn-ghost btn-square" aria-label="Attach files" title="Attach files"
                     disabled={files.length >= MAX_ATTACHMENTS} onClick={() => picker.current?.click()}>
                     <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                         <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
+                    </svg>
+                </button>
+                <button type="button" class={`btn btn-ghost btn-square ${sharing || editors.length ? 'text-primary' : ''}`}
+                    aria-label="Let others edit this message" title="Let others edit this message" aria-pressed={sharing}
+                    onClick={() => setSharing(!sharing)}>
+                    <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <circle cx="6" cy="5" r="2.5" />
+                        <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
+                        <circle cx="11.5" cy="5.5" r="2" />
+                        <path d="M11 9.6c2 .2 3.5 1.9 3.5 4" />
                     </svg>
                 </button>
                 <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {

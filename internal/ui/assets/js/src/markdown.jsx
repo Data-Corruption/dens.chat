@@ -1,21 +1,26 @@
 // The markdown subset messages use: **bold**, *italic* or _italic_,
 // ~~strikethrough~~, `inline code`, ``` code blocks ```, > quotes,
-// ||spoilers||, @mentions and bare http(s) links. There are no [label](url)
-// links, so a link always shows where it goes.
+// ||spoilers||, @mentions, bare http(s) links, and task lines that start
+// with [ ] or [x]. There are no [label](url) links, so a link always shows
+// where it goes.
 //
 // Every message comes from a den, and dens are other people's servers. The
 // renderer builds Preact nodes whose text is always text: nothing here
 // turns a string into markup, and a link's address is only ever an
 // http(s) URL the parser matched.
 
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/y;
 const NAME_CHAR = /[A-Za-z0-9_]/;
+// A task line, as denproto.Tasks finds one outside code blocks.
+const TASK_RE = /^\[( |x)\] /;
 
-// Markdown renders text as blocks: code blocks, quotes and paragraphs.
-export function Markdown({ text, me, onMention }) {
-    return <div class="markdown">{blocks(text, { me, onMention })}</div>;
+// Markdown renders text as blocks: code blocks, quotes, task lines and
+// paragraphs. With onTask, the reader may tick tasks: onTask(n, checked,
+// text) returns a promise that settles once the den has the tick.
+export function Markdown({ text, me, onMention, onTask }) {
+    return <div class="markdown">{blocks(text, { me, onMention, onTask })}</div>;
 }
 
 // Preview renders a text's first line inline, for places that are already
@@ -32,6 +37,7 @@ function blocks(text, ctx) {
     const lines = text.split('\n');
     let para = [];
     let quote = [];
+    let tasks = 0;
     const flushPara = () => {
         if (para.length) out.push(<p key={out.length}>{joinLines(para, ctx)}</p>);
         para = [];
@@ -58,6 +64,18 @@ function blocks(text, ctx) {
                 <pre key={out.length} class="my-1 overflow-x-auto rounded bg-base-300 p-2 text-sm">
                     <code>{code.join('\n')}</code>
                 </pre>,
+            );
+            continue;
+        }
+        const box = TASK_RE.exec(line);
+        if (box) {
+            flushPara();
+            flushQuote();
+            const label = line.slice(box[0].length);
+            out.push(
+                <Task key={out.length} n={tasks++} checked={box[1] === 'x'} text={label} onTask={ctx.onTask}>
+                    {inline(label, ctx, `t${out.length}`)}
+                </Task>,
             );
             continue;
         }
@@ -190,6 +208,32 @@ function findClose(text, d, start) {
     return -1;
 }
 
+// Task is a task line's checkbox. A tick shows at once, and holds until
+// the message catches up with it, or undoes itself if the den refused it.
+// Only the box ticks, so a link in the task's text opens without ticking.
+function Task({ n, checked, text, onTask, children }) {
+    const [want, setWant] = useState(null);
+    useEffect(() => setWant(null), [checked, text]);
+    const shown = want ?? checked;
+    return (
+        <div class="flex items-start gap-2">
+            <input
+                type="checkbox"
+                class="checkbox checkbox-sm mt-0.5"
+                checked={shown}
+                disabled={!onTask}
+                aria-label={text || 'Task'}
+                onChange={(e) => {
+                    const next = e.currentTarget.checked;
+                    setWant(next);
+                    onTask(n, next, text).catch(() => setWant(null));
+                }}
+            />
+            <span class={shown ? 'text-base-content/60 line-through' : ''}>{children}</span>
+        </div>
+    );
+}
+
 function Spoiler({ children }) {
     const [shown, setShown] = useState(false);
     return (
@@ -208,5 +252,9 @@ function Spoiler({ children }) {
 
 // firstLine is a text's first non-empty line, for previews.
 export function firstLine(text) {
-    return (text.split('\n').find((l) => l.trim()) || '').replace(/^> ?/, '').replace(/^```.*/, '[code]');
+    return (text.split('\n').find((l) => l.trim()) || '')
+        .replace(/^> ?/, '')
+        .replace(/^```.*/, '[code]')
+        .replace(/^\[ \] /, '☐ ')
+        .replace(/^\[x\] /, '☑ ');
 }
