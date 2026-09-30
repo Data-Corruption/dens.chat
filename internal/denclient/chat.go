@@ -35,6 +35,20 @@ func checkID(what, id string) error {
 	return nil
 }
 
+// checkEditors checks the members named to edit a message; the den checks
+// that each can.
+func checkEditors(ids []string) error {
+	if len(ids) > denproto.MaxEditors {
+		return inputError(fmt.Errorf("at most %d others can edit a message", denproto.MaxEditors))
+	}
+	for _, id := range ids {
+		if err := checkID("member", id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // HistoryQuery selects a page of messages: the newest, or before, after or
 // around a message ID.
 type HistoryQuery struct {
@@ -111,6 +125,9 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 			return denproto.Message{}, err
 		}
 	}
+	if err := checkEditors(req.Editors); err != nil {
+		return denproto.Message{}, err
+	}
 	if err := denproto.CheckMessageText(req.Text, len(req.Attachments) > 0); err != nil {
 		return denproto.Message{}, inputError(err)
 	}
@@ -129,8 +146,9 @@ type ErrEditConflict struct{ Current denproto.Message }
 
 func (e *ErrEditConflict) Error() string { return "the message changed since you started editing" }
 
-// Edit replaces a message's text. If someone changed it since revision, it
-// returns *ErrEditConflict with the message as it is now.
+// Edit replaces a message's text, and its editors when set. If someone
+// changed it since revision, it returns *ErrEditConflict with the message
+// as it is now.
 func (m *Manager) Edit(ctx context.Context, denID, messageID string, req denproto.EditRequest) (denproto.Message, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -144,8 +162,36 @@ func (m *Manager) Edit(ctx context.Context, denID, messageID string, req denprot
 	if err := denproto.CheckMessageText(req.Text, true); err != nil {
 		return denproto.Message{}, inputError(err)
 	}
+	if req.Editors != nil {
+		if err := checkEditors(*req.Editors); err != nil {
+			return denproto.Message{}, err
+		}
+	}
+	return change(ctx, c, http.MethodPatch, "/api/messages/"+messageID, req)
+}
+
+// SetTask checks or unchecks task n of a message. If the message changed
+// so that task n isn't the text the member ticked, it returns
+// *ErrEditConflict with the message as it is now.
+func (m *Manager) SetTask(ctx context.Context, denID, messageID string, n int, req denproto.TaskRequest) (denproto.Message, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return denproto.Message{}, err
+	}
+	if err := checkID("message", messageID); err != nil {
+		return denproto.Message{}, err
+	}
+	if n < 0 || n > denproto.MaxTextRunes || len(req.Text) > denproto.MaxTextBytes {
+		return denproto.Message{}, inputError(errors.New("no such task"))
+	}
+	return change(ctx, c, http.MethodPost, "/api/messages/"+messageID+"/tasks/"+strconv.Itoa(n), req)
+}
+
+// change sends an edit or a tick, and reads the message it leaves, or the
+// conflict that carries it.
+func change(ctx context.Context, c *conn, method, path string, req any) (denproto.Message, error) {
 	var msg denproto.Message
-	err = c.call(ctx, http.MethodPatch, "/api/messages/"+messageID, req, &msg)
+	err := c.call(ctx, method, path, req, &msg)
 	var perr *denproto.Error
 	if errors.As(err, &perr) && perr.Code == denproto.CodeEditConflict {
 		var body struct {

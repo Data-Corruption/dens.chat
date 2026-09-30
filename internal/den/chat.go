@@ -843,11 +843,101 @@ func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]d
 	if err != nil {
 		return nil, err
 	}
+	editors, err := messageEditors(ctx, d.db, mids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range ms {
 		ms[i].Reply = replies[ms[i].ReplyTo]
 		ms[i].Attachments = files[mids[i]]
+		ms[i].Editors = editors[mids[i]]
 	}
 	return ms, nil
+}
+
+// messageEditors returns the editors of the messages with the given IDs,
+// by message, in the order of their IDs.
+func messageEditors(ctx context.Context, q querier, ids []int64) (map[int64][]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := q.QueryContext(ctx, `SELECT message_id, member_id FROM den_message_editors WHERE message_id IN (?`+
+		strings.Repeat(", ?", len(ids)-1)+`) ORDER BY message_id, member_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64][]string{}
+	for rows.Next() {
+		var message, member int64
+		if err := rows.Scan(&message, &member); err != nil {
+			return nil, err
+		}
+		out[message] = append(out[message], denproto.FormatID(member))
+	}
+	return out, rows.Err()
+}
+
+// checkEditors resolves the members an author names to edit a message with
+// them: at most MaxEditors others, each in the den now and able to see the
+// channel. It returns them in the order of their IDs.
+func (d *Den) checkEditors(ctx context.Context, ids []string, c denproto.Channel, author int64) ([]int64, error) {
+	if len(ids) > denproto.MaxEditors {
+		return nil, invalid("editors: at most %d members", denproto.MaxEditors)
+	}
+	out := make([]int64, 0, len(ids))
+	for _, s := range ids {
+		id, err := denproto.ParseID(s)
+		if err != nil || id == author || slices.Contains(out, id) {
+			return nil, invalid("editors: each must be another member, once")
+		}
+		var role string
+		err = d.db.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ? AND left_at IS NULL AND banned_at IS NULL`, id).Scan(&role)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && !visible(c, id, IsStaff(role)) {
+			return nil, invalid("editors: member %s can't see this channel", s)
+		}
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// setEditors replaces a message's editors within tx.
+func setEditors(ctx context.Context, tx *sql.Tx, message int64, editors []int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM den_message_editors WHERE message_id = ?`, message); err != nil {
+		return err
+	}
+	for _, e := range editors {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO den_message_editors (message_id, member_id) VALUES (?, ?)`, message, e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func formatIDs(ids []int64) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = denproto.FormatID(id)
+	}
+	return out
+}
+
+// mayEdit reports whether a member may edit a message: its author, or one
+// of the members they named.
+func mayEdit(m denproto.Message, member int64) bool {
+	id := denproto.FormatID(member)
+	return m.AuthorID == id || slices.Contains(m.Editors, id)
 }
 
 // replies returns previews of the messages with the given IDs, by ID.
@@ -1038,6 +1128,10 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
+	editors, err := d.checkEditors(ctx, req.Editors, c, s.MemberID)
+	if err != nil {
+		return denproto.Message{}, err
+	}
 	var id int64
 	var reopened []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
@@ -1058,6 +1152,9 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			return err
 		}
 		if err := insertMentions(ctx, tx, id, cid, mentioned); err != nil {
+			return err
+		}
+		if err := setEditors(ctx, tx, id, editors); err != nil {
 			return err
 		}
 		if err := attach(ctx, tx, id, s.MemberID, files, now); err != nil {
@@ -1084,7 +1181,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
 		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
-		Attachments: attached[id],
+		Attachments: attached[id], Editors: formatIDs(editors),
 	}
 	if err := d.Hub.Publish(denproto.EventMessageCreated, m, audienceOf(c)); err != nil {
 		return m, err
@@ -1161,8 +1258,12 @@ func (d *Den) message(ctx context.Context, id string) (denproto.Message, int64, 
 	return ms[0], mid, nil
 }
 
-// Edit replaces a message's text, if nobody changed it since revision.
+// Edit replaces a message's text, if nobody changed it since revision. Its
+// author and the members they named may edit it; only the author changes
+// who those are.
 func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.EditRequest) (denproto.Message, error) {
+	d.changes.Lock()
+	defer d.changes.Unlock()
 	m, mid, err := d.message(ctx, id)
 	if err != nil {
 		return m, err
@@ -1171,8 +1272,12 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if err != nil {
 		return m, errMessageNotFound
 	}
-	if m.AuthorID != denproto.FormatID(s.MemberID) {
-		return m, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the author edits a message")
+	if !mayEdit(m, s.MemberID) {
+		return m, forbidden("only the author, and the members they named, edit a message")
+	}
+	author, _ := denproto.ParseID(m.AuthorID)
+	if req.Editors != nil && author != s.MemberID {
+		return m, forbidden("only the author changes who may edit a message")
 	}
 	if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
 		return m, invalid("text: %v", err)
@@ -1180,18 +1285,34 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if req.Revision != m.Revision {
 		return m, &conflict{m}
 	}
-	mentioned, err := d.mentionedMembers(ctx, req.Text, c, s.MemberID)
+	var editors []int64
+	if req.Editors != nil {
+		if editors, err = d.checkEditors(ctx, *req.Editors, c, author); err != nil {
+			return m, err
+		}
+	}
+	// In a DM the message counts for the member it was sent to, as when it
+	// was sent, and nobody is mentioned by their own edit.
+	from := s.MemberID
+	if c.Kind == denproto.KindDM {
+		from = author
+	}
+	mentioned, err := d.mentionedMembers(ctx, req.Text, c, from)
 	if err != nil {
 		return m, err
 	}
+	mentioned = slices.DeleteFunc(mentioned, func(id int64) bool { return id == s.MemberID })
 	sealed, err := d.v.Seal([]byte(req.Text), textAD(mid))
 	if err != nil {
 		return m, err
 	}
 	now := d.now().UnixMilli()
+	// Changing only who may edit leaves the message unmarked.
+	edited := req.Text != m.Text
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, revision = revision + 1, edited_at = ?, edited_by = ?
-			WHERE id = ? AND revision = ?`, sealed, now, s.MemberID, mid, req.Revision)
+		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, revision = revision + 1,
+			edited_at = iif(?, ?, edited_at), edited_by = iif(?, ?, edited_by) WHERE id = ? AND revision = ?`,
+			sealed, edited, now, edited, s.MemberID, mid, req.Revision)
 		if err != nil {
 			return err
 		}
@@ -1201,7 +1322,13 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		if _, err := tx.ExecContext(ctx, `DELETE FROM den_mentions WHERE message_id = ?`, mid); err != nil {
 			return err
 		}
-		return insertMentions(ctx, tx, mid, cid, mentioned)
+		if err := insertMentions(ctx, tx, mid, cid, mentioned); err != nil {
+			return err
+		}
+		if req.Editors != nil {
+			return setEditors(ctx, tx, mid, editors)
+		}
+		return nil
 	})
 	if errors.Is(err, errRaced) {
 		current, _, lerr := d.message(ctx, id)
@@ -1213,7 +1340,57 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if err != nil {
 		return m, err
 	}
-	m.Text, m.Revision, m.EditedAt, m.EditedBy = req.Text, m.Revision+1, now, denproto.FormatID(s.MemberID)
+	m.Text, m.Revision = req.Text, m.Revision+1
+	if edited {
+		m.EditedAt, m.EditedBy = now, denproto.FormatID(s.MemberID)
+	}
+	if req.Editors != nil {
+		m.Editors = formatIDs(editors)
+	}
+	return m, d.Hub.Publish(denproto.EventMessageUpdated, m, audienceOf(c))
+}
+
+// SetTask checks or unchecks task n of a message, for its author or one of
+// its editors. A tick needs no revision, so ticks on different tasks never
+// conflict, but it names the task's text: if that no longer matches, as
+// after an edit moved the lines, the tick is refused as a conflict rather
+// than landing on another task. Ticks don't mark a message as edited.
+func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req denproto.TaskRequest) (denproto.Message, error) {
+	d.changes.Lock()
+	defer d.changes.Unlock()
+	m, mid, err := d.message(ctx, id)
+	if err != nil {
+		return m, err
+	}
+	c, _, err := d.visibleChannel(ctx, s, m.ChannelID)
+	if err != nil {
+		return m, errMessageNotFound
+	}
+	if !mayEdit(m, s.MemberID) {
+		return m, forbidden("only the author, and the members they named, tick a message's tasks")
+	}
+	tasks := denproto.Tasks(m.Text)
+	if n < 0 || n >= len(tasks) || tasks[n].Text != req.Text {
+		return m, &conflict{m}
+	}
+	if tasks[n].Checked == req.Checked {
+		return m, nil
+	}
+	text, _ := denproto.SetTask(m.Text, n, req.Checked)
+	sealed, err := d.v.Seal([]byte(text), textAD(mid))
+	if err != nil {
+		return m, err
+	}
+	res, err := d.db.ExecContext(ctx, `UPDATE den_messages SET text = ?, revision = revision + 1 WHERE id = ? AND revision = ?`,
+		sealed, mid, m.Revision)
+	if err != nil {
+		return m, err
+	}
+	// Edits and ticks wait their turn, so only a delete gets here first.
+	if changed, _ := res.RowsAffected(); changed == 0 {
+		return m, errMessageNotFound
+	}
+	m.Text, m.Revision = text, m.Revision+1
 	return m, d.Hub.Publish(denproto.EventMessageUpdated, m, audienceOf(c))
 }
 

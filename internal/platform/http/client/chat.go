@@ -20,6 +20,7 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Post("/api/dens/{den}/channels/{channel}/messages", rt.handleSend)
 	r.Put("/api/dens/{den}/channels/{channel}/read", rt.handleMarkRead)
 	r.Patch("/api/dens/{den}/messages/{message}", rt.handleEdit)
+	r.Post("/api/dens/{den}/messages/{message}/tasks/{n}", rt.handleTask)
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
 	for _, kind := range []string{"channels", "groups"} {
 		r.Post("/api/dens/{den}/"+kind, rt.handleManage(kind, http.MethodPost))
@@ -78,6 +79,26 @@ func (rt *router) handleEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := rt.a.Dens.Edit(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"), req)
+	rt.changed(w, r, m, err)
+}
+
+func (rt *router) handleTask(w http.ResponseWriter, r *http.Request) {
+	n, err := strconv.Atoi(chi.URLParam(r, "n"))
+	if err != nil {
+		jsonError(w, http.StatusNotFound, "No such task.")
+		return
+	}
+	var req denproto.TaskRequest
+	if !decodeJSONLimit(w, r, &req, maxMessageBody) {
+		return
+	}
+	m, err := rt.a.Dens.SetTask(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"), n, req)
+	rt.changed(w, r, m, err)
+}
+
+// changed answers an edit or a tick: the message as it now is, or a
+// conflict carrying it.
+func (rt *router) changed(w http.ResponseWriter, r *http.Request, m denproto.Message, err error) {
 	var conflict *denclient.ErrEditConflict
 	if errors.As(err, &conflict) {
 		w.Header().Set("Content-Type", "application/json")

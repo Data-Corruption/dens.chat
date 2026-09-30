@@ -64,6 +64,7 @@ func New(a *app.App) http.Handler {
 			r.Post("/channels/{id}/messages", h.send)
 			r.Put("/channels/{id}/read", h.markRead)
 			r.Patch("/messages/{id}", h.editMessage)
+			r.Post("/messages/{id}/tasks/{n}", h.setTask)
 			r.Delete("/messages/{id}", h.deleteMessage)
 			r.Post("/channels", h.createChannel)
 			r.Patch("/channels/{id}", h.updateChannel)

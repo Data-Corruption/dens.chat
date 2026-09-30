@@ -191,6 +191,13 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT, WITHOUT ROWID;
 			CREATE INDEX den_mentions_message ON den_mentions (message_id);
 
+			-- Members besides the author who may edit a message.
+			CREATE TABLE den_message_editors (
+				message_id INTEGER NOT NULL REFERENCES den_messages (id) ON DELETE CASCADE,
+				member_id  INTEGER NOT NULL REFERENCES den_members (id),
+				PRIMARY KEY (message_id, member_id)
+			) STRICT, WITHOUT ROWID;
+
 			-- Uploads. Each is stored sealed with the data key under a random
 			-- name (blob) only its row knows, and its name is sealed too. A
 			-- file is pending until a message or a profile uses it; pending

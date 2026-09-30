@@ -59,6 +59,10 @@ type Den struct {
 	nonceMu sync.Mutex
 	nonces  map[string]time.Time
 
+	// changes orders edits and ticks, and their events, so a message's
+	// updates go out in the order of its revisions.
+	changes sync.Mutex
+
 	limits struct {
 		challenge, join, login, socket, write, send, typing, upload, password, passwordName *limiter
 	}
