@@ -492,7 +492,7 @@ POST  /api/messages/{id}/tasks/{n}   {"checked": true, "text": "milk"}    200 me
 
 ## Later steps (outline)
 
-- **M1.7 Private DMs:** members publish their identity key and each device's signed encryption key, and clients fetch a DM partner's. DM messages carry sealed text with the ID of the conversation key it was sealed with, and each device fetches the conversation keys sealed for it. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. The key backup is stored and fetched as an opaque blob. `device.*` events tell DM partners when a member's devices change. A password sign-in waits for one of the member's other devices to approve it, which signs the new device's keys with the identity key and seals the DM keys for it; a recovery code needs no approval. See the design doc.
+- **M1.7 Private DMs:** starting a DM relays an exchange of one-time keys (X25519 and ML-KEM-768) between the two members' clients in three messages: a commitment to the starter's key, the other's key, and the starter's key. Each member stores their copy of the resulting DM key on the den, sealed with their DM seal, and fetches it on a new device. DM messages carry sealed text with the ID of the DM key it was sealed with. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. A password sign-in waits for another of the member's devices to approve it, after the same exchange between the two devices, which carries the member's seal to the new one; a recovery code needs no approval. Starting over replaces a member's sealed DM keys and marks their DMs for a new exchange. See the design doc.
 
 ## Rate limits
 
