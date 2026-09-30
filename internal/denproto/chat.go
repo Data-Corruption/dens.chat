@@ -3,6 +3,7 @@ package denproto
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -19,6 +20,7 @@ const (
 	MaxChannels    = 500
 	MaxGroups      = 100
 	ReplyExcerpt   = 100 // characters of a replied-to message a reply carries
+	MaxEditors     = 20  // members besides the author who may edit a message
 )
 
 // Channel kinds.
@@ -78,6 +80,9 @@ type Message struct {
 	Nonce     Bytes  `json:"nonce,omitempty"`
 	// Attachments are the message's files, in the order they were sent.
 	Attachments []File `json:"attachments,omitempty"`
+	// Editors are the members besides the author who may edit the message
+	// and tick its tasks.
+	Editors []string `json:"editors,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -145,11 +150,24 @@ type SendRequest struct {
 	ReplyTo string `json:"reply_to,omitempty"`
 	// Attachments are uploads to send with the message.
 	Attachments []string `json:"attachments,omitempty"`
+	// Editors are members who may also edit the message.
+	Editors []string `json:"editors,omitempty"`
 }
 
+// EditRequest replaces a message's text, and its editors when set, which
+// only the author changes.
 type EditRequest struct {
-	Revision int    `json:"revision"`
-	Text     string `json:"text"`
+	Revision int       `json:"revision"`
+	Text     string    `json:"text"`
+	Editors  *[]string `json:"editors,omitempty"`
+}
+
+// TaskRequest checks or unchecks one of a message's tasks. Text is the
+// task's text as the member saw it, so a tick doesn't land on another line
+// when the message changed meanwhile.
+type TaskRequest struct {
+	Checked bool   `json:"checked"`
+	Text    string `json:"text"`
 }
 
 type ReadRequest struct {
@@ -241,6 +259,14 @@ func CheckMessage(m Message) error {
 		// The text is empty when the original has only files.
 		if (r.Text != "" && CheckText(r.Text) != nil) || utf8.RuneCountInString(r.Text) > ReplyExcerpt {
 			return errors.New("message has an invalid reply")
+		}
+	}
+	if len(m.Editors) > MaxEditors {
+		return errors.New("message has too many editors")
+	}
+	for i, id := range m.Editors {
+		if _, err := ParseID(id); err != nil || id == m.AuthorID || slices.Contains(m.Editors[:i], id) {
+			return errors.New("message has an invalid editor")
 		}
 	}
 	if len(m.Attachments) > MaxAttachments {
@@ -345,4 +371,74 @@ func endsLink(r rune) bool {
 
 func isNameByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+}
+
+// Task is a checkbox in a message: a line that starts with "[ ] " or
+// "[x] ", outside a ``` block, as the page renders one. Text is the rest of
+// the line. A message's tasks are numbered from 0 in order.
+type Task struct {
+	Checked bool   `json:"checked"`
+	Text    string `json:"text"`
+}
+
+const (
+	taskOpen = "[ ] "
+	taskDone = "[x] "
+)
+
+// Tasks returns a text's tasks in order.
+func Tasks(text string) []Task {
+	var out []Task
+	eachTask(text, func(_ int, t Task) bool {
+		out = append(out, t)
+		return true
+	})
+	return out
+}
+
+// SetTask returns text with task n checked or not, and false if it has no
+// task n.
+func SetTask(text string, n int, checked bool) (string, bool) {
+	if n < 0 {
+		return text, false
+	}
+	i := 0
+	out, found := text, false
+	eachTask(text, func(at int, _ Task) bool {
+		if i < n {
+			i++
+			return true
+		}
+		mark := taskOpen
+		if checked {
+			mark = taskDone
+		}
+		out, found = text[:at]+mark+text[at+len(mark):], true
+		return false
+	})
+	return out, found
+}
+
+// eachTask calls fn with each task and where its line starts, until fn
+// returns false. Code blocks open and close as in Mentions.
+func eachTask(text string, fn func(at int, t Task) bool) {
+	inBlock := false
+	at := 0
+	for _, line := range strings.SplitAfter(text, "\n") {
+		body := strings.TrimSuffix(line, "\n")
+		switch {
+		case strings.HasPrefix(strings.TrimSpace(body), "```"):
+			inBlock = !inBlock
+		case inBlock:
+		case strings.HasPrefix(body, taskOpen):
+			if !fn(at, Task{Text: body[len(taskOpen):]}) {
+				return
+			}
+		case strings.HasPrefix(body, taskDone):
+			if !fn(at, Task{Checked: true, Text: body[len(taskDone):]}) {
+				return
+			}
+		}
+		at += len(line)
+	}
 }

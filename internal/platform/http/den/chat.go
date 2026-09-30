@@ -91,6 +91,29 @@ func (h *handler) editMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := h.d.Edit(r.Context(), session(r), chi.URLParam(r, "id"), req)
+	h.changed(w, r, m, err)
+}
+
+func (h *handler) setTask(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	n, err := strconv.Atoi(chi.URLParam(r, "n"))
+	if err != nil || n < 0 || n > denproto.MaxTextRunes {
+		h.fail(w, r, denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such task"))
+		return
+	}
+	var req denproto.TaskRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	m, err := h.d.SetTask(r.Context(), session(r), chi.URLParam(r, "id"), n, req)
+	h.changed(w, r, m, err)
+}
+
+// changed answers an edit or a tick: the message as it now is, or a
+// conflict carrying it.
+func (h *handler) changed(w http.ResponseWriter, r *http.Request, m denproto.Message, err error) {
 	if current, ok := dens.Conflict(err); ok {
 		denproto.WriteJSON(w, http.StatusConflict, map[string]any{
 			"error":   denproto.Errorf(http.StatusConflict, denproto.CodeEditConflict, "the message changed since that revision"),

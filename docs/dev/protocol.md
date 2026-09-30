@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files) and M1.5 (new devices and recovery) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery) and M1.6 (shared messages) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -327,7 +327,7 @@ DELETE /api/messages/{id}                                                       
 - `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history.
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
-- Only the author edits a message. The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
+- The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache.
 
 ### Read state
@@ -471,9 +471,27 @@ limits = {"file_size", "member_storage", "den_storage"}   (bytes)
 - A new den allows files of 25 MiB, 2 GiB of files per member and 20 GiB for the whole den. The owner changes them with `PATCH /api/den`: a file limit of 1 MiB to 1 GiB, room for at least one file per member, and for at least one member in the den.
 - A file over the size limit gets `413 too_large`. One that would take a member past their space gets `507 quota_exceeded`; past the den's space, or with less than 1 GiB left free on the den's disk, `507 den_full`. Space counts files and their previews.
 
+## Shared messages (M1.6)
+
+```
+POST  /api/channels/{id}/messages    {…, "editors": ["<member id>", …]}   201 message
+PATCH /api/messages/{id}             {"revision", "text", "editors"?}     200 message
+POST  /api/messages/{id}/tasks/{n}   {"checked": true, "text": "milk"}    200 message
+```
+
+- `editors` names up to 20 other members who may edit the message and tick its tasks. Each must be in the den and able to see the channel: in a staff-only channel only staff, and in a DM only its other member. The den lists them in the order of their IDs.
+- Only the author changes `editors`, with a `PATCH` that sets it; `[]` removes them all. A `PATCH` that changes only `editors` doesn't mark the message edited.
+- An editor edits the text as the author does, against a revision, and becomes `edited_by`. Editors don't delete a message.
+
+**Tasks.** A task is a line that starts with `[ ] ` or `[x] `, outside a ``` block; its text is the rest of the line. A message's tasks are numbered from 0 in order. The den finds them by this rule (`denproto.Tasks`), and the page renders them by the same one; both are tested against the cases in `internal/denproto/testdata/tasks.json`.
+
+- A tick sets task `n` to `checked`, as a change of its own: it needs no `revision`, and bumps it, so ticks on different tasks at once never conflict.
+- `text` is the task's text as the member saw it. If task `n` no longer has that text, as after an edit moved the lines, the den refuses the tick with `409 edit_conflict` and the current message, as for an edit, rather than tick another line. Ticking a task to the state it's in changes nothing.
+- A tick doesn't mark the message edited, and leaves its mentions as they were.
+- The den makes one change to a message at a time, and sends each `message.updated` in the order of its revisions. A tick's answer can still reach a client after a newer event, so clients keep the higher revision.
+
 ## Later steps (outline)
 
-- **M1.6 Shared messages:** `editors` (member IDs who can see the channel, at most 20) on create and on the author's `PATCH`. Task lines follow one rule shared by den and client, with test vectors: a line starting with `[ ] ` or `[x] `, numbered in order from 0. `POST /api/messages/{id}/tasks/{n}` with `{"checked"}` sets one box as a single change, needs no `revision` and bumps it, so concurrent ticks never conflict.
 - **M1.7 Private DMs:** members publish their identity key and each device's signed encryption key, and clients fetch a DM partner's. DM messages carry sealed text with the ID of the conversation key it was sealed with, and each device fetches the conversation keys sealed for it. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. The key backup is stored and fetched as an opaque blob. `device.*` events tell DM partners when a member's devices change. A password sign-in waits for one of the member's other devices to approve it, which signs the new device's keys with the identity key and seals the DM keys for it; a recovery code needs no approval. See the design doc.
 
 ## Rate limits

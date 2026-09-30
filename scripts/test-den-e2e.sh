@@ -9,7 +9,9 @@
 # on a different distro, trusts that authority, installs Dens and joins
 # with an invite from the owner. The two chat, the den's service restarts,
 # and the member must reconnect with the whole history. The owner sends a
-# DM, and the member a phone photo that must arrive stripped. A second
+# DM, and the member a phone photo that must arrive stripped. The owner
+# shares a checklist with the member, and the two tick different boxes at
+# the same moment, all of which must stay. A second
 # instance on the member's machine stands in for a fresh one: it signs in
 # by the den's address with a recovery code, whose new password must sign
 # the first install out at once. Signed in again with it, the first install
@@ -192,6 +194,20 @@ run() {
     { echo "error: the preview is $kind $(guest "$DEN" jpeg /root/preview.jpg)" >&2; return 1; }
   stored=$(guest "$DEN" sealed)
   echo ">> The photo arrived stripped, upright and with a preview; the den holds ${stored} sealed files"
+
+  echo ">> Two members tick one checklist at the same moment"
+  local list owner_ticks member_ticks text
+  list=$(guest "$DEN" send-shared "$den_id" "$channel" "$bob" '[ ] item 0\n[ ] item 1\n[ ] item 2\n[ ] item 3\n[ ] item 4\n[ ] item 5')
+  guest "$DEN" ticks "$den_id" "$list" 0 2 4 &
+  owner_ticks=$!
+  guest "$CLIENT" ticks "$den_id" "$list" 1 3 5 &
+  member_ticks=$!
+  wait "$owner_ticks" || { echo "error: the owner's ticks failed" >&2; return 1; }
+  wait "$member_ticks" || { echo "error: the member's ticks failed" >&2; return 1; }
+  text=$(guest "$CLIENT" text-of "$den_id" "$channel" "$list")
+  [[ "$text" == "[x] item 0|[x] item 1|[x] item 2|[x] item 3|[x] item 4|[x] item 5" ]] ||
+    { echo "error: the checklist reads: $text" >&2; return 1; }
+  echo ">> Every tick from both members stayed"
 
   echo ">> Recovering the member's account on a fresh install"
   local code left signed_out fingerprint key started took reason refusal

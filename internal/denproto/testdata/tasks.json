@@ -1,0 +1,16 @@
+{
+  "about": "Task lines as denproto.Tasks finds them and the page renders them: each text, and its tasks in order, checked or not, with the text after the box. The Go and page tests both read this file.",
+  "cases": [
+    {"text": "[ ] milk\n[x] eggs", "tasks": [{"checked": false, "text": "milk"}, {"checked": true, "text": "eggs"}]},
+    {"text": "shopping:\n[ ] milk\nand then\n[x] bread", "tasks": [{"checked": false, "text": "milk"}, {"checked": true, "text": "bread"}]},
+    {"text": "[] no box\n[ ]no space\n[X] a capital\n [ ] indented\n- [ ] after a dash\n[ ]", "tasks": []},
+    {"text": "[ ] ", "tasks": [{"checked": false, "text": ""}]},
+    {"text": "[x] [ ] a box in the text", "tasks": [{"checked": true, "text": "[ ] a box in the text"}]},
+    {"text": "[ ] **bold**, @alice and https://example.com", "tasks": [{"checked": false, "text": "**bold**, @alice and https://example.com"}]},
+    {"text": "```\n[ ] in a block\n```\n[ ] after it", "tasks": [{"checked": false, "text": "after it"}]},
+    {"text": "  ```\n[x] in an indented block\n  ```", "tasks": []},
+    {"text": "```\n[ ] in a block that never closes", "tasks": []},
+    {"text": "> [ ] in a quote", "tasks": []},
+    {"text": "[ ] one\n\n[ ] two", "tasks": [{"checked": false, "text": "one"}, {"checked": false, "text": "two"}]}
+  ]
+}

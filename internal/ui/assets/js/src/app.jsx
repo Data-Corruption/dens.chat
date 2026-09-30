@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { onConnection } from './events.js';
+import { onConnection, onUnpaired } from './events.js';
 import { toggleTheme } from './theme.js';
 import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
 import { Home } from './home.jsx';
@@ -57,7 +57,25 @@ export function App({ instance, version }) {
         })();
         const onPop = () => setPath(window.location.pathname);
         window.addEventListener('popstate', onPop);
-        return () => window.removeEventListener('popstate', onPop);
+        // A pairing link pasted into a tab already on this page changes only
+        // the fragment, which doesn't load the page again.
+        const onHash = async () => {
+            const next = takePairingToken();
+            if (!next) return;
+            try {
+                await api.post('/api/pair', { token: next });
+                window.location.reload();
+            } catch (e) {
+                setState({ phase: 'unpaired', error: e.message });
+            }
+        };
+        window.addEventListener('hashchange', onHash);
+        const stopUnpaired = onUnpaired(() => setState({ phase: 'unpaired' }));
+        return () => {
+            window.removeEventListener('popstate', onPop);
+            window.removeEventListener('hashchange', onHash);
+            stopUnpaired();
+        };
     }, []);
 
     function navigate(to) {

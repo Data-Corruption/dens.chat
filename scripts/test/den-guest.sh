@@ -209,6 +209,26 @@ send)
     nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
     api POST "/api/dens/$1/channels/$2/messages" "{\"nonce\":\"$nonce\",\"text\":\"$3\"}" | json 'd["id"]'
     ;;
+send-shared)
+    # send-shared DEN_ID CHANNEL_ID EDITOR_ID TEXT: post a message another
+    # member may edit; print its ID. TEXT is JSON-escaped.
+    nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+    api POST "/api/dens/$1/channels/$2/messages" "{\"nonce\":\"$nonce\",\"text\":\"$4\",\"editors\":[\"$3\"]}" | json 'd["id"]'
+    ;;
+ticks)
+    # ticks DEN_ID MESSAGE_ID N...: tick each task N, whose text is "item N".
+    den=$1 message=$2
+    shift 2
+    for n in "$@"; do
+        api POST "/api/dens/$den/messages/$message/tasks/$n" "{\"checked\":true,\"text\":\"item $n\"}" >/dev/null
+    done
+    ;;
+text-of)
+    # text-of DEN_ID CHANNEL_ID MESSAGE_ID: print a message's text, its
+    # lines joined with |.
+    api GET "/api/dens/$1/channels/$2/messages?limit=100" |
+        json 'next(m["text"] for m in d["messages"] if m["id"] == "'"$3"'").replace("\n", "|")'
+    ;;
 history)
     # history DEN_ID CHANNEL_ID: print the channel's messages, oldest first.
     api GET "/api/dens/$1/channels/$2/messages?limit=100" | json '"\n".join(m["text"] for m in d["messages"])'

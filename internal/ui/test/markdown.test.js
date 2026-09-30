@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Markdown, Preview, firstLine } from '../assets/js/src/markdown.jsx';
 import mentions from '../../denproto/testdata/mentions.json';
+import taskCases from '../../denproto/testdata/tasks.json';
 
 // nodes lists every element in a tree, depth first. A component, such as
 // the spoiler, is listed as itself, and its children are walked.
@@ -45,6 +46,22 @@ test('mentions are highlighted exactly where the den counts them', () => {
         const found = mentioned(render(c.text)).map((n) => n.props['data-mention']);
         assert.deepEqual([...new Set(found)], c.mentions, JSON.stringify(c.text));
     }
+});
+
+const tasksIn = (tree) => nodes(tree).filter((n) => n.type?.name === 'Task');
+
+test('task lines are checkboxes exactly where the den finds them, numbered in order', () => {
+    for (const c of taskCases.cases) {
+        const found = tasksIn(render(c.text));
+        assert.deepEqual(found.map((n) => ({ checked: n.props.checked, text: n.props.text })), c.tasks, JSON.stringify(c.text));
+        assert.deepEqual(found.map((n) => n.props.n), found.map((_, i) => i));
+    }
+});
+
+test('tasks tick only for a reader who may edit the message', () => {
+    assert.equal(tasksIn(render('[ ] milk'))[0].props.onTask, undefined);
+    const onTask = () => Promise.resolve();
+    assert.equal(tasksIn(Markdown({ text: '[ ] milk', onTask }))[0].props.onTask, onTask);
 });
 
 test("a mention of the reader looks different from anyone else's", () => {
@@ -107,5 +124,6 @@ test('a preview with more to show ends in an ellipsis instead of its punctuation
 test('the first line skips blank lines and quote marks, and stands in for code', () => {
     assert.equal(firstLine('\n  \n> quoted\nnext'), 'quoted');
     assert.equal(firstLine('```js\nlet x;\n```'), '[code]');
+    assert.equal(firstLine('[x] done\n[ ] not yet'), '☑ done');
     assert.equal(firstLine(''), '');
 });

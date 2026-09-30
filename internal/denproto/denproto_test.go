@@ -237,6 +237,51 @@ func TestMentions(t *testing.T) {
 	}
 }
 
+// The page's renderer shows task lines as checkboxes by the same rule, and
+// reads the same cases.
+//
+//go:embed testdata/tasks.json
+var taskCases []byte
+
+func TestTasks(t *testing.T) {
+	var file struct {
+		Cases []struct {
+			Text  string `json:"text"`
+			Tasks []Task `json:"tasks"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(taskCases, &file); err != nil {
+		t.Fatal(err)
+	}
+	if len(file.Cases) == 0 {
+		t.Fatal("no task cases")
+	}
+	for _, c := range file.Cases {
+		if got := Tasks(c.Text); !slices.Equal(got, c.Tasks) {
+			t.Errorf("Tasks(%q) = %+v, want %+v", c.Text, got, c.Tasks)
+		}
+	}
+}
+
+func TestSetTask(t *testing.T) {
+	text := "list:\n```\n[ ] not a task\n```\n[ ] milk\n[x] eggs\n[ ] bread"
+	got, ok := SetTask(text, 2, true)
+	if want := "list:\n```\n[ ] not a task\n```\n[ ] milk\n[x] eggs\n[x] bread"; !ok || got != want {
+		t.Fatalf("checking task 2: %q %v", got, ok)
+	}
+	if got, ok = SetTask(got, 1, false); !ok || got != "list:\n```\n[ ] not a task\n```\n[ ] milk\n[ ] eggs\n[x] bread" {
+		t.Fatalf("unchecking task 1: %q %v", got, ok)
+	}
+	if again, ok := SetTask(got, 1, false); !ok || again != got {
+		t.Fatalf("unchecking it again: %q %v", again, ok)
+	}
+	for _, n := range []int{-1, 3} {
+		if same, ok := SetTask(text, n, true); ok || same != text {
+			t.Errorf("SetTask(%d) = %q %v", n, same, ok)
+		}
+	}
+}
+
 func TestChecks(t *testing.T) {
 	for _, bad := range []string{"", "0", "01", "-1", "1a", "99999999999999999999"} {
 		if _, err := ParseID(bad); err == nil {
@@ -272,6 +317,22 @@ func TestChecks(t *testing.T) {
 	m.ReplyTo, m.Reply = "", &Reply{AuthorID: "3", Text: "hi"}
 	if CheckMessage(m) == nil {
 		t.Error("CheckMessage accepted a reply preview without reply_to")
+	}
+	m.Reply = nil
+	m.Editors = []string{"4", "6"}
+	if err := CheckMessage(m); err != nil {
+		t.Errorf("a message with editors: %v", err)
+	}
+	for _, bad := range [][]string{{"x"}, {"3"}, {"4", "4"}, make([]string, MaxEditors+1)} {
+		if bad[0] == "" {
+			for i := range bad {
+				bad[i] = FormatID(int64(i + 10))
+			}
+		}
+		m.Editors = bad
+		if CheckMessage(m) == nil {
+			t.Errorf("CheckMessage accepted the editors %q", bad)
+		}
 	}
 }
 

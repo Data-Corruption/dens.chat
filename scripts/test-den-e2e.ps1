@@ -12,7 +12,9 @@ store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
 second must reconnect and see the whole history. The owner then sends a
 DM, and the member sends a phone photo with GPS data, which must reach the
-owner without it. Instance fresh stands in for the member's new machine: it
+owner without it. The owner shares a checklist with the member, and the two
+tick different boxes at the same moment, all of which must stay. Instance
+fresh stands in for the member's new machine: it
 signs in by the den's address with a recovery code, whose new password must
 sign second out at once. Signed in again with it, second is signed out once
 more from fresh's device list. The owner then bans the member, whose
@@ -46,6 +48,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+Add-Type -AssemblyName System.Net.Http
 
 $BinaryDir = Join-Path $env:ProgramFiles "Dens"
 $Dens = Join-Path $BinaryDir "dens.exe"
@@ -174,6 +177,18 @@ function Wait-Connected($Browser, [long]$After) {
     }
     Write-Host ((Invoke-Api $Browser GET "/api/dens") | ConvertTo-Json -Depth 5)
     Fail "the den didn't connect"
+}
+
+# Send-Tick ticks task N of a message, whose text is "item N", and returns
+# the request still in flight, so ticks from two instances can land at once.
+function Send-Tick($Browser, [string]$DenID, [string]$Message, [int]$N) {
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.CookieContainer = $Browser.Session.Cookies
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.DefaultRequestHeaders.Add("Origin", $Browser.Origin)
+    $body = @{ checked = $true; text = "item $N" } | ConvertTo-Json -Compress
+    $content = New-Object System.Net.Http.StringContent($body, [Text.Encoding]::UTF8, "application/json")
+    return $client.PostAsync("$($Browser.Origin)/api/dens/$DenID/messages/$Message/tasks/$N", $content)
 }
 
 function New-Nonce {
@@ -388,6 +403,24 @@ den.test:$HttpsPort {
         if ($latin1.GetString([IO.File]::ReadAllBytes($f.FullName)).Contains("JFIF")) { Fail "$($f.Name) is stored in the clear" }
     }
     Write-Host "The photo arrived stripped, with a preview; the den holds $($stored.Count) sealed files."
+
+    Step "two members tick one checklist at the same moment"
+    $text = (0..5 | ForEach-Object { "[ ] item $_" }) -join "`n"
+    $list = Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = $text; editors = @($bob) }
+    $ticks = foreach ($n in 0..5) {
+        $who = $owner
+        if ($n % 2 -eq 1) { $who = $member }
+        Send-Tick $who $denID $list.id $n
+    }
+    [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$ticks)
+    foreach ($t in $ticks) {
+        if (-not $t.Result.IsSuccessStatusCode) { Fail "a tick failed with $([int]$t.Result.StatusCode)" }
+    }
+    $page = Invoke-Api $member GET "/api/dens/$denID/channels/$channel/messages?limit=10"
+    $got = (@($page.messages) | Where-Object { $_.id -eq $list.id }).text
+    $want = (0..5 | ForEach-Object { "[x] item $_" }) -join "`n"
+    if ($got -ne $want) { Fail "the checklist reads: $got" }
+    Write-Host "Every tick from both members stayed."
 
     Step "recover the member's account on instance fresh"
     Invoke-Installer (@("-Instance", "fresh", "-ClientPort", $FreshClientPort) + $userArgs)
