@@ -19,14 +19,20 @@ export function Home({ status, navigate }) {
     // signIn fills the sign-in form for a den this device was signed out of.
     const [signIn, setSignIn] = useState(null);
 
+    // show keeps the newest list, whether it came from the stream or a fetch.
+    const show = (v) => setView((cur) => (!cur || v.epoch !== cur.epoch || v.version >= cur.version ? v : cur));
+    // refresh fetches the list after an action here changed it, rather than
+    // wait for the stream, which a browser can hold back.
+    const refresh = () => api.get('/api/dens').then(show, () => {});
+
     useEffect(() => {
         // The list comes over plain HTTP first: the event stream's socket
         // can open late, since Firefox holds back sockets to an address
-        // that recently refused them. What the stream sends is newer.
+        // that recently refused them.
         let fresh = true;
-        api.get('/api/dens').then((v) => fresh && setView((cur) => cur || v), () => {});
+        api.get('/api/dens').then((v) => fresh && show(v), () => {});
         const stop = onEvent((message) => {
-            if (message.t === 'dens') setView(message.d);
+            if (message.t === 'dens') show(message.d);
         });
         return () => {
             fresh = false;
@@ -37,7 +43,10 @@ export function Home({ status, navigate }) {
     if (codes) {
         return <RecoveryCodes denName={codes.name} codes={codes.codes} onDone={() => setCodes(null)} />;
     }
-    const joined = (result) => setCodes({ name: result.den.name, codes: result.recovery_codes });
+    const joined = (result) => {
+        setCodes({ name: result.den.name, codes: result.recovery_codes });
+        refresh();
+    };
     const showCodes = (name, list) => setCodes({ name, codes: list });
 
     return (
@@ -54,10 +63,10 @@ export function Home({ status, navigate }) {
             ) : (
                 <>
                     {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} navigate={navigate} onCodes={showCodes}
+                    <DenList dens={view.dens} navigate={navigate} onCodes={showCodes} onChanged={refresh}
                         onSignIn={(den) => setSignIn({ den: den.url, username: den.username, key: Date.now() })} />
                     <JoinDen onJoined={joined} />
-                    <SignInDen key={signIn?.key} prefill={signIn} />
+                    <SignInDen key={signIn?.key} prefill={signIn} onDone={refresh} />
                 </>
             )}
         </>
@@ -74,7 +83,7 @@ const STATE_BADGES = {
 
 const ROLES = { owner: 'the owner', moderator: 'a moderator', member: 'a member' };
 
-function DenList({ dens, navigate, onCodes, onSignIn }) {
+function DenList({ dens, navigate, onCodes, onChanged, onSignIn }) {
     if (dens.length === 0) {
         return (
             <Card title="Your dens">
@@ -85,13 +94,13 @@ function DenList({ dens, navigate, onCodes, onSignIn }) {
     return (
         <Card title="Your dens">
             <ul class="flex flex-col gap-3">
-                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} onCodes={onCodes} onSignIn={onSignIn} />)}
+                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} onCodes={onCodes} onChanged={onChanged} onSignIn={onSignIn} />)}
             </ul>
         </Card>
     );
 }
 
-function DenItem({ den, navigate, onCodes, onSignIn }) {
+function DenItem({ den, navigate, onCodes, onChanged, onSignIn }) {
     const [badge, label] = STATE_BADGES[den.state] || ['badge-ghost', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
     const staff = den.role === 'owner' || den.role === 'moderator';
@@ -108,7 +117,10 @@ function DenItem({ den, navigate, onCodes, onSignIn }) {
                             <button type="button" class="btn btn-primary btn-sm" onClick={() => onSignIn(den)}>Sign in again</button>
                         )}
                         <button type="button" class="btn btn-sm" disabled={forget.busy}
-                            onClick={() => forget.run(() => api.del(`/api/dens/${den.den_id}`))}>
+                            onClick={() => forget.run(async () => {
+                                await api.del(`/api/dens/${den.den_id}`);
+                                await onChanged();
+                            })}>
                             Remove from this computer
                         </button>
                     </div>
@@ -126,14 +138,14 @@ function DenItem({ den, navigate, onCodes, onSignIn }) {
             </p>
             {den.error && <p class="text-sm text-warning">{den.error}</p>}
             <ErrorText message={forget.error} />
-            {den.state === 'offline' && !den.own && <NewAddress den={den} />}
+            {den.state === 'offline' && !den.own && <NewAddress den={den} onChanged={onChanged} />}
             {den.state === 'connected' && (
                 <>
                     {den.role === 'owner' && <DenSettings den={den} />}
                     {staff && <Invites denID={den.den_id} />}
                     {staff && <Bans denID={den.den_id} />}
                     <Devices den={den} onCodes={onCodes} />
-                    {!den.own && <Leave den={den} />}
+                    {!den.own && <Leave den={den} onChanged={onChanged} />}
                 </>
             )}
         </li>
@@ -380,7 +392,7 @@ function NewCodes({ den, left, onCodes, onDone }) {
 // NewAddress gives a den that can't be reached the new address its owner
 // moved it to. The service uses it only if the den there proves it's the
 // same one.
-function NewAddress({ den }) {
+function NewAddress({ den, onChanged }) {
     const [url, setURL] = useState('');
     const act = useAction();
 
@@ -389,6 +401,7 @@ function NewAddress({ den }) {
         act.run(async () => {
             await api.post(`/api/dens/${den.den_id}/address`, { url });
             setURL('');
+            await onChanged();
         });
     }
 
@@ -411,7 +424,7 @@ function NewAddress({ den }) {
 }
 
 // Leave takes this member out of a den and forgets it on this computer.
-function Leave({ den }) {
+function Leave({ den, onChanged }) {
     const [confirming, setConfirming] = useState(false);
     const act = useAction();
     return (
@@ -426,7 +439,10 @@ function Leave({ den }) {
                     </p>
                     <ErrorText message={act.error} />
                     <div class="flex gap-2">
-                        <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => act.run(() => api.post(`/api/dens/${den.den_id}/leave`))}>
+                        <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => act.run(async () => {
+                            await api.post(`/api/dens/${den.den_id}/leave`);
+                            await onChanged();
+                        })}>
                             Leave
                         </button>
                         <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
@@ -801,7 +817,7 @@ function JoinDen({ onJoined }) {
 
 // SignInDen signs this computer in to a den the member is in already: with
 // the den password, or with a recovery code that sets a new one.
-function SignInDen({ prefill }) {
+function SignInDen({ prefill, onDone }) {
     const empty = { den: prefill?.den || '', username: prefill?.username || '', password: '', code: '', confirm: '' };
     const [form, set, setForm] = useForm(empty);
     const [recovering, setRecovering] = useState(false);
@@ -831,6 +847,7 @@ function SignInDen({ prefill }) {
                     ? `Signed in to ${result.den.name}.${signedOut(result.signed_out)} You have ${left} recovery code${left === 1 ? '' : 's'} left; you can make new ones under Devices and password.`
                     : `Signed in to ${result.den.name}.`,
             );
+            await onDone();
         });
     }
 

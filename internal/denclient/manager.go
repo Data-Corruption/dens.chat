@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -71,6 +72,11 @@ type Manager struct {
 	PingTimeout  time.Duration
 
 	joinMu sync.Mutex
+
+	// epoch and changes version what Watch reports: a page keeps the
+	// newest statuses it has seen, from the stream or a fetch.
+	epoch   string
+	changes atomic.Uint64
 
 	mu      sync.Mutex
 	ctx     context.Context
@@ -131,7 +137,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	// request, uploads included; a file's body then takes what it takes.
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, ResponseHeaderTimeout: requestTimeout}
 	return &Manager{
-		db: db, v: v, log: log, own: own, agent: userAgent, label: deviceLabel(),
+		db: db, v: v, log: log, own: own, agent: userAgent, label: deviceLabel(), epoch: denproto.Random(8).String(),
 		HTTP:         &http.Client{Timeout: requestTimeout, Transport: transport},
 		Transfer:     &http.Client{Transport: transport},
 		files:        newFileCache(),
@@ -243,7 +249,14 @@ func (m *Manager) Watch() (<-chan struct{}, func()) {
 	}
 }
 
+// Version says how far the dens' statuses have changed: within one epoch,
+// a higher count is newer. Read it before the statuses it goes with.
+func (m *Manager) Version() (epoch string, count uint64) {
+	return m.epoch, m.changes.Load()
+}
+
 func (m *Manager) notify() {
+	m.changes.Add(1)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for ch := range m.watches {

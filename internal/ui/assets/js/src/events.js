@@ -5,16 +5,18 @@
 // views reload, since events may have been missed while it was down.
 //
 // While the stream is down, the page asks the service over plain HTTP
-// whether it's back before opening another socket. Firefox holds back a
-// socket to an address whose last ones failed, longer after each failure,
-// up to a minute, so retrying sockets while the service restarts would
-// keep this page, and new ones, waiting long after it's back.
+// whether it's back, and still knows this browser, before opening another
+// socket. Firefox holds back a socket to an address whose last ones failed,
+// longer after each failure, up to a minute, so sockets retried while the
+// service restarts, or refused because the instance behind this address
+// was replaced, would keep this page, and new ones, waiting long after.
 
 const MIN_DELAY = 250;
 const MAX_DELAY = 3000;
 
 const listeners = new Set();
 const connectionListeners = new Set();
+const unpairedListeners = new Set();
 let socket = null;
 let started = false;
 let down = false;
@@ -46,15 +48,17 @@ function retryNow() {
 }
 
 // reconnect opens the socket again once the service answers, and tries
-// again later if it doesn't.
+// again later if it doesn't. It stops for good once the service no longer
+// knows this browser.
 async function reconnect() {
-    let up = false;
+    let res = null;
     try {
-        up = (await fetch('/healthz', { cache: 'no-store' })).ok;
+        res = await fetch('/api/status', { cache: 'no-store' });
     } catch {
         // Not back yet.
     }
-    if (up) connect();
+    if (res?.status === 401) unpairedListeners.forEach((fn) => fn());
+    else if (res?.ok) connect();
     else schedule();
 }
 
@@ -133,6 +137,13 @@ export function onEvent(fn) {
         queueMicrotask(() => listeners.has(fn) && fn(replay));
     }
     return () => listeners.delete(fn);
+}
+
+// onUnpaired calls fn once the service no longer knows this browser, as
+// after its instance was replaced, and the stream has stopped.
+export function onUnpaired(fn) {
+    unpairedListeners.add(fn);
+    return () => unpairedListeners.delete(fn);
 }
 
 // onConnection calls fn with whether the stream is up, now and on every

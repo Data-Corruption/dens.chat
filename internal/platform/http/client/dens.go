@@ -46,13 +46,20 @@ type hosting struct {
 	URL     string `json:"url,omitempty"`
 }
 
+// densView is what the home page shows. Epoch and Version order the
+// copies it gets from the stream and from fetches, so it keeps the newest.
 type densView struct {
+	Epoch   string             `json:"epoch"`
+	Version uint64             `json:"version"`
 	Dens    []denclient.Status `json:"dens"`
 	Hosting hosting            `json:"hosting"`
 }
 
 func (rt *router) densView() densView {
-	v := densView{Dens: rt.a.Dens.Statuses(), Hosting: hosting{Enabled: rt.a.Den != nil}}
+	v := densView{Hosting: hosting{Enabled: rt.a.Den != nil}}
+	// The version comes first, so the statuses are at least that new.
+	v.Epoch, v.Version = rt.a.Dens.Version()
+	v.Dens = rt.a.Dens.Statuses()
 	if info, _, ok := rt.a.OwnDen(); ok {
 		v.Hosting.Created, v.Hosting.Name, v.Hosting.URL = true, info.Name, info.URL
 		for _, d := range v.Dens {
