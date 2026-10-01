@@ -49,7 +49,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
-| `spikes/` | Throwaway experiments that answer a design question before code depends on it, in their own Go module; each goes when the work it informs lands, its findings in the design doc |
+| `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design doc, which names the commit that last held it |
 | `docs/dev/` | Internal docs: the design, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
 
