@@ -15,6 +15,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/media"
+	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
 // Files go to dens through here, and come back through here.
@@ -32,33 +33,21 @@ const (
 	cacheFileSize = 8 << 20
 )
 
-// Uploaded is a file the den stored, and whether metadata was taken out
-// of it first.
+// Uploaded is a file the den stored, whether metadata was taken out of it
+// first, and whether it's a photo turned into a JPEG or PNG to send.
 type Uploaded struct {
 	denproto.File
-	Stripped bool `json:"stripped,omitempty"`
+	Stripped  bool `json:"stripped,omitempty"`
+	Converted bool `json:"converted,omitempty"`
 }
 
 // ErrTooLarge is an upload over the den's limit, which the page states.
 var ErrTooLarge = errors.New("the file is larger than this den allows")
 
-// refusal explains why a kind of file isn't sent.
-func refusal(k media.Kind) error {
-	switch k {
-	case media.Photo:
-		return inputError(errors.New("Dens can't send this kind of photo yet (HEIC, AVIF, TIFF, camera raw or Photoshop), " +
-			"because it can't take the location and camera details out of it. Save it as JPEG or PNG and send that."))
-	case media.Audio:
-		return inputError(errors.New("Dens can't send audio yet, because it can't take out the details audio files carry, " +
-			"which can include where they were recorded."))
-	}
-	return inputError(errors.New("Dens can't send video yet, because it can't take out the details videos carry, " +
-		"such as where they were filmed."))
-}
-
 // Upload sends a file to a den for a message or a profile to use. Images
-// lose their metadata on the way, as they stream; size is the file's
-// length. A file for a DM, which channel names, goes sealed. Nothing reads
+// lose their metadata on the way, as they stream, and video, audio and
+// photos browsers can't show go through the media module first (media.go);
+// size is the file's length. A file for a DM, which channel names, goes sealed. Nothing reads
 // body once Upload returns, so the caller can drain what's left of it.
 func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, size int64, body io.Reader) (Uploaded, error) {
 	c, err := m.find(denID)
@@ -85,7 +74,16 @@ func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, siz
 	}
 	kind := media.Sniff(head)
 	if kind.Refused() {
-		return Uploaded{}, refusal(kind)
+		return Uploaded{}, refusal(head)
+	}
+	var p *prepared
+	if kind.NeedsMedia() {
+		if p, err = m.prepare(ctx, kind, head, name, br, max(limits.FileSize, size), limits.FileSize); err != nil {
+			return Uploaded{}, err
+		}
+		defer p.close()
+		kind, name, size = p.kind, p.name, p.out.Size()
+		br = bufio.NewReaderSize(io.NewSectionReader(p.out, 0, size), media.SniffLen)
 	}
 
 	var send io.Reader = br
@@ -155,6 +153,12 @@ func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, siz
 		// The den read the whole file, so stripping is done.
 		up.Stripped = (<-stripped).res.Removed
 	}
+	if p != nil {
+		// A video's or audio's container is written anew, with nothing
+		// of the old one's but its streams, and a converted photo keeps
+		// only its pixels and colors.
+		up.Stripped, up.Converted = true, p.converted
+	}
 	return up, nil
 }
 
@@ -196,14 +200,24 @@ func stripError(err error) error {
 	return err
 }
 
-// OpenedFile is a file from a den, for the page.
+// OpenedFile is a file from a den, for the page, to read anywhere in, as a
+// player seeking through a video does.
 type OpenedFile struct {
-	io.Reader
-	Size int64
-	// Kind is what the file turned out to be. Only an image kind may be
-	// shown inline.
+	*io.SectionReader
+	// Kind is what the file turned out to be, and Head its first bytes.
+	// Only an image kind, or video or audio PlayType names, shows inline.
 	Kind  media.Kind
+	Head  []byte
 	close func() error
+}
+
+// PlayType is the type a video or audio file plays as, when it's in a
+// container the media module writes; "" otherwise.
+func (f *OpenedFile) PlayType() string {
+	if f.Kind != media.Video && f.Kind != media.Audio {
+		return ""
+	}
+	return media.PlayType(f.Head)
 }
 
 func (f *OpenedFile) Close() error {
@@ -213,7 +227,14 @@ func (f *OpenedFile) Close() error {
 	return f.close()
 }
 
-// OpenFile fetches a file, or its preview, from a den, or from the cache.
+func inMemory(data []byte, kind media.Kind) *OpenedFile {
+	return &OpenedFile{SectionReader: io.NewSectionReader(bytes.NewReader(data), 0, int64(len(data))), Kind: kind,
+		Head: data[:min(len(data), media.SniffLen)]}
+}
+
+// OpenFile opens a file, or its preview, from a den, or from the cache. A
+// DM's file opens with the key its message sealed, chunk by chunk as it's
+// read.
 func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool) (*OpenedFile, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -224,59 +245,63 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	}
 	key := cacheKey{den: denID, file: fileID, thumb: thumb}
 	if data, kind, ok := m.files.get(key); ok {
-		return &OpenedFile{Reader: bytes.NewReader(data), Size: int64(len(data)), Kind: kind}, nil
+		return inMemory(data, kind), nil
 	}
 	c.mu.Lock()
 	df, sealed := c.dmFiles[fileID]
 	c.mu.Unlock()
-	var body io.ReadCloser
-	var size int64
+	path := "/api/files/" + fileID
+	switch {
+	case sealed && thumb:
+		// A DM file's preview is a blob of its own.
+		if df.thumb == "" {
+			return nil, &denproto.Error{Status: http.StatusNotFound, Code: denproto.CodeNotFound, Message: "no preview"}
+		}
+		path = "/api/files/" + df.thumb
+	case thumb:
+		path += "/thumb"
+	}
+	rf, err := c.openRemote(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	var r interface {
+		io.ReaderAt
+		Size() int64
+	} = rf
 	if sealed {
-		// A DM's file opens with the key its message sealed.
-		if body, size, err = c.openDMFile(ctx, fileID, df, thumb); err != nil {
+		if r, err = vault.OpenStreamAtWith(df.key, rf, rf.size, denproto.DMFileAD(c.j.denID, df.channel, thumb)); err != nil {
+			rf.Close()
 			return nil, err
 		}
-	} else {
-		path := "/api/files/" + fileID
-		if thumb {
-			path += "/thumb"
-		}
-		res, err := c.transfer(ctx, path)
-		if err != nil {
-			return nil, err
-		}
-		size = res.ContentLength
-		if size < 0 || size > denproto.MaxFileSize {
-			res.Body.Close()
-			return nil, errors.New("the den's answer is malformed")
-		}
-		body = readCloser{io.LimitReader(res.Body, size), res.Body}
+	}
+	size := r.Size()
+	if size > denproto.MaxFileSize {
+		rf.Close()
+		return nil, errors.New("the den's answer is malformed")
 	}
 	if size <= cacheFileSize {
-		defer body.Close()
-		data, err := io.ReadAll(body)
-		if err != nil {
-			return nil, fmt.Errorf("read the file from the den: %w", err)
-		}
-		if int64(len(data)) != size {
-			return nil, errors.New("the den sent less than it said")
+		defer rf.Close()
+		data := make([]byte, size)
+		if _, err := r.ReadAt(data, 0); err != nil && size > 0 {
+			return nil, err
 		}
 		kind := media.Sniff(data[:min(len(data), media.SniffLen)])
 		m.files.put(key, data, kind)
-		return &OpenedFile{Reader: bytes.NewReader(data), Size: size, Kind: kind}, nil
+		return inMemory(data, kind), nil
 	}
-	br := bufio.NewReaderSize(body, media.SniffLen)
-	head, err := br.Peek(media.SniffLen)
-	if err != nil && !errors.Is(err, io.EOF) {
-		body.Close()
+	head := make([]byte, media.SniffLen)
+	if _, err := r.ReadAt(head, 0); err != nil {
+		rf.Close()
 		return nil, err
 	}
-	return &OpenedFile{Reader: br, Size: size, Kind: media.Sniff(head), close: body.Close}, nil
+	return &OpenedFile{SectionReader: io.NewSectionReader(r, 0, size), Kind: media.Sniff(head), Head: head, close: rf.Close}, nil
 }
 
-// transfer fetches a file from the den, signing in again once if the den
-// no longer accepts the token.
-func (c *conn) transfer(ctx context.Context, path string) (*http.Response, error) {
+// transfer fetches a file from the den, whole, or from byte from on when
+// from isn't negative, signing in again once if the den no longer accepts
+// the token.
+func (c *conn) transfer(ctx context.Context, path string, from int64) (*http.Response, error) {
 	for attempt := 0; ; attempt++ {
 		token, err := c.session(ctx)
 		if err != nil {
@@ -288,6 +313,9 @@ func (c *conn) transfer(ctx context.Context, path string) (*http.Response, error
 			return nil, err
 		}
 		a.headers(req.Header, token)
+		if from >= 0 {
+			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", from))
+		}
 		res, err := c.m.Transfer.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("reach the den: %w", err)
@@ -303,6 +331,97 @@ func (c *conn) transfer(ctx context.Context, path string) (*http.Response, error
 		}
 		return nil, err
 	}
+}
+
+// remoteFile reads a file from a den at any offset. A read that carries on
+// from the last one, or lands a little past it, reads on in the same
+// answer; one elsewhere asks the den for the rest of the file from there.
+type remoteFile struct {
+	ctx  context.Context
+	c    *conn
+	path string
+	size int64
+
+	mu   sync.Mutex
+	body io.ReadCloser // the den's answer from pos on, or nil
+	pos  int64
+}
+
+// skipAhead is how far past the last read a read may land and still be
+// reached by reading on.
+const skipAhead = 256 << 10
+
+// openRemote starts fetching a file from the den, which says its size.
+func (c *conn) openRemote(ctx context.Context, path string) (*remoteFile, error) {
+	res, err := c.transfer(ctx, path, -1)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != http.StatusOK || res.ContentLength < 0 || res.ContentLength > vault.SealedSize(denproto.MaxFileSize) {
+		res.Body.Close()
+		return nil, errors.New("the den's answer is malformed")
+	}
+	return &remoteFile{ctx: ctx, c: c, path: path, size: res.ContentLength, body: res.Body}, nil
+}
+
+func (r *remoteFile) Size() int64 { return r.size }
+
+func (r *remoteFile) ReadAt(p []byte, off int64) (int, error) {
+	if off < 0 {
+		return 0, errors.New("negative offset")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if off >= r.size {
+		return 0, io.EOF
+	}
+	want := p[:min(int64(len(p)), r.size-off)]
+	if r.body != nil && off > r.pos && off-r.pos <= skipAhead {
+		if _, err := io.CopyN(io.Discard, r.body, off-r.pos); err != nil {
+			r.drop()
+		}
+		r.pos = off
+	}
+	if r.body == nil || off != r.pos {
+		r.drop()
+		res, err := r.c.transfer(r.ctx, r.path, off)
+		if err != nil {
+			return 0, err
+		}
+		if res.StatusCode != http.StatusPartialContent || res.ContentLength != r.size-off ||
+			res.Header.Get("Content-Range") != fmt.Sprintf("bytes %d-%d/%d", off, r.size-1, r.size) {
+			res.Body.Close()
+			return 0, errors.New("the den's answer is malformed")
+		}
+		r.body, r.pos = res.Body, off
+	}
+	n, err := io.ReadFull(r.body, want)
+	r.pos += int64(n)
+	if err != nil {
+		r.drop()
+		if errors.Is(err, io.EOF) {
+			err = io.ErrUnexpectedEOF
+		}
+		return n, fmt.Errorf("read the file from the den: %w", err)
+	}
+	if len(want) < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+
+func (r *remoteFile) drop() {
+	if r.body != nil {
+		r.body.Close()
+		r.body = nil
+	}
+}
+
+func (r *remoteFile) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.drop()
+	return nil
 }
 
 // Storage reports how much of a den's space this member's files take.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -75,10 +76,19 @@ func (f *fixture) open() {
 	f.d = d
 }
 
+// The test binary is its own media worker, as ffmpeg.TestWorkerEnv says.
+func TestMain(m *testing.M) {
+	if os.Getenv(ffmpeg.TestWorkerEnv) == "1" {
+		os.Exit(ffmpeg.Work(os.Stdin, os.Stdout))
+	}
+	os.Exit(m.Run())
+}
+
 // testStorage makes the directories a den keeps uploads in.
 func testStorage(t *testing.T) Storage {
 	t.Helper()
-	s := Storage{Dir: filepath.Join(t.TempDir(), "uploads"), Temp: filepath.Join(t.TempDir(), "tmp")}
+	s := Storage{Dir: filepath.Join(t.TempDir(), "uploads"), Temp: filepath.Join(t.TempDir(), "tmp"),
+		Media: ffmpeg.TestRunner(nil)}
 	for _, dir := range []string{s.Dir, s.Temp} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)

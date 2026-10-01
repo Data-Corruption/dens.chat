@@ -9,14 +9,14 @@ import (
 	"strings"
 )
 
-// SecurityHeaders sets a strict policy on every response: scripts, styles
-// and connections only from the page's own origin, no framing, no referrer,
-// and no MIME sniffing.
+// SecurityHeaders sets a strict policy on every response: scripts, styles,
+// media and connections only from the page's own origin, no framing, no
+// referrer, and no MIME sniffing.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; "+
-			"img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; "+
+			"img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; "+
 			"frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")

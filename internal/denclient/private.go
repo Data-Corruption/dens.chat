@@ -137,13 +137,11 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	out.Text = p.Text
 	channel, _ := denproto.ParseID(m.ChannelID)
 	for _, f := range p.Files {
-		file := denproto.File{ID: f.ID, Name: f.Name, Type: f.Type, Size: f.Size, Width: f.Width, Height: f.Height, Animated: f.Animated}
 		df := dmFile{channel: channel, key: f.Key}
 		if f.Thumb != nil {
-			file.Thumb = &denproto.Thumb{Width: f.Thumb.Width, Height: f.Thumb.Height}
 			df.thumb = f.Thumb.ID
 		}
-		out.Attachments = append(out.Attachments, file)
+		out.Attachments = append(out.Attachments, dmUploaded(f).File)
 		if len(c.dmFiles) >= maxDMFiles {
 			clear(c.dmFiles)
 		}

@@ -81,7 +81,7 @@ func TestSecurityHeaders(t *testing.T) {
 	w := httptest.NewRecorder()
 	SecurityHeaders(ok).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	csp := w.Header().Get("Content-Security-Policy")
-	for _, want := range []string{"default-src 'none'", "script-src 'self'", "frame-ancestors 'none'"} {
+	for _, want := range []string{"default-src 'none'", "script-src 'self'", "media-src 'self'", "frame-ancestors 'none'"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP %q missing %q", csp, want)
 		}

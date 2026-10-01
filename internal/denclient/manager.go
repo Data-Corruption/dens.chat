@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
@@ -94,9 +95,12 @@ type Manager struct {
 	signIns   map[string]*pendingSignIn
 	signInSeq uint64
 
-	// TempDir holds DM files while they're prepared for sending, sealed
-	// with a key that lives only in memory.
+	// TempDir holds files while they're prepared for sending, sealed with
+	// keys that live only in memory.
 	TempDir string
+	// Media runs the media module, which takes video, audio and photos
+	// browsers can't show; without it they aren't sent.
+	Media *ffmpeg.Runner
 }
 
 // PageEvent carries a den's checked events to the page, or tells it to

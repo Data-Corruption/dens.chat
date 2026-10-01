@@ -65,14 +65,14 @@ func (f *fixture) mustUpload(s *Session, name string, data []byte) denproto.File
 }
 
 func (f *fixture) read(s *Session, id string, thumb bool) ([]byte, error) {
-	r, size, err := f.d.OpenFile(context.Background(), s, id, thumb)
+	r, err := f.d.OpenFile(context.Background(), s, id, thumb)
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 	data, err := io.ReadAll(r)
-	if err == nil && int64(len(data)) != size {
-		f.t.Fatalf("file %s: %d bytes, stated %d", id, len(data), size)
+	if err == nil && int64(len(data)) != r.Size() {
+		f.t.Fatalf("file %s: %d bytes, stated %d", id, len(data), r.Size())
 	}
 	return data, err
 }
@@ -149,8 +149,6 @@ func TestUploadRefusals(t *testing.T) {
 	ctx := context.Background()
 	_, err := f.upload(member, "gps.jpg", withComment(testJPEG(t, 20, 20)))
 	wantCode(t, err, denproto.CodeInvalidField)
-	_, err = f.upload(member, "clip.mp4", append([]byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2"), make([]byte, 100)...))
-	wantCode(t, err, denproto.CodeUnsupportedType)
 	_, err = f.upload(member, "cut.jpg", testJPEG(t, 50, 50)[:300])
 	wantCode(t, err, denproto.CodeInvalidField)
 

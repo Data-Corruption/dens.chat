@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"mime"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/media"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
@@ -29,9 +31,9 @@ import (
 // Clients take metadata out of images before uploading. The den checks
 // that nothing is left and refuses a file that still has some, so no
 // location reaches its disk; then it makes the image's preview from what
-// it stored. Files are sealed with the data key, in chunks, under random
-// names only their rows know, and their names are sealed like message
-// text.
+// it stored. Video and audio it strips again itself (media.go). Files are
+// sealed with the data key, in chunks, under random names only their rows
+// know, and their names are sealed like message text.
 const (
 	// uploadExpiry is how long an upload waits for a message or a profile
 	// to use it.
@@ -53,6 +55,7 @@ type fileStore struct {
 	decode chan struct{}
 	// freeSpace is host.FreeSpace; tests replace it.
 	freeSpace func(string) (uint64, error)
+	media     *ffmpeg.Runner
 
 	mu    sync.Mutex
 	sweep *time.Timer
@@ -60,7 +63,7 @@ type fileStore struct {
 }
 
 func newFileStore(s Storage) *fileStore {
-	return &fileStore{dir: s.Dir, temp: s.Temp, decode: make(chan struct{}, 1), freeSpace: host.FreeSpace}
+	return &fileStore{dir: s.Dir, temp: s.Temp, decode: make(chan struct{}, 1), freeSpace: host.FreeSpace, media: s.Media}
 }
 
 func blobName(blob []byte, thumb bool) string {
@@ -126,6 +129,29 @@ func (p *part) open(v *vault.Vault) (io.ReadCloser, error) {
 	return readCloser{v.OpenStream(f, blobAD(p.blob, p.thumb)), f}, nil
 }
 
+// openAt reads a finished part back at any offset; closer closes it.
+func (p *part) openAt(v *vault.Vault) (*vault.StreamReaderAt, io.Closer, error) {
+	return openSealedAt(v, p.f.Name(), blobAD(p.blob, p.thumb))
+}
+
+func openSealedAt(v *vault.Vault, name string, ad []byte) (*vault.StreamReaderAt, io.Closer, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	r, err := v.OpenStreamAt(f, st.Size(), ad)
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return r, f, nil
+}
+
 // move puts a finished part where stored files live.
 func (p *part) move() error {
 	if err := os.Rename(p.f.Name(), p.dest); err != nil {
@@ -153,13 +179,20 @@ type readCloser struct {
 	io.Closer
 }
 
+// StoredFile is a stored file opened to read anywhere in it, as a player
+// seeking through a video does: only the chunks a read covers are opened.
+type StoredFile struct {
+	*io.SectionReader
+	io.Closer
+}
+
 // open reads a stored file.
-func (s *fileStore) open(v *vault.Vault, blob []byte, thumb bool) (io.ReadCloser, error) {
-	f, err := os.Open(filepath.Join(s.dir, blobName(blob, thumb)))
+func (s *fileStore) open(v *vault.Vault, blob []byte, thumb bool) (StoredFile, error) {
+	r, closer, err := openSealedAt(v, filepath.Join(s.dir, blobName(blob, thumb)), blobAD(blob, thumb))
 	if err != nil {
-		return nil, err
+		return StoredFile{}, err
 	}
-	return readCloser{v.OpenStream(f, blobAD(blob, thumb)), f}, nil
+	return StoredFile{io.NewSectionReader(r, 0, r.Size()), closer}, nil
 }
 
 // remove deletes stored files and their previews. Their rows are already
@@ -272,9 +305,8 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 			return denproto.File{}, err
 		}
 		kind = media.Sniff(head)
-		if kind.Refused() {
-			return denproto.File{}, denproto.Errorf(http.StatusUnsupportedMediaType, denproto.CodeUnsupportedType,
-				"a %s can carry metadata Dens can't remove yet", kind)
+		if err := d.files.refuse(kind, head); err != nil {
+			return denproto.File{}, err
 		}
 		f = denproto.File{Name: denproto.CleanFilename(name), Type: kind.MIME()}
 		if f.Type == "" {
@@ -297,16 +329,24 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 	}
 	f.Size = n.n
 
+	stored := orig
 	var thumb *part
 	var thumbSize int64
-	if !sealed && kind.Image() {
+	switch {
+	case sealed:
+	case kind.Image():
 		f.Width, f.Height, f.Animated = res.Width, res.Height, res.Animated
 		if thumb, f.Thumb, thumbSize, err = d.preview(ctx, orig, blob, kind, res); err != nil {
 			return denproto.File{}, err
 		}
-		if thumb != nil {
-			defer thumb.abort()
+	case kind == media.Video || kind == media.Audio:
+		if stored, thumb, thumbSize, err = d.restrip(ctx, orig, blob, limits, &f); err != nil {
+			return denproto.File{}, err
 		}
+		defer stored.abort()
+	}
+	if thumb != nil {
+		defer thumb.abort()
 	}
 
 	now := d.now()
@@ -324,14 +364,18 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 		if f.Thumb != nil {
 			tw, th, ts = f.Thumb.Width, f.Thumb.Height, thumbSize
 		}
-		var w, h any
+		var w, h, duration any
 		if f.Width > 0 {
 			w, h = f.Width, f.Height
 		}
+		if f.Duration > 0 {
+			duration = f.Duration
+		}
 		result, err := tx.ExecContext(ctx, `INSERT INTO den_files
-			(blob, uploader_id, name, type, size, width, height, animated, thumb_width, thumb_height, thumb_size, sealed, created_at)
-			VALUES (?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			blob, s.MemberID, f.Type, f.Size, w, h, f.Animated, tw, th, ts, sealed, now.UnixMilli())
+			(blob, uploader_id, name, type, size, width, height, animated, thumb_width, thumb_height, thumb_size, duration_ms,
+			sealed, created_at)
+			VALUES (?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			blob, s.MemberID, f.Type, f.Size, w, h, f.Animated, tw, th, ts, duration, sealed, now.UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -348,7 +392,7 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 		// Moved in last, so a failure before leaves only temporary files,
 		// and one after, in the commit, leaves files no row names, which
 		// the next start clears.
-		if err := orig.move(); err != nil {
+		if err := stored.move(); err != nil {
 			return err
 		}
 		if thumb != nil {
@@ -359,7 +403,7 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 	if err != nil {
 		return denproto.File{}, err
 	}
-	orig.kept = true
+	stored.kept = true
 	if thumb != nil {
 		thumb.kept = true
 	}
@@ -412,10 +456,11 @@ func (d *Den) preview(ctx context.Context, orig *part, blob []byte, kind media.K
 // OpenFile opens a file, or its preview, for a member who may see it:
 // anyone who can see the message it's on, anyone in the den for a picture
 // on a profile, and only its uploader while it waits to be used.
-func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (io.ReadCloser, int64, error) {
+func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (StoredFile, error) {
+	none := StoredFile{}
 	fid, err := denproto.ParseID(id)
 	if err != nil {
-		return nil, 0, errFileNotFound
+		return none, errFileNotFound
 	}
 	var blob []byte
 	var size, uploader int64
@@ -426,46 +471,54 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?`, fid).
 		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, 0, errFileNotFound
+		return none, errFileNotFound
 	}
 	if err != nil {
-		return nil, 0, err
+		return none, err
 	}
 	switch {
 	case channel.Valid:
 		c, err := d.channel(ctx, d.db, channel.Int64)
 		if err != nil || !visible(c, s.MemberID, IsStaff(s.Role)) {
-			return nil, 0, errFileNotFound
+			return none, errFileNotFound
 		}
 	case profile, uploader == s.MemberID:
 	default:
-		return nil, 0, errFileNotFound
+		return none, errFileNotFound
 	}
 	if thumb {
 		if !thumbSize.Valid {
-			return nil, 0, errFileNotFound
+			return none, errFileNotFound
 		}
 		size = thumbSize.Int64
 	}
 	r, err := d.files.open(d.v, blob, thumb)
 	if errors.Is(err, fs.ErrNotExist) {
 		d.log.Warnf("File %d is missing from the den's storage", fid)
-		return nil, 0, errFileNotFound
+		return none, errFileNotFound
 	}
-	return r, size, err
+	if err != nil {
+		return none, err
+	}
+	if r.Size() != size {
+		r.Close()
+		return none, fmt.Errorf("file %d: %w", fid, vault.ErrSealed)
+	}
+	return r, nil
 }
 
-const fileColumns = `id, message_id, name, type, size, width, height, animated, thumb_width, thumb_height`
+const fileColumns = `id, message_id, name, type, size, width, height, animated, thumb_width, thumb_height, duration_ms`
 
 // scanFile reads a file's description, and the message it's on.
 func (d *Den) scanFile(scan func(...any) error) (denproto.File, int64, error) {
 	var f denproto.File
 	var id int64
-	var message, w, h, tw, th sql.NullInt64
+	var message, w, h, tw, th, duration sql.NullInt64
 	var sealed []byte
-	if err := scan(&id, &message, &sealed, &f.Type, &f.Size, &w, &h, &f.Animated, &tw, &th); err != nil {
+	if err := scan(&id, &message, &sealed, &f.Type, &f.Size, &w, &h, &f.Animated, &tw, &th, &duration); err != nil {
 		return f, 0, err
 	}
+	f.Duration = duration.Int64
 	name, err := d.v.Open(sealed, fileNameAD(id))
 	if err != nil {
 		return f, 0, err

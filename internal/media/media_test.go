@@ -11,6 +11,8 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/image/webp"
@@ -236,19 +238,27 @@ func TestSniff(t *testing.T) {
 		{"m4a", iso("M4A ", "isom"), Audio},
 		{"heic", iso("heic", "mif1", "heic"), Photo},
 		{"heic by brand", iso("mif1", "heic"), Photo},
-		{"avif", iso("avif", "mif1", "miaf"), Photo},
-		{"cr3", iso("crx ", "isom"), Photo},
+		{"avif", iso("avif", "mif1", "miaf"), Unsupported},
+		{"avif after heif's brands", iso("mif1", "miaf", "avif"), Unsupported},
+		{"cr3", iso("crx ", "isom"), Unsupported},
 		{"webm", []byte("\x1A\x45\xDF\xA3\x9f\x42\x86\x81"), Video},
-		{"avi", []byte("RIFF\x00\x00\x00\x00AVI LIST"), Video},
+		{"avi", []byte("RIFF\x00\x00\x00\x00AVI LIST"), Unsupported},
 		{"wav", []byte("RIFF\x00\x00\x00\x00WAVEfmt "), Audio},
 		{"ogg", []byte("OggS\x00\x02"), Audio},
 		{"mp3", []byte("ID3\x04\x00"), Audio},
+		{"mp3 without id3", []byte("\xFF\xFB\x90\x64"), Audio},
+		{"adts aac", []byte("\xFF\xF1\x50\x80"), Audio},
+		{"utf-16 text", []byte("\xFF\xFEh\x00i\x00"), Other},
+		{"aiff", []byte("FORM\x00\x00\x00\x00AIFF"), Unsupported},
 		{"flac", []byte("fLaC\x00"), Audio},
-		{"mpeg-ts", ts, Video},
+		{"mpeg-ts", ts, Unsupported},
 		{"tiff", []byte("II*\x00\x08\x00\x00\x00"), Photo},
 		{"big-endian tiff", []byte("MM\x00*\x00\x00\x00\x08"), Photo},
-		{"raf", []byte("FUJIFILMCCD-RAW 0201"), Photo},
-		{"jxl", []byte("\xFF\x0A\xFA"), Photo},
+		{"cr2", []byte("II*\x00\x10\x00\x00\x00CR\x02\x00"), Unsupported},
+		{"raf", []byte("FUJIFILMCCD-RAW 0201"), Unsupported},
+		{"jxl", []byte("\xFF\x0A\xFA"), Unsupported},
+		{"jp2", []byte("\x00\x00\x00\x0CjP  \r\n\x87\n"), Photo},
+		{"j2k codestream", []byte("\xFF\x4F\xFF\x51"), Photo},
 		{"psd", []byte("8BPS\x00\x01"), Photo},
 		{"pdf", []byte("%PDF-1.7\n"), Other},
 		{"zip", []byte("PK\x03\x04"), Other},
@@ -259,6 +269,45 @@ func TestSniff(t *testing.T) {
 	} {
 		if got := Sniff(c.head); got != c.want {
 			t.Errorf("%s: %s, want %s", c.name, got, c.want)
+		}
+		if name := Name(c.head); (name != "") != (c.want == Unsupported) {
+			t.Errorf("%s: named %q", c.name, name)
+		}
+	}
+	if got := Name([]byte("RIFF\x00\x00\x00\x00AVI LIST")); got != "an AVI video" {
+		t.Errorf("an AVI is named %q", got)
+	}
+}
+
+// tiff builds a little-endian TIFF whose first directory has the entries
+// given, each a tag and a LONG value.
+func tiff(entries ...[2]uint32) []byte {
+	b := []byte("II*\x00\x08\x00\x00\x00")
+	b = binary.LittleEndian.AppendUint16(b, uint16(len(entries)))
+	for _, e := range entries {
+		b = binary.LittleEndian.AppendUint16(b, uint16(e[0]))
+		b = binary.LittleEndian.AppendUint16(b, 4)
+		b = binary.LittleEndian.AppendUint32(b, 1)
+		b = binary.LittleEndian.AppendUint32(b, e[1])
+	}
+	return binary.LittleEndian.AppendUint32(b, 0)
+}
+
+func TestTIFFRaw(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		file []byte
+		raw  bool
+	}{
+		{"a photo", tiff([2]uint32{0x0100, 640}, [2]uint32{0x0101, 480}), false},
+		{"a dng", tiff([2]uint32{0x0100, 256}, [2]uint32{0xC612, 0x01040000}), true},
+		{"raw beneath", tiff([2]uint32{0x014A, 1234}), true},
+		{"a preview first", tiff([2]uint32{0x00FE, 1}), true},
+		{"a page of many", tiff([2]uint32{0x00FE, 2}), false},
+		{"cut short", tiff([2]uint32{0x0100, 640})[:12], true},
+	} {
+		if got := TIFFRaw(bytes.NewReader(c.file)); got != c.raw {
+			t.Errorf("%s: raw %t", c.name, got)
 		}
 	}
 }
@@ -666,5 +715,24 @@ func TestThumbnailBudget(t *testing.T) {
 	res.Width = 9
 	if _, err := Thumbnail(bytes.NewReader(img), PNG, res); !errors.Is(err, ErrMalformed) {
 		t.Errorf("%v, want ErrMalformed", err)
+	}
+}
+
+func TestPlayType(t *testing.T) {
+	for name, want := range map[string]string{
+		"meta.mp4": "video/mp4", "with-gps.mov": "video/mp4", "meta.m4a": "audio/mp4", "meta.mkv": "video/x-matroska",
+		"meta.webm": "video/webm", "meta.mp3": "audio/mpeg", "meta.flac": "audio/flac", "meta.ogg": "audio/ogg",
+		"meta.wav": "audio/wav",
+	} {
+		head, err := os.ReadFile(filepath.Join("ffmpeg", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := PlayType(head[:min(len(head), SniffLen)]); got != want {
+			t.Errorf("%s plays as %q, want %q", name, got, want)
+		}
+	}
+	if got := PlayType([]byte("\xFF\xD8\xFF\xE0")); got != "" {
+		t.Errorf("a JPEG plays as %q", got)
 	}
 }

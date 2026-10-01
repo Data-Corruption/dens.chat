@@ -196,7 +196,7 @@ func TestDMsStaySealed(t *testing.T) {
 	}
 	// All the den has of it is noise.
 	bob, _ := denproto.ParseID(me(t, member, denID).ID)
-	r, _, err := h.d.OpenFile(ctx, &den.Session{MemberID: bob}, up.ID, false)
+	r, err := h.d.OpenFile(ctx, &den.Session{MemberID: bob}, up.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"strconv"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 
@@ -16,6 +16,7 @@ func (rt *router) mountFiles(r chi.Router) {
 	r.Post("/api/dens/{den}/uploads", rt.handleUpload)
 	r.Get("/api/dens/{den}/files/{file}", rt.handleFile(false))
 	r.Get("/api/dens/{den}/files/{file}/thumb", rt.handleFile(true))
+	r.Post("/api/dens/{den}/uploads/{file}/thumb", rt.handleSetThumb)
 	r.Get("/api/dens/{den}/storage", rt.handleStorage)
 }
 
@@ -50,11 +51,26 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, up)
 }
 
+// handleSetThumb passes the preview the page drew for a video it uploaded,
+// which the media module couldn't make one for.
+func (rt *router) handleSetThumb(w http.ResponseWriter, r *http.Request) {
+	up, err := rt.a.Dens.SetThumb(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file"), r.ContentLength, r.Body)
+	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, up)
+}
+
 // handleFile serves a file, or its preview, to the page. Only a file that
-// turned out to be an image of a kind Dens reads shows inline, as that
-// image type; anything else downloads, and never as a type the browser
-// would render. The sandbox keeps even a file opened on its own from
-// running anything, and no-store keeps it out of the browser's cache.
+// turned out to be an image of a kind Dens reads, or video or audio in a
+// container the media module writes, shows inline, as that type; anything
+// else downloads, and never as a type the browser would render. Byte
+// ranges let a player seek. The sandbox keeps even a file opened on its own
+// from running anything, and no-store keeps it out of the browser's cache.
 func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		f, err := rt.a.Dens.OpenFile(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file"), thumb)
@@ -69,10 +85,17 @@ func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 		h := w.Header()
 		h.Set("Cache-Control", "no-store")
 		h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-		h.Set("Content-Length", strconv.FormatInt(f.Size, 10))
 		name, download := r.URL.Query()["download"]
-		if f.Kind.Image() && !download {
-			h.Set("Content-Type", f.Kind.MIME())
+		var inline string
+		switch {
+		case download:
+		case f.Kind.Image():
+			inline = f.Kind.MIME()
+		default:
+			inline = f.PlayType()
+		}
+		if inline != "" {
+			h.Set("Content-Type", inline)
 			h.Set("Content-Disposition", "inline")
 		} else {
 			h.Set("Content-Type", "application/octet-stream")
@@ -84,7 +107,7 @@ func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 			}
 			h.Set("Content-Disposition", disposition)
 		}
-		_, _ = io.Copy(w, f)
+		http.ServeContent(w, r, "", time.Time{}, f)
 	}
 }
 

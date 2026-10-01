@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
@@ -88,9 +89,12 @@ type Session struct {
 }
 
 // Storage is where the den keeps uploads: Dir holds them sealed, and
-// Temp, on the same filesystem, holds uploads still arriving.
+// Temp, on the same filesystem, holds uploads still arriving. Media runs
+// the media module, which strips video and audio again and makes their
+// previews; without it the den refuses them.
 type Storage struct {
 	Dir, Temp string
+	Media     *ffmpeg.Runner
 }
 
 // Open loads the den, if this install has created one.

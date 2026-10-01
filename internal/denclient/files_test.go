@@ -243,7 +243,7 @@ func TestFailedUploadHandsBackItsBody(t *testing.T) {
 	upload(t, member, denID, "first.bin", make([]byte, 3<<20))
 	for name, data := range map[string][]byte{
 		// Refused here after its first bytes.
-		"clip.webm": append([]byte("\x1A\x45\xDF\xA3"), make([]byte, 3<<20)...),
+		"clip.avi": append([]byte("RIFF\x00\x00\x30\x00AVI LIST"), make([]byte, 3<<20)...),
 		// Refused by the den before it reads the body: past the member's space.
 		"second.bin": make([]byte, 3<<20),
 	} {

@@ -94,6 +94,7 @@ func New(a *app.App) http.Handler {
 			r.Post("/me/device-requests/{id}/refuse", h.refuseRequest)
 			r.Post("/uploads", h.upload(false))
 			r.Post("/uploads/sealed", h.upload(true))
+			r.Post("/uploads/{id}/thumb", h.setThumb)
 			r.Get("/files/{id}", h.file(false))
 			r.Get("/files/{id}/thumb", h.file(true))
 			r.Get("/me/storage", h.storage)

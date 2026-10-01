@@ -352,6 +352,19 @@ func TestUploadsOverHTTP(t *testing.T) {
 		got.Header.Get("Content-Disposition") != "attachment" || got.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("serving: %q %v", body, got.Header)
 	}
+	// A player seeking asks for a range.
+	req.Header.Set("Range", "bytes=7-8")
+	got, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(got.Body)
+	got.Body.Close()
+	if got.StatusCode != http.StatusPartialContent || string(body) != "of" ||
+		got.Header.Get("Content-Range") != "bytes 7-8/17" || got.Header.Get("Content-Type") != "application/octet-stream" {
+		t.Fatalf("a range: %d %q %v", got.StatusCode, body, got.Header)
+	}
+	req.Header.Del("Range")
 	req.URL.Path += "/thumb"
 	got, _ = http.DefaultClient.Do(req)
 	wantError(t, got, http.StatusNotFound, denproto.CodeNotFound)
