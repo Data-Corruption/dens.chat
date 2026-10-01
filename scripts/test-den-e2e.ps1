@@ -208,9 +208,21 @@ function Wait-Value([scriptblock]$Get, [string]$What) {
 }
 
 # Get-DMHalf returns the digits a member reads out for a DM, once both
-# Dens moved its exchange on.
+# Dens moved its exchange on. Until then the check leaves half out, and
+# strict mode refuses a property that isn't there.
 function Get-DMHalf($Browser, [string]$DenID, [string]$DM) {
-    return Wait-Value { (Invoke-Api $Browser GET "/api/dens/$DenID/dms/$DM/check").half } "the DM's digits"
+    return Wait-Value {
+        $check = Invoke-Api $Browser GET "/api/dens/$DenID/dms/$DM/check"
+        if ($check.PSObject.Properties["half"]) { $check.half }
+    } "the DM's digits"
+}
+
+# Get-Requests returns the sign-ins an instance shows for a den: those
+# waiting for its approval, and those it approved. The den's status leaves
+# requests out when there are none.
+function Get-Requests($Browser, [string]$DenID) {
+    $den = @((Invoke-Api $Browser GET "/api/dens").dens) | Where-Object { $_.den_id -eq $DenID }
+    if ($den -and $den.PSObject.Properties["requests"]) { return @($den.requests) }
 }
 
 # Approve-SignIn signs one of the member's instances in with the password,
@@ -222,32 +234,24 @@ function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$
     if (-not $signIn.PSObject.Properties["pending"] -or $signIn.pending.stage -ne "waiting") { Fail "the password alone signed the device in" }
     $id = $signIn.pending.id
     $request = Wait-Value {
-        $den = @((Invoke-Api $Old GET "/api/dens").dens) | Where-Object { $_.den_id -eq $DenID }
-        if ($den.PSObject.Properties["requests"]) {
-            @($den.requests | Where-Object { -not $_.PSObject.Properties["approved"] })[0].id
-        }
+        $waiting = @(Get-Requests $Old $DenID | Where-Object { -not $_.PSObject.Properties["approved"] })
+        if ($waiting.Count -gt 0) { $waiting[0].id }
     } "a sign-in asking for approval"
     Invoke-Api $Old POST "/api/dens/$DenID/requests/$request/answer" | Out-Null
     $oldHalf = Wait-Value {
-        $den = @((Invoke-Api $Old GET "/api/dens").dens) | Where-Object { $_.den_id -eq $DenID }
-        if ($den.PSObject.Properties["requests"]) {
-            $r = @($den.requests) | Where-Object { $_.id -eq $request }
-            if ($r -and $r.PSObject.Properties["half"]) { $r.half }
-        }
+        $r = @(Get-Requests $Old $DenID | Where-Object { $_.id -eq $request })
+        if ($r.Count -gt 0 -and $r[0].PSObject.Properties["half"]) { $r[0].half }
     } "the approving instance's digits"
     $newHalf = Wait-Value {
-        $p = @((Invoke-Api $New GET "/api/dens").sign_ins) | Where-Object { $_.id -eq $id }
-        if ($p -and $p.PSObject.Properties["half"]) { $p.half }
+        $p = @(@((Invoke-Api $New GET "/api/dens").sign_ins) | Where-Object { $_.id -eq $id })
+        if ($p.Count -gt 0 -and $p[0].PSObject.Properties["half"]) { $p[0].half }
     } "the new instance's digits"
     if ($newHalf -eq $oldHalf) { Fail "both instances show the same digits" }
     if ($OldFirst) {
         Invoke-Api $Old POST "/api/dens/$DenID/requests/$request/approve" @{ digits = $newHalf } | Out-Null
         $shown = Wait-Value {
-            $den = @((Invoke-Api $Old GET "/api/dens").dens) | Where-Object { $_.den_id -eq $DenID }
-            if ($den.PSObject.Properties["requests"]) {
-                $r = @($den.requests) | Where-Object { $_.id -eq $request -and $_.PSObject.Properties["approved"] }
-                if ($r) { $r.half }
-            }
+            $r = @(Get-Requests $Old $DenID | Where-Object { $_.id -eq $request -and $_.PSObject.Properties["approved"] })
+            if ($r.Count -gt 0 -and $r[0].PSObject.Properties["half"]) { $r[0].half }
         } "the approved sign-in's digits"
         if ($shown -ne $oldHalf) { Fail "once it approved, the old instance shows $shown" }
         Invoke-Api $New POST "/api/dens/signin/$id/check" @{ digits = $shown } | Out-Null
@@ -256,8 +260,8 @@ function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$
         Invoke-Api $Old POST "/api/dens/$DenID/requests/$request/approve" @{ digits = $newHalf } | Out-Null
     }
     $stage = Wait-Value {
-        $p = @((Invoke-Api $New GET "/api/dens").sign_ins) | Where-Object { $_.id -eq $id }
-        if ($p -and $p.stage -notin @("waiting", "check", "approved")) { $p.stage }
+        $p = @(@((Invoke-Api $New GET "/api/dens").sign_ins) | Where-Object { $_.id -eq $id })
+        if ($p.Count -gt 0 -and $p[0].stage -notin @("waiting", "check", "approved")) { $p[0].stage }
     } "the sign-in to finish"
     if ($stage -ne "done") { Fail "the sign-in ended as $stage" }
     Invoke-Api $New DELETE "/api/dens/signin/$id" | Out-Null
