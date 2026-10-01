@@ -163,7 +163,7 @@ export function EditProfile({ denID, me, limits, onClose }) {
     function savePicture(blob) {
         const { shape } = cropping;
         picture.run(async () => {
-            const up = await upload(denID, blob, `${shape}.${blob.type === 'image/webp' ? 'webp' : 'png'}`).done;
+            const up = await upload(denID, '', blob, `${shape}.${blob.type === 'image/webp' ? 'webp' : 'png'}`).done;
             await api.patch(`/api/dens/${denID}/me`, { [shape]: up.id });
             setCropping(null);
         });

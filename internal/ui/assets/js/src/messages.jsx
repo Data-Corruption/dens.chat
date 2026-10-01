@@ -16,6 +16,8 @@ import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, formatSize, isImageFile, u
 import { compareIds, newNonce } from './ids.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { isStaff, rank } from './people.jsx';
+import { LOCKED, keyChanges } from './private.js';
+import { CheckPanel, KeyDivider } from './private.jsx';
 
 const WINDOW = 200;
 const PAGE = 50;
@@ -31,7 +33,7 @@ const MAX_EDITORS = 20;
 function withUpdate(list, d) {
     const held = list.messages.find((m) => m.id === d.id);
     if (held && held.revision > d.revision) return list;
-    const reply = { author_id: d.author_id, text: d.text };
+    const reply = { author_id: d.author_id, text: d.text, locked: !!d.locked };
     return { ...list, messages: list.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)) };
 }
 
@@ -49,10 +51,10 @@ function mergeIn(messages, incoming) {
 
 let nextKey = 1;
 
-// MessagePane shows a channel or DM. dm is the other member of a DM;
-// typing lists who is typing here; closed, when set, says why nothing can
-// be sent; limits are the den's upload limits.
-export function MessagePane({ denID, channel, me, members, readPosition, role, dm, typing, closed, limits, onProfile, onTyping }) {
+// MessagePane shows a channel or DM. dm is the other member of a DM, and
+// keys the DM's keys; typing lists who is typing here; closed, when set,
+// says why nothing can be sent; limits are the den's upload limits.
+export function MessagePane({ denID, channel, me, members, readPosition, role, dm, keys, typing, closed, limits, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -275,6 +277,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     function handleEvent(e) {
         const d = e.d;
         if (!d || d.channel_id !== channel.id) return;
+        // Once this member checks a DM's key, what it sealed opens.
+        if (e.t === 'dm.key') {
+            if (listRef.current.messages.some((m) => m.locked)) loadNewest();
+            return;
+        }
         if (e.t === 'message.created') {
             if (d.nonce) setPending((p) => p.filter((x) => x.nonce !== d.nonce));
             const mine = d.author_id === me.id;
@@ -326,7 +333,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         setFiles((cur) => [...cur, ...added]);
         for (const entry of added) {
             if (entry.error) continue;
-            const up = upload(denID, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }));
+            const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }));
             entry.abort = up.abort;
             up.done.then(
                 (result) => updateFile(entry.key, { result, progress: 1 }),
@@ -380,14 +387,20 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (mine.length) setEditing(mine[mine.length - 1].id);
     }
 
+    // A DM takes messages once this member checked its live key.
+    const live = keys?.find((k) => k.channel_id === channel.id && !k.retired);
+    const canSend = channel.kind !== 'dm' || (live?.stage === 'revealed' && (live.checks || []).some((c) => c.member_id === me.id));
     const byId = new Map(list.messages.map((m) => [m.id, m]));
     const rows = [];
     let prev = null;
+    // In a DM, dividers mark where its keys changed.
+    const changes = channel.kind === 'dm' && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id)))) : new Map();
     for (const m of list.messages) {
         const day = new Date(m.created_at).toDateString();
         if (!prev || new Date(prev.created_at).toDateString() !== day) {
             rows.push(<DayDivider key={`day-${m.id}`} time={m.created_at} />);
         }
+        if (changes.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={changes.get(m.id)} />);
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
             rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
@@ -406,7 +419,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 me={me}
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
-                canEdit={m.author_id === me.id || (m.editors || []).includes(me.id)}
+                canEdit={!m.locked && (m.author_id === me.id || (m.editors || []).includes(me.id))}
                 canDelete={m.author_id === me.id || rank(role) > rank(members.get(m.author_id)?.role)}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
                 candidates={candidates}
@@ -418,6 +431,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 onJump={jumpTo}
                 onView={setViewing}
                 denID={denID}
+                channelID={channel.id}
             />,
         );
         prev = m;
@@ -453,10 +467,16 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                             {dm ? (
                                 <>
                                     <p>This is the start of your conversation with {dm.display_name}.</p>
-                                    <p class="text-xs">Only the two of you see it here, but the den's owner can read everything on the den, this included.</p>
+                                    <p class="text-xs">
+                                        It's end-to-end encrypted: only the two of you can read it, not the den's owner. The den still
+                                        sees who talks to whom, and when.
+                                    </p>
                                 </>
                             ) : (
-                                `This is the start of #${channel.name}.`
+                                <>
+                                    <p>This is the start of #{channel.name}.</p>
+                                    <p class="text-xs">The den's owner can read what's posted here.</p>
+                                </>
                             )}
                         </div>
                     )}
@@ -478,9 +498,12 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 </div>
             )}
             {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
+            {!closed && channel.kind === 'dm' && (
+                <CheckPanel denID={denID} channel={channel} dm={dm} keyID={live?.id || ''} />
+            )}
             {closed ? (
                 <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
-            ) : (
+            ) : !canSend ? null : (
                 <Composer
                     placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
                     replyTo={replyTo}
@@ -521,19 +544,20 @@ function clock(ms) {
     return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-// Quoted shows the first line of a message a reply quotes, or that it has
-// only files.
-function Quoted({ text, me }) {
+// Quoted shows the first line of a message a reply quotes, that it has
+// only files, or that it can't be opened.
+function Quoted({ text, locked, me }) {
+    if (locked) return <span class="italic">A message this device can't open</span>;
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID, channelID }) {
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState('');
     async function tick(n, checked, text) {
         setError('');
         try {
-            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/tasks/${n}`, { checked, text }));
+            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/tasks/${n}?channel=${channelID}`, { checked, text }));
         } catch (e) {
             // A list that changed meanwhile shows as it is now.
             if (e.status === 409 && e.data?.message) onUpdated(e.data.message);
@@ -559,7 +583,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     <Spine />
                     <Avatar member={repliedAuthor} size="sm" />
                     <span class="shrink-0 font-medium">{name(repliedAuthor)}</span>
-                    <span class="truncate"><Quoted text={replied.text} me={me} /></span>
+                    <span class="truncate"><Quoted text={replied.text} locked={replied.locked} me={me} /></span>
                 </button>
             )}
             {m.reply_to && !replied && (
@@ -588,11 +612,13 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                             <span class="text-xs text-base-content/50" title={new Date(m.created_at).toLocaleString()}>{clock(m.created_at)}</span>
                         </div>
                     )}
-                    {editing ? (
-                        <EditBox m={m} denID={denID} mine={m.author_id === me.id} candidates={candidates} onDone={onEditDone} />
+                    {m.locked ? (
+                        <p class="cursor-default select-none text-sm italic text-base-content/60">{LOCKED[m.locked] || LOCKED.broken}</p>
+                    ) : editing ? (
+                        <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} onDone={onEditDone} />
                     ) : (
                         (m.text.trim() || m.edited_at) && (
-                            <div class="break-words">
+                            <div class="wrap-break-word">
                                 {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
                                 {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
                                 {editorNames.length > 0 && (
@@ -659,7 +685,7 @@ function PendingRow({ p, me, onRetry, onDiscard }) {
 // EditBox edits a message against the revision it started from. If the
 // message changed meanwhile, it shows the newer text and keeps the draft.
 // Its author also changes who else may edit it.
-function EditBox({ m, denID, mine, candidates, onDone }) {
+function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
     const [text, setText] = useState(m.text);
     const [editors, setEditors] = useState(m.editors || []);
     const [sharing, setSharing] = useState(false);
@@ -675,7 +701,7 @@ function EditBox({ m, denID, mine, candidates, onDone }) {
         setBusy(true);
         setError('');
         try {
-            await api.patch(`/api/dens/${denID}/messages/${m.id}`, { revision: base.revision, text, editors: shared ? editors : undefined });
+            await api.patch(`/api/dens/${denID}/messages/${m.id}?channel=${channelID}`, { revision: base.revision, text, editors: shared ? editors : undefined });
             onDone();
         } catch (e) {
             if (e.status === 409 && e.data?.message) {
@@ -810,7 +836,7 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates
             {replyTo && (
                 <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
                     <span class="min-w-0 truncate">
-                        Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} />
+                        Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} locked={replyTo.locked} />
                     </span>
                     <button type="button" class="btn btn-ghost btn-xs" onClick={onCancelReply} aria-label="Cancel reply">✕</button>
                 </div>

@@ -46,12 +46,13 @@ export const thumbURL = (denID, id) => `/api/dens/${denID}/files/${id}/thumb`;
 export const downloadURL = (denID, f) => `/api/dens/${denID}/files/${f.id}?download=${encodeURIComponent(f.name)}`;
 
 // upload sends a file to a den through the local service, which takes an
-// image's metadata out on the way. It reports progress from 0 to 1, and
-// returns the upload's promise and a way to stop it.
-export function upload(denID, file, name, onProgress) {
+// image's metadata out on the way, and seals a DM's. channelID names the
+// channel it's for, empty for a profile's picture. It reports progress
+// from 0 to 1, and returns the upload's promise and a way to stop it.
+export function upload(denID, channelID, file, name, onProgress) {
     const xhr = new XMLHttpRequest();
     const done = new Promise((resolve, reject) => {
-        xhr.open('POST', `/api/dens/${denID}/uploads`);
+        xhr.open('POST', `/api/dens/${denID}/uploads${channelID ? `?channel=${channelID}` : ''}`);
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.setRequestHeader('Dens-Filename', encodeURIComponent(name));
         xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);

@@ -8,6 +8,7 @@ import {
     Card, CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, day, useAction,
     useLater,
 } from './components.jsx';
+import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
 
 const VERIFIER_HINT =
     "You'll need this password to sign in to the den from a new device. The den never sees it: it gets a value derived from " +
@@ -41,13 +42,15 @@ export function Home({ status, navigate }) {
     }, []);
 
     if (codes) {
-        return <RecoveryCodes denName={codes.name} codes={codes.codes} onDone={() => setCodes(null)} />;
+        return <RecoveryCodes denName={codes.name} codes={codes.codes} seal={codes.seal} sealNew={codes.sealNew} onDone={() => setCodes(null)} />;
     }
     const joined = (result) => {
-        setCodes({ name: result.den.name, codes: result.recovery_codes });
+        setCodes({ name: result.den.name, codes: result.recovery_codes, seal: result.seal, sealNew: result.seal_new });
         refresh();
     };
     const showCodes = (name, list) => setCodes({ name, codes: list });
+    // A new seal, from starting over, shows once like a join's.
+    const showSeal = (name, seal) => setCodes({ name, codes: [], seal, sealNew: true });
 
     return (
         <>
@@ -62,8 +65,9 @@ export function Home({ status, navigate }) {
                 <Waiting label="Waiting for Dens on this computer…" />
             ) : (
                 <>
+                    <PendingSignIns list={view.sign_ins} />
                     {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} navigate={navigate} onCodes={showCodes} onChanged={refresh}
+                    <DenList dens={view.dens} navigate={navigate} onCodes={showCodes} onSeal={showSeal} onChanged={refresh}
                         onSignIn={(den) => setSignIn({ den: den.url, username: den.username, key: Date.now() })} />
                     <JoinDen onJoined={joined} />
                     <SignInDen key={signIn?.key} prefill={signIn} onDone={refresh} />
@@ -83,7 +87,7 @@ const STATE_BADGES = {
 
 const ROLES = { owner: 'the owner', moderator: 'a moderator', member: 'a member' };
 
-function DenList({ dens, navigate, onCodes, onChanged, onSignIn }) {
+function DenList({ dens, navigate, onCodes, onSeal, onChanged, onSignIn }) {
     if (dens.length === 0) {
         return (
             <Card title="Your dens">
@@ -94,13 +98,13 @@ function DenList({ dens, navigate, onCodes, onChanged, onSignIn }) {
     return (
         <Card title="Your dens">
             <ul class="flex flex-col gap-3">
-                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} onCodes={onCodes} onChanged={onChanged} onSignIn={onSignIn} />)}
+                {dens.map((den) => <DenItem key={den.den_id} den={den} navigate={navigate} onCodes={onCodes} onSeal={onSeal} onChanged={onChanged} onSignIn={onSignIn} />)}
             </ul>
         </Card>
     );
 }
 
-function DenItem({ den, navigate, onCodes, onChanged, onSignIn }) {
+function DenItem({ den, navigate, onCodes, onSeal, onChanged, onSignIn }) {
     const [badge, label] = STATE_BADGES[den.state] || ['badge-ghost', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
     const staff = den.role === 'owner' || den.role === 'moderator';
@@ -141,10 +145,12 @@ function DenItem({ den, navigate, onCodes, onChanged, onSignIn }) {
             {den.state === 'offline' && !den.own && <NewAddress den={den} onChanged={onChanged} />}
             {den.state === 'connected' && (
                 <>
+                    <SignInRequests den={den} />
+                    {!den.seal && <SealNeeded den={den} onSeal={(seal) => onSeal(den.name, seal)} />}
                     {den.role === 'owner' && <DenSettings den={den} />}
                     {staff && <Invites denID={den.den_id} />}
                     {staff && <Bans denID={den.den_id} />}
-                    <Devices den={den} onCodes={onCodes} />
+                    <Devices den={den} onCodes={onCodes} onSeal={onSeal} />
                     {!den.own && <Leave den={den} onChanged={onChanged} />}
                 </>
             )}
@@ -197,8 +203,8 @@ function Bans({ denID }) {
 }
 
 // Devices lists this member's devices on a den and signs any of them out,
-// and changes the den password and recovery codes.
-function Devices({ den, onCodes }) {
+// changes the den password and recovery codes, and shows the DM seal.
+function Devices({ den, onCodes, onSeal }) {
     const [open, setOpen] = useState(false);
     const [list, setList] = useState(null);
     const [confirm, setConfirm] = useState('');
@@ -242,11 +248,19 @@ function Devices({ den, onCodes }) {
                                         <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
                                     </span>
                                     {confirm === d.key_id ? (
-                                        <span class="flex gap-1">
-                                            <button type="button" class="btn btn-error btn-xs" disabled={act.busy} onClick={() => signOut(d)}>
-                                                {d.current ? 'Sign this device out' : 'Sign it out'}
-                                            </button>
-                                            <button type="button" class="btn btn-ghost btn-xs" onClick={() => setConfirm('')}>Cancel</button>
+                                        <span class="flex flex-col items-end gap-1">
+                                            {list.devices.length === 1 && (
+                                                <span class="max-w-xs text-right text-xs text-warning">
+                                                    It's your only device here. Signing in again then takes a recovery code, and your DM
+                                                    seal to read your direct messages.
+                                                </span>
+                                            )}
+                                            <span class="flex gap-1">
+                                                <button type="button" class="btn btn-error btn-xs" disabled={act.busy} onClick={() => signOut(d)}>
+                                                    {d.current ? 'Sign this device out' : 'Sign it out'}
+                                                </button>
+                                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setConfirm('')}>Cancel</button>
+                                            </span>
                                         </span>
                                     ) : (
                                         <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirm(d.key_id)}>Sign out</button>
@@ -256,13 +270,14 @@ function Devices({ den, onCodes }) {
                         </ul>
                     )}
                     <p class="text-xs text-base-content/60">
-                        Signing a device out ends its access at once. Signing in again takes your den password. Every new device shows
-                        on your others, so if one appears that isn't yours, change your password below: that signs out every device but
-                        this one.
+                        Signing a device out ends its access at once. Signing in again takes your den password, and one of your other
+                        devices to approve it. If a sign-in you didn't make asks for approval, refuse it and change your password
+                        below: that signs out every device but this one.
                     </p>
                 </div>
                 <ChangePassword den={den} onDone={load} />
                 {list !== null && <NewCodes den={den} left={list.recovery_codes_left} onCodes={onCodes} onDone={load} />}
+                {den.seal && <SealSection den={den} onSeal={(seal) => onSeal(den.name, seal)} />}
             </div>
         </details>
     );
@@ -798,8 +813,8 @@ function JoinDen({ onJoined }) {
     return (
         <Card title={`Join ${preview.name}`}>
             <p class="text-sm text-base-content/70">
-                {preview.url} proved it holds the identity the invite names. Its owner will be able to read everything you post
-                there, including direct messages.
+                {preview.url} proved it holds the identity the invite names. Its owner will be able to read what you post in its
+                channels. Direct messages are end-to-end encrypted, so they can't read those, though they see who talks to whom.
             </p>
             <form class="flex flex-col gap-2" onSubmit={join}>
                 <AccountFields form={form} set={set} />
@@ -843,9 +858,9 @@ function SignInDen({ prefill, onDone }) {
             setRecovering(false);
             const left = result.recovery_codes_left;
             setDone(
-                recovering
-                    ? `Signed in to ${result.den.name}.${signedOut(result.signed_out)} You have ${left} recovery code${left === 1 ? '' : 's'} left; you can make new ones under Devices and password.`
-                    : `Signed in to ${result.den.name}.`,
+                result.pending
+                    ? 'Almost there: approve this sign-in on one of your other devices, as shown at the top of this page.'
+                    : `Signed in to ${result.den.name}.${signedOut(result.signed_out)} You have ${left} recovery code${left === 1 ? '' : 's'} left; you can make new ones under Devices and password. To read your direct messages here, type your DM seal where the den is listed.`,
             );
             await onDone();
         });
@@ -855,8 +870,9 @@ function SignInDen({ prefill, onDone }) {
         <div ref={card}>
             <Card title="Sign in to a den you're in">
                 <p class="text-sm text-base-content/70">
-                    For a den you joined on another computer, or one that signed this device out. Your other devices will see that
-                    this one was added.
+                    For a den you joined on another computer, or one that signed this device out. With your password, one of your other
+                    devices there approves this one and passes it your DM seal. With no other device left, use a recovery code, then
+                    type your DM seal.
                 </p>
                 <form class="flex flex-col gap-2" onSubmit={submit}>
                     <Field
@@ -943,22 +959,30 @@ function HostDen({ hosting, onJoined }) {
     );
 }
 
-function RecoveryCodes({ denName, codes, onDone }) {
+// RecoveryCodes shows a den's recovery codes once, and the DM seal beside
+// them when there is one to keep; after starting over, the seal alone.
+function RecoveryCodes({ denName, codes, seal, sealNew, onDone }) {
     const [saved, setSaved] = useState(false);
     const text = codes.join('\n');
+    const what = codes.length && seal ? 'recovery codes and DM seal' : codes.length ? 'recovery codes' : 'DM seal';
     return (
-        <Card title={`Save your recovery codes for ${denName}`}>
-            <p>
-                If you forget your password for this den, one of these codes lets you set a new one. Each works once. They're shown
-                only now: store them somewhere safe, away from this computer.
-            </p>
-            <ol class="grid grid-cols-2 gap-2 font-mono text-sm">
-                {codes.map((code) => <li key={code} class="rounded bg-base-100 px-3 py-1">{code}</li>)}
-            </ol>
-            <div><CopyButton text={text} label="Copy codes" /></div>
+        <Card title={`Save your ${what} for ${denName}`}>
+            {codes.length > 0 && (
+                <>
+                    <p>
+                        If you forget your password for this den, one of these codes lets you set a new one. Each works once. They're
+                        shown only now: store them somewhere safe, away from this computer.
+                    </p>
+                    <ol class="grid grid-cols-2 gap-2 font-mono text-sm">
+                        {codes.map((code) => <li key={code} class="rounded bg-base-100 px-3 py-1">{code}</li>)}
+                    </ol>
+                    <div><CopyButton text={text} label="Copy codes" /></div>
+                </>
+            )}
+            {seal && <SealShown seal={seal} fresh={sealNew} />}
             <label class="label gap-2">
                 <input type="checkbox" class="checkbox" checked={saved} onChange={(e) => setSaved(e.currentTarget.checked)} />
-                I've stored my recovery codes
+                I've stored my {what}
             </label>
             <div>
                 <button type="button" class="btn btn-primary" disabled={!saved} onClick={onDone}>Done</button>
