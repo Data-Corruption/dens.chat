@@ -47,7 +47,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
-| `spikes/` | Throwaway experiments for the current milestone, in their own Go module; removed when it lands |
+| `spikes/` | Throwaway experiments that answer a design question before code depends on it, in their own Go module; each goes once its findings are in the design doc |
 | `docs/dev/` | Internal docs: the design, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
 

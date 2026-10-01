@@ -365,7 +365,7 @@ Members attach files to messages and put pictures on their profiles. Images lose
 
 - EXIF, GPS and similar metadata are stripped by the uploading member's own service, as the file streams to the den, so the den never receives a photo's location, and neither does its owner. The den runs the same check and refuses an image that still has any, which holds other clients to it.
 - Images: removal without re-encoding, the same code on both sides (`internal/media`). JPEG, PNG, GIF and WebP keep only what decoding, color and animation need, and a JPEG keeps its orientation in a minimal EXIF block of its own; the protocol lists what stays. Pixels are never touched, so nothing loses quality.
-- Video and audio need ffmpeg (`ffmpeg -map_metadata -1 -c copy`), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out. Dens doesn't strip video containers with code of its own. MP4 and Matroska hide metadata in many places, and ffmpeg already handles them, so there's one stripper to get right, not two.
+- Video and audio need ffmpeg, to copy their streams into a new container without the metadata (what `ffmpeg -map_metadata -1 -c copy` does), and so do the photo formats that can't be stripped without decoding them: HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop files. Until then Dens refuses them, and says why, rather than send a location nobody took out. Dens doesn't strip video containers with code of its own. MP4 and Matroska hide metadata in many places, and ffmpeg already handles them, so there's one stripper to get right, not two.
 - Other files, such as documents and archives, are sent as they are, with whatever they carry inside; the docs say so.
 - The member sees on each attached image when metadata came out. There is no opt-out in v1.
 
@@ -395,11 +395,12 @@ Members attach files to messages and put pictures on their profiles. Images lose
 **ffmpeg (after M1)**
 
 - ffmpeg is compiled to WebAssembly and translated to Go with wasm2go, the way the SQLite driver is built. One pure-Go build serves Linux and Windows, with no native binaries to vendor, and it runs under `MemoryDenyWriteExecute`, which rules out a WebAssembly JIT.
+- The module holds FFmpeg's libraries and a small driver of Dens's own in C, not the `ffmpeg` command, which needs threads since FFmpeg 7.0 and parses options Dens has no use for. The driver exports what Dens does with media (probe, strip, still and poster). FFmpeg still parses and writes every container; the driver chooses which streams and side data to copy.
 - The module is its own sandbox. It sees only its linear memory and the few functions Dens gives it: the input's bytes in and the output's bytes out, with no files, network or processes. A hostile file that takes over a decoder is stuck in the module's memory, which matters for a library parsing this many formats.
 - It runs in a worker process, a hidden command of the same binary, at the lowest priority (see Retention and compression), with a memory cap and a time limit, so a decoder that loops or balloons ends its job and not the service.
 - Media work is rare and can wait for a quiet moment, so running slower than native ffmpeg is fine. Large files are the open question.
 - The build leaves out GPL-only parts such as x264, so ffmpeg's terms stay LGPL beside Dens's MIT. Its source and build script ship with Dens, which lets anyone rebuild the binary with a changed ffmpeg, as the LGPL requires.
-- It starts as a spike after M1: build size, speed on large files, memory, and which codecs an LGPL build keeps.
+- It starts as a spike after M1: build size, speed on large files, memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file. Beside it, the spike tries a native ffmpeg that Dens installs and confines with the operating system's sandboxing, on the same files, for comparison. `spikes/README.md` has the plan.
 
 ## End-to-end encrypted DMs
 
@@ -716,7 +717,7 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 
 ## Open questions
 
-- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, and which codecs an LGPL build keeps (the spike after M1).
+- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file; or whether a native ffmpeg confined by the OS does better (the spike after M1, planned in `spikes/README.md`).
 - [ ] Owner defaults for retention windows and screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
