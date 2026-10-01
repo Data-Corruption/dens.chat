@@ -22,6 +22,9 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Patch("/api/dens/{den}/messages/{message}", rt.handleEdit)
 	r.Post("/api/dens/{den}/messages/{message}/tasks/{n}", rt.handleTask)
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
+	r.Get("/api/dens/{den}/dms/{channel}/check", rt.handleCheckState)
+	r.Post("/api/dens/{den}/dms/{channel}/check", rt.handleCheckDM)
+	r.Post("/api/dens/{den}/dms/{channel}/key", rt.handleStartKey)
 	for _, kind := range []string{"channels", "groups"} {
 		r.Post("/api/dens/{den}/"+kind, rt.handleManage(kind, http.MethodPost))
 		r.Patch("/api/dens/{den}/"+kind+"/{id}", rt.handleManage(kind, http.MethodPatch))
@@ -78,7 +81,7 @@ func (rt *router) handleEdit(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONLimit(w, r, &req, maxMessageBody) {
 		return
 	}
-	m, err := rt.a.Dens.Edit(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"), req)
+	m, err := rt.a.Dens.Edit(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), req)
 	rt.changed(w, r, m, err)
 }
 
@@ -92,13 +95,13 @@ func (rt *router) handleTask(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONLimit(w, r, &req, maxMessageBody) {
 		return
 	}
-	m, err := rt.a.Dens.SetTask(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"), n, req)
+	m, err := rt.a.Dens.SetTask(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), n, req)
 	rt.changed(w, r, m, err)
 }
 
 // changed answers an edit or a tick: the message as it now is, or a
 // conflict carrying it.
-func (rt *router) changed(w http.ResponseWriter, r *http.Request, m denproto.Message, err error) {
+func (rt *router) changed(w http.ResponseWriter, r *http.Request, m denclient.PageMessage, err error) {
 	var conflict *denclient.ErrEditConflict
 	if errors.As(err, &conflict) {
 		w.Header().Set("Content-Type", "application/json")
@@ -160,4 +163,46 @@ func (rt *router) handleManage(kind, method string) http.HandlerFunc {
 		}
 		writeJSON(w, map[string]bool{"ok": true})
 	}
+}
+
+// handleCheckState says where a DM's check stands: the digits this member
+// reads out, once both Dens can work them out.
+func (rt *router) handleCheckState(w http.ResponseWriter, r *http.Request) {
+	st, err := rt.a.Dens.CheckState(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, st)
+}
+
+// handleCheckDM takes the digits the other member read out.
+func (rt *router) handleCheckDM(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Digits string `json:"digits"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := rt.a.Dens.CheckDM(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"), body.Digits); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleStartKey starts a DM's key, or with restart, starts its check
+// again.
+func (rt *router) handleStartKey(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Restart bool `json:"restart"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := rt.a.Dens.StartDMKey(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"), body.Restart); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }

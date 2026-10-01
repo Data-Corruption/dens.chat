@@ -88,6 +88,15 @@ type Manager struct {
 	// focus is the channel each page shows in each den: page, den, channel.
 	focusMu sync.Mutex
 	focus   map[string]map[string]string
+
+	// signIns are sign-ins on this device waiting for another of the
+	// member's to approve them, by an ID of this manager's; guarded by mu.
+	signIns   map[string]*pendingSignIn
+	signInSeq uint64
+
+	// TempDir holds DM files while they're prepared for sending, sealed
+	// with a key that lives only in memory.
+	TempDir string
 }
 
 // PageEvent carries a den's checked events to the page, or tells it to
@@ -149,6 +158,8 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		watches:      map[chan struct{}]struct{}{},
 		streams:      map[chan PageEvent]struct{}{},
 		focus:        map[string]map[string]string{},
+		signIns:      map[string]*pendingSignIn{},
+		TempDir:      os.TempDir(),
 	}
 }
 
@@ -186,9 +197,10 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.wg.Wait()
 	m.mu.Lock()
 	for _, c := range m.conns {
-		c.j.key.Close()
+		c.j.close()
 	}
 	m.mu.Unlock()
+	m.dropSignIns()
 	return nil
 }
 
@@ -196,14 +208,22 @@ func (m *Manager) Run(ctx context.Context) error {
 func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time) {
 	ctx, stop := context.WithCancel(m.ctx)
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
-		stop: stop, done: make(chan struct{}), wake: make(chan struct{}, 1)}
+		stop: stop, done: make(chan struct{}), wake: make(chan struct{}, 1),
+		due: map[string]bool{}, keysDue: make(chan struct{}, 1), dmFiles: map[string]dmFile{},
+		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{}}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
 		defer close(c.done)
+		work := make(chan struct{})
+		go func() {
+			defer close(work)
+			c.keyWork(ctx)
+		}()
 		c.run(ctx)
+		<-work
 	}()
 }
 
@@ -215,7 +235,7 @@ func (m *Manager) forget(ctx context.Context, c *conn) error {
 	m.mu.Unlock()
 	c.stop()
 	<-c.done
-	c.j.key.Close()
+	c.j.close()
 	m.dropDenFocus(c.j.denID.String())
 	m.notify()
 	if _, err := m.db.ExecContext(ctx, `DELETE FROM joined_dens WHERE den_id = ?`, []byte(c.j.denID)); err != nil {
@@ -327,75 +347,100 @@ type JoinRequest struct {
 	Password    string
 }
 
-// Join redeems an invite string. It returns the new den's status and the
-// member's recovery codes, which are shown once.
-func (m *Manager) Join(ctx context.Context, invite string, req JoinRequest) (Status, []string, error) {
+// Joined is a den this install just joined: its status, and what the
+// member keeps safe, shown once: their recovery codes, and their DM seal.
+// SealNew says the seal was made for this den, rather than the one this
+// install's other dens use.
+type Joined struct {
+	Status        Status   `json:"den"`
+	RecoveryCodes []string `json:"recovery_codes"`
+	Seal          string   `json:"seal"`
+	SealNew       bool     `json:"seal_new"`
+}
+
+// Join redeems an invite string.
+func (m *Manager) Join(ctx context.Context, invite string, req JoinRequest) (Joined, error) {
 	inv, err := denproto.DecodeInvite(invite)
 	if err != nil {
-		return Status{}, nil, inputError(err)
+		return Joined{}, inputError(err)
 	}
 	return m.join(ctx, inv.DenID, inv.Code, inv.URL, req)
 }
 
 // JoinOwn redeems the owner invite of the den this install hosts.
-func (m *Manager) JoinOwn(ctx context.Context, code []byte, req JoinRequest) (Status, []string, error) {
+func (m *Manager) JoinOwn(ctx context.Context, code []byte, req JoinRequest) (Joined, error) {
 	own, _, ok := m.own()
 	if !ok {
-		return Status{}, nil, errors.New("this install hosts no den")
+		return Joined{}, errors.New("this install hosts no den")
 	}
 	return m.join(ctx, own.ID, code, own.URL, req)
 }
 
-func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req JoinRequest) (Status, []string, error) {
+func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req JoinRequest) (Joined, error) {
 	username, err := denproto.NormalizeUsername(req.Username)
 	if err != nil {
-		return Status{}, nil, inputError(err)
+		return Joined{}, inputError(err)
 	}
 	displayName, err := denproto.CleanName(req.DisplayName, denproto.MaxNameRunes)
 	if err != nil {
-		return Status{}, nil, inputError(fmt.Errorf("display name: %w", err))
+		return Joined{}, inputError(fmt.Errorf("display name: %w", err))
 	}
 	if err := vault.ValidatePassword(req.Password); err != nil {
-		return Status{}, nil, inputError(err)
+		return Joined{}, inputError(err)
 	}
 	m.mu.Lock()
 	started := m.ctx != nil
 	m.mu.Unlock()
 	if !started {
-		return Status{}, nil, ErrNotStarted
+		return Joined{}, ErrNotStarted
 	}
 	if c, err := m.find(denproto.Bytes(denID).String()); err == nil && !gone(c) {
-		return Status{}, nil, ErrAlreadyJoined
+		return Joined{}, ErrAlreadyJoined
 	}
 	// Two joins of one den at once would both pass the check above.
 	m.joinMu.Lock()
 	defer m.joinMu.Unlock()
 	if c, err := m.find(denproto.Bytes(denID).String()); err == nil {
 		if !gone(c) {
-			return Status{}, nil, ErrAlreadyJoined
+			return Joined{}, ErrAlreadyJoined
 		}
 		// This device is out of the den; joining again replaces it.
 		if err := m.forget(ctx, c); err != nil {
-			return Status{}, nil, err
+			return Joined{}, err
 		}
+	}
+	// The member's DM seal here is the one this install's other dens use,
+	// so they have one to keep. The first den makes it.
+	seal, err := installSeal(ctx, m.db, m.v)
+	if err != nil {
+		return Joined{}, err
+	}
+	made := seal == nil
+	if made {
+		seal = denproto.NewSeal()
+	}
+	defer clear(seal)
+	sealCheck, err := denproto.SealCheck(seal, denID)
+	if err != nil {
+		return Joined{}, err
 	}
 
 	a, _ := m.apiFor(denID, url)
 	// An invite made before the den moved leads to where it is now.
 	a, nonce, _, err := a.reach(ctx, denID)
 	if err != nil {
-		return Status{}, nil, err
+		return Joined{}, err
 	}
 	if !a.own {
 		url = a.base
 	}
 	info, err := preview(ctx, a, denID, code)
 	if err != nil {
-		return Status{}, nil, err
+		return Joined{}, err
 	}
 	key, err := vault.GenerateSigningKey()
 	if err != nil {
-		return Status{}, nil, err
+		return Joined{}, err
 	}
 	keyID := denproto.ID(key.Public())
 	var resp denproto.JoinResponse
@@ -403,21 +448,31 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 		Invite: code, Username: username, DisplayName: displayName,
 		Verifier:  denproto.Verifier(req.Password, denID, username),
 		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label,
-		Nonce: nonce, Proof: key.Sign(denproto.ProofMessage(denID, keyID, nonce)),
+		Nonce: nonce, Proof: key.Sign(denproto.ProofMessage(denID, keyID, nonce)), SealCheck: sealCheck,
 	}, &resp)
 	if err != nil {
 		key.Close()
-		return Status{}, nil, err
+		return Joined{}, err
 	}
 	member, ok := cleanMember(resp.Member)
 	if !ok || denproto.Size("token", resp.Token, denproto.TokenSize) != nil || len(resp.RecoveryCodes) != denproto.RecoveryCodes {
 		key.Close()
-		return Status{}, nil, errors.New("the den's answer to joining is malformed")
+		return Joined{}, errors.New("the den's answer to joining is malformed")
 	}
-	j := &joined{denID: denID, profile: Profile{URL: url, Name: info.Name, Member: member}, key: key, joinedAt: time.Now()}
-	if err := insertJoined(ctx, m.db, m.v, j); err != nil {
+	secret, err := vault.NewSecret(seal)
+	if err != nil {
 		key.Close()
-		return Status{}, nil, err
+		return Joined{}, err
+	}
+	j := &joined{denID: denID, profile: Profile{URL: url, Name: info.Name, Member: member}, key: key, joinedAt: time.Now(), seal: secret}
+	if err := insertJoined(ctx, m.db, m.v, j); err != nil {
+		j.close()
+		return Joined{}, err
+	}
+	if made {
+		if err := setInstallSeal(ctx, m.db, m.v, seal); err != nil {
+			m.log.Errorf("keep the DM seal for new dens: %v", err)
+		}
 	}
 	m.mu.Lock()
 	m.startLocked(j, resp.Token, time.UnixMilli(resp.ExpiresAt))
@@ -425,7 +480,7 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 	m.mu.Unlock()
 	m.notify()
 	m.log.Infof("Joined a den")
-	return c.status(), resp.RecoveryCodes, nil
+	return Joined{Status: c.status(), RecoveryCodes: resp.RecoveryCodes, Seal: denproto.FormatSeal(seal), SealNew: made}, nil
 }
 
 // CreateInvite makes an invite on a joined den and returns its invite

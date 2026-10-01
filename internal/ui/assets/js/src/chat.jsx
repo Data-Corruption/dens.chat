@@ -10,9 +10,12 @@ import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane } from './messages.jsx';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, RemoveMember, isStaff } from './people.jsx';
+import { needsCheck } from './private.js';
+import { SignInRequests } from './private.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
+const LIST_TAB = 'DENS_LIST_TAB:';
 // A typing notice shows this long unless another arrives; senders repeat
 // theirs while they type.
 const TYPING_SHOWN = 6000;
@@ -101,6 +104,11 @@ export function Chat({ denID, channelID, navigate }) {
     const [live, setLive] = useState(true);
     // newDevice is a device that just signed in to this member's account.
     const [newDevice, setNewDevice] = useState(null);
+    // status is the den's status on this computer: its sign-ins waiting
+    // for approval, and whether this device holds the DM seal.
+    const [status, setStatus] = useState(null);
+    // tab is the list the sidebar shows: the den's channels, or DMs.
+    const [tab, setTab] = useState(() => stored(LIST_TAB + denID) || 'den');
     const reloadTimer = useRef(null);
     useEffect(() => onConnection(setLive), []);
 
@@ -113,6 +121,7 @@ export function Chat({ denID, channelID, navigate }) {
         } catch (e) {
             setError(e.message);
         }
+        api.get('/api/dens').then((v) => setStatus(v.dens.find((d) => d.den_id === denID) || null), () => {});
     }
 
     function reloadSoon() {
@@ -126,7 +135,10 @@ export function Chat({ denID, channelID, navigate }) {
             if (msg.t === 'reconnected') return reloadSoon();
             if (msg.t === 'dens') {
                 const status = msg.d.dens.find((d) => d.den_id === denID);
-                if (status) setView((v) => (v ? { ...v, state: status.state, error: status.error, name: status.name, role: status.role } : v));
+                if (status) {
+                    setView((v) => (v ? { ...v, state: status.state, error: status.error, name: status.name, role: status.role } : v));
+                    setStatus(status);
+                }
                 return;
             }
             if (msg.t !== 'den' || msg.d.den !== denID) return;
@@ -137,6 +149,7 @@ export function Chat({ denID, channelID, navigate }) {
                 else if (e.t === 'typing') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.member_id, Date.now() + TYPING_SHOWN));
                 else if (e.t === 'message.created') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.author_id, 0));
                 else if (e.t === 'device.added') setNewDevice(e.d);
+                else if (e.t === 'dm.key') setView((v) => (v ? withKey(v, e.d) : v));
             }
             // The local service counts unread messages and mentions.
             if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
@@ -162,6 +175,11 @@ export function Chat({ denID, channelID, navigate }) {
     // The den sends typing only where this member is looking.
     const shown = visible && channel ? channel.id : '';
     useEffect(() => showChannel(denID, shown), [denID, shown]);
+    // Opening a channel or a DM shows the list it's in.
+    const openKind = channel?.kind;
+    useEffect(() => {
+        if (openKind) setTab(openKind === 'dm' ? 'dms' : 'den');
+    }, [channel?.id]);
 
     if (error && !view) return <div class="p-6"><div role="alert" class="alert alert-error">{error}</div></div>;
     if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
@@ -191,6 +209,11 @@ export function Chat({ denID, channelID, navigate }) {
     function openChannel(id) {
         setListOpen(false);
         navigate(`/den/${denID}/${id}`);
+    }
+
+    function pickTab(next) {
+        store(LIST_TAB + denID, next);
+        setTab(next);
     }
 
     function toggleMembers() {
@@ -229,9 +252,13 @@ export function Chat({ denID, channelID, navigate }) {
                         </div>
                         {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
                     </div>
-                    <ChannelList view={view} reads={reads} open={channel?.id} staff={staff} onOpen={openChannel} onDialog={setDialog} />
-                    <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
-                        onOpen={openChannel} onClose={closeDM} />
+                    <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id} />
+                    {tab === 'dms' ? (
+                        <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
+                            keys={view.dm_keys || []} me={view.me.id} onOpen={openChannel} onClose={closeDM} />
+                    ) : (
+                        <ChannelList view={view} reads={reads} open={channel?.id} staff={staff} onOpen={openChannel} onDialog={setDialog} />
+                    )}
                     <div class="mt-auto flex items-center gap-1 border-t border-base-300 p-2">
                         <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
                             onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
@@ -256,6 +283,7 @@ export function Chat({ denID, channelID, navigate }) {
                             <button type="button" class="btn btn-sm" onClick={forget}>Remove from this computer</button>
                         </div>
                     )}
+                    {status && !gone && <div class="mx-2"><SignInRequests den={status} /></div>}
                     {newDevice && !gone && (
                         <div role="status" class="alert alert-info alert-soft m-2 flex flex-wrap">
                             <span>
@@ -282,6 +310,7 @@ export function Chat({ denID, channelID, navigate }) {
                                 readPosition={reads.get(channel.id)?.message_id}
                                 role={view.role}
                                 dm={dm}
+                                keys={channel.kind === 'dm' ? (view.dm_keys || []).filter((k) => k.channel_id === channel.id) : undefined}
                                 typing={typers}
                                 closed={closed}
                                 limits={view.limits}
@@ -324,6 +353,29 @@ export function Chat({ denID, channelID, navigate }) {
                 {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
             </div>
         </DenContext.Provider>
+    );
+}
+
+// withKey puts a DM key's change into the view.
+function withKey(view, key) {
+    const keys = (view.dm_keys || []).filter((k) => k.id !== key.id);
+    return { ...view, dm_keys: [...keys, key] };
+}
+
+// ListTabs switches the sidebar between the den's channels and DMs, and
+// shows whether the other has anything unread.
+function ListTabs({ tab, onTab, view, reads, open }) {
+    const waiting = (dms) => view.channels.some((c) => (c.kind === 'dm') === dms && c.id !== open && hasMessages(c) && unread(reads.get(c.id)) && !reads.get(c.id)?.closed);
+    const tabs = [['den', 'Den', waiting(false)], ['dms', 'Direct messages', waiting(true)]];
+    return (
+        <div role="tablist" class="tabs tabs-border px-2 pt-1">
+            {tabs.map(([id, label, dot]) => (
+                <button key={id} type="button" role="tab" aria-selected={tab === id} class={`tab gap-1 ${tab === id ? 'tab-active' : ''}`} onClick={() => onTab(id)}>
+                    {label}
+                    {dot && tab !== id && <span class="h-2 w-2 rounded-full bg-base-content" aria-label="unread"></span>}
+                </button>
+            ))}
+        </div>
     );
 }
 
@@ -377,14 +429,20 @@ function ChannelList({ view, reads, open, staff, onOpen, onDialog }) {
 }
 
 // DMList shows this member's DMs, the most recently active first. A closed
-// one stays out of it until it has a new message, unless it's open.
-function DMList({ dms, reads, open, partner, online, onOpen, onClose }) {
+// one stays out of it until it has a new message, unless it's open. A DM
+// waiting for this member to compare codes says so.
+function DMList({ dms, reads, open, partner, online, keys, me, onOpen, onClose }) {
     const shown = dms.filter((c) => !reads.get(c.id)?.closed || c.id === open);
-    if (shown.length === 0) return null;
+    if (shown.length === 0) {
+        return (
+            <p class="cursor-default select-none p-4 text-sm text-base-content/60">
+                No direct messages yet. Open someone's profile to message them; it's end-to-end encrypted.
+            </p>
+        );
+    }
     const sorted = shown.sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
     return (
-        <nav aria-label="Direct messages" class="flex flex-col p-2 pt-0">
-            <h3 class="cursor-default select-none px-2 pb-1 text-xs font-semibold uppercase text-base-content/60">Direct messages</h3>
+        <nav aria-label="Direct messages" class="flex flex-col p-2">
             <ul class="flex flex-col">
                 {sorted.map((c) => {
                     const other = partner(c);
@@ -399,6 +457,7 @@ function DMList({ dms, reads, open, partner, online, onOpen, onClose }) {
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
                                 <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{other ? other.display_name : 'Unknown member'}</span>
+                                {needsCheck(keys, c.id, me) && <span class="badge badge-warning badge-xs ml-auto" title="Compare check codes">Check</span>}
                                 {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                             </button>
                             {/* Touch screens have no hover, so there the X always shows. */}
@@ -461,6 +520,7 @@ function ChannelHeader({ channel, dm, me, staff, elsewhere, online, membersOpen,
                         <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
                         <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
                         {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
+                        <span class="shrink-0 text-xs text-base-content/50" title="End-to-end encrypted: only the two of you can read it">🔒 Encrypted</span>
                     </button>
                 ) : (
                     <span class="shrink-0 font-semibold"># {channel.name}</span>

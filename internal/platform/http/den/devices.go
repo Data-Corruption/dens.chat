@@ -22,7 +22,7 @@ func (h *handler) passwordLogin(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	denproto.WriteJSON(w, http.StatusOK, resp)
+	denproto.WriteJSON(w, http.StatusAccepted, resp)
 }
 
 func (h *handler) recover(w http.ResponseWriter, r *http.Request) {

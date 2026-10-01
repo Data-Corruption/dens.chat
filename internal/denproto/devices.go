@@ -13,13 +13,15 @@ const (
 
 // PasswordLoginRequest signs in on a new device with the den password: the
 // member's verifier, and the new device's key with its proof over a nonce.
+// Offer starts the exchange with the device that approves it (M1.7).
 type PasswordLoginRequest struct {
-	Username    string `json:"username"`
-	Verifier    Bytes  `json:"verifier"`
-	PublicKey   Bytes  `json:"public_key"`
-	DeviceLabel string `json:"device_label"`
-	Nonce       Bytes  `json:"nonce"`
-	Proof       Bytes  `json:"proof"`
+	Username    string        `json:"username"`
+	Verifier    Bytes         `json:"verifier"`
+	PublicKey   Bytes         `json:"public_key"`
+	DeviceLabel string        `json:"device_label"`
+	Nonce       Bytes         `json:"nonce"`
+	Proof       Bytes         `json:"proof"`
+	Offer       ExchangeOffer `json:"offer"`
 }
 
 // RecoverRequest signs in on a new device with a recovery code instead of
@@ -36,7 +38,8 @@ type RecoverRequest struct {
 
 // SignInResponse starts a new device's session, and says which den and
 // member it is, how many recovery codes the member has left, and how many
-// of their other devices a recovery signed out.
+// of their other devices a recovery signed out. SealCheck identifies the
+// member's DM seal, so the device can check the one it's given or typed.
 type SignInResponse struct {
 	Token             Bytes  `json:"token"`
 	ExpiresAt         int64  `json:"expires_at"`
@@ -44,6 +47,7 @@ type SignInResponse struct {
 	Member            Member `json:"member"`
 	RecoveryCodesLeft int    `json:"recovery_codes_left"`
 	SignedOut         int    `json:"signed_out,omitempty"`
+	SealCheck         Bytes  `json:"seal_check"`
 }
 
 // PasswordChangeRequest changes the den password. The member proves it's

@@ -229,6 +229,7 @@ func (a *App) open(opts OpenOptions) error {
 	a.UserAgent = fmt.Sprintf("Mozilla/5.0 (compatible; %s/%s; +%s)", bi.Name, mmVer, bi.ContactURL)
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
+	a.Dens.TempDir = l.Temp
 	return nil
 }
 

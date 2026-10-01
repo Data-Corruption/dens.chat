@@ -1,26 +1,31 @@
 #Requires -Version 5.1
 <#
 Den e2e on Windows: an instance joins a den through Caddy, chats, sends a
-photo, and stays connected across a den restart; the member recovers their
-account on a fresh instance and signs the old one out; then a ban shuts
-them out. Every end runs on one machine.
+photo, and stays connected across a den restart; the two start a private
+DM; the member recovers their account on a fresh instance and signs the old
+one out; then a ban shuts them out. Every end runs on one machine.
 
 Instance main hosts the den. Caddy runs as a Windows service (it supports
 the Service Control Manager natively) and serves https://den.test with its
 internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
-second must reconnect and see the whole history. The owner then sends a
-DM, and the member sends a phone photo with GPS data, which must reach the
-owner without it. The owner shares a checklist with the member, and the two
-tick different boxes at the same moment, all of which must stay. Instance
-fresh stands in for the member's new machine: it
-signs in by the den's address with a recovery code, whose new password must
-sign second out at once. Signed in again with it, second is signed out once
-more from fresh's device list. The owner then bans the member, whose
-connections must close at once and who can't join again under the same
-name. The photo is
-scripts\test\gps-photo.jpg, next to this script.
+second must reconnect and see the whole history. The member sends a phone
+photo with GPS data, which must reach the owner without it. The owner opens
+a DM, which takes no message until both members type each other's check
+digits, and then carries text and a photo the den stores only sealed. The
+owner shares a checklist with the member, and the two tick different boxes
+at the same moment, all of which must stay. Instance fresh stands in for
+the member's new machine: it signs in by the den's address with a recovery
+code, whose new password must sign second out at once, and reads the DM
+only once the member types their DM seal. The new password alone doesn't
+sign second in again: fresh approves it, the two comparing digits, and
+hands it the seal, with which it reads the DM. Signed out once more from
+fresh's device list, second signs in again the same way, with the digits
+typed into fresh first, which must go on showing its own. The owner then
+bans the member, whose connections must close at once and who can't join
+again under the same name. The photo is scripts\test\gps-photo.jpg, next to
+this script.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
@@ -191,6 +196,92 @@ function Send-Tick($Browser, [string]$DenID, [string]$Message, [int]$N) {
     return $client.PostAsync("$($Browser.Origin)/api/dens/$DenID/messages/$Message/tasks/$N", $content)
 }
 
+# Read-Shared returns a file's bytes while the service holds it open for
+# writing, as it does its database. File.ReadAllBytes shares the file only
+# with readers, which Windows refuses then.
+function Read-Shared([string]$Path) {
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+    try {
+        $buffer = New-Object IO.MemoryStream
+        $stream.CopyTo($buffer)
+        return , $buffer.ToArray()
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+# Wait-Value polls $Get until it returns something, and returns that.
+function Wait-Value([scriptblock]$Get, [string]$What) {
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        $value = & $Get
+        if ($value) { return $value }
+        Start-Sleep -Milliseconds 250
+    }
+    Fail "timed out waiting for $What"
+}
+
+# Get-DMHalf returns the digits a member reads out for a DM, once both
+# Dens moved its exchange on. Until then the check leaves half out, and
+# strict mode refuses a property that isn't there.
+function Get-DMHalf($Browser, [string]$DenID, [string]$DM) {
+    return Wait-Value {
+        $check = Invoke-Api $Browser GET "/api/dens/$DenID/dms/$DM/check"
+        if ($check.PSObject.Properties["half"]) { $check.half }
+    } "the DM's digits"
+}
+
+# Get-Requests returns the sign-ins an instance shows for a den: those
+# waiting for its approval, and those it approved. The den's status leaves
+# requests out when there are none.
+function Get-Requests($Browser, [string]$DenID) {
+    $den = @((Invoke-Api $Browser GET "/api/dens").dens) | Where-Object { $_.den_id -eq $DenID }
+    if ($den -and $den.PSObject.Properties["requests"]) { return @($den.requests) }
+}
+
+# Approve-SignIn signs one of the member's instances in with the password,
+# approved from another: each shows digits, which the harness types into
+# the other, as the member would; first into the old instance with
+# -OldFirst, which must still show its own digits once it approved.
+function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$OldFirst) {
+    $signIn = Invoke-Api $New POST "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = $Password }
+    if (-not $signIn.PSObject.Properties["pending"] -or $signIn.pending.stage -ne "waiting") { Fail "the password alone signed the device in" }
+    $id = $signIn.pending.id
+    $request = Wait-Value {
+        $waiting = @(Get-Requests $Old $DenID | Where-Object { -not $_.PSObject.Properties["approved"] })
+        if ($waiting.Count -gt 0) { $waiting[0].id }
+    } "a sign-in asking for approval"
+    Invoke-Api $Old POST "/api/dens/$DenID/requests/$request/answer" | Out-Null
+    $oldHalf = Wait-Value {
+        $r = @(Get-Requests $Old $DenID | Where-Object { $_.id -eq $request })
+        if ($r.Count -gt 0 -and $r[0].PSObject.Properties["half"]) { $r[0].half }
+    } "the approving instance's digits"
+    $newHalf = Wait-Value {
+        $p = @(@((Invoke-Api $New GET "/api/dens").sign_ins) | Where-Object { $_.id -eq $id })
+        if ($p.Count -gt 0 -and $p[0].PSObject.Properties["half"]) { $p[0].half }
+    } "the new instance's digits"
+    if ($newHalf -eq $oldHalf) { Fail "both instances show the same digits" }
+    if ($OldFirst) {
+        Invoke-Api $Old POST "/api/dens/$DenID/requests/$request/approve" @{ digits = $newHalf } | Out-Null
+        $shown = Wait-Value {
+            $r = @(Get-Requests $Old $DenID | Where-Object { $_.id -eq $request -and $_.PSObject.Properties["approved"] })
+            if ($r.Count -gt 0 -and $r[0].PSObject.Properties["half"]) { $r[0].half }
+        } "the approved sign-in's digits"
+        if ($shown -ne $oldHalf) { Fail "once it approved, the old instance shows $shown" }
+        Invoke-Api $New POST "/api/dens/signin/$id/check" @{ digits = $shown } | Out-Null
+    } else {
+        Invoke-Api $New POST "/api/dens/signin/$id/check" @{ digits = $oldHalf } | Out-Null
+        Invoke-Api $Old POST "/api/dens/$DenID/requests/$request/approve" @{ digits = $newHalf } | Out-Null
+    }
+    $stage = Wait-Value {
+        $p = @(@((Invoke-Api $New GET "/api/dens").sign_ins) | Where-Object { $_.id -eq $id })
+        if ($p.Count -gt 0 -and $p[0].stage -notin @("waiting", "check", "approved")) { $p[0].stage }
+    } "the sign-in to finish"
+    if ($stage -ne "done") { Fail "the sign-in ended as $stage" }
+    Invoke-Api $New DELETE "/api/dens/signin/$id" | Out-Null
+    Invoke-Api $Old DELETE "/api/dens/$DenID/requests/$request" | Out-Null
+}
+
 function New-Nonce {
     $bytes = New-Object byte[] 16
     [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -358,20 +449,6 @@ den.test:$HttpsPort {
     $history = Get-History $member $denID $channel
     if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
 
-    Step "a direct message"
-    $state = Invoke-Api $owner GET "/api/dens/$denID/state"
-    $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
-    $dm = (Invoke-Api $owner POST "/api/dens/$denID/dms" @{ member_id = $bob }).id
-    Send-Message $owner $denID $dm "a private word"
-    $deadline = (Get-Date).AddSeconds(15)
-    while ((Get-Date) -lt $deadline) {
-        $memberState = Invoke-Api $member GET "/api/dens/$denID/state"
-        if (@($memberState.channels) | Where-Object { $_.id -eq $dm }) { break }
-        Start-Sleep -Milliseconds 250
-    }
-    $history = Get-History $member $denID $dm
-    if ($history -ne "a private word") { Fail "the member's DM reads: $history" }
-
     Step "a phone photo with GPS data"
     $photo = Join-Path $PSScriptRoot "test\gps-photo.jpg"
     try {
@@ -403,6 +480,55 @@ den.test:$HttpsPort {
         if ($latin1.GetString([IO.File]::ReadAllBytes($f.FullName)).Contains("JFIF")) { Fail "$($f.Name) is stored in the clear" }
     }
     Write-Host "The photo arrived stripped, with a preview; the den holds $($stored.Count) sealed files."
+
+    Step "a private DM, once both members compare check codes"
+    $state = Invoke-Api $owner GET "/api/dens/$denID/state"
+    $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
+    $dm = (Invoke-Api $owner POST "/api/dens/$denID/dms" @{ member_id = $bob }).id
+    Wait-Value { @((Invoke-Api $member GET "/api/dens/$denID/state").channels) | Where-Object { $_.id -eq $dm } } "the DM on the member's side" | Out-Null
+    $refused = Invoke-Refused $owner "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = "too soon" }
+    if ($refused -notmatch "compare check codes") { Fail "sending before the check: $refused" }
+    Invoke-Api $owner POST "/api/dens/$denID/dms/$dm/key" @{ restart = $false } | Out-Null
+    $ownerHalf = Get-DMHalf $owner $denID $dm
+    $memberHalf = Get-DMHalf $member $denID $dm
+    if ($ownerHalf -eq $memberHalf) { Fail "both members see the same digits" }
+    $refused = Invoke-Refused $owner "/api/dens/$denID/dms/$dm/check" @{ digits = "0000 0000 0000 0000" }
+    if ($refused -notmatch "don't match") { Fail "the wrong digits: $refused" }
+    Invoke-Api $owner POST "/api/dens/$denID/dms/$dm/check" @{ digits = $memberHalf } | Out-Null
+    Invoke-Api $member POST "/api/dens/$denID/dms/$dm/check" @{ digits = $ownerHalf } | Out-Null
+    Send-Message $owner $denID $dm "a private word"
+    $history = Get-History $member $denID $dm
+    if ($history -ne "a private word") { Fail "the member's DM reads: $history" }
+    try {
+        $upload = Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/uploads?channel=$dm" -Method POST -WebSession $member.Session `
+            -UseBasicParsing -Headers @{ Origin = $member.Origin; "Dens-Filename" = "IMG_0002.jpg" } `
+            -ContentType "application/octet-stream" -InFile $photo -TimeoutSec 60
+    } catch {
+        Fail "the DM upload failed: $($_.ErrorDetails.Message) $($_.Exception.Message)"
+    }
+    $file = $upload.Content | ConvertFrom-Json
+    if (-not $file.stripped -or $file.width -ne 300 -or $file.height -ne 400 -or -not $file.thumb) {
+        Fail "the DM upload came back as $($upload.Content)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    foreach ($variant in @("", "/thumb")) {
+        $got = Join-Path $Work "dm-photo.jpg"
+        $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$variant" -WebSession $owner.Session `
+            -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+        if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the DM photo$variant came as $($resp.Headers['Content-Type'])" }
+        $text = $latin1.GetString([IO.File]::ReadAllBytes($got))
+        foreach ($marker in @("TestPhone", "GPSLatitude", "Taken at home", "ns.adobe.com")) {
+            if ($text.Contains($marker)) { Fail "the DM photo$variant arrived with '$marker'" }
+        }
+    }
+    # The -shm file holds only the write-ahead log's index, where a write in
+    # progress locks bytes that would refuse the read.
+    $dbFiles = @(Get-ChildItem -File (Join-Path $DataRoot "main\data\db") | Where-Object { $_.Name -notlike "*-shm" })
+    if ($dbFiles.Count -eq 0) { Fail "no database files to look in" }
+    foreach ($f in $dbFiles) {
+        if ($latin1.GetString((Read-Shared $f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
+    }
+    Write-Host "The DM took messages only after both typed each other's digits; its text and photo reached the other side sealed."
 
     Step "two members tick one checklist at the same moment"
     $text = (0..5 | ForEach-Object { "[ ] item $_" }) -join "`n"
@@ -440,11 +566,21 @@ den.test:$HttpsPort {
     if ($out.Took -gt 5000) { Fail "the new password took $($out.Took) ms to sign instance second out" }
     Wait-Connected $fresh 0 | Out-Null
     Write-Host "Instance fresh signed in with a recovery code, shows the owner's den ID, and signed second out within $($out.Took) ms."
+    if (@((Invoke-Api $fresh GET "/api/dens").dens)[0].seal) { Fail "a recovery code brought a DM seal" }
+    $history = Get-History $fresh $denID $dm
+    if ($history -match "a private word") { Fail "instance fresh read the DM without the seal" }
+    if (-not $joined.seal_new) { Fail "joining showed no new DM seal" }
+    Invoke-Api $fresh POST "/api/dens/$denID/seal" @{ seal = $joined.seal } | Out-Null
+    $history = Get-History $fresh $denID $dm
+    if (-not $history.StartsWith("a private word")) { Fail "with the seal typed, the DM reads: $history" }
+    Write-Host "Instance fresh reads the DM once the member typed their seal."
     $refused = Invoke-Refused $member "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "bob password" }
     if ($refused -notmatch "don't match") { Fail "signing in with the old password: $refused" }
-    Invoke-Api $member POST "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "new bob password" } | Out-Null
+    Approve-SignIn $member $fresh $denID "new bob password"
     Wait-Connected $member 0 | Out-Null
-    Write-Host "The old password is gone, and the new one signs instance second in again."
+    $history = Get-History $member $denID $dm
+    if (-not $history.StartsWith("a private word")) { Fail "the approved instance's DM reads: $history" }
+    Write-Host "The old password is gone; the new one signs instance second in again once fresh approves it, and hands it the seal."
 
     Step "sign instance second out from instance fresh"
     $devices = @((Invoke-Api $fresh GET "/api/dens/$denID/devices").devices)
@@ -457,9 +593,9 @@ den.test:$HttpsPort {
         Fail "instance second was told: '$($out.Reason)'"
     }
     if ($out.Took -gt 5000) { Fail "signing out took $($out.Took) ms to reach instance second" }
-    Invoke-Api $member POST "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "new bob password" } | Out-Null
+    Approve-SignIn $member $fresh $denID "new bob password" -OldFirst
     Wait-Connected $member 0 | Out-Null
-    Write-Host "Instance second was signed out within $($out.Took) ms, and signed in again."
+    Write-Host "Instance second was signed out within $($out.Took) ms, and signed in again with fresh's approval, typed there first."
 
     Step "ban the member"
     $started = Get-Date

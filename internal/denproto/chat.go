@@ -83,6 +83,12 @@ type Message struct {
 	// Editors are the members besides the author who may edit the message
 	// and tick its tasks.
 	Editors []string `json:"editors,omitempty"`
+	// Sealed is a DM message's text and files, sealed by its members'
+	// clients with the DM key KeyID names (M1.7). Its Text is empty, its
+	// files are listed only inside, and its Nonce comes everywhere,
+	// history too, since opening it takes the nonce.
+	Sealed Bytes  `json:"sealed,omitempty"`
+	KeyID  string `json:"key_id,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -91,6 +97,12 @@ type Message struct {
 type Reply struct {
 	AuthorID string `json:"author_id"`
 	Text     string `json:"text"`
+	// A reply in a DM carries the original sealed instead, for the client
+	// to open and quote: its payload, key, nonce and revision.
+	Sealed   Bytes  `json:"sealed,omitempty"`
+	KeyID    string `json:"key_id,omitempty"`
+	Nonce    Bytes  `json:"nonce,omitempty"`
+	Revision int    `json:"revision,omitempty"`
 }
 
 // Excerpt is the start of a text for a reply's preview: from the first
@@ -152,14 +164,23 @@ type SendRequest struct {
 	Attachments []string `json:"attachments,omitempty"`
 	// Editors are members who may also edit the message.
 	Editors []string `json:"editors,omitempty"`
+	// Sealed and KeyID carry a DM message's text and files instead, with
+	// Text empty; Attachments are then its sealed uploads.
+	Sealed Bytes  `json:"sealed,omitempty"`
+	KeyID  string `json:"key_id,omitempty"`
 }
 
 // EditRequest replaces a message's text, and its editors when set, which
-// only the author changes.
+// only the author changes. A DM message's edit carries it sealed instead,
+// and since the den can't compare texts, Unedited marks one that only
+// ticks a task or changes the editors, which doesn't mark it edited.
 type EditRequest struct {
 	Revision int       `json:"revision"`
 	Text     string    `json:"text"`
 	Editors  *[]string `json:"editors,omitempty"`
+	Sealed   Bytes     `json:"sealed,omitempty"`
+	KeyID    string    `json:"key_id,omitempty"`
+	Unedited bool      `json:"unedited,omitempty"`
 }
 
 // TaskRequest checks or unchecks one of a message's tasks. Text is the
@@ -260,6 +281,17 @@ func CheckMessage(m Message) error {
 		if (r.Text != "" && CheckText(r.Text) != nil) || utf8.RuneCountInString(r.Text) > ReplyExcerpt {
 			return errors.New("message has an invalid reply")
 		}
+		if (r.Sealed != nil) != (m.Sealed != nil) || r.Sealed != nil && (r.Text != "" || checkSealed(r.Sealed, r.KeyID, r.Nonce, r.Revision) != nil) {
+			return errors.New("message has an invalid reply")
+		}
+	}
+	if m.Sealed != nil || m.KeyID != "" {
+		if err := checkSealed(m.Sealed, m.KeyID, m.Nonce, m.Revision); err != nil || m.Text != "" || len(m.Attachments) > 0 {
+			return errors.New("message has an invalid sealed text")
+		}
+		if len(m.Editors) > 1 {
+			return errors.New("message has too many editors")
+		}
 	}
 	if len(m.Editors) > MaxEditors {
 		return errors.New("message has too many editors")
@@ -282,7 +314,21 @@ func CheckMessage(m Message) error {
 		}
 		seen[f.ID] = true
 	}
+	if m.Sealed != nil {
+		return nil
+	}
 	return CheckMessageText(m.Text, len(m.Attachments) > 0)
+}
+
+// checkSealed checks what a client needs to open a sealed DM message.
+func checkSealed(sealed Bytes, keyID string, nonce Bytes, revision int) error {
+	if len(sealed) == 0 || len(sealed) > MaxSealed || len(nonce) != NonceBytes || revision < 1 {
+		return errors.New("invalid sealed message")
+	}
+	if _, err := ParseID(keyID); err != nil {
+		return errors.New("invalid sealed message")
+	}
+	return nil
 }
 
 // Mentions returns the usernames a text mentions, lowercased and without

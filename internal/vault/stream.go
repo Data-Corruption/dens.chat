@@ -30,7 +30,21 @@ const (
 // bound to ad, which should name what the file is. Close seals the last
 // chunk; a file that wasn't closed doesn't open.
 func (v *Vault) SealStream(w io.Writer, ad []byte) (io.WriteCloser, error) {
-	s := &sealWriter{aead: v.aead, w: w, ad: append([]byte{}, ad...), buf: make([]byte, 0, StreamChunk)}
+	return newSealWriter(v.aead, w, ad)
+}
+
+// SealStreamWith seals a stream as SealStream does, under a key of its
+// own, such as an end-to-end encrypted file's.
+func SealStreamWith(key []byte, w io.Writer, ad []byte) (io.WriteCloser, error) {
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, err
+	}
+	return newSealWriter(aead, w, ad)
+}
+
+func newSealWriter(aead cipher.AEAD, w io.Writer, ad []byte) (io.WriteCloser, error) {
+	s := &sealWriter{aead: aead, w: w, ad: append([]byte{}, ad...), buf: make([]byte, 0, StreamChunk)}
 	if _, err := rand.Read(s.nonce[:streamPrefix]); err != nil {
 		return nil, fmt.Errorf("generate nonce: %w", err)
 	}
@@ -115,7 +129,20 @@ func setChunkNonce(n *[chacha20poly1305.NonceSizeX]byte, counter uint64, last bo
 // includes a file that was tampered with, cut short or bound to other
 // data; what was read before then is authentic.
 func (v *Vault) OpenStream(r io.Reader, ad []byte) io.Reader {
-	return &openReader{aead: v.aead, r: bufio.NewReaderSize(r, 4096), ad: append([]byte{}, ad...)}
+	return newOpenReader(v.aead, r, ad)
+}
+
+// OpenStreamWith opens what SealStreamWith sealed with key.
+func OpenStreamWith(key []byte, r io.Reader, ad []byte) (io.Reader, error) {
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, err
+	}
+	return newOpenReader(aead, r, ad), nil
+}
+
+func newOpenReader(aead cipher.AEAD, r io.Reader, ad []byte) io.Reader {
+	return &openReader{aead: aead, r: bufio.NewReaderSize(r, 4096), ad: append([]byte{}, ad...)}
 }
 
 type openReader struct {

@@ -18,10 +18,13 @@ A den is a closed door, not a bunker. It keeps conversations away from
 platforms that mine or sell them, and from bulk data requests to a large
 provider. Your history doesn't disappear when a company changes its terms.
 
-It does not hide anything from the person who runs the den. The den owner can
-read every message, DM and file, and Dens says so in the app. Messages are not
-end-to-end encrypted. If you need protection from a determined investigator,
-use a tool built for that threat, such as [Signal](https://signal.org/).
+It does not hide channels from the person who runs the den. The den owner can
+read what's posted in a den's channels, files included, and Dens says so in the
+app. Direct messages are different: they're end-to-end encrypted, so only the
+two people in one can read it, not the den's owner, though the owner can still
+see who talks to whom, and when. If you need protection from a determined
+investigator, use a tool built for that threat, such as
+[Signal](https://signal.org/).
 
 Dens also collects as little as it can. It doesn't write IP addresses to disk,
 deletions remove data for real, and a den can set messages to expire.

@@ -284,6 +284,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		return err
 	}
 	d.files.remove(blobs)
+	d.cancelRequests(mid)
 	reason := denproto.CloseReasonRemoved
 	if req.Ban {
 		reason = denproto.CloseReasonBanned
@@ -370,6 +371,7 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 		return err
 	}
 	d.files.remove(blobs)
+	d.cancelRequests(s.MemberID)
 	d.CloseMemberSockets(s.MemberID, denproto.CloseRevoked, denproto.CloseReasonLeft)
 	d.log.Infof("Member %d left", s.MemberID)
 	return d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(s.MemberID), LeftAt: now}, Everyone)

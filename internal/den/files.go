@@ -224,8 +224,9 @@ func sniffType(head []byte) string {
 // Upload stores a file a member sends, for a message or their profile to
 // use within the hour. size is the request's length, or -1 when it
 // doesn't say; the body is read up to the den's file size limit and no
-// further.
-func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, body io.Reader) (denproto.File, error) {
+// further. A sealed upload is a DM's file, which the member's client
+// sealed: the den can't tell what it is, and keeps it as it came.
+func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, body io.Reader, sealed bool) (denproto.File, error) {
 	info, _ := d.Info()
 	limits := info.Limits
 	if size > limits.FileSize {
@@ -246,21 +247,6 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 	}
 
 	limited := &io.LimitedReader{R: body, N: limits.FileSize + 1}
-	br := bufio.NewReaderSize(limited, media.SniffLen)
-	head, err := br.Peek(media.SniffLen)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return denproto.File{}, err
-	}
-	kind := media.Sniff(head)
-	if kind.Refused() {
-		return denproto.File{}, denproto.Errorf(http.StatusUnsupportedMediaType, denproto.CodeUnsupportedType,
-			"a %s can carry metadata Dens can't remove yet", kind)
-	}
-	f := denproto.File{Name: denproto.CleanFilename(name), Type: kind.MIME()}
-	if f.Type == "" {
-		f.Type = sniffType(head)
-	}
-
 	blob := denproto.Random(16)
 	orig, err := d.files.create(d.v, blob, false)
 	if err != nil {
@@ -268,16 +254,43 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 	}
 	defer orig.abort()
 	n := &counter{w: orig}
-	res, err := media.Verify(n, br, kind)
-	switch {
-	case limited.N == 0:
-		return denproto.File{}, tooLarge(limits)
-	case errors.Is(err, media.ErrMetadata):
-		return denproto.File{}, invalid("the file still carries metadata, which clients take out before uploading")
-	case errors.Is(err, media.ErrMalformed):
-		return denproto.File{}, invalid("the file is damaged, or isn't what it starts out as")
-	case err != nil:
-		return denproto.File{}, err
+	var f denproto.File
+	var kind media.Kind
+	var res media.Result
+	if sealed {
+		f = denproto.File{Type: denproto.SealedType, Sealed: true}
+		if _, err := io.Copy(n, limited); err != nil {
+			return denproto.File{}, err
+		}
+		if limited.N == 0 {
+			return denproto.File{}, tooLarge(limits)
+		}
+	} else {
+		br := bufio.NewReaderSize(limited, media.SniffLen)
+		head, err := br.Peek(media.SniffLen)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return denproto.File{}, err
+		}
+		kind = media.Sniff(head)
+		if kind.Refused() {
+			return denproto.File{}, denproto.Errorf(http.StatusUnsupportedMediaType, denproto.CodeUnsupportedType,
+				"a %s can carry metadata Dens can't remove yet", kind)
+		}
+		f = denproto.File{Name: denproto.CleanFilename(name), Type: kind.MIME()}
+		if f.Type == "" {
+			f.Type = sniffType(head)
+		}
+		res, err = media.Verify(n, br, kind)
+		switch {
+		case limited.N == 0:
+			return denproto.File{}, tooLarge(limits)
+		case errors.Is(err, media.ErrMetadata):
+			return denproto.File{}, invalid("the file still carries metadata, which clients take out before uploading")
+		case errors.Is(err, media.ErrMalformed):
+			return denproto.File{}, invalid("the file is damaged, or isn't what it starts out as")
+		case err != nil:
+			return denproto.File{}, err
+		}
 	}
 	if err := orig.finish(); err != nil {
 		return denproto.File{}, err
@@ -286,7 +299,7 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 
 	var thumb *part
 	var thumbSize int64
-	if kind.Image() {
+	if !sealed && kind.Image() {
 		f.Width, f.Height, f.Animated = res.Width, res.Height, res.Animated
 		if thumb, f.Thumb, thumbSize, err = d.preview(ctx, orig, blob, kind, res); err != nil {
 			return denproto.File{}, err
@@ -316,9 +329,9 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 			w, h = f.Width, f.Height
 		}
 		result, err := tx.ExecContext(ctx, `INSERT INTO den_files
-			(blob, uploader_id, name, type, size, width, height, animated, thumb_width, thumb_height, thumb_size, created_at)
-			VALUES (?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			blob, s.MemberID, f.Type, f.Size, w, h, f.Animated, tw, th, ts, now.UnixMilli())
+			(blob, uploader_id, name, type, size, width, height, animated, thumb_width, thumb_height, thumb_size, sealed, created_at)
+			VALUES (?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			blob, s.MemberID, f.Type, f.Size, w, h, f.Animated, tw, th, ts, sealed, now.UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -492,27 +505,31 @@ func (d *Den) attachments(ctx context.Context, q querier, ids []int64) (map[int6
 }
 
 // attach puts pending uploads on a new message within tx. Each must be
-// the author's own, unused and not expired.
-func attach(ctx context.Context, tx *sql.Tx, message, author int64, files []int64, now time.Time) error {
+// the author's own, unused and not expired, and sealed for a DM's message
+// or not for a channel's.
+func attach(ctx context.Context, tx *sql.Tx, message, author int64, files []int64, sealed bool, now time.Time) error {
 	for i, id := range files {
 		res, err := tx.ExecContext(ctx, `UPDATE den_files SET message_id = ?, position = ?
-			WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND created_at > ?
+			WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND created_at > ? AND sealed = ?
 			AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)`,
-			message, i, id, author, now.Add(-uploadExpiry).UnixMilli())
+			message, i, id, author, now.Add(-uploadExpiry).UnixMilli(), sealed)
 		if err != nil {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n != 1 {
+			if sealed {
+				return invalid("attachments: no such sealed upload waiting to be sent")
+			}
 			return invalid("attachments: no such upload waiting to be sent")
 		}
 	}
 	return nil
 }
 
-// parseAttachments checks a send's list of uploads.
-func parseAttachments(ids []string) ([]int64, error) {
-	if len(ids) > denproto.MaxAttachments {
-		return nil, invalid("a message has at most %d files", denproto.MaxAttachments)
+// parseAttachments checks a send's list of uploads, at most most of them.
+func parseAttachments(ids []string, most int) ([]int64, error) {
+	if len(ids) > most {
+		return nil, invalid("a message has at most %d files", most)
 	}
 	out := make([]int64, 0, len(ids))
 	seen := map[int64]bool{}

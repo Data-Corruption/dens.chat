@@ -42,6 +42,10 @@ type Status struct {
 	State       State  `json:"state"`
 	Error       string `json:"error,omitempty"`
 	Since       int64  `json:"since"`
+	// Seal says this device holds the member's DM seal here; Requests are
+	// sign-ins on new devices waiting for their approval (M1.7).
+	Seal     bool          `json:"seal"`
+	Requests []RequestView `json:"requests,omitempty"`
 }
 
 var errDialUnauthorized = errors.New("the den no longer accepts this session")
@@ -73,6 +77,17 @@ type conn struct {
 	done chan struct{}      // closed when run has returned
 	wake chan struct{}      // cuts a wait between reconnects short
 
+	// DMs (M1.7): those whose exchange waits on this member, for keyWork;
+	// the keys of DM files this service opened; files uploaded for DMs,
+	// waiting to be sent; and sign-ins this device is approving, or
+	// approved, whose digits the new device may still be waiting for.
+	due       map[string]bool
+	keysDue   chan struct{}
+	dmFiles   map[string]dmFile
+	uploads   map[string]dmUpload
+	approvals map[string]*approval
+	approved  map[string]RequestView
+
 	// Only the run goroutine touches these.
 	epoch string
 	seq   uint64
@@ -85,6 +100,7 @@ func (c *conn) status() Status {
 		DenID: c.j.denID.String(), Fingerprint: denproto.Fingerprint(c.j.denID), Name: c.profile.Name, URL: c.profile.URL,
 		Username: c.profile.Member.Username, DisplayName: c.profile.Member.DisplayName, Role: c.profile.Member.Role,
 		Own: c.own, State: c.state, Error: c.errMsg, Since: c.since.UnixMilli(),
+		Seal: c.j.seal != nil, Requests: c.requestsLocked(),
 	}
 }
 
@@ -183,6 +199,9 @@ func farewell(err error) (State, string) {
 		case denproto.CloseReasonPasswordChanged:
 			return StateRevoked, "Your den password was changed on another device, which signed this one out. " +
 				"Sign in again with the new password; if you didn't change it, use a recovery code."
+		case denproto.CloseReasonStartedOver:
+			return StateRevoked, "You started over with a new DM seal on another device, which signed this one out. " +
+				"Sign in again, and approve it from that device."
 		}
 	}
 	return StateRevoked, "This den no longer accepts this device. Sign in again with your den password."
@@ -441,7 +460,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.mu.Lock()
 		c.den = state
+		c.markDueLocked(c.dueKeysLocked()...)
+		clear(c.dmFiles)
 		c.mu.Unlock()
+		c.m.notify()
 		// What the member can see may have changed, so cached files go
 		// too, and the page drops what it holds for this den and loads it
 		// again.
@@ -488,9 +510,32 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	me := c.profile.Member.ID
 	gone := c.den.gone
 	c.den.gone = nil
+	switch {
+	case err != nil:
+	case e.T == denproto.EventMessageCreated || e.T == denproto.EventMessageUpdated:
+		// A DM's message reaches the page opened, or saying why it can't be.
+		var m denproto.Message
+		if json.Unmarshal(out.D, &m) == nil && m.Sealed != nil {
+			out, err = denproto.NewEvent(out.T, out.Seq, c.openLocked(m))
+		}
+	case e.T == denproto.EventDMKey:
+		var k denproto.DMKey
+		if json.Unmarshal(e.D, &k) == nil && needsMe(k, me) {
+			c.markDueLocked(k.ChannelID)
+		}
+	}
+	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
+	if requests && err == nil {
+		c.requestChanged(e)
+	}
 	if len(gone) > 0 {
 		c.m.files.drop(c.j.denID.String(), gone...)
+		c.mu.Lock()
+		for _, id := range gone {
+			delete(c.dmFiles, id)
+		}
+		c.mu.Unlock()
 	}
 	if err == nil && e.T == denproto.EventChannelDeleted {
 		c.m.files.drop(c.j.denID.String())

@@ -38,13 +38,15 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				value TEXT NOT NULL
 			) STRICT;
 
-			-- One row: the data key's check value, and the data key sealed
-			-- under the local password once one is set.
+			-- One row: the data key's check value, the data key sealed under
+			-- the local password once one is set, and the DM seal new dens
+			-- start with, sealed with the data key once the first den has one.
 			CREATE TABLE vault (
 				id            INTEGER PRIMARY KEY CHECK (id = 1),
 				check_value   BLOB NOT NULL,
 				password_wrap TEXT,             -- JSON; NULL until a password is set
-				updated_at    INTEGER NOT NULL  -- unix milliseconds
+				updated_at    INTEGER NOT NULL, -- unix milliseconds
+				dm_seal       BLOB
 			) STRICT;
 
 			-- Paired browser sessions, keyed by SHA-256 of the cookie token.
@@ -56,12 +58,16 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT;
 
 			-- Dens this install has joined, keyed by den_id. The profile (URL,
-			-- name, account) and the device key are sealed with the data key.
+			-- name, account), the device key and the member's DM seal there
+			-- are sealed with the data key. The seal is NULL while this device
+			-- has none: signed in with a recovery code, until the member types
+			-- it or starts over.
 			CREATE TABLE joined_dens (
 				den_id     BLOB PRIMARY KEY,
 				profile    BLOB NOT NULL,
 				device_key BLOB NOT NULL,
-				joined_at  INTEGER NOT NULL
+				joined_at  INTEGER NOT NULL,
+				dm_seal    BLOB
 			) STRICT;
 
 			-- The den this install hosts, once created. The identity private
@@ -95,7 +101,8 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				banned_at     INTEGER,
 				banned_by     INTEGER REFERENCES den_members (id),
 				avatar_id     INTEGER REFERENCES den_files (id) ON DELETE SET NULL,
-				banner_id     INTEGER REFERENCES den_files (id) ON DELETE SET NULL
+				banner_id     INTEGER REFERENCES den_files (id) ON DELETE SET NULL,
+				seal_check    BLOB NOT NULL  -- identifies the DM seal only their devices hold
 			) STRICT;
 			CREATE INDEX den_members_avatar ON den_members (avatar_id) WHERE avatar_id IS NOT NULL;
 			CREATE INDEX den_members_banner ON den_members (banner_id) WHERE banner_id IS NOT NULL;
@@ -166,8 +173,9 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 
 			-- AUTOINCREMENT: message IDs grow with time and are never reused,
 			-- which history paging (before, after, around an ID) relies on.
-			-- The text is sealed with the data key; reply_to may name a
-			-- deleted message.
+			-- The text is sealed with the data key, except in a DM, where the
+			-- members' clients seal it with the DM key that key_id names and
+			-- the den can't open it. reply_to may name a deleted message.
 			CREATE TABLE den_messages (
 				id         INTEGER PRIMARY KEY AUTOINCREMENT,
 				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
@@ -178,7 +186,8 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				edited_by  INTEGER,
 				text       BLOB NOT NULL,
 				reply_to   INTEGER,
-				nonce      BLOB NOT NULL -- the author's idempotency key
+				nonce      BLOB NOT NULL, -- the author's idempotency key
+				key_id     INTEGER        -- a DM message's key
 			) STRICT;
 			CREATE INDEX den_messages_channel ON den_messages (channel_id, id);
 			CREATE INDEX den_messages_nonce ON den_messages (author_id, nonce);
@@ -202,7 +211,9 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			-- name (blob) only its row knows, and its name is sealed too. A
 			-- file is pending until a message or a profile uses it; pending
 			-- files are deleted after an hour. Sizes are bytes, as uploaded;
-			-- the thumb columns are set when the den made a preview.
+			-- the thumb columns are set when the den made a preview. A sealed
+			-- file is a DM's, which the uploader's client sealed: the den
+			-- knows only its size.
 			CREATE TABLE den_files (
 				id           INTEGER PRIMARY KEY AUTOINCREMENT,
 				blob         BLOB NOT NULL UNIQUE,
@@ -218,11 +229,49 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				thumb_width  INTEGER,
 				thumb_height INTEGER,
 				thumb_size   INTEGER,
+				sealed       INTEGER NOT NULL DEFAULT 0,
 				created_at   INTEGER NOT NULL
 			) STRICT;
 			CREATE INDEX den_files_message ON den_files (message_id, position);
 			CREATE INDEX den_files_uploader ON den_files (uploader_id);
 			CREATE INDEX den_files_pending ON den_files (created_at) WHERE message_id IS NULL;
+
+			-- The keys of DMs. Each comes from an exchange between the two
+			-- members' clients, which the den relays and can't take part in:
+			-- the starter's offer, the answer, and the starter's reveal, kept
+			-- as JSON only while the exchange runs. A retired key takes no new
+			-- messages: a member started over, or started the exchange again.
+			CREATE TABLE den_dm_keys (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
+				started_by INTEGER NOT NULL REFERENCES den_members (id),
+				started_at INTEGER NOT NULL,
+				stage      TEXT NOT NULL CHECK (stage IN ('offered', 'answered', 'revealed')),
+				offer      BLOB,
+				answer     BLOB,
+				reveal     BLOB,
+				retired_at INTEGER,
+				retired_by INTEGER REFERENCES den_members (id),
+				retired    TEXT CHECK (retired IN ('started_over', 'restarted')),
+				CHECK ((retired_at IS NULL) = (retired IS NULL) AND (retired IS NULL) = (retired_by IS NULL))
+			) STRICT;
+			CREATE INDEX den_dm_keys_channel ON den_dm_keys (channel_id, id);
+			-- A DM has one live key at a time.
+			CREATE UNIQUE INDEX den_dm_keys_live ON den_dm_keys (channel_id) WHERE retired IS NULL;
+
+			-- Each member's side of a DM key, sealed with their DM seal: their
+			-- exchange state while it runs, and their copy of the key once
+			-- they checked the code.
+			CREATE TABLE den_dm_key_members (
+				key_id     INTEGER NOT NULL REFERENCES den_dm_keys (id) ON DELETE CASCADE,
+				member_id  INTEGER NOT NULL REFERENCES den_members (id),
+				state      BLOB,
+				sealed     BLOB,
+				checked_at INTEGER,
+				PRIMARY KEY (key_id, member_id),
+				CHECK ((sealed IS NULL) = (checked_at IS NULL))
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_dm_key_members_member ON den_dm_key_members (member_id);
 
 			-- closed is a DM the member closed; a new message reopens it.
 			CREATE TABLE den_read_states (

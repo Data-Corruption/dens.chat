@@ -20,7 +20,8 @@ func (rt *router) mountFiles(r chi.Router) {
 }
 
 // handleUpload passes a file from the page to a den. The page sends the
-// file's bytes as they are; images lose their metadata on the way.
+// file's bytes as they are; images lose their metadata on the way. The
+// page names the channel the file is for, since a DM's goes sealed.
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {
@@ -31,7 +32,7 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusLengthRequired, "The upload didn't say how large it is.")
 		return
 	}
-	up, err := rt.a.Dens.Upload(r.Context(), chi.URLParam(r, "den"), name, r.ContentLength, r.Body)
+	up, err := rt.a.Dens.Upload(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), name, r.ContentLength, r.Body)
 	if err != nil {
 		// The page stops an upload when the member takes the file off;
 		// nobody is left to tell.

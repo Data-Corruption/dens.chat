@@ -68,7 +68,7 @@ func TestBanClosesSocketsRightAway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = member.Join(ctx, invite, denclient.JoinRequest{Username: "bob", DisplayName: "Bob", Password: "correct horse"})
+	_, err = member.Join(ctx, invite, denclient.JoinRequest{Username: "bob", DisplayName: "Bob", Password: "correct horse"})
 	if !denproto.IsCode(err, denproto.CodeBanned) {
 		t.Fatalf("rejoining when banned: %v", err)
 	}
@@ -192,6 +192,7 @@ func TestDMsBetweenClients(t *testing.T) {
 	viewOf(t, member, denID, "the DM", func(v denclient.View) bool {
 		return slices.ContainsFunc(v.Channels, func(c denproto.Channel) bool { return c.ID == dm.ID })
 	})
+	checkDM(t, owner, member, denID, dm.ID)
 	stream, stop := owner.Stream()
 	defer stop()
 	send(t, member, denID, dm.ID, "psst")

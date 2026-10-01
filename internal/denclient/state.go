@@ -26,6 +26,12 @@ type denState struct {
 	// gone holds files the den deleted since it was last taken, so they
 	// leave the cache.
 	gone []string
+	// keys are this member's DM keys by ID, with their own sealed copies
+	// and without exchanges; requests are sign-ins waiting for their
+	// approval by ID; sealCheck identifies their DM seal (M1.7).
+	keys      map[string]denproto.DMKey
+	requests  map[string]denproto.DeviceRequest
+	sealCheck denproto.Bytes
 }
 
 // View is a joined den as the page sees it.
@@ -38,12 +44,14 @@ type View struct {
 	ReadStates []denproto.ReadState `json:"read_states"`
 	Online     []string             `json:"online"`
 	Limits     denproto.Limits      `json:"limits"`
+	// DMKeys are the keys of this member's DMs, without anything secret.
+	DMKeys []denproto.DMKey `json:"dm_keys"`
 }
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
-		touched: map[string]bool{}}
+		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -78,6 +86,11 @@ func (s *denState) view(status Status, me denproto.Member) View {
 	for _, r := range s.reads {
 		v.ReadStates = append(v.ReadStates, r)
 	}
+	v.DMKeys = []denproto.DMKey{}
+	for _, k := range s.keys {
+		v.DMKeys = append(v.DMKeys, pageKey(k))
+	}
+	slices.SortFunc(v.DMKeys, func(a, b denproto.DMKey) int { return compareIDs(a.ID, b.ID) })
 	slices.SortFunc(v.Members, func(a, b denproto.Member) int { return compareIDs(a.ID, b.ID) })
 	// Positions count within a group, so IDs break ties between groups.
 	slices.SortFunc(v.Groups, func(a, b denproto.Group) int { return cmp.Or(a.Position-b.Position, compareIDs(a.ID, b.ID)) })
@@ -201,9 +214,31 @@ func (s *denState) load(r denproto.Ready) error {
 	if channels > denproto.MaxChannels || len(next.groups) > denproto.MaxGroups {
 		return errMalformed
 	}
+	if len(r.SealCheck) != denproto.SealCheckSize {
+		return errMalformed
+	}
+	next.sealCheck = r.SealCheck
+	for _, k := range r.DMKeys {
+		if denproto.CheckDMKey(k) != nil || k.Exchange != nil || next.channels[k.ChannelID].Kind != denproto.KindDM {
+			return errMalformed
+		}
+		next.keys[k.ID] = k
+	}
+	if len(r.DeviceRequests) > maxRequests {
+		return errMalformed
+	}
+	for _, q := range r.DeviceRequests {
+		if denproto.CheckDeviceRequest(q) != nil {
+			return errMalformed
+		}
+		next.requests[q.ID.String()] = q
+	}
 	*s = *next
 	return nil
 }
+
+// maxRequests bounds the sign-ins a den says wait for approval.
+const maxRequests = 16
 
 // applyEvent updates the state for one event and returns the event as it
 // may be forwarded to the page: decoded, checked and re-encoded, so no
@@ -371,6 +406,32 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 			return e, false, errMalformed
 		}
 		data = r
+	case denproto.EventDMKey:
+		var k denproto.DMKey
+		if json.Unmarshal(e.D, &k) != nil || denproto.CheckDMKey(k) != nil || s.channels[k.ChannelID].Kind != denproto.KindDM {
+			return e, false, errMalformed
+		}
+		k.Exchange = nil
+		s.keys[k.ID] = k
+		data = pageKey(k)
+	case denproto.EventDeviceRequest:
+		var q denproto.DeviceRequest
+		if json.Unmarshal(e.D, &q) != nil || denproto.CheckDeviceRequest(q) != nil {
+			return e, false, errMalformed
+		}
+		if _, ok := s.requests[q.ID.String()]; !ok && len(s.requests) >= maxRequests {
+			return e, false, errMalformed
+		}
+		s.requests[q.ID.String()] = q
+		// The page hears of it through the den's status.
+		return e, false, nil
+	case denproto.EventDeviceRequestEnded:
+		var end denproto.DeviceRequestEnded
+		if json.Unmarshal(e.D, &end) != nil || len(end.ID) != denproto.RequestIDSize {
+			return e, false, errMalformed
+		}
+		delete(s.requests, end.ID.String())
+		return e, false, nil
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState
 		if json.Unmarshal(e.D, &r) != nil {
@@ -391,6 +452,23 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 	}
 	out, err := denproto.NewEvent(e.T, e.Seq, data)
 	return out, err == nil, err
+}
+
+// pageKey is a DM key as the page sees it: without its sealed copy or
+// exchange, which are for this service alone.
+func pageKey(k denproto.DMKey) denproto.DMKey {
+	k.Sealed, k.Exchange = nil, nil
+	return k
+}
+
+// liveKey returns a DM's live key, if it has one.
+func (s *denState) liveKey(channel string) (denproto.DMKey, bool) {
+	for _, k := range s.keys {
+		if k.ChannelID == channel && k.Retired == "" {
+			return k, true
+		}
+	}
+	return denproto.DMKey{}, false
 }
 
 // noteMessage keeps unread state current as messages arrive: the channel's

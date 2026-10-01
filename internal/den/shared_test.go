@@ -17,7 +17,7 @@ func (f *fixture) sendShared(s *Session, channel, text string, editors ...*Sessi
 	for i, e := range editors {
 		ids[i] = denproto.FormatID(e.MemberID)
 	}
-	return f.d.Send(context.Background(), s, channel, denproto.SendRequest{Nonce: denproto.Random(16), Text: text, Editors: ids})
+	return f.d.Send(context.Background(), s, channel, f.sealedSend(s, channel, denproto.SendRequest{Nonce: denproto.Random(16), Text: text, Editors: ids}))
 }
 
 func TestSharedMessages(t *testing.T) {

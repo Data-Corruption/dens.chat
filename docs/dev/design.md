@@ -33,7 +33,7 @@ Dens offers living-room privacy: a closed door, not a bunker. The branding pilla
 | Bulk data requests to a large provider | A compromised device (client or den) |
 | History disappearing when a company changes its terms | A targeted investigation or state actor |
 | Casual filesystem scanners and backup snoopers (local encryption) | Traffic analysis: the den sees member IPs |
-| The den owner reading DMs and the photos in them (end-to-end encrypted from M1.7) | An owner who tampers with DM keys, where members never compare safety codes |
+| The den owner reading DMs and the photos in them (end-to-end encrypted from M1.7) | Members who compare DM check codes over a channel the den's owner controls, or with someone pretending to be the other member |
 
 The public docs include a short philosophy section: being able to say dumb things, joke, vent and make art without a permanent searchable record is part of being human. They recommend Linux over Windows, LibreWolf, and not posting identifying details for low-stakes use, and point to Signal, Qubes OS and similar tools for higher-stakes threat models, noting that none of them are bulletproof.
 
@@ -142,6 +142,7 @@ Each install has one local user, stored in an encrypted vault, and one random da
 
 - The list of joined dens: URL, den identity key fingerprint, display name.
 - One Ed25519 keypair per den, plus the current session token for each.
+- The DM seal (M1.7).
 - Local settings and preferences.
 
 Sensitive fields in SQLite are encrypted one by one with the same data key (XChaCha20-Poly1305): on a client, the vault and cached den content; on a den, message and DM text, and the names of uploads. A den's uploads are encrypted with it too (see Files and media). This is a speed bump against scanners and backup snoopers, not protection from root or a live compromise, and it doesn't hide anything from the den owner, whose install holds the den's key. Metadata such as timestamps and IDs stays plaintext so queries work.
@@ -171,12 +172,12 @@ Because this is a root-managed system unit on Linux, it avoids the unprivileged 
 
 **Re-authentication for sensitive actions**
 
-There is no idle lock in v1; the OS screen lock covers someone at an unlocked desktop. Instead, a paired browser must re-enter the local password for sensitive actions: exporting a backup, viewing or exporting keys, changing the local password, and restoring. Someone at an unlocked machine could read chats, but not take the identity with them. An optional idle lock can come later.
+There is no idle lock in v1; the OS screen lock covers someone at an unlocked desktop. Instead, a paired browser must re-enter the local password for sensitive actions: exporting a backup, viewing or exporting keys, viewing the DM seal (M1.7), changing the local password, and restoring. Someone at an unlocked machine could read chats, but not take the identity with them. An optional idle lock can come later.
 
 **Service hygiene**
 
 - The data key and vault stay in memory only in the service process; nothing sensitive goes to logs.
-- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk: the data key, and the seeds of the den's identity key and of each device key. Go's Ed25519 caches expanded keys through weak pointers, which can't point outside the Go heap, so each signature expands a short-lived copy of the key and clears it.
+- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk: the data key, the seeds of the den's identity key and of each device key, and each den's DM seal. Go's Ed25519 caches expanded keys through weak pointers, which can't point outside the Go heap, so each signature expands a short-lived copy of the key and clears it. A DM key is opened from its sealed copy only while a message or file is sealed or opened, and cleared after.
 
 ## Authentication
 
@@ -223,14 +224,14 @@ Each den on the home page has a **Devices and password** section. It lists each 
 
 From M1.7, a password alone doesn't add a device: one of the member's other devices approves it, which makes their own devices a second factor with no authenticator app.
 
-1. The new device signs in with the username and password as now. The den holds it as pending for 10 minutes and asks the member's other sessions.
-2. The new device shows a six-digit code. Dens on the member's other devices shows the request with the new device's label, and asks for that code. Typing the code, not pressing a button, is what approves it: someone who stole the password can make requests, but the code for theirs shows only on their own screen, so the member can't approve one by accident.
-3. The approving device signs the new device's keys with the member's identity key and seals the DM keys for it (see End-to-end encrypted DMs). Only then does the den register the new device and start its session.
-4. Refusing a request, or letting it expire, keeps the device out. A refusal also tells the member to change their password, since someone has it.
+1. The new device signs in with the username and password as now. The den holds it as pending for 10 minutes and asks the member's other sessions, which show the request with the new device's label.
+2. The new device and one of the member's existing devices, the one they approve from, run the same exchange that starts a DM, through the den: the new device starts it with its sign-in. Each shows half of its check code (see End-to-end encrypted DMs), and keeps showing it until the other device no longer needs it: the new device until it's signed in, and the approving one, after it approves, until the member is done. The member types each device's digits into the other, so a request from someone else, whose screen the member can't see, can't be approved by accident; and if the den had swapped in keys of its own, the digits wouldn't match.
+3. The existing device seals the member's DM seal with the exchange's key and sends it through the den, which carries it but can't open it. Only then does the den register the new device and start its session.
+4. Refusing a request, or letting it expire, keeps the device out. A refusal also tells the member to change their password, since someone has it. A new password, starting over, or leaving the den cancels what's waiting.
 
-- The code is random and never reaches the den: the request carries only a commitment to it and the new device's key, so the den can't swap in a key of its own, and a code can't approve any other request.
-- The device that joins with an invite needs no approval. A member with no other device signs in with a recovery code, which needs none: the codes are the one way in without a device. With neither devices nor codes, the account can't be recovered.
-- The approval is signed with the member's identity key, which only their devices hold, so DM partners can check every device of theirs, and even the den's owner can't add one.
+- Both checks matter: the existing device mustn't hand the seal to anyone else, and the new device mustn't take a seal from anyone else, or DMs it starts would be sealed under a key the den knows.
+- The device that joins with an invite needs no approval. A member with no other device signs in with a recovery code, which needs none, and types their saved seal to read their DMs: the codes are the one way in without a device. With neither devices nor codes, the account can't be recovered.
+- The den enforces approval, but DM privacy doesn't rest on it: a device the den lets in on its own gets no seal, so it can't read DMs, and a DM it starts fails the check with anyone who compares with the real member.
 
 **Den identity and moving domains**
 
@@ -279,7 +280,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 
 - Channel groups are one level deep and contain text and voice channels.
 - Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
-- DMs are one-to-one between members of the same den, stored on the den. Until M1.7 the UI says the owner can read them; from M1.7 they're end-to-end encrypted. Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
+- DMs are one-to-one between members of the same den, stored on the den and end-to-end encrypted (see End-to-end encrypted DMs). Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
 
 **Profiles**
 
@@ -407,38 +408,52 @@ From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores a
 **What it protects**
 
 - The den's owner, and anyone holding the den's disk or backups, can't read DMs or see the photos in them.
-- Metadata stays visible: the den still sees who DMs whom, when, and how much.
-- Keys pass through the den, so an owner can hand out keys of their own and sit in the middle of a DM. A swap after a member has seen their partner's real key shows in the DM, and members who compare a safety code once rule it out entirely (see Trust). An owner in the middle from a DM's first message, between members who never compare codes, goes unnoticed.
+- Keys pass through the den, so a den could hand out keys of its own and sit in the middle of a DM. The check code catches that before the DM's first message (see Starting a DM).
+- Metadata stays visible: the den sees who DMs whom, when, and how much, and it can hold messages back.
+- Members who compare check codes over a channel the den's owner controls, or with someone pretending to be the other member, aren't protected. Nothing here is bulletproof, and the app says so.
+- There's no forward secrecy: a stolen device, or a leaked seal together with a copy of the den's data, opens all of that member's DM history.
 
-**Keys**
+**The DM seal**
 
 All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already seals data at rest.
 
-- Each member has an identity key for each den, an Ed25519 key that lives only on their own devices. A new device gets it from the device that approves it (see Approving new devices), or from the key backup when it signs in with a recovery code.
-- Every device has an encryption key pair for each den, beside the signing key it logs in with: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer. The member's identity key signs it.
-- Each DM has a conversation key. The sending service creates it and seals a copy for every device of both members with that device's encryption key; the den stores the sealed copies as opaque blobs and hands each device its own.
-- The conversation key changes when either member removes a device, so a removed device can't read what follows. Older keys stay, sealed for the current devices, so history stays readable.
+- Each member has a DM seal: 256 random bits, made by their Dens the first time they join or create a den, and kept in the vault. It never reaches the den. Their other devices get it through approval (see Approving new devices), sealed to that device.
+- One seal serves every den an install joins. Each den's DM keys are sealed under a key derived from the seal and the den's ID, so no den sees the seal, and what one den stores is useless at another. An install that joined dens before it was linked to the member's other devices can hold a different seal for some dens; each den's DMs use the seal they were set up with.
+- The page shows the seal beside the recovery codes whenever the member joins a den, saying when it's the one the install's other dens use, and again on request after the local password: "This protects your end-to-end encrypted direct messages. Keep it secret and don't share it with anyone. You'll need it to read your DMs if you lose every device."
+- The seal never changes. A member who loses it and every device starts over (see History and starting over).
+
+**Starting a DM**
+
+1. Alice presses Message on Bob's profile, and her Dens starts an exchange of one-time keys: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer.
+2. The exchange runs in commit-first order, through the den, as three messages that each Dens sends when it's online: a commitment to Alice's key, Bob's key, then Alice's key. Alice's key is fixed before she sees Bob's, and Bob's is sent before he sees Alice's, so a den in the middle can't choose keys that make both sides' codes match. It gets one blind guess. Between messages, each side's state waits on the den sealed with its member's seal, so whichever of their devices is online moves the exchange on.
+3. Each Dens derives a 32-digit check code from the exchange. Alice's screen shows the first 16 digits and asks for the last 16; Bob's shows the last 16 and asks for the first 16. Each reads their digits out to the other and types the other's. Neither screen shows what its member types, so the check can't be passed by copying one's own screen. Each screen keeps its digits until the other member has typed them, so whoever checks first can still read theirs out.
+4. Each Dens opens the DM only once its own member typed the other's digits correctly. Neither trusts the other side's confirmation, which would come through the den. Digits that don't match mean someone may be in the middle, and the exchange can start again.
+5. The exchange's shared secret becomes the DM key. Each member's Dens seals its copy with their seal, bound to the den, the DM, the member and the key's ID, and stores it on the den once its member has checked. That copy is what lets them send with the key, and their other devices read with it. Alice can send as soon as she has checked; Bob reads it once he has too.
+
+The page says where to compare, best first: in person; a voice or video call; another den one of them owns, never the den the DM is on, even when it's theirs, since whoever tampered with it could change the digits sent there too; several accounts on other services they know are really the other's; a den neither of them owns, whose owner could change what's there. It also says why: a tampered den can set up an impostor elsewhere ("I'm @Y on Twitter, let's compare there"), and hosting your own den narrows that risk, but nothing removes it.
 
 **Messages and photos**
 
-- The local service encrypts a DM's text with the current conversation key, bound to the channel, the author and the message's nonce, before sending, and decrypts what arrives before the page sees it. The browser never holds a key.
+- The local service encrypts a DM's text with the DM key, bound to the channel, the author, the message's nonce and the key's ID, before sending, and decrypts what arrives before the page sees it. The browser never holds a key.
 - The den keeps doing everything that doesn't need the text: ordering, history pages, edits with revisions, deletes, read state and unread counts (in a DM every message counts, so the den needn't read one), typing and closing.
 - Photos: the sending service strips metadata and makes the thumbnail itself, with the same code the den uses for channel uploads, then encrypts the original and the thumbnail with a fresh key per file. The file's key, dimensions and type travel inside the encrypted message. The den stores two opaque blobs and counts their size against the upload limits.
 - Work that moves to the client: reply quotes (the client decrypts the original itself), search, and compact links. Task checkboxes (M1.6) tick as an ordinary edit against the current revision. Media recompression (M5) skips DM files, which the den can't open; the sending service compresses before upload instead.
 - Calls aren't covered. Voice and screen share pass through the den's SFU, which can decrypt media hop by hop; end-to-end encrypted calls would need SFrame (insertable streams), after v1.
 
-**History and recovery**
+**History and starting over**
 
-- A new device gets the conversation keys from the device that approves it, sealed to its encryption key, so it reads the history. Keys never leave the member's own devices unsealed.
-- Recovery after losing every device restores the identity key and conversation keys from a key backup on the den, sealed with a key derived from the member's den password: Argon2id with its own context, so it differs from the verifier. Changing the password seals the backup again. A weak password makes the backup guessable offline by the den, as it already makes the verifier.
-- Keeping history costs some forward secrecy: whoever gets a device's keys can read what that device could. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
+- A new device gets the seal from the device that approves it, fetches the member's sealed DM keys, and reads their DM history. A member signing in with a recovery code, with no other device, types their saved seal.
+- DM keys don't change on their own. Keeping history costs forward secrecy: whoever gets a device, or the seal, can read what that member can. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
+- A member who has lost their seal and every device starts over: their Dens makes a new seal, and the DM history sealed with the old one stays unreadable to them, while their partners keep theirs. Each of their DMs needs a new exchange and check before anything more is sent in it. Both sides then show a divider where the keys changed, saying who started over, when, and when the two checked again. A DM can have several.
+- Starting over takes the den password, so a stolen session can't wipe a member's DM keys. It signs out their other devices there, since those hold the old seal, and they come back through approval. The new seal is the one the install starts new dens with from then on.
+- A former member who joins again with another seal than the one they left with starts over the same way; with the same one, their keys and history are as they left them.
+- Starting over is also how a member shuts out a stolen device, which holds the seal: signing it out stops it fetching from the den, and a new seal keeps what's written afterwards from it.
 
-**Trust**
+**In the app**
 
-- The first time a client sees a member's identity key, it trusts it. A device key the identity didn't sign is refused, and a new identity key, as after a reset without the backup, shows in the DM.
-- Each DM offers a safety code: a short fingerprint of both members' identity keys, which two people compare in person or over another channel. Matching codes rule out an owner in the middle.
-
-**In the app.** DMs say they're end-to-end encrypted; channels say the den's owner can read them.
+- The channel list has two tabs: Den and Direct messages.
+- DMs say they're end-to-end encrypted; channels say the den's owner can read them.
+- A DM waiting for its check shows who started it, the digits to read out, a box for the other's digits, and the advice on where to compare.
 
 ## Voice and screen share
 
@@ -629,7 +644,8 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 - [x] Serves only den routes; no client or admin routes compiled into its router.
 - [x] Challenge answers sign the den's address, and clients send nothing to an address the den didn't sign, so no relay can pass a sign-in through (M1.5).
-- [ ] A password alone doesn't add a device: another of the member's devices approves it, or a recovery code stands in (M1.7).
+- [x] A password alone doesn't add a device: another of the member's devices approves it, or a recovery code stands in (M1.7).
+- [x] A DM starts only after both members type each other's check digits, and the DM seal never reaches the den (M1.7).
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
 - [ ] Bearer tokens only, never cookies, so no web page can make a browser act on a den.
@@ -688,13 +704,13 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | M1.4 Files | Upload limits, metadata stripping, thumbnails and image dimensions, attachments served through the local service | A phone photo with GPS data arrives stripped, and the list shows its thumbnail without layout shift |
 | M1.5 Recovery | New-device login, recovery codes, password change, the Devices page | A member recovers on a fresh machine and revokes the old key |
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
-| M1.7 Private DMs | End-to-end encrypted DMs and their photos: identity and device encryption keys, sealed conversation keys, the key backup, safety codes, and approving new devices from an existing one | The den's database and backups hold no readable DM text or photo, both members read their DMs on every device, one restored from the key backup included, a new identity key shows in the DM, and the password alone can't add a device |
+| M1.7 Private DMs | End-to-end encrypted DMs and their photos: the DM seal, check codes to start a DM and to approve a new device, sealed DM keys on the den, starting over, and the Den and Direct messages tabs | The den's database and backups hold no readable DM text or photo; a DM starts only after both members type each other's check digits, and a den that swaps keys fails the check; a new device reads DM history after approval, and one signed in with a recovery code after its member types the seal; the password alone can't add a device |
 
 Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg, which starts as a spike after M1), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
-**Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes, den IDs, approving new devices, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
+**Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
 
 **After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, and an optional idle lock.
 
@@ -704,7 +720,4 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 - [ ] Owner defaults for retention windows and screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
-- [ ] How long a DM's conversation key lives before it changes on its own, besides when a device is removed (M1.7).
-- [ ] Whether DM keys have a backup on the den at all, and what seals it: the den password can be guessed offline by the den, and recovering with a code replaces it; the recovery codes can't be guessed; with no backup, a member who loses every device loses their DMs (M1.7).
-- [ ] How members verify each other's keys beyond safety codes, such as with the inviter's key fingerprint and a secret carried in the invite, which the den never sees (M1.7).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.

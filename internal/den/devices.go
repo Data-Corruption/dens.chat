@@ -13,10 +13,10 @@ import (
 )
 
 // A member's devices, and the ways to sign in without one: the den password
-// on a new device, and a recovery code when the password is forgotten.
-// Every new device is announced to the member's other sessions, which is
-// what makes a stolen password noticeable, and every new password signs out
-// the devices the old one may have let in.
+// on a new device, which another of their devices approves (approval.go),
+// and a recovery code when the password is forgotten. Every new device is
+// announced to the member's other sessions, and every new password signs
+// out the devices the old one may have let in.
 
 // errSignIn is every failed password sign-in or recovery, so neither says
 // whether the username exists.
@@ -125,44 +125,14 @@ func (d *Den) signedIn(ctx context.Context, member int64, dev denproto.Device, t
 	if err != nil {
 		return denproto.SignInResponse{}, err
 	}
+	var sealCheck []byte
+	if err := d.db.QueryRowContext(ctx, `SELECT seal_check FROM den_members WHERE id = ?`, member).Scan(&sealCheck); err != nil {
+		return denproto.SignInResponse{}, err
+	}
 	info, _ := d.Info()
 	d.log.Infof("Member %d signed in on a new device", member)
-	resp := denproto.SignInResponse{Token: token, ExpiresAt: expires.UnixMilli(), Den: info, Member: m, RecoveryCodesLeft: left}
+	resp := denproto.SignInResponse{Token: token, ExpiresAt: expires.UnixMilli(), Den: info, Member: m, RecoveryCodesLeft: left, SealCheck: sealCheck}
 	return resp, d.Hub.Publish(denproto.EventDeviceAdded, dev, OnlyMember(member))
-}
-
-// PasswordLogin registers a new device for a member who proves their den
-// password, and starts its session.
-func (d *Den) PasswordLogin(ctx context.Context, req denproto.PasswordLoginRequest) (denproto.SignInResponse, error) {
-	username, label, err := d.signInFields(req.Username, req.DeviceLabel, req.Verifier, req.PublicKey, req.Nonce, req.Proof)
-	if err != nil {
-		return denproto.SignInResponse{}, err
-	}
-	now := d.now()
-	expires := now.Add(d.TokenLifetime)
-	token := denproto.Random(denproto.TokenSize)
-	var member int64
-	var dev denproto.Device
-	var left int
-	err = d.tx(ctx, func(tx *sql.Tx) error {
-		var hash []byte
-		var err error
-		if member, hash, err = activeMember(ctx, tx, username); err != nil {
-			return err
-		}
-		if !denproto.Equal(hash, denproto.Hash(req.Verifier)) {
-			return errSignIn
-		}
-		if dev, err = addDevice(ctx, tx, member, req.PublicKey, label, token, now, expires); err != nil {
-			return err
-		}
-		left, err = codesLeft(ctx, tx, member)
-		return err
-	})
-	if err != nil {
-		return denproto.SignInResponse{}, err
-	}
-	return d.signedIn(ctx, member, dev, token, expires, left)
 }
 
 // Recover signs a member in on a new device with one of their recovery
@@ -207,6 +177,7 @@ func (d *Den) Recover(ctx context.Context, req denproto.RecoverRequest) (denprot
 	if err != nil {
 		return denproto.SignInResponse{}, err
 	}
+	d.cancelRequests(member)
 	if err := d.devicesGone(member, gone, denproto.CloseReasonPasswordChanged); err != nil {
 		return denproto.SignInResponse{}, err
 	}
@@ -283,6 +254,7 @@ func (d *Den) ChangePassword(ctx context.Context, s *Session, req denproto.Passw
 	}
 	out.SignedOut = len(gone)
 	d.log.Infof("Member %d changed their den password, which signed out %d devices", s.MemberID, len(gone))
+	d.cancelRequests(s.MemberID)
 	return out, d.devicesGone(s.MemberID, gone, denproto.CloseReasonPasswordChanged)
 }
 

@@ -3,6 +3,7 @@ package den
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -133,6 +134,13 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 			ChannelID: ch.ID, LastMessage: last[ch.ID], ReadPosition: read[ch.ID], MentionCount: mentions[ch.ID], Closed: closed[ch.ID],
 		})
 	}
+	if err := d.db.QueryRowContext(ctx, `SELECT seal_check FROM den_members WHERE id = ?`, member).Scan(&r.SealCheck); err != nil {
+		return r, err
+	}
+	if r.DMKeys, err = memberKeys(ctx, d.db, member); err != nil {
+		return r, err
+	}
+	r.DeviceRequests = d.memberRequests(member)
 	return r, nil
 }
 
@@ -791,21 +799,28 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 
 // Messages --------------------------------------------------------------------
 
-const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to`
+const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id`
 
 func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	var m denproto.Message
 	var id, channel, author int64
-	var editedAt, editedBy, replyTo sql.NullInt64
-	var sealed []byte
-	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &sealed, &replyTo); err != nil {
+	var editedAt, editedBy, replyTo, keyID sql.NullInt64
+	var text, nonce []byte
+	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID); err != nil {
 		return m, err
 	}
-	text, err := d.v.Open(sealed, textAD(id))
-	if err != nil {
-		return m, err
+	m.ID, m.ChannelID, m.AuthorID = denproto.FormatID(id), denproto.FormatID(channel), denproto.FormatID(author)
+	if keyID.Valid {
+		// A DM's text is sealed by its members' clients. It goes out as it
+		// came, with what opening it takes: its key and its nonce.
+		m.Sealed, m.KeyID, m.Nonce = text, denproto.FormatID(keyID.Int64), nonce
+	} else {
+		plain, err := d.v.Open(text, textAD(id))
+		if err != nil {
+			return m, err
+		}
+		m.Text = string(plain)
 	}
-	m.ID, m.ChannelID, m.AuthorID, m.Text = denproto.FormatID(id), denproto.FormatID(channel), denproto.FormatID(author), string(text)
 	if editedAt.Valid {
 		m.EditedAt = editedAt.Int64
 	}
@@ -849,8 +864,11 @@ func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]d
 	}
 	for i := range ms {
 		ms[i].Reply = replies[ms[i].ReplyTo]
-		ms[i].Attachments = files[mids[i]]
 		ms[i].Editors = editors[mids[i]]
+		// A DM message's files are listed inside it, with their keys.
+		if ms[i].Sealed == nil {
+			ms[i].Attachments = files[mids[i]]
+		}
 	}
 	return ms, nil
 }
@@ -950,26 +968,25 @@ func (d *Den) replies(ctx context.Context, ids []int64) (map[string]*denproto.Re
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT id, author_id, text FROM den_messages WHERE id IN (?`+
+	ms, err := d.scanMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id IN (?`+
 		strings.Repeat(", ?", len(ids)-1)+`)`, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := make(map[string]*denproto.Reply, len(ids))
-	for rows.Next() {
-		var id, author int64
-		var sealed []byte
-		if err := rows.Scan(&id, &author, &sealed); err != nil {
-			return nil, err
-		}
-		text, err := d.v.Open(sealed, textAD(id))
-		if err != nil {
-			return nil, err
-		}
-		out[denproto.FormatID(id)] = &denproto.Reply{AuthorID: denproto.FormatID(author), Text: denproto.Excerpt(string(text))}
+	out := make(map[string]*denproto.Reply, len(ms))
+	for _, m := range ms {
+		out[m.ID] = replyOf(m)
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+// replyOf previews a message for the replies to it: the start of its
+// text, or in a DM, the whole of it sealed, for the client to open.
+func replyOf(m denproto.Message) *denproto.Reply {
+	if m.Sealed != nil {
+		return &denproto.Reply{AuthorID: m.AuthorID, Sealed: m.Sealed, KeyID: m.KeyID, Nonce: m.Nonce, Revision: m.Revision}
+	}
+	return &denproto.Reply{AuthorID: m.AuthorID, Text: denproto.Excerpt(m.Text)}
 }
 
 func (d *Den) scanMessages(ctx context.Context, query string, args ...any) ([]denproto.Message, error) {
@@ -995,6 +1012,26 @@ func reverse(ms []denproto.Message) {
 	}
 }
 
+// historyBudget bounds the messages in a history page, as JSON, so the
+// page stays within a response's 1 MiB with room to spare.
+const historyBudget = 896 << 10
+
+// fit keeps the messages from the front of ms that fit in budget bytes of
+// JSON, at least one, and reports whether it left any out.
+func fit(ms []denproto.Message, budget int) ([]denproto.Message, bool, error) {
+	used := 0
+	for i, m := range ms {
+		b, err := json.Marshal(m)
+		if err != nil {
+			return nil, false, err
+		}
+		if used += len(b) + 1; used > budget && i > 0 {
+			return ms[:i], true, nil
+		}
+	}
+	return ms, false, nil
+}
+
 // HistoryQuery selects a page: the newest, or before, after or around an ID.
 type HistoryQuery struct {
 	Before, After, Around int64
@@ -1017,7 +1054,9 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	if n < 1 || n > denproto.MaxHistory {
 		return denproto.History{}, invalid("limit must be 1 to %d", denproto.MaxHistory)
 	}
-	older := func(below int64, limit int) ([]denproto.Message, bool, error) {
+	// Each side of the anchor gets its share of the page's bytes, and
+	// keeps the messages nearest the anchor that fit.
+	older := func(below int64, limit, budget int) ([]denproto.Message, bool, error) {
 		ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
 			WHERE channel_id = ? AND id < ? ORDER BY id DESC LIMIT ?`, cid, below, limit+1)
 		if err != nil {
@@ -1027,10 +1066,11 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 		if more {
 			ms = ms[:limit]
 		}
+		ms, cut, err := fit(ms, budget)
 		reverse(ms)
-		return ms, more, nil
+		return ms, more || cut, err
 	}
-	newer := func(from int64, limit int) ([]denproto.Message, bool, error) {
+	newer := func(from int64, limit, budget int) ([]denproto.Message, bool, error) {
 		ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
 			WHERE channel_id = ? AND id >= ? ORDER BY id LIMIT ?`, cid, from, limit+1)
 		if err != nil {
@@ -1040,7 +1080,8 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 		if more {
 			ms = ms[:limit]
 		}
-		return ms, more, nil
+		ms, cut, err := fit(ms, budget)
+		return ms, more || cut, err
 	}
 	exists := func(where string, id int64) (bool, error) {
 		var found bool
@@ -1051,20 +1092,20 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	switch {
 	case q.Around > 0:
 		var before, after []denproto.Message
-		if before, h.HasOlder, err = older(q.Around, n/2); err == nil {
-			after, h.HasNewer, err = newer(q.Around, n-n/2)
+		if before, h.HasOlder, err = older(q.Around, n/2, historyBudget/2); err == nil {
+			after, h.HasNewer, err = newer(q.Around, n-n/2, historyBudget/2)
 		}
 		h.Messages = append(before, after...)
 	case q.Before > 0:
-		if h.Messages, h.HasOlder, err = older(q.Before, n); err == nil {
+		if h.Messages, h.HasOlder, err = older(q.Before, n, historyBudget); err == nil {
 			h.HasNewer, err = exists("id >= ?", q.Before)
 		}
 	case q.After > 0:
-		if h.Messages, h.HasNewer, err = newer(q.After+1, n); err == nil {
+		if h.Messages, h.HasNewer, err = newer(q.After+1, n, historyBudget); err == nil {
 			h.HasOlder, err = exists("id <= ?", q.After)
 		}
 	default:
-		h.Messages, h.HasOlder, err = older(1<<62, n)
+		h.Messages, h.HasOlder, err = older(1<<62, n, historyBudget)
 	}
 	if h.Messages == nil {
 		h.Messages = []denproto.Message{}
@@ -1090,12 +1131,22 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err := denproto.Size("nonce", req.Nonce, denproto.NonceBytes); err != nil {
 		return denproto.Message{}, err
 	}
-	files, err := parseAttachments(req.Attachments)
+	dm := c.Kind == denproto.KindDM
+	most := denproto.MaxAttachments
+	if dm {
+		most = denproto.MaxDMFiles
+	}
+	files, err := parseAttachments(req.Attachments, most)
 	if err != nil {
 		return denproto.Message{}, err
 	}
-	if err := denproto.CheckMessageText(req.Text, len(files) > 0); err != nil {
-		return denproto.Message{}, invalid("text: %v", err)
+	if err := checkSealedText(dm, req.Text, req.Sealed, req.KeyID); err != nil {
+		return denproto.Message{}, err
+	}
+	if !dm {
+		if err := denproto.CheckMessageText(req.Text, len(files) > 0); err != nil {
+			return denproto.Message{}, invalid("text: %v", err)
+		}
 	}
 	var replyTo *int64
 	var reply *denproto.Reply
@@ -1112,7 +1163,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			return denproto.Message{}, invalid("reply_to: no such message in this channel")
 		}
 		replyTo = &r
-		reply = &denproto.Reply{AuthorID: replied[0].AuthorID, Text: denproto.Excerpt(replied[0].Text)}
+		reply = replyOf(replied[0])
 	}
 	now := d.now()
 	existing, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
@@ -1134,22 +1185,37 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	}
 	var id int64
 	var reopened []int64
+	var keyID *int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce)
-			VALUES (?, ?, ?, x'', ?, ?)`, cid, s.MemberID, now.UnixMilli(), replyTo, []byte(req.Nonce))
+		text := []byte(req.Sealed)
+		if dm {
+			// Checked here, so a start-over that retires the key can't slip
+			// in between.
+			k, err := sendKey(ctx, tx, cid, req.KeyID, s.MemberID)
+			if err != nil {
+				return err
+			}
+			keyID = &k
+		} else {
+			text = []byte{}
+		}
+		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID)
 		if err != nil {
 			return err
 		}
 		if id, err = res.LastInsertId(); err != nil {
 			return err
 		}
-		// The sealed text names its row, so it can't be moved to another.
-		sealed, err := d.v.Seal([]byte(req.Text), textAD(id))
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ? WHERE id = ?`, sealed, id); err != nil {
-			return err
+		if !dm {
+			// The sealed text names its row, so it can't be moved to another.
+			sealed, err := d.v.Seal([]byte(req.Text), textAD(id))
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ? WHERE id = ?`, sealed, id); err != nil {
+				return err
+			}
 		}
 		if err := insertMentions(ctx, tx, id, cid, mentioned); err != nil {
 			return err
@@ -1157,7 +1223,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		if err := setEditors(ctx, tx, id, editors); err != nil {
 			return err
 		}
-		if err := attach(ctx, tx, id, s.MemberID, files, now); err != nil {
+		if err := attach(ctx, tx, id, s.MemberID, files, dm, now); err != nil {
 			return err
 		}
 		// A member has read what they wrote.
@@ -1174,14 +1240,19 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
-	attached, err := d.attachments(ctx, d.db, []int64{id})
-	if err != nil {
-		return denproto.Message{}, err
-	}
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
 		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
-		Attachments: attached[id], Editors: formatIDs(editors),
+		Editors: formatIDs(editors),
+	}
+	if dm {
+		m.Sealed, m.KeyID = req.Sealed, denproto.FormatID(*keyID)
+	} else {
+		attached, err := d.attachments(ctx, d.db, []int64{id})
+		if err != nil {
+			return denproto.Message{}, err
+		}
+		m.Attachments = attached[id]
 	}
 	if err := d.Hub.Publish(denproto.EventMessageCreated, m, audienceOf(c)); err != nil {
 		return m, err
@@ -1194,6 +1265,21 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		}
 	}
 	return m, d.publishReadState(ctx, s.MemberID, cid)
+}
+
+// checkSealedText checks that a DM message's text comes sealed, with the
+// key it's sealed with, and that nothing else does.
+func checkSealedText(dm bool, text string, sealed denproto.Bytes, keyID string) error {
+	if !dm {
+		if sealed != nil || keyID != "" {
+			return invalid("sealed: only DM messages come sealed")
+		}
+		return nil
+	}
+	if text != "" || len(sealed) == 0 || len(sealed) > denproto.MaxSealed {
+		return invalid("sealed: a DM message's text comes sealed, 1 to %d bytes, and text stays empty", denproto.MaxSealed)
+	}
+	return nil
 }
 
 // mentionedMembers resolves a text's mentions to members in the den who can
@@ -1279,7 +1365,20 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if req.Editors != nil && author != s.MemberID {
 		return m, forbidden("only the author changes who may edit a message")
 	}
-	if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
+	dm := c.Kind == denproto.KindDM
+	if err := checkSealedText(dm, req.Text, req.Sealed, req.KeyID); err != nil {
+		return m, err
+	}
+	var keyID *int64
+	if dm {
+		k, err := sendKey(ctx, d.db, cid, req.KeyID, s.MemberID)
+		if err != nil {
+			return m, err
+		}
+		keyID = &k
+	} else if req.Unedited {
+		return m, invalid("unedited: only DM messages' edits say so; the den compares other texts itself")
+	} else if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
 		return m, invalid("text: %v", err)
 	}
 	if req.Revision != m.Revision {
@@ -1302,17 +1401,23 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		return m, err
 	}
 	mentioned = slices.DeleteFunc(mentioned, func(id int64) bool { return id == s.MemberID })
-	sealed, err := d.v.Seal([]byte(req.Text), textAD(mid))
-	if err != nil {
-		return m, err
+	sealed := []byte(req.Sealed)
+	if !dm {
+		if sealed, err = d.v.Seal([]byte(req.Text), textAD(mid)); err != nil {
+			return m, err
+		}
 	}
 	now := d.now().UnixMilli()
-	// Changing only who may edit leaves the message unmarked.
+	// Changing only who may edit leaves the message unmarked. The den can't
+	// compare a DM's texts, so the edit says.
 	edited := req.Text != m.Text
+	if dm {
+		edited = !req.Unedited
+	}
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, revision = revision + 1,
+		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, key_id = ?, revision = revision + 1,
 			edited_at = iif(?, ?, edited_at), edited_by = iif(?, ?, edited_by) WHERE id = ? AND revision = ?`,
-			sealed, edited, now, edited, s.MemberID, mid, req.Revision)
+			sealed, keyID, edited, now, edited, s.MemberID, mid, req.Revision)
 		if err != nil {
 			return err
 		}
@@ -1341,6 +1446,9 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		return m, err
 	}
 	m.Text, m.Revision = req.Text, m.Revision+1
+	if dm {
+		m.Sealed, m.KeyID = req.Sealed, denproto.FormatID(*keyID)
+	}
 	if edited {
 		m.EditedAt, m.EditedBy = now, denproto.FormatID(s.MemberID)
 	}
@@ -1368,6 +1476,9 @@ func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req den
 	}
 	if !mayEdit(m, s.MemberID) {
 		return m, forbidden("only the author, and the members they named, tick a message's tasks")
+	}
+	if c.Kind == denproto.KindDM {
+		return m, invalid("a DM message's tasks tick with an edit: the den can't read its text")
 	}
 	tasks := denproto.Tasks(m.Text)
 	if n < 0 || n >= len(tasks) || tasks[n].Text != req.Text {
