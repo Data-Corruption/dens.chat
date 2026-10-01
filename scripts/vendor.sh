@@ -572,11 +572,14 @@ vendor_ffmpeg_src() {
   printf '🟢 Vendored FFmpeg source %s\n' "$FFMPEG_VERSION"
 }
 
+# vendor_zlib_src fetches zlib's release tarball from its GitHub release,
+# which holds the same file as zlib.net: zlib.net has answered a CI runner
+# with something else.
 vendor_zlib_src() {
   mkdir -p "$TOOLS_DIR"
   VENDOR_ZLIB_SRC="$TOOLS_DIR/zlib-${ZLIB_VERSION}.tar.xz"
   download_verified "$VENDOR_ZLIB_SRC" \
-    "https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz" \
+    "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.xz" \
     "$ZLIB_SHA" "zlib source"
   printf '🟢 Vendored zlib source %s\n' "$ZLIB_VERSION"
 }
