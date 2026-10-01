@@ -26,8 +26,11 @@ see who talks to whom, and when. If you need protection from a determined
 investigator, use a tool built for that threat, such as
 [Signal](https://signal.org/).
 
-Dens also collects as little as it can. It doesn't write IP addresses to disk,
-deletions remove data for real, and a den can set messages to expire.
+Dens also collects as little as it can. Photos, videos and recordings lose
+their location and camera details on your own computer before they're sent,
+so a den never receives them, and the few formats Dens can't clean, such as
+AVIF photos and camera raw, aren't sent at all. It doesn't write IP addresses
+to disk, deletions remove data for real, and a den can set messages to expire.
 
 ## How it works
 

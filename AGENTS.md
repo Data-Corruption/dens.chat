@@ -31,6 +31,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, and the DM key exchanges it relays |
 | `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, and approving new devices |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, and previews; the client strips with it and the den checks with it |
+| `internal/media/ffmpeg` | The media module: FFmpeg and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
 | `internal/control` | CLI-to-service protocol over the control endpoint |
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
@@ -45,6 +46,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
+| `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
 | `spikes/` | Throwaway experiments that answer a design question before code depends on it, in their own Go module; each goes when the work it informs lands, its findings in the design doc |
@@ -155,6 +157,14 @@ problem cleanly without dragging a tree behind it.
 **Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`. Some
 PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 
+**The media module is generated, and committed.** Never edit
+`internal/media/ffmpeg/module`. Change the driver or `scripts/ffmpeg.sh`, run
+the script, and commit what it writes beside the change; CI regenerates it and
+fails on any difference. What the module makes is untrusted like any member's
+file: check it as you would theirs. A test package that runs media jobs gets a
+`TestMain` that runs the worker when `ffmpeg.TestWorkerEnv` is set, and its
+Runner from `ffmpeg.TestRunner`.
+
 ## Build and test
 
 ```sh
@@ -168,6 +178,8 @@ PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
 ./scripts/build.sh --prod-all  # all release binaries
+./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build
+./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
@@ -177,8 +189,9 @@ land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
-cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests, and
-Caddy for the den e2e) are pinned by version and SHA-256 in `scripts/vendor.sh`
+cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests,
+Caddy for the den e2e, and the media module's FFmpeg, zlib, wasi-sdk,
+binaryen and wasm2go) are pinned by version and SHA-256 in `scripts/vendor.sh`
 and fetched into the gitignored `tools/`. Never depend on `tools/` contents
 directly.
 
