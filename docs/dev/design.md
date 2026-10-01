@@ -392,16 +392,23 @@ Members attach files to messages and put pictures on their profiles. Images lose
 - The den serves every file as bytes to download, and never states a type a browser would act on.
 - A file's name is text from a den: shown as text, and cleaned before it names a download.
 
-**ffmpeg (after M1)**
+**ffmpeg**
 
 - ffmpeg is compiled to WebAssembly and translated to Go with wasm2go, the way the SQLite driver is built. One pure-Go build serves Linux and Windows, with no native binaries to vendor, and it runs under `MemoryDenyWriteExecute`, which rules out a WebAssembly JIT.
-- The module holds FFmpeg's libraries and a small driver of Dens's own in C, not the `ffmpeg` command, which needs threads since FFmpeg 7.0 and parses options Dens has no use for. The driver exports what Dens does with media (probe, strip, still and poster). FFmpeg still parses and writes every container; the driver chooses which streams and side data to copy.
-- The module is its own sandbox. It sees only its linear memory and the few functions Dens gives it: the input's bytes in and the output's bytes out, with no files, network or processes. A hostile file that takes over a decoder is stuck in the module's memory, which matters for a library parsing this many formats.
-- It runs in a worker process, a hidden command of the same binary, with a memory cap and a time limit, so a decoder that loops or balloons ends its job and not the service. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that starts the worker process (then discards that thread), and every thread the worker starts inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
+- The module holds FFmpeg 9.0's libraries and a small driver of Dens's own in C, not the `ffmpeg` command, which needs threads since FFmpeg 7.0 and parses options Dens has no use for. The driver exports what Dens does with media: probe, strip, still and poster. FFmpeg keeps only what those need: the containers phones and browsers use; the HEVC, H.264, MJPEG, TIFF, JPEG 2000 and Photoshop decoders; swscale; and the JPEG and PNG encoders, with zlib. VP8, VP9 and AV1 keep their parsers, which give a WebM's size without decoding it.
+- Stripping copies the video and audio streams into a new container, and nothing else: no metadata, chapters, attachments, cover art, data tracks or subtitles, which some cameras fill with coordinates. A stream's side data comes along only from a list of what playback needs: rotation, cropping, stereo and 360° layouts, HDR's light levels and mastering display, Dolby Vision's configuration, and the ICC profile, as Dens keeps it in images. The copy names no encoder. A MOV is written out as an MP4, which Chrome plays where it won't play a MOV, and which can carry a Dolby Vision configuration, as FFmpeg writes it into MP4 when allowed unofficial boxes. The SEI user data H.264 and HEVC carry inside the stream, which iPhones write in every frame (19 bytes, no readable text), is dropped with FFmpeg's `filter_units`, since Dens can't tell what's in it.
+- A still assembles a HEIC's tile grid, crops it, turns it as its display matrix says, the way the ffmpeg command reads one, and keeps its ICC profile. The encoder gets a fresh frame carrying only that profile, so nothing else the source carried, EXIF included, reaches the file. It holds at most two full images at a time, so a 48-megapixel photo fits in 512 MB. A poster is a video's first frame, cropped as its container asks and turned. HDR video isn't tone-mapped, so an HDR video's poster looks washed out.
+- The module is its own sandbox. It sees only its linear memory and the few functions Dens gives it: the input's bytes in and the output's bytes out, with no files, network or processes. A hostile file that takes over a decoder is stuck in the module's memory, which matters for a library parsing this many formats. The host keeps it so:
+  - It answers the WASI calls wasi-libc makes with the clock, randomness and a log, and refuses any that would open a file, list a directory or reach a socket.
+  - It reserves the module's memory up to the cap, and hands it over as a slice whose capacity is its length. wasm2go checks `memory.fill`, `memory.copy` and `memory.init` against a slice's capacity, so spare capacity would let them write past the end instead of trapping.
+  - It starts the module at the size its memory import declares.
+  - It recovers a trap, which wasm2go turns into a Go panic, as the end of the job.
+- It runs in a worker process, a hidden command of the same binary, with a memory cap, a deadline, and a Go stack limit well below the default, so a decoder that loops, balloons or recurses ends its job and not the service. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that starts the worker process (then discards that thread), and every thread the worker starts inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
 - Dens probes and strips media, and makes stills and previews. It re-encodes a photo only when browsers can't show its format or Dens can't strip it in place, as a HEIC, which becomes a JPEG on the sender's machine; it never recompresses to save space. Stripping copies streams, and runs at the disk's pace in the module; a still or a preview decodes one image or frame.
 - Dens doesn't run a native ffmpeg confined by the operating system instead. That would take confinement written and tested for each OS, and a second program to build, sign, ship and keep patched, where the module holds a hostile file the same way on every platform, inside the service's own sandbox.
-- The build leaves out GPL-only parts such as x264, so ffmpeg's terms stay LGPL beside Dens's MIT. Its source and build script ship with Dens, which lets anyone rebuild the binary with a changed ffmpeg, as the LGPL requires.
-- It starts as a spike after M1: build size, speed on large files, memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file. `spikes/README.md` has the plan and the results so far.
+- The module holds a bug inside its memory, but doesn't find it: one that corrupts the module's own heap can still give a wrong result without a trap. So Dens's own C is fuzzed natively under AddressSanitizer with damaged files, beside the module, in its tests.
+- The build leaves out GPL-only parts such as x264, so ffmpeg's terms stay LGPL beside Dens's MIT. Its source and build script ship with Dens, which lets anyone rebuild the binary with a changed ffmpeg, as the LGPL requires. wasi-sdk, binaryen, FFmpeg and zlib are pinned like the other build tools, and wasm2go through Go's checksum database.
+- What it costs, as measured in the spike after M1 (`spikes/README.md`): the module adds about 26 MiB to a binary and compiles cold in 20 seconds within 5 GB. Stripping runs at 0.5 to 2 GB/s, and a 4 GB phone video takes under 70 MB, since MP4's frame index grows by about 16 MB per GB; Matroska's stays flat. A 12-megapixel HEIC becomes a JPEG in 0.5 to 0.7 seconds, and a 1080p video's poster takes a quarter of a second; the translation runs at 1.3 to 1.9 times native.
 
 ## End-to-end encrypted DMs
 
@@ -674,6 +681,13 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] Protected DACL on the state directory and data key blob: SYSTEM, Administrators and the service SID only.
 - [x] `dens.exe` excluded from Windows Error Reporting.
 
+**Media**
+
+- [ ] ffmpeg runs only as the translated module, in a worker process with a memory cap, a deadline and a lower Go stack limit, reaching nothing but the functions Dens gives it.
+- [ ] The module's memory is a slice with no spare capacity, so bulk memory operations trap past its end.
+- [ ] Dens's C in the module is fuzzed with damaged files under AddressSanitizer in CI, beside the module.
+- [ ] Stripped files of every kind Dens takes are checked by a reader independent of FFmpeg, such as exiftool, in CI.
+
 **Logs and data**
 
 - [ ] No message content, tokens, keys or IPs in logs; log IDs and event types only.
@@ -708,7 +722,7 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | M1.6 Shared messages | Co-editors on messages, task checkboxes | Two members tick different boxes on one checklist at the same moment and both ticks stay |
 | M1.7 Private DMs | End-to-end encrypted DMs and their photos: the DM seal, check codes to start a DM and to approve a new device, sealed DM keys on the den, starting over, and the Den and Direct messages tabs | The den's database and backups hold no readable DM text or photo; a DM starts only after both members type each other's check digits, and a den that swaps keys fails the check; a new device reads DM history after approval, and one signed in with a recovery code after its member types the seal; the password alone can't add a device |
 
-Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg, which starts as a spike after M1), browser notifications, and the persistent cache (M6).
+Not in M1: compact links, message retention (M5), video uploads (they need ffmpeg), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
@@ -718,7 +732,6 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 
 ## Open questions
 
-- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file (the spike after M1, planned in `spikes/README.md`).
 - [ ] Owner defaults for screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).

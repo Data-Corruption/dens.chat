@@ -242,3 +242,27 @@ What shipping each would take:
 - **Dens's own, embedded:** the release builds the driver for each target with zig and embeds it in the Dens binary for that target, adding about 2 MB, and more once it decodes. `dens install` and `dens update` write it beside the binary in their transactions, root-owned and read-only. No second artifact, signature or download: it's signed and updated with the binary.
 - **Dens's own, published:** the same builds as release artifacts beside the binary, signed with cosign, fetched and verified by the installer scripts and `dens update`. A second artifact per target in the fixed release layout.
 - **BtbN's:** the installers fetch a pinned archive of 112 to 185 MB from GitHub, verified only by the pinned hash, and extract `ffmpeg`. Each FFmpeg security fix means a new pin, and BtbN keeps a month's last build for two years. Mirroring it on Dens's release host makes Dens the one offering the source of FFmpeg and its fifty libraries.
+
+### Write-up
+
+**Go**: Dens runs FFmpeg as a WebAssembly module translated to Go, in a worker process. The native track ended after its builds: a native ffmpeg needs confinement written and tested for each OS and a second program to ship, and with recompression dropped nothing Dens does needs native speed.
+
+| Goal | Result |
+| --- | --- |
+| Probing and stripping add at most 10 MB | 9.6 MiB (10.06 MB) on Linux amd64, at the limit |
+| Everything through stills and posters adds at most 35 MB | 24.3 to 25.9 MiB on the four release targets, without VP8, VP9 and dav1d |
+| Compiles on a 16 GB CI runner in under 10 minutes | 20 s cold, peaking at 4.2 to 4.7 GB |
+| Stripping any file up to the den's limit under 128 MB | Under 70 MB for a 4 GB phone video; MP4's frame index grows 16 MB per GB, so this holds to about 8 GB, and Matroska stays flat |
+| Stripping at 50 MB/s or more | 0.5 to 2 GB/s, at the disk's pace, on Linux and Windows |
+| A 48-megapixel HEIC in under 10 s within 512 MB | No 48-megapixel HEIC was found. A 48-megapixel TIFF takes 1.25 s within a 512 MB cap, and four times a 12-megapixel HEIC's decoding puts a HEIC near 2.5 s |
+| A 4K video's first frame in under 5 s | No 4K sample; a 1080p HEVC poster takes 0.24 s, so 4K would be near 1 s |
+| Every failure in A4 ends the job, never its parent | Yes, once the host gives the module a slice with no spare capacity |
+| exiftool finds nothing left in any stripped file | Nothing in 16 videos and audio files, 4 HEICs and the TIFF, JPEG 2000 and Photoshop files, but the ICC profile Dens keeps |
+
+What the implementation in Dens has to carry over from here, all in `docs/dev/design.md` under "ffmpeg":
+
+- The host's rules: refuse file, directory and socket calls; a memory slice with no spare capacity; the module's declared minimum memory; traps recovered as job errors; a worker process with a memory cap, a deadline and a lower Go stack limit.
+- The driver's rules: video and audio only, side data from a list (with the ICC profile), the container's aspect ratio for stream and codec, Matroska's decode times derived from presentation times, no encoder tag, MOV written as MP4, SEI user data dropped. A still or a poster goes to the encoder as a fresh frame, cropped and turned as the source asks, with at most two full images held.
+- The tests: the trap module's attempts, exiftool's check of every kind of file, and the driver fuzzed natively under AddressSanitizer beside the module. That fuzzing found a use-after-free in the driver that the module had held without a trace.
+
+Left for when it's built: whether `filter_units` drops the iPhone's SEI user data without changing playback, and whether Firefox plays an MP4 of the iPhone's PCM audio, which Chrome does. wasm2go's check of bulk memory against capacity, not length, may be worth reporting to its author: go-sqlite3's host reserves its spare capacity unmapped, so there such a write would fault, not trap.
