@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery) and M1.6 (shared messages) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages) and M1.7 (private DMs and approving new devices) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -35,9 +35,9 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | --- | --- |
 | 400 | `malformed`, `invalid_field` |
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
-| 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code) |
+| 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code), `no_other_device` (a password sign-in with no other device to approve it) |
 | 404 | `not_found` |
-| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` |
+| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step) |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed) |
 | 413 | `too_large` |
 | 415 | `unsupported_type` |
@@ -56,6 +56,7 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 - **Password verifier:** `Argon2id(password, salt = SHA-256("dens-den-password-v1" ‖ den_id ‖ username))`, with t=3, m=64 MiB, p=4 and a 32-byte output. `username` is lowercase ASCII, per the name rules in the design doc. The den stores `SHA-256(verifier)` and compares in constant time.
 - **Recovery codes:** 10 per member, each 10 random bytes (80 bits) shown as 16 base32 characters in four groups, such as `K7QM-2XRD-9HVT-LC4P`. The den stores `SHA-256` of each. A code works once.
 - **Den ID as shown:** the first 10 bytes of `den_id`, written like a recovery code. Members compare it to check they reached the same den, as after signing in by address.
+- **DM seal (M1.7):** 32 random bytes a member's clients hold and never send to a den. `seal_check = HMAC-SHA-256(key = HKDF-SHA-256(seal, salt = den_id, info = "dens-dm-seal-v1"), "dens-dm-seal-check-v1")` identifies it at one den without revealing it. Members see it written like a recovery code, in 13 groups of four.
 
 ## Objects
 
@@ -115,13 +116,14 @@ POST /api/join/preview
 POST /api/join
 {"invite": "<code>", "username": "alice", "display_name": "Alice",
  "verifier": "<32 bytes>", "public_key": "<32 bytes>", "device_label": "Pearl (Windows)",
- "nonce": "<32 bytes>", "proof": "<64 bytes>"}
+ "nonce": "<32 bytes>", "proof": "<64 bytes>", "seal_check": "<32 bytes>"}
 201 {"member": {…}, "token": "<32 bytes>", "expires_at": 1759000000000,
      "recovery_codes": ["ABCD-EFGH-…", …]}
 ```
 
 - The client runs the challenge before preview, so a member never sees a name from a den that failed its identity check.
 - The invite is consumed only by a successful join.
+- `seal_check` identifies the DM seal the joining client holds (see [Private DMs](#private-dms-m17)). A former member who comes back with another seal starts over (see [Starting over](#starting-over)).
 - **Owner bootstrap:** creating a den also creates a one-use owner invite, which the owner's own client redeems over loopback. The den makes the first member to redeem it the owner. There is no second path for creating the owner account. If that first join fails, the install can issue a fresh owner invite, but only while the den has no owner.
 
 ### Invites
@@ -155,17 +157,20 @@ A member signs in on a device new to the den with their den password, or with a 
 ```
 POST /api/auth/password
 {"username": "alice", "verifier": "<32 bytes>", "public_key": "<32 bytes>", "device_label": "Pearl (Windows)",
- "nonce": "<32 bytes>", "proof": "<64 bytes>"}
-200 {"token": "<32 bytes>", "expires_at": …, "den": {…}, "member": {…}, "recovery_codes_left": 10}
+ "nonce": "<32 bytes>", "proof": "<64 bytes>", "offer": {…}}
+202 {"pending_token": "<32 bytes>", "expires_at": …}
 
 POST /api/auth/recover
 {"username", "recovery_code": "K7QM-2XRD-9HVT-LC4P", "new_verifier", "public_key", "device_label", "nonce", "proof"}
-200 {…as for the password…, "signed_out": 1}
+200 {"token": "<32 bytes>", "expires_at": …, "den": {…}, "member": {…}, "recovery_codes_left": 9, "signed_out": 1,
+     "seal_check": "<32 bytes>"}
 ```
 
-- Both register the new key under its label and start its session. The den tells the member's other sessions with `device.added {device}`, so a sign-in the member didn't make shows on the devices they have.
+- A password alone doesn't add a device: the sign-in waits for one of the member's other devices to approve it, and `offer` starts the exchange the two run (see [Approving new devices](#approving-new-devices-m17)). A member with no other device gets `403 no_other_device`, and signs in with a recovery code instead.
+- Recovery needs no approval. It registers the new key under its label and starts its session, as an approved sign-in does, and the den tells the member's other sessions with `device.added {device}`, so a sign-in the member didn't make shows on the devices they have.
+- `seal_check` identifies the member's DM seal, which a device signed in with a recovery code doesn't have: the member types the one they saved, which the client checks against it, or starts over.
 - Recovery spends the code and makes `new_verifier` the password, so the old one stops working. The den takes a code in any case, with or without its dashes.
-- A new password, set by recovery or by a change, signs out every other device of the member, since anyone who had the old password may have signed one in with it. The den deletes their keys and sessions and closes their sockets with 4003 `password changed`, and `signed_out` says how many there were.
+- A new password, set by recovery or by a change, signs out every other device of the member, since anyone who had the old password may have signed one in with it. The den deletes their keys and sessions and closes their sockets with 4003 `password changed`, and `signed_out` says how many there were. It also cancels the member's sign-ins waiting for approval.
 - Only a member in the den now signs in this way. One who left or was removed comes back with an invite; a banned one can't.
 - Every failure is the same `401 unauthorized`: an unknown username, a wrong password or code, or a member who left.
 - The client lowercases the username before deriving the verifier, as at join, so the member can type it in any case.
@@ -197,7 +202,7 @@ device = {"key_id", "label", "created_at", "last_seen_at", "current"?}
 
 - `last_seen_at` is the key's last sign-in. `current` marks the device making the request.
 - Revoking a key ends its sessions and closes its sockets at once, with 4003 `key revoked`. Revoking the current device signs it out. A key that isn't the member's gets `404 not_found`.
-- The member's own sessions get `device.removed {"key_id"}`, for a revoked key and for each one a new password signs out. Both `device.*` events are durable, and go to nobody else.
+- The member's own sessions get `device.removed {"key_id"}`, for a revoked key and for each one a new password, or starting over, signs out. The `device.*` events are durable, and go to nobody else.
 
 ## The WebSocket
 
@@ -213,6 +218,8 @@ Dens-Protocol: 1
 [{"t": "message.created", "seq": 5021, "d": {…}}, {"t": "read_state.updated", "seq": 5022, "d": {…}}]
 ```
 
+The den keeps each frame under 1 MiB: events queued behind a large one go in the next frame.
+
 - **Durable events** record a change a member can see, and carry `seq`. `seq` increases strictly within a den epoch. It has holes, because a member only receives the events they're allowed to see.
 - **Ephemeral events** (presence, typing, `auth.renewed`) carry no `seq`, and are never replayed.
 - Events apply in order: across frames, and within a frame's array.
@@ -221,7 +228,7 @@ Dens-Protocol: 1
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`.
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; and from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval).
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
@@ -257,7 +264,7 @@ Each side checks the other with WebSocket pings, since a dead connection can loo
 | 1001 | Going away (a proxy reload or restart) | Reconnect with backoff and resume |
 | 1012 | Den restarting | Reconnect after a random 0.5 to 5 seconds, and resume (it will get `ready`) |
 | 4001 | Session expired | Log in again, then reconnect and resume |
-| 4003 | Key revoked, or the member left, was removed or was banned; the reason says which: `key revoked`, `password changed` (a new password signed the device out), `left`, `removed` or `banned` | Stop. Tell the member, and don't reconnect. After `key revoked` or `password changed`, offer to sign in again with the password |
+| 4003 | Key revoked, or the member left, was removed or was banned; the reason says which: `key revoked`, `password changed` (a new password signed the device out), `started over` (a new DM seal did), `left`, `removed` or `banned` | Stop. Tell the member, and don't reconnect. After `key revoked`, `password changed` or `started over`, offer to sign in again |
 | 4008 | Too slow | Reconnect and resume |
 | 4029 | Rate limited | Reconnect after the `Retry-After` the close reason carries |
 
@@ -289,14 +296,17 @@ group   = {"id", "name", "position"}
 
 ```
 message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
-           "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6)}
+           "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6),
+           "sealed"?, "key_id"? (M1.7)}
 ```
+
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
 
 `revision` starts at 1 and increases with every edit. `edited_by` is the member who made the latest edit, which differs from the author on shared messages.
 
-`reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. The text is empty when the original has only files. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`.
+`reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. The text is empty when the original has only files. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`. In a DM, the den can't read the original, so `reply` carries it whole, for the client to open and quote: `{"author_id", "text": "", "sealed", "key_id", "nonce", "revision"}`.
 
 **Mentions.** `@` then 2 to 32 letters, digits or `_`, matching a username without regard to case. It counts at the start of a line, or after a character that is neither one of those nor `@`, when none of them follows. It doesn't count inside code (a ``` block, or a span from one backtick to the next with something between) or inside a link (`http://` or `https://` at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick). The den counts by this rule (`denproto.Mentions`), and the page highlights by the same one; both are tested against the cases in `internal/denproto/testdata/mentions.json`. A mention adds to the unread mention count of the member it names, if they can see the channel and aren't the author. An edit recounts.
 
@@ -311,7 +321,7 @@ GET /api/channels/{id}/messages?around=<id>&limit=50     id and about half each 
 200 {"messages": [… ascending by id …], "has_older": true, "has_newer": false}
 ```
 
-- `limit` is 1 to 100.
+- `limit` is 1 to 100. A page stops short of it when its messages would pass what a response holds, about 900 KiB of them, keeping those nearest the anchor; `has_older` and `has_newer` say more are there.
 - The anchor `id` doesn't have to exist: `around` a deleted message returns its neighbours.
 - `has_newer: false` means the page reaches the newest message, and the view can attach to the live tail.
 - Responses are gzip-compressed when the client sends `Accept-Encoding: gzip`.
@@ -324,7 +334,7 @@ PATCH  /api/messages/{id}            {"revision", "text"}                       
 DELETE /api/messages/{id}                                                            204
 ```
 
-- `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history.
+- `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history, except on a DM's messages, whose sealed text is bound to it.
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
@@ -379,8 +389,8 @@ POST /api/dms/{id}/close                   204
 ```
 
 - A DM is a channel of kind `dm` between two members: `{"id", "kind": "dm", "members": [lower ID, higher ID], "group_id": null, "name": "", "position": 0, "staff_only": false}`. Each pair has one; `POST /api/dms` returns it, creating it on first use and sending `channel.created` to both.
-- Only its two members see it, in `ready`, events, history and sends. Staff don't see or moderate DMs. The den's owner can still read them on the den's machine, like everything else there, and clients say so.
-- Messages, edits, deletes, replies and read state work as in channels. Every message counts toward the other member's unread `mention_count`.
+- Only its two members see it, in `ready`, events, history and sends. Staff don't see or moderate DMs, and from M1.7 the den's owner can't read them either: their messages and files are end-to-end encrypted (see [Private DMs](#private-dms-m17)).
+- Messages, edits, deletes, replies and read state work as in channels, their text sealed. Every message counts toward the other member's unread `mention_count`.
 - DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit.
 - A DM whose other member left keeps its history, but nothing more can be sent (`403 forbidden`), and no new DM starts with a former member.
 - Closing a DM takes it out of the member's list on all their devices: their read state for it gets `"closed": true`, sent as `read_state.updated`. A new message in it, from either member, or opening it again with `POST /api/dms`, reopens it the same way.
@@ -448,6 +458,7 @@ GET  /api/me/storage               200 {"used", "den_used"}
 
 - A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent. An edit changes only the text.
 - A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image.
+- A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](#dm-files)).
 - A member may fetch a file when they can see the message it's on, any member may fetch a picture on a profile, and only its uploader may fetch an upload waiting to be used. Anyone else gets `404 not_found`.
 - A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, and `channel.deleted` and a fresh `ready` can leave anything unreachable.
 - `GET /api/me/storage` says how much space the member's files take and how much everyone's do, in bytes, previews included.
@@ -490,9 +501,105 @@ POST  /api/messages/{id}/tasks/{n}   {"checked": true, "text": "milk"}    200 me
 - A tick doesn't mark the message edited, and leaves its mentions as they were.
 - The den makes one change to a message at a time, and sends each `message.updated` in the order of its revisions. A tick's answer can still reach a client after a newer event, so clients keep the higher revision.
 
-## Later steps (outline)
+## Private DMs (M1.7)
 
-- **M1.7 Private DMs:** starting a DM relays an exchange of one-time keys (X25519 and ML-KEM-768) between the two members' clients in three messages: a commitment to the starter's key, the other's key, and the starter's key. Each member stores their copy of the resulting DM key on the den, sealed with their DM seal, and fetches it on a new device. DM messages carry sealed text with the ID of the DM key it was sealed with. DM files upload as opaque blobs, with their key, dimensions and type inside the sealed message. A password sign-in waits for another of the member's devices to approve it, after the same exchange between the two devices, which carries the member's seal to the new one; a recovery code needs no approval. Starting over replaces a member's sealed DM keys and marks their DMs for a new exchange. See the design doc.
+A DM's messages and files are end-to-end encrypted: its members' clients seal them with the DM's key before they reach the den, and open them after. The den relays the exchange that makes each key and keeps each member's copy sealed with their DM seal, and never holds anything that opens them. The cryptography is in `internal/denproto/e2e.go`, which both sides share.
+
+In this section, `len(x)` is x's length as an 8-byte big-endian number, and IDs join as 8-byte big-endian numbers too.
+
+### DM keys
+
+```
+dm_key = {"id", "channel_id", "started_by", "started_at", "stage": "offered" | "answered" | "revealed",
+          "checks"?: [{"member_id", "at"}], "retired_at"?, "retired_by"?, "retired"?: "started_over" | "restarted",
+          "sealed"?, "exchange"?: {"offer", "answer"?, "reveal"?, "state"?}}
+
+GET  /api/dms/{id}/keys                                               200 {"keys": [dm_key, …]}
+POST /api/dms/{id}/keys               {"offer", "state", "restart"?}  201 dm_key
+POST /api/dms/{id}/keys/{key}/answer  {"answer", "state"}             200 dm_key
+POST /api/dms/{id}/keys/{key}/reveal  {"reveal"}                      200 dm_key
+PUT  /api/dms/{id}/keys/{key}/sealed  {"sealed"}                      200 dm_key
+```
+
+A DM's key comes from an exchange of one-time keys between its two members' clients, in three messages, each sent when its client is online:
+
+1. **Offer**, from the member who starts it: `{"ek", "commit"}`, a fresh ML-KEM-768 encapsulation key, and `commit = SHA-256("dens-exchange-commit-v1" ‖ len(ctx) ‖ ctx ‖ x ‖ nonce)` over a fresh X25519 public key `x` and 32 random bytes.
+2. **Answer**, from the other member: `{"x", "nonce", "ct"}`, their own fresh X25519 key and 32 random bytes, and a ciphertext encapsulated to `ek`.
+3. **Reveal**, from the starter: `{"x", "nonce"}`, which must open `commit`.
+
+Here `ctx = "dens-exchange-dm-v1" ‖ den_id ‖ channel ‖ starter ‖ other`. Both sides hash the whole exchange, `transcript = SHA-256(len(ctx) ‖ ctx ‖ ek ‖ commit ‖ answer's x ‖ answer's nonce ‖ ct ‖ reveal's x ‖ reveal's nonce)`, and derive from `secret = X25519 shared secret ‖ ML-KEM shared secret`:
+
+- the DM key: `HKDF-SHA-256(secret, salt = transcript, info = "dens-exchange-key-v1")`, 32 bytes;
+- the check code: 16 bytes with `info = "dens-exchange-check-v1"`, read as two big-endian 64-bit numbers, each modulo 10^16, and written as 32 digits. The starter's screen shows the first 16 and asks for the last 16; the other member's shows the last 16 and asks for the first.
+
+Everything that feeds the code is fixed before its sender sees the other side's part: the starter's X25519 key by its commitment, and the ML-KEM secret by the key it's encapsulated to. A den in the middle, running one exchange with each member, can't steer their codes to match: it gets one guess at 32 digits.
+
+- The den relays the three messages in order, each from the right member, and refuses a reveal that doesn't open the offer's commitment. Clients check it themselves, and trust nothing else the den says about an exchange.
+- `state` is the member's own side of the exchange, sealed with their seal like their copy of the key below, but bound to `"dens-exchange-state-v1" ‖ den_id ‖ channel ‖ member ‖ commit ‖ side`. Any of the member's devices can carry the exchange on with it, and work out the member's digits until both have checked, so whoever checks first can still read theirs out. Each member sees only their own, and only while the exchange runs.
+- `sealed` stores the member's copy of the key once they've compared the code: XChaCha20-Poly1305 under `HKDF-SHA-256(seal, salt = den_id, info = "dens-dm-seal-v1")`, bound to `"dens-dm-key-v1" ‖ den_id ‖ channel ‖ key_id ‖ member`, as nonce ‖ ciphertext, 72 bytes. Storing it is what `checks` records, and what lets the member send with the key. Once both members have, the exchange goes.
+- A DM has one live key at a time. Starting another gets `409 key_exists`. `restart` retires a live key still being made, or one only one member checked, as after digits that don't match, and starts the next. A key both members checked stays until one of them starts over.
+- A retired key takes no new messages, and stays so what it sealed still opens. `retired` says why, and `retired_by` who.
+- Each change to a key reaches the DM's two members as `dm.key {dm_key}`, each with their own view, and the exchange while it runs. `ready` carries `dm_keys` without exchanges.
+
+### DM messages
+
+```
+POST  /api/channels/{id}/messages  {"nonce", "sealed", "key_id", "reply_to"?, "attachments"?, "editors"?}  201 message
+PATCH /api/messages/{id}           {"revision", "sealed", "key_id", "editors"?, "unedited"?}              200 message
+```
+
+- `sealed` is `{"text", "files"?}` as JSON, sealed with XChaCha20-Poly1305 under the DM key and bound to `"dens-dm-message-v1" ‖ den_id ‖ channel ‖ author ‖ len(nonce) ‖ nonce ‖ key_id ‖ revision`, as nonce ‖ ciphertext, at most 64 KiB. `text` stays empty. The sealed text follows a message's rules, and lists at most 10 files.
+- `key_id` must name the DM's live key, and one its sender checked; otherwise `400 invalid_field`.
+- An edit seals the message again at the next revision, under the DM's live key, which may be newer than the one it was sent with. The den can't compare texts, so `"unedited": true` marks an edit that only ticks a task or changes the editors, and doesn't mark the message edited. A DM's tasks tick this way: `POST /api/messages/{id}/tasks/{n}` refuses a DM's message.
+- The rest works as in channels: ordering, history, revisions and edit conflicts, deletes, read state, and unread counts, where every message counts for the other member.
+- Binding the author, nonce, key and revision keeps the den from moving a sealed text to another message, or passing an old revision off as a new one. It can still hold a message back, or show one twice.
+
+### DM files
+
+```
+POST /api/uploads/sealed   (body: the sealed file)   201 {"id", "name": "", "type": "application/octet-stream", "size", "sealed": true}
+```
+
+- A DM's file goes up sealed by the sender's client, which first takes an image's metadata out and makes its preview, as the den does for a channel's. Each file gets a random key of its own. The file and its preview are sealed with it as streams, in the format files at rest use, bound to `"dens-dm-file-v1" ‖ den_id ‖ channel ‖ "file"` or `"thumb"`, and go up as two blobs.
+- The message's sealed text lists each file: `{"id", "key", "name", "type", "size", "width"?, "height"?, "animated"?, "thumb"?: {"id", "width", "height"}}`. Its `attachments` name every blob, each file's and its preview's, at most 20.
+- A DM's message takes only sealed uploads, and a channel's none. The den counts a sealed blob against the upload limits, and serves it like any file, with no preview of its own.
+
+### Starting over
+
+```
+POST /api/me/seal   {"verifier", "seal_check"}   200 {"signed_out": 1}
+```
+
+- A member who has lost their seal and every device that held it, or wants to shut out a stolen device that holds it, starts over with a new seal. It takes the password, so a stolen session can't.
+- The live keys of their DMs retire (`"retired": "started_over"`), and their copies of every DM key, and their exchange states, go: nothing opens them any more. What those keys sealed stays unreadable to them, while the other members keep their copies. Each DM needs a new exchange and check before anything more is sent in it.
+- Every other device of theirs is signed out with 4003 `started over`, since it holds the old seal, and their sign-ins waiting for approval are cancelled.
+- A former member who joins again with another seal than the one they left with starts over the same way.
+
+## Approving new devices (M1.7)
+
+A password sign-in on a new device waits for one of the member's other devices to approve it. The two run the exchange a DM's key starts with, through the den, and the member types each device's digits into the other. The approving device then hands over the member's DM seal, sealed with the exchange's key.
+
+```
+POST /api/auth/password                  {…, "offer"}             202 {"pending_token", "expires_at"}
+GET  /api/auth/pending?after=<version>   Bearer <pending token>   200 {"version", "status", "answer"?, "session"?, "handover"?}
+POST /api/auth/pending/reveal            Bearer <pending token>   {"reveal"}   204
+
+POST /api/me/device-requests/{id}/answer    {"answer"}     200 device_request
+POST /api/me/device-requests/{id}/approve   {"handover"}   204
+POST /api/me/device-requests/{id}/refuse                   204
+
+device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer", "answer"?, "answered_by"?, "reveal"?}
+```
+
+1. The new device starts the exchange with `ctx = "dens-exchange-device-v1" ‖ den_id ‖ len(username) ‖ username ‖ key_id`, its own key ID, and sends the offer with its sign-in. The den checks the password and holds the request for 10 minutes, in memory only; a member may have 3 waiting.
+2. The member's sessions get `device.request {device_request}`, and `ready` lists the waiting ones as `device_requests`. The device the member approves from answers, and becomes `answered_by`, which alone may approve.
+3. The new device asks after its sign-in with the pending token, which is no session token. The den answers once `version` passes `after`, or after 20 seconds with nothing new. `status` is `waiting`, `answered` (with the answer, to which the new device reveals), `approved`, `refused` or `cancelled`. An unknown or lapsed token gets `401 unauthorized`.
+4. Each device shows its half of the check code, the new device, as the starter, the first 16 digits, and the member types each into the other.
+5. The approving device, once its member typed the new device's digits, sends `handover`: the seal, sealed with XChaCha20-Poly1305 under `HKDF-SHA-256(exchange key, info = "dens-seal-handover-v1")` and bound to `ctx`, 72 bytes. The den registers the new device, starts its session, tells the member's sessions with `device.added`, and answers the new device with `approved`, `session` (as a recovery returns it) and `handover`.
+6. The new device opens the handover only once its member typed the approving device's digits, and keeps the seal only if it matches the session's `seal_check`.
+
+- Refusing, from any of the member's devices, keeps the device out. A new password, starting over, or the member leaving cancels what's waiting. Each way, the member's sessions get `device.request_ended {"id", "outcome": "approved" | "refused" | "cancelled"}`. A request that lapses just goes.
+- The den enforces approval, but a DM's privacy doesn't rest on it: a device the den lets in on its own has no seal, so it opens no DM, and one it starts fails the check with anyone who compares with the real member.
 
 ## Rate limits
 
@@ -504,6 +611,7 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Join and join preview | 10 per hour per IP |
 | Sign-in with a device key | 30 per minute per IP |
 | Password sign-in and recovery | 10, then 1 every 6 minutes, per IP and per username. A signed-in member's password checks count against the username's |
+| A new device asking after its sign-in, and revealing | 30 per minute per IP |
 | Sending messages | 5 per 5 seconds per member, per channel |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |

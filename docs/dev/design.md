@@ -177,7 +177,7 @@ There is no idle lock in v1; the OS screen lock covers someone at an unlocked de
 **Service hygiene**
 
 - The data key and vault stay in memory only in the service process; nothing sensitive goes to logs.
-- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk: the data key, and the seeds of the den's identity key and of each device key. Go's Ed25519 caches expanded keys through weak pointers, which can't point outside the Go heap, so each signature expands a short-lived copy of the key and clears it.
+- Core dumps are disabled (`LimitCORE=0` on Linux; `dens.exe` excluded from Windows Error Reporting), and key material is held in locked memory (`mlock` or `VirtualLock`) so it isn't swapped to disk: the data key, the seeds of the den's identity key and of each device key, and each den's DM seal. Go's Ed25519 caches expanded keys through weak pointers, which can't point outside the Go heap, so each signature expands a short-lived copy of the key and clears it. A DM key is opened from its sealed copy only while a message or file is sealed or opened, and cleared after.
 
 ## Authentication
 
@@ -225,9 +225,9 @@ Each den on the home page has a **Devices and password** section. It lists each 
 From M1.7, a password alone doesn't add a device: one of the member's other devices approves it, which makes their own devices a second factor with no authenticator app.
 
 1. The new device signs in with the username and password as now. The den holds it as pending for 10 minutes and asks the member's other sessions, which show the request with the new device's label.
-2. The new device and one of the member's existing devices run the same exchange that starts a DM, through the den, and each shows half of its check code (see End-to-end encrypted DMs). The member types each device's digits into the other, so a request from someone else, whose screen the member can't see, can't be approved by accident; and if the den had swapped in keys of its own, the digits wouldn't match.
+2. The new device and one of the member's existing devices, the one they approve from, run the same exchange that starts a DM, through the den: the new device starts it with its sign-in. Each shows half of its check code (see End-to-end encrypted DMs), and keeps showing it until the other device no longer needs it: the new device until it's signed in, and the approving one, after it approves, until the member is done. The member types each device's digits into the other, so a request from someone else, whose screen the member can't see, can't be approved by accident; and if the den had swapped in keys of its own, the digits wouldn't match.
 3. The existing device seals the member's DM seal with the exchange's key and sends it through the den, which carries it but can't open it. Only then does the den register the new device and start its session.
-4. Refusing a request, or letting it expire, keeps the device out. A refusal also tells the member to change their password, since someone has it.
+4. Refusing a request, or letting it expire, keeps the device out. A refusal also tells the member to change their password, since someone has it. A new password, starting over, or leaving the den cancels what's waiting.
 
 - Both checks matter: the existing device mustn't hand the seal to anyone else, and the new device mustn't take a seal from anyone else, or DMs it starts would be sealed under a key the den knows.
 - The device that joins with an invite needs no approval. A member with no other device signs in with a recovery code, which needs none, and types their saved seal to read their DMs: the codes are the one way in without a device. With neither devices nor codes, the account can't be recovered.
@@ -280,7 +280,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 
 - Channel groups are one level deep and contain text and voice channels.
 - Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
-- DMs are one-to-one between members of the same den, stored on the den. Until M1.7 the UI says the owner can read them; from M1.7 they're end-to-end encrypted. Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
+- DMs are one-to-one between members of the same den, stored on the den and end-to-end encrypted (see End-to-end encrypted DMs). Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
 
 **Profiles**
 
@@ -419,18 +419,18 @@ All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already s
 
 - Each member has a DM seal: 256 random bits, made by their Dens the first time they join or create a den, and kept in the vault. It never reaches the den. Their other devices get it through approval (see Approving new devices), sealed to that device.
 - One seal serves every den an install joins. Each den's DM keys are sealed under a key derived from the seal and the den's ID, so no den sees the seal, and what one den stores is useless at another. An install that joined dens before it was linked to the member's other devices can hold a different seal for some dens; each den's DMs use the seal they were set up with.
-- The page shows the seal once, beside the recovery codes, when it's made, and again on request after the local password: "This protects your end-to-end encrypted direct messages. Keep it secret and don't share it with anyone. You'll need it to read your DMs if you lose every device."
+- The page shows the seal beside the recovery codes whenever the member joins a den, saying when it's the one the install's other dens use, and again on request after the local password: "This protects your end-to-end encrypted direct messages. Keep it secret and don't share it with anyone. You'll need it to read your DMs if you lose every device."
 - The seal never changes. A member who loses it and every device starts over (see History and starting over).
 
 **Starting a DM**
 
 1. Alice presses Message on Bob's profile, and her Dens starts an exchange of one-time keys: X25519 and ML-KEM-768 used together, so a DM stays safe if either is broken, and ML-KEM guards against traffic recorded now and decrypted later by a quantum computer.
-2. The exchange runs in commit-first order, through the den, as three messages that each Dens sends when it's online: a commitment to Alice's key, Bob's key, then Alice's key. Alice's key is fixed before she sees Bob's, and Bob's is sent before he sees Alice's, so a den in the middle can't choose keys that make both sides' codes match. It gets one blind guess.
-3. Each Dens derives a 32-digit check code from the exchange. Alice's screen shows the first 16 digits and asks for the last 16; Bob's shows the last 16 and asks for the first 16. Each reads their digits out to the other and types the other's. Neither screen shows what its member types, so the check can't be passed by copying one's own screen.
+2. The exchange runs in commit-first order, through the den, as three messages that each Dens sends when it's online: a commitment to Alice's key, Bob's key, then Alice's key. Alice's key is fixed before she sees Bob's, and Bob's is sent before he sees Alice's, so a den in the middle can't choose keys that make both sides' codes match. It gets one blind guess. Between messages, each side's state waits on the den sealed with its member's seal, so whichever of their devices is online moves the exchange on.
+3. Each Dens derives a 32-digit check code from the exchange. Alice's screen shows the first 16 digits and asks for the last 16; Bob's shows the last 16 and asks for the first 16. Each reads their digits out to the other and types the other's. Neither screen shows what its member types, so the check can't be passed by copying one's own screen. Each screen keeps its digits until the other member has typed them, so whoever checks first can still read theirs out.
 4. Each Dens opens the DM only once its own member typed the other's digits correctly. Neither trusts the other side's confirmation, which would come through the den. Digits that don't match mean someone may be in the middle, and the exchange can start again.
-5. The exchange's shared secret becomes the DM key. Each member's Dens seals its copy with their seal, bound to the den, the DM, the member and the key's ID, and stores it on the den.
+5. The exchange's shared secret becomes the DM key. Each member's Dens seals its copy with their seal, bound to the den, the DM, the member and the key's ID, and stores it on the den once its member has checked. That copy is what lets them send with the key, and their other devices read with it. Alice can send as soon as she has checked; Bob reads it once he has too.
 
-The page says where to compare, best first: in person; a voice or video call; a den one of them owns, never the den the DM is on; several accounts on other services they know are really the other's; a den neither of them owns, whose owner could change what's there. It also says why: a tampered den can set up an impostor elsewhere ("I'm @Y on Twitter, let's compare there"), and hosting your own den narrows that risk, but nothing removes it.
+The page says where to compare, best first: in person; a voice or video call; another den one of them owns, never the den the DM is on, even when it's theirs, since whoever tampered with it could change the digits sent there too; several accounts on other services they know are really the other's; a den neither of them owns, whose owner could change what's there. It also says why: a tampered den can set up an impostor elsewhere ("I'm @Y on Twitter, let's compare there"), and hosting your own den narrows that risk, but nothing removes it.
 
 **Messages and photos**
 
@@ -445,6 +445,8 @@ The page says where to compare, best first: in person; a voice or video call; a 
 - A new device gets the seal from the device that approves it, fetches the member's sealed DM keys, and reads their DM history. A member signing in with a recovery code, with no other device, types their saved seal.
 - DM keys don't change on their own. Keeping history costs forward secrecy: whoever gets a device, or the seal, can read what that member can. Signal makes the opposite choice, giving new devices no old messages; Dens keeps history, since members expect their DMs on every device, as with channels.
 - A member who has lost their seal and every device starts over: their Dens makes a new seal, and the DM history sealed with the old one stays unreadable to them, while their partners keep theirs. Each of their DMs needs a new exchange and check before anything more is sent in it. Both sides then show a divider where the keys changed, saying who started over, when, and when the two checked again. A DM can have several.
+- Starting over takes the den password, so a stolen session can't wipe a member's DM keys. It signs out their other devices there, since those hold the old seal, and they come back through approval. The new seal is the one the install starts new dens with from then on.
+- A former member who joins again with another seal than the one they left with starts over the same way; with the same one, their keys and history are as they left them.
 - Starting over is also how a member shuts out a stolen device, which holds the seal: signing it out stops it fetching from the den, and a new seal keeps what's written afterwards from it.
 
 **In the app**
@@ -642,8 +644,8 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 - [x] Serves only den routes; no client or admin routes compiled into its router.
 - [x] Challenge answers sign the den's address, and clients send nothing to an address the den didn't sign, so no relay can pass a sign-in through (M1.5).
-- [ ] A password alone doesn't add a device: another of the member's devices approves it, or a recovery code stands in (M1.7).
-- [ ] A DM starts only after both members type each other's check digits, and the DM seal never reaches the den (M1.7).
+- [x] A password alone doesn't add a device: another of the member's devices approves it, or a recovery code stands in (M1.7).
+- [x] A DM starts only after both members type each other's check digits, and the DM seal never reaches the den (M1.7).
 - [ ] Request size limits, WebSocket message size limits and per-connection rate limits.
 - [ ] Invite codes: 128-bit random, single use, expiring, stored hashed.
 - [ ] Bearer tokens only, never cookies, so no web page can make a browser act on a den.

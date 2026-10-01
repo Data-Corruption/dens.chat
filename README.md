@@ -8,8 +8,8 @@ on your own computer.
 Dens is in early development and has no releases yet.
 
 - **Privacy model:** a closed door, not a bunker. Conversations stay away from
-  platforms and data brokers, but the den owner can read everything. Messages
-  are not end-to-end encrypted.
+  platforms and data brokers. The den owner can read its channels; direct
+  messages are end-to-end encrypted.
 - **Platforms:** Linux and Windows 11, for both joining and hosting dens.
 - **Site:** [dens.chat](https://dens.chat/)
 
