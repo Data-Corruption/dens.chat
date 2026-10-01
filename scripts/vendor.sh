@@ -47,14 +47,16 @@ DEFAULT_WRANGLER_VERSION="4.125.0"
 # Runs the page's tests (./scripts/test.sh -js) and nothing else. Track the
 # active LTS line.
 DEFAULT_NODE_VERSION="v24.21.0"
-# The ffmpeg spike (spikes/README.md) builds FFmpeg for WebAssembly with these
-# and translates it to Go; nothing in the product uses them yet.
+# The media module (scripts/ffmpeg.sh) is FFmpeg and zlib built for
+# WebAssembly with these and translated to Go. Releases publish FFmpeg's
+# source, so a bump changes what they ship.
 DEFAULT_WASI_SDK_VERSION="34"
 DEFAULT_BINARYEN_VERSION="133"
 DEFAULT_FFMPEG_VERSION="9.0.2"
 DEFAULT_WASM2GO_VERSION="v0.4.16"
 DEFAULT_ZLIB_VERSION="1.3.2"
-# Reads media metadata independently of FFmpeg, as the spike's check.
+# Reads media metadata independently of FFmpeg, to check what stripping
+# leaves (TestExiftoolFindsNothingLeft in internal/media/ffmpeg).
 DEFAULT_EXIFTOOL_VERSION="13.55"
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
@@ -559,8 +561,8 @@ vendor_binaryen() {
   printf '🟢 Vendored binaryen %s\n' "$BINARYEN_VERSION"
 }
 
-# vendor_ffmpeg_src resolves to the verified source tarball; the spike's build
-# unpacks it where it builds.
+# vendor_ffmpeg_src resolves to the verified source tarball, which
+# scripts/ffmpeg.sh unpacks where it builds and releases publish as it is.
 vendor_ffmpeg_src() {
   mkdir -p "$TOOLS_DIR"
   VENDOR_FFMPEG_SRC="$TOOLS_DIR/ffmpeg-${FFMPEG_VERSION}.tar.xz"
@@ -696,7 +698,8 @@ vendor_main() {
     local candidate
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
-        # The ffmpeg spike's toolchains are large, and only it asks for them.
+        # The media module's tools are large, and only its build and checks
+        # ask for them.
         arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool) continue ;;
       esac
       tools+=("$candidate")

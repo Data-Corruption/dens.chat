@@ -22,6 +22,7 @@ var constructors = []constructor{
 	updateCommand,
 	uninstallCommand,
 	restoreCommand,
+	mediaWorkerCommand,
 }
 
 // All builds the commands for this build.
