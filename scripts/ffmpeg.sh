@@ -56,13 +56,20 @@ usage() {
   sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'
 }
 
-paths=$(./scripts/vendor.sh wasi-sdk binaryen ffmpeg-src zlib-src wasm2go)
+# vendor fetches the pinned inputs a mode needs: FFmpeg's and zlib's
+# source, and the tools named. Only the module needs the WebAssembly
+# toolchain (MODULE_TOOLS).
+MODULE_TOOLS=(wasi-sdk binaryen wasm2go)
+paths=
 tool() { printf '%s\n' "$paths" | sed -n "s/^$1=//p"; }
-wasi=$(tool wasi-sdk)
-wasm_opt=$(tool binaryen)
-wasm2go=$(tool wasm2go)
-ffmpeg_tar=$(tool ffmpeg-src)
-zlib_tar=$(tool zlib-src)
+vendor() {
+  paths=$(./scripts/vendor.sh ffmpeg-src zlib-src "$@")
+  ffmpeg_tar=$(tool ffmpeg-src)
+  zlib_tar=$(tool zlib-src)
+  wasi=$(tool wasi-sdk)
+  wasm_opt=$(tool binaryen)
+  wasm2go=$(tool wasm2go)
+}
 
 # build_module OUT_DIR: build the module and its translation into OUT_DIR.
 build_module() {
@@ -185,9 +192,11 @@ build_asan() {
 
 case "${1:-}" in
   "")
+    vendor "${MODULE_TOOLS[@]}"
     build_module "$MODULE_DIR"
     ;;
   --check)
+    vendor "${MODULE_TOOLS[@]}"
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     build_module "$tmp"
@@ -202,6 +211,7 @@ case "${1:-}" in
     ;;
   --source)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    vendor
     out=$(realpath -m "$2")
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
@@ -216,10 +226,12 @@ case "${1:-}" in
     printf '%s\n' "$out"
     ;;
   --asan)
+    vendor
     build_asan
     ;;
   --fuzz)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
+    vendor
     asan=$(build_asan)
     DENS_FFMPEG_ASAN="$asan" go test ./internal/media/ffmpeg -run '^$' -fuzz '^FuzzDriver$' \
       -fuzztime "$2" -fuzzminimizetime 1x
