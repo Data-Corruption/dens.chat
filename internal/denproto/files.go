@@ -43,6 +43,9 @@ const (
 // are ASCII.
 const HeaderFilename = "Dens-Filename"
 
+// SealedType is the type a den gives a sealed upload, which it can't open.
+const SealedType = "application/octet-stream"
+
 // Error codes for uploads.
 const (
 	// CodeUnsupportedType (415) is a file Dens refuses rather than send
@@ -69,6 +72,9 @@ type File struct {
 	Height   int    `json:"height,omitempty"`
 	Animated bool   `json:"animated,omitempty"`
 	Thumb    *Thumb `json:"thumb,omitempty"`
+	// Sealed marks an upload sealed by the member's client for a DM
+	// (M1.7), which the den can't open: it has no name or type of its own.
+	Sealed bool `json:"sealed,omitempty"`
 }
 
 // Thumb is the size of a file's preview.
@@ -157,6 +163,12 @@ func CheckMediaType(t string) error {
 func CheckFile(f File) error {
 	if _, err := ParseID(f.ID); err != nil {
 		return errors.New("file has an invalid ID")
+	}
+	if f.Sealed {
+		if f.Name != "" || f.Type != SealedType || f.Size < 0 || f.Size > MaxFileSize || f.Width != 0 || f.Height != 0 || f.Animated || f.Thumb != nil {
+			return errors.New("sealed file has details it can't have")
+		}
+		return nil
 	}
 	if f.Name == "" || CleanFilename(f.Name) != f.Name {
 		return errors.New("file has an invalid name")

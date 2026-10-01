@@ -100,3 +100,58 @@ func TestStreamUnclosedDoesNotOpen(t *testing.T) {
 		t.Errorf("%v, want ErrSealed", err)
 	}
 }
+
+// SealedSize says exactly how long a sealed stream is, so an upload can
+// state its length before it's sealed.
+func TestSealedSize(t *testing.T) {
+	key := make([]byte, KeySize)
+	for _, n := range []int{0, 1, StreamChunk - 1, StreamChunk, StreamChunk + 1, 3 * StreamChunk, 3*StreamChunk + 5} {
+		var out bytes.Buffer
+		w, err := SealStreamWith(key, &out, []byte("ad"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(make([]byte, n)); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if got := SealedSize(int64(n)); got != int64(out.Len()) {
+			t.Errorf("%d bytes seal to %d, SealedSize says %d", n, out.Len(), got)
+		}
+		if got, ok := OpenedSize(int64(out.Len())); !ok || got != int64(n) {
+			t.Errorf("%d sealed bytes open to %d, OpenedSize says %d %t", out.Len(), n, got, ok)
+		}
+	}
+}
+
+func TestOpenedSizeRefusesImpossibleLengths(t *testing.T) {
+	for _, n := range []int64{0, streamHeader + 15, streamHeader + StreamChunk + 16 + 5} {
+		if _, ok := OpenedSize(n); ok {
+			t.Errorf("%d bytes can't be a sealed stream", n)
+		}
+	}
+}
+
+func TestSecret(t *testing.T) {
+	s, err := NewSecret([]byte("a seal"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen string
+	if err := s.Use(func(b []byte) error { seen = string(b); return nil }); err != nil || seen != "a seal" {
+		t.Fatalf("use: %q %v", seen, err)
+	}
+	if c := s.Copy(); string(c) != "a seal" {
+		t.Fatalf("copy: %q", c)
+	}
+	s.Close()
+	s.Close()
+	if err := s.Use(func([]byte) error { return nil }); err == nil {
+		t.Fatal("a closed secret was used")
+	}
+	if _, err := NewSecret(nil); err == nil {
+		t.Fatal("an empty secret")
+	}
+}

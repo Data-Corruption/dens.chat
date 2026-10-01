@@ -308,6 +308,9 @@ type JoinRequest struct {
 	DeviceLabel string `json:"device_label"`
 	Nonce       Bytes  `json:"nonce"`
 	Proof       Bytes  `json:"proof"`
+	// SealCheck identifies the DM seal the joining member's client holds
+	// (M1.7).
+	SealCheck Bytes `json:"seal_check"`
 }
 
 type JoinResponse struct {
@@ -365,6 +368,11 @@ type Ready struct {
 	Channels   []Channel   `json:"channels"`
 	ReadStates []ReadState `json:"read_states"`
 	Online     []string    `json:"online"`
+	// M1.7: the member's seal check, the keys of their DMs without their
+	// exchanges, and sign-ins waiting for their approval.
+	SealCheck      Bytes           `json:"seal_check"`
+	DMKeys         []DMKey         `json:"dm_keys"`
+	DeviceRequests []DeviceRequest `json:"device_requests"`
 }
 
 type Renew struct {
