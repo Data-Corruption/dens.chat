@@ -173,3 +173,7 @@ func (h *host) Xproc_exit(code int32)                       { panic(exitError{co
 func (h *host) Xpath_open(_, _, _, _, _ int32, _, _ int64, _, _ int32) int32 {
 	return errnoNotcapable
 }
+
+// FFmpeg's image demuxers look for numbered sequences on disk.
+func (h *host) Xfd_readdir(_, _, _ int32, _ int64, _ int32) int32 { return errnoBadf }
+func (h *host) Xpath_filestat_get(_, _, _, _, _ int32) int32      { return errnoNotcapable }

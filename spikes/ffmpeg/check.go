@@ -70,6 +70,7 @@ func check(exiftool, before, after string) int {
 		return 1
 	}
 	removed, left, zeroed := []string{}, []string{}, []string{}
+	icc := 0
 	for k := range b {
 		if _, ok := a[k]; !ok && sensitive.MatchString(k) {
 			removed = append(removed, k)
@@ -77,6 +78,10 @@ func check(exiftool, before, after string) int {
 	}
 	for k, v := range a {
 		switch {
+		// Dens keeps an image's ICC profile, as the protocol lists, since
+		// its colors depend on it.
+		case strings.HasPrefix(k, "ICC"):
+			icc++
 		case !sensitive.MatchString(k) || structural.MatchString(k):
 		case zeroDate.MatchString(v) || v == "0" || v == "":
 			zeroed = append(zeroed, k)
@@ -89,7 +94,7 @@ func check(exiftool, before, after string) int {
 	}
 	res := map[string]any{
 		"file": before, "tags_before": len(b), "tags_after": len(a),
-		"removed": removed, "zeroed": zeroed,
+		"removed": removed, "zeroed": zeroed, "icc_tags": icc,
 		// Anything here is a leak until shown otherwise, whether or not its
 		// value changed.
 		"left": left,

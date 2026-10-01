@@ -44,17 +44,23 @@ func trap(h *host, args []string) (err error) {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: trap unsafe|safe NAME [ARG]")
 	}
-	if h.mem.Grow(32, h.mem.max) < 0 {
-		return fmt.Errorf("the memory cap is below the module's minimum")
-	}
 	var m trapModule
+	var pages int64
 	switch args[0] {
 	case "unsafe":
-		m = trapsunsafe.New(h)
+		pages = trapsunsafe.MinPages
 	case "safe":
-		m = trapssafe.New(h)
+		pages = trapssafe.MinPages
 	default:
 		return fmt.Errorf("no translation %q", args[0])
+	}
+	if h.mem.Grow(pages, h.mem.max) < 0 {
+		return fmt.Errorf("the memory cap is below the module's minimum")
+	}
+	if args[0] == "unsafe" {
+		m = trapsunsafe.New(h)
+	} else {
+		m = trapssafe.New(h)
 	}
 	m.X_initialize()
 	arg := int64(0)

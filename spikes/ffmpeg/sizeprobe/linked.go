@@ -12,6 +12,8 @@ func link() func() {
 		m.Xdm_init(0)
 		m.Xdm_probe()
 		m.Xdm_strip(0)
+		m.Xdm_still(0, 0)
+		m.Xdm_poster(0, 0)
 		m.Xdm_error(0, 0, 0)
 		m.Xfree(m.Xmalloc(0))
 	}

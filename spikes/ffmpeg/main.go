@@ -5,6 +5,8 @@
 //
 //	ffspike [-mem MB] [-timeout D] probe IN
 //	ffspike [-mem MB] [-timeout D] strip IN OUT [MUXER]
+//	ffspike [-mem MB] [-timeout D] still IN OUT [MAX_SIDE [QUALITY]]
+//	ffspike [-mem MB] [-timeout D] poster IN OUT [MAX_SIDE [QUALITY]]
 //	ffspike [-mem MB] [-timeout D] trap unsafe|safe NAME [ARG]
 //	ffspike check EXIFTOOL ORIGINAL STRIPPED
 //	ffspike fuzz [-duration D] [-jobs N] ASAN_DRIVER SEED...
@@ -22,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,9 +47,10 @@ func main() {
 	if len(args) > 0 && args[0] == "fuzz" {
 		os.Exit(fuzz(args[1:]))
 	}
-	if len(args) < 2 || (args[0] != "probe" && args[0] != "strip" && args[0] != "trap") ||
-		(args[0] != "probe" && len(args) < 3) {
-		fmt.Fprintln(os.Stderr, "usage: ffspike [-mem MB] [-timeout D] probe IN | strip IN OUT [MUXER] | trap unsafe|safe NAME [ARG]")
+	ops := map[string]bool{"probe": true, "strip": true, "still": true, "poster": true, "trap": true}
+	if len(args) < 2 || !ops[args[0]] || (args[0] != "probe" && len(args) < 3) {
+		fmt.Fprintln(os.Stderr, "usage: ffspike [-mem MB] [-timeout D] probe IN | strip IN OUT [MUXER] | "+
+			"still IN OUT [MAX_SIDE [QUALITY]] | poster IN OUT [MAX_SIDE [QUALITY]] | trap unsafe|safe NAME [ARG]")
 		os.Exit(2)
 	}
 	os.Exit(run(*memMB, *timeout, args))
@@ -165,7 +169,7 @@ func job(h *host, args []string) (err error) {
 	}
 	defer in.Close()
 	h.files[0] = in
-	if h.mem.Grow(32, h.mem.max) < 0 {
+	if h.mem.Grow(ffwasm.MinPages, h.mem.max) < 0 {
 		return errors.New("the memory cap is below the module's minimum")
 	}
 	m := ffwasm.New(h, h, h)
@@ -173,6 +177,14 @@ func job(h *host, args []string) (err error) {
 	m.Xdm_init(avLogWarning)
 
 	var ret int32
+	if args[0] != "probe" {
+		out, err := os.OpenFile(args[2], os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			return err
+		}
+		defer out.Close()
+		h.files[1] = out
+	}
 	switch args[0] {
 	case "probe":
 		ret = m.Xdm_probe()
@@ -183,17 +195,32 @@ func job(h *host, args []string) (err error) {
 		} else if muxer, err = muxerFor(args[2]); err != nil {
 			return err
 		}
-		out, err := os.OpenFile(args[2], os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-		h.files[1] = out
 		ret = m.Xdm_strip(cstring(m, h, muxer))
-		if ret >= 0 {
-			if err := out.Close(); err != nil {
+	case "still", "poster":
+		// A still keeps its size unless asked; a poster fits a preview.
+		maxSide, quality := int64(0), int64(3)
+		if args[0] == "poster" {
+			maxSide = 640
+		}
+		if len(args) > 3 {
+			if maxSide, err = strconv.ParseInt(args[3], 10, 32); err != nil {
 				return err
 			}
+		}
+		if len(args) > 4 {
+			if quality, err = strconv.ParseInt(args[4], 10, 32); err != nil {
+				return err
+			}
+		}
+		if args[0] == "still" {
+			ret = m.Xdm_still(int32(maxSide), int32(quality))
+		} else {
+			ret = m.Xdm_poster(int32(maxSide), int32(quality))
+		}
+	}
+	if ret >= 0 && h.files[1] != nil {
+		if err := h.files[1].Close(); err != nil {
+			return err
 		}
 	}
 	if ret < 0 {

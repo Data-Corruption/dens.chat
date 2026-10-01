@@ -53,6 +53,7 @@ DEFAULT_WASI_SDK_VERSION="34"
 DEFAULT_BINARYEN_VERSION="133"
 DEFAULT_FFMPEG_VERSION="9.0.2"
 DEFAULT_WASM2GO_VERSION="v0.4.16"
+DEFAULT_ZLIB_VERSION="1.3.2"
 # Reads media metadata independently of FFmpeg, as the spike's check.
 DEFAULT_EXIFTOOL_VERSION="13.55"
 
@@ -71,6 +72,7 @@ WASI_SDK_VERSION="${WASI_SDK_VERSION:-$DEFAULT_WASI_SDK_VERSION}"
 BINARYEN_VERSION="${BINARYEN_VERSION:-$DEFAULT_BINARYEN_VERSION}"
 FFMPEG_VERSION="${FFMPEG_VERSION:-$DEFAULT_FFMPEG_VERSION}"
 WASM2GO_VERSION="${WASM2GO_VERSION:-$DEFAULT_WASM2GO_VERSION}"
+ZLIB_VERSION="${ZLIB_VERSION:-$DEFAULT_ZLIB_VERSION}"
 EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-$DEFAULT_EXIFTOOL_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
@@ -102,6 +104,7 @@ WASI_SDK_SHA_LINUX_ARM64_OVERRIDE="${WASI_SDK_SHA_LINUX_ARM64:-}"
 BINARYEN_SHA_LINUX_AMD64_OVERRIDE="${BINARYEN_SHA_LINUX_AMD64:-}"
 BINARYEN_SHA_LINUX_ARM64_OVERRIDE="${BINARYEN_SHA_LINUX_ARM64:-}"
 FFMPEG_SHA_OVERRIDE="${FFMPEG_SHA:-}"
+ZLIB_SHA_OVERRIDE="${ZLIB_SHA:-}"
 EXIFTOOL_SHA_OVERRIDE="${EXIFTOOL_SHA:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
@@ -135,6 +138,9 @@ BINARYEN_SHA_LINUX_ARM64="${BINARYEN_SHA_LINUX_ARM64:-89c07ea56faf38d0fbecf36ca8
 # The source tarball, whose signature verified against FFmpeg's release key
 # FCF986EA15E6E293A5644F10B4322F04D67658D8, as ffmpeg.org lists it.
 FFMPEG_SHA="${FFMPEG_SHA:-8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e}"
+# The source tarball, whose signature verified against Mark Adler's key
+# 5ED46A6721D365587791E2AA783FCD8E58BCAFBA, matching the GitHub release's digest.
+ZLIB_SHA="${ZLIB_SHA:-d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3}"
 # The production release on CPAN, as MetaCPAN lists its SHA-256.
 EXIFTOOL_SHA="${EXIFTOOL_SHA:-5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667}"
 
@@ -161,6 +167,7 @@ VENDOR_NODE=""
 VENDOR_WASI_SDK=""
 VENDOR_BINARYEN=""
 VENDOR_FFMPEG_SRC=""
+VENDOR_ZLIB_SRC=""
 VENDOR_WASM2GO=""
 VENDOR_EXIFTOOL=""
 
@@ -172,7 +179,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
-  wasi-sdk binaryen ffmpeg-src wasm2go exiftool)
+  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool)
 
 # Pin validation --------------------------------------------------------------
 
@@ -216,6 +223,7 @@ validate_pins() {
   require_hash_overrides "binaryen" "$BINARYEN_VERSION" "$DEFAULT_BINARYEN_VERSION" \
     "$BINARYEN_SHA_LINUX_AMD64_OVERRIDE" "$BINARYEN_SHA_LINUX_ARM64_OVERRIDE"
   require_hash_overrides "FFmpeg" "$FFMPEG_VERSION" "$DEFAULT_FFMPEG_VERSION" "$FFMPEG_SHA_OVERRIDE"
+  require_hash_overrides "zlib" "$ZLIB_VERSION" "$DEFAULT_ZLIB_VERSION" "$ZLIB_SHA_OVERRIDE"
   require_hash_overrides "exiftool" "$EXIFTOOL_VERSION" "$DEFAULT_EXIFTOOL_VERSION" "$EXIFTOOL_SHA_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
@@ -240,6 +248,7 @@ validate_pins() {
   validate_sha256 "$BINARYEN_SHA_LINUX_AMD64" "BINARYEN_SHA_LINUX_AMD64"
   validate_sha256 "$BINARYEN_SHA_LINUX_ARM64" "BINARYEN_SHA_LINUX_ARM64"
   validate_sha256 "$FFMPEG_SHA" "FFMPEG_SHA"
+  validate_sha256 "$ZLIB_SHA" "ZLIB_SHA"
   validate_sha256 "$EXIFTOOL_SHA" "EXIFTOOL_SHA"
 }
 
@@ -561,6 +570,15 @@ vendor_ffmpeg_src() {
   printf '🟢 Vendored FFmpeg source %s\n' "$FFMPEG_VERSION"
 }
 
+vendor_zlib_src() {
+  mkdir -p "$TOOLS_DIR"
+  VENDOR_ZLIB_SRC="$TOOLS_DIR/zlib-${ZLIB_VERSION}.tar.xz"
+  download_verified "$VENDOR_ZLIB_SRC" \
+    "https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz" \
+    "$ZLIB_SHA" "zlib source"
+  printf '🟢 Vendored zlib source %s\n' "$ZLIB_VERSION"
+}
+
 vendor_wasm2go() {
   vendor_go_tool wasm2go \
     "github.com/ncruces/wasm2go@${WASM2GO_VERSION}" \
@@ -601,6 +619,7 @@ vendor_ensure() {
     wasi-sdk) vendor_wasi_sdk ;;
     binaryen) vendor_binaryen ;;
     ffmpeg-src) vendor_ffmpeg_src ;;
+    zlib-src) vendor_zlib_src ;;
     wasm2go) vendor_wasm2go ;;
     exiftool) vendor_exiftool ;;
     *)
@@ -627,6 +646,7 @@ vendor_resolved() {
     wasi-sdk) printf '%s' "$VENDOR_WASI_SDK" ;;
     binaryen) printf '%s' "$VENDOR_BINARYEN" ;;
     ffmpeg-src) printf '%s' "$VENDOR_FFMPEG_SRC" ;;
+    zlib-src) printf '%s' "$VENDOR_ZLIB_SRC" ;;
     wasm2go) printf '%s' "$VENDOR_WASM2GO" ;;
     exiftool) printf '%s' "$VENDOR_EXIFTOOL" ;;
   esac
@@ -677,7 +697,7 @@ vendor_main() {
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
         # The ffmpeg spike's toolchains are large, and only it asks for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:wasm2go|*:exiftool) continue ;;
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool) continue ;;
       esac
       tools+=("$candidate")
     done

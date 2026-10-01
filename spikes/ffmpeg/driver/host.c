@@ -1,5 +1,6 @@
 // A native host for the driver, the baseline the WebAssembly build is measured
-// against: dmnative probe IN, or dmnative strip MUXER IN OUT.
+// against: dmnative probe IN, dmnative strip MUXER IN OUT, or dmnative still|poster
+// IN OUT MAX_SIDE QUALITY.
 
 #define _FILE_OFFSET_BITS 64
 
@@ -11,6 +12,8 @@
 
 int32_t dm_probe(void);
 int32_t dm_strip(const char *muxer);
+int32_t dm_still(int32_t max_side, int32_t quality);
+int32_t dm_poster(int32_t max_side, int32_t quality);
 void dm_init(int32_t level);
 int32_t dm_error(int32_t err, char *buf, int32_t size);
 
@@ -65,8 +68,16 @@ int main(int argc, char **argv) {
         if (files[1] && fclose(files[1]) != 0) {
             ret = -1;
         }
+    } else if (argc == 6 && (strcmp(argv[1], "still") == 0 || strcmp(argv[1], "poster") == 0)) {
+        files[0] = fopen(argv[2], "rb");
+        files[1] = fopen(argv[3], "w+b");
+        int max_side = atoi(argv[4]), quality = atoi(argv[5]);
+        ret = !files[0] || !files[1] ? -1 : argv[1][0] == 's' ? dm_still(max_side, quality) : dm_poster(max_side, quality);
+        if (files[1] && fclose(files[1]) != 0) {
+            ret = -1;
+        }
     } else {
-        fprintf(stderr, "usage: dmnative probe IN | strip MUXER IN OUT\n");
+        fprintf(stderr, "usage: dmnative probe IN | strip MUXER IN OUT | still|poster IN OUT MAX_SIDE QUALITY\n");
         return 2;
     }
     if (ret < 0) {

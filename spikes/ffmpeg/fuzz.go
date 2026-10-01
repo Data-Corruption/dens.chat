@@ -43,12 +43,19 @@ func fuzz(args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		muxer, err := muxerFor(path)
-		if err != nil {
+		ext := strings.ToLower(filepath.Ext(path))
+		sd := seed{name: filepath.Base(path), ext: ext, data: data}
+		if images[ext] {
+			sd.ops = []string{"still"}
+		} else if sd.muxer, err = muxerFor(path); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
+		} else if videos[ext] {
+			sd.ops = []string{"strip", "poster"}
+		} else {
+			sd.ops = []string{"strip"}
 		}
-		seeds = append(seeds, seed{name: filepath.Base(path), ext: filepath.Ext(path), muxer: muxer, data: data})
+		seeds = append(seeds, sd)
 	}
 	dir := "out/spikes/ffmpeg/fuzz"
 	if err := os.MkdirAll(filepath.Join(dir, "finds"), 0o755); err != nil {
@@ -77,12 +84,26 @@ func fuzz(args []string) int {
 				if err := os.WriteFile(in, data, 0o644); err != nil {
 					return
 				}
-				out, nout := filepath.Join(work, "out"+s.ext), filepath.Join(work, "native"+s.ext)
+				op := s.ops[rng.IntN(len(s.ops))]
+				ext := s.ext
+				if op != "strip" {
+					ext = ".img"
+				}
+				out, nout := filepath.Join(work, "out"+ext), filepath.Join(work, "native"+ext)
 				os.Remove(out)
 				os.Remove(nout)
-				module := moduleOutcome(runJob(512, 20*time.Second, []string{"strip", in, out, s.muxer}, io.Discard))
-				native, report := nativeOutcome(asan, s.muxer, in, nout)
-				key := "module " + module + ", native " + native
+				var job, nargs []string
+				switch op {
+				case "strip":
+					job, nargs = []string{"strip", in, out, s.muxer}, []string{"strip", s.muxer, in, nout}
+				case "still":
+					job, nargs = []string{"still", in, out, "0", "3"}, []string{"still", in, nout, "0", "3"}
+				case "poster":
+					job, nargs = []string{"poster", in, out, "640", "3"}, []string{"poster", in, nout, "640", "3"}
+				}
+				module := moduleOutcome(runJob(512, 20*time.Second, job, io.Discard))
+				native, report := nativeOutcome(asan, nargs)
+				key := op + ": module " + module + ", native " + native
 				// Where both strip, the translation must write what the C
 				// code does.
 				if module == "stripped" && native == "stripped" {
@@ -104,7 +125,7 @@ func fuzz(args []string) int {
 					name := fmt.Sprintf("%06d-%s-%s", id, strings.ReplaceAll(module, " ", "_"), strings.ReplaceAll(native, " ", "_"))
 					os.WriteFile(filepath.Join(dir, "finds", name+s.ext), data, 0o644)
 					os.WriteFile(filepath.Join(dir, "finds", name+".txt"),
-						[]byte(fmt.Sprintf("seed %s\ndamage %s\nmodule %s\nnative %s\n\n%s", s.name, how, module, native, report)), 0o644)
+						[]byte(fmt.Sprintf("seed %s\nop %s\ndamage %s\nmodule %s\nnative %s\n\n%s", s.name, op, how, module, native, report)), 0o644)
 				}
 			}
 		}()
@@ -126,8 +147,17 @@ func fuzz(args []string) int {
 
 type seed struct {
 	name, ext, muxer string
+	ops              []string
 	data             []byte
 }
+
+// images get stills, videos get stripped or a poster, and the rest get
+// stripped.
+var (
+	images = map[string]bool{".heic": true, ".heif": true, ".avif": true, ".tif": true, ".tiff": true,
+		".dng": true, ".jp2": true, ".j2c": true, ".j2k": true, ".psd": true}
+	videos = map[string]bool{".mp4": true, ".mov": true, ".mkv": true, ".webm": true, ".m4v": true}
+)
 
 // damage returns a copy of data with one kind of damage, and says which.
 // Most of it lands in the first 64 KB, where containers keep their headers.
@@ -238,10 +268,10 @@ func moduleOutcome(r report) string {
 	return "other: " + r.Error
 }
 
-func nativeOutcome(driver, muxer, in, out string) (string, string) {
+func nativeOutcome(driver string, args []string) (string, string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, driver, "strip", muxer, in, out)
+	cmd := exec.CommandContext(ctx, driver, args...)
 	cmd.Env = append(os.Environ(), fmt.Sprintf("ASAN_OPTIONS=exitcode=%d:detect_leaks=0:symbolize=1", asanExit))
 	output, err := cmd.CombinedOutput()
 	var exit *exec.ExitError
