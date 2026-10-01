@@ -1,8 +1,9 @@
 # Build outputs
 /tools/
 /out/
-# The ffmpeg spike's translation, which its build regenerates
+# The ffmpeg spike's translations, which its build regenerates
 /spikes/ffmpeg/ffwasm/
+/spikes/ffmpeg/traps/*/
 /internal/ui/assets/css/output.css
 /internal/ui/assets/js/output.js
 /internal/ui/assets/manifest.json

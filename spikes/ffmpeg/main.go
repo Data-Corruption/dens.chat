@@ -5,7 +5,9 @@
 //
 //	ffspike [-mem MB] [-timeout D] probe IN
 //	ffspike [-mem MB] [-timeout D] strip IN OUT [MUXER]
+//	ffspike [-mem MB] [-timeout D] trap unsafe|safe NAME [ARG]
 //	ffspike check EXIFTOOL ORIGINAL STRIPPED
+//	ffspike fuzz [-duration D] [-jobs N] ASAN_DRIVER SEED...
 package main
 
 import (
@@ -15,6 +17,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,8 +41,12 @@ func main() {
 	if len(args) == 4 && args[0] == "check" {
 		os.Exit(check(args[1], args[2], args[3]))
 	}
-	if len(args) < 2 || (args[0] != "probe" && args[0] != "strip") || (args[0] == "strip" && len(args) < 3) {
-		fmt.Fprintln(os.Stderr, "usage: ffspike [-mem MB] [-timeout D] probe IN | strip IN OUT [MUXER]")
+	if len(args) > 0 && args[0] == "fuzz" {
+		os.Exit(fuzz(args[1:]))
+	}
+	if len(args) < 2 || (args[0] != "probe" && args[0] != "strip" && args[0] != "trap") ||
+		(args[0] != "probe" && len(args) < 3) {
+		fmt.Fprintln(os.Stderr, "usage: ffspike [-mem MB] [-timeout D] probe IN | strip IN OUT [MUXER] | trap unsafe|safe NAME [ARG]")
 		os.Exit(2)
 	}
 	os.Exit(run(*memMB, *timeout, args))
@@ -59,19 +66,32 @@ type report struct {
 }
 
 func run(memMB int64, timeout time.Duration, args []string) int {
+	rep := runJob(memMB, timeout, args, os.Stderr)
+	out, _ := json.Marshal(rep)
+	fmt.Println(string(out))
+	if !rep.OK {
+		return 1
+	}
+	return 0
+}
+
+// runJob runs one job in a worker process, and reports on it.
+func runJob(memMB int64, timeout time.Duration, args []string, stderr io.Writer) report {
 	self, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return report{Op: args[0], Error: err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, self, append([]string{"-mem", fmt.Sprint(memMB), "work"}, args...)...)
 	var stdout bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, os.Stderr
+	cmd.Stdout, cmd.Stderr = &stdout, stderr
 	start := time.Now()
 	err = cmd.Run()
 	rep := report{Op: args[0], File: filepath.Base(args[1]), Ms: time.Since(start).Milliseconds()}
+	if args[0] == "trap" {
+		rep.File = strings.Join(args[1:], " ")
+	}
 	if ps := cmd.ProcessState; ps != nil {
 		rep.PeakRSSMB = peakRSSMB(ps)
 		rep.CPUMs = (ps.UserTime() + ps.SystemTime()).Milliseconds()
@@ -97,12 +117,7 @@ func run(memMB int64, timeout time.Duration, args []string) int {
 		rep.Error = err.Error()
 	}
 	rep.OK = err == nil && rep.Error == ""
-	out, _ := json.Marshal(rep)
-	fmt.Println(string(out))
-	if !rep.OK {
-		return 1
-	}
-	return 0
+	return rep
 }
 
 // work runs one job in this process, and prints its account as JSON.
@@ -117,7 +132,12 @@ func work(memMB int64, args []string) int {
 		PeakMB   float64         `json:"peak_mb,omitempty"`
 		Result   json.RawMessage `json:"result,omitempty"`
 	}
-	err := job(h, args)
+	var err error
+	if args[0] == "trap" {
+		err = trap(h, args[1:])
+	} else {
+		err = job(h, args)
+	}
 	res.ModuleMB = float64(h.mem.peak<<16) / (1 << 20)
 	res.PeakMB = selfPeakMB()
 	res.Result = h.result

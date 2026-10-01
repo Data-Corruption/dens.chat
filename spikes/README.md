@@ -136,6 +136,30 @@ FFmpeg 9.0.2, configured as LGPL version 2.1 or later; wasi-sdk 34 (clang 23), b
   - The generated MP3 is silent by construction, since FFmpeg has no MP3 encoder: its frames are valid and empty.
   - The generated videos played only in VLC: they were MPEG-4 Part 2, FFmpeg's own encoder, which browsers don't decode. They're now copies of the Android sample's H.264 and AAC, whose own stripped copy plays in all three; the new set hasn't been played by hand.
 
+#### A4, the translation's containment
+
+- The translated Go imports only `embed`, `encoding/binary`, `math`, `math/bits`, `runtime` and `unsafe`. Nothing reaches a file, a socket or a process except through the host functions Dens provides.
+- `-unsafe` makes no difference to containment. The six helpers that use `unsafe`, the 16-, 32- and 64-bit loads and stores, each check the address against the memory's length first. Byte loads and stores index the slice. An access's offset is added in 64 bits, so it can't wrap around to low memory, as in WebAssembly.
+- `traps.c` is a module with one export per attempt, built and translated as the driver is, with and without `-unsafe`. `ffspike trap` runs each in the worker. Every attempt behaves the same in both translations:
+
+| Attempt | What happens |
+| --- | --- |
+| Load or store at the end of memory, across it, or at the top of the address space | Panics: index out of range |
+| Fill or copy past the end of memory | Panics, once the host's memory has no spare capacity; see below |
+| Call through a null pointer, past the function table, or with the wrong signature | Panics: nil, index out of range, or the wrong function type |
+| `unreachable` | Panics |
+| Divide by zero, or the most negative number by −1 | Panics |
+| Shadow stack past its 1 MB | Runs below address 0, wraps to the top of the address space, and panics, since the stack comes first in memory |
+| Recursion past Go's stack | The worker dies with a fatal stack overflow at the 64 MB limit it sets, after 0.2 s and 134 MB |
+| Memory balloon | `malloc` refuses at the cap: 240 MB under 256, 1008 MB under 1024, with the worker at 245 and 1014 MB |
+| Endless loop | The parent kills the worker at the deadline |
+
+- A panic is recovered and ends the job with an error. The two failures Go can't recover from, its own stack running out and the deadline, end the worker, and the parent reports them.
+- **Bulk memory ran past the end.** wasm2go's `memory.fill`, `memory.copy` and `memory.init` slice the memory with `mem[x:y]`, which Go checks against the slice's capacity, not its length. The spike's host had reserved the whole cap as capacity, so a fill past the end of memory succeeded, writing into pages the module could grow into later; a page grown afterwards wasn't zero. The writes stayed inside memory reserved for the module, but WebAssembly says they trap. The host now gives the module a slice whose capacity is its length, cut from the reserved memory, and they do. Dens's own host must do the same. go-sqlite3's host reserves its capacity with `PROT_NONE`, so there such a write would fault instead of trapping.
+- **Damaged files:** ffspike fuzz damages the 16 videos and generated files over and over: flipped bytes, cut short, 32-bit fields set to edge values, chunks copied elsewhere, runs of random bytes, mostly in the first 64 KB where containers keep their headers. Each damaged copy goes through the module's worker and through the native driver built with AddressSanitizer, and where both strip, their outputs are compared byte for byte.
+  - In an hour, 12 at a time, 1,191,521 damaged files went through both. They agreed on every one: 905,664 stripped by both, 285,709 refused by both. Nothing trapped, killed a worker or ran past the deadline, and AddressSanitizer found no memory bug. Where both stripped, the outputs were identical but for 148 MP3s.
+  - The only differences came from FFmpeg itself: for an MP3 frame with a free-format header, `avpriv_mpegaudio_decode_header` leaves the bitrate unset, and the MP3 writer compares it anyway, so the stack's leftovers decide whether the file's tag says variable (`Xing`) or constant (`Info`) bitrate. AddressSanitizer doesn't see uninitialized reads. FFmpeg's current code keeps the header in the writer's context, which ends it.
+
 #### B1, builds
 
 `native.sh` and the zig and BtbN pins that made these are in commit `8f5963e`; they went with the native track.

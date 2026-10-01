@@ -3,10 +3,11 @@
 # linked into a module, its Go translation into spikes/ffmpeg/ffwasm, and the
 # same driver natively as the baseline. Prints the sizes.
 #
-#   OPT=-Oz WOPT=-Oz SMALL= spikes/ffmpeg/build.sh
+#   OPT=-Oz WOPT=-Oz SMALL= ASAN= spikes/ffmpeg/build.sh
 #
-# OPT is clang's optimization for FFmpeg and the driver, WOPT is wasm-opt's, and
-# SMALL=1 configures FFmpeg with --enable-small.
+# OPT is clang's optimization for FFmpeg and the driver, WOPT is wasm-opt's,
+# SMALL=1 configures FFmpeg with --enable-small, and ASAN=1 also builds the
+# native driver under AddressSanitizer.
 set -euo pipefail
 exec </dev/null
 cd "$(dirname "$0")/../.."
@@ -94,6 +95,22 @@ mkdir -p "$mod"
 echo "== the translation"
 rm -rf spikes/ffmpeg/ffwasm && mkdir -p spikes/ffmpeg/ffwasm
 "$wasm2go" -pkg ffwasm -unsafe -embed -o spikes/ffmpeg/ffwasm/ffwasm.go "$mod/dm.wasm"
+
+# A4's module of traps, built as the driver is, and translated with and
+# without -unsafe.
+echo "== the trap module"
+traps="$build/traps"
+mkdir -p "$traps"
+"$wasi/bin/clang" --target=wasm32-wasip1 --sysroot="$sysroot" "$OPT" -mexec-model=reactor \
+  spikes/ffmpeg/traps/traps.c -o "$traps/raw.wasm" \
+  -Wl,--import-memory -Wl,--stack-first -Wl,-z,stack-size=1048576 -Wl,--max-memory=4294967296
+"$wasm_opt" "$WOPT" "$traps/raw.wasm" -o "$traps/traps.wasm" --strip-debug --strip-producers
+for variant in unsafe safe; do
+  flag=()
+  [[ "$variant" == unsafe ]] && flag=(-unsafe)
+  rm -rf "spikes/ffmpeg/traps/$variant" && mkdir -p "spikes/ffmpeg/traps/$variant"
+  "$wasm2go" -pkg "traps$variant" "${flag[@]}" -o "spikes/ffmpeg/traps/$variant/traps.go" "$traps/traps.wasm"
+done
 (cd spikes && go build -o "$repo/out/spikes/ffmpeg/ffspike" ./ffmpeg)
 
 # The same C code natively, without assembly as in the module, so the
@@ -104,6 +121,19 @@ configure_build "$native" "${common[@]}" "${components[@]}" --disable-pthreads -
   --optflags="$OPT"
 cc -O2 -I"$native/prefix/include" spikes/ffmpeg/driver/driver.c spikes/ffmpeg/driver/host.c \
   -o "$repo/out/spikes/ffmpeg/dmnative" -L"$native/prefix/lib" -lavformat -lavcodec -lavutil -lm
+
+# The native driver again, with FFmpeg's code and the driver's under
+# AddressSanitizer, which A4 runs damaged files through to see which of them
+# hit real memory bugs.
+if [[ -n "${ASAN:-}" ]]; then
+  echo "== the native baseline under AddressSanitizer"
+  asan="$build/native-asan"
+  configure_build "$asan" "${common[@]}" "${components[@]}" --disable-pthreads --disable-asm \
+    --toolchain=gcc-asan --optflags=-O1
+  cc -O1 -g -fsanitize=address -fno-omit-frame-pointer -I"$asan/prefix/include" \
+    spikes/ffmpeg/driver/driver.c spikes/ffmpeg/driver/host.c \
+    -o "$repo/out/spikes/ffmpeg/dmnative-asan" -L"$asan/prefix/lib" -lavformat -lavcodec -lavutil -lm
+fi
 
 printf 'module: raw %s bytes, optimized %s bytes; Go source %s bytes, data %s bytes\n' \
   "$(stat -c %s "$mod/raw.wasm")" "$(stat -c %s "$mod/dm.wasm")" \

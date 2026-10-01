@@ -18,16 +18,22 @@ const (
 	errnoNotcapable = 76
 )
 
-// memory is the module's linear memory. Its capacity is reserved up front, so
-// growing never moves it; pages the module never touches cost no RAM.
+// memory is the module's linear memory. All of it up to the cap is reserved
+// up front, so growing never moves it; pages the module never touches cost no
+// RAM. The module sees buf, whose capacity is its length: the translation
+// checks bulk operations (memory.fill, memory.copy, memory.init) against
+// capacity, and they must trap past the end, not write into pages it may
+// grow into later.
 type memory struct {
-	buf  []byte
-	max  int64 // pages
-	peak int64 // pages
+	reserved []byte
+	buf      []byte
+	max      int64 // pages
+	peak     int64 // pages
 }
 
 func newMemory(maxBytes int64) *memory {
-	return &memory{buf: make([]byte, 0, maxBytes), max: maxBytes >> 16}
+	r := make([]byte, maxBytes)
+	return &memory{reserved: r, buf: r[:0:0], max: maxBytes >> 16}
 }
 
 func (m *memory) Slice() *[]byte { return &m.buf }
@@ -41,7 +47,7 @@ func (m *memory) Grow(delta, limit int64) int64 {
 	if n > min(limit, m.max) || n < old {
 		return -1
 	}
-	m.buf = m.buf[:n<<16]
+	m.buf = m.reserved[: n<<16 : n<<16]
 	m.peak = max(m.peak, n)
 	return old
 }
