@@ -402,6 +402,36 @@ upload)
         --data-binary "@$2" "$BASE/api/dens/$1/uploads?channel=${4:-}" |
         json 'd["id"] + " " + str(d.get("stripped", False)).lower() + " %dx%d " % (d["width"], d["height"]) + ("preview" if d.get("thumb") else "none")'
     ;;
+upload-media)
+    # upload-media DEN_ID FILE NAME [CHANNEL_ID]: upload a file as upload
+    # does; print its ID, type, size, whether it has a preview, whether it
+    # was converted, its name and its duration.
+    curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
+        -H "Content-Type: application/octet-stream" -H "Dens-Filename: $3" \
+        --data-binary "@$2" "$BASE/api/dens/$1/uploads?channel=${4:-}" |
+        json '" ".join([d["id"], d["type"], "%dx%d" % (d.get("width", 0), d.get("height", 0)), "preview" if d.get("thumb") else "none", "converted" if d.get("converted") else "as-is", d["name"], str(d.get("duration_ms", 0))])'
+    ;;
+clean)
+    # clean FILE: fail if a video or photo still carries what the phone put
+    # in it: its make and model, Apple's keys, EXIF, or a location.
+    python3 - "$1" <<'PY'
+import re, sys
+d = open(sys.argv[1], "rb").read()
+for marker in (b"com.apple.quicktime", b"iPhone", b"Exif", b"TestPhone"):
+    if marker in d:
+        sys.exit("the file still carries " + marker.decode())
+if re.search(rb"[+-]\d{2}\.\d{3,}[+-]\d{3}\.\d{3,}", d):
+    sys.exit("the file still carries a location")
+PY
+    ;;
+range)
+    # range DEN_ID FILE_ID WHOLE FROM TO: fetch bytes FROM to TO of a file as
+    # a player seeking does, and fail unless they're those of WHOLE.
+    curl -sS --fail-with-body -b "$JAR" -o /root/range -D /root/headers -r "$4-$5" "$BASE/api/dens/$1/files/$2"
+    head -n 1 /root/headers | grep -q ' 206' || fail "a range came back as $(head -n 1 /root/headers)"
+    tail -c +"$(($4 + 1))" "$3" | head -c "$(($5 - $4 + 1))" >/root/want
+    cmp -s /root/range /root/want || fail "a range holds the wrong bytes"
+    ;;
 send-file)
     # send-file DEN_ID CHANNEL_ID FILE_ID: send an upload with no text; print
     # the message's ID.
