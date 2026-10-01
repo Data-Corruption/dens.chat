@@ -233,8 +233,11 @@ case "${1:-}" in
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
     vendor
     asan=$(build_asan)
+    # No minimizing: Go's fuzzer would shrink each input that reaches new Go
+    # code, which says little about the C under test, and it reports one it
+    # was shrinking when the time ran out as a failure.
     DENS_FFMPEG_ASAN="$asan" go test ./internal/media/ffmpeg -run '^$' -fuzz '^FuzzDriver$' \
-      -fuzztime "$2" -fuzzminimizetime 1x
+      -fuzztime "$2" -fuzzminimizetime 0
     ;;
   -h | --help)
     usage

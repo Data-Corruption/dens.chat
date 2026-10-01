@@ -16,6 +16,11 @@ import (
 // file.
 const asanExit = 99
 
+// fuzzJobTime bounds each input's job, in the module and natively, well
+// below the Runner's minutes: a damaged file that makes FFmpeg spin ends
+// its job as it would anyway, and a few don't stall the fuzzer.
+const fuzzJobTime = 15 * time.Second
+
 // FuzzDriver runs damaged files through the driver, as Dens does with what
 // members send. In the module, every job ends with an answer or a JobError,
 // whatever the file: a trap, a balloon or a loop ends its worker, not the
@@ -57,6 +62,7 @@ func FuzzDriver(f *testing.F) {
 	}
 	asan := os.Getenv("DENS_FFMPEG_ASAN")
 	r := TestRunner(nil)
+	r.timeout = func(Op, int64) time.Duration { return fuzzJobTime }
 	f.Fuzz(func(t *testing.T, which uint8, data []byte) {
 		op := ops[int(which)%len(ops)]
 		ctx := context.Background()
@@ -96,7 +102,7 @@ func runNative(t *testing.T, asan string, op Op, data []byte) {
 		OpStill:  {"still", in, out, "0", "3"},
 		OpPoster: {"poster", in, out, "640", "5"},
 	}[op]
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), fuzzJobTime)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, asan, args...)
 	// Allocations past what the module's cap allows fail, as they would in
