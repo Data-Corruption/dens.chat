@@ -18,9 +18,9 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// DM files (M1.7). The den can't open a DM's files, so this service does
-// what the den does for a channel's: it takes an image's metadata out and
-// makes its preview. Then it seals the file and its preview with a key of
+// DM files. The den can't open a DM's files, so this service does what
+// the den does for a channel's: it takes an image's metadata out and makes
+// its preview, or a video's from its first frame. Then it seals the file and its preview with a key of
 // the file's own, which goes inside the message that sends them, and the
 // den stores two blobs it can't tell from noise.
 
@@ -54,10 +54,27 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 	}
 	kind := media.Sniff(head)
 	if kind.Refused() {
-		return Uploaded{}, refusal(kind)
+		return Uploaded{}, refusal(head)
+	}
+	var p *prepared
+	if kind.NeedsMedia() {
+		// The copy is sealed again below, so it must fit sealed.
+		fit := limits.FileSize - (vault.SealedSize(limits.FileSize) - limits.FileSize)
+		if p, err = c.m.prepare(ctx, kind, head, name, br, max(limits.FileSize, size), fit); err != nil {
+			return Uploaded{}, err
+		}
+		defer p.close()
+		kind, name, size = p.kind, p.name, p.out.Size()
+		br = bufio.NewReaderSize(io.NewSectionReader(p.out, 0, size), media.SniffLen)
+		if head, err = br.Peek(media.SniffLen); err != nil && !errors.Is(err, io.EOF) {
+			return Uploaded{}, err
+		}
 	}
 	file := denproto.DMFile{Name: denproto.CleanFilename(name), Type: kind.MIME()}
-	if file.Type == "" {
+	switch {
+	case p != nil && p.stripped.MIME != "":
+		file.Type = p.stripped.MIME
+	case file.Type == "":
 		file.Type = sniffType(head)
 	}
 
@@ -118,6 +135,21 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 			}
 		}
 	}
+	if p != nil && p.stripped.MIME != "" {
+		file.Width, file.Height, file.Duration = p.stripped.Width, p.stripped.Height, p.stripped.DurationMS
+		if p.stripped.Decodes {
+			th, err := media.Poster(ctx, c.m.Media, p.out)
+			switch {
+			case err == nil:
+				thumb = &th
+			case ctx.Err() != nil:
+				return Uploaded{}, ctx.Err()
+			default:
+				// The page draws one instead, where the browser plays it.
+				c.m.log.Infof("A DM video has no preview: %v", err)
+			}
+		}
+	}
 
 	file.Key = denproto.Random(32)
 	ch, _ := denproto.ParseID(channelID)
@@ -141,22 +173,9 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 	}
 	file.ID = sent.ID
 	if thumb != nil {
-		var sealed bytes.Buffer
-		sw, err := vault.SealStreamWith(file.Key, &sealed, denproto.DMFileAD(c.j.denID, ch, true))
-		if err != nil {
+		if file.Thumb, err = c.uploadDMThumb(ctx, file.Key, ch, *thumb); err != nil {
 			return Uploaded{}, err
 		}
-		if _, err := sw.Write(thumb.Data); err != nil {
-			return Uploaded{}, err
-		}
-		if err := sw.Close(); err != nil {
-			return Uploaded{}, err
-		}
-		preview, err := c.uploadSealed(ctx, &sealed, int64(sealed.Len()))
-		if err != nil {
-			return Uploaded{}, err
-		}
-		file.Thumb = &denproto.DMThumb{ID: preview.ID, Width: thumb.Width, Height: thumb.Height}
 	}
 
 	now := time.Now()
@@ -172,22 +191,67 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		c.dmFiles[file.ID] = dmFile{channel: ch, key: file.Key, thumb: file.Thumb.ID}
 	}
 	c.mu.Unlock()
-	up := Uploaded{File: denproto.File{ID: file.ID, Name: file.Name, Type: file.Type, Size: file.Size,
-		Width: file.Width, Height: file.Height, Animated: file.Animated}, Stripped: res.Removed}
-	if file.Thumb != nil {
-		up.Thumb = &denproto.Thumb{Width: file.Thumb.Width, Height: file.Thumb.Height}
+	up := dmUploaded(file)
+	up.Stripped = res.Removed
+	if p != nil {
+		up.Stripped, up.Converted = true, p.converted
 	}
 	return up, nil
 }
 
+// dmUploaded describes a DM file to the page as a den describes a
+// channel's.
+func dmUploaded(file denproto.DMFile) Uploaded {
+	up := Uploaded{File: denproto.File{ID: file.ID, Name: file.Name, Type: file.Type, Size: file.Size,
+		Width: file.Width, Height: file.Height, Animated: file.Animated, Duration: file.Duration}}
+	if file.Thumb != nil {
+		up.Thumb = &denproto.Thumb{Width: file.Thumb.Width, Height: file.Thumb.Height}
+	}
+	return up
+}
+
+// uploadDMThumb seals a DM file's preview with the file's key and uploads
+// it.
+func (c *conn) uploadDMThumb(ctx context.Context, key denproto.Bytes, channel int64, th media.Thumb) (*denproto.DMThumb, error) {
+	var sealed bytes.Buffer
+	sw, err := vault.SealStreamWith(key, &sealed, denproto.DMFileAD(c.j.denID, channel, true))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := sw.Write(th.Data); err != nil {
+		return nil, err
+	}
+	if err := sw.Close(); err != nil {
+		return nil, err
+	}
+	preview, err := c.uploadSealed(ctx, &sealed, int64(sealed.Len()))
+	if err != nil {
+		return nil, err
+	}
+	return &denproto.DMThumb{ID: preview.ID, Width: th.Width, Height: th.Height}, nil
+}
+
 // uploadSealed sends a sealed blob to the den, of the given length.
 func (c *conn) uploadSealed(ctx context.Context, body io.Reader, length int64) (denproto.File, error) {
+	f, err := c.post(ctx, "/api/uploads/sealed", body, length)
+	if err != nil {
+		return denproto.File{}, err
+	}
+	if !f.Sealed || f.Size != length {
+		return denproto.File{}, errors.New("the den's answer is malformed")
+	}
+	return f, nil
+}
+
+// post sends bytes to the den, of the given length, and reads back the
+// file they made or changed.
+func (c *conn) post(ctx context.Context, path string, body io.Reader, length int64) (denproto.File, error) {
 	token, err := c.session(ctx)
 	if err != nil {
 		return denproto.File{}, err
 	}
 	a := c.remote()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.base+"/api/uploads/sealed", body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.base+path, body)
 	if err != nil {
 		return denproto.File{}, err
 	}
@@ -207,7 +271,7 @@ func (c *conn) uploadSealed(ctx context.Context, body io.Reader, length int64) (
 		return denproto.File{}, fmt.Errorf("read the den's response: %w", err)
 	}
 	var f denproto.File
-	if len(data) > denproto.MaxBody || json.Unmarshal(data, &f) != nil || denproto.CheckFile(f) != nil || !f.Sealed || f.Size != length {
+	if len(data) > denproto.MaxBody || json.Unmarshal(data, &f) != nil || denproto.CheckFile(f) != nil {
 		return denproto.File{}, errors.New("the den's answer is malformed")
 	}
 	return f, nil
@@ -262,36 +326,4 @@ func (c *counter) Write(p []byte) (int, error) {
 	n, err := c.w.Write(p)
 	c.n += int64(n)
 	return n, err
-}
-
-// openDMFile fetches a DM file, or its preview, and opens it with the key
-// its message sealed.
-func (c *conn) openDMFile(ctx context.Context, fileID string, df dmFile, thumb bool) (io.ReadCloser, int64, error) {
-	blob := fileID
-	if thumb {
-		if df.thumb == "" {
-			return nil, 0, &denproto.Error{Status: http.StatusNotFound, Code: denproto.CodeNotFound, Message: "no preview"}
-		}
-		blob = df.thumb
-	}
-	res, err := c.transfer(ctx, "/api/files/"+blob)
-	if err != nil {
-		return nil, 0, err
-	}
-	size, ok := vault.OpenedSize(res.ContentLength)
-	if !ok || size > denproto.MaxFileSize {
-		res.Body.Close()
-		return nil, 0, errors.New("the den's answer is malformed")
-	}
-	r, err := vault.OpenStreamWith(df.key, io.LimitReader(res.Body, res.ContentLength), denproto.DMFileAD(c.j.denID, df.channel, thumb))
-	if err != nil {
-		res.Body.Close()
-		return nil, 0, err
-	}
-	return readCloser{r, res.Body}, size, nil
-}
-
-type readCloser struct {
-	io.Reader
-	io.Closer
 }

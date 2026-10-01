@@ -480,6 +480,7 @@ type DMFile struct {
 	Width    int      `json:"width,omitempty"`
 	Height   int      `json:"height,omitempty"`
 	Animated bool     `json:"animated,omitempty"`
+	Duration int64    `json:"duration_ms,omitempty"`
 	Thumb    *DMThumb `json:"thumb,omitempty"`
 }
 
@@ -567,7 +568,8 @@ func CheckDMPayload(p DMPayload) error {
 			}
 			thumb = &Thumb{Width: t.Width, Height: t.Height}
 		}
-		file := File{ID: f.ID, Name: f.Name, Type: f.Type, Size: f.Size, Width: f.Width, Height: f.Height, Animated: f.Animated, Thumb: thumb}
+		file := File{ID: f.ID, Name: f.Name, Type: f.Type, Size: f.Size, Width: f.Width, Height: f.Height, Animated: f.Animated,
+			Duration: f.Duration, Thumb: thumb}
 		if err := CheckFile(file); err != nil {
 			return err
 		}

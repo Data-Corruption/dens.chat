@@ -2,8 +2,9 @@
 // shows an image whole.
 //
 // Every file comes through the local service, which serves only real
-// images as images and everything else as a download. A file's name comes
-// from a den and is shown as text, never used as anything else.
+// images, and video and audio in containers Dens writes, as what they are,
+// and everything else as a download. A file's name comes from a den and is
+// shown as text, never used as anything else.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { APIError } from './api.js';
@@ -17,6 +18,15 @@ const SEVERAL = { w: 240, h: 180 };
 const MIN_SIDE = 48;
 
 export const MAX_ATTACHMENTS = 10;
+
+// formatDuration writes milliseconds as a player shows them: 0:04, 1:02:03.
+export function formatDuration(ms) {
+    const total = Math.floor(ms / 1000);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = String(total % 60).padStart(2, '0');
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
 
 export function formatSize(bytes) {
     if (bytes < 1024) return `${bytes} B`;
@@ -73,20 +83,230 @@ export function upload(denID, channelID, file, name, onProgress) {
     return { done, abort: () => xhr.abort() };
 }
 
+// attachmentKind says how a message shows a file: a video it plays, an
+// image's preview, audio it plays, or a card to download.
+export function attachmentKind(f) {
+    if (f.type?.startsWith('video/') && f.width > 0) return 'video';
+    if (f.type?.startsWith('audio/')) return 'audio';
+    if (f.thumb) return 'image';
+    return 'file';
+}
+
 // Attachments shows a message's files: images as previews that open the
-// viewer, anything else as a card to download.
+// viewer, video and audio as players, anything else as a card to download.
 export function Attachments({ denID, files, onOpen }) {
-    const images = files.filter((f) => f.thumb);
-    const others = files.filter((f) => !f.thumb);
-    const box = images.length > 1 ? SEVERAL : ONE;
+    const tiles = files.filter((f) => ['image', 'video'].includes(attachmentKind(f)));
+    const others = files.filter((f) => !tiles.includes(f));
+    const box = tiles.length > 1 ? SEVERAL : ONE;
     return (
         <div class="mt-1 flex flex-col gap-1">
-            {images.length > 0 && (
+            {tiles.length > 0 && (
                 <div class="flex flex-wrap gap-1">
-                    {images.map((f) => <ImageTile key={f.id} denID={denID} file={f} box={box} onOpen={() => onOpen(f)} />)}
+                    {tiles.map((f) => attachmentKind(f) === 'video'
+                        ? <VideoTile key={f.id} denID={denID} file={f} box={box} />
+                        : <ImageTile key={f.id} denID={denID} file={f} box={box} onOpen={() => onOpen(f)} />)}
                 </div>
             )}
-            {others.map((f) => <FileCard key={f.id} denID={denID} file={f} />)}
+            {others.map((f) => attachmentKind(f) === 'audio'
+                ? <AudioCard key={f.id} denID={denID} file={f} />
+                : <FileCard key={f.id} denID={denID} file={f} />)}
+        </div>
+    );
+}
+
+// How long a playing video's controls stay up after the pointer last moved,
+// about as long as browsers' own.
+const CONTROLS_LINGER = 2500;
+
+// playbackTime reads a player's position, and the video's length when
+// it's known: 0:01 / 0:04.
+export function playbackTime(seconds, total) {
+    const at = formatDuration(seconds * 1000);
+    return total > 0 ? `${at} / ${formatDuration(total * 1000)}` : at;
+}
+
+// VideoTile plays a video in the message list, sized before it loads from
+// the size the den stated, with its preview as the poster, or a plain box
+// of its shape without one. Nothing of the video loads until it plays; the
+// player asks for ranges as it goes, and as the member seeks. The controls
+// are the page's own, since browsers' own can't be kept up: they stay while
+// the video is paused, so it shows where it stopped and how long it is,
+// and while it plays they hide once the pointer rests or leaves. Keyboard
+// focus inside keeps them up too, but not focus a click gave, as Firefox
+// gives the video itself.
+function VideoTile({ denID, file, box }) {
+    const size = fitBox(file.width, file.height, box.w, box.h);
+    const frame = useRef(null);
+    const video = useRef(null);
+    const linger = useRef(0);
+    const [paused, setPaused] = useState(true);
+    const [started, setStarted] = useState(false);
+    const [time, setTime] = useState(0);
+    const [duration, setDuration] = useState((file.duration_ms || 0) / 1000);
+    const [muted, setMuted] = useState(false);
+    const [volume, setVolume] = useState(1);
+    const [waiting, setWaiting] = useState(false);
+    const [failed, setFailed] = useState(null);
+    const [stirred, setStirred] = useState(false);
+    const [full, setFull] = useState(false);
+
+    useEffect(() => {
+        const onFull = () => setFull(document.fullscreenElement === frame.current);
+        document.addEventListener('fullscreenchange', onFull);
+        return () => {
+            document.removeEventListener('fullscreenchange', onFull);
+            clearTimeout(linger.current);
+        };
+    }, []);
+
+    // stir shows the controls for a while after the pointer moves.
+    function stir() {
+        setStirred(true);
+        clearTimeout(linger.current);
+        linger.current = setTimeout(() => setStirred(false), CONTROLS_LINGER);
+    }
+    function rest() {
+        clearTimeout(linger.current);
+        setStirred(false);
+    }
+    function toggle() {
+        const v = video.current;
+        // A play the browser refuses shows through the error event.
+        if (v.paused) v.play().catch(() => {});
+        else v.pause();
+    }
+    function toggleMute() {
+        const v = video.current;
+        v.muted = !v.muted;
+        if (!v.muted && v.volume === 0) v.volume = 1;
+    }
+    function setLevel(e) {
+        const v = video.current;
+        v.volume = Number(e.currentTarget.value);
+        v.muted = v.volume === 0;
+    }
+    function seek(e) {
+        const t = Number(e.currentTarget.value);
+        video.current.currentTime = t;
+        setTime(t);
+    }
+    function toggleFull() {
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else frame.current.requestFullscreen().catch(() => {});
+    }
+
+    const shown = paused || stirred || failed;
+    // Hidden controls still come up for keyboard focus inside.
+    const fade = shown ? '' : 'pointer-events-none opacity-0 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100';
+    const silent = muted || volume === 0;
+    const button = 'flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-white/20';
+    return (
+        <div ref={frame} onPointerMove={stir} onPointerDown={stir} onPointerLeave={rest}
+            class="@container group relative max-w-full overflow-hidden rounded bg-base-300 [&:fullscreen]:rounded-none [&:fullscreen]:bg-black"
+            style={full ? undefined : { width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}>
+            <video ref={video} src={fileURL(denID, file.id)} poster={file.thumb ? thumbURL(denID, file.id) : undefined} preload="none"
+                title={file.name} aria-label={file.name} class="h-full w-full object-contain" onClick={toggle}
+                onPlay={() => { setPaused(false); setStarted(true); }} onPause={() => setPaused(true)}
+                onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+                onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
+                onVolumeChange={(e) => { setMuted(e.currentTarget.muted); setVolume(e.currentTarget.volume); }}
+                onWaiting={() => setWaiting(true)} onPlaying={() => setWaiting(false)} onCanPlay={() => setWaiting(false)}
+                onError={(e) => setFailed(e.currentTarget.error?.code === 2 ? "The video couldn't be loaded." : "This browser can't play this video.")} />
+            {failed ? (
+                <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 p-2 text-center text-xs text-white">
+                    <span>{failed}</span>
+                    <a class="btn btn-xs" href={downloadURL(denID, file)} download={file.name}>Download</a>
+                </div>
+            ) : (
+                (!started || (waiting && !paused)) && (
+                    <span class="pointer-events-none absolute inset-0 flex items-center justify-center text-white">
+                        {waiting && !paused
+                            ? <span class="loading loading-spinner loading-md" aria-label="Loading"></span>
+                            : <span class="flex h-10 w-10 items-center justify-center rounded-full bg-black/50"><PlayIcon size="h-5 w-5" /></span>}
+                    </span>
+                )
+            )}
+            {!failed && (
+                // A tile too narrow for the time in the bar, as a phone's
+                // upright video makes, shows it in a corner instead.
+                <span class={`badge badge-neutral badge-sm pointer-events-none absolute left-1 top-1 select-none whitespace-nowrap tabular-nums transition-opacity @min-[13rem]:hidden ${fade}`}>
+                    {playbackTime(time, duration)}
+                </span>
+            )}
+            {!failed && (
+                <div class={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white transition-opacity ${fade}`}>
+                    <button type="button" class={button} onClick={toggle} title={paused ? 'Play' : 'Pause'} aria-label={paused ? 'Play' : 'Pause'}>
+                        {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
+                    </button>
+                    <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
+                    <input type="range" class="range range-xs min-w-0 flex-1" min="0" max={duration || 0} step="any" value={time}
+                        onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
+                    <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
+                        <SoundIcon muted={silent} />
+                    </button>
+                    <input type="range" class="range range-xs hidden w-14 shrink-0 @min-[20rem]:block" min="0" max="1" step="0.05"
+                        value={silent ? 0 : volume} onInput={setLevel} aria-label="Volume"
+                        aria-valuetext={`${Math.round((silent ? 0 : volume) * 100)}%`} />
+                    {document.fullscreenEnabled && (
+                        <button type="button" class={`${button} hidden @min-[9rem]:flex`} onClick={toggleFull}
+                            title={full ? 'Exit full screen' : 'Full screen'} aria-label={full ? 'Exit full screen' : 'Full screen'}>
+                            <FullIcon full={full} />
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function PlayIcon({ size }) {
+    return (
+        <svg viewBox="0 0 16 16" class={size} fill="currentColor" aria-hidden="true">
+            <path d="M4.5 2.8v10.4L13 8z" />
+        </svg>
+    );
+}
+
+function PauseIcon() {
+    return (
+        <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+            <path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" />
+        </svg>
+    );
+}
+
+function SoundIcon({ muted }) {
+    return (
+        <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
+            <path d="M2 6h2.5L8 3v10L4.5 10H2z" fill="currentColor" stroke="none" />
+            {muted ? <path d="M10.5 6l4 4M14.5 6l-4 4" /> : <path d="M10.5 5.5a3.5 3.5 0 0 1 0 5M12.5 3.5a6.3 6.3 0 0 1 0 9" />}
+        </svg>
+    );
+}
+
+function FullIcon({ full }) {
+    return (
+        <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
+            {full
+                ? <path d="M6 2.5V6H2.5M10 2.5V6h3.5M6 13.5V10H2.5M10 13.5V10h3.5" />
+                : <path d="M2.5 6V2.5H6M13.5 6V2.5H10M2.5 10v3.5H6M13.5 10v3.5H10" />}
+        </svg>
+    );
+}
+
+function AudioCard({ denID, file }) {
+    return (
+        <div class="flex w-full max-w-sm flex-col gap-2 rounded border border-base-300 bg-base-200 p-2">
+            <div class="flex items-center gap-3">
+                <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium" title={file.name}>{file.name}</p>
+                    <p class="cursor-default select-none text-xs text-base-content/60">
+                        {file.duration_ms > 0 && `${formatDuration(file.duration_ms)} · `}{formatSize(file.size)}
+                    </p>
+                </div>
+                <a class="btn btn-ghost btn-sm" href={downloadURL(denID, file)} download={file.name}>Download</a>
+            </div>
+            <audio src={fileURL(denID, file.id)} controls preload="none" aria-label={file.name} class="w-full" />
         </div>
     );
 }
@@ -203,3 +423,74 @@ export function Thumb({ file, size = 56 }) {
 }
 
 export const isImageFile = (file) => /^image\/(jpeg|png|gif|webp)$/.test(file.type);
+
+// A video's preview, where Dens can't make one: the media module doesn't
+// decode WebM's or AV1's frames, so the page draws the first frame the
+// browser plays and sends it, before the message goes. The den makes its own
+// preview from that image. Where the browser can't play the video either, it
+// goes without, and the message list shows a box of its shape.
+const PREVIEW_SIDE = 1280;
+const PREVIEW_WAIT = 15000;
+
+// needsPreview says whether an upload is a video still without a preview.
+export const needsPreview = (f) => !!f.type?.startsWith('video/') && f.width > 0 && !f.thumb;
+
+// previewSize fits a frame of w×h in maxSide, keeping its shape.
+export function previewSize(w, h, maxSide) {
+    if (!(w > 0 && h > 0)) return { w: 0, h: 0 };
+    const s = Math.min(1, maxSide / Math.max(w, h));
+    return { w: Math.max(1, Math.round(w * s)), h: Math.max(1, Math.round(h * s)) };
+}
+
+// drawPreview resolves to a JPEG of the first frame of the video at src, or
+// null.
+function drawPreview(src) {
+    return new Promise((resolve) => {
+        const video = document.createElement('video');
+        const done = (blob) => {
+            clearTimeout(timer);
+            video.removeAttribute('src');
+            video.load();
+            resolve(blob);
+        };
+        const timer = setTimeout(() => done(null), PREVIEW_WAIT);
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.onerror = () => done(null);
+        video.onloadeddata = () => {
+            const { w, h } = previewSize(video.videoWidth, video.videoHeight, PREVIEW_SIDE);
+            if (!w) return done(null);
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            try {
+                canvas.getContext('2d').drawImage(video, 0, 0, w, h);
+            } catch {
+                return done(null);
+            }
+            canvas.toBlob(done, 'image/jpeg', 0.9);
+        };
+        video.src = src;
+    });
+}
+
+// addPreview gives an uploaded video the page's preview, and resolves to
+// the upload as it is then: with the preview, or as it was.
+export async function addPreview(denID, file) {
+    const blob = await drawPreview(fileURL(denID, file.id));
+    if (!blob) return file;
+    try {
+        const res = await fetch(`/api/dens/${denID}/uploads/${file.id}/thumb`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: blob,
+            credentials: 'same-origin',
+        });
+        if (!res.ok) return file;
+        const up = await res.json();
+        return up?.thumb ? { ...file, thumb: up.thumb } : file;
+    } catch {
+        return file;
+    }
+}

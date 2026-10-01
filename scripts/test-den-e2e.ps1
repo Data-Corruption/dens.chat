@@ -11,9 +11,11 @@ internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
 second must reconnect and see the whole history. The member sends a phone
-photo with GPS data, which must reach the owner without it. The owner opens
-a DM, which takes no message until both members type each other's check
-digits, and then carries text and a photo the den stores only sealed. The
+photo with GPS data, which must reach the owner without it, a phone video,
+which must arrive stripped with its preview and play from any byte, and an
+iPhone HEIC, which must arrive as a JPEG. The owner opens a DM, which takes
+no message until both members type each other's check digits, and then
+carries text, a photo and a video the den stores only sealed. The
 owner shares a checklist with the member, and the two tick different boxes
 at the same moment, all of which must stay. Instance fresh stands in for
 the member's new machine: it signs in by the den's address with a recovery
@@ -25,7 +27,7 @@ fresh's device list, second signs in again the same way, with the digits
 typed into fresh first, which must go on showing its own. The owner then
 bans the member, whose connections must close at once and who can't join
 again under the same name. The photo is scripts\test\gps-photo.jpg, next to
-this script.
+this script, and the video and HEIC are in internal\media\ffmpeg\testdata.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
@@ -282,6 +284,57 @@ function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$
     Invoke-Api $Old DELETE "/api/dens/$DenID/requests/$request" | Out-Null
 }
 
+# Send-Upload uploads a file as the page does, for a channel, whose DM's go
+# sealed, and returns what the local service answered.
+function Send-Upload($Browser, [string]$DenID, [string]$Channel, [string]$Path, [string]$Name) {
+    try {
+        $upload = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/uploads?channel=$Channel" -Method POST `
+            -WebSession $Browser.Session -UseBasicParsing -Headers @{ Origin = $Browser.Origin; "Dens-Filename" = $Name } `
+            -ContentType "application/octet-stream" -InFile $Path -TimeoutSec 120
+    } catch {
+        Fail "uploading $Name failed: $($_.ErrorDetails.Message) $($_.Exception.Message)"
+    }
+    return $upload.Content | ConvertFrom-Json
+}
+
+# Get-Field reads a field the answer may leave out, which strict mode
+# refuses to read directly.
+function Get-Field($Object, [string]$Name) {
+    if ($Object.PSObject.Properties[$Name]) { return $Object.$Name }
+    return $null
+}
+
+# Test-Clean fails if a file still carries what the phone put in it: its
+# make and model, Apple's keys, EXIF, or a location.
+function Test-Clean([string]$Path, [string]$What) {
+    $text = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($Path))
+    foreach ($marker in @("com.apple.quicktime", "iPhone", "Exif", "TestPhone")) {
+        if ($text.Contains($marker)) { Fail "$What arrived with '$marker'" }
+    }
+    if ($text -match '[+-]\d{2}\.\d{3,}[+-]\d{3}\.\d{3,}') { Fail "$What arrived with a location" }
+}
+
+# Test-Range fetches bytes From to To of a file as a player seeking does,
+# and fails unless they're those of the whole file at Path. Windows
+# PowerShell won't set a Range header itself.
+function Test-Range($Browser, [string]$DenID, [string]$FileID, [string]$Path, [int]$From, [int]$To) {
+    $request = [Net.HttpWebRequest]::Create("$($Browser.Origin)/api/dens/$DenID/files/$FileID")
+    $request.CookieContainer = $Browser.Session.Cookies
+    $request.AddRange($From, $To)
+    $response = $request.GetResponse()
+    try {
+        if ([int]$response.StatusCode -ne 206) { Fail "a range came back as $([int]$response.StatusCode)" }
+        $part = New-Object IO.MemoryStream
+        $response.GetResponseStream().CopyTo($part)
+    } finally {
+        $response.Close()
+    }
+    $whole = [IO.File]::ReadAllBytes($Path)
+    if ([Convert]::ToBase64String($part.ToArray()) -ne [Convert]::ToBase64String($whole, $From, $To - $From + 1)) {
+        Fail "a range holds the wrong bytes"
+    }
+}
+
 function New-Nonce {
     $bytes = New-Object byte[] 16
     [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -481,6 +534,37 @@ den.test:$HttpsPort {
     }
     Write-Host "The photo arrived stripped, with a preview; the den holds $($stored.Count) sealed files."
 
+    Step "a phone video with GPS data, and an iPhone HEIC"
+    $media = Join-Path $PSScriptRoot "..\internal\media\ffmpeg\testdata"
+    $file = Send-Upload $member $denID "" (Join-Path $media "with-gps.mov") "IMG_0003.MOV"
+    # 568x320, turned a quarter, for four seconds.
+    if (-not $file.stripped -or $file.type -ne "video/mp4" -or $file.width -ne 320 -or $file.height -ne 568 -or
+        -not (Get-Field $file "thumb") -or (Get-Field $file "duration_ms") -lt 3900) {
+        Fail "the video came back as $($file | ConvertTo-Json -Compress)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $got = Join-Path $Work "video.mp4"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "video/mp4") { Fail "the video came as $($resp.Headers['Content-Type'])" }
+    Test-Clean $got "the video"
+    Test-Range $owner $denID $file.id $got 200000 299999
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile (Join-Path $Work "video-preview.jpg") -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the video's preview came as $($resp.Headers['Content-Type'])" }
+    $file = Send-Upload $member $denID "" (Join-Path $media "rotated.heic") "IMG_0004.HEIC"
+    if (-not (Get-Field $file "converted") -or $file.type -ne "image/jpeg" -or $file.name -ne "IMG_0004.jpg" -or
+        $file.width -ne 3024 -or $file.height -ne 4032 -or -not (Get-Field $file "thumb")) {
+        Fail "the HEIC came back as $($file | ConvertTo-Json -Compress)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $got = Join-Path $Work "heic.jpg"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the HEIC came as $($resp.Headers['Content-Type'])" }
+    Test-Clean $got "the HEIC"
+    Write-Host "The video arrived stripped with its preview and plays from any byte; the HEIC arrived as a JPEG."
+
     Step "a private DM, once both members compare check codes"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"
     $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
@@ -521,6 +605,20 @@ den.test:$HttpsPort {
             if ($text.Contains($marker)) { Fail "the DM photo$variant arrived with '$marker'" }
         }
     }
+    $file = Send-Upload $member $denID $dm (Join-Path $media "with-gps.mov") "IMG_0005.MOV"
+    if ($file.type -ne "video/mp4" -or $file.width -ne 320 -or -not (Get-Field $file "thumb") -or (Get-Field $file "duration_ms") -lt 3900) {
+        Fail "the DM video came back as $($file | ConvertTo-Json -Compress)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    # The owner's Dens learns the video's key from the message, which the
+    # page reads before it asks for the file.
+    Get-History $owner $denID $dm | Out-Null
+    $got = Join-Path $Work "dm-video.mp4"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "video/mp4") { Fail "the DM video came as $($resp.Headers['Content-Type'])" }
+    Test-Clean $got "the DM video"
+    Test-Range $owner $denID $file.id $got 200000 299999
     # The -shm file holds only the write-ahead log's index, where a write in
     # progress locks bytes that would refuse the read.
     $dbFiles = @(Get-ChildItem -File (Join-Path $DataRoot "main\data\db") | Where-Object { $_.Name -notlike "*-shm" })

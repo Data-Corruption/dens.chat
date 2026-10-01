@@ -17,7 +17,24 @@ const (
 	// MaxImageSide bounds an image's stated sides, which clients lay out
 	// before it loads.
 	MaxImageSide = 1 << 16
+	// MaxDuration is the longest a video or audio file may say it lasts,
+	// in milliseconds: a week.
+	MaxDuration = 7 * 24 * 60 * 60 * 1000
+	// MaxPreviewUpload bounds the image a page draws for a video's preview,
+	// at the video's size, as a JPEG or PNG.
+	MaxPreviewUpload = 16 << 20
 )
+
+// PreviewShape reports whether an image of pw × ph has the shape of a video
+// of vw × vh, give or take a pixel of rounding on each side where it was
+// drawn smaller.
+func PreviewShape(pw, ph, vw, vh int) bool {
+	if pw < 1 || ph < 1 || vw < 1 || vh < 1 {
+		return false
+	}
+	diff := int64(pw)*int64(vh) - int64(ph)*int64(vw)
+	return max(diff, -diff) <= int64(vw)+int64(vh)
+}
 
 // Upload limits a den starts with; the owner changes them.
 const (
@@ -49,8 +66,10 @@ const SealedType = "application/octet-stream"
 // Error codes for uploads.
 const (
 	// CodeUnsupportedType (415) is a file Dens refuses rather than send
-	// with metadata it can't remove: video, audio, and photos in formats
-	// it can't clean yet.
+	// with metadata it can't remove: AVIF, JPEG XL and camera raw photos,
+	// and video and audio in containers the media module doesn't read. A
+	// den also refuses a photo clients turn into a JPEG or PNG first, and
+	// video and audio when it has no media module.
 	CodeUnsupportedType = "unsupported_type"
 	// CodeQuotaExceeded (507) is a member who has used up their space.
 	CodeQuotaExceeded = "quota_exceeded"
@@ -61,8 +80,9 @@ const (
 
 // File is an uploaded file: an attachment, or a picture on a profile. Type
 // is what the den found the file to be, never what the uploader said;
-// Width and Height are set for images, as they display, and Thumb when the
-// den made a preview.
+// Width and Height are set for images and videos, as they display,
+// Duration for video and audio when it's known, and Thumb when there's a
+// preview.
 type File struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -71,6 +91,7 @@ type File struct {
 	Width    int    `json:"width,omitempty"`
 	Height   int    `json:"height,omitempty"`
 	Animated bool   `json:"animated,omitempty"`
+	Duration int64  `json:"duration_ms,omitempty"`
 	Thumb    *Thumb `json:"thumb,omitempty"`
 	// Sealed marks an upload sealed by the member's client for a DM
 	// (M1.7), which the den can't open: it has no name or type of its own.
@@ -165,7 +186,8 @@ func CheckFile(f File) error {
 		return errors.New("file has an invalid ID")
 	}
 	if f.Sealed {
-		if f.Name != "" || f.Type != SealedType || f.Size < 0 || f.Size > MaxFileSize || f.Width != 0 || f.Height != 0 || f.Animated || f.Thumb != nil {
+		if f.Name != "" || f.Type != SealedType || f.Size < 0 || f.Size > MaxFileSize || f.Width != 0 || f.Height != 0 || f.Animated ||
+			f.Duration != 0 || f.Thumb != nil {
 			return errors.New("sealed file has details it can't have")
 		}
 		return nil
@@ -181,6 +203,9 @@ func CheckFile(f File) error {
 	}
 	if (f.Width == 0) != (f.Height == 0) || f.Width < 0 || f.Height < 0 || f.Width > MaxImageSide || f.Height > MaxImageSide {
 		return errors.New("file has an invalid image size")
+	}
+	if f.Duration < 0 || f.Duration > MaxDuration {
+		return errors.New("file has an invalid duration")
 	}
 	if t := f.Thumb; t != nil {
 		if f.Width == 0 || t.Width < 1 || t.Height < 1 || t.Width > MaxThumb || t.Height > MaxThumb {

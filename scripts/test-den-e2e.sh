@@ -10,9 +10,11 @@
 # on a different distro, trusts that authority, installs Dens and joins
 # with an invite from the owner. The two chat, the den's service restarts,
 # and the member must reconnect with the whole history. The member sends a
-# phone photo that must arrive stripped. The owner opens a DM, which takes
-# no message until both members type each other's check digits, and then
-# carries text and a photo the den stores only sealed. The owner shares a
+# phone photo that must arrive stripped, a phone video that must arrive
+# stripped with its preview and play from any byte, and an iPhone HEIC that
+# must arrive as a JPEG. The owner opens a DM, which takes no message until
+# both members type each other's check digits, and then carries text, a
+# photo and a video the den stores only sealed. The owner shares a
 # checklist with the member, and the two tick different boxes at the same
 # moment, all of which must stay. A second instance on the member's
 # machine stands in for a fresh one: it signs in by the den's address with
@@ -225,6 +227,33 @@ run() {
   stored=$(guest "$DEN" sealed)
   echo ">> The photo arrived stripped, upright and with a preview; the den holds ${stored} sealed files"
 
+  echo ">> A phone video with GPS data, and an iPhone HEIC, through Caddy"
+  local media type name duration converted
+  for media in with-gps.mov rotated.heic; do
+    "${INCUS[@]}" file push -q "internal/media/ffmpeg/testdata/$media" "$CLIENT/root/$media"
+  done
+  read -r file type size preview converted name duration <<<"$(guest "$CLIENT" upload-media "$den_id" /root/with-gps.mov IMG_0003.MOV)"
+  # 568x320, turned a quarter, for four seconds.
+  [[ "$type $size $preview $converted $name" == "video/mp4 320x568 preview as-is IMG_0003.MOV" && "$duration" -gt 3900 ]] ||
+    { echo "error: the video came back as: $file $type $size $preview $converted $name $duration" >&2; return 1; }
+  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/video.mp4)
+  [[ "$kind" == video/mp4 ]] || { echo "error: the video came as $kind" >&2; return 1; }
+  guest "$DEN" clean /root/video.mp4
+  guest "$DEN" range "$den_id" "$file" /root/video.mp4 200000 299999
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/video-preview.jpg thumb)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/video-preview.jpg)" == "320x568 nothing" ]] ||
+    { echo "error: the video's preview is $kind $(guest "$DEN" jpeg /root/video-preview.jpg)" >&2; return 1; }
+  read -r file type size preview converted name duration <<<"$(guest "$CLIENT" upload-media "$den_id" /root/rotated.heic IMG_0004.HEIC)"
+  [[ "$type $size $preview $converted $name" == "image/jpeg 3024x4032 preview converted IMG_0004.jpg" ]] ||
+    { echo "error: the HEIC came back as: $file $type $size $preview $converted $name" >&2; return 1; }
+  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/heic.jpg)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/heic.jpg)" == "3024x4032 ICC_PROFILE" ]] ||
+    { echo "error: the HEIC arrived as $kind $(guest "$DEN" jpeg /root/heic.jpg)" >&2; return 1; }
+  guest "$DEN" clean /root/heic.jpg
+  echo ">> The video arrived stripped with its preview and plays from any byte; the HEIC arrived as an upright JPEG in its own colors"
+
   echo ">> A private DM, once both members compare check codes"
   local bob dm owner_half member_half refusal
   bob=$(guest "$DEN" member-id "$den_id" bob)
@@ -252,9 +281,20 @@ run() {
     { echo "error: the DM photo arrived as $kind $(guest "$DEN" jpeg /root/dm-photo.jpg)" >&2; return 1; }
   kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-preview.jpg thumb)
   [[ "$kind" == image/jpeg ]] || { echo "error: the DM photo's preview came as $kind" >&2; return 1; }
+  read -r file type size preview converted name duration <<<"$(member upload-media "$den_id" /root/with-gps.mov IMG_0005.MOV "$dm")"
+  [[ "$type $size $preview" == "video/mp4 320x568 preview" && "$duration" -gt 3900 ]] ||
+    { echo "error: the DM video came back as: $file $type $size $preview $duration" >&2; return 1; }
+  member send-file "$den_id" "$dm" "$file" >/dev/null
+  # The owner's service learns the video's key from the message, which the
+  # page reads before it asks for the file.
+  guest "$DEN" history "$den_id" "$dm" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video.mp4)
+  [[ "$kind" == video/mp4 ]] || { echo "error: the DM video came as $kind" >&2; return 1; }
+  guest "$DEN" clean /root/dm-video.mp4
+  guest "$DEN" range "$den_id" "$file" /root/dm-video.mp4 200000 299999
   guest "$DEN" dm-sealed "a private word"
   stored=$(guest "$DEN" sealed)
-  echo ">> The DM took messages only after both typed each other's digits; its text and photo reached the other side, and the den holds ${stored} sealed files"
+  echo ">> The DM took messages only after both typed each other's digits; its text, photo and video reached the other side, and the den holds ${stored} sealed files"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text

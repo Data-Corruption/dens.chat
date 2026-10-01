@@ -408,14 +408,14 @@ A member is online while they have an open socket. `ready` carries `online`, a l
 - `typing` counts only in a channel the connection focuses. The den passes it on as an ephemeral `typing {channel_id, member_id}` to the other connections focused there, at most once every 2 seconds per member and channel, dropping the rest.
 - Clients show a typing notice for about 6 seconds, and clear it when that member's message arrives.
 
-## Files (M1.4)
+## Files (M1.4, M1.8)
 
 ```
-file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "thumb"?: {"width", "height"}}
+file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"width", "height"}}
 image = {"id", "width", "height"}
 ```
 
-A file is an upload: an attachment on a message, or a picture on a profile. `type` is what the den found the file to be from its first bytes, never what its name says. `width` and `height` are set for images, as they display, so a client lays out the space an image takes before it loads. `thumb` is there when the den made a preview.
+A file is an upload: an attachment on a message, or a picture on a profile. `type` is what the den found the file to be from its bytes, never what its name says. `width` and `height` are set for images and videos, as they display, so a client lays out the space one takes before it loads. `duration_ms` is a video's or audio's length when it's known, at most a week. `thumb` is there when the file has a preview.
 
 ### Uploading
 
@@ -428,7 +428,9 @@ Dens-Filename: <the file's name, UTF-8, percent-encoded>
 - `Content-Length`, when given, lets the den refuse a file over the size limit before reading it. Without it the den reads up to the limit and refuses the file once it passes it.
 - The den reads the file's first bytes to decide what it is:
   - JPEG, PNG, GIF and WebP are images. They get their size as they display (after a JPEG's orientation), `animated` when they have more than one frame, and a preview: a JPEG, or a PNG when it has transparency, fitting a 640 × 640 square, never enlarged, upright. An image too large to decode within the den's memory budget, 256 MiB, goes without one and downloads like any other file.
-  - Video, audio, and photos in formats Dens can't clean yet (HEIF and AVIF, TIFF and camera raw, JPEG XL, JPEG 2000 and Photoshop) are refused with `415 unsupported_type`, rather than stored with metadata nobody took out.
+  - Video and audio in MP4 and QuickTime, Matroska and WebM, MP3, AAC, FLAC, Ogg and WAV go through the den's media module (see [Video and audio](#video-and-audio)).
+  - HEIF (not AVIF), TIFF (not camera raw), JPEG 2000 and Photoshop photos are refused with `415 unsupported_type`: clients send them as the JPEG or PNG they turn them into.
+  - AVIF, JPEG XL, camera raw, and video and audio in other containers (AVI, ASF, FLV, MPEG program and transport streams, AIFF, AMR, MIDI, RealMedia) are refused with `415 unsupported_type`, and a message naming the kind, rather than stored with metadata nobody took out. So are video and audio at a den without the media module.
   - Anything else is a file to download, with the media type the den sniffed, for clients to pick an icon.
 - The name is cleaned: control, bidi and zero-width characters are dropped, `/` and `\` become `_`, spaces and dots are trimmed from both ends, and it is cut to 255 bytes without splitting a character. An empty name becomes `file`.
 - An upload waits an hour for a message or a profile to use it, and is then deleted. Until it's used, only the member who uploaded it can fetch it.
@@ -447,6 +449,26 @@ Clients take metadata out of images before uploading, so a den never receives it
 
 A JPEG that isn't upright keeps its orientation as the smallest EXIF block that holds it, and the den accepts it only in exactly this form: `Exif\0\0`, then a big-endian TIFF header (`MM`, 42, the directory at 8), one directory with one entry, orientation (`0x0112`, type SHORT, count 1, the value 2 to 8), and no next directory, 32 bytes in all. An upright JPEG keeps no EXIF.
 
+### Video and audio
+
+Clients strip video and audio before uploading, with the same media module dens run: it copies the file's video and audio streams into a new container and nothing else (see the design doc's ffmpeg section). A den can't check a container the way it checks an image, so it strips the file again and stores its own copy:
+
+- `type` is what the copy plays as, which its container decides:
+  - MP4, QuickTime and AAC become MP4: `video/mp4`, or `audio/mp4` without video.
+  - Matroska and WebM become WebM when WebM takes their codecs (`video/webm`, `audio/webm`), else MP4 when it does, else stay Matroska (`video/x-matroska`, `audio/x-matroska`).
+  - MP3, FLAC, Ogg and WAV stay as they are: `audio/mpeg`, `audio/flac`, `audio/ogg` and `audio/wav`.
+- `size` is the copy's, which must fit the file size limit too.
+- `width` and `height` are a video's as it displays: cropped as its container asks, stretched by its pixels' aspect ratio, and turned.
+- A video's preview is its first frame, made like an image's. The module decodes H.264 and HEVC, but not VP8, VP9 or AV1, so such a video arrives without `thumb`, and its uploader's client may send one (below).
+- A file the module can't read gets `400 invalid_field`, as a damaged image does.
+
+```
+POST /api/uploads/{id}/thumb   (body: a JPEG or PNG)   200 file
+```
+
+- The image is the video's first frame as the uploader's browser plays it, drawn at the video's size or smaller, at most 16 MiB, and stripped like any image. It must have the video's shape, give or take a pixel of rounding on each side.
+- Only the uploader may send one, while the upload waits to be used, for a video without a preview. The den makes its own preview from the image and keeps nothing else of it; the preview counts against the member's space.
+
 ### Attachments
 
 ```
@@ -457,7 +479,8 @@ GET  /api/me/storage               200 {"used", "den_used"}
 ```
 
 - A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent. An edit changes only the text.
-- A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image.
+- A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image, video or audio.
+- A file answers byte ranges (`Range: bytes=N-`, `206 Partial Content`), and the den decrypts only the chunks a range covers, so a player seeks without fetching the whole file. Its `ETag` is its ID, quoted, since its bytes never change.
 - A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](#dm-files)).
 - A member may fetch a file when they can see the message it's on, any member may fetch a picture on a profile, and only its uploader may fetch an upload waiting to be used. Anyone else gets `404 not_found`.
 - A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, and `channel.deleted` and a fresh `ready` can leave anything unreachable.
@@ -561,7 +584,9 @@ POST /api/uploads/sealed   (body: the sealed file)   201 {"id", "name": "", "typ
 ```
 
 - A DM's file goes up sealed by the sender's client, which first takes an image's metadata out and makes its preview, as the den does for a channel's. Each file gets a random key of its own. The file and its preview are sealed with it as streams, in the format files at rest use, bound to `"dens-dm-file-v1" ‖ den_id ‖ channel ‖ "file"` or `"thumb"`, and go up as two blobs.
-- The message's sealed text lists each file: `{"id", "key", "name", "type", "size", "width"?, "height"?, "animated"?, "thumb"?: {"id", "width", "height"}}`. Its `attachments` name every blob, each file's and its preview's, at most 20.
+- The sender's client strips a DM's video and audio, and makes a video's preview, as a den does for a channel's. For a video the module can't decode, the sender's page draws the preview, and the client seals and uploads it as it does its own.
+- The message's sealed text lists each file: `{"id", "key", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"id", "width", "height"}}`. Its `attachments` name every blob, each file's and its preview's, at most 20.
+- A sealed file answers byte ranges like any other, and a client opens the chunks a range covers with the file's key, so a DM's video seeks the same way.
 - A DM's message takes only sealed uploads, and a channel's none. The den counts a sealed blob against the upload limits, and serves it like any file, with no preview of its own.
 
 ### Starting over
@@ -614,6 +639,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | A new device asking after its sign-in, and revealing | 30 per minute per IP |
 | Sending messages | 5 per 5 seconds per member, per channel |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
-| Uploads | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
+| Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | Other writes | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

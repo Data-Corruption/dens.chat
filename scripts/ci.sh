@@ -111,6 +111,7 @@ execute_release() {
   package_installers
   if $RELEASE_BUILD_REQUIRED; then
     package_binaries
+    package_ffmpeg_source
     write_release_version
     generate_checksums
     sign_application_release

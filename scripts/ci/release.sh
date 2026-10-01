@@ -9,6 +9,7 @@ RELEASE_CHECKSUM_OBJECTS=(
   linux-arm64.gz
   windows-amd64.exe.gz
   windows-arm64.exe.gz
+  ffmpeg-source.tar.xz
   version
 )
 RELEASE_OBJECTS=(

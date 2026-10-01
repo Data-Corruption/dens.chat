@@ -69,26 +69,72 @@ func (i *idleReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// setThumb takes the preview a member's page made for a video the den
+// can't make one for.
+func (h *handler) setThumb(w http.ResponseWriter, r *http.Request) {
+	s := session(r)
+	if err := h.d.Allow(dens.LimitUpload, strconv.FormatInt(s.MemberID, 10)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	body := &idleReader{r: r.Body, rc: http.NewResponseController(w)}
+	f, err := h.d.SetThumb(r.Context(), s, chi.URLParam(r, "id"), r.ContentLength, body)
+	if err != nil {
+		if body.err != nil {
+			h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeMalformed, "the upload stopped before its end"))
+			return
+		}
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, f)
+}
+
 // file serves a file, or its preview, as bytes to download: the den never
 // says what a file is in a way a browser would act on, and clients check
-// what they got before showing anything.
+// what they got before showing anything. It answers byte ranges, opening
+// only the chunks a range covers, so a video plays from wherever its player
+// seeks.
 func (h *handler) file(thumb bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rc, size, err := h.d.OpenFile(r.Context(), session(r), chi.URLParam(r, "id"), thumb)
+		id := chi.URLParam(r, "id")
+		f, err := h.d.OpenFile(r.Context(), session(r), id, thumb)
 		if err != nil {
 			h.fail(w, r, err)
 			return
 		}
-		defer rc.Close()
+		defer f.Close()
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", "attachment")
-		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		w.Header().Set("Cache-Control", "no-store")
-		if _, err := io.Copy(w, rc); errors.Is(err, vault.ErrSealed) {
+		// A file's bytes never change under its ID.
+		tag := `"` + id + `"`
+		if thumb {
+			tag = `"` + id + `.thumb"`
+		}
+		w.Header().Set("ETag", tag)
+		rs := &readWatch{ReadSeeker: f}
+		http.ServeContent(w, r, "", time.Time{}, rs)
+		if errors.Is(rs.err, vault.ErrSealed) {
 			// The response is cut short, so the client notices too.
-			h.log.Errorf("serve file %s: %v", chi.URLParam(r, "id"), err)
+			h.log.Errorf("serve file %s: %v", id, rs.err)
 		}
 	}
+}
+
+// readWatch remembers how reading failed, which http.ServeContent doesn't
+// say.
+type readWatch struct {
+	io.ReadSeeker
+	err error
+}
+
+func (r *readWatch) Read(p []byte) (int, error) {
+	n, err := r.ReadSeeker.Read(p)
+	if err != nil && err != io.EOF && r.err == nil {
+		r.err = err
+	}
+	return n, err
 }
 
 func (h *handler) storage(w http.ResponseWriter, r *http.Request) {

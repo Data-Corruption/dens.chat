@@ -22,6 +22,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
 	denhttp "github.com/Data-Corruption/dens.chat/internal/platform/http/den"
@@ -29,7 +30,16 @@ import (
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
-// store is one install's database, vault and log.
+// The test binary is its own media worker, as ffmpeg.TestWorkerEnv says.
+func TestMain(m *testing.M) {
+	if os.Getenv(ffmpeg.TestWorkerEnv) == "1" {
+		os.Exit(ffmpeg.Work(os.Stdin, os.Stdout))
+	}
+	os.Exit(m.Run())
+}
+
+// store is one install's database, vault and log, and its media module,
+// which its den and client share.
 type store struct {
 	db      *sql.DB
 	v       *vault.Vault
@@ -57,7 +67,8 @@ func newStore(t *testing.T) store {
 	if err := vaultstore.Init(context.Background(), db, v.CheckValue()); err != nil {
 		t.Fatal(err)
 	}
-	storage := den.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp")}
+	storage := den.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp"),
+		Media: ffmpeg.TestRunner(nil)}
 	for _, d := range []string{storage.Dir, storage.Temp} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
@@ -178,6 +189,7 @@ func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address
 	t.Helper()
 	m := denclient.New(s.db, s.v, s.log, "dens-test", own)
 	m.TempDir = t.TempDir()
+	m.Media = s.storage.Media
 	transport := h.public.Client().Transport.(*http.Transport).Clone()
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if strings.HasPrefix(addr, "example.com:") {

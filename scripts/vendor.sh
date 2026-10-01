@@ -47,6 +47,17 @@ DEFAULT_WRANGLER_VERSION="4.125.0"
 # Runs the page's tests (./scripts/test.sh -js) and nothing else. Track the
 # active LTS line.
 DEFAULT_NODE_VERSION="v24.21.0"
+# The media module (scripts/ffmpeg.sh) is FFmpeg and zlib built for
+# WebAssembly with these and translated to Go. Releases publish FFmpeg's
+# source, so a bump changes what they ship.
+DEFAULT_WASI_SDK_VERSION="34"
+DEFAULT_BINARYEN_VERSION="133"
+DEFAULT_FFMPEG_VERSION="9.0.2"
+DEFAULT_WASM2GO_VERSION="v0.4.16"
+DEFAULT_ZLIB_VERSION="1.3.2"
+# Reads media metadata independently of FFmpeg, to check what stripping
+# leaves (TestExiftoolFindsNothingLeft in internal/media/ffmpeg).
+DEFAULT_EXIFTOOL_VERSION="13.55"
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
@@ -59,6 +70,12 @@ PREACT_VERSION="${PREACT_VERSION:-$DEFAULT_PREACT_VERSION}"
 CADDY_VERSION="${CADDY_VERSION:-$DEFAULT_CADDY_VERSION}"
 WRANGLER_VERSION="${WRANGLER_VERSION:-$DEFAULT_WRANGLER_VERSION}"
 NODE_VERSION="${NODE_VERSION:-$DEFAULT_NODE_VERSION}"
+WASI_SDK_VERSION="${WASI_SDK_VERSION:-$DEFAULT_WASI_SDK_VERSION}"
+BINARYEN_VERSION="${BINARYEN_VERSION:-$DEFAULT_BINARYEN_VERSION}"
+FFMPEG_VERSION="${FFMPEG_VERSION:-$DEFAULT_FFMPEG_VERSION}"
+WASM2GO_VERSION="${WASM2GO_VERSION:-$DEFAULT_WASM2GO_VERSION}"
+ZLIB_VERSION="${ZLIB_VERSION:-$DEFAULT_ZLIB_VERSION}"
+EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-$DEFAULT_EXIFTOOL_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
 #
@@ -84,6 +101,13 @@ CADDY_SHA_LINUX_ARM64_OVERRIDE="${CADDY_SHA_LINUX_ARM64:-}"
 CADDY_SHA_WINDOWS_AMD64_OVERRIDE="${CADDY_SHA_WINDOWS_AMD64:-}"
 NODE_SHA_LINUX_AMD64_OVERRIDE="${NODE_SHA_LINUX_AMD64:-}"
 NODE_SHA_LINUX_ARM64_OVERRIDE="${NODE_SHA_LINUX_ARM64:-}"
+WASI_SDK_SHA_LINUX_AMD64_OVERRIDE="${WASI_SDK_SHA_LINUX_AMD64:-}"
+WASI_SDK_SHA_LINUX_ARM64_OVERRIDE="${WASI_SDK_SHA_LINUX_ARM64:-}"
+BINARYEN_SHA_LINUX_AMD64_OVERRIDE="${BINARYEN_SHA_LINUX_AMD64:-}"
+BINARYEN_SHA_LINUX_ARM64_OVERRIDE="${BINARYEN_SHA_LINUX_ARM64:-}"
+FFMPEG_SHA_OVERRIDE="${FFMPEG_SHA:-}"
+ZLIB_SHA_OVERRIDE="${ZLIB_SHA:-}"
+EXIFTOOL_SHA_OVERRIDE="${EXIFTOOL_SHA:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -108,6 +132,19 @@ CADDY_SHA_WINDOWS_AMD64="${CADDY_SHA_WINDOWS_AMD64:-1708333f79e274c7697285afe6d5
 # signature verified against a release key named in Node's README.
 NODE_SHA_LINUX_AMD64="${NODE_SHA_LINUX_AMD64:-fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6}"
 NODE_SHA_LINUX_ARM64="${NODE_SHA_LINUX_ARM64:-6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2}"
+# Release tarballs, as the GitHub release lists their digests.
+WASI_SDK_SHA_LINUX_AMD64="${WASI_SDK_SHA_LINUX_AMD64:-b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4}"
+WASI_SDK_SHA_LINUX_ARM64="${WASI_SDK_SHA_LINUX_ARM64:-f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971}"
+BINARYEN_SHA_LINUX_AMD64="${BINARYEN_SHA_LINUX_AMD64:-2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489}"
+BINARYEN_SHA_LINUX_ARM64="${BINARYEN_SHA_LINUX_ARM64:-89c07ea56faf38d0fbecf36ca8ec0721756716185f265b568e133d427f299bf8}"
+# The source tarball, whose signature verified against FFmpeg's release key
+# FCF986EA15E6E293A5644F10B4322F04D67658D8, as ffmpeg.org lists it.
+FFMPEG_SHA="${FFMPEG_SHA:-8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e}"
+# The source tarball, whose signature verified against Mark Adler's key
+# 5ED46A6721D365587791E2AA783FCD8E58BCAFBA, matching the GitHub release's digest.
+ZLIB_SHA="${ZLIB_SHA:-d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3}"
+# The production release on CPAN, as MetaCPAN lists its SHA-256.
+EXIFTOOL_SHA="${EXIFTOOL_SHA:-5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667}"
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -129,6 +166,12 @@ VENDOR_PREACT=""
 VENDOR_CADDY=""
 VENDOR_CADDY_WINDOWS=""
 VENDOR_NODE=""
+VENDOR_WASI_SDK=""
+VENDOR_BINARYEN=""
+VENDOR_FFMPEG_SRC=""
+VENDOR_ZLIB_SRC=""
+VENDOR_WASM2GO=""
+VENDOR_EXIFTOOL=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -137,7 +180,8 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
-VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node)
+VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
+  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool)
 
 # Pin validation --------------------------------------------------------------
 
@@ -176,6 +220,13 @@ validate_pins() {
     "$CADDY_SHA_LINUX_AMD64_OVERRIDE" "$CADDY_SHA_LINUX_ARM64_OVERRIDE" "$CADDY_SHA_WINDOWS_AMD64_OVERRIDE"
   require_hash_overrides "Node.js" "$NODE_VERSION" "$DEFAULT_NODE_VERSION" \
     "$NODE_SHA_LINUX_AMD64_OVERRIDE" "$NODE_SHA_LINUX_ARM64_OVERRIDE"
+  require_hash_overrides "wasi-sdk" "$WASI_SDK_VERSION" "$DEFAULT_WASI_SDK_VERSION" \
+    "$WASI_SDK_SHA_LINUX_AMD64_OVERRIDE" "$WASI_SDK_SHA_LINUX_ARM64_OVERRIDE"
+  require_hash_overrides "binaryen" "$BINARYEN_VERSION" "$DEFAULT_BINARYEN_VERSION" \
+    "$BINARYEN_SHA_LINUX_AMD64_OVERRIDE" "$BINARYEN_SHA_LINUX_ARM64_OVERRIDE"
+  require_hash_overrides "FFmpeg" "$FFMPEG_VERSION" "$DEFAULT_FFMPEG_VERSION" "$FFMPEG_SHA_OVERRIDE"
+  require_hash_overrides "zlib" "$ZLIB_VERSION" "$DEFAULT_ZLIB_VERSION" "$ZLIB_SHA_OVERRIDE"
+  require_hash_overrides "exiftool" "$EXIFTOOL_VERSION" "$DEFAULT_EXIFTOOL_VERSION" "$EXIFTOOL_SHA_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -194,6 +245,13 @@ validate_pins() {
   validate_sha256 "$CADDY_SHA_WINDOWS_AMD64" "CADDY_SHA_WINDOWS_AMD64"
   validate_sha256 "$NODE_SHA_LINUX_AMD64" "NODE_SHA_LINUX_AMD64"
   validate_sha256 "$NODE_SHA_LINUX_ARM64" "NODE_SHA_LINUX_ARM64"
+  validate_sha256 "$WASI_SDK_SHA_LINUX_AMD64" "WASI_SDK_SHA_LINUX_AMD64"
+  validate_sha256 "$WASI_SDK_SHA_LINUX_ARM64" "WASI_SDK_SHA_LINUX_ARM64"
+  validate_sha256 "$BINARYEN_SHA_LINUX_AMD64" "BINARYEN_SHA_LINUX_AMD64"
+  validate_sha256 "$BINARYEN_SHA_LINUX_ARM64" "BINARYEN_SHA_LINUX_ARM64"
+  validate_sha256 "$FFMPEG_SHA" "FFMPEG_SHA"
+  validate_sha256 "$ZLIB_SHA" "ZLIB_SHA"
+  validate_sha256 "$EXIFTOOL_SHA" "EXIFTOOL_SHA"
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -450,6 +508,103 @@ vendor_node() {
   printf '🟢 Vendored Node.js %s\n' "$NODE_VERSION"
 }
 
+# The toolchains unpack once into a directory named for their version, as
+# Caddy does, since unpacking them on every run would take longer than the
+# builds that use them.
+vendor_wasi_sdk() {
+  vendor_require_bins tar gzip
+  local arch sha
+  case "$HOST_GOARCH" in
+    amd64) arch="x86_64-linux"; sha="$WASI_SDK_SHA_LINUX_AMD64" ;;
+    arm64) arch="arm64-linux"; sha="$WASI_SDK_SHA_LINUX_ARM64" ;;
+    *)
+      printf "error: no wasi-sdk download configured for %s\n" "$HOST_GOARCH" >&2
+      return 1
+      ;;
+  esac
+  mkdir -p "$TOOLS_DIR"
+  local base="wasi-sdk-${WASI_SDK_VERSION}.0-${arch}"
+  local archive="$TOOLS_DIR/${base}.tar.gz"
+  download_verified "$archive" \
+    "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-${WASI_SDK_VERSION}/${base}.tar.gz" \
+    "$sha" "wasi-sdk $arch"
+  VENDOR_WASI_SDK="$TOOLS_DIR/$base"
+  if [[ ! -x "$VENDOR_WASI_SDK/bin/clang" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
+    rm -rf "$VENDOR_WASI_SDK"
+    tar --no-same-owner -xzf "$archive" -C "$TOOLS_DIR"
+  fi
+  printf '🟢 Vendored wasi-sdk %s\n' "$WASI_SDK_VERSION"
+}
+
+vendor_binaryen() {
+  vendor_require_bins tar gzip
+  local arch sha
+  case "$HOST_GOARCH" in
+    amd64) arch="x86_64-linux"; sha="$BINARYEN_SHA_LINUX_AMD64" ;;
+    arm64) arch="aarch64-linux"; sha="$BINARYEN_SHA_LINUX_ARM64" ;;
+    *)
+      printf "error: no binaryen download configured for %s\n" "$HOST_GOARCH" >&2
+      return 1
+      ;;
+  esac
+  mkdir -p "$TOOLS_DIR"
+  local archive="$TOOLS_DIR/binaryen-version_${BINARYEN_VERSION}-${arch}.tar.gz"
+  download_verified "$archive" \
+    "https://github.com/WebAssembly/binaryen/releases/download/version_${BINARYEN_VERSION}/binaryen-version_${BINARYEN_VERSION}-${arch}.tar.gz" \
+    "$sha" "binaryen $arch"
+  local dir="$TOOLS_DIR/binaryen-version_${BINARYEN_VERSION}"
+  if [[ ! -x "$dir/bin/wasm-opt" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
+    rm -rf "$dir"
+    tar --no-same-owner -xzf "$archive" -C "$TOOLS_DIR"
+  fi
+  VENDOR_BINARYEN="$dir/bin/wasm-opt"
+  printf '🟢 Vendored binaryen %s\n' "$BINARYEN_VERSION"
+}
+
+# vendor_ffmpeg_src resolves to the verified source tarball, which
+# scripts/ffmpeg.sh unpacks where it builds and releases publish as it is.
+vendor_ffmpeg_src() {
+  mkdir -p "$TOOLS_DIR"
+  VENDOR_FFMPEG_SRC="$TOOLS_DIR/ffmpeg-${FFMPEG_VERSION}.tar.xz"
+  download_verified "$VENDOR_FFMPEG_SRC" \
+    "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" \
+    "$FFMPEG_SHA" "FFmpeg source"
+  printf '🟢 Vendored FFmpeg source %s\n' "$FFMPEG_VERSION"
+}
+
+vendor_zlib_src() {
+  mkdir -p "$TOOLS_DIR"
+  VENDOR_ZLIB_SRC="$TOOLS_DIR/zlib-${ZLIB_VERSION}.tar.xz"
+  download_verified "$VENDOR_ZLIB_SRC" \
+    "https://zlib.net/zlib-${ZLIB_VERSION}.tar.xz" \
+    "$ZLIB_SHA" "zlib source"
+  printf '🟢 Vendored zlib source %s\n' "$ZLIB_VERSION"
+}
+
+vendor_wasm2go() {
+  vendor_go_tool wasm2go \
+    "github.com/ncruces/wasm2go@${WASM2GO_VERSION}" \
+    "github.com/ncruces/wasm2go" "$WASM2GO_VERSION"
+  VENDOR_WASM2GO="$TOOLS_DIR/wasm2go"
+}
+
+# exiftool is a Perl script; it runs from its unpacked distribution.
+vendor_exiftool() {
+  vendor_require_bins tar gzip perl
+  mkdir -p "$TOOLS_DIR"
+  local base="Image-ExifTool-${EXIFTOOL_VERSION}"
+  local archive="$TOOLS_DIR/${base}.tar.gz"
+  download_verified "$archive" \
+    "https://cpan.metacpan.org/authors/id/E/EX/EXIFTOOL/${base}.tar.gz" \
+    "$EXIFTOOL_SHA" "exiftool"
+  if [[ ! -f "$TOOLS_DIR/$base/exiftool" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
+    rm -rf "${TOOLS_DIR:?}/$base"
+    tar --no-same-owner -xzf "$archive" -C "$TOOLS_DIR"
+  fi
+  VENDOR_EXIFTOOL="$TOOLS_DIR/$base/exiftool"
+  printf '🟢 Vendored exiftool %s\n' "$EXIFTOOL_VERSION"
+}
+
 vendor_ensure() {
   case "$1" in
     esbuild) vendor_esbuild ;;
@@ -463,6 +618,12 @@ vendor_ensure() {
     caddy) vendor_caddy ;;
     caddy-windows) vendor_caddy_windows ;;
     node) vendor_node ;;
+    wasi-sdk) vendor_wasi_sdk ;;
+    binaryen) vendor_binaryen ;;
+    ffmpeg-src) vendor_ffmpeg_src ;;
+    zlib-src) vendor_zlib_src ;;
+    wasm2go) vendor_wasm2go ;;
+    exiftool) vendor_exiftool ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -484,6 +645,12 @@ vendor_resolved() {
     caddy) printf '%s' "$VENDOR_CADDY" ;;
     caddy-windows) printf '%s' "$VENDOR_CADDY_WINDOWS" ;;
     node) printf '%s' "$VENDOR_NODE" ;;
+    wasi-sdk) printf '%s' "$VENDOR_WASI_SDK" ;;
+    binaryen) printf '%s' "$VENDOR_BINARYEN" ;;
+    ffmpeg-src) printf '%s' "$VENDOR_FFMPEG_SRC" ;;
+    zlib-src) printf '%s' "$VENDOR_ZLIB_SRC" ;;
+    wasm2go) printf '%s' "$VENDOR_WASM2GO" ;;
+    exiftool) printf '%s' "$VENDOR_EXIFTOOL" ;;
   esac
 }
 
@@ -531,7 +698,9 @@ vendor_main() {
     local candidate
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
-        arm64:rclone|arm64:hugo|*:caddy-windows) continue ;;
+        # The media module's tools are large, and only its build and checks
+        # ask for them.
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool) continue ;;
       esac
       tools+=("$candidate")
     done

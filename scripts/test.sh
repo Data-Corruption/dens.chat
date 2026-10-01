@@ -60,6 +60,9 @@ run_go_tests() {
 
   ensure_ui_placeholders
   go test -race ./...
+  # The race detector slows the media module's workers fifty times over and
+  # finds nothing in them, so its long cases run without it.
+  go test ./internal/media/...
 }
 
 ensure_ui_placeholders() {
@@ -72,36 +75,43 @@ ensure_ui_placeholders() {
 }
 
 # run_windows_tests cross-compiles every package's tests and runs them on
-# the Windows host through WSL interop, as the desktop user. The cmd package
-# checks the source tree and scripts, which only exist on the Linux side, so
-# it stays with the Linux suite.
+# the Windows host through WSL interop, as the desktop user, each in a copy
+# of its package's directory holding the repository's testdata, which tests
+# read by relative paths. The cmd package checks the source tree and
+# scripts, which only exist on the Linux side, so it stays with the Linux
+# suite.
 run_windows_tests() {
   command -v powershell.exe >/dev/null 2>&1 || {
     printf "error: -windows needs WSL with Windows interop\n" >&2
     exit 1
   }
   ensure_ui_placeholders
-  local win_temp work pkg name failed=0
+  local win_temp work pkg name rel dir failed=0
   win_temp=$(powershell.exe -NoProfile -NonInteractive -Command '[IO.Path]::GetTempPath()' | tr -d '\r')
   work=$(wslpath -u "${win_temp}dens-go-tests")
   rm -rf "$work"
   mkdir -p "$work"
+  while IFS= read -r dir; do
+    mkdir -p "$work/$(dirname "$dir")"
+    cp -r "$dir" "$work/$dir"
+  done < <(find internal pkg -type d -name testdata -not -path '*/testdata/*')
   for pkg in $(go list ./... | grep -v '/cmd$'); do
-    name=$(printf '%s' "${pkg#"$(go list -m)"/}" | tr '/' '_')
-    GOOS=windows go test -c -o "$work/$name.test.exe" "$pkg"
+    rel=${pkg#"$(go list -m)"/}
+    name=$(printf '%s' "$rel" | tr '/' '_')
+    mkdir -p "$work/$rel"
+    GOOS=windows go test -c -o "$work/$rel/$name.test.exe" "$pkg"
   done
-  for test_exe in "$work"/*.test.exe; do
-    [[ -e "$test_exe" ]] || continue
+  while IFS= read -r test_exe; do
     # The command registry test reads its package source, which the Windows
     # side can't see.
-    if (cd "$work" && timeout 600 "$test_exe" -test.count=1 -test.skip TestAllCommandConstructorsAreListed >"$test_exe.log" 2>&1); then
+    if (cd "$(dirname "$test_exe")" && timeout 600 "$test_exe" -test.count=1 -test.skip TestAllCommandConstructorsAreListed </dev/null >"$test_exe.log" 2>&1); then
       printf 'ok    %s\n' "$(basename "$test_exe" .test.exe)"
     else
       printf 'FAIL  %s\n' "$(basename "$test_exe" .test.exe)"
       tail -n 20 "$test_exe.log"
       failed=1
     fi
-  done
+  done < <(find "$work" -name '*.test.exe' | sort)
   rm -rf "$work"
   return "$failed"
 }
@@ -119,6 +129,7 @@ run_shell_lint() {
     scripts/build.sh
     scripts/ci.sh
     scripts/vendor.sh
+    scripts/ffmpeg.sh
     scripts/test.sh
     scripts/test-release.sh
     scripts/test-lifecycle-e2e.sh

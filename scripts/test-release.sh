@@ -149,13 +149,13 @@ upload_remote_file "$tmp/same-size" "same-size"
   fail "publication write skipped different same-size, same-mtime bytes"
 
 printf 'partial\n' > "$PUBLISH_REMOTE/releases-partial"
-for file in linux-amd64.gz linux-arm64.gz windows-amd64.exe.gz windows-arm64.exe.gz; do
+for file in linux-amd64.gz linux-arm64.gz windows-amd64.exe.gz windows-arm64.exe.gz ffmpeg-source.tar.xz; do
   printf '%s\n' "$file" > "$VERSION_DIR/$file"
 done
 printf '%s\n' "$VERSION" > "$VERSION_DIR/version"
 (
   cd "$VERSION_DIR"
-  sha256sum linux-*.gz windows-*.gz version > checksums.txt
+  sha256sum linux-*.gz windows-*.gz ffmpeg-source.tar.xz version > checksums.txt
 )
 sign_application_release
 

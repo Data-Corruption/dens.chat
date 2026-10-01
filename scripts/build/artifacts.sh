@@ -217,13 +217,22 @@ write_release_version() {
   printf "🟢 Release packaged in %s\n" "$VERSION_DIR"
 }
 
-# One file listing the sha256 of every release artifact (gzipped binaries +
-# version marker). Each installer verifies its cosign signature once, then
-# plain sha256-matches the selected artifact against it.
+# FFmpeg's source, as the binaries include it, with the driver and the script
+# that builds the media module: the LGPL asks it of a binary that includes
+# FFmpeg.
+package_ffmpeg_source() {
+  mkdir -p "$VERSION_DIR"
+  ./scripts/ffmpeg.sh --source "$VERSION_DIR/ffmpeg-source.tar.xz"
+  printf "🟢 Packaged FFmpeg's source\n"
+}
+
+# One file listing the sha256 of every release artifact (gzipped binaries,
+# FFmpeg's source and the version marker). Each installer verifies its cosign
+# signature once, then plain sha256-matches the selected artifact against it.
 generate_checksums() {
   (
     cd "$VERSION_DIR" || exit 1
-    sha256sum linux-*.gz windows-*.gz version > checksums.txt
+    sha256sum linux-*.gz windows-*.gz ffmpeg-source.tar.xz version > checksums.txt
   )
   printf "🟢 Generated checksums.txt\n"
 }

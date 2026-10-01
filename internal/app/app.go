@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/instance"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/pairing"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
@@ -56,6 +58,9 @@ type App struct {
 	Den *den.Den
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
+	// Media runs the media module's jobs, the den's and the client's, one
+	// at a time.
+	Media *ffmpeg.Runner
 
 	ReleaseSource release.ReleaseSource
 	UserAgent     string
@@ -200,8 +205,16 @@ func (a *App) open(opts OpenOptions) error {
 		a.Log.Info("Cleared the browser sessions of the restored backup")
 	}
 
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("find this binary: %w", err)
+	}
+	a.Media = ffmpeg.NewRunner([]string{exe, ffmpeg.WorkerCommand}, host.StartLowPriority,
+		func(s string) { a.Log.Debugf("Media module: %s", s) })
+
 	if a.Instance.Den.Enabled {
-		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, den.Storage{Dir: l.Uploads, Temp: l.Temp}); err != nil {
+		storage := den.Storage{Dir: l.Uploads, Temp: l.Temp, Media: a.Media}
+		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, storage); err != nil {
 			return err
 		}
 		if a.DevMode() {
@@ -230,6 +243,7 @@ func (a *App) open(opts OpenOptions) error {
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
 	a.Dens.TempDir = l.Temp
+	a.Dens.Media = a.Media
 	return nil
 }
 

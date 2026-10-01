@@ -12,7 +12,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
-import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, formatSize, isImageFile, upload } from './files.jsx';
+import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { isStaff, rank } from './people.jsx';
@@ -336,7 +336,12 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }));
             entry.abort = up.abort;
             up.done.then(
-                (result) => updateFile(entry.key, { result, progress: 1 }),
+                async (result) => {
+                    // The message waits for the preview, which the den takes
+                    // only while the upload waits to be sent.
+                    if (needsPreview(result)) result = await addPreview(denID, result);
+                    updateFile(entry.key, { result, progress: 1 });
+                },
                 (e) => updateFile(entry.key, { error: e.message }),
             );
         }
@@ -923,22 +928,48 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates
     );
 }
 
+// MetadataRemoved marks a file whose metadata came out before it left this
+// computer, and says what that can be on hover or focus.
+function MetadataRemoved({ id }) {
+    return (
+        <span class="tooltip">
+            <span id={id} role="tooltip" class="tooltip-content rounded-lg px-3 py-2 text-left">
+                Metadata was removed from this file. That can include where and when it was made, and the phone or camera that made it.
+            </span>
+            <span tabIndex={0} role="img" aria-label="Metadata removed" aria-describedby={id} class="flex cursor-help text-success">
+                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.5" />
+                    <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
+                </svg>
+            </span>
+        </span>
+    );
+}
+
 // FileChip is a file waiting to go with the message: its preview or icon,
-// how far its upload is, and whether its metadata came out.
+// how far its upload is, whether its metadata came out, and whether a
+// photo browsers can't show was turned into one they can.
 function FileChip({ f, onRemove }) {
     const done = !!f.result;
+    const name = f.result?.name || f.name;
     return (
         <li class={`flex w-60 max-w-full items-center gap-2 rounded border bg-base-200 p-1.5 ${f.error ? 'border-error' : 'border-base-300'}`}>
             {isImageFile(f.file) ? <Thumb file={f.file} size={40} /> : <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>}
             <div class="min-w-0 flex-1 text-xs">
-                <p class="truncate font-medium" title={f.name}>{f.name}</p>
+                <p class="truncate font-medium" title={name}>{name}</p>
                 {f.error ? (
                     <p class="text-error" role="alert">{f.error}</p>
                 ) : done ? (
-                    <p class="text-base-content/60">
-                        {formatSize(f.result.size)}
-                        {f.result.stripped && <span class="block text-success">Location and camera details removed</span>}
-                    </p>
+                    <>
+                        <p class="flex items-center gap-1 text-base-content/60">
+                            {formatSize(f.result.size)}
+                            {f.result.stripped && <MetadataRemoved id={`metadata-${f.key}`} />}
+                        </p>
+                        {f.result.converted && (
+                            <p class="text-base-content/60">Sent as {f.result.type === 'image/png' ? 'PNG' : 'JPEG'}, which every browser shows</p>
+                        )}
+                    </>
                 ) : (
                     <progress class="progress progress-primary h-1.5 w-full" value={Math.round(f.progress * 100)} max="100"></progress>
                 )}
