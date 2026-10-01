@@ -13,7 +13,7 @@ Dens is a self-hosted chat app for Linux and Windows with text, voice and screen
 - Credible exit: users and dens can move machines, and nothing depends on a company staying friendly.
 - Linux and Windows for both client and den, from one codebase with a small platform layer. Linux is the recommended platform because its service sandbox is stronger, and the docs say so.
 - Works in any modern browser; tested on LibreWolf, Ungoogled Chromium, Waterfox and Brave.
-- Manageable self-hosting: storage limits, automatic media compression, no email dependency.
+- Manageable self-hosting: storage limits members can see and manage, no email dependency.
 
 **Non-goals**
 
@@ -353,7 +353,7 @@ Dens usually run on home connections, where upload bandwidth is scarce and every
 
 ## Files and media
 
-Members attach files to messages and put pictures on their profiles. Images lose their metadata before they leave the member's machine, and are stored as they were otherwise, capped by owner-set limits; images and video are recompressed after an owner-set window (M5). Files in DMs are the exception from M1.7: the sender's service strips and encrypts them before upload, and the den stores only opaque blobs (see End-to-end encrypted DMs).
+Members attach files to messages and put pictures on their profiles. Images lose their metadata before they leave the member's machine, and are stored as they were otherwise, never recompressed, within owner-set limits that members see and manage (M5). Files in DMs are the exception from M1.7: the sender's service strips and encrypts them before upload, and the den stores only opaque blobs (see End-to-end encrypted DMs).
 
 **Limits (owner settings)**
 
@@ -380,11 +380,10 @@ Members attach files to messages and put pictures on their profiles. Images lose
 - A file's ID is a den ID like any other, and its bytes never change under it, so clients can cache it by ID. IDs are not content hashes, which would let a member test whether a file they have is somewhere they can't see.
 - An upload waits an hour for a message or a profile to use it. Deleting a message, a channel or a member's messages deletes their files, and a member who leaves loses their pictures and unused uploads.
 
-**Retention and compression**
+**Managing files (M5)**
 
-1. Originals are kept for an owner-set window (for example 14 days), shown on each attachment with a download button.
-2. After the window, a worker job recompresses with ffmpeg and keeps the result only if it is smaller.
-3. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that starts the worker process (then discards that thread), and every thread the worker starts inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
+- Dens doesn't recompress what members send. Recompressing would lower the quality of files members chose to send, without asking, and keep a den decoding every video in the background. The per-member limit is what keeps uploads small: it leaves the choice of what to send, and at what size, to the member.
+- A member sees how much of their limit they use, and their uploads, largest first, each with the message or profile that uses it. They can delete a file, which takes it out of its message, or swap it for a smaller copy they upload. A file's bytes never change under its ID, so a swap is a new upload that an edit puts in the old one's place, and cached copies stay right. A DM's files work the same way, sealed.
 
 **Serving**
 
@@ -397,10 +396,11 @@ Members attach files to messages and put pictures on their profiles. Images lose
 - ffmpeg is compiled to WebAssembly and translated to Go with wasm2go, the way the SQLite driver is built. One pure-Go build serves Linux and Windows, with no native binaries to vendor, and it runs under `MemoryDenyWriteExecute`, which rules out a WebAssembly JIT.
 - The module holds FFmpeg's libraries and a small driver of Dens's own in C, not the `ffmpeg` command, which needs threads since FFmpeg 7.0 and parses options Dens has no use for. The driver exports what Dens does with media (probe, strip, still and poster). FFmpeg still parses and writes every container; the driver chooses which streams and side data to copy.
 - The module is its own sandbox. It sees only its linear memory and the few functions Dens gives it: the input's bytes in and the output's bytes out, with no files, network or processes. A hostile file that takes over a decoder is stuck in the module's memory, which matters for a library parsing this many formats.
-- It runs in a worker process, a hidden command of the same binary, at the lowest priority (see Retention and compression), with a memory cap and a time limit, so a decoder that loops or balloons ends its job and not the service.
-- Media work is rare and can wait for a quiet moment, so running slower than native ffmpeg is fine. Large files are the open question.
+- It runs in a worker process, a hidden command of the same binary, with a memory cap and a time limit, so a decoder that loops or balloons ends its job and not the service. Jobs run one at a time at the lowest CPU priority so calls and streams keep their CPU: `IDLE_PRIORITY_CLASS` on Windows, and on Linux nice 19 plus `SCHED_IDLE`. Linux nice values and scheduling policies are per thread, so the service sets them on the thread that starts the worker process (then discards that thread), and every thread the worker starts inherits them. There is no transient cgroup scope: the sandboxed service account can't create one, and a niced child already gets a small share next to the service's own threads.
+- Dens probes and strips media, and makes stills and previews; it never re-encodes what members send. Stripping copies streams, and runs at the disk's pace in the module; a still or a preview decodes one image or frame.
+- Dens doesn't run a native ffmpeg confined by the operating system instead. That would take confinement written and tested for each OS, and a second program to build, sign, ship and keep patched, where the module holds a hostile file the same way on every platform, inside the service's own sandbox.
 - The build leaves out GPL-only parts such as x264, so ffmpeg's terms stay LGPL beside Dens's MIT. Its source and build script ship with Dens, which lets anyone rebuild the binary with a changed ffmpeg, as the LGPL requires.
-- It starts as a spike after M1: build size, speed on large files, memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file. Beside it, the spike tries a native ffmpeg that Dens installs and confines with the operating system's sandboxing, on the same files, for comparison. `spikes/README.md` has the plan.
+- It starts as a spike after M1: build size, speed on large files, memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file. `spikes/README.md` has the plan and the results so far.
 
 ## End-to-end encrypted DMs
 
@@ -438,7 +438,7 @@ The page says where to compare, best first: in person; a voice or video call; an
 - The local service encrypts a DM's text with the DM key, bound to the channel, the author, the message's nonce and the key's ID, before sending, and decrypts what arrives before the page sees it. The browser never holds a key.
 - The den keeps doing everything that doesn't need the text: ordering, history pages, edits with revisions, deletes, read state and unread counts (in a DM every message counts, so the den needn't read one), typing and closing.
 - Photos: the sending service strips metadata and makes the thumbnail itself, with the same code the den uses for channel uploads, then encrypts the original and the thumbnail with a fresh key per file. The file's key, dimensions and type travel inside the encrypted message. The den stores two opaque blobs and counts their size against the upload limits.
-- Work that moves to the client: reply quotes (the client decrypts the original itself), search, and compact links. Task checkboxes (M1.6) tick as an ordinary edit against the current revision. Media recompression (M5) skips DM files, which the den can't open; the sending service compresses before upload instead.
+- Work that moves to the client: reply quotes (the client decrypts the original itself), search, and compact links. Task checkboxes (M1.6) tick as an ordinary edit against the current revision.
 - Calls aren't covered. Voice and screen share pass through the den's SFU, which can decrypt media hop by hop; end-to-end encrypted calls would need SFrame (insertable streams), after v1.
 
 **History and starting over**
@@ -690,7 +690,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M2 | 1:1 voice: Pion SFU with UDP mux, ICE-TCP, signaling relay | Clear two-person call across two home networks |
 | M3 | Group voice: renegotiation on join and leave, mute, speaking indicators | 10-person call stays stable for an hour |
 | M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
-| M5 | Media retention and compression worker, message retention setting | Old originals replaced, calls unaffected during jobs |
+| M5 | Message retention setting, and managing files: each member's uploads by size against their limit, deleting them, and swapping an attachment for a smaller copy | A member at their limit frees space by deleting and swapping old attachments, and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
 
 M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
@@ -717,8 +717,8 @@ Not in M1: compact links, message retention (M5), video uploads (they need ffmpe
 
 ## Open questions
 
-- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file; or whether a native ffmpeg confined by the OS does better (the spike after M1, planned in `spikes/README.md`).
-- [ ] Owner defaults for retention windows and screen share caps.
+- [ ] Whether ffmpeg as WebAssembly translated to Go is small and fast enough, how large a file it handles in bounded memory, which codecs an LGPL build keeps, and whether the translated module still holds a hostile file (the spike after M1, planned in `spikes/README.md`).
+- [ ] Owner defaults for screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.

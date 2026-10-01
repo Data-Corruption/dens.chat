@@ -55,13 +55,6 @@ DEFAULT_FFMPEG_VERSION="9.0.2"
 DEFAULT_WASM2GO_VERSION="v0.4.16"
 # Reads media metadata independently of FFmpeg, as the spike's check.
 DEFAULT_EXIFTOOL_VERSION="13.55"
-# A third-party native FFmpeg the spike compares with its own: BtbN's LGPL
-# build of the 9.0 branch, from a month's last autobuild, which BtbN keeps for
-# two years.
-DEFAULT_BTBN_RELEASE="autobuild-2026-09-30-13-08"
-DEFAULT_BTBN_FFMPEG="n9.0.2-17-g2a571b6068"
-# Cross-compiles the spike's native FFmpeg for every release target.
-DEFAULT_ZIG_VERSION="0.16.0"
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
@@ -79,9 +72,6 @@ BINARYEN_VERSION="${BINARYEN_VERSION:-$DEFAULT_BINARYEN_VERSION}"
 FFMPEG_VERSION="${FFMPEG_VERSION:-$DEFAULT_FFMPEG_VERSION}"
 WASM2GO_VERSION="${WASM2GO_VERSION:-$DEFAULT_WASM2GO_VERSION}"
 EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-$DEFAULT_EXIFTOOL_VERSION}"
-BTBN_RELEASE="${BTBN_RELEASE:-$DEFAULT_BTBN_RELEASE}"
-BTBN_FFMPEG="${BTBN_FFMPEG:-$DEFAULT_BTBN_FFMPEG}"
-ZIG_VERSION="${ZIG_VERSION:-$DEFAULT_ZIG_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
 #
@@ -113,10 +103,6 @@ BINARYEN_SHA_LINUX_AMD64_OVERRIDE="${BINARYEN_SHA_LINUX_AMD64:-}"
 BINARYEN_SHA_LINUX_ARM64_OVERRIDE="${BINARYEN_SHA_LINUX_ARM64:-}"
 FFMPEG_SHA_OVERRIDE="${FFMPEG_SHA:-}"
 EXIFTOOL_SHA_OVERRIDE="${EXIFTOOL_SHA:-}"
-BTBN_SHA_LINUX_AMD64_OVERRIDE="${BTBN_SHA_LINUX_AMD64:-}"
-BTBN_SHA_WINDOWS_AMD64_OVERRIDE="${BTBN_SHA_WINDOWS_AMD64:-}"
-ZIG_SHA_LINUX_AMD64_OVERRIDE="${ZIG_SHA_LINUX_AMD64:-}"
-ZIG_SHA_LINUX_ARM64_OVERRIDE="${ZIG_SHA_LINUX_ARM64:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -151,13 +137,6 @@ BINARYEN_SHA_LINUX_ARM64="${BINARYEN_SHA_LINUX_ARM64:-89c07ea56faf38d0fbecf36ca8
 FFMPEG_SHA="${FFMPEG_SHA:-8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e}"
 # The production release on CPAN, as MetaCPAN lists its SHA-256.
 EXIFTOOL_SHA="${EXIFTOOL_SHA:-5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667}"
-# Release archives, as the GitHub release lists their digests; BtbN signs
-# nothing, so these hashes are the whole of the check.
-BTBN_SHA_LINUX_AMD64="${BTBN_SHA_LINUX_AMD64:-2d41cbea0ca1a15029b638330740f78d6f5aeb062355bf425433fc938705350a}"
-BTBN_SHA_WINDOWS_AMD64="${BTBN_SHA_WINDOWS_AMD64:-6b264b9e6019103f601d98c292bd332fd87acf1c5e941ddff4fb71760fe63432}"
-# Release tarballs, as ziglang.org's download index lists them.
-ZIG_SHA_LINUX_AMD64="${ZIG_SHA_LINUX_AMD64:-70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00}"
-ZIG_SHA_LINUX_ARM64="${ZIG_SHA_LINUX_ARM64:-ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17}"
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -184,9 +163,6 @@ VENDOR_BINARYEN=""
 VENDOR_FFMPEG_SRC=""
 VENDOR_WASM2GO=""
 VENDOR_EXIFTOOL=""
-VENDOR_BTBN=""
-VENDOR_BTBN_WINDOWS=""
-VENDOR_ZIG=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -196,7 +172,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
-  wasi-sdk binaryen ffmpeg-src wasm2go exiftool btbn btbn-windows zig)
+  wasi-sdk binaryen ffmpeg-src wasm2go exiftool)
 
 # Pin validation --------------------------------------------------------------
 
@@ -241,10 +217,6 @@ validate_pins() {
     "$BINARYEN_SHA_LINUX_AMD64_OVERRIDE" "$BINARYEN_SHA_LINUX_ARM64_OVERRIDE"
   require_hash_overrides "FFmpeg" "$FFMPEG_VERSION" "$DEFAULT_FFMPEG_VERSION" "$FFMPEG_SHA_OVERRIDE"
   require_hash_overrides "exiftool" "$EXIFTOOL_VERSION" "$DEFAULT_EXIFTOOL_VERSION" "$EXIFTOOL_SHA_OVERRIDE"
-  require_hash_overrides "BtbN FFmpeg" "$BTBN_RELEASE" "$DEFAULT_BTBN_RELEASE" \
-    "$BTBN_SHA_LINUX_AMD64_OVERRIDE" "$BTBN_SHA_WINDOWS_AMD64_OVERRIDE"
-  require_hash_overrides "zig" "$ZIG_VERSION" "$DEFAULT_ZIG_VERSION" \
-    "$ZIG_SHA_LINUX_AMD64_OVERRIDE" "$ZIG_SHA_LINUX_ARM64_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -269,10 +241,6 @@ validate_pins() {
   validate_sha256 "$BINARYEN_SHA_LINUX_ARM64" "BINARYEN_SHA_LINUX_ARM64"
   validate_sha256 "$FFMPEG_SHA" "FFMPEG_SHA"
   validate_sha256 "$EXIFTOOL_SHA" "EXIFTOOL_SHA"
-  validate_sha256 "$BTBN_SHA_LINUX_AMD64" "BTBN_SHA_LINUX_AMD64"
-  validate_sha256 "$BTBN_SHA_WINDOWS_AMD64" "BTBN_SHA_WINDOWS_AMD64"
-  validate_sha256 "$ZIG_SHA_LINUX_AMD64" "ZIG_SHA_LINUX_AMD64"
-  validate_sha256 "$ZIG_SHA_LINUX_ARM64" "ZIG_SHA_LINUX_ARM64"
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -617,71 +585,6 @@ vendor_exiftool() {
   printf '🟢 Vendored exiftool %s\n' "$EXIFTOOL_VERSION"
 }
 
-# BtbN's builds resolve to their unpacked directory, which holds bin/ffmpeg
-# (or bin/ffmpeg.exe), ffprobe, and the licenses.
-vendor_btbn() {
-  vendor_require_bins tar xz
-  if [[ "$HOST_GOARCH" != amd64 ]]; then
-    printf "error: no BtbN FFmpeg download configured for %s\n" "$HOST_GOARCH" >&2
-    return 1
-  fi
-  mkdir -p "$TOOLS_DIR"
-  local base="ffmpeg-${BTBN_FFMPEG}-linux64-lgpl-9.0"
-  local archive="$TOOLS_DIR/${base}.tar.xz"
-  download_verified "$archive" \
-    "https://github.com/BtbN/FFmpeg-Builds/releases/download/${BTBN_RELEASE}/${base}.tar.xz" \
-    "$BTBN_SHA_LINUX_AMD64" "BtbN FFmpeg linux64"
-  if [[ ! -x "$TOOLS_DIR/$base/bin/ffmpeg" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
-    rm -rf "${TOOLS_DIR:?}/$base"
-    tar --no-same-owner -xJf "$archive" -C "$TOOLS_DIR"
-  fi
-  VENDOR_BTBN="$TOOLS_DIR/$base"
-  printf '🟢 Vendored BtbN FFmpeg %s\n' "$BTBN_FFMPEG"
-}
-
-vendor_btbn_windows() {
-  vendor_require_bins unzip
-  mkdir -p "$TOOLS_DIR"
-  local base="ffmpeg-${BTBN_FFMPEG}-win64-lgpl-9.0"
-  local archive="$TOOLS_DIR/${base}.zip"
-  download_verified "$archive" \
-    "https://github.com/BtbN/FFmpeg-Builds/releases/download/${BTBN_RELEASE}/${base}.zip" \
-    "$BTBN_SHA_WINDOWS_AMD64" "BtbN FFmpeg win64"
-  if [[ ! -f "$TOOLS_DIR/$base/bin/ffmpeg.exe" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
-    rm -rf "${TOOLS_DIR:?}/$base"
-    unzip -q "$archive" -d "$TOOLS_DIR"
-  fi
-  VENDOR_BTBN_WINDOWS="$TOOLS_DIR/$base"
-  printf '🟢 Vendored BtbN FFmpeg %s for Windows\n' "$BTBN_FFMPEG"
-}
-
-vendor_zig() {
-  vendor_require_bins tar xz
-  local arch sha
-  case "$HOST_GOARCH" in
-    amd64) arch="x86_64-linux"; sha="$ZIG_SHA_LINUX_AMD64" ;;
-    arm64) arch="aarch64-linux"; sha="$ZIG_SHA_LINUX_ARM64" ;;
-    *)
-      printf "error: no zig download configured for %s\n" "$HOST_GOARCH" >&2
-      return 1
-      ;;
-  esac
-  mkdir -p "$TOOLS_DIR"
-  local base="zig-${arch}-${ZIG_VERSION}"
-  local archive="$TOOLS_DIR/${base}.tar.xz"
-  # ziglang.org throttles downloads and lists community mirrors; the pinned
-  # hash, not the host, is what makes a copy trustworthy.
-  download_verified "$archive" \
-    "https://pkg.hexops.org/zig/${base}.tar.xz" \
-    "$sha" "zig $arch"
-  if [[ ! -x "$TOOLS_DIR/$base/zig" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
-    rm -rf "${TOOLS_DIR:?}/$base"
-    tar --no-same-owner -xJf "$archive" -C "$TOOLS_DIR"
-  fi
-  VENDOR_ZIG="$TOOLS_DIR/$base/zig"
-  printf '🟢 Vendored zig %s\n' "$ZIG_VERSION"
-}
-
 vendor_ensure() {
   case "$1" in
     esbuild) vendor_esbuild ;;
@@ -700,9 +603,6 @@ vendor_ensure() {
     ffmpeg-src) vendor_ffmpeg_src ;;
     wasm2go) vendor_wasm2go ;;
     exiftool) vendor_exiftool ;;
-    btbn) vendor_btbn ;;
-    btbn-windows) vendor_btbn_windows ;;
-    zig) vendor_zig ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -729,9 +629,6 @@ vendor_resolved() {
     ffmpeg-src) printf '%s' "$VENDOR_FFMPEG_SRC" ;;
     wasm2go) printf '%s' "$VENDOR_WASM2GO" ;;
     exiftool) printf '%s' "$VENDOR_EXIFTOOL" ;;
-    btbn) printf '%s' "$VENDOR_BTBN" ;;
-    btbn-windows) printf '%s' "$VENDOR_BTBN_WINDOWS" ;;
-    zig) printf '%s' "$VENDOR_ZIG" ;;
   esac
 }
 
@@ -780,7 +677,7 @@ vendor_main() {
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
         # The ffmpeg spike's toolchains are large, and only it asks for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:wasm2go|*:exiftool|*:btbn|*:btbn-windows|*:zig) continue ;;
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:wasm2go|*:exiftool) continue ;;
       esac
       tools+=("$candidate")
     done
