@@ -196,6 +196,20 @@ function Send-Tick($Browser, [string]$DenID, [string]$Message, [int]$N) {
     return $client.PostAsync("$($Browser.Origin)/api/dens/$DenID/messages/$Message/tasks/$N", $content)
 }
 
+# Read-Shared returns a file's bytes while the service holds it open for
+# writing, as it does its database. File.ReadAllBytes shares the file only
+# with readers, which Windows refuses then.
+function Read-Shared([string]$Path) {
+    $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+    try {
+        $buffer = New-Object IO.MemoryStream
+        $stream.CopyTo($buffer)
+        return , $buffer.ToArray()
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 # Wait-Value polls $Get until it returns something, and returns that.
 function Wait-Value([scriptblock]$Get, [string]$What) {
     $deadline = (Get-Date).AddSeconds(30)
@@ -507,8 +521,12 @@ den.test:$HttpsPort {
             if ($text.Contains($marker)) { Fail "the DM photo$variant arrived with '$marker'" }
         }
     }
-    foreach ($f in @(Get-ChildItem -File (Join-Path $DataRoot "main\data\db"))) {
-        if ($latin1.GetString([IO.File]::ReadAllBytes($f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
+    # The -shm file holds only the write-ahead log's index, where a write in
+    # progress locks bytes that would refuse the read.
+    $dbFiles = @(Get-ChildItem -File (Join-Path $DataRoot "main\data\db") | Where-Object { $_.Name -notlike "*-shm" })
+    if ($dbFiles.Count -eq 0) { Fail "no database files to look in" }
+    foreach ($f in $dbFiles) {
+        if ($latin1.GetString((Read-Shared $f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
     }
     Write-Host "The DM took messages only after both typed each other's digits; its text and photo reached the other side sealed."
 
