@@ -1,25 +1,32 @@
 #!/usr/bin/env bash
 
 # Den e2e on Linux: a second machine joins a den through Caddy, chats, and
-# stays connected across a den restart; the member recovers their account
-# on a fresh install and signs the old one out; then a ban shuts them out.
+# stays connected across a den restart; the two start a private DM; the
+# member recovers their account on a fresh install and signs the old one
+# out; then a ban shuts them out.
 #
 # One Incus container hosts the den behind the pinned Caddy, serving
 # https://den.test with Caddy's internal certificate authority. Another,
 # on a different distro, trusts that authority, installs Dens and joins
 # with an invite from the owner. The two chat, the den's service restarts,
-# and the member must reconnect with the whole history. The owner sends a
-# DM, and the member a phone photo that must arrive stripped. The owner
-# shares a checklist with the member, and the two tick different boxes at
-# the same moment, all of which must stay. A second
-# instance on the member's machine stands in for a fresh one: it signs in
-# by the den's address with a recovery code, whose new password must sign
-# the first install out at once. Signed in again with it, the first install
-# is signed out once more from the fresh one's device list.
-# The owner then bans the member, whose connections must close at once and
-# who can't join again under the same name. Both install from unsigned
-# fixture releases through install.sh, like the lifecycle harness; the
-# guest steps are in scripts/test/den-guest.sh.
+# and the member must reconnect with the whole history. The member sends a
+# phone photo that must arrive stripped. The owner opens a DM, which takes
+# no message until both members type each other's check digits, and then
+# carries text and a photo the den stores only sealed. The owner shares a
+# checklist with the member, and the two tick different boxes at the same
+# moment, all of which must stay. A second instance on the member's
+# machine stands in for a fresh one: it signs in by the den's address with
+# a recovery code, whose new password must sign the first install out at
+# once, and reads the DM only once the member types their DM seal. The new
+# password alone doesn't sign the first install in again: the fresh one
+# approves it, the two comparing digits, and hands it the seal, with which
+# it reads the DM. Signed out once more from the fresh one's device list,
+# it signs in again the same way, with the digits typed into the fresh one
+# first, which must go on showing its own. The owner then bans the member, whose
+# connections must close at once and who can't join again under the same
+# name. Both install from unsigned fixture releases through install.sh,
+# like the lifecycle harness; the guest steps are in
+# scripts/test/den-guest.sh.
 #
 # Usage:
 #   ./scripts/test-den-e2e.sh
@@ -96,10 +103,41 @@ guest() {
   timeout 600 "${INCUS[@]}" exec "$name" -- sh /root/den-guest.sh "$@"
 }
 
+# member runs a step on the member's first install.
+member() {
+  guest "$CLIENT" "$@"
+}
+
 # fresh runs a step as instance fresh on the member's machine: the member's
 # new install, with its own keys and none of the first one's data.
 fresh() {
   timeout 600 "${INCUS[@]}" exec "$CLIENT" --env INSTANCE=fresh --env PORT=18484 -- sh /root/den-guest.sh "$@"
+}
+
+# approve_sign_in NEW OLD DEN_ID PASSWORD [old-first]: sign one of the
+# member's installs in with the password, approved from another, each a
+# function that runs a step there. Each shows digits, which the harness
+# types into the other, as the member would: first into the old install
+# with old-first, which must still show its own digits once it approved.
+approve_sign_in() {
+  local new=$1 old=$2 den_id=$3 password=$4 order=${5:-} id request new_half old_half shown
+  id=$($new sign-in https://den.test bob "$password")
+  [[ -n "$id" ]] || { echo "error: the password alone signed the device in" >&2; return 1; }
+  request=$($old request "$den_id")
+  old_half=$($old answer "$den_id" "$request")
+  new_half=$($new sign-in-half "$id")
+  [[ "$new_half" != "$old_half" ]] || { echo "error: both devices show the same digits" >&2; return 1; }
+  if [[ "$order" == old-first ]]; then
+    $old approve "$den_id" "$request" "$new_half"
+    shown=$($old approved-half "$den_id" "$request")
+    [[ "$shown" == "$old_half" ]] || { echo "error: once it approved, the old install shows $shown" >&2; return 1; }
+    $new check-sign-in "$id" "$shown"
+  else
+    $new check-sign-in "$id" "$old_half"
+    $old approve "$den_id" "$request" "$new_half"
+  fi
+  $new wait-signed-in "$id"
+  $old dismiss "$den_id" "$request"
 }
 
 run() {
@@ -168,14 +206,6 @@ run() {
     { echo "error: the member's history after the restart is: $history" >&2; return 1; }
   echo ">> The member's history is complete after the restart"
 
-  echo ">> A direct message"
-  local bob dm
-  bob=$(guest "$DEN" member-id "$den_id" bob)
-  dm=$(guest "$DEN" dm "$den_id" "$bob")
-  guest "$DEN" send "$den_id" "$dm" "a private word" >/dev/null
-  [[ "$(guest "$CLIENT" wait-dm "$den_id")" == "$dm" ]] || { echo "error: the DM didn't reach the member" >&2; return 1; }
-  history=$(guest "$CLIENT" history "$den_id" "$dm")
-  [[ "$history" == "a private word" ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
 
   echo ">> A phone photo with GPS data, through Caddy"
   local upload file stripped size preview kind stored
@@ -194,6 +224,37 @@ run() {
     { echo "error: the preview is $kind $(guest "$DEN" jpeg /root/preview.jpg)" >&2; return 1; }
   stored=$(guest "$DEN" sealed)
   echo ">> The photo arrived stripped, upright and with a preview; the den holds ${stored} sealed files"
+
+  echo ">> A private DM, once both members compare check codes"
+  local bob dm owner_half member_half refusal
+  bob=$(guest "$DEN" member-id "$den_id" bob)
+  dm=$(guest "$DEN" dm "$den_id" "$bob")
+  [[ "$(member wait-dm "$den_id")" == "$dm" ]] || { echo "error: the DM didn't reach the member" >&2; return 1; }
+  refusal=$(guest "$DEN" send-refused "$den_id" "$dm" "too soon")
+  [[ "$refusal" == *"compare check codes"* ]] || { echo "error: sending before the check: $refusal" >&2; return 1; }
+  guest "$DEN" start-key "$den_id" "$dm"
+  owner_half=$(guest "$DEN" dm-half "$den_id" "$dm")
+  member_half=$(member dm-half "$den_id" "$dm")
+  [[ "$owner_half" != "$member_half" ]] || { echo "error: both members see the same digits" >&2; return 1; }
+  refusal=$(guest "$DEN" check-dm-refused "$den_id" "$dm" "0000 0000 0000 0000")
+  [[ "$refusal" == *"don't match"* ]] || { echo "error: the wrong digits: $refusal" >&2; return 1; }
+  guest "$DEN" check-dm "$den_id" "$dm" "$member_half"
+  member check-dm "$den_id" "$dm" "$owner_half"
+  guest "$DEN" send "$den_id" "$dm" "a private word" >/dev/null
+  history=$(member history "$den_id" "$dm")
+  [[ "$history" == "a private word" ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
+  upload=$(member upload "$den_id" /root/gps-photo.jpg IMG_0002.jpg "$dm")
+  read -r file stripped size preview <<<"$upload"
+  [[ "$stripped $size $preview" == "true 300x400 preview" ]] || { echo "error: the DM photo came back as: $upload" >&2; return 1; }
+  member send-file "$den_id" "$dm" "$file" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-photo.jpg)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/dm-photo.jpg)" == "400x300 JFIF,orientation 6" ]] ||
+    { echo "error: the DM photo arrived as $kind $(guest "$DEN" jpeg /root/dm-photo.jpg)" >&2; return 1; }
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-preview.jpg thumb)
+  [[ "$kind" == image/jpeg ]] || { echo "error: the DM photo's preview came as $kind" >&2; return 1; }
+  guest "$DEN" dm-sealed "a private word"
+  stored=$(guest "$DEN" sealed)
+  echo ">> The DM took messages only after both typed each other's digits; its text and photo reached the other side, and the den holds ${stored} sealed files"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text
@@ -230,11 +291,23 @@ run() {
   (( took < 5000 )) || { echo "error: the new password took ${took} ms to sign the first install out" >&2; return 1; }
   fresh wait-connected 0 >/dev/null
   echo ">> The fresh install signed in with a recovery code, shows the owner's den ID, and signed the first install out within ${took} ms"
-  refusal=$(guest "$CLIENT" sign-in-refused https://den.test bob "bob password")
+  local seal
+  [[ "$(fresh has-seal)" == false ]] || { echo "error: a recovery code brought a DM seal" >&2; return 1; }
+  history=$(fresh history "$den_id" "$dm")
+  [[ "$history" != *"a private word"* ]] || { echo "error: the fresh install read the DM without the seal" >&2; return 1; }
+  seal=$(member seal)
+  [[ -n "$seal" ]] || { echo "error: joining showed no new DM seal" >&2; return 1; }
+  fresh type-seal "$den_id" "$seal"
+  history=$(fresh history "$den_id" "$dm")
+  [[ "$history" == "a private word"* ]] || { echo "error: with the seal typed, the DM reads: $history" >&2; return 1; }
+  echo ">> The fresh install reads the DM once the member typed their seal"
+  refusal=$(member sign-in-refused https://den.test bob "bob password")
   [[ "$refusal" == *"don't match"* ]] || { echo "error: signing in with the old password: $refusal" >&2; return 1; }
-  guest "$CLIENT" sign-in https://den.test bob "new bob password"
-  guest "$CLIENT" wait-connected 0 >/dev/null
-  echo ">> The old password is gone, and the new one signs the first install in again"
+  approve_sign_in member fresh "$den_id" "new bob password"
+  member wait-connected 0 >/dev/null
+  history=$(member history "$den_id" "$dm")
+  [[ "$history" == "a private word"* ]] || { echo "error: the approved install's DM reads: $history" >&2; return 1; }
+  echo ">> The old password is gone; the new one signs the first install in again once the fresh one approves it, and hands it the seal"
 
   echo ">> Signing the first install out from the fresh one"
   key=$(fresh other-device "$den_id")
@@ -245,9 +318,9 @@ run() {
   [[ "$reason" == "This device was signed out of this den. Sign in again with your den password." ]] ||
     { echo "error: the first install was told: $reason" >&2; return 1; }
   (( took < 5000 )) || { echo "error: signing out took ${took} ms to reach the first install" >&2; return 1; }
-  guest "$CLIENT" sign-in https://den.test bob "new bob password"
-  guest "$CLIENT" wait-connected 0 >/dev/null
-  echo ">> The first install was signed out within ${took} ms, and signed in again"
+  approve_sign_in member fresh "$den_id" "new bob password" old-first
+  member wait-connected 0 >/dev/null
+  echo ">> The first install was signed out within ${took} ms, and signed in again with the fresh one's approval, typed there first"
 
   echo ">> Banning the member"
   guest "$CLIENT" status

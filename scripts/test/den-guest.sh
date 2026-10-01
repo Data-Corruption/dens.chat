@@ -130,6 +130,18 @@ code)
     # code N: print the Nth recovery code from joining.
     json "d['recovery_codes'][$1]" < /root/join.json
     ;;
+seal)
+    # seal: print the DM seal from joining, if it was made for this den.
+    json 'd["seal"] if d["seal_new"] else ""' < /root/join.json
+    ;;
+type-seal)
+    # type-seal DEN_ID SEAL: give this device the member's DM seal.
+    api POST "/api/dens/$1/seal" "{\"seal\":\"$2\"}" >/dev/null
+    ;;
+has-seal)
+    # has-seal: print whether this device holds the only den's DM seal.
+    api GET /api/dens | json 'str(d["dens"][0]["seal"]).lower()'
+    ;;
 fingerprint)
     # fingerprint: print the only den's ID as the page shows it.
     api GET /api/dens | json 'd["dens"][0]["fingerprint"]'
@@ -143,9 +155,78 @@ recover)
         json '"%d %d %s" % (d["recovery_codes_left"], d["signed_out"], d["den"]["fingerprint"])'
     ;;
 sign-in)
-    # sign-in DEN USERNAME PASSWORD: sign this instance in with the den
-    # password.
-    api POST /api/dens/signin "{\"den\":\"$1\",\"username\":\"$2\",\"password\":\"$3\"}" >/dev/null
+    # sign-in DEN USERNAME PASSWORD: ask to sign this instance in with the
+    # den password; print the sign-in's ID, which waits for approval.
+    api POST /api/dens/signin "{\"den\":\"$1\",\"username\":\"$2\",\"password\":\"$3\"}" |
+        json 'd["pending"]["id"] if d.get("pending") and d["pending"]["stage"] == "waiting" else ""'
+    ;;
+sign-in-half)
+    # sign-in-half ID: print the digits this instance shows for a sign-in
+    # waiting for approval, once the approving device answered.
+    for _ in $(seq 1 120); do
+        half=$(api GET /api/dens | json 'next((p["half"] for p in d["sign_ins"] if p["id"] == "'"$1"'" and p.get("half")), "")')
+        [ -n "$half" ] && { printf '%s\n' "$half"; exit 0; }
+        sleep 0.25
+    done
+    api GET /api/dens >&2
+    fail "the sign-in never showed digits"
+    ;;
+check-sign-in)
+    # check-sign-in ID DIGITS: type the approving device's digits.
+    api POST "/api/dens/signin/$1/check" "{\"digits\":\"$2\"}" >/dev/null
+    ;;
+wait-signed-in)
+    # wait-signed-in ID: wait until a sign-in is approved and done.
+    for _ in $(seq 1 120); do
+        stage=$(api GET /api/dens | json 'next((p["stage"] for p in d["sign_ins"] if p["id"] == "'"$1"'"), "gone")')
+        case $stage in
+        done) api DELETE "/api/dens/signin/$1" >/dev/null; exit 0 ;;
+        waiting|check|approved) sleep 0.25 ;;
+        *) fail "the sign-in ended as $stage" ;;
+        esac
+    done
+    fail "the sign-in never finished"
+    ;;
+request)
+    # request DEN_ID: print the ID of a sign-in waiting for this device's
+    # approval, once it shows.
+    for _ in $(seq 1 120); do
+        id=$(api GET /api/dens | json 'next((r["id"] for x in d["dens"] if x["den_id"] == "'"$1"'" for r in x.get("requests") or [] if not r.get("approved")), "")')
+        [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
+        sleep 0.25
+    done
+    fail "no sign-in asked for approval"
+    ;;
+answer)
+    # answer DEN_ID REQUEST_ID: start approving a sign-in from this device;
+    # print the digits it shows once the new device revealed.
+    api POST "/api/dens/$1/requests/$2/answer" >/dev/null
+    for _ in $(seq 1 120); do
+        half=$(api GET /api/dens | json 'next((r.get("half", "") for x in d["dens"] if x["den_id"] == "'"$1"'" for r in x.get("requests") or [] if r["id"] == "'"$2"'"), "")')
+        [ -n "$half" ] && { printf '%s\n' "$half"; exit 0; }
+        sleep 0.25
+    done
+    fail "the new device never revealed"
+    ;;
+approve)
+    # approve DEN_ID REQUEST_ID DIGITS: type the new device's digits, which
+    # hands it the member's DM seal.
+    api POST "/api/dens/$1/requests/$2/approve" "{\"digits\":\"$3\"}" >/dev/null
+    ;;
+approved-half)
+    # approved-half DEN_ID REQUEST_ID: print the digits this device still
+    # shows for a sign-in it approved.
+    for _ in $(seq 1 120); do
+        half=$(api GET /api/dens | json 'next((r["half"] for x in d["dens"] if x["den_id"] == "'"$1"'" for r in x.get("requests") or [] if r["id"] == "'"$2"'" and r.get("approved")), "")')
+        [ -n "$half" ] && { printf '%s\n' "$half"; exit 0; }
+        sleep 0.25
+    done
+    api GET /api/dens >&2
+    fail "the approved sign-in doesn't show its digits"
+    ;;
+dismiss)
+    # dismiss DEN_ID REQUEST_ID: stop showing a sign-in this device approved.
+    api DELETE "/api/dens/$1/requests/$2" >/dev/null
     ;;
 sign-in-refused)
     # sign-in-refused DEN USERNAME PASSWORD: print why signing in failed.
@@ -241,6 +322,53 @@ dm)
     # dm DEN_ID MEMBER_ID: open the DM with a member; print its ID.
     api POST "/api/dens/$1/dms" "{\"member_id\":\"$2\"}" | json 'd["id"]'
     ;;
+start-key)
+    # start-key DEN_ID DM_ID: start the DM's key, as the page does.
+    api POST "/api/dens/$1/dms/$2/key" '{"restart":false}' >/dev/null
+    ;;
+dm-half)
+    # dm-half DEN_ID DM_ID: print the digits this member reads out, once
+    # both Dens moved the DM's exchange on.
+    for _ in $(seq 1 120); do
+        half=$(api GET "/api/dens/$1/dms/$2/check" | json 'd.get("half", "")')
+        [ -n "$half" ] && { printf '%s\n' "$half"; exit 0; }
+        sleep 0.25
+    done
+    api GET "/api/dens/$1/dms/$2/check" >&2
+    fail "the DM's check never showed digits"
+    ;;
+check-dm)
+    # check-dm DEN_ID DM_ID DIGITS: type the digits the other member reads.
+    api POST "/api/dens/$1/dms/$2/check" "{\"digits\":\"$3\"}" >/dev/null
+    ;;
+check-dm-refused)
+    # check-dm-refused DEN_ID DM_ID DIGITS: print why digits were refused.
+    status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \
+        -d "{\"digits\":\"$3\"}" -o /root/check.json -w '%{http_code}' "$BASE/api/dens/$1/dms/$2/check")
+    [ "$status" -ge 400 ] || fail "the wrong digits were taken"
+    json 'd["error"]' < /root/check.json
+    ;;
+send-refused)
+    # send-refused DEN_ID CHANNEL_ID TEXT: print why a message was refused.
+    nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+    status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \
+        -d "{\"nonce\":\"$nonce\",\"text\":\"$3\"}" -o /root/send.json -w '%{http_code}' "$BASE/api/dens/$1/channels/$2/messages")
+    [ "$status" -ge 400 ] || fail "the message was sent"
+    json 'd["error"]' < /root/send.json
+    ;;
+dm-sealed)
+    # dm-sealed TEXT: fail if the den's database holds TEXT in the clear,
+    # counting its write-ahead log.
+    found=0
+    for f in /var/lib/dens/main/data/db/*; do
+        [ -f "$f" ] || continue
+        found=$((found + 1))
+        if grep -q "$1" "$f"; then
+            fail "$f holds the DM's text"
+        fi
+    done
+    [ "$found" -gt 0 ] || fail "no database files to look in"
+    ;;
 wait-dm)
     # wait-dm DEN_ID: print this member's DM's ID once it has arrived.
     for _ in $(seq 1 40); do
@@ -266,11 +394,12 @@ wait-out)
     fail "the den never closed this device out as $1"
     ;;
 upload)
-    # upload DEN_ID FILE NAME: upload a file as the page does; print its ID,
-    # whether metadata came out, its size and whether it has a preview.
+    # upload DEN_ID FILE NAME [CHANNEL_ID]: upload a file as the page does,
+    # for a channel, whose DM's go sealed; print its ID, whether metadata
+    # came out, its size and whether it has a preview.
     curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
         -H "Content-Type: application/octet-stream" -H "Dens-Filename: $3" \
-        --data-binary "@$2" "$BASE/api/dens/$1/uploads" |
+        --data-binary "@$2" "$BASE/api/dens/$1/uploads?channel=${4:-}" |
         json 'd["id"] + " " + str(d.get("stripped", False)).lower() + " %dx%d " % (d["width"], d["height"]) + ("preview" if d.get("thumb") else "none")'
     ;;
 send-file)
