@@ -23,13 +23,15 @@ type SignInRequest struct {
 	RecoveryCode string
 }
 
-// SignedIn is this device's sign-in to a den it's new to: the den's
-// status, how many recovery codes the member has left, and how many of
-// their other devices a recovery signed out.
+// SignedIn is this device's sign-in to a den it's new to. A recovery code
+// signs in at once: the den's status, how many recovery codes the member
+// has left, and how many of their other devices it signed out. A password
+// waits for one of the member's other devices to approve it: Pending.
 type SignedIn struct {
-	Den               Status `json:"den"`
-	RecoveryCodesLeft int    `json:"recovery_codes_left"`
-	SignedOut         int    `json:"signed_out"`
+	Den               Status      `json:"den"`
+	RecoveryCodesLeft int         `json:"recovery_codes_left"`
+	SignedOut         int         `json:"signed_out"`
+	Pending           *SignInView `json:"pending,omitempty"`
 }
 
 // MovedError is a den that moved to an address that can't be reached from
@@ -48,8 +50,11 @@ func (e *MovedError) Unwrap() error { return e.Err }
 // new device key. An invite from the den, used or not, pins its identity;
 // an address trusts the key the den proves there, which is safe for the
 // password, since a verifier made for one den is worthless at another.
-// Recovering with a code sets a new password, which signs out the member's
-// other devices.
+// With the password, the sign-in waits for another of the member's
+// devices to approve it, which hands over their DM seal. Recovering with a
+// code needs no approval, and sets a new password, which signs out the
+// member's other devices; the device has no DM seal until the member types
+// theirs in or starts over.
 func (m *Manager) SignIn(ctx context.Context, req SignInRequest) (SignedIn, error) {
 	username, err := denproto.NormalizeUsername(req.Username)
 	if err != nil {
@@ -117,18 +122,19 @@ func (m *Manager) SignIn(ctx context.Context, req SignInRequest) (SignedIn, erro
 	keyID := denproto.ID(key.Public())
 	proof := key.Sign(denproto.ProofMessage(id, keyID, nonce))
 	verifier := denproto.Verifier(req.Password, id, username)
-	var resp denproto.SignInResponse
-	if code != nil {
-		err = a.call(ctx, http.MethodPost, "/api/auth/recover", nil, denproto.RecoverRequest{
-			Username: username, RecoveryCode: denproto.FormatRecoveryCode(code), NewVerifier: verifier,
-			PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label, Nonce: nonce, Proof: proof,
-		}, &resp)
-	} else {
-		err = a.call(ctx, http.MethodPost, "/api/auth/password", nil, denproto.PasswordLoginRequest{
-			Username: username, Verifier: verifier,
-			PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label, Nonce: nonce, Proof: proof,
-		}, &resp)
+	if code == nil {
+		pending, err := m.waitForApproval(ctx, a, id, url, username, key, verifier, nonce, proof)
+		if err != nil {
+			key.Close()
+			return SignedIn{}, err
+		}
+		return SignedIn{Pending: &pending}, nil
 	}
+	var resp denproto.SignInResponse
+	err = a.call(ctx, http.MethodPost, "/api/auth/recover", nil, denproto.RecoverRequest{
+		Username: username, RecoveryCode: denproto.FormatRecoveryCode(code), NewVerifier: verifier,
+		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label, Nonce: nonce, Proof: proof,
+	}, &resp)
 	if err != nil {
 		key.Close()
 		return SignedIn{}, err
@@ -137,7 +143,7 @@ func (m *Manager) SignIn(ctx context.Context, req SignInRequest) (SignedIn, erro
 	name, nameErr := denproto.CleanName(resp.Den.Name, denproto.MaxNameRunes)
 	if !ok || member.Username != username || nameErr != nil || !denproto.Equal(resp.Den.ID, id) ||
 		denproto.Size("token", resp.Token, denproto.TokenSize) != nil || resp.RecoveryCodesLeft < 0 || resp.RecoveryCodesLeft > denproto.RecoveryCodes ||
-		resp.SignedOut < 0 || resp.SignedOut > maxDevices {
+		resp.SignedOut < 0 || resp.SignedOut > maxDevices || len(resp.SealCheck) != denproto.SealCheckSize {
 		key.Close()
 		return SignedIn{}, errors.New("the den's answer to signing in is malformed")
 	}
@@ -151,7 +157,7 @@ func (m *Manager) SignIn(ctx context.Context, req SignInRequest) (SignedIn, erro
 	c := m.conns[len(m.conns)-1]
 	m.mu.Unlock()
 	m.notify()
-	m.log.Infof("Signed in to a den on this device")
+	m.log.Infof("Signed in to a den on this device with a recovery code")
 	return SignedIn{Den: c.status(), RecoveryCodesLeft: resp.RecoveryCodesLeft, SignedOut: resp.SignedOut}, nil
 }
 

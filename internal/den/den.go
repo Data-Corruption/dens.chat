@@ -62,6 +62,10 @@ type Den struct {
 	// changes orders edits and ticks, and their events, so a message's
 	// updates go out in the order of its revisions.
 	changes sync.Mutex
+	// keys orders changes to DM keys, and their events.
+	keys sync.Mutex
+	// requests are sign-ins waiting for approval (M1.7).
+	requests requests
 
 	limits struct {
 		challenge, join, login, socket, write, send, typing, upload, password, passwordName *limiter
@@ -96,6 +100,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		TokenLifetime: DefaultTokenLifetime,
 		now:           time.Now,
 		nonces:        map[string]time.Time{},
+		requests:      newRequests(),
 		sockets:       newSocketSet(),
 		presence:      newPresence(),
 		PresenceDelay: defaultPresenceDelay,
@@ -385,6 +390,7 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		{"invite", req.Invite, denproto.InviteCodeSize},
 		{"verifier", req.Verifier, denproto.VerifierSize},
 		{"public_key", req.PublicKey, denproto.PublicKeySize},
+		{"seal_check", req.SealCheck, denproto.SealCheckSize},
 	} {
 		if err := denproto.Size(f.name, f.value, f.size); err != nil {
 			return denproto.JoinResponse{}, err
@@ -414,6 +420,9 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 	}
 	keyID := denproto.ID(ed25519.PublicKey(req.PublicKey))
 	var member denproto.Member
+	var retired []int64
+	d.keys.Lock()
+	defer d.keys.Unlock()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var inviteID int64
 		var role string
@@ -436,11 +445,22 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 				displayName, role, inviteID, id); err != nil {
 				return err
 			}
+			// Coming back with another seal is starting over: nothing opens
+			// the copies of DM keys the old one sealed.
+			var sealCheck []byte
+			if err := tx.QueryRowContext(ctx, `SELECT seal_check FROM den_members WHERE id = ?`, id).Scan(&sealCheck); err != nil {
+				return err
+			}
+			if !denproto.Equal(sealCheck, req.SealCheck) {
+				if retired, err = resetSeal(ctx, tx, id, req.SealCheck, now.UnixMilli()); err != nil {
+					return err
+				}
+			}
 		} else {
 			joinedAt = now.UnixMilli()
 			res, err := tx.ExecContext(ctx,
-				`INSERT INTO den_members (username, display_name, role, verifier_hash, joined_at, invite_id) VALUES (?, ?, ?, ?, ?, ?)`,
-				username, displayName, role, denproto.Hash(req.Verifier), joinedAt, inviteID)
+				`INSERT INTO den_members (username, display_name, role, verifier_hash, joined_at, invite_id, seal_check) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				username, displayName, role, denproto.Hash(req.Verifier), joinedAt, inviteID, []byte(req.SealCheck))
 			if err != nil {
 				return err
 			}
@@ -477,6 +497,9 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 	}
 	d.log.Infof("Member %s joined", member.ID)
 	if err := d.Hub.Publish(denproto.EventMemberJoined, member, Everyone); err != nil {
+		return denproto.JoinResponse{}, err
+	}
+	if err := d.publishKeys(ctx, retired...); err != nil {
 		return denproto.JoinResponse{}, err
 	}
 	return denproto.JoinResponse{Member: member, Token: token, ExpiresAt: now.Add(d.TokenLifetime).UnixMilli(), RecoveryCodes: shown}, nil

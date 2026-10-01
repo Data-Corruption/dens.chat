@@ -48,11 +48,13 @@ type hosting struct {
 
 // densView is what the home page shows. Epoch and Version order the
 // copies it gets from the stream and from fetches, so it keeps the newest.
+// SignIns are sign-ins on this device waiting for approval.
 type densView struct {
-	Epoch   string             `json:"epoch"`
-	Version uint64             `json:"version"`
-	Dens    []denclient.Status `json:"dens"`
-	Hosting hosting            `json:"hosting"`
+	Epoch   string                 `json:"epoch"`
+	Version uint64                 `json:"version"`
+	Dens    []denclient.Status     `json:"dens"`
+	SignIns []denclient.SignInView `json:"sign_ins"`
+	Hosting hosting                `json:"hosting"`
 }
 
 func (rt *router) densView() densView {
@@ -60,6 +62,7 @@ func (rt *router) densView() densView {
 	// The version comes first, so the statuses are at least that new.
 	v.Epoch, v.Version = rt.a.Dens.Version()
 	v.Dens = rt.a.Dens.Statuses()
+	v.SignIns = rt.a.Dens.SignIns()
 	if info, _, ok := rt.a.OwnDen(); ok {
 		v.Hosting.Created, v.Hosting.Name, v.Hosting.URL = true, info.Name, info.URL
 		for _, d := range v.Dens {
@@ -185,11 +188,6 @@ func (b joinBody) request() denclient.JoinRequest {
 	return denclient.JoinRequest{Username: b.Username, DisplayName: b.DisplayName, Password: b.Password}
 }
 
-type joinResult struct {
-	Den           denclient.Status `json:"den"`
-	RecoveryCodes []string         `json:"recovery_codes"`
-}
-
 // handleCreateDen creates the den this install hosts and joins it as the
 // owner, over loopback. If the den exists but the owner never joined (the
 // first attempt failed), it issues a fresh owner invite and joins with it.
@@ -238,12 +236,12 @@ func (rt *router) handleCreateDen(w http.ResponseWriter, r *http.Request) {
 		xhttp.Error(r.Context(), w, err)
 		return
 	}
-	status, codes, err := rt.a.Dens.JoinOwn(r.Context(), code, body.request())
+	joined, err := rt.a.Dens.JoinOwn(r.Context(), code, body.request())
 	if err != nil {
 		rt.denError(w, r, err)
 		return
 	}
-	writeJSON(w, joinResult{Den: status, RecoveryCodes: codes})
+	writeJSON(w, joined)
 }
 
 func (rt *router) handlePreview(w http.ResponseWriter, r *http.Request) {
@@ -269,12 +267,12 @@ func (rt *router) handleJoin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	status, codes, err := rt.a.Dens.Join(r.Context(), body.Invite, body.request())
+	joined, err := rt.a.Dens.Join(r.Context(), body.Invite, body.request())
 	if err != nil {
 		rt.denError(w, r, err)
 		return
 	}
-	writeJSON(w, joinResult{Den: status, RecoveryCodes: codes})
+	writeJSON(w, joined)
 }
 
 func (rt *router) handleCreateInvite(w http.ResponseWriter, r *http.Request) {

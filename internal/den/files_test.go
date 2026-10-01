@@ -52,7 +52,7 @@ func withComment(jpg []byte) []byte {
 }
 
 func (f *fixture) upload(s *Session, name string, data []byte) (denproto.File, error) {
-	return f.d.Upload(context.Background(), s, name, int64(len(data)), bytes.NewReader(data))
+	return f.d.Upload(context.Background(), s, name, int64(len(data)), bytes.NewReader(data), false)
 }
 
 func (f *fixture) mustUpload(s *Session, name string, data []byte) denproto.File {
@@ -162,7 +162,7 @@ func TestUploadRefusals(t *testing.T) {
 	_, err = f.upload(member, "big.bin", big)
 	wantCode(t, err, denproto.CodeTooLarge)
 	// Without a stated length, the den stops reading past the limit.
-	_, err = f.d.Upload(ctx, member, "big.bin", -1, bytes.NewReader(big))
+	_, err = f.d.Upload(ctx, member, "big.bin", -1, bytes.NewReader(big), false)
 	wantCode(t, err, denproto.CodeTooLarge)
 
 	chunk := make([]byte, 1<<20)
@@ -288,7 +288,7 @@ func TestAttachments(t *testing.T) {
 
 func (f *fixture) mustSendFiles(s *Session, channel string, files ...string) denproto.Message {
 	f.t.Helper()
-	m, err := f.d.Send(context.Background(), s, channel, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: files})
+	m, err := f.d.Send(context.Background(), s, channel, f.sealedSend(s, channel, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: files}))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -303,14 +303,54 @@ func TestDMFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	file := f.mustUpload(member, "for carol.txt", []byte("hi"))
-	f.mustSendFiles(member, dm.ID, file.ID)
-	if _, err := f.read(carol, file.ID, false); err != nil {
-		t.Fatalf("carol reading a DM file: %v", err)
+	// A DM takes only files its members' clients sealed, which the den
+	// keeps as they came, and channels take none.
+	plain := f.mustUpload(member, "for carol.txt", []byte("hi"))
+	_, err = f.d.Send(ctx, member, dm.ID, f.sealedSend(member, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{plain.ID}}))
+	wantCode(t, err, denproto.CodeInvalidField)
+	blob := []byte("sealed by the client, which the den can't tell from noise")
+	file, err := f.d.Upload(ctx, member, "ignored.txt", int64(len(blob)), bytes.NewReader(blob), true)
+	if err != nil || !file.Sealed || file.Name != "" || file.Type != denproto.SealedType || file.Size != int64(len(blob)) || file.Thumb != nil {
+		t.Fatalf("a sealed upload: %+v %v", file, err)
+	}
+	if err := denproto.CheckFile(file); err != nil {
+		t.Fatalf("a client checking it: %v", err)
+	}
+	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	_, err = f.d.Send(ctx, member, general.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "x", Attachments: []string{file.ID}})
+	wantCode(t, err, denproto.CodeInvalidField)
+	m := f.mustSendFiles(member, dm.ID, file.ID)
+	if m.Attachments != nil {
+		t.Fatalf("a DM message lists its files outside its sealed text: %+v", m.Attachments)
+	}
+	if got, err := f.read(carol, file.ID, false); err != nil || !bytes.Equal(got, blob) {
+		t.Fatalf("carol reading a DM file: %q %v", got, err)
+	}
+	if _, err := f.read(carol, file.ID, true); !denproto.IsCode(err, denproto.CodeNotFound) {
+		t.Fatalf("a sealed file has no preview of the den's: %v", err)
 	}
 	if _, err := f.read(owner, file.ID, false); !denproto.IsCode(err, denproto.CodeNotFound) {
 		t.Fatalf("the owner read a DM file through the den: %v", err)
 	}
+	// A sealed upload isn't a profile picture either.
+	another, err := f.d.Upload(ctx, member, "", 3, bytes.NewReader([]byte("abc")), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Avatar: &another.ID})
+	wantCode(t, err, denproto.CodeInvalidField)
+	// A DM message holds each file and its preview.
+	var ids []string
+	for range denproto.MaxDMFiles + 1 {
+		u, err := f.d.Upload(ctx, member, "", 1, bytes.NewReader([]byte("x")), true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, u.ID)
+	}
+	_, err = f.d.Send(ctx, member, dm.ID, f.sealedSend(member, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: ids}))
+	wantCode(t, err, denproto.CodeInvalidField)
+	f.mustSendFiles(member, dm.ID, ids[:denproto.MaxDMFiles]...)
 }
 
 func TestProfilePictures(t *testing.T) {

@@ -10,16 +10,6 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-func (f *fixture) joinWith(code []byte, username, password string, dev device) (denproto.JoinResponse, error) {
-	nonce, proof := f.proof(dev)
-	info, _ := f.d.Info()
-	return f.d.Join(context.Background(), denproto.JoinRequest{
-		Invite: code, Username: username, DisplayName: "Name of " + username,
-		Verifier: denproto.Verifier(password, info.ID, username), PublicKey: dev.pub(),
-		DeviceLabel: "test", Nonce: nonce, Proof: proof,
-	})
-}
-
 func (f *fixture) invite(s *Session, uses int) denproto.Invite {
 	f.t.Helper()
 	inv, err := f.d.CreateInvite(context.Background(), s, denproto.InviteCreateRequest{MaxUses: uses})
@@ -45,7 +35,7 @@ func (f *fixture) member(owner *Session, username string) *Session {
 
 func (f *fixture) send(s *Session, channel, text string) denproto.Message {
 	f.t.Helper()
-	m, err := f.d.Send(context.Background(), s, channel, denproto.SendRequest{Nonce: denproto.Random(16), Text: text})
+	m, err := f.d.Send(context.Background(), s, channel, f.sealedSend(s, channel, denproto.SendRequest{Nonce: denproto.Random(16), Text: text}))
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -262,7 +252,11 @@ func TestDirectMessages(t *testing.T) {
 
 	// Only the two of them see it, and every message counts for the other.
 	f.send(member, dm.ID, "hi, no mention needed")
-	if e := <-bobSub.Events; e.T != denproto.EventMessageCreated {
+	e := <-bobSub.Events
+	for e.T == denproto.EventDMKey {
+		e = <-bobSub.Events
+	}
+	if e.T != denproto.EventMessageCreated {
 		t.Fatalf("bob got %+v", e)
 	}
 	select {

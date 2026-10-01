@@ -23,6 +23,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
 	denhttp "github.com/Data-Corruption/dens.chat/internal/platform/http/den"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -52,6 +53,10 @@ func newStore(t *testing.T) store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close(); v.Close(); log.Close() })
+	// The service sets the vault up at its first start.
+	if err := vaultstore.Init(context.Background(), db, v.CheckValue()); err != nil {
+		t.Fatal(err)
+	}
 	storage := den.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp")}
 	for _, d := range []string{storage.Dir, storage.Temp} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
@@ -164,12 +169,19 @@ func (h *denHost) client(t *testing.T, own denclient.OwnDen) *denclient.Manager 
 // at every start, and returns a function that stops it.
 func (h *denHost) clientFrom(t *testing.T, s store, own denclient.OwnDen) (*denclient.Manager, func()) {
 	t.Helper()
+	return h.clientVia(t, s, own, h.public.Listener.Addr().String())
+}
+
+// clientVia starts a Manager as clientFrom does, which reaches example.com
+// at address.
+func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address string) (*denclient.Manager, func()) {
+	t.Helper()
 	m := denclient.New(s.db, s.v, s.log, "dens-test", own)
-	public := h.public
-	transport := public.Client().Transport.(*http.Transport).Clone()
+	m.TempDir = t.TempDir()
+	transport := h.public.Client().Transport.(*http.Transport).Clone()
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if strings.HasPrefix(addr, "example.com:") {
-			addr = public.Listener.Addr().String()
+			addr = address
 		}
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
@@ -217,7 +229,7 @@ func join(t *testing.T, m *denclient.Manager, invite, username string) denclient
 	req := denclient.JoinRequest{Username: username, DisplayName: strings.ToUpper(username[:1]) + username[1:], Password: "correct horse"}
 	var err error
 	for range 100 { // Run may not have started yet
-		_, _, err = m.Join(context.Background(), invite, req)
+		_, err = m.Join(context.Background(), invite, req)
 		if err != denclient.ErrNotStarted {
 			break
 		}
@@ -239,7 +251,7 @@ func TestJoinConnectAndRestart(t *testing.T) {
 	owner := h.client(t, h.own())
 	var joined denclient.Status
 	for range 100 {
-		joined, _, err = owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		joined, err = status(owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"}))
 		if err != denclient.ErrNotStarted {
 			break
 		}
@@ -266,7 +278,7 @@ func TestJoinConnectAndRestart(t *testing.T) {
 	if status.Own || status.Role != denproto.RoleMember || status.Name != "Test Den" {
 		t.Fatalf("member status %+v", status)
 	}
-	if _, _, err := member.Join(context.Background(), invite, denclient.JoinRequest{Username: "bob2", DisplayName: "B", Password: "correct horse"}); err != denclient.ErrAlreadyJoined {
+	if _, err := member.Join(context.Background(), invite, denclient.JoinRequest{Username: "bob2", DisplayName: "B", Password: "correct horse"}); err != denclient.ErrAlreadyJoined {
 		t.Fatalf("second join: %v", err)
 	}
 
@@ -299,7 +311,7 @@ func TestRenewalKeepsTheSocket(t *testing.T) {
 	}
 	m := h.client(t, h.own())
 	for range 100 {
-		_, _, err = m.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		_, err = m.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
 		if err != denclient.ErrNotStarted {
 			break
 		}
@@ -343,7 +355,7 @@ func TestAddressProblems(t *testing.T) {
 	owner := h.client(t, h.own())
 	var joined denclient.Status
 	for range 100 {
-		joined, _, err = owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		joined, err = status(owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"}))
 		if err != denclient.ErrNotStarted {
 			break
 		}
@@ -395,7 +407,7 @@ func chatDen(t *testing.T) (h *denHost, owner, member *denclient.Manager, denID,
 	owner = h.client(t, h.own())
 	var joined denclient.Status
 	for range 100 {
-		joined, _, err = owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		joined, err = status(owner.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"}))
 		if err != denclient.ErrNotStarted {
 			break
 		}
@@ -439,8 +451,11 @@ func send(t *testing.T, m *denclient.Manager, denID, channelID, text string) den
 	if err != nil {
 		t.Fatal(err)
 	}
-	return msg
+	return msg.Message
 }
+
+// status is the status of a den just joined.
+func status(j denclient.Joined, err error) (denclient.Status, error) { return j.Status, err }
 
 // collect reads message.created events from a page stream until it has
 // want distinct messages, failing on a duplicate.
@@ -513,11 +528,11 @@ func TestChatCatchUp(t *testing.T) {
 func TestChatEditsAndMentions(t *testing.T) {
 	h, owner, member, denID, channelID := chatDen(t)
 	msg := send(t, member, denID, channelID, "first draft")
-	edited, err := member.Edit(context.Background(), denID, msg.ID, denproto.EditRequest{Revision: 1, Text: "second draft"})
+	edited, err := member.Edit(context.Background(), denID, channelID, msg.ID, denproto.EditRequest{Revision: 1, Text: "second draft"})
 	if err != nil || edited.Revision != 2 {
 		t.Fatalf("edit: %+v %v", edited, err)
 	}
-	_, err = member.Edit(context.Background(), denID, msg.ID, denproto.EditRequest{Revision: 1, Text: "stale"})
+	_, err = member.Edit(context.Background(), denID, channelID, msg.ID, denproto.EditRequest{Revision: 1, Text: "stale"})
 	var conflict *denclient.ErrEditConflict
 	if !errors.As(err, &conflict) || conflict.Current.Text != "second draft" {
 		t.Fatalf("stale edit: %v", err)

@@ -4,22 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
-
-// passwordLogin signs in on a new device with a password.
-func (f *fixture) passwordLogin(username, password string, dev device) (denproto.SignInResponse, error) {
-	nonce, proof := f.proof(dev)
-	info, _ := f.d.Info()
-	// Clients salt the verifier with the username as the den stores it.
-	return f.d.PasswordLogin(context.Background(), denproto.PasswordLoginRequest{
-		Username: username, Verifier: denproto.Verifier(password, info.ID, strings.ToLower(username)),
-		PublicKey: dev.pub(), DeviceLabel: "laptop", Nonce: nonce, Proof: proof,
-	})
-}
 
 func (f *fixture) recover(username, code, password string, dev device) (denproto.SignInResponse, error) {
 	nonce, proof := f.proof(dev)
@@ -42,7 +30,7 @@ func TestPasswordSignIn(t *testing.T) {
 	ownerSub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
 
 	laptop := newDevice()
-	resp, err := f.passwordLogin("BOB", "password", laptop)
+	resp, err := f.signIn(member, "BOB", "password", laptop)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,12 +42,21 @@ func TestPasswordSignIn(t *testing.T) {
 	if err != nil || s.MemberID != member.MemberID || !denproto.Equal(s.KeyID, laptop.id()) {
 		t.Fatalf("the new session: %+v %v", s, err)
 	}
-	// The member's other sessions hear about the new device; nobody else does.
-	e := <-sub.Events
-	var added denproto.Device
-	json.Unmarshal(e.D, &added)
-	if e.T != denproto.EventDeviceAdded || added.Label != "laptop" || !denproto.Equal(added.KeyID, laptop.id()) {
-		t.Fatalf("event %s %+v", e.T, added)
+	// The member's other sessions hear about the request, and then the new
+	// device; nobody else does.
+	for _, want := range []string{denproto.EventDeviceRequest, denproto.EventDeviceRequest, denproto.EventDeviceRequest,
+		denproto.EventDeviceAdded, denproto.EventDeviceRequestEnded} {
+		e := <-sub.Events
+		if e.T != want {
+			t.Fatalf("event %s, want %s", e.T, want)
+		}
+		if e.T == denproto.EventDeviceAdded {
+			var added denproto.Device
+			json.Unmarshal(e.D, &added)
+			if added.Label != "laptop" || !denproto.Equal(added.KeyID, laptop.id()) {
+				t.Fatalf("added %+v", added)
+			}
+		}
 	}
 	select {
 	case e := <-ownerSub.Events:
@@ -68,15 +65,15 @@ func TestPasswordSignIn(t *testing.T) {
 	}
 
 	for name, try := range map[string]func() error{
-		"a wrong password": func() error { _, err := f.passwordLogin("bob", "not the password", newDevice()); return err },
-		"nobody":           func() error { _, err := f.passwordLogin("nobody", "password", newDevice()); return err },
-		"a bad username":   func() error { _, err := f.passwordLogin("!", "password", newDevice()); return err },
+		"a wrong password": func() error { _, err := f.askSignIn("bob", "not the password", newDevice()); return err },
+		"nobody":           func() error { _, err := f.askSignIn("nobody", "password", newDevice()); return err },
+		"a bad username":   func() error { _, err := f.askSignIn("!", "password", newDevice()); return err },
 	} {
 		if err := try(); !denproto.IsCode(err, denproto.CodeUnauthorized) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	_, err = f.passwordLogin("bob", "password", laptop)
+	_, err = f.askSignIn("bob", "password", laptop)
 	wantCode(t, err, denproto.CodeInvalidField)
 
 	// Only members in the den now sign in: not one who left, or was banned.
@@ -84,13 +81,13 @@ func TestPasswordSignIn(t *testing.T) {
 	if err := f.d.Leave(ctx, carol); err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.passwordLogin("carol", "password", newDevice())
+	_, err = f.askSignIn("carol", "password", newDevice())
 	wantCode(t, err, denproto.CodeUnauthorized)
 	dave := f.member(owner, "dave")
 	if err := f.d.Remove(ctx, owner, denproto.FormatID(dave.MemberID), denproto.RemoveRequest{Ban: true}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.passwordLogin("dave", "password", newDevice())
+	_, err = f.askSignIn("dave", "password", newDevice())
 	wantCode(t, err, denproto.CodeUnauthorized)
 }
 
@@ -98,11 +95,11 @@ func TestPasswordGuessesAreLimited(t *testing.T) {
 	f, _, _ := chatFixture(t)
 	var err error
 	for range 11 {
-		_, err = f.passwordLogin("bob", "guess", newDevice())
+		_, err = f.askSignIn("bob", "guess", newDevice())
 	}
 	wantCode(t, err, denproto.CodeRateLimited)
 	// The limit is the username's, not the device's or the address's.
-	_, err = f.passwordLogin("bob", "password", newDevice())
+	_, err = f.askSignIn("bob", "password", newDevice())
 	wantCode(t, err, denproto.CodeRateLimited)
 }
 
@@ -125,9 +122,10 @@ func TestRecovery(t *testing.T) {
 	// The code is spent, and the old password is gone with it.
 	_, err = f.recover("erin", code, "another password", newDevice())
 	wantCode(t, err, denproto.CodeUnauthorized)
-	_, err = f.passwordLogin("erin", "password", newDevice())
+	_, err = f.askSignIn("erin", "password", newDevice())
 	wantCode(t, err, denproto.CodeUnauthorized)
-	if _, err := f.passwordLogin("erin", "a new password", newDevice()); err != nil {
+	recovered, _ := f.d.Authenticate(ctx, resp.Token)
+	if _, err := f.signIn(recovered, "erin", "a new password", newDevice()); err != nil {
 		t.Fatalf("the new password: %v", err)
 	}
 	// A code works as typed: any case, without dashes.
@@ -164,7 +162,7 @@ func TestChangePasswordAndCodes(t *testing.T) {
 	wantCode(t, err, denproto.CodeWrongPassword)
 	_, err = f.d.ChangePassword(ctx, s, denproto.PasswordChangeRequest{NewVerifier: f.verifier("gail", "second")})
 	wantCode(t, err, denproto.CodeInvalidField)
-	laptop, err := f.passwordLogin("gail", "password", newDevice())
+	laptop, err := f.signIn(s, "gail", "password", newDevice())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +185,7 @@ func TestChangePasswordAndCodes(t *testing.T) {
 	if err != nil || changed.RecoveryCodesLeft != denproto.RecoveryCodes-1 || changed.SignedOut != 0 {
 		t.Fatalf("change with a code: %+v %v", changed, err)
 	}
-	if _, err := f.passwordLogin("gail", "third", newDevice()); err != nil {
+	if _, err := f.signIn(s, "gail", "third", newDevice()); err != nil {
 		t.Fatalf("the newest password: %v", err)
 	}
 
@@ -209,7 +207,7 @@ func TestDevicesAndRevoking(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()
 	laptop := newDevice()
-	resp, err := f.passwordLogin("bob", "password", laptop)
+	resp, err := f.signIn(member, "bob", "password", laptop)
 	if err != nil {
 		t.Fatal(err)
 	}

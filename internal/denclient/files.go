@@ -58,12 +58,17 @@ func refusal(k media.Kind) error {
 
 // Upload sends a file to a den for a message or a profile to use. Images
 // lose their metadata on the way, as they stream; size is the file's
-// length. Nothing reads body once Upload returns, so the caller can drain
-// what's left of it.
-func (m *Manager) Upload(ctx context.Context, denID, name string, size int64, body io.Reader) (Uploaded, error) {
+// length. A file for a DM, which channel names, goes sealed. Nothing reads
+// body once Upload returns, so the caller can drain what's left of it.
+func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, size int64, body io.Reader) (Uploaded, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return Uploaded{}, err
+	}
+	if channelID != "" {
+		if _, dm := c.isDM(channelID); dm {
+			return c.uploadDM(ctx, channelID, name, size, body)
+		}
 	}
 	limits := c.limits()
 	if limits.FileSize > 0 && size > limits.FileSize {
@@ -221,22 +226,34 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	if data, kind, ok := m.files.get(key); ok {
 		return &OpenedFile{Reader: bytes.NewReader(data), Size: int64(len(data)), Kind: kind}, nil
 	}
-	path := "/api/files/" + fileID
-	if thumb {
-		path += "/thumb"
+	c.mu.Lock()
+	df, sealed := c.dmFiles[fileID]
+	c.mu.Unlock()
+	var body io.ReadCloser
+	var size int64
+	if sealed {
+		// A DM's file opens with the key its message sealed.
+		if body, size, err = c.openDMFile(ctx, fileID, df, thumb); err != nil {
+			return nil, err
+		}
+	} else {
+		path := "/api/files/" + fileID
+		if thumb {
+			path += "/thumb"
+		}
+		res, err := c.transfer(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		size = res.ContentLength
+		if size < 0 || size > denproto.MaxFileSize {
+			res.Body.Close()
+			return nil, errors.New("the den's answer is malformed")
+		}
+		body = readCloser{io.LimitReader(res.Body, size), res.Body}
 	}
-	res, err := c.transfer(ctx, path)
-	if err != nil {
-		return nil, err
-	}
-	size := res.ContentLength
-	if size < 0 || size > denproto.MaxFileSize {
-		res.Body.Close()
-		return nil, errors.New("the den's answer is malformed")
-	}
-	body := io.LimitReader(res.Body, size)
 	if size <= cacheFileSize {
-		defer res.Body.Close()
+		defer body.Close()
 		data, err := io.ReadAll(body)
 		if err != nil {
 			return nil, fmt.Errorf("read the file from the den: %w", err)
@@ -251,10 +268,10 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	br := bufio.NewReaderSize(body, media.SniffLen)
 	head, err := br.Peek(media.SniffLen)
 	if err != nil && !errors.Is(err, io.EOF) {
-		res.Body.Close()
+		body.Close()
 		return nil, err
 	}
-	return &OpenedFile{Reader: br, Size: size, Kind: media.Sniff(head), close: res.Body.Close}, nil
+	return &OpenedFile{Reader: br, Size: size, Kind: media.Sniff(head), close: body.Close}, nil
 }
 
 // transfer fetches a file from the den, signing in again once if the den

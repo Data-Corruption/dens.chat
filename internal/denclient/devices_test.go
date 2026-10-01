@@ -17,16 +17,17 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// joinWithCodes joins a new member and returns their recovery codes.
-func joinWithCodes(t *testing.T, owner, member *denclient.Manager, denID, username string) []string {
+// joinWithCodes joins a new member and returns what they keep: their
+// recovery codes, and their DM seal.
+func joinWithCodes(t *testing.T, owner, member *denclient.Manager, denID, username string) denclient.Joined {
 	t.Helper()
 	invite, _, err := owner.CreateInvite(context.Background(), denID, denproto.InviteCreateRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var codes []string
+	var joined denclient.Joined
 	for range 100 { // Run may not have started yet
-		_, codes, err = member.Join(context.Background(), invite, denclient.JoinRequest{Username: username, DisplayName: username, Password: "old password"})
+		joined, err = member.Join(context.Background(), invite, denclient.JoinRequest{Username: username, DisplayName: username, Password: "old password"})
 		if err != denclient.ErrNotStarted {
 			break
 		}
@@ -36,7 +37,127 @@ func joinWithCodes(t *testing.T, owner, member *denclient.Manager, denID, userna
 		t.Fatal(err)
 	}
 	waitFor(t, member, username+" connected", connected)
-	return codes
+	return joined
+}
+
+// signInApproved signs a device in with a password, approved from one of
+// the member's other devices: each shows its digits, which the test reads
+// off and types into the other, as the member would. With approveFirst,
+// the member types into the approving device first, which must go on
+// showing its digits for the new device.
+func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, req denclient.SignInRequest, approveFirst bool) denclient.Status {
+	t.Helper()
+	in, err := signIn(t, m, req)
+	if err != nil {
+		t.Fatalf("sign in: %v", err)
+	}
+	if in.Pending == nil || in.Pending.Stage != denclient.SignInWaiting {
+		t.Fatalf("the sign-in doesn't wait for approval: %+v", in)
+	}
+	ctx := context.Background()
+	request := waitRequest(t, approver, denID, func(r denclient.RequestView) bool { return !r.Approved })
+	if err := approver.AnswerSignIn(ctx, denID, request.ID); err != nil {
+		t.Fatalf("answer: %v", err)
+	}
+	fresh := waitSignIn(t, m, in.Pending.ID, func(v denclient.SignInView) bool { return v.Half != "" })
+	request = waitRequest(t, approver, denID, func(r denclient.RequestView) bool { return r.ID == request.ID && r.Half != "" })
+	if err := m.CheckSignIn(ctx, fresh.ID, "0000 0000 0000 0000"); !isInput(err) {
+		t.Fatalf("the wrong digits: %v", err)
+	}
+	if approveFirst {
+		if err := approver.ApproveSignIn(ctx, denID, request.ID, fresh.Half); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		waitSignIn(t, m, fresh.ID, func(v denclient.SignInView) bool { return v.Stage == denclient.SignInApproved && v.Half == fresh.Half })
+		approved := waitRequest(t, approver, denID, func(r denclient.RequestView) bool { return r.ID == request.ID && r.Approved })
+		if approved.Half != request.Half {
+			t.Fatalf("the approving device's digits once it approved: %+v", approved)
+		}
+		if err := m.CheckSignIn(ctx, fresh.ID, approved.Half); err != nil {
+			t.Fatalf("the new device's check: %v", err)
+		}
+		if err := approver.DismissApproved(denID, request.ID); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range approver.Statuses() {
+			if s.DenID == denID && len(s.Requests) != 0 {
+				t.Fatalf("a dismissed approval still shows: %+v", s.Requests)
+			}
+		}
+	} else {
+		if err := m.CheckSignIn(ctx, fresh.ID, request.Half); err != nil {
+			t.Fatalf("the new device's check: %v", err)
+		}
+		if err := approver.ApproveSignIn(ctx, denID, request.ID, fresh.Half); err != nil {
+			t.Fatalf("approve: %v", err)
+		}
+		waitRequest(t, approver, denID, func(r denclient.RequestView) bool { return r.ID == request.ID && r.Approved })
+		if err := approver.DismissApproved(denID, request.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := waitSignIn(t, m, fresh.ID, func(v denclient.SignInView) bool {
+		return v.Stage != denclient.SignInWaiting && v.Stage != denclient.SignInCheck
+	})
+	if done.Stage != denclient.SignInDone || done.DenID != denID {
+		t.Fatalf("the sign-in ended %+v", done)
+	}
+	m.DismissSignIn(done.ID)
+	for _, s := range m.Statuses() {
+		if s.DenID == denID {
+			if !s.Seal {
+				t.Fatal("the approved device has no DM seal")
+			}
+			return s
+		}
+	}
+	t.Fatal("the approved device doesn't list the den")
+	return denclient.Status{}
+}
+
+func isInput(err error) bool {
+	var input *denclient.InputError
+	return errors.As(err, &input)
+}
+
+// waitRequest waits for a den to list a sign-in waiting for approval that
+// matches.
+func waitRequest(t *testing.T, m *denclient.Manager, denID string, match func(denclient.RequestView) bool) denclient.RequestView {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		for _, s := range m.Statuses() {
+			if s.DenID != denID {
+				continue
+			}
+			for _, r := range s.Requests {
+				if match(r) {
+					return r
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for a sign-in to approve: %+v", m.Statuses())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// waitSignIn waits for a sign-in on this device to match.
+func waitSignIn(t *testing.T, m *denclient.Manager, id string, match func(denclient.SignInView) bool) denclient.SignInView {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		for _, v := range m.SignIns() {
+			if v.ID == id && match(v) {
+				return v
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting on the sign-in: %+v", m.SignIns())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func signIn(t *testing.T, m *denclient.Manager, req denclient.SignInRequest) (denclient.SignedIn, error) {
@@ -68,12 +189,13 @@ func TestRecoverOnAFreshMachineAndRevokeTheOldKey(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
 	ctx := context.Background()
 	old := h.client(t, noOwnDen)
-	codes := joinWithCodes(t, owner, old, denID, "erin")
+	joined := joinWithCodes(t, owner, old, denID, "erin")
+	codes := joined.RecoveryCodes
 
 	fresh := h.client(t, noOwnDen)
 	start := time.Now()
 	in, err := signIn(t, fresh, denclient.SignInRequest{Den: "https://example.com", Username: "Erin", Password: "new password", RecoveryCode: strings.ToLower(codes[2])})
-	if err != nil || in.RecoveryCodesLeft != denproto.RecoveryCodes-1 || in.SignedOut != 1 || in.Den.Username != "erin" || in.Den.Name != "Chat Den" {
+	if err != nil || in.RecoveryCodesLeft != denproto.RecoveryCodes-1 || in.SignedOut != 1 || in.Den.Username != "erin" || in.Den.Name != "Chat Den" || in.Den.Seal {
 		t.Fatalf("recover: %+v %v", in, err)
 	}
 	waitFor(t, old, "the old machine signed out by the new password", revoked("Your den password was changed"))
@@ -81,14 +203,21 @@ func TestRecoverOnAFreshMachineAndRevokeTheOldKey(t *testing.T) {
 		t.Fatalf("signing the old machine out took %v", took)
 	}
 	waitFor(t, fresh, "the fresh machine connected", connected)
+	// A recovery code brings no DM seal; the member types the one they
+	// saved, which only then lets this machine approve others.
+	if err := fresh.TypeSeal(ctx, denID, denproto.FormatSeal(denproto.NewSeal())); !isInput(err) {
+		t.Fatalf("someone else's seal: %v", err)
+	}
+	if err := fresh.TypeSeal(ctx, denID, strings.ToLower(joined.Seal)); err != nil {
+		t.Fatalf("the saved seal: %v", err)
+	}
 
-	// The old password is gone, and the new one signs the old machine in.
+	// The old password is gone, and the new one signs the old machine in,
+	// with the fresh one's approval.
 	if _, err := signIn(t, old, denclient.SignInRequest{Den: "https://example.com", Username: "erin", Password: "old password"}); !denproto.IsCode(err, denproto.CodeUnauthorized) {
 		t.Fatalf("the old password: %v", err)
 	}
-	if _, err := signIn(t, old, denclient.SignInRequest{Den: "https://example.com", Username: "erin", Password: "new password"}); err != nil {
-		t.Fatalf("signing the old machine in again: %v", err)
-	}
+	signInApproved(t, old, fresh, denID, denclient.SignInRequest{Den: "https://example.com", Username: "erin", Password: "new password"}, false)
 	waitFor(t, old, "the old machine back", connected)
 
 	list, err := fresh.Devices(ctx, denID)
@@ -111,9 +240,7 @@ func TestRecoverOnAFreshMachineAndRevokeTheOldKey(t *testing.T) {
 	}
 
 	// Signed in once more, the old machine changes the password.
-	if _, err := signIn(t, old, denclient.SignInRequest{Den: "https://example.com", Username: "erin", Password: "new password"}); err != nil {
-		t.Fatal(err)
-	}
+	signInApproved(t, old, fresh, denID, denclient.SignInRequest{Den: "https://example.com", Username: "erin", Password: "new password"}, true)
 	waitFor(t, old, "the old machine back again", connected)
 	changed, err := old.ChangePassword(ctx, denID, "new password", "", "newest password")
 	if err != nil || changed.SignedOut != 1 || changed.RecoveryCodesLeft != in.RecoveryCodesLeft {
@@ -128,31 +255,35 @@ func TestRecoverOnAFreshMachineAndRevokeTheOldKey(t *testing.T) {
 func TestSignInPinnedByAnOldInvite(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
 	ctx := context.Background()
-	joinWithCodes(t, owner, h.client(t, noOwnDen), denID, "frank")
+	desktop := h.client(t, noOwnDen)
+	joinWithCodes(t, owner, desktop, denID, "frank")
 	// The invite frank used is spent, but still names the den.
 	invite, _, err := owner.CreateInvite(ctx, denID, denproto.InviteCreateRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	laptop := h.client(t, noOwnDen)
-	in, err := signIn(t, laptop, denclient.SignInRequest{Den: invite, Username: "frank", Password: "old password"})
-	if err != nil || in.Den.DenID != denID || in.RecoveryCodesLeft != denproto.RecoveryCodes || in.SignedOut != 0 {
-		t.Fatalf("%+v %v", in, err)
+	st := signInApproved(t, laptop, desktop, denID, denclient.SignInRequest{Den: invite, Username: "frank", Password: "old password"}, true)
+	if st.Fingerprint != denproto.Fingerprint(mustID(t, denID)) {
+		t.Fatalf("fingerprint %q", st.Fingerprint)
 	}
 	waitFor(t, laptop, "the laptop connected", connected)
 	if _, err := signIn(t, laptop, denclient.SignInRequest{Den: invite, Username: "frank", Password: "old password"}); !errors.Is(err, denclient.ErrAlreadyJoined) {
 		t.Fatalf("signing in twice: %v", err)
 	}
-	if in.Den.Fingerprint != denproto.Fingerprint(mustID(t, denID)) {
-		t.Fatalf("fingerprint %q", in.Den.Fingerprint)
-	}
 }
 
-// An owner who signs out the machine that hosts their den signs in again
-// there by the den's address, which needn't loop back from that machine.
+// An owner who signs out the machine that hosts their den, their only
+// device, signs in again there with a recovery code, by the den's address,
+// which needn't loop back from that machine. The password alone can't: no
+// other device is left to approve it.
 func TestOwnerSignsInAgainOnTheHostingMachine(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
 	ctx := context.Background()
+	codes, err := owner.NewRecoveryCodes(ctx, denID, "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
 	list, err := owner.Devices(ctx, denID)
 	if err != nil || len(list.Devices) != 1 || !list.Devices[0].Current {
 		t.Fatalf("devices: %+v %v", list, err)
@@ -162,7 +293,10 @@ func TestOwnerSignsInAgainOnTheHostingMachine(t *testing.T) {
 	}
 	waitFor(t, owner, "the owner signed out", func(s denclient.Status) bool { return s.State == denclient.StateRevoked })
 	h.public.Listener.Close()
-	in, err := signIn(t, owner, denclient.SignInRequest{Den: "https://example.com", Username: "alice", Password: "correct horse"})
+	if _, err := signIn(t, owner, denclient.SignInRequest{Den: "https://example.com", Username: "alice", Password: "correct horse"}); !isInput(err) {
+		t.Fatalf("the password with no device to approve it: %v", err)
+	}
+	in, err := signIn(t, owner, denclient.SignInRequest{Den: "https://example.com", Username: "alice", Password: "correct horse", RecoveryCode: codes[0]})
 	if err != nil || in.Den.DenID != denID || in.Den.URL != "https://example.com" || !in.Den.Own {
 		t.Fatalf("%+v %v", in, err)
 	}
@@ -224,9 +358,12 @@ func TestRelayIsFollowedPastNotThrough(t *testing.T) {
 	r := h.relay(t)
 	laptop := h.client(t, noOwnDen)
 	in, err := signIn(t, laptop, denclient.SignInRequest{Den: r.URL, Username: "gina", Password: "old password"})
-	if err != nil || in.Den.URL != "https://example.com" {
+	if err != nil || in.Pending == nil || in.Pending.URL != "https://example.com" {
 		t.Fatalf("%+v %v", in, err)
 	}
+	// Waiting for approval goes to the den too.
+	waitSignIn(t, laptop, in.Pending.ID, func(denclient.SignInView) bool { return true })
+	time.Sleep(100 * time.Millisecond)
 	if seen := r.seen(); len(seen) != 1 || seen[0] != "/api/auth/challenge" {
 		t.Fatalf("through the relay: %v", seen)
 	}

@@ -113,7 +113,7 @@ func (f *fixture) owner() (token denproto.Bytes, key ed25519.PrivateKey) {
 	joined, err := f.d.Join(context.Background(), denproto.JoinRequest{
 		Invite: code, Username: "alice", DisplayName: "Alice", Verifier: denproto.Random(32),
 		PublicKey: denproto.Bytes(key.Public().(ed25519.PublicKey)), DeviceLabel: "test",
-		Nonce: resp.Nonce, Proof: denproto.Prove(key, info.ID, resp.Nonce),
+		Nonce: resp.Nonce, Proof: denproto.Prove(key, info.ID, resp.Nonce), SealCheck: denproto.Random(denproto.SealCheckSize),
 	})
 	if err != nil {
 		f.t.Fatal(err)
@@ -134,6 +134,8 @@ func (f *fixture) dial(token denproto.Bytes, resume string) (*websocket.Conn, []
 	if err != nil {
 		f.t.Fatal(err)
 	}
+	// As much as a client reads, and no more.
+	c.SetReadLimit(denproto.MaxBody)
 	return c, read(f.t, c)
 }
 
@@ -268,7 +270,7 @@ func (f *fixture) member(ownerToken denproto.Bytes, username string) denproto.By
 	joined, err := f.d.Join(context.Background(), denproto.JoinRequest{
 		Invite: inv.Code, Username: username, DisplayName: username, Verifier: denproto.Random(32),
 		PublicKey: denproto.Bytes(key.Public().(ed25519.PublicKey)), DeviceLabel: "test",
-		Nonce: resp.Nonce, Proof: denproto.Prove(key, info.ID, resp.Nonce),
+		Nonce: resp.Nonce, Proof: denproto.Prove(key, info.ID, resp.Nonce), SealCheck: denproto.Random(denproto.SealCheckSize),
 	})
 	if err != nil {
 		f.t.Fatal(err)
@@ -411,25 +413,17 @@ func TestSigningOutClosesThatDevicesSockets(t *testing.T) {
 				}
 				pub := denproto.Bytes(key.Public().(ed25519.PublicKey))
 				proof := denproto.Prove(key, info.ID, resp.Nonce)
-				if code != nil {
-					joined, err := f.d.Join(ctx, denproto.JoinRequest{Invite: code, Username: "alice", DisplayName: "Alice", Verifier: verifier,
-						PublicKey: pub, DeviceLabel: "desktop", Nonce: resp.Nonce, Proof: proof})
-					if err != nil {
-						t.Fatal(err)
-					}
-					code = nil
-					return joined.Token
-				}
-				in, err := f.d.PasswordLogin(ctx, denproto.PasswordLoginRequest{Username: "alice", Verifier: verifier,
-					PublicKey: pub, DeviceLabel: "laptop", Nonce: resp.Nonce, Proof: proof})
+				joined, err := f.d.Join(ctx, denproto.JoinRequest{Invite: code, Username: "alice", DisplayName: "Alice", Verifier: verifier,
+					PublicKey: pub, DeviceLabel: "desktop", Nonce: resp.Nonce, Proof: proof, SealCheck: denproto.Random(denproto.SealCheckSize)})
 				if err != nil {
 					t.Fatal(err)
 				}
-				return in.Token
+				return joined.Token
 			}
 			_, desktopKey, _ := ed25519.GenerateKey(nil)
 			_, laptopKey, _ := ed25519.GenerateKey(nil)
-			desktopToken, laptopToken := signIn(desktopKey), signIn(laptopKey)
+			desktopToken := signIn(desktopKey)
+			laptopToken := f.approve(desktopToken, "alice", verifier, laptopKey)
 			desktop, _ := f.dial(desktopToken, "")
 			laptop, _ := f.dial(laptopToken, "")
 			s, _ := f.d.Authenticate(ctx, desktopToken)

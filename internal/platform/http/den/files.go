@@ -19,30 +19,37 @@ import (
 // A slow upload is fine; a stalled one would hold its place forever.
 const uploadIdle = time.Minute
 
-func (h *handler) upload(w http.ResponseWriter, r *http.Request) {
-	s := session(r)
-	if err := h.d.Allow(dens.LimitUpload, strconv.FormatInt(s.MemberID, 10)); err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
-	if err != nil {
-		h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "%s must be percent-encoded", denproto.HeaderFilename))
-		return
-	}
-	body := &idleReader{r: r.Body, rc: http.NewResponseController(w)}
-	f, err := h.d.Upload(r.Context(), s, name, r.ContentLength, body)
-	if err != nil {
-		if body.err != nil {
-			// The client stopped sending: it went away, or took the file
-			// off. That's the client's business, not the den's failure.
-			h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeMalformed, "the upload stopped before its end"))
+// upload stores an upload: a file to check, or with sealed, a DM's file
+// the den can't open, which comes without a name.
+func (h *handler) upload(sealed bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s := session(r)
+		if err := h.d.Allow(dens.LimitUpload, strconv.FormatInt(s.MemberID, 10)); err != nil {
+			h.fail(w, r, err)
 			return
 		}
-		h.fail(w, r, err)
-		return
+		var name string
+		if !sealed {
+			var err error
+			if name, err = url.PathUnescape(r.Header.Get(denproto.HeaderFilename)); err != nil {
+				h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "%s must be percent-encoded", denproto.HeaderFilename))
+				return
+			}
+		}
+		body := &idleReader{r: r.Body, rc: http.NewResponseController(w)}
+		f, err := h.d.Upload(r.Context(), s, name, r.ContentLength, body, sealed)
+		if err != nil {
+			if body.err != nil {
+				// The client stopped sending: it went away, or took the file
+				// off. That's the client's business, not the den's failure.
+				h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeMalformed, "the upload stopped before its end"))
+				return
+			}
+			h.fail(w, r, err)
+			return
+		}
+		denproto.WriteJSON(w, http.StatusCreated, f)
 	}
-	denproto.WriteJSON(w, http.StatusCreated, f)
 }
 
 // idleReader gives each read of a request body uploadIdle to arrive, and

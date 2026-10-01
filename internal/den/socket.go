@@ -23,7 +23,14 @@ const (
 	writeTimeout  = 10 * time.Second
 	eventsPerSend = 256
 	replayChunk   = 500
+	// frameBudget bounds a frame's events as JSON, below the 1 MiB a client
+	// reads, with room for the array around them.
+	frameBudget = denproto.MaxBody - 64<<10
 )
+
+// eventSize is about how much of a frame an event takes: its payload and
+// type, and the object around them.
+func eventSize(e denproto.Event) int { return len(e.D) + len(e.T) + 48 }
 
 type closeRequest struct {
 	code   websocket.StatusCode
@@ -209,14 +216,16 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		first, _ := denproto.NewEvent(denproto.EventResumed, 0, nil)
 		online, _ := denproto.NewEvent(denproto.EventPresence, 0, denproto.Presence{Online: d.online(), Full: true})
 		batch := []denproto.Event{first, online}
-		for len(missed) > 0 {
-			n := min(replayChunk-len(batch), len(missed))
-			batch = append(batch, missed[:n]...)
-			missed = missed[n:]
-			if !write(batch...) {
-				return
+		size := eventSize(first) + eventSize(online)
+		for _, e := range missed {
+			if len(batch) >= replayChunk || size+eventSize(e) > frameBudget {
+				if !write(batch...) {
+					return
+				}
+				batch, size = batch[:0], 0
 			}
-			batch = batch[:0]
+			batch = append(batch, e)
+			size += eventSize(e)
 		}
 		if len(batch) > 0 && !write(batch...) {
 			return
@@ -268,17 +277,25 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 			// refresh ends the batch: it replaces the client's state, so
 			// events before it go first and the snapshot follows.
 			var batch []denproto.Event
+			size := 0
 			for {
 				if e.T == eventRefresh {
 					if len(batch) > 0 && !write(batch...) {
 						return
 					}
-					batch = nil
+					batch, size = nil, 0
 					if !sendReady(e.Seq) {
 						return
 					}
 				} else {
+					if len(batch) > 0 && size+eventSize(e) > frameBudget {
+						if !write(batch...) {
+							return
+						}
+						batch, size = nil, 0
+					}
 					batch = append(batch, e)
+					size += eventSize(e)
 				}
 				if len(batch) >= eventsPerSend {
 					break

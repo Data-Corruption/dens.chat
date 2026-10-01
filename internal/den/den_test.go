@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,10 @@ type fixture struct {
 	d       *Den
 	clock   time.Time
 	storage Storage
+	// seals are the members' DM seals, which their clients hold, and keys
+	// the DMs' keys, made as tests need them.
+	seals map[int64]denproto.Bytes
+	keys  map[string]testKey
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -42,7 +47,8 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, db: db, v: v, log: log, clock: time.UnixMilli(1_759_000_000_000), storage: testStorage(t)}
+	f := &fixture{t: t, db: db, v: v, log: log, clock: time.UnixMilli(1_759_000_000_000), storage: testStorage(t),
+		seals: map[int64]denproto.Bytes{}, keys: map[string]testKey{}}
 	t.Cleanup(func() {
 		if f.d != nil {
 			f.d.Close()
@@ -120,14 +126,33 @@ func (f *fixture) proof(dev device) (nonce, proof denproto.Bytes) {
 	return resp.Nonce, denproto.Prove(dev.key, info.ID, resp.Nonce)
 }
 
+// join joins with the password "password" and a new DM seal, as a fresh
+// install does.
 func (f *fixture) join(code []byte, username string, dev device) (denproto.JoinResponse, error) {
+	return f.joinAs(code, username, "password", dev, denproto.NewSeal())
+}
+
+func (f *fixture) joinWith(code []byte, username, password string, dev device) (denproto.JoinResponse, error) {
+	return f.joinAs(code, username, password, dev, denproto.NewSeal())
+}
+
+func (f *fixture) joinAs(code []byte, username, password string, dev device, seal denproto.Bytes) (denproto.JoinResponse, error) {
 	nonce, proof := f.proof(dev)
 	info, _ := f.d.Info()
-	return f.d.Join(context.Background(), denproto.JoinRequest{
+	check, err := denproto.SealCheck(seal, info.ID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	joined, err := f.d.Join(context.Background(), denproto.JoinRequest{
 		Invite: code, Username: username, DisplayName: "Name of " + username,
-		Verifier: denproto.Verifier("password", info.ID, username), PublicKey: dev.pub(),
-		DeviceLabel: "test", Nonce: nonce, Proof: proof,
+		Verifier: denproto.Verifier(password, info.ID, strings.ToLower(username)), PublicKey: dev.pub(),
+		DeviceLabel: "test", Nonce: nonce, Proof: proof, SealCheck: check,
 	})
+	if err == nil {
+		id, _ := denproto.ParseID(joined.Member.ID)
+		f.seals[id] = seal
+	}
+	return joined, err
 }
 
 func wantCode(t *testing.T, err error, code string) {
@@ -211,6 +236,7 @@ func TestProofsAndNonces(t *testing.T) {
 	req := denproto.JoinRequest{
 		Invite: code, Username: "alice", DisplayName: "Alice", Verifier: denproto.Random(32),
 		PublicKey: dev.pub(), DeviceLabel: "test", Nonce: nonce, Proof: denproto.Prove(newDevice().key, info.ID, nonce),
+		SealCheck: denproto.Random(denproto.SealCheckSize),
 	}
 	_, err := f.d.Join(context.Background(), req)
 	wantCode(t, err, denproto.CodeBadSignature)

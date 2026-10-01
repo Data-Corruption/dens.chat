@@ -63,7 +63,7 @@ func gpsJPEG(t *testing.T) []byte {
 
 func upload(t *testing.T, m *denclient.Manager, denID, name string, data []byte) denclient.Uploaded {
 	t.Helper()
-	up, err := m.Upload(context.Background(), denID, name, int64(len(data)), bytes.NewReader(data))
+	up, err := m.Upload(context.Background(), denID, "", name, int64(len(data)), bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,11 +143,11 @@ func TestUploadRefusalsAndLimits(t *testing.T) {
 	ctx := context.Background()
 	video := append([]byte("\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"), make([]byte, 64)...)
 	var input *denclient.InputError
-	if _, err := member.Upload(ctx, denID, "clip.mp4", int64(len(video)), bytes.NewReader(video)); !errors.As(err, &input) {
+	if _, err := member.Upload(ctx, denID, "", "clip.mp4", int64(len(video)), bytes.NewReader(video)); !errors.As(err, &input) {
 		t.Fatalf("a video: %v", err)
 	}
 	cut := gpsJPEG(t)[:2000]
-	if _, err := member.Upload(ctx, denID, "cut.jpg", int64(len(cut)), bytes.NewReader(cut)); !errors.As(err, &input) {
+	if _, err := member.Upload(ctx, denID, "", "cut.jpg", int64(len(cut)), bytes.NewReader(cut)); !errors.As(err, &input) {
 		t.Fatalf("a damaged photo: %v", err)
 	}
 	limits := denproto.Limits{FileSize: 1 << 20, MemberStorage: 1 << 30, DenStorage: 1 << 31}
@@ -156,7 +156,7 @@ func TestUploadRefusalsAndLimits(t *testing.T) {
 	}
 	viewOf(t, member, denID, "the new limits", func(v denclient.View) bool { return v.Limits == limits })
 	big := make([]byte, 1<<20+1)
-	if _, err := member.Upload(ctx, denID, "big.bin", int64(len(big)), bytes.NewReader(big)); !errors.Is(err, denclient.ErrTooLarge) {
+	if _, err := member.Upload(ctx, denID, "", "big.bin", int64(len(big)), bytes.NewReader(big)); !errors.Is(err, denclient.ErrTooLarge) {
 		t.Fatalf("too large: %v", err)
 	}
 	st, err := member.Storage(ctx, denID)
@@ -248,7 +248,7 @@ func TestFailedUploadHandsBackItsBody(t *testing.T) {
 		"second.bin": make([]byte, 3<<20),
 	} {
 		body := bytes.NewReader(data)
-		if _, err := member.Upload(ctx, denID, name, int64(len(data)), body); err == nil {
+		if _, err := member.Upload(ctx, denID, "", name, int64(len(data)), body); err == nil {
 			t.Fatalf("%s was accepted", name)
 		}
 		if n, err := io.Copy(io.Discard, body); err != nil || n == 0 {
