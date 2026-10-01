@@ -1,6 +1,6 @@
 # Spikes
 
-Throwaway experiments that answer a design question before the code that depends on it. Each is a directory in this Go module, whose dependencies never reach the product, and each goes once its findings are in `docs/dev/design.md`.
+Throwaway experiments that answer a design question before the code that depends on it. Each is a directory in this Go module, whose dependencies never reach the product, and each goes when the work it informs lands, its findings in `docs/dev/design.md`.
 
 ## ffmpeg in WebAssembly
 

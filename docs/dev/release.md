@@ -28,9 +28,12 @@ releases/
     linux-arm64.gz
     windows-amd64.exe.gz
     windows-arm64.exe.gz
+    ffmpeg-source.tar.xz
     checksums.txt
     checksums.txt.cosign.bundle
 ```
+
+`ffmpeg-source.tar.xz` holds FFmpeg's source, as the binaries include it, with the driver and the script that builds the module (M1.8), as the LGPL asks of a binary that includes FFmpeg.
 
 This layout and the signing identity below are fixed once the first release
 ships: installed copies depend on both.
