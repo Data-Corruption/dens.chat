@@ -69,10 +69,11 @@ type Den struct {
 	requests requests
 
 	limits struct {
-		challenge, join, login, socket, write, send, typing, upload, password, passwordName *limiter
+		challenge, join, login, socket, write, send, typing, upload, password, passwordName, call *limiter
 	}
 	sockets  *socketSet
 	presence *presence
+	calls    callRegistry
 
 	// PresenceDelay is how long presence changes gather before they're
 	// announced; tests shorten it.
@@ -107,6 +108,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		requests:      newRequests(),
 		sockets:       newSocketSet(),
 		presence:      newPresence(),
+		calls:         newCallRegistry(),
 		PresenceDelay: defaultPresenceDelay,
 	}
 	d.limits.challenge = newLimiter(30, 2*time.Second, 100_000)
@@ -119,6 +121,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	d.limits.upload = newLimiter(20, 3*time.Second, 100_000)
 	d.limits.password = newLimiter(10, 6*time.Minute, 100_000)
 	d.limits.passwordName = newLimiter(10, 6*time.Minute, 100_000)
+	d.limits.call = newLimiter(10, 6*time.Second, 100_000)
 
 	var name, url string
 	var pub, sealed []byte
@@ -162,8 +165,11 @@ func (d *Den) holdKey(seed, pub []byte) error {
 	return nil
 }
 
-// Close stops sweeping uploads and releases the identity key.
+// Close ends calls, stops sweeping uploads and releases the identity key.
 func (d *Den) Close() {
+	if err := d.StopCalls(); err != nil {
+		d.log.Warnf("stop calls: %v", err)
+	}
 	d.files.stop()
 	d.mu.Lock()
 	defer d.mu.Unlock()

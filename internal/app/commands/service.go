@@ -48,6 +48,8 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 					&cli.StringFlag{Name: "log", Usage: "override the log level for this run (" + xlog.ValidLevels + ")"},
 					&cli.IntFlag{Name: "port", Usage: "client port of a new development instance"},
 					&cli.IntFlag{Name: "den-port", Usage: "host a den on this port (development instances only)"},
+					&cli.IntFlag{Name: "media-udp-port", Usage: "UDP port for the den's calls (development instances only)"},
+					&cli.IntFlag{Name: "media-tcp-port", Usage: "TCP fallback port for the den's calls (development instances only)"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					return runService(ctx, bi, cmd)
@@ -128,6 +130,7 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 		LogLevel:      cmd.String("log"),
 		DevClientPort: cmd.Int("port"),
 		DevDenPort:    cmd.Int("den-port"),
+		DevMediaPorts: [2]int{cmd.Int("media-udp-port"), cmd.Int("media-tcp-port")},
 	}); err != nil {
 		return err
 	}

@@ -32,6 +32,8 @@ type denState struct {
 	keys      map[string]denproto.DMKey
 	requests  map[string]denproto.DeviceRequest
 	sealCheck denproto.Bytes
+	// calls are who is in each voice channel's call (M2).
+	calls map[string]denproto.Call
 }
 
 // View is a joined den as the page sees it.
@@ -46,12 +48,15 @@ type View struct {
 	Limits     denproto.Limits      `json:"limits"`
 	// DMKeys are the keys of this member's DMs, without anything secret.
 	DMKeys []denproto.DMKey `json:"dm_keys"`
+	// Calls are the calls with someone in them.
+	Calls []denproto.Call `json:"calls"`
 }
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
-		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{}}
+		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
+		calls: map[string]denproto.Call{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -91,6 +96,11 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		v.DMKeys = append(v.DMKeys, pageKey(k))
 	}
 	slices.SortFunc(v.DMKeys, func(a, b denproto.DMKey) int { return compareIDs(a.ID, b.ID) })
+	v.Calls = []denproto.Call{}
+	for _, c := range s.calls {
+		v.Calls = append(v.Calls, c)
+	}
+	slices.SortFunc(v.Calls, func(a, b denproto.Call) int { return compareIDs(a.ChannelID, b.ChannelID) })
 	slices.SortFunc(v.Members, func(a, b denproto.Member) int { return compareIDs(a.ID, b.ID) })
 	// Positions count within a group, so IDs break ties between groups.
 	slices.SortFunc(v.Groups, func(a, b denproto.Group) int { return cmp.Or(a.Position-b.Position, compareIDs(a.ID, b.ID)) })
@@ -233,8 +243,39 @@ func (s *denState) load(r denproto.Ready) error {
 		}
 		next.requests[q.ID.String()] = q
 	}
+	if len(r.Calls) > denproto.MaxChannels {
+		return errMalformed
+	}
+	for _, c := range r.Calls {
+		if !cleanCall(c) {
+			return errMalformed
+		}
+		if len(c.Members) > 0 {
+			next.calls[c.ChannelID] = c
+		}
+	}
 	*s = *next
 	return nil
+}
+
+// maxCallMembers bounds the members a den says are in one call: more than
+// a den lets in today, so owner settings that raise the limit later don't
+// make clients refuse it.
+const maxCallMembers = 1000
+
+// cleanCall checks who a den says is in a call.
+func cleanCall(c denproto.Call) bool {
+	if !validID(c.ChannelID) || len(c.Members) > maxCallMembers {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, m := range c.Members {
+		if !validID(m.ID) || seen[m.ID] {
+			return false
+		}
+		seen[m.ID] = true
+	}
+	return true
 }
 
 // maxRequests bounds the sign-ins a den says wait for approval.
@@ -302,6 +343,30 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 			delete(s.online, id)
 		}
 		data = p
+	case denproto.EventVoiceState:
+		var v denproto.VoiceState
+		if json.Unmarshal(e.D, &v) != nil || len(v.Calls) > denproto.MaxChannels {
+			return e, false, errMalformed
+		}
+		for _, c := range v.Calls {
+			if !cleanCall(c) {
+				return e, false, errMalformed
+			}
+		}
+		if v.Full {
+			clear(s.calls)
+		}
+		for _, c := range v.Calls {
+			if len(c.Members) == 0 {
+				delete(s.calls, c.ChannelID)
+			} else {
+				s.calls[c.ChannelID] = c
+			}
+		}
+		if v.Calls == nil {
+			v.Calls = []denproto.Call{}
+		}
+		data = v
 	case denproto.EventTyping:
 		var t denproto.Typing
 		if json.Unmarshal(e.D, &t) != nil || !validID(t.ChannelID) || !validID(t.MemberID) {

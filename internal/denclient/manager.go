@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"os"
 	"runtime"
 	"slices"
@@ -95,6 +96,16 @@ type Manager struct {
 	signIns   map[string]*pendingSignIn
 	signInSeq uint64
 
+	// call is the install's one call, if it holds one (M2).
+	callMu sync.Mutex
+	call   *activeCall
+
+	// LookupHost resolves a den's name to the addresses its calls' media
+	// goes to, and LocalAddrs lists this machine's, for a den on it; tests
+	// keep both on loopback.
+	LookupHost func(ctx context.Context, host string) ([]netip.Addr, error)
+	LocalAddrs func() ([]netip.Addr, error)
+
 	// TempDir holds files while they're prepared for sending, sealed with
 	// keys that live only in memory.
 	TempDir string
@@ -163,6 +174,8 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		streams:      map[chan PageEvent]struct{}{},
 		focus:        map[string]map[string]string{},
 		signIns:      map[string]*pendingSignIn{},
+		LookupHost:   lookupHost,
+		LocalAddrs:   localAddrs,
 		TempDir:      os.TempDir(),
 	}
 }

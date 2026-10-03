@@ -23,7 +23,8 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		h.Set("Permissions-Policy", "camera=(), geolocation=(), payment=(), usb=()")
+		// The page takes the microphone for calls, and nothing else may.
+		h.Set("Permissions-Policy", "camera=(), geolocation=(), microphone=(self), payment=(), usb=()")
 		next.ServeHTTP(w, r)
 	})
 }

@@ -380,6 +380,8 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		c.mu.Lock()
 		c.ws = nil
 		c.mu.Unlock()
+		// The den ends a call with the socket that joined it.
+		c.m.denDropped(c.j.denID.String())
 	}()
 
 	sctx, cancel := context.WithCancel(ctx)
@@ -490,6 +492,9 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits})
 		return out, err == nil, err
+	case denproto.EventVoiceOffer, denproto.EventVoiceEnded:
+		// These go to the page holding the call, not to every page.
+		return e, false, c.callEvent(e)
 	case denproto.EventAuthRenewed:
 		var r denproto.Renewed
 		if json.Unmarshal(e.D, &r) == nil {
@@ -568,18 +573,36 @@ func (c *conn) updateMe(ctx context.Context, m denproto.Member) error {
 // send writes one client frame to the den. Frames are hints the den
 // repeats on its side as needed, so a failed write is only dropped.
 func (c *conn) send(ws *websocket.Conn, t string, data any) {
+	_ = writeFrame(ws, t, data)
+}
+
+func writeFrame(ws *websocket.Conn, t string, data any) error {
 	e, err := denproto.NewEvent(t, 0, data)
 	if err != nil {
-		return
+		return err
 	}
 	frame, err := denproto.EncodeFrame(e)
 	if err != nil {
-		return
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = ws.Write(ctx, websocket.MessageText, frame)
+	return ws.Write(ctx, websocket.MessageText, frame)
 }
+
+// sendFrame writes a client frame to the den, and reports whether it
+// could: a call needs to know, where a hint doesn't.
+func (c *conn) sendFrame(t string, data any) error {
+	c.mu.Lock()
+	ws := c.ws
+	c.mu.Unlock()
+	if ws == nil {
+		return errNotConnected
+	}
+	return writeFrame(ws, t, data)
+}
+
+var errNotConnected = errors.New("the den isn't connected")
 
 // setFocus records the channels the pages show and tells the den.
 func (c *conn) setFocus(channels []string) {

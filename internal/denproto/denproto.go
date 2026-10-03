@@ -373,6 +373,8 @@ type Ready struct {
 	SealCheck      Bytes           `json:"seal_check"`
 	DMKeys         []DMKey         `json:"dm_keys"`
 	DeviceRequests []DeviceRequest `json:"device_requests"`
+	// M2: the calls the member can see that have someone in them.
+	Calls []Call `json:"calls"`
 }
 
 type Renew struct {

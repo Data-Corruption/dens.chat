@@ -107,6 +107,9 @@ type OpenOptions struct {
 	// DevDenPort, when set, makes a development instance host a den on
 	// that port. Installed instances get the den role from the installer.
 	DevDenPort int
+	// DevMediaPorts, where set, are the UDP and TCP ports of a development
+	// instance's calls, so two can host dens on one machine.
+	DevMediaPorts [2]int
 }
 
 // Open prepares the service. Every failure wraps host.ErrRefused: a service
@@ -315,6 +318,12 @@ func (a *App) prepareDev(opts OpenOptions) error {
 	if opts.DevDenPort != 0 && (!cfg.Den.Enabled || cfg.Den.Port != opts.DevDenPort) {
 		cfg.Den.Enabled, cfg.Den.Port = true, opts.DevDenPort
 		changed = true
+	}
+	for i, port := range []*int{&cfg.Den.MediaUDPPort, &cfg.Den.MediaTCPPort} {
+		if p := opts.DevMediaPorts[i]; p != 0 && *port != p {
+			*port = p
+			changed = true
+		}
 	}
 	if changed {
 		data, err := instance.Encode(cfg)
