@@ -266,15 +266,36 @@ status)
     api GET /api/dens
     ;;
 channel)
-    # channel DEN_ID NAME: create a text channel; print its ID once the
-    # den's event has reached this client.
-    api POST "/api/dens/$1/channels" "{\"name\":\"$2\"}" >/dev/null
+    # channel DEN_ID NAME [KIND]: create a channel, text unless KIND says
+    # voice; print its ID once the den's event has reached this client.
+    api POST "/api/dens/$1/channels" "{\"name\":\"$2\",\"kind\":\"${3:-text}\"}" >/dev/null
     for _ in $(seq 1 40); do
         id=$(api GET "/api/dens/$1/state" | json 'next((c["id"] for c in d["channels"] if c["name"] == "'"$2"'"), "")')
         [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
         sleep 0.25
     done
     fail "channel $2 never appeared"
+    ;;
+named-channel)
+    # named-channel DEN_ID NAME: print a channel's ID once it has reached
+    # this client.
+    for _ in $(seq 1 40); do
+        id=$(api GET "/api/dens/$1/state" | json 'next((c["id"] for c in d["channels"] if c["name"] == "'"$2"'"), "")')
+        [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
+        sleep 0.25
+    done
+    fail "channel $2 never reached this client"
+    ;;
+voice-probe)
+    # voice-probe DEN_ID CHANNEL_ID MEMBER_ID udp|tcp: join the call in a
+    # voice channel through the paired browser's session, as its page would,
+    # with Pion in the browser's place, over that one network, and pass once
+    # MEMBER_ID is heard.
+    cookie=$(awk '$6 ~ /^dens_session_/ { print $6 "=" $7 }' "$JAR")
+    [ -n "$cookie" ] || fail "no browser session to call with"
+    DENS_VOICE_PROBE=$BASE DENS_PROBE_COOKIE=$cookie DENS_PROBE_DEN=$1 DENS_PROBE_CHANNEL=$2 DENS_PROBE_HEAR=$3 \
+        DENS_PROBE_NETWORK=$4 /root/voice-probe -test.run '^TestVoiceProbe$' -test.v -test.count=1 ||
+        fail "the call over $4 didn't carry member $3's audio"
     ;;
 wait-channel)
     # wait-channel DEN_ID: print the first channel's ID once one exists.

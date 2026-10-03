@@ -1,7 +1,8 @@
 #Requires -Version 5.1
 <#
 Den e2e on Windows: an instance joins a den through Caddy, chats, sends a
-photo, and stays connected across a den restart; the two start a private
+photo, stays connected across a den restart, and calls the owner through
+the den's media ports, over UDP and over TCP alone; the two start a private
 DM; the member recovers their account on a fresh instance and signs the old
 one out; then a ban shuts them out. Every end runs on one machine.
 
@@ -10,7 +11,11 @@ the Service Control Manager natively) and serves https://den.test with its
 internal certificate authority, which the harness trusts in the machine
 store; den.test points at loopback in the hosts file. Instance second joins
 with an invite from the owner, the two chat, then main's service restarts;
-second must reconnect and see the whole history. The member sends a phone
+second must reconnect and see the whole history. The two then call each
+other in a voice channel, a test binary built here with Pion standing in for
+each one's browser, and each must hear the other: over UDP, and with the
+member's side over TCP alone; this runs Pion under main's restricted service
+SID. The member sends a phone
 photo with GPS data, which must reach the owner without it, a phone video,
 which must arrive stripped with its preview and play from any byte, and an
 iPhone HEIC, which must arrive as a JPEG. The owner opens a DM, which takes
@@ -31,7 +36,8 @@ this script, and the video and HEIC are in internal\media\ffmpeg\testdata.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
-is installed. From an elevated PowerShell:
+is installed. It builds the voice probe with the Go on PATH. From an
+elevated PowerShell:
   bash scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
   bash scripts/vendor.sh caddy-windows
   powershell -ExecutionPolicy Bypass -File scripts\test-den-e2e.ps1 -ReleaseDir out\windows-e2e -CaddyZip tools\caddy_2.11.4_windows_amd64.zip
@@ -360,6 +366,41 @@ function Wait-Channel($Browser, [string]$DenID) {
     Fail "no channel reached instance second"
 }
 
+# Start-Probe joins a voice channel's call for an instance, as its page
+# would: the voice probe, with Pion in the browser's place, drives the
+# instance's page socket with the browser's session, over one network,
+# until it hears the given member.
+function Start-Probe($Browser, [string]$DenID, [string]$Channel, [string]$Hear, [string]$Network) {
+    $cookie = @($Browser.Session.Cookies.GetCookies([Uri]$Browser.Origin) | Where-Object { $_.Name -like "dens_session_*" })
+    if ($cookie.Count -eq 0) { Fail "no browser session to call with" }
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = $script:Probe
+    $info.Arguments = '-test.run ^TestVoiceProbe$ -test.v -test.count=1'
+    $info.UseShellExecute = $false
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $info.EnvironmentVariables["DENS_VOICE_PROBE"] = $Browser.Origin
+    $info.EnvironmentVariables["DENS_PROBE_COOKIE"] = "$($cookie[0].Name)=$($cookie[0].Value)"
+    $info.EnvironmentVariables["DENS_PROBE_DEN"] = $DenID
+    $info.EnvironmentVariables["DENS_PROBE_CHANNEL"] = $Channel
+    $info.EnvironmentVariables["DENS_PROBE_HEAR"] = $Hear
+    $info.EnvironmentVariables["DENS_PROBE_NETWORK"] = $Network
+    $process = [Diagnostics.Process]::Start($info)
+    # Both streams are read as they come, so a full pipe never holds the
+    # probe up.
+    return [pscustomobject]@{ Process = $process; Out = $process.StandardOutput.ReadToEndAsync(); Err = $process.StandardError.ReadToEndAsync() }
+}
+
+function Wait-Probe($Probe, [string]$Who) {
+    if (-not $Probe.Process.WaitForExit(120000)) {
+        $Probe.Process.Kill()
+        Fail "$Who's side of the call didn't finish"
+    }
+    $Probe.Process.WaitForExit()
+    Write-Host ($Probe.Out.Result + $Probe.Err.Result)
+    if ($Probe.Process.ExitCode -ne 0) { Fail "$Who didn't hear the other side" }
+}
+
 function Test-Installed {
     if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { return $true }
     return (Test-Path -LiteralPath $DataRoot) -or (Test-Path -LiteralPath $Dens)
@@ -415,6 +456,10 @@ if (Get-Service -Name $CaddyService -ErrorAction SilentlyContinue) {
 $passed = $false
 try {
     New-Item -ItemType Directory -Path $Work | Out-Null
+    Step "build the voice probe"
+    $script:Probe = Join-Path $Work "voice-probe.exe"
+    Invoke-Native -FilePath "go" -Arguments @("-C", (Split-Path -Parent $PSScriptRoot), "test", "-c", "-o", $script:Probe,
+        "./internal/platform/http/client") | Out-Null
     $Release = Join-Path $Work "release"
     Copy-Item -LiteralPath (Resolve-Path -LiteralPath $ReleaseDir).ProviderPath -Destination $Release -Recurse
     $env:APP_SKIP_VERIFY = "true"
@@ -501,6 +546,25 @@ den.test:$HttpsPort {
     Send-Message $owner $denID $channel "after the restart"
     $history = Get-History $member $denID $channel
     if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
+
+    Step "a call through the den's media ports"
+    Invoke-Api $owner POST "/api/dens/$denID/channels" @{ name = "Lounge"; kind = "voice" } | Out-Null
+    $lounge = Wait-Value {
+        $ids = @(@((Invoke-Api $member GET "/api/dens/$denID/state").channels) | Where-Object { $_.name -eq "Lounge" } | ForEach-Object { $_.id })
+        if ($ids.Count -gt 0) { $ids[0] }
+    } "the voice channel on the member's side"
+    $aliceID = (Invoke-Api $owner GET "/api/dens/$denID/state").me.id
+    $bobID = (Invoke-Api $member GET "/api/dens/$denID/state").me.id
+    # Both instances reach the den on this machine's own addresses, as
+    # den.test points at loopback. Over TCP alone, as on a network that
+    # blocks UDP, the member's side takes the fallback port.
+    foreach ($network in @("udp", "tcp")) {
+        $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp"
+        $memberSide = Start-Probe $member $denID $lounge $aliceID $network
+        Wait-Probe $memberSide "the member, over $network,"
+        Wait-Probe $ownerSide "the owner"
+        Write-Host "The owner and the member heard each other, the member over $network."
+    }
 
     Step "a phone photo with GPS data"
     $photo = Join-Path $PSScriptRoot "test\gps-photo.jpg"
