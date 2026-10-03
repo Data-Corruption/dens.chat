@@ -210,7 +210,8 @@ func TestOffersFollowJoinsAndLeaves(t *testing.T) {
 func TestHangingUpEndsTheCall(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
 	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	// Over UDP, so the den hears bob hang up; see TestCaller.Close.
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
 	alice.hears(bob)
 	_ = bob.caller.Close()
 	select {

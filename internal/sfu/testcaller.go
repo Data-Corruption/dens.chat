@@ -253,7 +253,9 @@ func (c *TestCaller) Connected() bool {
 	return c.pc.ConnectionState() == webrtc.PeerConnectionStateConnected
 }
 
-// Close hangs up.
+// Close hangs up. Over TCP the den may not hear it: Pion queues the
+// caller's close_notify, and closing the connection drops the queue, so
+// the den learns only from the silence.
 func (c *TestCaller) Close() error {
 	c.once.Do(func() { close(c.stop) })
 	return c.pc.Close()
