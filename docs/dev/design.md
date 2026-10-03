@@ -496,6 +496,7 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Screen: `getDisplayMedia`, which goes through xdg-desktop-portal and PipeWire on Wayland (M4).
 - The peer connection names no STUN or TURN servers, so a call contacts nothing but the den.
 - The page's `Permissions-Policy` grants the microphone to the page itself (`microphone=(self)`). The camera stays off.
+- Noise suppression (M3): browsers' own suppressor takes out steady noise such as fans and hum, but not keyboards, a TV or other voices. A member can turn on RNNoise instead, Xiph's small noise-suppression network (BSD), compiled to WebAssembly with the wasi-sdk the media module pins and run in an AudioWorklet between the microphone and the call, at 48 kHz in 10 ms frames. The browser still cancels echo first, since that needs the raw microphone and what the browser plays. Only one suppressor runs at a time, so the browser's is off (`noiseSuppression: false`) while RNNoise is on, and the encoder gets the cleaned audio. Others' audio keeps playing through media elements, which the echo canceller hears. RNNoise's estimate of whether someone is speaking can drive the speaking indicators. Compiling WebAssembly in the page takes `'wasm-unsafe-eval'` in its CSP, which allows WebAssembly but not `eval`.
 
 **Signaling**
 
@@ -758,7 +759,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M0 | Foundation: Sprout fork trimmed to the single-process lifecycle, elevated installers for Linux and Windows, `dens@`/`dens-<name>` service, platform layer, two listeners, vault with envelope encryption, `dens open` pairing | On both platforms: browser pairs, vault survives reboot, backup restores on a second machine, including Linux to Windows and back |
 | M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
 | M2 | Voice: calls in voice channels through the Pion SFU, on a UDP mux with ICE-TCP fallback; the signaling relay, with offers from the den as members join and leave; mute; the call bar | A clear two-person call across two home networks in the four target browsers, over UDP and with UDP blocked, and from the den owner's own browser |
-| M3 | Group voice: speaking indicators, staff disconnecting members from calls, calls that ride out a dropped connection | 10-person call stays stable for an hour |
+| M3 | Group voice: speaking indicators, staff disconnecting members from calls, calls that ride out a dropped connection, and RNNoise noise suppression as a member's choice | 10-person call stays stable for an hour |
 | M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
 | M5 | Message retention setting, and managing files: each member's uploads by size against their limit, deleting them, and swapping an attachment for a smaller copy | A member at their limit frees space by deleting and swapping old attachments, and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
