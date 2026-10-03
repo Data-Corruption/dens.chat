@@ -92,4 +92,11 @@ func TestSecurityHeaders(t *testing.T) {
 	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Error("nosniff missing")
 	}
+	// Calls take the microphone, for the page alone; nothing takes the camera.
+	policy := w.Header().Get("Permissions-Policy")
+	for _, want := range []string{"microphone=(self)", "camera=()"} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("Permissions-Policy %q missing %q", policy, want)
+		}
+	}
 }

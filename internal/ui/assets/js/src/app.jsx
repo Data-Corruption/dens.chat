@@ -9,6 +9,7 @@ import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useActio
 import { Home } from './home.jsx';
 import { Settings } from './settings.jsx';
 import { Chat } from './chat.jsx';
+import { CallBar } from './voice.jsx';
 
 // chatRoute reads /den/<den>[/<channel>] from a path.
 function chatRoute(path) {
@@ -131,6 +132,7 @@ export function App({ instance, version }) {
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">
                     <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6">
+                        {passwordSet && <CallBar boxed />}
                         {page}
                         {version && <p class="text-center text-xs text-base-content/50">Dens {version}</p>}
                     </div>

@@ -74,6 +74,7 @@ const (
 	LimitUpload              // per member: uploads
 	LimitPassword            // per IP: password sign-in and recovery
 	LimitPasswordName        // per username: anything that checks a password or recovery code
+	LimitCall                // per member: joining a call
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -99,6 +100,8 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.password
 	case LimitPasswordName:
 		l = d.limits.passwordName
+	case LimitCall:
+		l = d.limits.call
 	default:
 		l = d.limits.write
 	}
@@ -111,7 +114,7 @@ func (d *Den) Allow(kind int, key string) error {
 // RelaxLimits lifts the rate limits, for development instances, where a
 // developer seeds thousands of messages to test the message list.
 func (d *Den) RelaxLimits() {
-	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload, &d.limits.password, &d.limits.passwordName} {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload, &d.limits.password, &d.limits.passwordName, &d.limits.call} {
 		*l = newLimiter(1_000_000, time.Microsecond, 1000)
 	}
 }

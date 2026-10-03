@@ -209,14 +209,20 @@ func TestSocketResumeAndClose(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Presence isn't replayed, so who's online comes right after "resumed".
+	// Presence and calls aren't replayed, so who's online and in calls
+	// comes right after "resumed".
 	c, events := f.dial(token, ready.Epoch+"."+strconv.FormatUint(ready.Seq, 10))
-	if len(events) != 5 || events[0].T != denproto.EventResumed || events[1].T != denproto.EventPresence || events[4].Seq != ready.Seq+3 {
+	if len(events) != 6 || events[0].T != denproto.EventResumed || events[1].T != denproto.EventPresence ||
+		events[2].T != denproto.EventVoiceState || events[5].Seq != ready.Seq+3 {
 		t.Fatalf("resume frame %+v", events)
 	}
 	var online denproto.Presence
 	if json.Unmarshal(events[1].D, &online); !online.Full || len(online.Online) != 1 {
 		t.Fatalf("presence on resume %+v", online)
+	}
+	var calls denproto.VoiceState
+	if json.Unmarshal(events[2].D, &calls); !calls.Full || calls.Calls == nil {
+		t.Fatalf("calls on resume %+v", calls)
 	}
 	c.CloseNow()
 

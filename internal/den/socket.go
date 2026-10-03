@@ -42,6 +42,22 @@ type socket struct {
 	keyID     []byte
 	tokenHash []byte
 	closeReq  chan closeRequest
+	// voiceOut holds the offers and endings of the call this socket joined,
+	// which go to it alone.
+	voiceOut chan denproto.Event
+}
+
+// voice queues an event of the socket's call. A full queue drops it: an
+// offer that never arrives ends its call when its answer is due.
+func (sock *socket) voice(t string, data any) {
+	e, err := denproto.NewEvent(t, 0, data)
+	if err != nil {
+		return
+	}
+	select {
+	case sock.voiceOut <- e:
+	default:
+	}
 }
 
 // requestClose asks the socket's writer to close it. The first request
@@ -160,13 +176,16 @@ func parseResume(v string) (string, uint64) {
 
 // ServeSocket upgrades an authenticated request to the event stream.
 func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
-	sock := &socket{member: s.MemberID, keyID: s.KeyID, tokenHash: s.TokenHash, closeReq: make(chan closeRequest, 1)}
+	sock := &socket{member: s.MemberID, keyID: s.KeyID, tokenHash: s.TokenHash, closeReq: make(chan closeRequest, 1),
+		voiceOut: make(chan denproto.Event, 16)}
 	if !d.sockets.add(sock) {
 		denproto.WriteError(w, denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited,
 			"too many connections for this member, or the den is stopping"))
 		return
 	}
 	defer d.sockets.remove(sock)
+	// A call ends with the socket that joined it.
+	defer d.leaveCall(sock)
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -212,11 +231,13 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	}
 
 	if resumed {
-		// Presence isn't replayed, so a resumed client gets who's online now.
+		// Presence and calls aren't replayed, so a resumed client gets who's
+		// online and in calls now.
 		first, _ := denproto.NewEvent(denproto.EventResumed, 0, nil)
 		online, _ := denproto.NewEvent(denproto.EventPresence, 0, denproto.Presence{Online: d.online(), Full: true})
-		batch := []denproto.Event{first, online}
-		size := eventSize(first) + eventSize(online)
+		calls, _ := denproto.NewEvent(denproto.EventVoiceState, 0, denproto.VoiceState{Calls: d.visibleCalls(d.Hub.Staff(sub)), Full: true})
+		batch := []denproto.Event{first, online, calls}
+		size := eventSize(first) + eventSize(online) + eventSize(calls)
 		for _, e := range missed {
 			if len(batch) >= replayChunk || size+eventSize(e) > frameBudget {
 				if !write(batch...) {
@@ -316,6 +337,10 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 			if !write(e) {
 				return
 			}
+		case e := <-sock.voiceOut:
+			if !write(e) {
+				return
+			}
 		case <-expiry.C:
 			left := time.Until(time.UnixMilli(expires.Load()))
 			if left <= 0 {
@@ -382,6 +407,23 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				if json.Unmarshal(e.D, &t) == nil {
 					d.typing(sub, t.ChannelID)
 				}
+			case denproto.EventVoiceJoin:
+				var req denproto.VoiceJoin
+				if json.Unmarshal(e.D, &req) == nil {
+					d.joinCall(ctx, s, sock, sub, req)
+				}
+			case denproto.EventVoiceAnswer:
+				var req denproto.VoiceAnswer
+				if json.Unmarshal(e.D, &req) == nil {
+					d.answerCall(sock, req)
+				}
+			case denproto.EventVoiceMute:
+				var req denproto.VoiceMute
+				if json.Unmarshal(e.D, &req) == nil && d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) == nil {
+					d.muteCall(sock, req.Muted)
+				}
+			case denproto.EventVoiceLeave:
+				d.leaveCall(sock)
 			}
 			// Unknown event types are ignored, as the protocol requires.
 		}

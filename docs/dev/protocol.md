@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages) and M1.7 (private DMs and approving new devices) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices) and M2 (voice) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -228,7 +228,7 @@ The den keeps each frame under 1 MiB: events queued behind a large one go in the
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; and from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval).
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); and from M2, `calls` (see [Voice](#voice-m2)).
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
@@ -239,7 +239,7 @@ The client remembers `epoch` and the `seq` of the last durable event it applied,
 
 ### Client frames
 
-The client sends the same array shape: `auth.renew`, and `focus` and `typing` (see [Presence and typing](#presence-and-typing)).
+The client sends the same array shape: `auth.renew`, `focus` and `typing` (see [Presence and typing](#presence-and-typing)), and from M2 the `voice.*` frames (see [Voice](#voice-m2)).
 
 ```json
 [{"t": "auth.renew", "d": {"nonce": "…", "proof": "…"}}]
@@ -626,6 +626,57 @@ device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer"
 - Refusing, from any of the member's devices, keeps the device out. A new password, starting over, or the member leaving cancels what's waiting. Each way, the member's sessions get `device.request_ended {"id", "outcome": "approved" | "refused" | "cancelled"}`. A request that lapses just goes.
 - The den enforces approval, but a DM's privacy doesn't rest on it: a device the den lets in on its own has no seal, so it opens no DM, and one it starts fails the check with anyone who compares with the real member.
 
+## Voice (M2)
+
+A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design doc's Voice and screen share).
+
+```
+call = {"channel_id", "members": [{"id", "muted"?}, …]}
+```
+
+Client frames:
+
+```json
+[{"t": "voice.join", "d": {"channel_id": "41", "muted": false}}]
+[{"t": "voice.answer", "d": {"version": 1, "sdp": "v=0…"}}]
+[{"t": "voice.mute", "d": {"muted": true}}]
+[{"t": "voice.leave", "d": {}}]
+```
+
+Den events, all ephemeral:
+
+```json
+{"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
+{"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
+{"t": "voice.state", "d": {"calls": [call, …]}}
+```
+
+### Joining and leaving
+
+- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` is optional and sets the member's mark from the start.
+- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds 15 members, or the den's calls 30 in all), `rate_limited`, or `failed` when the den couldn't set the call up.
+- `voice.leave` ends the member's call. A call also ends with the socket it started on, so removals, bans, revoked devices and den restarts end calls as they close sockets.
+- The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; and with `failed` when its connection doesn't come up or breaks (below).
+
+### Offers and answers
+
+- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle and Opus only. Its first section receives the member's audio (`recvonly` at the den), and each of the rest sends another member's (`sendonly`), with that member's ID as its stream ID (`msid`).
+- An offer carries no candidates. The client writes the den's: each address the den's name resolves to, or for a den on its own machine, the machine's addresses on its other interfaces, each with `udp_port` over UDP and `tcp_port` over TCP (`tcptype passive`). The den answers connectivity checks from any address, so it needs no candidates from the client, and the client sends none.
+- `voice.answer` answers the offer with that `version`, which counts up from 1 in each call. The den keeps one offer outstanding per call, and sends the next only after its answer. An answer to any other version is ignored.
+- When a member joins or leaves a call, each other member in it gets a new offer, which adds their section or retires it (`inactive`). A later join can take a retired section back.
+- An offer not answered within 15 seconds, a connection not up within 30 seconds of its answer, a connection that fails, or an answer that doesn't fit its offer ends the call with `failed`.
+- Offers and answers are each at most 32 KiB. The client passes its browser only offers of audio.
+
+### Media
+
+- The den takes only Opus from each member, on their own section, and forwards each packet's payload to the others under its own headers, without header extensions. It forwards at most 256 kbps and 500 packets a second from each member and drops the rest.
+- `udp_port` and `tcp_port` are the den's media ports. Packets that name no call are dropped, and a TCP connection that doesn't name one within 5 seconds is closed. The TCP port holds at most 128 connections at once.
+
+### Who's in a call
+
+- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce.
+- `ready` carries `calls`, those the member can see that have someone in them. Calls aren't replayed, so after `resumed` the den sends `voice.state` with `"full": true`, which replaces every call the client held.
+
 ## Rate limits
 
 The den limits per IP, taken from `X-Forwarded-For` only on connections from loopback, and per member. Limits live in memory only. Starting values, to tune with real use:
@@ -640,5 +691,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Sending messages | 5 per 5 seconds per member, per channel |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
-| Other writes | 30 per 10 seconds per member |
+| Joining a call | 10 per minute per member |
+| Other writes, mute included | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

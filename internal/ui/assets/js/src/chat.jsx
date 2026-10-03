@@ -12,6 +12,8 @@ import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, RemoveMember, isStaff } from './people.jsx';
 import { needsCheck } from './private.js';
 import { SignInRequests } from './private.jsx';
+import { applyCalls, joinCall } from './voice.js';
+import { CallBar, CallMembers, useCall } from './voice.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -146,6 +148,7 @@ export function Chat({ denID, channelID, navigate }) {
             for (const e of msg.d.events || []) {
                 if (STRUCTURAL.has(e.t)) reloadSoon();
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
+                else if (e.t === 'voice.state') setView((v) => (v ? { ...v, calls: applyCalls(v.calls, e.d) } : v));
                 else if (e.t === 'typing') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.member_id, Date.now() + TYPING_SHOWN));
                 else if (e.t === 'message.created') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.author_id, 0));
                 else if (e.t === 'device.added') setNewDevice(e.d);
@@ -257,20 +260,24 @@ export function Chat({ denID, channelID, navigate }) {
                         <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
                             keys={view.dm_keys || []} me={view.me.id} onOpen={openChannel} onClose={closeDM} />
                     ) : (
-                        <ChannelList view={view} reads={reads} open={channel?.id} staff={staff} onOpen={openChannel} onDialog={setDialog} />
+                        <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
+                            onOpen={openChannel} onDialog={setDialog} />
                     )}
-                    <div class="mt-auto flex items-center gap-1 border-t border-base-300 p-2">
-                        <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
-                            onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
-                            <Avatar member={view.me} size="sm" online={live && view.state === 'connected'} />
-                            <span class="truncate text-sm">{view.me.display_name}</span>
-                        </button>
-                        {staff && !gone && (
-                            <>
-                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
-                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
-                            </>
-                        )}
+                    <div class="mt-auto">
+                        <CallBar denID={denID} />
+                        <div class="flex items-center gap-1 border-t border-base-300 p-2">
+                            <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
+                                onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
+                                <Avatar member={view.me} size="sm" online={live && view.state === 'connected'} />
+                                <span class="truncate text-sm">{view.me.display_name}</span>
+                            </button>
+                            {staff && !gone && (
+                                <>
+                                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
+                                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </aside>
                 <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
@@ -384,27 +391,32 @@ function applyReads(view, reads) {
     return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
 }
 
-function ChannelList({ view, reads, open, staff, onOpen, onDialog }) {
+function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, onDialog }) {
     const listed = view.channels.filter((c) => c.kind !== 'dm');
     const ungrouped = listed.filter((c) => !c.group_id).sort((a, b) => a.position - b.position);
     const groups = [...view.groups].sort((a, b) => a.position - b.position);
+    const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
+    const { call } = useCall();
     const item = (c) => {
         const r = reads.get(c.id);
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
+        const voice = c.kind === 'voice';
+        const inCall = voice && call?.den === denID && call.channel === c.id;
         return (
             <li key={c.id}>
                 <button
                     type="button"
-                    class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'} ${c.kind !== 'text' ? 'opacity-60' : ''}`}
-                    onClick={() => c.kind === 'text' && onOpen(c.id)}
-                    disabled={c.kind !== 'text'}
-                    title={c.kind === 'voice' ? 'Voice channel' : undefined}
+                    class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
+                    onClick={() => (voice ? joinCall(denID, c.id, { den: view.name, channel: c.name }) : onOpen(c.id))}
+                    disabled={voice && gone}
+                    title={voice ? "Join the call. Calls aren't end-to-end encrypted: the den can hear them." : undefined}
                 >
-                    <span class="text-base-content/50">{c.kind === 'voice' ? '🔊' : '#'}</span>
+                    <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? '🔊' : '#'}</span>
                     <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
                     {c.staff_only && <span class="text-xs text-base-content/50" title="Staff only">🔒</span>}
                     {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                 </button>
+                {voice && <CallMembers call={calls.get(c.id)} members={members} />}
             </li>
         );
     };

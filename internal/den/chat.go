@@ -62,6 +62,7 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 	}
 	rows.Close()
 	r.Online = d.online()
+	r.Calls = d.visibleCalls(staff)
 	if r.Groups, err = d.groups(ctx, d.db); err != nil {
 		return r, err
 	}
@@ -552,6 +553,7 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 		return after, err
 	}
 	if before.StaffOnly != after.StaffOnly {
+		d.channelChanged(after, false)
 		// Members who could see the channel lose it, or members who
 		// couldn't gain it with its history: a fresh snapshot covers both.
 		if err := d.Hub.Publish(denproto.EventChannelUpdated, after, Staff); err != nil {
@@ -610,6 +612,7 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 		return err
 	}
 	d.files.remove(blobs)
+	d.channelChanged(c, true)
 	if err := d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: c.ID}, audienceOf(c)); err != nil {
 		return err
 	}

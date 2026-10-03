@@ -195,6 +195,7 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 	// Staff-only channels come or go with the role, so the member's sockets
 	// start over from a snapshot of what they can see now.
 	d.Hub.SetStaff(mid, IsStaff(req.Role))
+	d.roleChanged(mid)
 	return m, nil
 }
 

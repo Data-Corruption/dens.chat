@@ -91,7 +91,17 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	page := hex.EncodeToString(denproto.Random(8))
 	defer rt.a.Dens.DropFocus(page)
-	go rt.readPage(ctx, cancel, c, page)
+	// The install's call belongs to the page that joined it, and its offers
+	// and end come to that page alone. Closing the page leaves the call.
+	calls := make(chan denclient.CallEvent, 16)
+	deliver := func(e denclient.CallEvent) {
+		select {
+		case calls <- e:
+		default:
+		}
+	}
+	defer rt.a.Dens.DropPage(page)
+	go rt.readPage(ctx, cancel, c, page, deliver)
 	changes, stop := rt.a.Dens.Watch()
 	defer stop()
 	stream, stopStream := rt.a.Dens.Stream()
@@ -116,6 +126,17 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-changes:
 			if !send() {
+				return
+			}
+		case e := <-calls:
+			data, err := json.Marshal(map[string]any{"t": "call", "d": e})
+			if err != nil {
+				return
+			}
+			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err = c.Write(wctx, websocket.MessageText, data)
+			cancel()
+			if err != nil {
 				return
 			}
 		case e, ok := <-stream:
@@ -147,19 +168,24 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // pageMessage is what the page sends on its event stream: the channel it
-// shows in a den ("focus", with an empty channel for none) and typing.
+// shows in a den ("focus", with an empty channel for none), typing, and
+// its call: joining, answering the den's offers, muting and leaving.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
 		Den     string `json:"den"`
 		Channel string `json:"channel"`
+		Muted   bool   `json:"muted"`
+		Version int    `json:"version"`
+		SDP     string `json:"sdp"`
 	} `json:"d"`
 }
 
 // readPage handles the page's messages until the stream closes.
-func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, page string) {
+func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, page string, deliver func(denclient.CallEvent)) {
 	defer cancel()
-	c.SetReadLimit(4 << 10)
+	// Room for a call's answer, which messages are otherwise far below.
+	c.SetReadLimit(denproto.MaxClientFrame)
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
@@ -174,6 +200,16 @@ func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *we
 			rt.a.Dens.SetFocus(page, msg.D.Den, msg.D.Channel)
 		case "typing":
 			_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
+		case "voice.join":
+			if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, msg.D.Muted, deliver) != nil {
+				deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
+			}
+		case "voice.answer":
+			rt.a.Dens.AnswerCall(page, msg.D.Den, msg.D.Version, msg.D.SDP)
+		case "voice.mute":
+			rt.a.Dens.MuteCall(page, msg.D.Den, msg.D.Muted)
+		case "voice.leave":
+			rt.a.Dens.LeaveCall(page, msg.D.Den)
 		}
 	}
 }

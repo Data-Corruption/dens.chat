@@ -1,34 +1,37 @@
 #!/usr/bin/env bash
 
-# Den e2e on Linux: a second machine joins a den through Caddy, chats, and
-# stays connected across a den restart; the two start a private DM; the
-# member recovers their account on a fresh install and signs the old one
-# out; then a ban shuts them out.
+# Den e2e on Linux: a second machine joins a den through Caddy, chats,
+# stays connected across a den restart, and calls the owner through the
+# den's media ports, over UDP and over TCP alone; the two start a private
+# DM; the member recovers their account on a fresh install and signs the
+# old one out; then a ban shuts them out.
 #
 # One Incus container hosts the den behind the pinned Caddy, serving
-# https://den.test with Caddy's internal certificate authority. Another,
-# on a different distro, trusts that authority, installs Dens and joins
-# with an invite from the owner. The two chat, the den's service restarts,
-# and the member must reconnect with the whole history. The member sends a
-# phone photo that must arrive stripped, a phone video that must arrive
-# stripped with its preview and play from any byte, and an iPhone HEIC that
-# must arrive as a JPEG. The owner opens a DM, which takes no message until
-# both members type each other's check digits, and then carries text, a
-# photo and a video the den stores only sealed. The owner shares a
-# checklist with the member, and the two tick different boxes at the same
-# moment, all of which must stay. A second instance on the member's
-# machine stands in for a fresh one: it signs in by the den's address with
-# a recovery code, whose new password must sign the first install out at
-# once, and reads the DM only once the member types their DM seal. The new
-# password alone doesn't sign the first install in again: the fresh one
-# approves it, the two comparing digits, and hands it the seal, with which
-# it reads the DM. Signed out once more from the fresh one's device list,
-# it signs in again the same way, with the digits typed into the fresh one
-# first, which must go on showing its own. The owner then bans the member, whose
-# connections must close at once and who can't join again under the same
-# name. Both install from unsigned fixture releases through install.sh,
-# like the lifecycle harness; the guest steps are in
-# scripts/test/den-guest.sh.
+# https://den.test with Caddy's internal certificate authority. Another, on
+# a different distro, trusts that authority, installs Dens and joins with an
+# invite from the owner. The two chat, the den's service restarts, and the
+# member must reconnect with the whole history. The two then call each other
+# in a voice channel, a test binary with Pion standing in for each one's
+# browser, and each must hear the other: over UDP, and with the member's
+# side over TCP alone. The member sends a phone photo that must arrive
+# stripped, a phone video that must arrive stripped with its preview and
+# play from any byte, and an iPhone HEIC that must arrive as a JPEG. The
+# owner opens a DM, which takes no message until both members type each
+# other's check digits, and then carries text, a photo and a video the den
+# stores only sealed. The owner shares a checklist with the member, and the
+# two tick different boxes at the same moment, all of which must stay. A
+# second instance on the member's machine stands in for a fresh one: it
+# signs in by the den's address with a recovery code, whose new password
+# must sign the first install out at once, and reads the DM only once the
+# member types their DM seal. The new password alone doesn't sign the first
+# install in again: the fresh one approves it, the two comparing digits, and
+# hands it the seal, with which it reads the DM. Signed out once more from
+# the fresh one's device list, it signs in again the same way, with the
+# digits typed into the fresh one first, which must go on showing its own.
+# The owner then bans the member, whose connections must close at once and
+# who can't join again under the same name. Both install from unsigned
+# fixture releases through install.sh, like the lifecycle harness; the guest
+# steps are in scripts/test/den-guest.sh.
 #
 # Usage:
 #   ./scripts/test-den-e2e.sh
@@ -143,8 +146,11 @@ approve_sign_in() {
 }
 
 run() {
-  echo ">> Building the fixture release and fetching Caddy ..."
+  echo ">> Building the fixture release and the voice probe, and fetching Caddy ..."
   scripts/test/fixture-releases.sh "$HARNESS_DIR/release" "$target"
+  # The voice probe is a test binary: Pion standing in for each side's
+  # browser in a call.
+  GOOS=linux GOARCH=${target#linux-} CGO_ENABLED=0 go test -c -o "$HARNESS_DIR/voice-probe" ./internal/platform/http/client
   local caddy
   caddy=$(./scripts/vendor.sh caddy | sed -n 's/^caddy=//p')
 
@@ -155,6 +161,7 @@ run() {
     launch_container "$distro" "$name"
     push_release "$name" "$HARNESS_DIR/release"
     "${INCUS[@]}" file push -q scripts/test/den-guest.sh "$name/root/den-guest.sh"
+    "${INCUS[@]}" file push -q --mode 0755 "$HARNESS_DIR/voice-probe" "$name/root/voice-probe"
     guest "$name" prepare
   done
 
@@ -207,6 +214,27 @@ run() {
   [[ "$history" == $'hello from the member\nhello back, @bob\nafter the restart' ]] ||
     { echo "error: the member's history after the restart is: $history" >&2; return 1; }
   echo ">> The member's history is complete after the restart"
+
+  echo ">> A call through the den's media ports"
+  local lounge alice_id bob_id network
+  lounge=$(guest "$DEN" channel "$den_id" Lounge voice)
+  [[ "$(guest "$CLIENT" named-channel "$den_id" Lounge)" == "$lounge" ]] || { echo "error: the member sees another voice channel" >&2; return 1; }
+  alice_id=$(guest "$DEN" member-id "$den_id" alice)
+  bob_id=$(guest "$DEN" member-id "$den_id" bob)
+  # The owner's install reaches its den on this machine's own addresses;
+  # the member's, at the address den.test resolves to. Over TCP alone, as
+  # on a network that blocks UDP, the member's side takes the fallback port.
+  for network in udp tcp; do
+    guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp >"$RUN_LOG_DIR/call-owner-$network.log" 2>&1 &
+    local owner=$!
+    if ! guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" "$network" >"$RUN_LOG_DIR/call-member-$network.log" 2>&1; then
+      wait "$owner" || :
+      cat "$RUN_LOG_DIR/call-member-$network.log" "$RUN_LOG_DIR/call-owner-$network.log" >&2
+      return 1
+    fi
+    wait "$owner" || { cat "$RUN_LOG_DIR/call-owner-$network.log" >&2; return 1; }
+    echo ">> The owner and the member heard each other, the member over $network"
+  done
 
 
   echo ">> A phone photo with GPS data, through Caddy"

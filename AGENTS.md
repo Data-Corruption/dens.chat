@@ -28,8 +28,9 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, and the cryptography of private DMs and device approval |
-| `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, and the DM key exchanges it relays |
-| `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, and approving new devices |
+| `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, and who may be in which call |
+| `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, approving new devices, and relaying the page's call, with where its media goes |
+| `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, and forwarding each member's audio to the others within its limits; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, and previews; the client strips with it and the den checks with it |
 | `internal/media/ffmpeg` | The media module: FFmpeg and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
@@ -173,7 +174,7 @@ Runner from `ffmpeg.TestRunner`.
 ./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
-./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, and is banned, in two Incus containers
+./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture

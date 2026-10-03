@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -199,6 +200,10 @@ func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address
 	}
 	m.HTTP = &http.Client{Timeout: 10 * time.Second, Transport: transport}
 	m.Transfer = &http.Client{Transport: transport}
+	// Calls' media goes to the den's loopback ports, as its name does above.
+	loopback := func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil }
+	m.LocalAddrs = loopback
+	m.LookupHost = func(context.Context, string) ([]netip.Addr, error) { return loopback() }
 	m.MinTokenLife = 200 * time.Millisecond
 	m.RenewLead = 600 * time.Millisecond
 	m.RenewRetry = 100 * time.Millisecond

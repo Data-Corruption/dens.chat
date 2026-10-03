@@ -126,6 +126,15 @@ export function sendTyping(den, channel) {
     send({ t: 'typing', d: { den, channel } });
 }
 
+// sendCall sends a message of this page's call, and reports whether the
+// stream was up to take it. Unlike the hints above, a call needs to know:
+// the service ends a page's call when its stream closes.
+export function sendCall(t, d) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify({ t, d }));
+    return true;
+}
+
 // onEvent calls fn with every message from the service, starting with the
 // latest den statuses if they already came; it returns a function that
 // stops.

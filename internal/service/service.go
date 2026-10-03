@@ -21,6 +21,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/client"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/den"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
+	"github.com/Data-Corruption/dens.chat/internal/sfu"
 )
 
 // Run binds every listener, reports ready, and serves until ctx is
@@ -39,13 +40,21 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	}
 	var denLn net.Listener
 	if a.Instance.Den.Enabled {
-		denLn, err = net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(a.Instance.Den.Port)))
-		if err != nil {
+		closeAll := func() {
 			_ = controlLn.Close()
 			for _, ln := range clientLns {
 				_ = ln.Close()
 			}
+		}
+		denLn, err = net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(a.Instance.Den.Port)))
+		if err != nil {
+			closeAll()
 			return fmt.Errorf("den listener: %w", err)
+		}
+		if err := startCalls(a); err != nil {
+			closeAll()
+			_ = denLn.Close()
+			return err
 		}
 	}
 
@@ -83,8 +92,12 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		start("den listener", func(ctx context.Context) error {
 			err := server.Serve(ctx, den.New(a), errorLog, denLn)
 			// The listener is closed now, so clients told to reconnect
-			// can't reach this process again.
+			// can't reach this process again. Closing the sockets ends
+			// their calls, and then the media ports close.
 			a.Den.CloseSockets(3 * time.Second)
+			if stopErr := a.Den.StopCalls(); stopErr != nil {
+				a.Log.Warnf("stop calls: %v", stopErr)
+			}
 			return err
 		})
 	}
@@ -121,4 +134,29 @@ type logWriter struct{ a *app.App }
 func (w logWriter) Write(p []byte) (int, error) {
 	w.a.Log.Warnf("http: %s", p)
 	return len(p), nil
+}
+
+// startCalls binds the den's media ports on every interface, IPv4 and
+// IPv6, and runs calls on them. Pion's own messages name addresses, so
+// they reach the log only in development instances.
+func startCalls(a *app.App) error {
+	udp, err := net.ListenUDP("udp", &net.UDPAddr{Port: a.Instance.Den.MediaUDPPort})
+	if err != nil {
+		return fmt.Errorf("media UDP port: %w", err)
+	}
+	tcp, err := net.Listen("tcp", ":"+strconv.Itoa(a.Instance.Den.MediaTCPPort))
+	if err != nil {
+		_ = udp.Close()
+		return fmt.Errorf("media TCP port: %w", err)
+	}
+	var cfg sfu.Config
+	if a.DevMode() {
+		cfg.Log = func(s string) { a.Log.Debugf("%s", s) }
+	}
+	if err := a.Den.StartCalls(udp, tcp, cfg); err != nil {
+		_ = udp.Close()
+		_ = tcp.Close()
+		return fmt.Errorf("start calls: %w", err)
+	}
+	return nil
 }
