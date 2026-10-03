@@ -654,7 +654,7 @@ Den events, all ephemeral:
 ### Joining and leaving
 
 - `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` is optional and sets the member's mark from the start.
-- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds 15 members, or the den's calls 30 in all) or `rate_limited`.
+- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds 15 members, or the den's calls 30 in all), `rate_limited`, or `failed` when the den couldn't set the call up.
 - `voice.leave` ends the member's call. A call also ends with the socket it started on, so removals, bans, revoked devices and den restarts end calls as they close sockets.
 - The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; and with `failed` when its connection doesn't come up or breaks (below).
 
@@ -670,7 +670,7 @@ Den events, all ephemeral:
 ### Media
 
 - The den takes only Opus from each member, on their own section, and forwards each packet's payload to the others under its own headers, without header extensions. It forwards at most 256 kbps and 500 packets a second from each member and drops the rest.
-- `udp_port` and `tcp_port` are the den's media ports. Packets that name no call are dropped, and a TCP connection that doesn't name one within 5 seconds is closed.
+- `udp_port` and `tcp_port` are the den's media ports. Packets that name no call are dropped, and a TCP connection that doesn't name one within 5 seconds is closed. The TCP port holds at most 128 connections at once.
 
 ### Who's in a call
 

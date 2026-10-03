@@ -524,13 +524,13 @@ The den's media ports carry every call: one UDP port, and one TCP port as the fa
 
 - `SettingEngine.SetICEUDPMux` puts all media on one UDP port; `SetICETCPMux` adds a TCP fallback port. Both listen on every interface, IPv4 and IPv6. The service binds them at start with the den listener, and doesn't start without them, as with its other ports.
 - `SetLite`, with multicast DNS off: the den neither looks up members' `.local` names nor sends queries on its own network.
-- A TCP connection that doesn't name a call within 5 seconds is closed, and packets for no call are dropped.
+- A TCP connection that doesn't name a call within 5 seconds is closed, and the TCP port holds at most 128 at once, so a flood of idle connections costs bounded memory. Packets for no call are dropped.
 - Voice is Opus only. The den reads a member's audio only from the section it asked them to send on, and forwards each packet's payload under headers of its own, without the sender's header extensions, at most 256 kbps and 500 packets a second from each member.
 - Interceptors: NACK, RTCP reports and TWCC for bandwidth estimation.
 - Forward PLI keyframe requests to the sharer when a viewer joins a screen share (M4).
 - Pion's own log messages name addresses, so they reach the log only in development instances. The den logs each call's start, end and the reason it ended, by member and channel ID.
 - No TURN in v1: the den is directly reachable, so clients behind NAT connect outward. Add `pion/turn` on TCP 443 later if restrictive networks need it.
-- Pion is the only WebRTC stack in Go, and DTLS-SRTP and ICE aren't things to write. `pion/webrtc` v4 brings 15 more of the project's modules, plus `google/uuid` and `wlynxg/anet`, all MIT-licensed, and adds about 8 MB to the binary, including parts Dens doesn't use, such as data channels and a TURN client.
+- Pion is the only WebRTC stack in Go, and DTLS-SRTP and ICE aren't things to write. `pion/webrtc` v4 brings 15 more of the project's modules, plus `google/uuid` and `wlynxg/anet`, all MIT-licensed, and adds about 5 MB to the binary, including parts Dens doesn't use, such as data channels and a TURN client.
 - Start from Pion's SFU-over-WebSocket example rather than a blank file.
 
 **Bandwidth at target scale** (approximate)
@@ -636,7 +636,7 @@ Windows 11, current supported releases, Home and Pro. Windows 10 and Windows Ser
 
 **Known risks**
 
-- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID. Pion itself is still untested there.
+- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID, and the den e2e's call runs Pion there (M2).
 
 ### Platform layer
 
@@ -735,13 +735,13 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 **Voice (M2)**
 
-- [ ] Only members who can see a voice channel join its call, and a call ends as soon as that stops.
-- [ ] The local service writes the den's media addresses into every offer, so a den can't point a member's browser anywhere else, and takes the browser's candidates out of every answer, so the den never learns members' local addresses.
-- [ ] The page's peer connection names no STUN or TURN server, and its `Permissions-Policy` grants the microphone to the page alone.
-- [ ] The local service passes the page only offers of audio, within 32 KiB, and the den takes only answers that fit its offer, within 32 KiB.
-- [ ] The den forwards only Opus, under its own headers, at most 256 kbps and 500 packets a second from each member.
-- [ ] The media ports drop packets for no call, and close a TCP connection that doesn't name one within 5 seconds.
-- [ ] Pion's log messages, which name addresses, stay out of release logs.
+- [x] Only members who can see a voice channel join its call, and a call ends as soon as that stops.
+- [x] The local service writes the den's media addresses into every offer, so a den can't point a member's browser anywhere else, and takes the browser's candidates out of every answer, so the den never learns members' local addresses.
+- [x] The page's peer connection names no STUN or TURN server, and its `Permissions-Policy` grants the microphone to the page alone.
+- [x] The local service passes the page only offers of audio, within 32 KiB, and the den takes only answers that fit its offer, within 32 KiB.
+- [x] The den forwards only Opus, under its own headers, at most 256 kbps and 500 packets a second from each member.
+- [x] The media ports drop packets for no call, close a TCP connection that doesn't name one within 5 seconds, and hold at most 128 TCP connections.
+- [x] Pion's log messages, which name addresses, stay out of release logs.
 
 **Logs and data**
 
@@ -785,7 +785,7 @@ Not in M1: compact links, message retention (M5), browser notifications, and the
 **M2.** One pull request, built and committed in layers: the den's SFU and calls with their protocol, the local service's relay, the page, the e2e, then the docs.
 
 - A new package, `internal/sfu`, holds the Pion side: the media ports, peer connections, forwarding and offers. `internal/den` decides who may be in which call and sends the events, and `internal/denclient` holds the relay.
-- The page's call lives beside its views, not in a den's, so a member keeps talking while reading another den. A voice channel lists who is in its call. A bar at the foot of the channel list shows the call while it lasts: its channel, whether it's connected, mute, leave, the microphone and speaker, and that the den's owner could listen in.
+- The page's call lives beside its views, not in a den's, so a member keeps talking while reading another den. A voice channel lists who is in its call. A bar at the foot of the channel list shows the call while it lasts: its channel, whether it's connected, mute, leave, the microphone and speaker, and that calls aren't end-to-end encrypted, so the den can hear them.
 - Development instances take `--media-udp-port` and `--media-tcp-port`, as they take `--den-port`, so two can host dens on one machine.
 
 **M2 testing.**
@@ -793,7 +793,7 @@ Not in M1: compact links, message retention (M5), browser notifications, and the
 - Go tests run Pion peers against the den's SFU in the test process: audio both ways, offers as a third member joins and leaves, the caps, one call per member, the call ending with its socket and with each way of losing access, an unanswered offer, oversized or mismatched SDP, and a member's packets past the rate limit.
 - The relay's tests cover the addresses it writes for a remote den, its own den and a name that resolves to loopback; the candidates it takes out both ways; the offers it refuses; and one call per install, which ends with the page that owns it.
 - The den e2e gains a voice probe: a Go test binary, with Pion in the browser's place, that joins a voice channel through each install's page socket as the page does, and checks that packets cross both ways, over UDP and then over TCP alone. On Linux the member reaches the den across the containers' network. On Windows both instances share a machine, and the den runs Pion under the restricted service SID, which the platform spike didn't cover.
-- Before the manual test, a scripted check runs the four browsers with fake microphones (Chromium's `--use-fake-device-for-media-stream`, Firefox's `media.navigator.streams.fake`): pages on two instances join one call, and `getStats` shows each receiving the other's audio.
+- Before the manual test, both browser engines are checked with fake microphones (Chromium's `--use-fake-device-for-media-stream`, Firefox's `media.navigator.streams.fake`), Chromium and Firefox in a container where they share a network with the instances: pages on two instances call each other, over UDP and with UDP blocked, mute, rejoin after a den restart, and, with four members, take a leaver's section back, and `getStats` shows each receiving the others' audio.
 - The manual test: two machines on different networks, a phone's hotspot serving as the second; each target browser; the den owner's own browser; UDP blocked, to force TCP; a den restart during a call; and a denied microphone.
 
 **Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
