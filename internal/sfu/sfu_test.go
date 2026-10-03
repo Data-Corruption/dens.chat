@@ -3,6 +3,7 @@ package sfu
 import (
 	"net"
 	"net/netip"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -143,6 +144,17 @@ func TestTwoMembersHearEachOther(t *testing.T) {
 	if strings.Contains(first, "a=candidate") {
 		t.Error("an offer carries the den's candidates")
 	}
+}
+
+// TestOnOneCPU runs a call as on a small machine, where Pion's background
+// work comes late: two members joining at once must still hear each other.
+func TestOnOneCPU(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	s, udpPort, tcpPort := testSFU(t, Config{})
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice.hears(bob)
+	bob.hears(alice)
 }
 
 func TestOverTCPAlone(t *testing.T) {

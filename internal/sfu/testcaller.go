@@ -47,6 +47,10 @@ type TestCaller struct {
 	stop chan struct{}
 	once sync.Once
 
+	// checking closes once the caller's connection has started, which
+	// Pion does in the background after the first answer.
+	checking chan struct{}
+
 	mu      sync.Mutex
 	started bool
 	heard   map[string]int // member → packets received
@@ -80,6 +84,11 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 	// As a browser does, the caller stays open when the den closes its end,
 	// until the caller itself hangs up.
 	settings.DisableCloseByDTLS(true)
+	// A caller starts its checks as it answers, before the den has the
+	// answer, and the den drops the checks that come first. A browser keeps
+	// checking for many seconds; Pion gives a path seven checks 200 ms
+	// apart, which a den applying the answer on a busy machine can outlast.
+	settings.SetICEMaxBindingRequests(100)
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(media), webrtc.WithInterceptorRegistry(registry), webrtc.WithSettingEngine(settings))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
@@ -90,12 +99,18 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 		_ = pc.Close()
 		return nil, err
 	}
-	c := &TestCaller{pc: pc, mic: mic, rate: opts.Rate, stop: make(chan struct{}),
+	c := &TestCaller{pc: pc, mic: mic, rate: opts.Rate, stop: make(chan struct{}), checking: make(chan struct{}),
 		heard: map[string]int{}, changed: make(chan struct{})}
 	if c.rate == 0 {
 		c.rate = 50
 	}
 	pc.OnTrack(c.listen)
+	var once sync.Once
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+		if state != webrtc.ICEConnectionStateNew {
+			once.Do(func() { close(c.checking) })
+		}
+	})
 	return c, nil
 }
 
@@ -103,13 +118,26 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 // the answer without the caller's own, as the page's local service sends
 // it. The caller starts speaking with its first answer.
 func (c *TestCaller) Answer(offer string) (string, error) {
-	if err := c.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer}); err != nil {
-		return "", err
-	}
 	c.mu.Lock()
 	first := !c.started
 	c.started = true
 	c.mu.Unlock()
+	if !first {
+		// Pion starts the connection in the background after an answer, and
+		// takes a new offer that comes first for an ICE restart, with new
+		// credentials the den never hears of. A browser doesn't, so the
+		// caller waits for its connection to start, as a browser's has.
+		select {
+		case <-c.checking:
+		case <-c.stop:
+			return "", errors.New("the caller closed")
+		case <-time.After(10 * time.Second):
+			return "", errors.New("the caller's connection didn't start")
+		}
+	}
+	if err := c.pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: offer}); err != nil {
+		return "", err
+	}
 	if first {
 		// As the page does, the microphone takes the section the den
 		// offered to receive it on.
