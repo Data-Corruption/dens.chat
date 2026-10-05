@@ -384,6 +384,7 @@ func (d *Den) checkChannelFields(ctx context.Context, req denproto.ChannelReques
 		if kind != denproto.KindText && *req.Description != "" {
 			return nil, invalid("only text channels have descriptions")
 		}
+		*req.Description = denproto.CleanLinks(*req.Description)
 		if err := denproto.CheckDescription(*req.Description); err != nil {
 			return nil, invalid("description: %v", err)
 		}
@@ -1147,6 +1148,8 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		return denproto.Message{}, err
 	}
 	if !dm {
+		// Links lose their tracking before the text's limits are checked.
+		req.Text = denproto.CleanLinks(req.Text)
 		if err := denproto.CheckMessageText(req.Text, len(files) > 0); err != nil {
 			return denproto.Message{}, invalid("text: %v", err)
 		}
@@ -1381,8 +1384,11 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		keyID = &k
 	} else if req.Unedited {
 		return m, invalid("unedited: only DM messages' edits say so; the den compares other texts itself")
-	} else if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
-		return m, invalid("text: %v", err)
+	} else {
+		req.Text = denproto.CleanLinks(req.Text)
+		if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
+			return m, invalid("text: %v", err)
+		}
 	}
 	if req.Revision != m.Revision {
 		return m, &conflict{m}

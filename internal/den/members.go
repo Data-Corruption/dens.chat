@@ -94,14 +94,15 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 		sets, args = append(sets, "display_name = ?"), append(args, name)
 	}
 	if req.Bio != nil {
-		if err := denproto.CheckBio(*req.Bio); err != nil {
+		bio := denproto.CleanLinks(*req.Bio)
+		if err := denproto.CheckBio(bio); err != nil {
 			return denproto.Member{}, invalid("bio: %v", err)
 		}
-		if *req.Bio == "" {
+		if bio == "" {
 			// NULL itself: a nil slice can be stored as an empty blob.
 			sets = append(sets, "bio = NULL")
 		} else {
-			sealed, err := d.v.Seal([]byte(*req.Bio), bioAD(s.MemberID))
+			sealed, err := d.v.Seal([]byte(bio), bioAD(s.MemberID))
 			if err != nil {
 				return denproto.Member{}, err
 			}

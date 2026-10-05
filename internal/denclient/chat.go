@@ -159,6 +159,10 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 	if err := checkEditors(req.Editors); err != nil {
 		return PageMessage{}, err
 	}
+	// The den takes tracking out of a channel's links itself, but can't
+	// read a DM's, so the sender does, before sealing; doing it for every
+	// message checks the limits on the text the den will keep.
+	req.Text = denproto.CleanLinks(req.Text)
 	if err := denproto.CheckMessageText(req.Text, len(req.Attachments) > 0); err != nil {
 		return PageMessage{}, inputError(err)
 	}
@@ -212,6 +216,7 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 	}
 	// The den knows whether the message has files, which may leave it
 	// without text.
+	req.Text = denproto.CleanLinks(req.Text)
 	if err := denproto.CheckMessageText(req.Text, true); err != nil {
 		return PageMessage{}, inputError(err)
 	}

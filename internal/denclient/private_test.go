@@ -207,6 +207,30 @@ func TestDMsStaySealed(t *testing.T) {
 	}
 }
 
+// The den can't read a DM to take tracking out of its links, so the sender's
+// Dens does before sealing it, on sends and edits.
+func TestDMLinksLoseTheirTracking(t *testing.T) {
+	_, owner, member, denID, _ := chatDen(t)
+	ctx := context.Background()
+	dm := openDM(t, owner, member, denID)
+	checkDM(t, owner, member, denID, dm)
+	const shared, clean = "https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42"
+	sent := sendDM(t, owner, denID, dm, "look "+shared)
+	if sent.Text != "look "+clean {
+		t.Fatalf("sent %q", sent.Text)
+	}
+	if got := history(t, member, denID, dm); len(got) != 1 || got[0].Text != "look "+clean {
+		t.Fatalf("bob reads %+v", got)
+	}
+	edited, err := owner.Edit(ctx, denID, dm, sent.ID, denproto.EditRequest{Revision: sent.Revision, Text: "look again " + shared})
+	if err != nil || edited.Text != "look again "+clean {
+		t.Fatalf("edited %q: %v", edited.Text, err)
+	}
+	if got := history(t, member, denID, dm); len(got) != 1 || got[0].Text != "look again "+clean {
+		t.Fatalf("bob reads %+v", got)
+	}
+}
+
 // Someone at the den who plays each member's side of the exchange to the
 // other, as a tampered den could, ends up sharing a key with each; but the
 // two members' digits don't match, so neither check passes and nothing is

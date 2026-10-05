@@ -407,12 +407,7 @@ func linkLength(s string) int {
 // endsLink reports whether r ends a link: a space as JavaScript's \s
 // matches one, or one of <>"'`.
 func endsLink(r rune) bool {
-	switch r {
-	case '<', '>', '"', '\'', '`', '\t', '\n', '\v', '\f', '\r', ' ',
-		0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff:
-		return true
-	}
-	return r >= 0x2000 && r <= 0x200a
+	return jsSpace(r) || strings.ContainsRune("<>\"'`", r)
 }
 
 func isNameByte(c byte) bool {
