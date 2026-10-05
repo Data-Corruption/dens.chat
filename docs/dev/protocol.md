@@ -314,26 +314,27 @@ A DM's message carries its text and files `sealed` instead, with the DM key `key
 
 The den rewrites the links in a message's text when it's sent or edited, and in a channel's description or a member's bio when it's set, then checks the text's limits. A DM's text is rewritten the same way by its sender's client, before it's sealed. Both follow one rule (`denproto.CleanLinks`), tested against the cases in `internal/denproto/testdata/links.json`. The page's renderer is tested against the same cases, to check that it ends each link where the rule does.
 
-- A link is found as the page renders one: `http://` or `https://` outside code, at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick, less any `.`, `,`, `;`, `:`, `!`, `?`, `)` and `]` at its end.
-- Hosts match exactly and in lowercase, as a URL parser reads them. A link with a user name or password before its host stays as it is, and so does one that doesn't parse.
+- A link is one the page renders as a link: `http://` or `https://`, at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick, less any `.`, `,`, `;`, `:`, `!`, `?` and `]` at its end, and any `)` there that closes no `(` in the link. It isn't in code or part of a mention, and inside bold, italics, strikethrough or a spoiler it ends where they do. The page's renderer (`markdown.jsx`) decides each of these, and `denproto` follows it step by step.
+- Hosts match exactly and in lowercase, as a URL parser reads them, so a port or a trailing dot makes another host. A link with a user name or password before its host stays as it is, and so does one that doesn't parse.
 - Links to these sites, in these forms, are written in one form, which keeps only what identifies the post or video:
 
 | Site | Forms | Kept | Written as |
 | --- | --- | --- | --- |
 | YouTube | `/watch?v=ID`, `/shorts/ID`, `/live/ID` and `/embed/ID` on `youtube.com`, `www.youtube.com` and `m.youtube.com`; `youtu.be/ID`; `/embed/ID` on `youtube-nocookie.com` and `www.youtube-nocookie.com` | The video ID, 11 of `A-Z`, `a-z`, `0-9`, `-` and `_`. The start time `t`, or `start` on an embed: digits, optionally followed by `s`, or a time like `1h2m3s` | `https://www.youtube.com/watch?v=ID`, then `&t=` and the start time if there is one |
-| Reddit | `/comments/POST` on `reddit.com` and its `www.`, `old.`, `new.`, `np.` and `m.` hosts, also after `/r/NAME`, `/u/NAME` or `/user/NAME`, optionally followed by a title and then a comment ID, or by `/comment/` and a comment ID; `/gallery/POST` on the same hosts; `redd.it/POST` | The post ID and the comment ID, each 1 to 16 of `a-z` and `0-9` | `https://www.reddit.com/comments/POST`, or `https://www.reddit.com/comments/POST/_/COMMENT` |
+| Reddit | `/comments/POST` on `reddit.com` and its `www.`, `old.`, `new.`, `np.` and `m.` hosts, also after `/r/NAME`, `/u/NAME` or `/user/NAME`, optionally followed by a title, which may be empty, and then a comment ID; `/gallery/POST` on the same hosts; `redd.it/POST`. Each may end in a `/` | The post ID and the comment ID, each 1 to 16 of `a-z` and `0-9` | `https://www.reddit.com/comments/POST`, or `https://www.reddit.com/comments/POST/comment/COMMENT` |
 | X | `/NAME/status/ID`, `/i/status/ID` and `/i/web/status/ID`, optionally followed by more of a path, on `x.com`, `twitter.com` and their `www.` and `mobile.` hosts | The status ID, 1 to 20 digits | `https://x.com/i/status/ID` |
 
 - Every other link keeps its form, and loses its tracking parameters:
   - On any site: `fbclid`, `gclid`, `dclid`, `gbraid`, `wbraid`, `msclkid`, `twclid`, `ttclid`, `yclid`, `igshid`, `igsh`, `mc_cid`, `mc_eid`, `_hsenc`, `_hsmi`, `mkt_tok`, and any whose name starts with `utm_`.
-  - On YouTube's hosts (`youtube.com`, `youtu.be`, `youtube-nocookie.com` and their subdomains, such as `music.youtube.com`): `si`, `pp` and `feature`.
-  - On X's hosts: `s`, `t`, `ref_src` and `ref_url`.
-  - On Reddit's hosts: `share_id`.
+  - On `youtube.com`, `youtu.be`, `youtube-nocookie.com` and their subdomains, such as `music.youtube.com`: `si`, `pp` and `feature`.
+  - On `x.com`, `twitter.com` and their subdomains: `s`, `t`, `ref_src` and `ref_url`.
+  - On `reddit.com`, its subdomains and `redd.it`: `share_id`.
 
-  Everything else in the link stays as it was, the remaining parameters' order and spelling included. A link left with no parameters loses its `?` too.
+  Everything else in the link stays as it was, the remaining parameters' order and spelling included. A link left with no parameters loses its `?` too, and empty ones between `&`s go.
+- A link stays as it is if the page would find another link once it's rewritten, as when what's left ends in punctuation the page leaves out of a link: `https://example.com/a.?utm_source=x` keeps its tracking rather than become a link to `https://example.com/a`.
 - A Reddit share link (`/r/NAME/s/CODE`) loses only its tracking parameters. Its code is Reddit's own record of who shared the link, and only Reddit can turn it into a post.
 - Rewriting a text a second time changes nothing.
-- The page shows a link written as `https://www.reddit.com/…` on `old.reddit.com` for members who prefer it.
+- The page shows a link written as `https://www.reddit.com/comments/…` on `old.reddit.com` in a browser that prefers it.
 
 ### History
 
