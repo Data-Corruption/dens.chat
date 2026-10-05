@@ -309,9 +309,9 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 - Optional den-wide retention (for example 30 or 90 days), off by default, shown to members in den info.
 - Removal and bans revoke all of a member's keys and close their sockets at once (see Leaving, removal and bans).
 
-**Compact links**
+**Compact links (M3)**
 
-Not in M1. When a message is saved, the den rewrites known links to a site code plus ID and expands them at render time. Unknown links are stored unchanged.
+When a message is saved, the den rewrites known links to a site code plus ID and expands them at render time. In a private DM the sending service rewrites them before sealing, since the den can't read the text. Unknown links are stored unchanged.
 
 | Site | Stored | Kept | Expands to |
 | --- | --- | --- | --- |
@@ -759,7 +759,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M0 | Foundation: Sprout fork trimmed to the single-process lifecycle, elevated installers for Linux and Windows, `dens@`/`dens-<name>` service, platform layer, two listeners, vault with envelope encryption, `dens open` pairing | On both platforms: browser pairs, vault survives reboot, backup restores on a second machine, including Linux to Windows and back |
 | M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
 | M2 | Voice: calls in voice channels through the Pion SFU, on a UDP mux with ICE-TCP fallback; the signaling relay, with offers from the den as members join and leave; mute; the call bar | A clear two-person call across two home networks in the four target browsers, over UDP and with UDP blocked, and from the den owner's own browser |
-| M3 | Group voice: speaking indicators, staff disconnecting members from calls, calls that ride out a dropped connection, and RNNoise noise suppression as a member's choice | 10-person call stays stable for an hour |
+| M3 | Group voice: speaking indicators, staff disconnecting members from calls, calls that ride out a dropped connection, and RNNoise noise suppression as a member's choice. Compact links: Reddit, YouTube and X links kept as their IDs, without tracking parameters | 10-person call stays stable for an hour, and a YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
 | M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
 | M5 | Message retention setting, and managing files: each member's uploads by size against their limit, deleting them, and swapping an attachment for a smaller copy | A member at their limit frees space by deleting and swapping old attachments, and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
@@ -779,7 +779,7 @@ M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 | M1.7 Private DMs | End-to-end encrypted DMs and their photos: the DM seal, check codes to start a DM and to approve a new device, sealed DM keys on the den, starting over, and the Den and Direct messages tabs | The den's database and backups hold no readable DM text or photo; a DM starts only after both members type each other's check digits, and a den that swaps keys fails the check; a new device reads DM history after approval, and one signed in with a recovery code after its member types the seal; the password alone can't add a device |
 | M1.8 Media | ffmpeg in WebAssembly: video and audio stripped on the sender's machine and again on the den; HEIC, TIFF, JPEG 2000 and Photoshop photos sent as a JPEG or PNG; video posters, and WebM and AV1 previews from the page; players in the message list that seek; the worker process; the module's build, tests and source in releases | A phone video with GPS arrives stripped with its poster, and plays and seeks in the four target browsers, in a channel and in a DM; an iPhone HEIC arrives as an upright JPEG in its own colors; an AVIF is refused with a reason; a damaged file ends only its worker |
 
-Not in M1: compact links, message retention (M5), browser notifications, and the persistent cache (M6).
+Not in M1: compact links (M3), message retention (M5), browser notifications, and the persistent cache (M6).
 
 **M1 testing.** A den e2e harness runs beside the lifecycle harnesses, and each step extends it. On Linux, an Incus container hosts a den behind Caddy with Caddy's internal certificate authority, and a container on another distro trusts that authority, joins by name and must stay connected across a den restart. On Windows, one instance hosts a den behind Caddy running as a Windows service, and a second instance joins it. Cross-platform pairs (a WSL client with a Windows den, a Windows client with a Linux den) are checked by hand once per step. Caddy is pinned in `scripts/vendor.sh`, since distro packages lag (Debian 13 ships 2.6). [lifecycle.md](lifecycle.md) describes running the harnesses.
 
@@ -799,7 +799,7 @@ Not in M1: compact links, message retention (M5), browser notifications, and the
 
 **Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
 
-**After v1:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, and AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos.
+**After v1 loose ideas:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, and AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos.
 
 ## Open questions
 
