@@ -102,9 +102,10 @@ run_windows_tests() {
     GOOS=windows go test -c -o "$work/$rel/$name.test.exe" "$pkg"
   done
   while IFS= read -r test_exe; do
-    # The command registry test reads its package source, which the Windows
-    # side can't see.
-    if (cd "$(dirname "$test_exe")" && timeout 600 "$test_exe" -test.count=1 -test.skip TestAllCommandConstructorsAreListed </dev/null >"$test_exe.log" 2>&1); then
+    # The command registry's test and the notices' read the module's source,
+    # which the Windows side doesn't have.
+    if (cd "$(dirname "$test_exe")" && timeout 600 "$test_exe" -test.count=1 \
+      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule' </dev/null >"$test_exe.log" 2>&1); then
       printf 'ok    %s\n' "$(basename "$test_exe" .test.exe)"
     else
       printf 'FAIL  %s\n' "$(basename "$test_exe" .test.exe)"
@@ -130,6 +131,7 @@ run_shell_lint() {
     scripts/ci.sh
     scripts/vendor.sh
     scripts/ffmpeg.sh
+    scripts/notices.sh
     scripts/test.sh
     scripts/test-release.sh
     scripts/test-lifecycle-e2e.sh

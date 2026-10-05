@@ -22,6 +22,7 @@ var constructors = []constructor{
 	updateCommand,
 	uninstallCommand,
 	restoreCommand,
+	licensesCommand,
 	mediaWorkerCommand,
 }
 

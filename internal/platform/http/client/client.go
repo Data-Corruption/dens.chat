@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
@@ -55,6 +56,7 @@ func New(a *app.App) http.Handler {
 	r.Use(guard.SameOrigin)
 
 	r.Get("/healthz", handleHealth)
+	r.Get("/licenses", handleLicenses)
 	r.Get("/assets/*", a.UI.ServeAsset)
 	// The page decides what to show from the API; an unpaired browser gets
 	// 401s and shows how to pair.
@@ -79,6 +81,14 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok\n"))
+}
+
+// handleLicenses shows the third-party notices the binary carries, as dens
+// licenses prints them. They're the same for anyone, so they need no
+// session.
+func handleLicenses(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(build.Notices()))
 }
 
 type sessionKey struct{}
