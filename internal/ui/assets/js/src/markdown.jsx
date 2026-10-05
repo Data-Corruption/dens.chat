@@ -10,6 +10,7 @@
 // http(s) URL the parser matched.
 
 import { useEffect, useState } from 'preact/hooks';
+import { shownLink, trimLink } from './links.js';
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/y;
 const NAME_CHAR = /[A-Za-z0-9_]/;
@@ -137,15 +138,15 @@ function inline(text, ctx, key, prev = '') {
             URL_RE.lastIndex = i;
             const m = URL_RE.exec(text);
             if (m && !NAME_CHAR.test(before)) {
-                // Trailing punctuation usually ends the sentence, not the URL.
-                const url = m[0].replace(/[.,;:!?)\]]+$/, '');
+                const url = trimLink(m[0]);
+                const shown = shownLink(url);
                 flush();
                 out.push(
                     ctx.preview ? (
-                        <span key={`${key}-${n++}`} class="text-primary">{url}</span>
+                        <span key={`${key}-${n++}`} class="text-primary">{shown}</span>
                     ) : (
-                        <a key={`${key}-${n++}`} href={url} target="_blank" rel="noopener noreferrer nofollow" class="link link-primary break-all">
-                            {url}
+                        <a key={`${key}-${n++}`} href={shown} target="_blank" rel="noopener noreferrer nofollow" class="link link-primary break-all">
+                            {shown}
                         </a>
                     ),
                 );
