@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices) and M2 (voice) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice) and M3 (links, calls that ride out a dropped connection, and staff in calls) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -302,13 +302,38 @@ message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at
 
 A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)).
 
-`text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. In M1 the den stores it as sent, without normalizing. Link compaction (see the design doc) later rewrites known links and drops their tracking parameters when a message is saved.
+`text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links-m3)).
 
 `revision` starts at 1 and increases with every edit. `edited_by` is the member who made the latest edit, which differs from the author on shared messages.
 
 `reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. The text is empty when the original has only files. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`. In a DM, the den can't read the original, so `reply` carries it whole, for the client to open and quote: `{"author_id", "text": "", "sealed", "key_id", "nonce", "revision"}`.
 
 **Mentions.** `@` then 2 to 32 letters, digits or `_`, matching a username without regard to case. It counts at the start of a line, or after a character that is neither one of those nor `@`, when none of them follows. It doesn't count inside code (a ``` block, or a span from one backtick to the next with something between) or inside a link (`http://` or `https://` at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick). The den counts by this rule (`denproto.Mentions`), and the page highlights by the same one; both are tested against the cases in `internal/denproto/testdata/mentions.json`. A mention adds to the unread mention count of the member it names, if they can see the channel and aren't the author. An edit recounts.
+
+### Links (M3)
+
+The den rewrites the links in a message's text when it's sent or edited, and in a channel's description or a member's bio when it's set, then checks the text's limits. A DM's text is rewritten the same way by its sender's client, before it's sealed. Both follow one rule (`denproto.CleanLinks`), tested against the cases in `internal/denproto/testdata/links.json`. The page's renderer is tested against the same cases, to check that it ends each link where the rule does.
+
+- A link is found as the page renders one: `http://` or `https://` outside code, at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick, less any `.`, `,`, `;`, `:`, `!`, `?`, `)` and `]` at its end.
+- Hosts match exactly and in lowercase, as a URL parser reads them. A link with a user name or password before its host stays as it is, and so does one that doesn't parse.
+- Links to these sites, in these forms, are written in one form, which keeps only what identifies the post or video:
+
+| Site | Forms | Kept | Written as |
+| --- | --- | --- | --- |
+| YouTube | `/watch?v=ID`, `/shorts/ID`, `/live/ID` and `/embed/ID` on `youtube.com`, `www.youtube.com` and `m.youtube.com`; `youtu.be/ID`; `/embed/ID` on `youtube-nocookie.com` and `www.youtube-nocookie.com` | The video ID, 11 of `A-Z`, `a-z`, `0-9`, `-` and `_`. The start time `t`, or `start` on an embed: digits, optionally followed by `s`, or a time like `1h2m3s` | `https://www.youtube.com/watch?v=ID`, then `&t=` and the start time if there is one |
+| Reddit | `/comments/POST` on `reddit.com` and its `www.`, `old.`, `new.`, `np.` and `m.` hosts, also after `/r/NAME`, `/u/NAME` or `/user/NAME`, optionally followed by a title and then a comment ID, or by `/comment/` and a comment ID; `/gallery/POST` on the same hosts; `redd.it/POST` | The post ID and the comment ID, each 1 to 16 of `a-z` and `0-9` | `https://www.reddit.com/comments/POST`, or `https://www.reddit.com/comments/POST/_/COMMENT` |
+| X | `/NAME/status/ID`, `/i/status/ID` and `/i/web/status/ID`, optionally followed by more of a path, on `x.com`, `twitter.com` and their `www.` and `mobile.` hosts | The status ID, 1 to 20 digits | `https://x.com/i/status/ID` |
+
+- Every other link keeps its form, and loses its tracking parameters:
+  - On any site: `fbclid`, `gclid`, `dclid`, `gbraid`, `wbraid`, `msclkid`, `twclid`, `ttclid`, `yclid`, `igshid`, `igsh`, `mc_cid`, `mc_eid`, `_hsenc`, `_hsmi`, `mkt_tok`, and any whose name starts with `utm_`.
+  - On YouTube's hosts (`youtube.com`, `youtu.be`, `youtube-nocookie.com` and their subdomains, such as `music.youtube.com`): `si`, `pp` and `feature`.
+  - On X's hosts: `s`, `t`, `ref_src` and `ref_url`.
+  - On Reddit's hosts: `share_id`.
+
+  Everything else in the link stays as it was, the remaining parameters' order and spelling included. A link left with no parameters loses its `?` too.
+- A Reddit share link (`/r/NAME/s/CODE`) loses only its tracking parameters. Its code is Reddit's own record of who shared the link, and only Reddit can turn it into a post.
+- Rewriting a text a second time changes nothing.
+- The page shows a link written as `https://www.reddit.com/…` on `old.reddit.com` for members who prefer it.
 
 ### History
 
@@ -631,32 +656,35 @@ device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer"
 A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design doc's Voice and screen share).
 
 ```
-call = {"channel_id", "members": [{"id", "muted"?}, …]}
+call = {"channel_id", "members": [{"id", "muted"?, "staff_muted"? (M3)}, …]}
 ```
 
-Client frames:
+Client frames, with `resume` and `voice.restart` from M3:
 
 ```json
 [{"t": "voice.join", "d": {"channel_id": "41", "muted": false}}]
+[{"t": "voice.join", "d": {"channel_id": "41", "resume": true}}]
 [{"t": "voice.answer", "d": {"version": 1, "sdp": "v=0…"}}]
 [{"t": "voice.mute", "d": {"muted": true}}]
+[{"t": "voice.restart", "d": {}}]
 [{"t": "voice.leave", "d": {}}]
 ```
 
-Den events, all ephemeral:
+Den events, all ephemeral, with `voice.resumed` from M3:
 
 ```json
 {"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
+{"t": "voice.resumed", "d": {"channel_id": "41"}}
 {"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
 {"t": "voice.state", "d": {"calls": [call, …]}}
 ```
 
 ### Joining and leaving
 
-- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` is optional and sets the member's mark from the start.
+- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` is optional and sets the member's mark from the start. With `"resume": true` (M3), the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection-m3)).
 - A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds 15 members, or the den's calls 30 in all), `rate_limited`, or `failed` when the den couldn't set the call up.
-- `voice.leave` ends the member's call. A call also ends with the socket it started on, so removals, bans, revoked devices and den restarts end calls as they close sockets.
-- The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; and with `failed` when its connection doesn't come up or breaks (below).
+- `voice.leave` ends the member's call. When the socket a call started on closes, the den holds the call (see below), unless the den closed that socket for good with 4003. So removals, bans, revoked devices, new passwords, starting over and leaving end calls at once, and a den restart ends every call.
+- The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; with `failed` when its connection doesn't come up or breaks (below); and with `disconnected_by_staff` when staff disconnect its member (M3).
 
 ### Offers and answers
 
@@ -674,8 +702,30 @@ Den events, all ephemeral:
 
 ### Who's in a call
 
-- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce.
+- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce. `staff_muted` (M3) is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls-m3)).
 - `ready` carries `calls`, those the member can see that have someone in them. Calls aren't replayed, so after `resumed` the den sends `voice.state` with `"full": true`, which replaces every call the client held.
+
+### Riding out a dropped connection (M3)
+
+A call's socket can close while its media still flows, or come back after its media broke. Neither ends the call by itself.
+
+- When a call's socket closes, other than with 4003, the den holds the call for 30 seconds. The member stays in it with their media, and the den sends no offers. An offer that was still out is dropped, and the call gets a fresh one once it's resumed.
+- `voice.join` with `"resume": true` takes back a call the den holds in that channel for the socket's device, the device key its session signed in with, whose socket has closed or is older than this one. The den moves the call to this socket and answers `voice.resumed`. It makes a new offer if one was dropped or the call's sections changed meanwhile. The client keeps its peer connection.
+- A resume never starts a call. If the device has no call to take back, the den answers `voice.ended`: with the reason its call ended while held, if that was within the last 10 minutes, or `failed` otherwise. After `failed`, the client may join again.
+- A held call ends like any other call: when the member joins another, leaves the den or is removed, when its device is signed out, when staff disconnect them, or when they can no longer see the channel. It ends with `failed` once its hold runs out.
+- `voice.restart` asks the den to restart ICE, as when the client's media connection broke. The den's next offer carries new ICE credentials: at once, or as soon as the outstanding offer is answered. The client writes the den's addresses into that offer afresh. DTLS carries on, so the call keeps its sections and keys. A restart before the call's first answer is ignored, and a restart counts toward the member's other writes.
+- A call whose media stops answering connectivity checks for 30 seconds ends with `failed`, held or not.
+
+### Staff in calls (M3)
+
+```
+POST /api/members/{id}/disconnect                    204
+POST /api/members/{id}/voice-mute  {"muted": true}   204
+```
+
+- Staff disconnect and mute members of a lower rank, as they remove them: moderators act on members, and the owner on anyone else. Anyone else gets `403 forbidden`, and an ID that isn't a member in the den gets `404 not_found`.
+- Disconnecting ends the member's call, held or not, with `voice.ended` and `disconnected_by_staff`. It leaves a member in no call as they are. They can join again at once.
+- A staff mute makes the den forward nothing from the member, in their call and in any they join, until staff lift it with `"muted": false`, the member leaves the den, or the den restarts. It can be set whether or not they're in a call. Calls show it as `"staff_muted": true` on the member, beside their own `muted`.
 
 ## Rate limits
 
@@ -692,5 +742,5 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | Joining a call | 10 per minute per member |
-| Other writes, mute included | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, and staff disconnecting and muting | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

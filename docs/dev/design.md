@@ -134,6 +134,13 @@ Keep the client listener and den listener separate. Caddy forwards remote reques
 - Uploads come from the browser's file picker, drag and drop, or a paste; downloads use `Content-Disposition: attachment` so the browser saves them as the desktop user.
 - The service never needs write access to the user's home directory, which removes the Downloads permission step from install.
 
+**Third-party notices (M3)**
+
+The binary includes others' code: Go's standard library and modules such as Pion and the SQLite driver; FFmpeg and zlib in the media module; RNNoise; and Preact, Tailwind and DaisyUI in the page. Most of their licenses ask that copies of the binary carry their notices, and the LGPL also asks for FFmpeg's source, which each release publishes.
+
+- `scripts/notices.sh` gathers every license into one file that the binary embeds: those of the Go modules it links, from the module cache, and those of the inputs `scripts/vendor.sh` pins. The file is committed, so a new dependency shows up in review as a new license, and CI writes it again and fails if it differs.
+- `dens licenses` prints it, and the page's settings link to it.
+
 ## Local identity and encryption
 
 Each install has one local user, stored in an encrypted vault, and one random data key that encrypts it. The data key is wrapped twice: once bound to the host for unattended boot, and once by the user's password for backup and moving machines.
@@ -311,17 +318,18 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 
 **Compact links (M3)**
 
-When a message is saved, the den rewrites known links to a site code plus ID and expands them at render time. In a private DM the sending service rewrites them before sealing, since the den can't read the text. Unknown links are stored unchanged.
+When a message is sent or edited, or a channel's description or a member's bio is set, the den rewrites the links in it. Links to Reddit, YouTube and X become one short form, which keeps only what identifies the post or video, and every other link loses its tracking parameters. In a private DM the sending service rewrites the text before sealing it, since the den can't read it. A rewritten link stays in the text as an ordinary URL, so everything that reads text reads it as before: the markdown subset, mentions, tasks, reply previews, edits and sealed DMs.
 
-| Site | Stored | Kept | Expands to |
-| --- | --- | --- | --- |
-| Reddit | post ID, optional comment ID | nothing else | `reddit.com` or `old.reddit.com`, per member setting |
-| YouTube | video ID | timestamp (`t`) | `youtube.com/watch?v=…` |
-| X | status ID | nothing else | `x.com/i/status/…` |
+| Site | Kept | Written as |
+| --- | --- | --- |
+| YouTube | video ID, start time (`t`) | `https://www.youtube.com/watch?v=…&t=…` |
+| Reddit | post ID, optional comment ID | `https://www.reddit.com/comments/…`, shown on `old.reddit.com` for members who prefer it |
+| X | status ID | `https://x.com/i/status/…` |
 
-- Tracking parameters (`si`, `utm_*`, `feature`, share IDs) are dropped.
-- Links are stored as structured spans (site, ID, position) next to the text.
-- Size saving is modest: roughly 40–80 bytes per link, a few MB across 50,000 links. Per-field encryption overhead (nonce and tag, about 40 bytes) is similar in size.
+- Tracking parameters come off every link: each site's own (YouTube's `si`, X's `s` and `t`, Reddit's `share_id`), and a fixed list of those that track on any site, such as `utm_*`, `fbclid` and `gclid`. The protocol lists the forms each site's links take, and every parameter.
+- A Reddit share link (`reddit.com/r/…/s/…`) stays as it is, apart from tracking parameters. Its code is Reddit's own record of who shared the link, and only Reddit can turn it into a post ID, which would mean Dens fetching from Reddit.
+- Hosts match exactly, as a URL parser reads them, so a lookalike link is never rewritten into a real one.
+- The page shows links without knowing the rule, so the rule can take in more sites later without a protocol change. Links get shorter too, often by 20 to 80 bytes, but that's a side effect.
 - No link previews in v1: fetching them would reveal the den's or members' IPs to those sites. Could be an opt-in feature for v2. Previews would take a fixed height, with their content scaled to fit, so they never shift the message list.
 
 **Presence at 500 online**
@@ -420,7 +428,7 @@ Members attach files to messages and put pictures on their profiles. Images lose
 
 ## End-to-end encrypted DMs
 
-From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores and relays them but can't read them. Channels stay readable by the den, since staff moderate them and the den does the work that needs their text: mentions, reply previews and, later, compact links.
+From M1.7, DMs and the photos in them are end-to-end encrypted: the den stores and relays them but can't read them. Channels stay readable by the den, since staff moderate them and the den does the work that needs their text: mentions, reply previews and compact links.
 
 **What it protects**
 
@@ -482,8 +490,10 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Anyone who can see a voice channel can join its call, and sees who is in it and who is muted. A staff-only voice channel's call is staff's, as its text channels are.
 - A member is in one call at a time, on one device: joining from another device, or in another channel, moves them there. An install holds one call, which belongs to the page that joined it, so closing or reloading that page leaves the call.
 - The den ends a member's call as soon as they can't see its channel: they leave or are removed or banned, the device is signed out, a role change hides a staff-only channel, or the channel is deleted.
-- A call lasts as long as the den connection it started on. A den restart or a lost connection ends it, and the page joins again once the den is back, trying a few times before it gives up and says why.
+- A call rides out a dropped connection (M3): the den holds it for 30 seconds after its socket closes, and the page takes it back once it reconnects (see Riding out a dropped connection). A den restart ends every call, and the page joins again once the den is back, trying a few times before it gives up and says why.
 - Mute is the member's own: the page stops sending their microphone's sound, and the others see the mark.
+- Staff can disconnect a member of a lower rank from a call, or mute them, which the den enforces (M3; see Staff in calls).
+- Speaking indicators (M3): each page measures the audio it plays for each member, and its own microphone's as sent, and rings the avatar of whoever is speaking. Only members in the call see them, since only their pages play its audio, and the den sends nothing for them.
 - A voice channel's call holds 15 members, and a den's calls 30 in all. Each member's audio goes out once to every other member of their call, so the den's upload grows with the square of a call's size: a full call of 15 sends about 6 to 10 Mbps (see the bandwidth table). The caps become owner settings with the screen share limits (M4).
 - Calls aren't end-to-end encrypted. Media is encrypted between each browser and the den (DTLS-SRTP), and the den decrypts it to forward it, so the den's owner could listen in. The page says so on voice channels, as it says on channels that the den's owner can read them. End-to-end encrypted calls would need SFrame (insertable streams), after v1.
 - DMs have no calls until then: a DM's call would pass through the den's SFU like any other, so its owner could listen in, unlike the DM's messages.
@@ -496,7 +506,8 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Screen: `getDisplayMedia`, which goes through xdg-desktop-portal and PipeWire on Wayland (M4).
 - The peer connection names no STUN or TURN servers, so a call contacts nothing but the den.
 - The page's `Permissions-Policy` grants the microphone to the page itself (`microphone=(self)`). The camera stays off.
-- Noise suppression (M3): browsers' own suppressor takes out steady noise such as fans and hum, but not keyboards, a TV or other voices. A member can turn on RNNoise instead, Xiph's small noise-suppression network (BSD), compiled to WebAssembly with the wasi-sdk the media module pins and run in an AudioWorklet between the microphone and the call, at 48 kHz in 10 ms frames. The browser still cancels echo first, since that needs the raw microphone and what the browser plays. Only one suppressor runs at a time, so the browser's is off (`noiseSuppression: false`) while RNNoise is on, and the encoder gets the cleaned audio. Others' audio keeps playing through media elements, which the echo canceller hears. RNNoise's estimate of whether someone is speaking can drive the speaking indicators. Compiling WebAssembly in the page takes `'wasm-unsafe-eval'` in its CSP, which allows WebAssembly but not `eval`.
+- Noise suppression (M3): browsers' own suppressor takes out steady noise such as fans and hum, but not keyboards, a TV or other voices. A member can turn on RNNoise instead, Xiph's small noise-suppression network (BSD), compiled to WebAssembly and run in an AudioWorklet between the microphone and the call, at 48 kHz in 10 ms frames. The browser still cancels echo first, since that needs the raw microphone and what the browser plays. Only one suppressor runs at a time, so the browser's is off (`noiseSuppression: false`) while RNNoise is on, and the encoder gets the cleaned audio. Others' audio keeps playing through media elements, which the echo canceller hears. The browser keeps the choice, as it keeps the microphone and speaker, and a change applies mid-call by replacing the track the call sends, without a new offer.
+- `scripts/rnnoise.sh` builds RNNoise from its pinned release with the wasi-sdk the media module pins, and writes the module into the page's assets. The module is committed, as the media module is: CI builds it again and fails if it differs. The page loads it only when a member turns RNNoise on. Compiling WebAssembly takes `'wasm-unsafe-eval'` in the page's CSP, which allows WebAssembly but not `eval`, and gives a script in the page nothing it couldn't do already.
 
 **Signaling**
 
@@ -508,8 +519,28 @@ The page signals over its event socket to its local service, which relays on the
 4. The page attaches its microphone and answers. The local service takes the browser's candidates out of the answer and passes it to the den.
 5. Media flows directly between the browser and the den, over UDP or, where UDP is blocked, TCP, encrypted with DTLS-SRTP.
 6. When someone joins or leaves the call, the den sends each other member a new offer, which adds or retires that member's section. One offer is outstanding per member at a time, and one not answered within 15 seconds ends that member's call.
+7. When the page's connection to the media ports breaks, as on a move to another network, it asks for an ICE restart (M3). The den's next offer carries new ICE credentials, the local service writes the den's addresses into it afresh, and the browser checks its new paths. DTLS carries on, so the call keeps its keys and its sections.
 
 The messages are in [protocol.md](protocol.md#voice-m2).
+
+**Riding out a dropped connection (M3)**
+
+A call's signaling and its media take different paths: the den socket runs from the member's local service through Caddy, and the media from their browser straight to the den's media ports. Losing one needn't end the call.
+
+- When a call's socket closes, the den holds the call for 30 seconds. The member stays in it, their audio flows both ways if its path still does, and offers wait. That covers a Caddy reload, a blip that broke only the socket, and at least five of the client's reconnects.
+- The page keeps its peer connection while its den is away, and asks to resume the call once the den is back. The den moves the held call to the new socket, which must be the same device's, and makes a new offer if the call changed meanwhile. The others notice nothing but a gap in that member's audio, if there was one. They see no mark during the hold, since the den can't tell whether the audio still flows.
+- A socket the den closes for good ends its call at once: a removal, a ban, a revoked device, a new password, starting over and leaving all do. Any other close holds the call.
+- A call that ends while held stays ended, and the resume says why, so a member disconnected by staff in that window isn't brought back by their own page. A call that can't be resumed, because the hold ran out or the den restarted, is joined again from the start.
+- When the browser's own connection to the media ports breaks, as when a laptop moves from Wi-Fi to Ethernet or leaves home, the page asks for an ICE restart (step 7 above). The local service looks the den's addresses up again for it, since split DNS can give another address on another network.
+- The local service holds nothing of a call across a dropped connection: it passes the page's resume on to the den, and writes the den's addresses into its offers afresh. So a call also rides out the service restarting, if it's back within the hold.
+- Closing or reloading the page ends its call at once, and a call whose media stops answering connectivity checks for 30 seconds ends as failed.
+
+**Staff in calls (M3)**
+
+- Staff disconnect members of a lower rank from calls, and mute them, under the rank rules of removal: moderators act on members, and the owner on anyone else.
+- A disconnected member can join again at once. One who keeps coming back is removed or banned like anyone else.
+- A staff mute makes the den forward nothing from the member, whatever their page sends. It belongs to the member, not the call, so leaving and joining again doesn't shed it. It lasts until staff lift it, the member leaves the den, or the den restarts, since the den keeps it in memory. Everyone who can see the call sees the mark.
+- The member's page says what happened, without naming who did it.
 
 **Media addresses**
 
@@ -529,6 +560,8 @@ The den's media ports carry every call: one UDP port, and one TCP port as the fa
 - Voice is Opus only. The den reads a member's audio only from the section it asked them to send on, and forwards each packet's payload under headers of its own, without the sender's header extensions, at most 256 kbps and 500 packets a second from each member.
 - Interceptors: NACK, RTCP reports and TWCC for bandwidth estimation.
 - Forward PLI keyframe requests to the sharer when a viewer joins a screen share (M4).
+- A held call keeps its peer connection without a socket, and its offers wait until it's resumed. An ICE restart is Pion's own: the den's offer carries new credentials, which the UDP and TCP muxes match from then on (M3).
+- A staff mute drops the member's packets before they're forwarded (M3).
 - Pion's own log messages name addresses, so they reach the log only in development instances. The den logs each call's start, end and the reason it ended, by member and channel ID.
 - No TURN in v1: the den is directly reachable, so clients behind NAT connect outward. Add `pion/turn` on TCP 443 later if restrictive networks need it.
 - Pion is the only WebRTC stack in Go, and DTLS-SRTP and ICE aren't things to write. `pion/webrtc` v4 brings 15 more of the project's modules, plus `google/uuid` and `wlynxg/anet`, all MIT-licensed, and adds about 5 MB to the binary, including parts Dens doesn't use, such as data channels and a TURN client.
@@ -694,6 +727,8 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] Session cookie `HttpOnly`, `SameSite=Strict`; pairing tokens single use and short-lived.
 - [x] Listener bound on both `127.0.0.1` and `::1`.
 - [x] Everything from a den is hostile input: the client service checks every den response against the protocol's types and limits before storing or forwarding it.
+- [ ] The CSP allows WebAssembly for RNNoise (`'wasm-unsafe-eval'`), but not `eval` (M3).
+- [ ] Rewritten links stay on their own site: hosts match exactly, as a URL parser reads them, so a lookalike is never rewritten into a real link (M3).
 
 **Den listener**
 
@@ -744,11 +779,18 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] The media ports drop packets for no call, close a TCP connection that doesn't name one within 5 seconds, and hold at most 128 TCP connections.
 - [x] Pion's log messages, which name addresses, stay out of release logs.
 
+**Voice (M3)**
+
+- [ ] Only staff of a higher rank disconnect or mute a member, and the den enforces a mute by forwarding nothing from them.
+- [ ] A held call resumes only on a socket of the device that held it, within 30 seconds, and a socket the den closes for good ends its call at once.
+- [ ] A call that ended while held stays ended: its resume gets the reason, never a new call.
+
 **Logs and data**
 
 - [ ] No message content, tokens, keys or IPs in logs; log IDs and event types only.
 - [x] SQLite `secure_delete=ON`.
 - [x] Signed releases: the installers and `dens update` verify cosign signatures against the release workflow's identity.
+- [ ] The binary carries the license notices of everything it includes, and CI fails when they're stale (M3).
 
 ## Milestones
 
@@ -759,7 +801,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M0 | Foundation: Sprout fork trimmed to the single-process lifecycle, elevated installers for Linux and Windows, `dens@`/`dens-<name>` service, platform layer, two listeners, vault with envelope encryption, `dens open` pairing | On both platforms: browser pairs, vault survives reboot, backup restores on a second machine, including Linux to Windows and back |
 | M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
 | M2 | Voice: calls in voice channels through the Pion SFU, on a UDP mux with ICE-TCP fallback; the signaling relay, with offers from the den as members join and leave; mute; the call bar | A clear two-person call across two home networks in the four target browsers, over UDP and with UDP blocked, and from the den owner's own browser |
-| M3 | Group voice: speaking indicators, staff disconnecting members from calls, calls that ride out a dropped connection, and RNNoise noise suppression as a member's choice. Compact links: Reddit, YouTube and X links kept as their IDs, without tracking parameters | 10-person call stays stable for an hour, and a YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
+| M3 | Group voice: speaking indicators, staff disconnecting and muting members in calls, calls that ride out a dropped connection, and RNNoise noise suppression as a member's choice. Compact links: Reddit, YouTube and X links in one short form, and tracking parameters off every link. Third-party notices in the binary | A call of everyone the manual test brings together stays stable for an hour, and a YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
 | M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
 | M5 | Message retention setting, and managing files: each member's uploads by size against their limit, deleting them, and swapping an attachment for a smaller copy | A member at their limit frees space by deleting and swapping old attachments, and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
@@ -797,12 +839,32 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 - Before the manual test, both browser engines are checked with fake microphones (Chromium's `--use-fake-device-for-media-stream`, Firefox's `media.navigator.streams.fake`), Chromium and Firefox in a container where they share a network with the instances: pages on two instances call each other, over UDP and with UDP blocked, mute, rejoin after a den restart, and, with four members, take a leaver's section back, and `getStats` shows each receiving the others' audio.
 - The manual test: two machines on different networks, a phone's hotspot serving as the second; each target browser; the den owner's own browser; UDP blocked, to force TCP; a den restart during a call; and a denied microphone.
 
+**M3 steps.** M3 lands as two pull requests, each built and committed in layers, and each checked in the four target browsers:
+
+| Step | Scope | Done when |
+| --- | --- | --- |
+| M3.1 Links | Compact links in channels, DMs, channel descriptions and bios; tracking parameters off every link; the `old.reddit.com` preference; third-party notices in the binary | A YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
+| M3.2 Group voice | Calls that ride out a dropped connection, with ICE restarts; staff disconnecting and muting members; speaking indicators; RNNoise | A call of everyone the manual test brings together stays stable for an hour |
+
+**M3 testing.**
+
+- Go tests:
+  - The link rule against `internal/denproto/testdata/links.json`, whose cases the page's renderer is tested against too, for where a link ends. The den rewrites a message's text on send and edit, and descriptions and bios, before checking their limits. The client rewrites a DM's text before sealing it.
+  - Pion callers against the den: a call held across its socket closing, with audio crossing throughout, resumed on a new socket of the same device and refused to any other; a hold that runs out; a call whose socket the den closed for good, which isn't held; a call ended while held, whose resume says why; an ICE restart, after which audio crosses on the new credentials; staff disconnecting and muting under the rank rules, and a muted member's packets reaching no one, through leaving and joining again.
+  - The notices file is current, and every module the binary links has a license in it.
+- Page tests: when an indicator lights and how long it stays lit, the choice to resume, restart or join again, the reasons' text, and the `old.reddit.com` preference.
+- The den e2e gains short checks, on Linux and Windows: a link in a channel and in a DM arrives rewritten; the voice probe's call rides out a Caddy restart without a new call, with packets crossing throughout; a staff mute stops the member's packets, and a staff disconnect ends their call with its reason. The hour-long call stays out of the e2e.
+- Before M3.2's code depends on it, a spike in `spikes/rnnoise/` builds RNNoise with the pinned wasi-sdk and runs it in an AudioWorklet under the page's CSP in the four target browsers. It measures the module's size, its CPU per 10 ms frame and the latency it adds, for the regular and the little model, and checks that echo cancellation still works with the browser's suppressor off. Its findings come here, and it goes before M3.2's pull request.
+- Before the manual test, Chromium and Firefox in a container with fake microphones, as in M2, check RNNoise on and off, speaking indicators, and a call riding out a Caddy restart.
+- The manual test, as in M2: a test build packed with setup steps for friends, on a den the owner hosts on their own domain, which the group uses as its voice chat for a day, with everyone in one call for at least an hour. On the way: RNNoise on and off, speaking indicators in each target browser, staff disconnecting and muting, Wi-Fi dropped for a few seconds, a laptop moving between networks, a Caddy reload mid-call, and a YouTube share link in a channel and in a DM.
+
 **Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
 
 **After v1 loose ideas:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, and AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos.
 
 ## Open questions
 
+- [ ] RNNoise in an AudioWorklet: its size, CPU and added latency in each target browser, and the regular or the little model (M3.2's spike).
 - [ ] Owner defaults for screen share caps.
 - [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
