@@ -1,49 +1,10 @@
 ---
 title: Dens
-toc: false
+tagline: Self-hosted chat
+description: >-
+  Dens is a self-hosted chat app with text, voice and screen share, built so
+  small communities can talk without platforms mining or owning their
+  conversations.
+images:
+  - og.png
 ---
-
-Dens is self-hosted chat for small communities: text channels, DMs, voice and
-screen share, running on a machine that you or a friend control. There is no
-central service and no account with a company. Each den (a community) is its
-own server, and your identity lives on your own computer.
-
-{{< callout type="info" >}}
-Dens is in early development and has no releases yet.
-{{< /callout >}}
-
-## Living-room privacy
-
-A den is a closed door, not a bunker. It keeps conversations away from
-platforms that mine or sell them, and from bulk data requests to a large
-provider. Your history doesn't disappear when a company changes its terms.
-
-It does not hide channels from the person who runs the den. The den owner can
-read what's posted in a den's channels, files included, and Dens says so in the
-app. Direct messages are different: they're end-to-end encrypted, so only the
-two people in one can read it, not the den's owner, though the owner can still
-see who talks to whom, and when. If you need protection from a determined
-investigator, use a tool built for that threat, such as
-[Signal](https://signal.org/).
-
-Dens also collects as little as it can. Photos, videos and recordings lose
-their location and camera details on your own computer before they're sent,
-so a den never receives them, and the few formats Dens can't clean, such as
-AVIF photos and camera raw, aren't sent at all. It doesn't write IP addresses
-to disk, deletions remove data for real, and a den can set messages to expire.
-
-## How it works
-
-- **Every install is a client.** A small background service on your computer
-  serves the chat page to your own browser at `localhost` and keeps your keys.
-  You log in to each den with a key that never leaves your machine.
-- **Any install can also host one den.** A den is sized for about 1,000
-  members, 500 online at once, 10 people in voice and 2 screen shares.
-- **You can leave.** Clients and dens can move to new machines from a backup,
-  and nothing depends on a company staying friendly.
-
-## Platforms
-
-Dens runs on Linux and Windows 11, for both joining and hosting dens. Linux is
-recommended because its service sandbox is stronger. It works in any modern
-browser and is tested on LibreWolf, Ungoogled Chromium, Waterfox and Brave.

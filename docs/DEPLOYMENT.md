@@ -83,5 +83,11 @@ The generated site still uses the configured `baseURL` for canonical URLs.
 ## Site identity
 
 - `hugo.yaml`: title, both descriptions and the GitHub navigation URL.
-- `layouts/_partials/custom/footer.html`: author name and profile link.
-- `static/favicon.svg`: the site icon.
+- `layouts/_partials/custom/footer.html`: author name and profile link on the
+  documentation pages; the landing page's footer in `layouts/home.html`
+  carries them too, with the GitHub links.
+- `static/favicon.svg`: the site icon. `favicon.ico`, the `favicon-*.png`,
+  `apple-touch-icon.png` and `android-chrome-*.png` files are renders of it,
+  and `site.webmanifest` names the site; they replace Hextra's own.
+- `static/og.png`: the image a shared link shows, named in
+  `content/_index.md`.

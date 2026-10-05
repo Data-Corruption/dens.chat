@@ -1,0 +1,93 @@
+{{- /* Two machines and their EULAs. The cloud's unrolls down the rest of the
+   page; yours is three lines. Each is a <details>, so it opens without the
+   script; landing.js adds the unrolling. */ -}}
+{{- /* The fine print. Entries may hold a link, so they're HTML; the tiny
+   paragraphs at the bottom remix them as plain text. */}}
+{{- $fine := slice
+  "Deleting a message hides it from you."
+  "“Free” is just a cosmetic label; you’re paying in ways you can’t comprehend."
+  `If you don’t pay attention during ads, we suspend your service. Attention may be verified by asking you to say the advertiser’s name out loud to end the ad; see <a href="https://patents.google.com/patent/US8246454B2/en" target="_blank" rel="noopener noreferrer">US 8,246,454 B2</a>. We are not Sony or associated with them.`
+  "Encryption is available where available."
+  "Deleting your account hides it from you. You can’t have it back or be forgotten, for your safety."
+  "Your username is yours until someone more valuable wants it."
+  "Your community’s rules are our rules, which are our advertisers’ rules."
+  "Headings are for convenience only and do not mean what they say."
+  "If any provision is found unenforceable, the others will be enforced harder."
+  "You may not scrape, export, reverse engineer, or meaningfully leave."
+  "Rights holders, partners, sponsors and their vendors may also review your content."
+  "We are committed to your privacy, which is why we wrote this document."
+  "Third-party cookies are delicious, and you have consented to them."
+  "Your continued breathing constitutes acceptance."
+  "Anything you post may be used to train something that replaces you."
+  "Account recovery requires a government ID, a selfie, your SSN, pictures of your children, address, and bank info. This info will be shared with local and federal law enforcement. Typical recovery requests get a response within 6 months."
+  "Archived content may be unarchived, sold, or shown at a shareholder meeting."
+  `All private messages will be scanned and sent to law enforcement if needed. Do not worry if they contain jokes; <a href="https://www.ibtimes.co.uk/snapchat-message-arrest-illinois-student-teacher-1811948" target="_blank" rel="noopener noreferrer">we can tell the difference</a>. We are not Snapchat or associated with them.`
+  "Our policies default to the most authoritarian jurisdiction we operate in."
+  "We may tell you about changes by email, banner, push notification, or not at all."
+  "You agree to cease possessing sexual traits, expressions and thoughts. You will also have as many children as possible and ensure they use our products."
+  "Premium features include features."
+  "We may sunset any product, including the one you just moved your whole community to."
+  "By reading this far you have agreed to the next clause."
+  "You agree to stop reading."
+}}
+<figure class="machine machine--home">
+  {{ partial "landing/pc.svg" . }}
+  <figcaption class="machine-label">Your PC <span class="micro">at home // uptime: whenever you’re in // watched by: the cat</span></figcaption>
+  <details class="eula eula--home">
+    <summary class="rod"><span class="rod-tag">EULA</span><span class="sr-only">: unroll the terms for your own PC</span></summary>
+    <div class="unroll">
+    <div class="paper">
+      <div class="paper-in">
+        <p class="paper-title">End user license agreement</p>
+        <ol class="paper-terms">
+          <li>It’s your computer.</li>
+          <li>It’s your den. Be cool to each other.</li>
+          <li>The code is MIT licensed: do what you want with it. It comes with no warranty.</li>
+        </ol>
+      </div>
+    </div>
+    <span class="paper-roll" aria-hidden="true"></span>
+    </div>
+  </details>
+</figure>
+<figure class="machine machine--cloud">
+  {{ partial "landing/cloud.svg" . }}
+  <figcaption class="machine-label">Their cloud <span class="micro">somewhere // uptime 99.99% // watched by: everyone</span></figcaption>
+  <details class="eula eula--cloud" data-reach="page">
+    <summary class="rod"><span class="rod-tag">EULA</span><span class="sr-only">: unroll the cloud’s terms of service</span></summary>
+    <div class="unroll">
+    <div class="paper">
+      <div class="paper-in">
+        <p class="paper-title">Terms of service</p>
+        <p class="paper-rev">Revision 47. Effective whenever we say. Supersedes everything you agreed to before.</p>
+        <ol class="paper-terms">
+          <li><b>Acceptance.</b> By opening, scrolling, hovering over or thinking about this service, you agree to these terms. We may change them at any time, for any reason, and will let you know by changing them.</li>
+          <li><b>Your content.</b> You keep ownership of your content. You grant us a worldwide, perpetual, irrevocable, royalty-free, sublicensable and transferable license to host, store, copy, analyze, modify, translate, publish, display, distribute and train on it, and to let our partners do the same.</li>
+          <li><b>Acceptable use.</b> You will not post anything that our advertisers, payment processors, app stores, insurers, investors, the loudest accounts in our replies, or any government we are currently trying to please would find upsetting. This list may change before you finish reading it.</li>
+          <li><b>Moderation.</b> We may remove content, mute, suspend or delete accounts, and close whole communities at our sole discretion. Appeals are reviewed by an automated system trained on the content it removed.</li>
+          <li><b>Your data.</b> We collect what you say, who you say it to, when, from where, on what device, and how long you hesitated before sending it. We share it with our affiliates, our partners, their partners, and anyone holding a court order or a sufficiently large purchase order.</li>
+          <li><b>Personalization.</b> To improve your experience, we will show you things you did not ask for, in the space where your friends used to be.</li>
+          <li><b>Features.</b> Features you rely on may be moved into a paid tier, renamed, or retired. Your community may be measured as engagement and optimized accordingly.</li>
+          <li><b>Disputes.</b> You waive your right to a class action, a jury trial, and a sense of humor. Disputes are settled by an arbitrator we pick, in a city you have never been to.</li>
+          <li><b>Termination.</b> We may end the service, or your access to it, at any time. Your messages, art, inside jokes and years of your friends’ lives will be handled in accordance with section 5.</li>
+          <li><b>Liability.</b> Nothing is our fault. To the extent anything is our fault, see section 9.</li>
+          <li><b>Changes.</b> See section 1.</li>
+        </ol>
+        <ol class="paper-fine">
+          {{- range $i, $c := $fine }}
+          <li><span>12.{{ add $i 1 }}</span> {{ $c | safeHTML }}</li>
+          {{- end }}
+        </ol>
+        <div class="paper-finer" aria-hidden="true">
+          {{- range seq 18 }}
+          {{- $n := . }}
+          <p>§ {{ add 12 $n }}.{{ mod (mul $n 7) 13 }}({{ index (slice "a" "b" "c" "d" "e") (mod $n 5) }}) {{ range $j, $c := $fine }}{{ if eq (mod (add $j $n) 3) 0 }}{{ $c | plainify }} {{ end }}{{ end }}</p>
+          {{- end }}
+        </div>
+      </div>
+      <p class="paper-sign">Sign here ______________________ <span>(you already did)</span></p>
+    </div>
+    <span class="paper-roll" aria-hidden="true"></span>
+    </div>
+  </details>
+</figure>

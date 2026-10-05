@@ -1,0 +1,24 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+{{- if and hugo.IsProduction (not .Params.noindex) }}
+<meta name="robots" content="index, follow">
+{{- else }}
+<meta name="robots" content="noindex, nofollow">
+{{- end }}
+<title>{{ if .IsHome }}{{ site.Title }} · {{ .Params.tagline | default site.Title }}{{ else }}{{ .Title }} · {{ site.Title }}{{ end }}</title>
+<meta name="description" content="{{ .Description | default site.Params.description | plainify | strings.TrimSpace }}">
+<link rel="canonical" href="{{ .Permalink }}">
+{{- partial "opengraph.html" . }}
+{{- partial "twitter_cards.html" . }}
+{{- partialCached "favicons.html" . }}
+{{- range slice "archivo-expanded-900" "archivo-expanded-700" "silkscreen-400" }}
+<link rel="preload" href="{{ printf "fonts/%s.woff2" . | relURL }}" as="font" type="font/woff2" crossorigin>
+{{- end }}
+{{- /* Before anything paints: the skin the visitor picked, here or in the docs. */}}
+{{- $theme := resources.Get "js/theme.js" }}
+{{- if hugo.IsProduction }}{{ $theme = $theme | minify | fingerprint }}{{ end }}
+<script src="{{ $theme.RelPermalink }}"{{ with $theme.Data.Integrity }} integrity="{{ . }}"{{ end }}></script>
+{{- $css := resources.Get "css/landing.css" }}
+{{- if hugo.IsProduction }}{{ $css = $css | minify | fingerprint }}{{ end }}
+<link rel="stylesheet" href="{{ $css.RelPermalink }}"{{ with $css.Data.Integrity }} integrity="{{ . }}"{{ end }}>
