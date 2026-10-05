@@ -215,6 +215,13 @@ run() {
     { echo "error: the member's history after the restart is: $history" >&2; return 1; }
   echo ">> The member's history is complete after the restart"
 
+  local linked linked_text
+  linked=$(guest "$CLIENT" send "$den_id" "$channel" "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42")
+  linked_text=$(guest "$DEN" text-of "$den_id" "$channel" "$linked")
+  [[ "$linked_text" == "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42" ]] ||
+    { echo "error: a YouTube share link reached the channel as: $linked_text" >&2; return 1; }
+  echo ">> A YouTube share link reached the channel without its tracking, with its timestamp"
+
   echo ">> A call through the den's media ports"
   local lounge alice_id bob_id network
   lounge=$(guest "$DEN" channel "$den_id" Lounge voice)
@@ -300,6 +307,11 @@ run() {
   guest "$DEN" send "$den_id" "$dm" "a private word" >/dev/null
   history=$(member history "$den_id" "$dm")
   [[ "$history" == "a private word" ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
+  # The den can't read a DM, so the sender's Dens takes the tracking out.
+  linked=$(guest "$DEN" send "$den_id" "$dm" "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42")
+  linked_text=$(member text-of "$den_id" "$dm" "$linked")
+  [[ "$linked_text" == "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42" ]] ||
+    { echo "error: a YouTube share link reached the DM as: $linked_text" >&2; return 1; }
   upload=$(member upload "$den_id" /root/gps-photo.jpg IMG_0002.jpg "$dm")
   read -r file stripped size preview <<<"$upload"
   [[ "$stripped $size $preview" == "true 300x400 preview" ]] || { echo "error: the DM photo came back as: $upload" >&2; return 1; }
@@ -322,7 +334,7 @@ run() {
   guest "$DEN" range "$den_id" "$file" /root/dm-video.mp4 200000 299999
   guest "$DEN" dm-sealed "a private word"
   stored=$(guest "$DEN" sealed)
-  echo ">> The DM took messages only after both typed each other's digits; its text, photo and video reached the other side, and the den holds ${stored} sealed files"
+  echo ">> The DM took messages only after both typed each other's digits; its text, a link without its tracking, a photo and a video reached the other side, and the den holds ${stored} sealed files"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text

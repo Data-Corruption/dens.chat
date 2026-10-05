@@ -356,6 +356,13 @@ function Get-History($Browser, [string]$DenID, [string]$Channel) {
     return (@($page.messages) | ForEach-Object { $_.text }) -join "|"
 }
 
+function Get-MessageText($Browser, [string]$DenID, [string]$Channel, [string]$ID) {
+    $page = Invoke-Api $Browser GET "/api/dens/$DenID/channels/$Channel/messages?limit=100"
+    $texts = @(@($page.messages) | Where-Object { $_.id -eq $ID } | ForEach-Object { $_.text })
+    if ($texts.Count -eq 0) { Fail "message $ID isn't in channel $Channel" }
+    return $texts[0]
+}
+
 function Wait-Channel($Browser, [string]$DenID) {
     $deadline = (Get-Date).AddSeconds(15)
     while ((Get-Date) -lt $deadline) {
@@ -546,6 +553,10 @@ den.test:$HttpsPort {
     Send-Message $owner $denID $channel "after the restart"
     $history = Get-History $member $denID $channel
     if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
+    $linked = Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42" }
+    $linkedText = Get-MessageText $owner $denID $channel $linked.id
+    if ($linkedText -cne "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42") { Fail "a YouTube share link reached the channel as: $linkedText" }
+    Write-Host "A YouTube share link reached the channel without its tracking, with its timestamp."
 
     Step "a call through the den's media ports"
     Invoke-Api $owner POST "/api/dens/$denID/channels" @{ name = "Lounge"; kind = "voice" } | Out-Null
@@ -647,6 +658,10 @@ den.test:$HttpsPort {
     Send-Message $owner $denID $dm "a private word"
     $history = Get-History $member $denID $dm
     if ($history -ne "a private word") { Fail "the member's DM reads: $history" }
+    # The den can't read a DM, so the sender's Dens takes the tracking out.
+    $linked = Invoke-Api $owner POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42" }
+    $linkedText = Get-MessageText $member $denID $dm $linked.id
+    if ($linkedText -cne "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42") { Fail "a YouTube share link reached the DM as: $linkedText" }
     try {
         $upload = Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/uploads?channel=$dm" -Method POST -WebSession $member.Session `
             -UseBasicParsing -Headers @{ Origin = $member.Origin; "Dens-Filename" = "IMG_0002.jpg" } `
@@ -690,7 +705,7 @@ den.test:$HttpsPort {
     foreach ($f in $dbFiles) {
         if ($latin1.GetString((Read-Shared $f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
     }
-    Write-Host "The DM took messages only after both typed each other's digits; its text and photo reached the other side sealed."
+    Write-Host "The DM took messages only after both typed each other's digits; its text, a link without its tracking, and its photo reached the other side sealed."
 
     Step "two members tick one checklist at the same moment"
     $text = (0..5 | ForEach-Object { "[ ] item $_" }) -join "`n"
