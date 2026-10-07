@@ -58,6 +58,11 @@ DEFAULT_ZLIB_VERSION="1.3.2"
 # Reads media metadata independently of FFmpeg, to check what stripping
 # leaves (TestExiftoolFindsNothingLeft in internal/media/ffmpeg).
 DEFAULT_EXIFTOOL_VERSION="13.55"
+# RNNoise, the noise suppression the page runs in calls, built for WebAssembly with
+# the media module's wasi-sdk and binaryen: its release's code, and the model
+# its v0.2 tag names (model_version), which the release doesn't carry.
+DEFAULT_RNNOISE_VERSION="0.2"
+DEFAULT_RNNOISE_MODEL_VERSION="0b50c45"
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
@@ -76,6 +81,8 @@ FFMPEG_VERSION="${FFMPEG_VERSION:-$DEFAULT_FFMPEG_VERSION}"
 WASM2GO_VERSION="${WASM2GO_VERSION:-$DEFAULT_WASM2GO_VERSION}"
 ZLIB_VERSION="${ZLIB_VERSION:-$DEFAULT_ZLIB_VERSION}"
 EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-$DEFAULT_EXIFTOOL_VERSION}"
+RNNOISE_VERSION="${RNNOISE_VERSION:-$DEFAULT_RNNOISE_VERSION}"
+RNNOISE_MODEL_VERSION="${RNNOISE_MODEL_VERSION:-$DEFAULT_RNNOISE_MODEL_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
 #
@@ -108,6 +115,8 @@ BINARYEN_SHA_LINUX_ARM64_OVERRIDE="${BINARYEN_SHA_LINUX_ARM64:-}"
 FFMPEG_SHA_OVERRIDE="${FFMPEG_SHA:-}"
 ZLIB_SHA_OVERRIDE="${ZLIB_SHA:-}"
 EXIFTOOL_SHA_OVERRIDE="${EXIFTOOL_SHA:-}"
+RNNOISE_SHA_OVERRIDE="${RNNOISE_SHA:-}"
+RNNOISE_MODEL_SHA_OVERRIDE="${RNNOISE_MODEL_SHA:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -145,6 +154,12 @@ FFMPEG_SHA="${FFMPEG_SHA:-8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec
 ZLIB_SHA="${ZLIB_SHA:-d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3}"
 # The production release on CPAN, as MetaCPAN lists its SHA-256.
 EXIFTOOL_SHA="${EXIFTOOL_SHA:-5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667}"
+# The release tarball, which GitHub keeps no digest of: its code matches the
+# v0.2 tag's file for file, as GitLab's archive of the tag hashes in MSYS2's
+# PKGBUILD (fafc947f...). Its own model differs from the one the tag names.
+RNNOISE_SHA="${RNNOISE_SHA:-90fce4b00b9ff24c08dbfe31b82ffd43bae383d85c5535676d28b0a2b11c0d37}"
+# The model the v0.2 tag names, as Fedora's sources record it by this SHA-256.
+RNNOISE_MODEL_SHA="${RNNOISE_MODEL_SHA:-4ac81c5c0884ec4bd5907026aaae16209b7b76cd9d7f71af582094a2f98f4b43}"
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -172,6 +187,8 @@ VENDOR_FFMPEG_SRC=""
 VENDOR_ZLIB_SRC=""
 VENDOR_WASM2GO=""
 VENDOR_EXIFTOOL=""
+VENDOR_RNNOISE_SRC=""
+VENDOR_RNNOISE_MODEL=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -181,7 +198,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
-  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool)
+  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model)
 
 # Pin validation --------------------------------------------------------------
 
@@ -227,6 +244,8 @@ validate_pins() {
   require_hash_overrides "FFmpeg" "$FFMPEG_VERSION" "$DEFAULT_FFMPEG_VERSION" "$FFMPEG_SHA_OVERRIDE"
   require_hash_overrides "zlib" "$ZLIB_VERSION" "$DEFAULT_ZLIB_VERSION" "$ZLIB_SHA_OVERRIDE"
   require_hash_overrides "exiftool" "$EXIFTOOL_VERSION" "$DEFAULT_EXIFTOOL_VERSION" "$EXIFTOOL_SHA_OVERRIDE"
+  require_hash_overrides "RNNoise" "$RNNOISE_VERSION" "$DEFAULT_RNNOISE_VERSION" "$RNNOISE_SHA_OVERRIDE"
+  require_hash_overrides "RNNoise's model" "$RNNOISE_MODEL_VERSION" "$DEFAULT_RNNOISE_MODEL_VERSION" "$RNNOISE_MODEL_SHA_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -252,6 +271,8 @@ validate_pins() {
   validate_sha256 "$FFMPEG_SHA" "FFMPEG_SHA"
   validate_sha256 "$ZLIB_SHA" "ZLIB_SHA"
   validate_sha256 "$EXIFTOOL_SHA" "EXIFTOOL_SHA"
+  validate_sha256 "$RNNOISE_SHA" "RNNOISE_SHA"
+  validate_sha256 "$RNNOISE_MODEL_SHA" "RNNOISE_MODEL_SHA"
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -584,6 +605,27 @@ vendor_zlib_src() {
   printf '🟢 Vendored zlib source %s\n' "$ZLIB_VERSION"
 }
 
+# vendor_rnnoise_src and vendor_rnnoise_model resolve to RNNoise's verified
+# release tarball and the model its tag names, which scripts/rnnoise.sh
+# unpacks over the release's own.
+vendor_rnnoise_src() {
+  mkdir -p "$TOOLS_DIR"
+  VENDOR_RNNOISE_SRC="$TOOLS_DIR/rnnoise-${RNNOISE_VERSION}.tar.gz"
+  download_verified "$VENDOR_RNNOISE_SRC" \
+    "https://github.com/xiph/rnnoise/releases/download/v${RNNOISE_VERSION}/rnnoise-${RNNOISE_VERSION}.tar.gz" \
+    "$RNNOISE_SHA" "RNNoise source"
+  printf '🟢 Vendored RNNoise source %s\n' "$RNNOISE_VERSION"
+}
+
+vendor_rnnoise_model() {
+  mkdir -p "$TOOLS_DIR"
+  VENDOR_RNNOISE_MODEL="$TOOLS_DIR/rnnoise_data-${RNNOISE_MODEL_VERSION}.tar.gz"
+  download_verified "$VENDOR_RNNOISE_MODEL" \
+    "https://media.xiph.org/rnnoise/models/rnnoise_data-${RNNOISE_MODEL_VERSION}.tar.gz" \
+    "$RNNOISE_MODEL_SHA" "RNNoise model"
+  printf '🟢 Vendored RNNoise model %s\n' "$RNNOISE_MODEL_VERSION"
+}
+
 vendor_wasm2go() {
   vendor_go_tool wasm2go \
     "github.com/ncruces/wasm2go@${WASM2GO_VERSION}" \
@@ -627,6 +669,8 @@ vendor_ensure() {
     zlib-src) vendor_zlib_src ;;
     wasm2go) vendor_wasm2go ;;
     exiftool) vendor_exiftool ;;
+    rnnoise-src) vendor_rnnoise_src ;;
+    rnnoise-model) vendor_rnnoise_model ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -654,6 +698,8 @@ vendor_resolved() {
     zlib-src) printf '%s' "$VENDOR_ZLIB_SRC" ;;
     wasm2go) printf '%s' "$VENDOR_WASM2GO" ;;
     exiftool) printf '%s' "$VENDOR_EXIFTOOL" ;;
+    rnnoise-src) printf '%s' "$VENDOR_RNNOISE_SRC" ;;
+    rnnoise-model) printf '%s' "$VENDOR_RNNOISE_MODEL" ;;
   esac
 }
 
@@ -701,9 +747,9 @@ vendor_main() {
     local candidate
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
-        # The media module's tools are large, and only its build and checks
-        # ask for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool) continue ;;
+        # The media module's and RNNoise's inputs are large, and only their
+        # builds and checks ask for them.
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model) continue ;;
       esac
       tools+=("$candidate")
     done
