@@ -280,6 +280,9 @@ jobs:
       - name: Check the module matches its inputs
         run: ./scripts/ffmpeg.sh --check
 
+      - name: Check RNNoise's module matches its inputs
+        run: ./scripts/rnnoise.sh --check
+
       - name: Check stripped copies with exiftool
         run: |
           set -euo pipefail

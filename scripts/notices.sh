@@ -96,6 +96,9 @@ generate() {
     "Dens takes it under the MIT license, one of the three it offers."
   section "musl, as wasi-libc includes it" "$TEXTS/musl.txt" "https://musl.libc.org"
   section "cloudlibc, as wasi-libc includes it" "$TEXTS/cloudlibc.txt" "https://github.com/NuxiNL/cloudlibc"
+  section "RNNoise ${DEFAULT_RNNOISE_VERSION}, with its model ${DEFAULT_RNNOISE_MODEL_VERSION}, in the page" "$TEXTS/rnnoise.txt" \
+    "https://gitlab.xiph.org/xiph/rnnoise" \
+    "Its model comes from the same project, beside its code."
   section "Preact ${DEFAULT_PREACT_VERSION}, in the page" "$TEXTS/preact.txt" "https://preactjs.com"
   section "Tailwind CSS ${DEFAULT_TAILWIND_VERSION#v}, in the page's styles" "$TEXTS/tailwindcss.txt" "https://tailwindcss.com"
   section "daisyUI ${DEFAULT_DAISYUI_VERSION#v}, in the page's styles" "$TEXTS/daisyui.txt" "https://daisyui.com"
