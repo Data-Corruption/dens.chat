@@ -52,7 +52,7 @@ func New(a *app.App) http.Handler {
 		})
 	})
 	r.Use(guard.Host(guard.LoopbackHosts(a.Instance.ClientPort)))
-	r.Use(guard.SecurityHeaders)
+	r.Use(guard.PageSecurityHeaders)
 	r.Use(guard.SameOrigin)
 
 	r.Get("/healthz", handleHealth)

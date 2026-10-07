@@ -12,10 +12,20 @@ import (
 // SecurityHeaders sets a strict policy on every response: scripts, styles,
 // media and connections only from the page's own origin, no framing, no
 // referrer, and no MIME sniffing.
-func SecurityHeaders(next http.Handler) http.Handler {
+func SecurityHeaders(next http.Handler) http.Handler { return securityHeaders(next, "'self'") }
+
+// PageSecurityHeaders sets the same policy on the client listener, which
+// serves the page, with WebAssembly allowed (M3): the page compiles RNNoise
+// for calls. 'wasm-unsafe-eval' allows WebAssembly but not eval, so a
+// script on the page gains nothing it couldn't already do.
+func PageSecurityHeaders(next http.Handler) http.Handler {
+	return securityHeaders(next, "'self' 'wasm-unsafe-eval'")
+}
+
+func securityHeaders(next http.Handler, scriptSrc string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; "+
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src "+scriptSrc+"; style-src 'self'; "+
 			"img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; "+
 			"frame-ancestors 'none'; base-uri 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")

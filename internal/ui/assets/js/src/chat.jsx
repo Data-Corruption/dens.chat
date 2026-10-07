@@ -104,6 +104,7 @@ export function Chat({ denID, channelID, navigate }) {
     const [typing, setTyping] = useState(() => new Map());
     const [visible, setVisible] = useState(document.visibilityState === 'visible');
     const [live, setLive] = useState(true);
+    const { call: myCall } = useCall();
     // newDevice is a device that just signed in to this member's account.
     const [newDevice, setNewDevice] = useState(null);
     // status is the den's status on this computer: its sign-ins waiting
@@ -264,7 +265,7 @@ export function Chat({ denID, channelID, navigate }) {
                             onOpen={openChannel} onDialog={setDialog} />
                     )}
                     <div class="mt-auto">
-                        <CallBar denID={denID} />
+                        <CallBar denID={denID} staffMuted={staffMuted(view, myCall)} />
                         <div class="flex items-center gap-1 border-t border-base-300 p-2">
                             <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
                                 onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
@@ -386,6 +387,14 @@ function ListTabs({ tab, onTab, view, reads, open }) {
     );
 }
 
+// staffMuted says whether staff muted this member in their call in this
+// den, which a staff mute outlasts.
+export function staffMuted(view, call) {
+    if (!call || !view?.me) return false;
+    const c = (view.calls || []).find((x) => x.channel_id === call.channel);
+    return !!c?.members.find((m) => m.id === view.me.id)?.staff_muted;
+}
+
 function applyReads(view, reads) {
     const changed = new Map(reads.map((r) => [r.channel_id, r]));
     return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
@@ -396,7 +405,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
     const ungrouped = listed.filter((c) => !c.group_id).sort((a, b) => a.position - b.position);
     const groups = [...view.groups].sort((a, b) => a.position - b.position);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
-    const { call } = useCall();
+    const { call, speaking, volumes } = useCall();
     const item = (c) => {
         const r = reads.get(c.id);
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
@@ -416,7 +425,10 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
                     {c.staff_only && <span class="text-xs text-base-content/50" title="Staff only">🔒</span>}
                     {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                 </button>
-                {voice && <CallMembers call={calls.get(c.id)} members={members} />}
+                {voice && (
+                    <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
+                        volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} />
+                )}
             </li>
         );
     };
