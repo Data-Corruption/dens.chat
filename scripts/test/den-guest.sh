@@ -287,15 +287,39 @@ named-channel)
     fail "channel $2 never reached this client"
     ;;
 voice-probe)
-    # voice-probe DEN_ID CHANNEL_ID MEMBER_ID udp|tcp: join the call in a
-    # voice channel through the paired browser's session, as its page would,
-    # with Pion in the browser's place, over that one network, and pass once
-    # MEMBER_ID is heard.
+    # voice-probe DEN_ID CHANNEL_ID MEMBER_ID udp|tcp [THEN [STAY]]: join the
+    # call in a voice channel through the paired browser's session, as its
+    # page would, with Pion in the browser's place, over that one network,
+    # and pass once MEMBER_ID is heard and THEN holds (see TestVoiceProbe):
+    # ride, restart, silence or ended:REASON. With THEN, the probe creates
+    # /root/probe-ready once it hears the member, for wait-ready. STAY is
+    # how many seconds it stays in the call at the end.
     cookie=$(awk '$6 ~ /^dens_session_/ { print $6 "=" $7 }' "$JAR")
     [ -n "$cookie" ] || fail "no browser session to call with"
+    ready=""
+    [ -n "${5:-}" ] && ready=/root/probe-ready
     DENS_VOICE_PROBE=$BASE DENS_PROBE_COOKIE=$cookie DENS_PROBE_DEN=$1 DENS_PROBE_CHANNEL=$2 DENS_PROBE_HEAR=$3 \
-        DENS_PROBE_NETWORK=$4 /root/voice-probe -test.run '^TestVoiceProbe$' -test.v -test.count=1 ||
-        fail "the call over $4 didn't carry member $3's audio"
+        DENS_PROBE_NETWORK=$4 DENS_PROBE_THEN=${5:-} DENS_PROBE_STAY=${6:-} DENS_PROBE_READY=$ready \
+        /root/voice-probe -test.run '^TestVoiceProbe$' -test.v -test.count=1 ||
+        fail "the call over $4 didn't carry member $3's audio${5:+, then $5}"
+    ;;
+wait-ready)
+    # wait-ready: wait until this install's voice probe has heard the other
+    # side, and is waiting for what comes next.
+    for _ in $(seq 1 360); do
+        [ -f /root/probe-ready ] && { rm -f /root/probe-ready; exit 0; }
+        sleep 0.25
+    done
+    fail "the voice probe never heard the other side"
+    ;;
+voice-mute)
+    # voice-mute DEN_ID MEMBER_ID true|false: mute a member in calls, as
+    # staff, or lift it.
+    api POST "/api/dens/$1/members/$2/voice-mute" "{\"muted\":$3}" >/dev/null
+    ;;
+disconnect)
+    # disconnect DEN_ID MEMBER_ID: end a member's call, as staff.
+    api POST "/api/dens/$1/members/$2/disconnect" "{}" >/dev/null
     ;;
 wait-channel)
     # wait-channel DEN_ID: print the first channel's ID once one exists.

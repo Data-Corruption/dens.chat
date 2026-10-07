@@ -13,7 +13,11 @@
 # member must reconnect with the whole history. The two then call each other
 # in a voice channel, a test binary with Pion standing in for each one's
 # browser, and each must hear the other: over UDP, and with the member's
-# side over TCP alone. The member sends a phone photo that must arrive
+# side over TCP alone. The member's call must ride out Caddy restarting,
+# and then its own service restarting, the den holding it while the member
+# is away and the member taking it back on the same connection. A staff
+# mute must silence the member, and a staff disconnect end their call. The
+# member sends a phone photo that must arrive
 # stripped, a phone video that must arrive stripped with its preview and
 # play from any byte, and an iPhone HEIC that must arrive as a JPEG. The
 # owner opens a DM, which takes no message until both members type each
@@ -242,6 +246,72 @@ run() {
     wait "$owner" || { cat "$RUN_LOG_DIR/call-owner-$network.log" >&2; return 1; }
     echo ">> The owner and the member heard each other, the member over $network"
   done
+
+  # The member's install reaches the den through Caddy, so restarting Caddy
+  # drops its connection; the call's media goes straight to the den's ports
+  # and keeps going, and the member's page takes the call back.
+  echo ">> A call rides out the den's proxy restarting"
+  local member_probe
+  guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp "" 45 >"$RUN_LOG_DIR/ride-owner.log" 2>&1 &
+  owner=$!
+  guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp ride >"$RUN_LOG_DIR/ride-member.log" 2>&1 &
+  member_probe=$!
+  if ! guest "$CLIENT" wait-ready; then
+    wait "$member_probe" "$owner" || :
+    cat "$RUN_LOG_DIR/ride-member.log" "$RUN_LOG_DIR/ride-owner.log" >&2
+    return 1
+  fi
+  "${INCUS[@]}" exec "$DEN" -- systemctl restart caddy-e2e
+  if ! wait "$member_probe"; then
+    wait "$owner" || :
+    cat "$RUN_LOG_DIR/ride-member.log" "$RUN_LOG_DIR/ride-owner.log" >&2
+    return 1
+  fi
+  wait "$owner" || { cat "$RUN_LOG_DIR/ride-owner.log" >&2; return 1; }
+  echo ">> The member's call rode out Caddy restarting, its audio crossing throughout"
+
+  # The member's service restarts, as on an update: its page's socket and
+  # its connection to the den close together, the den holds the call, and
+  # the page takes it back once the service is back.
+  echo ">> A call rides out the member's service restarting"
+  guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp "" 45 >"$RUN_LOG_DIR/restart-owner.log" 2>&1 &
+  owner=$!
+  guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp restart >"$RUN_LOG_DIR/restart-member.log" 2>&1 &
+  member_probe=$!
+  if ! guest "$CLIENT" wait-ready; then
+    wait "$member_probe" "$owner" || :
+    cat "$RUN_LOG_DIR/restart-member.log" "$RUN_LOG_DIR/restart-owner.log" >&2
+    return 1
+  fi
+  "${INCUS[@]}" exec "$CLIENT" -- systemctl restart dens@main
+  if ! wait "$member_probe"; then
+    wait "$owner" || :
+    cat "$RUN_LOG_DIR/restart-member.log" "$RUN_LOG_DIR/restart-owner.log" >&2
+    return 1
+  fi
+  wait "$owner" || { cat "$RUN_LOG_DIR/restart-owner.log" >&2; return 1; }
+  echo ">> The member's call rode out its service restarting, its audio crossing throughout"
+
+  echo ">> Staff mute the member in the call, then disconnect them"
+  guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp silence >"$RUN_LOG_DIR/staff-owner.log" 2>&1 &
+  owner=$!
+  guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp ended:disconnected_by_staff >"$RUN_LOG_DIR/staff-member.log" 2>&1 &
+  member_probe=$!
+  if ! guest "$DEN" wait-ready || ! guest "$CLIENT" wait-ready; then
+    wait "$member_probe" "$owner" || :
+    cat "$RUN_LOG_DIR/staff-member.log" "$RUN_LOG_DIR/staff-owner.log" >&2
+    return 1
+  fi
+  guest "$DEN" voice-mute "$den_id" "$bob_id" true
+  if ! wait "$owner"; then
+    wait "$member_probe" || :
+    cat "$RUN_LOG_DIR/staff-owner.log" "$RUN_LOG_DIR/staff-member.log" >&2
+    return 1
+  fi
+  guest "$DEN" voice-mute "$den_id" "$bob_id" false
+  guest "$DEN" disconnect "$den_id" "$bob_id"
+  wait "$member_probe" || { cat "$RUN_LOG_DIR/staff-member.log" >&2; return 1; }
+  echo ">> A staff mute silenced the member for the owner, and a staff disconnect ended the member's call"
 
 
   echo ">> A phone photo with GPS data, through Caddy"
