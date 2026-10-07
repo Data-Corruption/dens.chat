@@ -3,6 +3,7 @@ package sfu
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -36,11 +37,19 @@ type Peer struct {
 	mic    *webrtc.RTPTransceiver      // receives the member's audio
 	track  *webrtc.TrackLocalStaticRTP // that audio, as the others receive it
 
+	// muted drops the member's audio before it's forwarded, as a staff mute
+	// does.
+	muted atomic.Bool
+
 	mu        sync.Mutex
 	closed    bool
 	version   int
-	waiting   bool // an offer is out
-	stale     bool // the sections changed since that offer
+	offer     string // the offer that's out, as sent
+	waiting   bool   // an offer is out
+	stale     bool   // the sections changed since that offer
+	held      bool   // the member's signaling is away, so no offer goes out
+	answered  bool   // the member has answered an offer
+	restart   bool   // the next offer restarts ICE
 	connected bool
 	answerBy  *time.Timer
 	connectBy *time.Timer
@@ -136,7 +145,7 @@ func (p *Peer) Answer(version int, sdp string) {
 		p.fail()
 		return
 	}
-	p.waiting = false
+	p.waiting, p.answered = false, true
 	p.answerBy.Stop()
 	p.spare = append(p.spare, p.offered...)
 	p.offered = nil
@@ -150,19 +159,20 @@ func (p *Peer) Answer(version int, sdp string) {
 	}
 }
 
-// negotiate sends the client a new offer, or, while one is out, marks it
-// stale, so the next goes once it's answered.
+// negotiate sends the client a new offer, or, while one is out or the
+// member's signaling is away, marks it stale, so the next goes once it's
+// answered or the call resumes.
 func (p *Peer) negotiate() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
 		return
 	}
-	if p.waiting {
+	if p.waiting || p.held {
 		p.stale = true
 		return
 	}
-	offer, err := p.pc.CreateOffer(nil)
+	offer, err := p.pc.CreateOffer(&webrtc.OfferOptions{ICERestart: p.restart})
 	if err == nil {
 		err = p.pc.SetLocalDescription(offer)
 	}
@@ -171,12 +181,70 @@ func (p *Peer) negotiate() {
 		return
 	}
 	p.version++
-	p.waiting, p.stale = true, false
+	p.waiting, p.stale, p.restart = true, false, false
 	p.offered = append(p.offered, p.retiring...)
 	p.retiring = nil
+	p.offer = setOpusParams(denproto.StripCandidates(offer.SDP), opusParams)
 	p.answerBy = time.AfterFunc(p.sfu.answer, p.fail)
-	p.signal.Offer(p.version, denproto.StripCandidates(offer.SDP))
+	p.signal.Offer(p.version, p.offer)
 }
+
+// Hold keeps the member in the call while their signaling is away (M3):
+// their media flows as before, but no offer goes out, and the one that's
+// out waits without its deadline. Pion can't take an offer back, so
+// Resume sends it again.
+func (p *Peer) Hold() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.held {
+		return
+	}
+	p.held = true
+	if p.waiting {
+		p.answerBy.Stop()
+	}
+}
+
+// Resume brings the member's signaling back: the offer that was out goes
+// again, under its version, which a client that answered it already
+// answers again, or the offer the call's changes need goes now.
+func (p *Peer) Resume() {
+	p.mu.Lock()
+	if p.closed || !p.held {
+		p.mu.Unlock()
+		return
+	}
+	p.held = false
+	if p.waiting {
+		p.answerBy = time.AfterFunc(p.sfu.answer, p.fail)
+		p.signal.Offer(p.version, p.offer)
+		p.mu.Unlock()
+		return
+	}
+	again := p.stale
+	p.mu.Unlock()
+	if again {
+		p.negotiate()
+	}
+}
+
+// Restart has the peer's next offer restart ICE, with new credentials, as
+// when the member's connection to the media ports broke: at once, or once
+// the offer that's out is answered. DTLS carries on, so the call keeps its
+// keys and sections. Before the first answer there's nothing to restart.
+func (p *Peer) Restart() {
+	p.mu.Lock()
+	if p.closed || !p.answered {
+		p.mu.Unlock()
+		return
+	}
+	p.restart = true
+	p.mu.Unlock()
+	p.negotiate()
+}
+
+// SetMuted drops the member's audio, or forwards it again.
+func (p *Peer) SetMuted(muted bool) { p.muted.Store(muted) }
 
 // send has the peer send another member's audio, on a spare section if
 // there is one. The caller holds the SFU's lock.
@@ -306,7 +374,7 @@ func (p *Peer) forward(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver)
 			return
 		}
 		now := time.Now()
-		if pkt.PayloadType != uint8(remote.PayloadType()) ||
+		if p.muted.Load() || pkt.PayloadType != uint8(remote.PayloadType()) ||
 			!packets.AllowN(now, 1) || !bytes.AllowN(now, len(pkt.Payload)) {
 			continue
 		}
