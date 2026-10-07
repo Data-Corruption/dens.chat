@@ -75,6 +75,34 @@ func (h *handler) removeMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// disconnectMember ends a member's call at staff's word (M3).
+func (h *handler) disconnectMember(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	if err := h.d.DisconnectFromCall(r.Context(), session(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// voiceMute mutes a member in calls, or lifts it, at staff's word (M3).
+func (h *handler) voiceMute(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	var req denproto.VoiceMuteRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	if err := h.d.SetStaffMute(r.Context(), session(r), chi.URLParam(r, "id"), req.Muted); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handler) bans(w http.ResponseWriter, r *http.Request) {
 	list, err := h.d.Bans(r.Context(), session(r))
 	if err != nil {

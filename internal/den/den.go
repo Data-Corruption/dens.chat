@@ -78,6 +78,9 @@ type Den struct {
 	// PresenceDelay is how long presence changes gather before they're
 	// announced; tests shorten it.
 	PresenceDelay time.Duration
+	// CallHold is how long a call whose socket closed waits for its device
+	// to take it back (M3); tests shorten it.
+	CallHold time.Duration
 }
 
 // Session is an authenticated session.
@@ -103,6 +106,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	d := &Den{
 		db: db, v: v, log: log, Hub: NewHub(), files: newFileStore(storage),
 		TokenLifetime: DefaultTokenLifetime,
+		CallHold:      denproto.CallHold,
 		now:           time.Now,
 		nonces:        map[string]time.Time{},
 		requests:      newRequests(),

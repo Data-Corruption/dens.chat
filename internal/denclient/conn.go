@@ -492,7 +492,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits})
 		return out, err == nil, err
-	case denproto.EventVoiceOffer, denproto.EventVoiceEnded:
+	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(e)
 	case denproto.EventAuthRenewed:

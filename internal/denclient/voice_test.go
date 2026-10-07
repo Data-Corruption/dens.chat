@@ -33,13 +33,18 @@ func (h *denHost) startCalls() {
 // page stands in for a page that holds a call: a test caller is its
 // browser, and it answers the offers its install relays, as the page does.
 type page struct {
-	t      *testing.T
-	m      *denclient.Manager
-	id     string
-	caller *sfu.TestCaller
-	events chan denclient.CallEvent
-	ended  chan string
-	stop   chan struct{}
+	t       *testing.T
+	m       *denclient.Manager
+	id      string
+	caller  *sfu.TestCaller
+	events  chan denclient.CallEvent
+	ended   chan string
+	resumed chan struct{}
+	stop    chan struct{}
+	// The last offer answered, and its answer, which goes again if the den
+	// sends that offer again after a resume, as the page does.
+	version int
+	answer  string
 }
 
 func newPage(t *testing.T, m *denclient.Manager, id string) *page {
@@ -49,7 +54,7 @@ func newPage(t *testing.T, m *denclient.Manager, id string) *page {
 		t.Fatal(err)
 	}
 	p := &page{t: t, m: m, id: id, caller: caller, events: make(chan denclient.CallEvent, 16),
-		ended: make(chan string, 16), stop: make(chan struct{})}
+		ended: make(chan string, 16), resumed: make(chan struct{}, 16), stop: make(chan struct{})}
 	t.Cleanup(func() {
 		close(p.stop)
 		_ = caller.Close()
@@ -73,12 +78,20 @@ func (p *page) run() {
 		case <-p.stop:
 			return
 		case e := <-p.events:
-			if e.Ended != "" {
+			switch {
+			case e.Ended != "":
 				p.ended <- e.Ended
-				continue
-			}
-			if answer, err := p.caller.Answer(e.Offer.SDP); err == nil {
-				p.m.AnswerCall(p.id, e.DenID, e.Offer.Version, answer)
+			case e.Resumed:
+				p.resumed <- struct{}{}
+			case e.Offer != nil:
+				if e.Offer.Version != p.version {
+					answer, err := p.caller.Answer(e.Offer.SDP)
+					if err != nil {
+						continue
+					}
+					p.version, p.answer = e.Offer.Version, answer
+				}
+				p.m.AnswerCall(p.id, e.DenID, e.Offer.Version, p.answer)
 			}
 		}
 	}
@@ -86,8 +99,24 @@ func (p *page) run() {
 
 func (p *page) join(denID, channel string) {
 	p.t.Helper()
-	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, false, p.deliver); err != nil {
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, false, false, p.deliver); err != nil {
 		p.t.Fatal(err)
+	}
+}
+
+// resume asks for the call the den holds, as the page does once its den
+// is back.
+func (p *page) resume(denID, channel string) {
+	p.t.Helper()
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, false, true, p.deliver); err != nil {
+		p.t.Fatal(err)
+	}
+	select {
+	case <-p.resumed:
+	case reason := <-p.ended:
+		p.t.Fatalf("page %s's resume ended the call: %s", p.id, reason)
+	case <-time.After(10 * time.Second):
+		p.t.Fatalf("page %s's call didn't resume", p.id)
 	}
 }
 
@@ -183,13 +212,59 @@ func TestCallThroughTheClient(t *testing.T) {
 	b.waitEnded(denclient.CallDisconnected)
 }
 
+// TestCallRidesOutADroppedConnection checks that a call goes on when its
+// install's connection to the den drops, and that its page takes it back
+// once the connection returns, with its media flowing throughout.
+func TestCallRidesOutADroppedConnection(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.startCalls()
+	name := "Lounge"
+	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+		t.Fatal(err)
+	}
+	var lounge string
+	viewOf(t, member, denID, "the voice channel", func(v denclient.View) bool {
+		for _, c := range v.Channels {
+			if c.Name == name {
+				lounge = c.ID
+			}
+		}
+		return lounge != ""
+	})
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	a, b := newPage(t, owner, "page-a"), newPage(t, member, "page-b")
+	a.join(denID, lounge)
+	// A call lists members in the order the den heard them join.
+	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
+	b.join(denID, lounge)
+	a.hears(bob)
+	b.hears(alice)
+
+	// The den makes the member's install reconnect, as a dropped socket does.
+	bobID, _ := denproto.ParseID(bob)
+	h.d.CloseMemberSockets(bobID, denproto.CloseTooSlow, "too slow")
+	b.waitEnded(denclient.CallDisconnected)
+	a.hears(bob)
+	b.hears(alice)
+	waitFor(t, member, "the den back", connected)
+	b.resume(denID, lounge)
+	viewOf(t, owner, denID, "bob still in the call", showsCall(lounge, alice, bob))
+
+	// Another member's joining reaches the resumed call as an offer.
+	carol := newPage(t, owner, "page-c")
+	carol.join(denID, lounge)
+	a.waitEnded(denproto.VoiceMoved)
+	b.hears(alice)
+	carol.hears(bob)
+}
+
 func TestCallRefusalsReachThePage(t *testing.T) {
 	_, owner, _, denID, general := chatDen(t)
 	a := newPage(t, owner, "page-a")
 	// The den has no calls running: no media ports in this test.
 	a.join(denID, general)
 	a.waitEnded(denproto.VoiceNotFound)
-	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, false, a.deliver); err == nil {
+	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, false, false, a.deliver); err == nil {
 		t.Error("joined a call in a den this install hasn't joined")
 	}
 }

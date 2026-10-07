@@ -13,6 +13,8 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Patch("/api/dens/{den}/me", rt.handleUpdateProfile)
 	r.Put("/api/dens/{den}/members/{member}/role", rt.handleSetRole)
 	r.Post("/api/dens/{den}/members/{member}/remove", rt.handleRemoveMember)
+	r.Post("/api/dens/{den}/members/{member}/disconnect", rt.handleDisconnectFromCall)
+	r.Post("/api/dens/{den}/members/{member}/voice-mute", rt.handleStaffMute)
 	r.Get("/api/dens/{den}/bans", rt.handleBans)
 	r.Delete("/api/dens/{den}/bans/{member}", rt.handleUnban)
 	r.Post("/api/dens/{den}/dms", rt.handleOpenDM)
@@ -61,6 +63,26 @@ func (rt *router) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rt.a.Dens.RemoveMember(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"), req); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (rt *router) handleDisconnectFromCall(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.DisconnectFromCall(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (rt *router) handleStaffMute(w http.ResponseWriter, r *http.Request) {
+	var req denproto.VoiceMuteRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.a.Dens.SetStaffMute(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"), req.Muted); err != nil {
 		rt.denError(w, r, err)
 		return
 	}

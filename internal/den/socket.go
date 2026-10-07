@@ -45,6 +45,9 @@ type socket struct {
 	// voiceOut holds the offers and endings of the call this socket joined,
 	// which go to it alone.
 	voiceOut chan denproto.Event
+	// forGood marks a socket the den closed because its device or member is
+	// done here, whose call ends rather than waits for the device (M3).
+	forGood atomic.Bool
 }
 
 // voice queues an event of the socket's call. A full queue drops it: an
@@ -61,8 +64,12 @@ func (sock *socket) voice(t string, data any) {
 }
 
 // requestClose asks the socket's writer to close it. The first request
-// wins; later ones are dropped rather than blocking.
+// wins; later ones are dropped rather than blocking. A revoked device, a
+// member who's gone, and a logout close it for good.
 func (sock *socket) requestClose(code websocket.StatusCode, reason string) {
+	if code == denproto.CloseRevoked || code == websocket.StatusNormalClosure {
+		sock.forGood.Store(true)
+	}
 	select {
 	case sock.closeReq <- closeRequest{code, reason}:
 	default:
@@ -184,8 +191,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		return
 	}
 	defer d.sockets.remove(sock)
-	// A call ends with the socket that joined it.
-	defer d.leaveCall(sock)
+	// A call waits for its device when its socket closes, or ends with it.
+	defer d.socketClosed(sock)
 	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
@@ -424,6 +431,10 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				}
 			case denproto.EventVoiceLeave:
 				d.leaveCall(sock)
+			case denproto.EventVoiceRestart:
+				if d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) == nil {
+					d.restartCall(sock)
+				}
 			}
 			// Unknown event types are ignored, as the protocol requires.
 		}

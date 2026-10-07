@@ -77,6 +77,8 @@ func New(a *app.App) http.Handler {
 			r.Get("/members/{id}", h.member)
 			r.Patch("/members/{id}", h.setRole)
 			r.Post("/members/{id}/remove", h.removeMember)
+			r.Post("/members/{id}/disconnect", h.disconnectMember)
+			r.Post("/members/{id}/voice-mute", h.voiceMute)
 			r.Patch("/me", h.updateProfile)
 			r.Post("/me/leave", h.leave)
 			r.Get("/bans", h.bans)

@@ -104,6 +104,8 @@ func signOutOthers(ctx context.Context, q querier, member int64, keep []byte) ([
 // devicesGone closes the sockets of device keys that were just deleted,
 // giving reason, and tells the member's other sessions.
 func (d *Den) devicesGone(member int64, keys [][]byte, reason string) error {
+	// A call held for a socket that had already closed ends too.
+	defer d.devicesSignedOut(keys)
 	var errs []error
 	for _, key := range keys {
 		d.sockets.closeKey(key, denproto.CloseRevoked, reason)
