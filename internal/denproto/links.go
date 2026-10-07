@@ -226,13 +226,19 @@ func cleanLink(raw string) string {
 	if c, ok := canonical(host, u.EscapedPath(), u.RawQuery); ok {
 		return c
 	}
+	if amazonStore(host) != "" {
+		raw = dropAmazonRef(raw)
+	}
 	return dropTracking(raw, host)
 }
 
-// canonical returns the one form a YouTube video's, Reddit post's or X
-// post's link is written in, keeping only what identifies it, and a
-// YouTube link's start time.
+// canonical returns the one form a YouTube video's, Reddit post's, X
+// post's or Amazon product's link is written in, keeping only what
+// identifies it, and a YouTube link's start time.
 func canonical(host, path, query string) (string, bool) {
+	if store := amazonStore(host); store != "" {
+		return amazonProduct(store, segments(path))
+	}
 	switch host {
 	case "youtube.com", "www.youtube.com", "m.youtube.com":
 		seg := segments(path)
@@ -375,6 +381,91 @@ func startTime(s string) bool {
 	return rest == ""
 }
 
+// amazonStores are the domains of Amazon's stores, which serve the same
+// product at /dp/ASIN.
+var amazonStores = []string{
+	"amazon.com", "amazon.ca", "amazon.com.mx", "amazon.com.br", "amazon.co.uk", "amazon.ie", "amazon.de",
+	"amazon.fr", "amazon.it", "amazon.es", "amazon.nl", "amazon.se", "amazon.pl", "amazon.com.be",
+	"amazon.com.tr", "amazon.ae", "amazon.sa", "amazon.eg", "amazon.in", "amazon.co.jp", "amazon.sg",
+	"amazon.com.au", "amazon.co.za", "amazon.cn",
+}
+
+// amazonStore returns the store a host serves: its domain, or with www.
+// or smile. before it, or "" for any other host.
+func amazonStore(host string) string {
+	host = strings.TrimPrefix(strings.TrimPrefix(host, "www."), "smile.")
+	if contains(amazonStores, host) {
+		return host
+	}
+	return ""
+}
+
+// amazonProduct writes a product page's link as /dp/ASIN on its store's
+// www. host: from /dp/ASIN, /gp/product/ASIN or /gp/aw/d/ASIN, each
+// perhaps after the product's name and before more of a path.
+func amazonProduct(store string, seg []string) (string, bool) {
+	for i := range seg {
+		var id string
+		switch {
+		case seg[i] == "dp" && i+1 < len(seg) && (i == 0 || i == 1):
+			id = seg[i+1]
+		case seg[i] == "gp" && i == 0 && len(seg) > 2 && seg[1] == "product":
+			id = seg[2]
+		case seg[i] == "gp" && i == 0 && len(seg) > 3 && seg[1] == "aw" && seg[2] == "d":
+			id = seg[3]
+		default:
+			continue
+		}
+		if asin(id) {
+			return "https://www." + store + "/dp/" + id, true
+		}
+		return "", false
+	}
+	return "", false
+}
+
+// asin reports whether s is a product's ID on Amazon: 10 of A-Z and 0-9,
+// as a book's ISBN-10 is.
+func asin(s string) bool {
+	if len(s) != 10 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// dropAmazonRef takes the path segments that start with ref= out of an
+// Amazon link, which record how the page was reached.
+func dropAmazonRef(raw string) string {
+	scheme, rest, _ := strings.Cut(raw, "://")
+	slash := strings.IndexByte(rest, '/')
+	if slash < 0 {
+		return raw
+	}
+	end := len(rest)
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		end = i
+	}
+	if end < slash {
+		return raw
+	}
+	var kept []string
+	for _, s := range strings.Split(rest[slash:end], "/") {
+		if !strings.HasPrefix(s, "ref=") {
+			kept = append(kept, s)
+		}
+	}
+	path := strings.Join(kept, "/")
+	if path == "" {
+		path = "/"
+	}
+	return scheme + "://" + rest[:slash] + path + rest[end:]
+}
+
 // tracking lists the parameters that track on any site, besides every one
 // whose name starts with utm_.
 var tracking = map[string]bool{
@@ -383,8 +474,14 @@ var tracking = map[string]bool{
 	"mc_eid": true, "_hsenc": true, "_hsmi": true, "mkt_tok": true,
 }
 
-// siteTracking returns the parameters that track on a site's own hosts.
+// siteTracking returns the parameters that track on a site's own hosts. A
+// name that ends in * stands for every one that starts with what's before
+// it.
 func siteTracking(host string) []string {
+	if amazonStore(host) != "" {
+		return []string{"ref", "ref_", "qid", "sr", "crid", "sprefix", "keywords", "content-id", "_encoding",
+			"pd_rd_*", "pf_rd_*", "tag", "linkCode", "linkId", "ascsubtag", "creativeASIN", "creative", "camp"}
+	}
 	switch {
 	case onSite(host, "youtube.com", "youtu.be", "youtube-nocookie.com"):
 		return []string{"si", "pp", "feature"}
@@ -427,7 +524,7 @@ func dropTracking(raw, host string) string {
 	for _, p := range strings.Split(raw[q+1:end], "&") {
 		name, _, _ := strings.Cut(p, "=")
 		switch {
-		case tracking[name] || strings.HasPrefix(name, "utm_") || contains(site, name):
+		case tracking[name] || strings.HasPrefix(name, "utm_") || matches(site, name):
 			dropped = true
 		case p != "":
 			kept = append(kept, p)
@@ -441,6 +538,17 @@ func dropTracking(raw, host string) string {
 		out += "?" + strings.Join(kept, "&")
 	}
 	return out + raw[end:]
+}
+
+// matches reports whether name is in names, where a name ending in *
+// matches any that starts with what's before it.
+func matches(names []string, name string) bool {
+	for _, n := range names {
+		if p, ok := strings.CutSuffix(n, "*"); ok && strings.HasPrefix(name, p) || n == name {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(list []string, s string) bool {

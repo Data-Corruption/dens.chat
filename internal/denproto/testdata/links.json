@@ -74,6 +74,17 @@
     {"text": "xhttps://youtu.be/dQw4w9WgXcQ?si=abc", "links": []},
     {"text": "日本https://youtu.be/dQw4w9WgXcQ", "links": ["https://youtu.be/dQw4w9WgXcQ"], "clean": "日本https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
     {"text": "one\r\nhttps://youtu.be/dQw4w9WgXcQ?si=abc\r\ntwo", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "one\r\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ\r\ntwo"},
-    {"text": "a https://youtu.be/dQw4w9WgXcQ?si=abc b https://x.com/u/status/9?s=1", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc", "https://x.com/u/status/9?s=1"], "clean": "a https://www.youtube.com/watch?v=dQw4w9WgXcQ b https://x.com/i/status/9"}
+    {"text": "a https://youtu.be/dQw4w9WgXcQ?si=abc b https://x.com/u/status/9?s=1", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc", "https://x.com/u/status/9?s=1"], "clean": "a https://www.youtube.com/watch?v=dQw4w9WgXcQ b https://x.com/i/status/9"},
+    {"text": "look: https://www.amazon.com/Anker-Charger-Foldable-Compact-Compatible/dp/B0BX4P3W2Q/ref=sr_1_3?crid=2X8ABCDEF&keywords=anker+charger&qid=1730000000&sprefix=anker%2Caps%2C150&sr=8-3&th=1", "links": ["https://www.amazon.com/Anker-Charger-Foldable-Compact-Compatible/dp/B0BX4P3W2Q/ref=sr_1_3?crid=2X8ABCDEF&keywords=anker+charger&qid=1730000000&sprefix=anker%2Caps%2C150&sr=8-3&th=1"], "clean": "look: https://www.amazon.com/dp/B0BX4P3W2Q"},
+    {"text": "look: https://www.amazon.co.uk/gp/product/B08N5WRWNW/ref=ppx_yo_dt_b_asin_title_o00_s00?ie=UTF8&psc=1", "links": ["https://www.amazon.co.uk/gp/product/B08N5WRWNW/ref=ppx_yo_dt_b_asin_title_o00_s00?ie=UTF8&psc=1"], "clean": "look: https://www.amazon.co.uk/dp/B08N5WRWNW"},
+    {"text": "look: https://amazon.de/dp/3446263000?tag=somebody-21&linkCode=ll1&linkId=abc123", "links": ["https://amazon.de/dp/3446263000?tag=somebody-21&linkCode=ll1&linkId=abc123"], "clean": "look: https://www.amazon.de/dp/3446263000"},
+    {"text": "look: https://www.amazon.com/gp/aw/d/B0BX4P3W2Q?psc=1&pd_rd_w=Abc12&pd_rd_r=1a2b3c", "links": ["https://www.amazon.com/gp/aw/d/B0BX4P3W2Q?psc=1&pd_rd_w=Abc12&pd_rd_r=1a2b3c"], "clean": "look: https://www.amazon.com/dp/B0BX4P3W2Q"},
+    {"text": "look: https://smile.amazon.com/dp/B0BX4P3W2Q/", "links": ["https://smile.amazon.com/dp/B0BX4P3W2Q/"], "clean": "look: https://www.amazon.com/dp/B0BX4P3W2Q"},
+    {"text": "look: https://www.amazon.com/s?k=usb+c+cable&crid=1ABCDE&sprefix=usb%2Caps%2C150&ref=nb_sb_noss_1", "links": ["https://www.amazon.com/s?k=usb+c+cable&crid=1ABCDE&sprefix=usb%2Caps%2C150&ref=nb_sb_noss_1"], "clean": "look: https://www.amazon.com/s?k=usb+c+cable"},
+    {"text": "look: https://www.amazon.com/gp/bestsellers/electronics/ref=zg_bs_nav_electronics_0?pf_rd_p=12345&pf_rd_r=ABC&node=172282", "links": ["https://www.amazon.com/gp/bestsellers/electronics/ref=zg_bs_nav_electronics_0?pf_rd_p=12345&pf_rd_r=ABC&node=172282"], "clean": "look: https://www.amazon.com/gp/bestsellers/electronics?node=172282"},
+    {"text": "look: https://amzn.to/3xYzAbC", "links": ["https://amzn.to/3xYzAbC"]},
+    {"text": "look: https://a.co/d/abc1234", "links": ["https://a.co/d/abc1234"]},
+    {"text": "look: https://amazon.com.example.net/dp/B0BX4P3W2Q?tag=x", "links": ["https://amazon.com.example.net/dp/B0BX4P3W2Q?tag=x"]},
+    {"text": "look: https://www.amazon.com/dp/b0bx4p3w2q?ref_=abc&smid=A1B2C3", "links": ["https://www.amazon.com/dp/b0bx4p3w2q?ref_=abc&smid=A1B2C3"], "clean": "look: https://www.amazon.com/dp/b0bx4p3w2q?smid=A1B2C3"}
   ]
 }
