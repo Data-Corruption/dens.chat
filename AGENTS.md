@@ -28,9 +28,9 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
-| `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, and who may be in which call |
+| `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, who may be in which call, the calls it holds for a dropped connection, and staff disconnecting and muting members |
 | `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, approving new devices, and relaying the page's call, with where its media goes |
-| `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, and forwarding each member's audio to the others within its limits; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
+| `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, holding a call's signaling and ICE restarts, and forwarding each member's audio to the others within its limits, or none of it under a staff mute; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, and previews; the client strips with it and the den checks with it |
 | `internal/media/ffmpeg` | The media module: FFmpeg and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
@@ -41,13 +41,14 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
-| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source |
+| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source, and RNNoise for calls: its AudioWorklet (`assets/js/rnnoise.worklet.js`) and module (`assets/wasm/rnnoise.wasm`, generated and committed), with the header its build needs (`rnnoise/`) |
 | `internal/build` | Values baked in at build time, and the third-party notices the binary carries (`notices.txt`, generated and committed) |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
+| `scripts/rnnoise.sh` | Builds RNNoise's module for the page from its pinned inputs, and checks the committed one |
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
@@ -174,6 +175,11 @@ file: check it as you would theirs. A test package that runs media jobs gets a
 `TestMain` that runs the worker when `ffmpeg.TestWorkerEnv` is set, and its
 Runner from `ffmpeg.TestRunner`.
 
+**So is RNNoise's module.** Never edit `internal/ui/assets/wasm/rnnoise.wasm`.
+Change `scripts/rnnoise.sh` or `internal/ui/rnnoise`, run the script, and
+commit what it writes; CI builds it again and fails on any difference. The
+module imports nothing, and the worklet gives it nothing.
+
 ## Build and test
 
 ```sh
@@ -189,6 +195,7 @@ Runner from `ffmpeg.TestRunner`.
 ./scripts/build.sh --prod-all  # all release binaries
 ./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build
 ./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
+./scripts/rnnoise.sh           # rebuild RNNoise's module for the page after changing its build
 ./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
@@ -200,10 +207,10 @@ Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md)
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
 cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests,
-Caddy for the den e2e, and the media module's FFmpeg, zlib, wasi-sdk,
-binaryen and wasm2go) are pinned by version and SHA-256 in `scripts/vendor.sh`
-and fetched into the gitignored `tools/`. Never depend on `tools/` contents
-directly.
+Caddy for the den e2e, the media module's FFmpeg, zlib, wasi-sdk, binaryen
+and wasm2go, and RNNoise's source and model) are pinned by version and
+SHA-256 in `scripts/vendor.sh` and fetched into the gitignored `tools/`.
+Never depend on `tools/` contents directly.
 
 Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest.json}`,
 `out/`, `tools/`, `docs/out/`. Edit sources under
