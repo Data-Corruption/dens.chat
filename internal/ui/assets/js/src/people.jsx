@@ -23,7 +23,7 @@ export function isStaff(role) {
 
 function RoleBadge({ role, size = 'badge-sm' }) {
     if (!isStaff(role)) return null;
-    return <span class={`badge badge-soft ${role === 'owner' ? 'badge-warning' : 'badge-info'} ${size}`}>{role === 'owner' ? 'Owner' : 'Moderator'}</span>;
+    return <span class={`badge badge-role ${role === 'owner' ? 'badge-warning' : 'badge-info'} ${size}`}>{role === 'owner' ? 'Owner' : 'Moderator'}</span>;
 }
 
 const byName = (a, b) => a.display_name.localeCompare(b.display_name);
