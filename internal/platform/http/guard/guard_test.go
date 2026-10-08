@@ -77,6 +77,28 @@ func TestSameOriginGuard(t *testing.T) {
 	}
 }
 
+// The page compiles RNNoise, so its policy allows WebAssembly, but not
+// eval or inline code; the den's never serves a page, and allows neither.
+func TestPageSecurityHeaders(t *testing.T) {
+	csp := func(h func(http.Handler) http.Handler) string {
+		w := httptest.NewRecorder()
+		h(ok).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		return w.Header().Get("Content-Security-Policy")
+	}
+	page := csp(PageSecurityHeaders)
+	if !strings.Contains(page, "script-src 'self' 'wasm-unsafe-eval';") {
+		t.Errorf("the page's CSP doesn't allow WebAssembly: %q", page)
+	}
+	for _, not := range []string{"'unsafe-eval'", "unsafe-inline"} {
+		if strings.Contains(page, not) {
+			t.Errorf("the page's CSP allows %s: %q", not, page)
+		}
+	}
+	if den := csp(SecurityHeaders); strings.Contains(den, "wasm") {
+		t.Errorf("the den's CSP allows WebAssembly: %q", den)
+	}
+}
+
 func TestSecurityHeaders(t *testing.T) {
 	w := httptest.NewRecorder()
 	SecurityHeaders(ok).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))

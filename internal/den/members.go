@@ -196,7 +196,7 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 	// Staff-only channels come or go with the role, so the member's sockets
 	// start over from a snapshot of what they can see now.
 	d.Hub.SetStaff(mid, IsStaff(req.Role))
-	d.roleChanged(mid)
+	d.roleChanged(mid, IsStaff(req.Role))
 	return m, nil
 }
 
@@ -292,6 +292,8 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		reason = denproto.CloseReasonBanned
 	}
 	d.CloseMemberSockets(mid, denproto.CloseRevoked, reason)
+	// A call held for a socket that had already closed ends too.
+	d.memberGone(mid)
 	d.log.Infof("Member %d removed by member %d (ban %t)", mid, s.MemberID, req.Ban)
 	if left {
 		if err := d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(mid), LeftAt: now}, Everyone); err != nil {
@@ -375,6 +377,7 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 	d.files.remove(blobs)
 	d.cancelRequests(s.MemberID)
 	d.CloseMemberSockets(s.MemberID, denproto.CloseRevoked, denproto.CloseReasonLeft)
+	d.memberGone(s.MemberID)
 	d.log.Infof("Member %d left", s.MemberID)
 	return d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(s.MemberID), LeftAt: now}, Everyone)
 }

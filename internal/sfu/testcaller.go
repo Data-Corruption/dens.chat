@@ -58,10 +58,16 @@ type TestCaller struct {
 	changed chan struct{}
 }
 
+// browserOpus is Opus as Chromium describes it in its answers. The caller
+// answers with its parameters, as a browser does, where Pion would echo the
+// den's.
+var browserOpus = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
+	SDPFmtpLine: "minptime=10;useinbandfec=1"}
+
 // NewTestCaller makes a caller.
 func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 	media := &webrtc.MediaEngine{}
-	if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: opus, PayloadType: 111}, webrtc.RTPCodecTypeAudio); err != nil {
+	if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: browserOpus, PayloadType: 111}, webrtc.RTPCodecTypeAudio); err != nil {
 		return nil, err
 	}
 	registry := &interceptor.Registry{}
@@ -94,7 +100,7 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 	if err != nil {
 		return nil, err
 	}
-	mic, err := webrtc.NewTrackLocalStaticRTP(opus, "mic", "self")
+	mic, err := webrtc.NewTrackLocalStaticRTP(browserOpus, "mic", "self")
 	if err != nil {
 		_ = pc.Close()
 		return nil, err
@@ -155,7 +161,7 @@ func (c *TestCaller) Answer(offer string) (string, error) {
 	if first {
 		go c.speak()
 	}
-	return denproto.StripCandidates(answer.SDP), nil
+	return setOpusParams(denproto.StripCandidates(answer.SDP), browserOpus.SDPFmtpLine), nil
 }
 
 // speak sends numbered packets, each carrying the extension the den must

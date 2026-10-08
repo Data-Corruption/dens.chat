@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,9 +39,52 @@ const (
 // ErrClosed is returned once calls have stopped.
 var ErrClosed = errors.New("calls have stopped")
 
+// opusParams is what every offer asks of the browser's Opus encoder: 96
+// kbps, where a browser left to itself sends 32, and error correction in
+// each packet for the one before, against loss. Browsers read it from the
+// den's offer.
+const opusParams = "minptime=10;useinbandfec=1;maxaveragebitrate=96000"
+
 // opus is the one codec calls carry.
 var opus = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
-	SDPFmtpLine: "minptime=10;useinbandfec=1"}
+	SDPFmtpLine: opusParams}
+
+// setOpusParams writes params into every Opus format of a description.
+// Every offer gets opusParams this way: Pion builds each offer after the
+// first from the parameters the browser answered with, which don't ask for
+// the bitrate, and a browser takes a new offer's as its encoder's.
+func setOpusParams(desc, params string) string {
+	lines := strings.Split(desc, "\r\n")
+	opusTypes := map[string]bool{}
+	hasParams := map[string]bool{}
+	for _, line := range lines {
+		if rest, ok := strings.CutPrefix(line, "a=rtpmap:"); ok {
+			pt, codec, _ := strings.Cut(rest, " ")
+			if strings.HasPrefix(strings.ToLower(codec), "opus/") {
+				opusTypes[pt] = true
+			}
+		} else if rest, ok := strings.CutPrefix(line, "a=fmtp:"); ok {
+			pt, _, _ := strings.Cut(rest, " ")
+			hasParams[pt] = true
+		}
+	}
+	out := make([]string, 0, len(lines)+len(opusTypes))
+	for _, line := range lines {
+		if rest, ok := strings.CutPrefix(line, "a=fmtp:"); ok {
+			if pt, _, _ := strings.Cut(rest, " "); opusTypes[pt] {
+				out = append(out, "a=fmtp:"+pt+" "+params)
+				continue
+			}
+		}
+		out = append(out, line)
+		if rest, ok := strings.CutPrefix(line, "a=rtpmap:"); ok {
+			if pt, _, _ := strings.Cut(rest, " "); opusTypes[pt] && !hasParams[pt] {
+				out = append(out, "a=fmtp:"+pt+" "+params)
+			}
+		}
+	}
+	return strings.Join(out, "\r\n")
+}
 
 // Config holds what development instances and tests change.
 type Config struct {

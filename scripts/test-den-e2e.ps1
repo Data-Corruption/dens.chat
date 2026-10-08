@@ -15,7 +15,10 @@ second must reconnect and see the whole history. The two then call each
 other in a voice channel, a test binary built here with Pion standing in for
 each one's browser, and each must hear the other: over UDP, and with the
 member's side over TCP alone; this runs Pion under main's restricted service
-SID. The member sends a phone
+SID. The member's call must ride out Caddy restarting, and then second's
+service restarting, the den holding it while the member is away and the
+member taking it back on the same connection. A staff mute must silence the
+member, and a staff disconnect end their call. The member sends a phone
 photo with GPS data, which must reach the owner without it, a phone video,
 which must arrive stripped with its preview and play from any byte, and an
 iPhone HEIC, which must arrive as a JPEG. The owner opens a DM, which takes
@@ -376,8 +379,11 @@ function Wait-Channel($Browser, [string]$DenID) {
 # Start-Probe joins a voice channel's call for an instance, as its page
 # would: the voice probe, with Pion in the browser's place, drives the
 # instance's page socket with the browser's session, over one network,
-# until it hears the given member.
-function Start-Probe($Browser, [string]$DenID, [string]$Channel, [string]$Hear, [string]$Network) {
+# until it hears the given member, and then what Then asks for (see
+# TestVoiceProbe): ride, restart, silence or ended:REASON, creating the Ready file
+# once it hears the member. Stay is how many seconds it stays at the end.
+function Start-Probe($Browser, [string]$DenID, [string]$Channel, [string]$Hear, [string]$Network,
+    [string]$Then = "", [string]$Stay = "", [string]$Ready = "") {
     $cookie = @($Browser.Session.Cookies.GetCookies([Uri]$Browser.Origin) | Where-Object { $_.Name -like "dens_session_*" })
     if ($cookie.Count -eq 0) { Fail "no browser session to call with" }
     $info = New-Object System.Diagnostics.ProcessStartInfo
@@ -392,10 +398,29 @@ function Start-Probe($Browser, [string]$DenID, [string]$Channel, [string]$Hear, 
     $info.EnvironmentVariables["DENS_PROBE_CHANNEL"] = $Channel
     $info.EnvironmentVariables["DENS_PROBE_HEAR"] = $Hear
     $info.EnvironmentVariables["DENS_PROBE_NETWORK"] = $Network
+    $info.EnvironmentVariables["DENS_PROBE_THEN"] = $Then
+    $info.EnvironmentVariables["DENS_PROBE_STAY"] = $Stay
+    $info.EnvironmentVariables["DENS_PROBE_READY"] = $Ready
     $process = [Diagnostics.Process]::Start($info)
     # Both streams are read as they come, so a full pipe never holds the
     # probe up.
     return [pscustomobject]@{ Process = $process; Out = $process.StandardOutput.ReadToEndAsync(); Err = $process.StandardError.ReadToEndAsync() }
+}
+
+# Wait-Ready waits for a probe to hear the other side, which it says by
+# creating its Ready file.
+function Wait-Ready([string]$Path, $Probe, [string]$Who) {
+    $deadline = (Get-Date).AddSeconds(90)
+    while (-not (Test-Path -LiteralPath $Path)) {
+        if ($Probe.Process.HasExited -or (Get-Date) -gt $deadline) {
+            if (-not $Probe.Process.HasExited) { $Probe.Process.Kill() }
+            $Probe.Process.WaitForExit()
+            Write-Host ($Probe.Out.Result + $Probe.Err.Result)
+            Fail "$Who's side of the call never heard the other"
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    Remove-Item -LiteralPath $Path
 }
 
 function Wait-Probe($Probe, [string]$Who) {
@@ -576,6 +601,44 @@ den.test:$HttpsPort {
         Wait-Probe $ownerSide "the owner"
         Write-Host "The owner and the member heard each other, the member over $network."
     }
+
+    # The member's instance reaches the den through Caddy, so restarting
+    # Caddy drops its connection; the call's media goes straight to the den's
+    # ports and keeps going, and the member's page takes the call back.
+    Step "a call rides out the den's proxy restarting"
+    $memberReady = Join-Path $Work "probe-ready-member"
+    $ownerReady = Join-Path $Work "probe-ready-owner"
+    $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Stay "45"
+    $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "ride" -Ready $memberReady
+    Wait-Ready $memberReady $memberSide "the member"
+    Restart-Service -Name $CaddyService
+    Wait-Probe $memberSide "the member, riding out Caddy restarting,"
+    Wait-Probe $ownerSide "the owner"
+    Write-Host "The member's call rode out Caddy restarting, its audio crossing throughout."
+
+    # The member's service restarts, as on an update: its page's socket and
+    # its connection to the den close together, the den holds the call, and
+    # the page takes it back once the service is back.
+    Step "a call rides out the member's service restarting"
+    $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Stay "45"
+    $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "restart" -Ready $memberReady
+    Wait-Ready $memberReady $memberSide "the member"
+    Invoke-Native -FilePath $Dens -Arguments @("service", "restart", "--instance", "second") | Out-Null
+    Wait-Probe $memberSide "the member, riding out its service restarting,"
+    Wait-Probe $ownerSide "the owner"
+    Write-Host "The member's call rode out its service restarting, its audio crossing throughout."
+
+    Step "staff mute the member in the call, then disconnect them"
+    $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Then "silence" -Ready $ownerReady
+    $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "ended:disconnected_by_staff" -Ready $memberReady
+    Wait-Ready $ownerReady $ownerSide "the owner"
+    Wait-Ready $memberReady $memberSide "the member"
+    Invoke-Api $owner POST "/api/dens/$denID/members/$bobID/voice-mute" @{ muted = $true } | Out-Null
+    Wait-Probe $ownerSide "the owner, hearing the member go quiet,"
+    Invoke-Api $owner POST "/api/dens/$denID/members/$bobID/voice-mute" @{ muted = $false } | Out-Null
+    Invoke-Api $owner POST "/api/dens/$denID/members/$bobID/disconnect" @{} | Out-Null
+    Wait-Probe $memberSide "the member, disconnected by staff,"
+    Write-Host "A staff mute silenced the member for the owner, and a staff disconnect ended the member's call."
 
     Step "a phone photo with GPS data"
     $photo = Join-Path $PSScriptRoot "test\gps-photo.jpg"

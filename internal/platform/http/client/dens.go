@@ -93,6 +93,10 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer rt.a.Dens.DropFocus(page)
 	// The install's call belongs to the page that joined it, and its offers
 	// and end come to that page alone. Closing the page leaves the call.
+	// The service stopping closes every page's stream too, but cancels the
+	// requests' context first, and leaves the call alone: the den holds it
+	// once the service's connection drops, for the page to take back when
+	// the service is back (M3).
 	calls := make(chan denclient.CallEvent, 16)
 	deliver := func(e denclient.CallEvent) {
 		select {
@@ -100,7 +104,11 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 		default:
 		}
 	}
-	defer rt.a.Dens.DropPage(page)
+	defer func() {
+		if r.Context().Err() == nil {
+			rt.a.Dens.DropPage(page)
+		}
+	}()
 	go rt.readPage(ctx, cancel, c, page, deliver)
 	changes, stop := rt.a.Dens.Watch()
 	defer stop()
@@ -169,13 +177,15 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // pageMessage is what the page sends on its event stream: the channel it
 // shows in a den ("focus", with an empty channel for none), typing, and
-// its call: joining, answering the den's offers, muting and leaving.
+// its call: joining or resuming it, answering the den's offers, asking for
+// an ICE restart, muting and leaving.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
 		Den     string `json:"den"`
 		Channel string `json:"channel"`
 		Muted   bool   `json:"muted"`
+		Resume  bool   `json:"resume"`
 		Version int    `json:"version"`
 		SDP     string `json:"sdp"`
 	} `json:"d"`
@@ -201,11 +211,13 @@ func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *we
 		case "typing":
 			_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 		case "voice.join":
-			if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, msg.D.Muted, deliver) != nil {
+			if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, msg.D.Muted, msg.D.Resume, deliver) != nil {
 				deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
 			}
 		case "voice.answer":
 			rt.a.Dens.AnswerCall(page, msg.D.Den, msg.D.Version, msg.D.SDP)
+		case "voice.restart":
+			rt.a.Dens.RestartCall(ctx, page, msg.D.Den)
 		case "voice.mute":
 			rt.a.Dens.MuteCall(page, msg.D.Den, msg.D.Muted)
 		case "voice.leave":

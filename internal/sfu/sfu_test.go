@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -168,6 +169,60 @@ func TestOverTCPAlone(t *testing.T) {
 // TestOffersFollowJoinsAndLeaves checks that each join and leave reaches
 // the others as a new offer, and that a section a leaver retires carries
 // the next joiner, so offers don't grow with every join.
+// TestOffersAskForTheBitrate checks that every offer asks the browser for
+// the den's Opus parameters: the re-offer an earlier member gets when
+// another joins too, which Pion would build from the browser's answer.
+func TestOffersAskForTheBitrate(t *testing.T) {
+	s, udpPort, tcpPort := testSFU(t, Config{})
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice.hears(bob)
+	for who, offers := range map[string][]offer{"alice": alice.waitOffers(2), "bob": bob.waitOffers(1)} {
+		for _, o := range offers {
+			var params []string
+			for _, line := range strings.Split(o.sdp, "\r\n") {
+				if p, ok := strings.CutPrefix(line, "a=fmtp:111 "); ok {
+					params = append(params, p)
+				}
+			}
+			if len(params) != strings.Count(o.sdp, "m=audio") || slices.ContainsFunc(params, func(p string) bool { return p != opusParams }) {
+				t.Errorf("%s's offer %d asks for %q, not %q in every section", who, o.version, params, opusParams)
+			}
+		}
+	}
+}
+
+func TestOpusParamsInAnOffer(t *testing.T) {
+	in := strings.Join([]string{
+		"v=0",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 111 0",
+		"a=rtpmap:111 opus/48000/2",
+		"a=fmtp:111 minptime=10;useinbandfec=1;stereo=1",
+		"a=rtpmap:0 PCMU/8000",
+		"a=fmtp:0 something=1",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 96",
+		"a=rtpmap:96 OPUS/48000/2",
+		"a=sendonly",
+		"",
+	}, "\r\n")
+	want := strings.Join([]string{
+		"v=0",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 111 0",
+		"a=rtpmap:111 opus/48000/2",
+		"a=fmtp:111 " + opusParams,
+		"a=rtpmap:0 PCMU/8000",
+		"a=fmtp:0 something=1",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 96",
+		"a=rtpmap:96 OPUS/48000/2",
+		"a=fmtp:96 " + opusParams,
+		"a=sendonly",
+		"",
+	}, "\r\n")
+	if got := setOpusParams(in, opusParams); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestOffersFollowJoinsAndLeaves(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
 	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
@@ -282,4 +337,130 @@ func TestRateLimit(t *testing.T) {
 	if got < maxPacketsPerSecond/2 {
 		t.Errorf("forwarded only %d packets in about a second", got)
 	}
+}
+
+// TestHeldCallKeepsItsMedia checks that a held call's media flows both
+// ways while no offer reaches its member, and that the offer the call's
+// changes need goes out once it resumes.
+func TestHeldCallKeepsItsMedia(t *testing.T) {
+	s, udpPort, tcpPort := testSFU(t, Config{})
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice.hears(bob)
+	bob.hears(alice)
+	before := len(alice.waitOffers(2))
+
+	alice.peer.Hold()
+	bob.hears(alice)
+	alice.hears(bob)
+	carol := join(t, s, udpPort, tcpPort, "41", "1003", CallerOptions{}, true)
+	carol.hears(bob)
+	time.Sleep(300 * time.Millisecond)
+	if n := len(alice.offersSeen()); n != before {
+		t.Fatalf("a held call got %d offers, not %d", n, before)
+	}
+
+	alice.peer.Resume()
+	got := alice.waitOffers(before + 1)
+	if o := got[before]; o.version != before+1 || strings.Count(o.sdp, "m=audio") != 3 {
+		t.Fatalf("the offer after resuming has version %d and %d sections", o.version, strings.Count(o.sdp, "m=audio"))
+	}
+	alice.hears(carol)
+	carol.hears(alice)
+}
+
+// TestHoldSendsTheOfferThatWasOutAgain checks that an offer out when the
+// call is held waits past its deadline, and goes again under its version
+// once the call resumes, when the answer the client kept is taken.
+func TestHoldSendsTheOfferThatWasOutAgain(t *testing.T) {
+	s, udpPort, tcpPort := testSFU(t, Config{AnswerTimeout: time.Second})
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, false)
+	o := alice.waitOffers(1)[0]
+	// The socket closes with the offer out, and the call is held at once,
+	// well within the answer's timeout even under the race detector.
+	alice.peer.Hold()
+	sdp, err := denproto.AddCandidates(o.sdp, []netip.Addr{netip.MustParseAddr("127.0.0.1")}, udpPort, tcpPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The client answers, but the answer is lost with the socket.
+	reply, err := alice.caller.Answer(sdp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-alice.failed:
+		t.Fatal("a held call failed for an offer it couldn't answer")
+	case <-time.After(1500 * time.Millisecond):
+	}
+
+	alice.peer.Resume()
+	got := alice.waitOffers(2)
+	if got[1].version != o.version || got[1].sdp != o.sdp {
+		t.Fatalf("the offer sent again has version %d, and is the same: %t", got[1].version, got[1].sdp == o.sdp)
+	}
+	alice.peer.Answer(o.version, reply)
+	alice.hears(bob)
+	bob.hears(alice)
+	select {
+	case <-alice.failed:
+		t.Fatal("the call failed after its answer")
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// TestICERestart checks that a restart's offer carries new ICE
+// credentials, and that the call's audio crosses again after it.
+func TestICERestart(t *testing.T) {
+	s, udpPort, tcpPort := testSFU(t, Config{})
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, false)
+	// Before the first answer there's nothing to restart.
+	alice.peer.Restart()
+	time.Sleep(100 * time.Millisecond)
+	if n := len(alice.offersSeen()); n != 1 {
+		t.Fatalf("a restart before the first answer made %d offers", n)
+	}
+	alice.peer.Close()
+
+	alice = join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice.hears(bob)
+	bob.hears(alice)
+	ufrag := func(sdp string) string {
+		for _, line := range strings.Split(sdp, "\r\n") {
+			if v, ok := strings.CutPrefix(line, "a=ice-ufrag:"); ok {
+				return v
+			}
+		}
+		return ""
+	}
+	before := alice.waitOffers(2)
+	alice.peer.Restart()
+	after := alice.waitOffers(len(before) + 1)
+	if old, now := ufrag(before[len(before)-1].sdp), ufrag(after[len(before)].sdp); old == "" || old == now {
+		t.Fatalf("the restart's offer kept its ICE username %q", now)
+	}
+	alice.hears(bob)
+	bob.hears(alice)
+}
+
+// TestStaffMute checks that a muted member's audio reaches no one, and
+// comes back once the mute is lifted.
+func TestStaffMute(t *testing.T) {
+	s, udpPort, tcpPort := testSFU(t, Config{})
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	bob.hears(alice)
+	alice.peer.SetMuted(true)
+	// Packets already on their way may still land.
+	time.Sleep(200 * time.Millisecond)
+	from := bob.caller.Heard(alice.id)
+	time.Sleep(500 * time.Millisecond)
+	if n := bob.caller.Heard(alice.id) - from; n > 0 {
+		t.Fatalf("bob heard %d packets from muted alice", n)
+	}
+	alice.hears(bob)
+	alice.peer.SetMuted(false)
+	bob.hears(alice)
 }

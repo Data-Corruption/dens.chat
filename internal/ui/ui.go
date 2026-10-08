@@ -238,6 +238,8 @@ func detectContentType(path string) string {
 		return "font/woff"
 	case ".woff2":
 		return "font/woff2"
+	case ".wasm":
+		return "application/wasm"
 	case ".ttf":
 		return "font/ttf"
 	case ".eot":

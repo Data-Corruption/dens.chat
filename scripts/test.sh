@@ -132,6 +132,7 @@ run_shell_lint() {
     scripts/vendor.sh
     scripts/ffmpeg.sh
     scripts/notices.sh
+    scripts/rnnoise.sh
     scripts/test.sh
     scripts/test-release.sh
     scripts/test-lifecycle-e2e.sh

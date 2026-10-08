@@ -104,6 +104,30 @@ func (m *Manager) RemoveMember(ctx context.Context, denID, memberID string, req 
 	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/remove", req, nil)
 }
 
+// DisconnectFromCall ends a member's call, as staff (M3).
+func (m *Manager) DisconnectFromCall(ctx context.Context, denID, memberID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("member", memberID); err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/disconnect", struct{}{}, nil)
+}
+
+// SetStaffMute mutes a member in calls, as staff, or lifts it (M3).
+func (m *Manager) SetStaffMute(ctx context.Context, denID, memberID string, muted bool) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("member", memberID); err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/voice-mute", denproto.VoiceMuteRequest{Muted: muted}, nil)
+}
+
 // Bans lists a den's banned members.
 func (m *Manager) Bans(ctx context.Context, denID string) ([]denproto.Ban, error) {
 	c, err := m.find(denID)

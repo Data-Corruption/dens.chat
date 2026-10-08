@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+	"time"
 
 	"github.com/pion/sdp/v3"
 )
@@ -18,6 +19,10 @@ const (
 	EventVoiceOffer  = "voice.offer"
 	EventVoiceEnded  = "voice.ended"
 	EventVoiceState  = "voice.state"
+	// From M3: a client asks for an ICE restart, and the den says it took a
+	// held call back.
+	EventVoiceRestart = "voice.restart" // a client frame
+	EventVoiceResumed = "voice.resumed"
 )
 
 // Limits on calls.
@@ -25,6 +30,14 @@ const (
 	MaxCallMembers = 15       // members in one voice channel's call
 	MaxDenCallers  = 30       // members in calls across a den
 	MaxSDP         = 32 << 10 // bytes in an offer or an answer
+)
+
+// How long the den holds a call whose socket closed, for the member's
+// device to take back (M3), and how long it remembers why a held call
+// ended, for that device's resume.
+const (
+	CallHold          = 30 * time.Second
+	CallEndRemembered = 10 * time.Minute
 )
 
 // Reasons a call ends, in voice.ended.
@@ -36,11 +49,26 @@ const (
 	VoiceForbidden   = "forbidden" // the member can no longer see the channel
 	VoiceDeleted     = "deleted"   // the channel was deleted
 	VoiceFailed      = "failed"    // the connection didn't come up, or broke
+	// VoiceDisconnectedByStaff is staff ending a member's call (M3).
+	VoiceDisconnectedByStaff = "disconnected_by_staff"
 )
 
+// VoiceJoin starts a call, or with Resume takes back the call the den holds
+// for this device (M3).
 type VoiceJoin struct {
 	ChannelID string `json:"channel_id"`
 	Muted     bool   `json:"muted,omitempty"`
+	Resume    bool   `json:"resume,omitempty"`
+}
+
+// VoiceResumed says the den moved a held call to this socket.
+type VoiceResumed struct {
+	ChannelID string `json:"channel_id"`
+}
+
+// VoiceMuteRequest is staff muting a member in calls, or lifting it.
+type VoiceMuteRequest struct {
+	Muted bool `json:"muted"`
 }
 
 type VoiceAnswer struct {
@@ -73,9 +101,12 @@ type Call struct {
 	Members   []CallMember `json:"members"`
 }
 
+// CallMember is one member of a call: Muted is their own mark, and
+// StaffMuted staff's, which the den enforces (M3).
 type CallMember struct {
-	ID    string `json:"id"`
-	Muted bool   `json:"muted,omitempty"`
+	ID         string `json:"id"`
+	Muted      bool   `json:"muted,omitempty"`
+	StaffMuted bool   `json:"staff_muted,omitempty"`
 }
 
 // VoiceState gives the members of each call that changed. Full replaces

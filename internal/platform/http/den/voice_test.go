@@ -3,7 +3,9 @@ package den
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
+	"net/http"
 	"net/netip"
 	"slices"
 	"strconv"
@@ -62,6 +64,10 @@ type voiceSocket struct {
 	me     string
 	caller *sfu.TestCaller
 	events chan denproto.Event
+	// The last offer answered, and its answer, which goes again if the den
+	// sends that offer again, as after a resume.
+	version int
+	answer  string
 }
 
 func (f *fixture) voiceSocket(token denproto.Bytes, caller *sfu.TestCaller) *voiceSocket {
@@ -104,15 +110,17 @@ func (v *voiceSocket) run() {
 				if json.Unmarshal(e.D, &o) != nil {
 					return
 				}
-				sdp, err := denproto.AddCandidates(o.SDP, []netip.Addr{netip.MustParseAddr("127.0.0.1")}, o.UDPPort, o.TCPPort)
-				if err != nil {
-					return
+				if o.Version != v.version {
+					sdp, err := denproto.AddCandidates(o.SDP, []netip.Addr{netip.MustParseAddr("127.0.0.1")}, o.UDPPort, o.TCPPort)
+					if err != nil {
+						return
+					}
+					if v.answer, err = v.caller.Answer(sdp); err != nil {
+						return
+					}
+					v.version = o.Version
 				}
-				answer, err := v.caller.Answer(sdp)
-				if err != nil {
-					return
-				}
-				v.send(denproto.EventVoiceAnswer, denproto.VoiceAnswer{Version: o.Version, SDP: answer})
+				v.send(denproto.EventVoiceAnswer, denproto.VoiceAnswer{Version: o.Version, SDP: v.answer})
 			}
 			select {
 			case v.events <- e:
@@ -196,6 +204,7 @@ func callMembers(c denproto.Call) []string {
 
 func TestCallThroughTheDen(t *testing.T) {
 	f := newFixture(t)
+	f.d.CallHold = 200 * time.Millisecond
 	f.startCalls(sfu.Config{})
 	aliceToken, _ := f.owner()
 	bobToken := f.member(aliceToken, "bob")
@@ -229,9 +238,190 @@ func TestCallThroughTheDen(t *testing.T) {
 	alice.send(denproto.EventVoiceLeave, struct{}{})
 	bob.wait(inCall(lounge.ID, bob.me+"*"))
 
-	// A call ends with the socket that joined it.
+	// A call whose socket closes waits for its device, then ends.
 	bob.c.Close(websocket.StatusNormalClosure, "")
 	alice.wait(inCall(lounge.ID))
+}
+
+// TestCallRidesOutItsSocket checks that a call whose socket closes is
+// held, with its media flowing, and taken back on a new socket of the same
+// device, which then gets the call's offers.
+func TestCallRidesOutItsSocket(t *testing.T) {
+	f := newFixture(t)
+	f.startCalls(sfu.Config{})
+	aliceToken, _ := f.owner()
+	bobToken := f.member(aliceToken, "bob")
+	carolToken := f.member(aliceToken, "carol")
+	lounge := f.channel(f.session(aliceToken), "Lounge", denproto.KindVoice, false)
+	aliceCaller, bobCaller, carolCaller := newCaller(t), newCaller(t), newCaller(t)
+	alice := f.voiceSocket(aliceToken, aliceCaller)
+	bob := f.voiceSocket(bobToken, bobCaller)
+	alice.join(lounge.ID)
+	bob.wait(inCall(lounge.ID, alice.me))
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, alice.me, bob.me))
+	heard := func(c *sfu.TestCaller, from string) {
+		t.Helper()
+		if err := c.WaitHeard(from, 20, 10*time.Second); err != nil {
+			t.Fatal(err)
+		}
+	}
+	heard(aliceCaller, bob.me)
+	heard(bobCaller, alice.me)
+
+	bob.c.Close(websocket.StatusGoingAway, "")
+	heard(aliceCaller, bob.me)
+	heard(bobCaller, alice.me)
+
+	again := f.voiceSocket(bobToken, bobCaller)
+	again.version, again.answer = bob.version, bob.answer
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.wait("the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed })
+	carol := f.voiceSocket(carolToken, carolCaller)
+	carol.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, alice.me, bob.me, carol.me))
+	heard(bobCaller, carol.me)
+	heard(carolCaller, bob.me)
+}
+
+// TestResumeAfterTheHold checks that a call its device didn't take back in
+// time is over, and that resuming then says so rather than starting one.
+func TestResumeAfterTheHold(t *testing.T) {
+	f := newFixture(t)
+	f.d.CallHold = 200 * time.Millisecond
+	f.startCalls(sfu.Config{})
+	aliceToken, _ := f.owner()
+	bobToken := f.member(aliceToken, "bob")
+	lounge := f.channel(f.session(aliceToken), "Lounge", denproto.KindVoice, false)
+	alice := f.voiceSocket(aliceToken, nil)
+	bob := f.voiceSocket(bobToken, newCaller(t))
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, bob.me))
+	bob.c.Close(websocket.StatusGoingAway, "")
+	alice.wait(inCall(lounge.ID))
+	again := f.voiceSocket(bobToken, nil)
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.wait(ended(lounge.ID, denproto.VoiceFailed))
+	// Nothing to resume at all gets the same answer.
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.wait(ended(lounge.ID, denproto.VoiceFailed))
+}
+
+// TestHeldCallEndsWithAccess checks that a held call ends as soon as its
+// member is removed, without waiting out the hold.
+func TestHeldCallEndsWithAccess(t *testing.T) {
+	f := newFixture(t)
+	f.startCalls(sfu.Config{})
+	aliceToken, _ := f.owner()
+	owner := f.session(aliceToken)
+	bobToken := f.member(aliceToken, "bob")
+	lounge := f.channel(owner, "Lounge", denproto.KindVoice, false)
+	alice := f.voiceSocket(aliceToken, nil)
+	bob := f.voiceSocket(bobToken, newCaller(t))
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, bob.me))
+	bob.c.Close(websocket.StatusGoingAway, "")
+	time.Sleep(100 * time.Millisecond)
+	if err := f.d.Remove(context.Background(), owner, bob.me, denproto.RemoveRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	alice.wait(inCall(lounge.ID))
+}
+
+// staffMuted matches word of a call in which a member is muted by staff,
+// or not.
+func staffMuted(channel, member string, muted bool) (string, func(denproto.Event) bool) {
+	return fmt.Sprintf("member %s's staff mute to be %t", member, muted), func(e denproto.Event) bool {
+		var s denproto.VoiceState
+		if e.T != denproto.EventVoiceState || json.Unmarshal(e.D, &s) != nil {
+			return false
+		}
+		for _, c := range s.Calls {
+			for _, m := range c.Members {
+				if c.ChannelID == channel && m.ID == member {
+					return m.StaffMuted == muted
+				}
+			}
+		}
+		return false
+	}
+}
+
+func TestStaffInCalls(t *testing.T) {
+	f := newFixture(t)
+	f.startCalls(sfu.Config{})
+	aliceToken, _ := f.owner()
+	owner := f.session(aliceToken)
+	bobToken := f.member(aliceToken, "bob")
+	carolToken := f.member(aliceToken, "carol")
+	lounge := f.channel(owner, "Lounge", denproto.KindVoice, false)
+	aliceCaller, bobCaller := newCaller(t), newCaller(t)
+	alice := f.voiceSocket(aliceToken, aliceCaller)
+	bob := f.voiceSocket(bobToken, bobCaller)
+	carol := f.voiceSocket(carolToken, nil)
+	if _, err := f.d.SetRole(context.Background(), owner, carol.me, denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	carol = f.voiceSocket(carolToken, nil)
+	alice.join(lounge.ID)
+	bob.wait(inCall(lounge.ID, alice.me))
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, alice.me, bob.me))
+	if err := aliceCaller.WaitHeard(bob.me, 20, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	auth := func(token denproto.Bytes) http.Header {
+		return http.Header{"Authorization": {"Bearer " + token.String()}}
+	}
+	act := func(token denproto.Bytes, member, what string, body any) *http.Response {
+		return f.post("/api/members/"+member+"/"+what, body, auth(token))
+	}
+	wantError(t, act(bobToken, alice.me, "disconnect", nil), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, act(carolToken, alice.me, "voice-mute", denproto.VoiceMuteRequest{Muted: true}), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, act(aliceToken, "999999", "disconnect", nil), http.StatusNotFound, denproto.CodeNotFound)
+
+	// A staff mute stops the member's audio, in this call and the next.
+	if resp := act(carolToken, bob.me, "voice-mute", denproto.VoiceMuteRequest{Muted: true}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("muting bob: %d", resp.StatusCode)
+	}
+	alice.wait(staffMuted(lounge.ID, bob.me, true))
+	quiet := func() {
+		t.Helper()
+		time.Sleep(300 * time.Millisecond)
+		from := aliceCaller.Heard(bob.me)
+		time.Sleep(500 * time.Millisecond)
+		if n := aliceCaller.Heard(bob.me) - from; n > 0 {
+			t.Fatalf("alice heard %d packets from muted bob", n)
+		}
+	}
+	quiet()
+	bob.send(denproto.EventVoiceLeave, struct{}{})
+	alice.wait(inCall(lounge.ID, alice.me))
+	// A page makes a new connection for each call it joins.
+	bob = f.voiceSocket(bobToken, newCaller(t))
+	bob.join(lounge.ID)
+	alice.wait(staffMuted(lounge.ID, bob.me, true))
+	quiet()
+	if resp := act(aliceToken, bob.me, "voice-mute", denproto.VoiceMuteRequest{Muted: false}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("unmuting bob: %d", resp.StatusCode)
+	}
+	alice.wait(staffMuted(lounge.ID, bob.me, false))
+	if err := aliceCaller.WaitHeard(bob.me, 20, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	// Disconnecting ends the call, which the member may join again.
+	if resp := act(carolToken, bob.me, "disconnect", nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("disconnecting bob: %d", resp.StatusCode)
+	}
+	bob.wait(ended(lounge.ID, denproto.VoiceDisconnectedByStaff))
+	alice.wait(inCall(lounge.ID, alice.me))
+	if resp := act(carolToken, bob.me, "disconnect", nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("disconnecting bob, in no call: %d", resp.StatusCode)
+	}
+	bob = f.voiceSocket(bobToken, nil)
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, alice.me, bob.me))
 }
 
 func TestCallRefusals(t *testing.T) {

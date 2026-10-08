@@ -23,11 +23,13 @@ import (
 const CallDisconnected = "disconnected"
 
 // CallEvent goes to the page that holds the install's call: an offer to
-// answer, carrying the den's candidates, or the call's end and why.
+// answer, carrying the den's candidates; that the den took the call back
+// after its connection dropped (M3); or the call's end and why.
 type CallEvent struct {
 	DenID   string     `json:"den"`
 	Channel string     `json:"channel"`
 	Offer   *CallOffer `json:"offer,omitempty"`
+	Resumed bool       `json:"resumed,omitempty"`
 	Ended   string     `json:"ended,omitempty"`
 }
 
@@ -48,8 +50,12 @@ type activeCall struct {
 
 // JoinCall starts the install's call in one of a den's voice channels, for
 // a page, which gets the call's offers and its end through deliver; it
-// mustn't block. A call another page held ends, as moved.
-func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, muted bool, deliver func(CallEvent)) error {
+// mustn't block. A call another page held ends, as moved. With resume, the
+// page asks the den for the call it holds for this device after the den's
+// connection dropped (M3), which the page's peer connection carries on.
+// Either way, the den's addresses are looked up afresh, since the network
+// may have changed.
+func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, muted, resume bool, deliver func(CallEvent)) error {
 	if !validID(channel) {
 		return inputError(errors.New("no such channel"))
 	}
@@ -80,7 +86,7 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mut
 			}
 		}
 	}
-	if err := c.sendFrame(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: channel, Muted: muted}); err != nil {
+	if err := c.sendFrame(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: channel, Muted: muted, Resume: resume}); err != nil {
 		if m.takeCall(func(x *activeCall) bool { return x == call }) != nil {
 			end(CallDisconnected)
 		}
@@ -104,6 +110,27 @@ func (m *Manager) AnswerCall(page, denID string, version int, sdp string) {
 	if c, err := m.find(denID); err == nil {
 		_ = c.sendFrame(denproto.EventVoiceAnswer, denproto.VoiceAnswer{Version: version, SDP: sdp})
 	}
+}
+
+// RestartCall has the den restart the ICE of the page's call, as when the
+// browser's connection to the media ports broke (M3). The den's address
+// may have changed with the network, so the offer that follows gets it
+// afresh.
+func (m *Manager) RestartCall(ctx context.Context, page, denID string) {
+	call := m.currentCall(page, denID)
+	if call == nil {
+		return
+	}
+	c, err := m.find(denID)
+	if err != nil {
+		return
+	}
+	if addrs, err := c.mediaAddrs(ctx); err == nil {
+		m.callMu.Lock()
+		call.addrs = addrs
+		m.callMu.Unlock()
+	}
+	_ = c.sendFrame(denproto.EventVoiceRestart, struct{}{})
 }
 
 // MuteCall sets the member's mark in the page's call.
@@ -191,11 +218,15 @@ func (c *conn) callEvent(e denproto.Event) error {
 		}
 		m.callMu.Lock()
 		call := m.call
+		var addrs []netip.Addr
+		if call != nil {
+			addrs = call.addrs
+		}
 		m.callMu.Unlock()
 		if call == nil || call.den != denID || call.channel != o.ChannelID {
 			return nil
 		}
-		sdp, err := denproto.AddCandidates(denproto.StripCandidates(o.SDP), call.addrs, o.UDPPort, o.TCPPort)
+		sdp, err := denproto.AddCandidates(denproto.StripCandidates(o.SDP), addrs, o.UDPPort, o.TCPPort)
 		if err == nil {
 			err = denproto.CheckOffer(sdp)
 		}
@@ -206,6 +237,17 @@ func (c *conn) callEvent(e denproto.Event) error {
 		}
 		call.deliver(CallEvent{DenID: denID, Channel: o.ChannelID,
 			Offer: &CallOffer{Version: o.Version, SDP: sdp, UDPPort: o.UDPPort, TCPPort: o.TCPPort}})
+	case denproto.EventVoiceResumed:
+		var x denproto.VoiceResumed
+		if json.Unmarshal(e.D, &x) != nil {
+			return errMalformed
+		}
+		m.callMu.Lock()
+		call := m.call
+		m.callMu.Unlock()
+		if call != nil && call.den == denID && call.channel == x.ChannelID {
+			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Resumed: true})
+		}
 	case denproto.EventVoiceEnded:
 		var x denproto.VoiceEnded
 		if json.Unmarshal(e.D, &x) != nil {
@@ -224,7 +266,7 @@ func (c *conn) callEvent(e denproto.Event) error {
 func cleanReason(reason string) string {
 	switch reason {
 	case denproto.VoiceMoved, denproto.VoiceNotFound, denproto.VoiceFull, denproto.VoiceRateLimited,
-		denproto.VoiceForbidden, denproto.VoiceDeleted:
+		denproto.VoiceForbidden, denproto.VoiceDeleted, denproto.VoiceDisconnectedByStaff:
 		return reason
 	}
 	return denproto.VoiceFailed
