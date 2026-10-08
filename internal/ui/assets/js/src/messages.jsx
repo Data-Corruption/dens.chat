@@ -1,12 +1,15 @@
 // A channel's message list and composer.
 //
 // The list holds one contiguous run of at most WINDOW messages, never the
-// whole channel. Scrolling near either end loads the next page and trims
-// the far end, so memory stays flat however far back a member scrolls.
-// While the run holds the newest message the list is attached to the live
-// tail and new messages append; jumping to an old message (a reply's
-// quote) loads the page around it and detaches, and new messages then only
-// update a "jump to present" bar.
+// whole channel, and none that lie more than SCREENS screens beyond what's
+// shown, so a run of photos holds far fewer than a run of text. Scrolling
+// near either end loads the next page and cuts the far end, so memory
+// stays flat however far back a member scrolls (see paging.js). While the
+// run holds the newest message the list is attached to the live tail and
+// new messages append, unless the member is reading far enough up that the
+// run is full; jumping to an old message (a reply's quote) loads the page
+// around it and detaches, and new messages then only update a "jump to
+// present" bar.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -14,7 +17,7 @@ import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
-import { PAGE, WINDOW, fromPage, mergeIn, replayed, withDelete, withUpdate } from './paging.js';
+import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withNewer, withOlder, withUpdate } from './paging.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
@@ -125,6 +128,31 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         }
     }
 
+    // far finds where the run reaches more than SCREENS screens beyond what's
+    // shown, by its rows as they're laid out: those are what a growing run
+    // gives up first.
+    function far() {
+        const box = scroller.current;
+        if (!box) return { above: null, below: null };
+        const view = box.getBoundingClientRect();
+        const rows = [...box.querySelectorAll('[data-id]')].map((el) => {
+            const r = el.getBoundingClientRect();
+            return { id: el.dataset.id, top: r.top, bottom: r.bottom };
+        });
+        return farIds(rows, view.top, view.bottom, SCREENS * box.clientHeight);
+    }
+
+    // nextPage is how many messages the page beyond an end ("older" or
+    // "newer") asks for, by how tall the rows nearest that end are.
+    function nextPage(end) {
+        const box = scroller.current;
+        if (!box) return PAGE;
+        const rows = [...box.querySelectorAll('[data-id]')];
+        const near = end === 'older' ? rows.slice(0, 20) : rows.slice(-20);
+        const height = near.reduce((sum, el) => sum + el.getBoundingClientRect().height, 0) / near.length;
+        return pageSize(height, box.clientHeight);
+    }
+
     async function loadNewest() {
         try {
             const got = await fetchPage(`${base}?limit=${PAGE}`, true);
@@ -138,23 +166,19 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         }
     }
 
+    // loadOlder adds the page before the run, and cuts what lies far below
+    // the view, measured before the page lands: the anchor keeps the view
+    // where it is, so what's below stays put.
     async function loadOlder() {
         const cur = listRef.current;
         if (loading.current.older || !cur.hasOlder || !cur.messages.length) return;
         loading.current.older = true;
         try {
-            const got = await fetchPage(`${base}?before=${cur.messages[0].id}&limit=${PAGE}`, false);
+            const got = await fetchPage(`${base}?before=${cur.messages[0].id}&limit=${nextPage('older')}`, false);
             if (!got) return;
+            const { below } = far();
             captureAnchor();
-            setList((l) => {
-                let messages = mergeIn(l.messages, got.page.messages);
-                let hasNewer = l.hasNewer;
-                if (messages.length > WINDOW) {
-                    messages = messages.slice(0, WINDOW);
-                    hasNewer = true;
-                }
-                return replayed({ ...l, messages, hasOlder: got.page.has_older, hasNewer }, got.since);
-            });
+            setList((l) => replayed(withOlder(l, got.page, below), got.since));
         } catch (e) {
             setError(e.message);
         } finally {
@@ -167,18 +191,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (loading.current.newer || !cur.hasNewer || !cur.messages.length) return;
         loading.current.newer = true;
         try {
-            const got = await fetchPage(`${base}?after=${cur.messages[cur.messages.length - 1].id}&limit=${PAGE}`, false);
+            const got = await fetchPage(`${base}?after=${cur.messages[cur.messages.length - 1].id}&limit=${nextPage('newer')}`, false);
             if (!got) return;
+            const { above } = far();
             captureAnchor();
-            setList((l) => {
-                let messages = mergeIn(l.messages, got.page.messages);
-                let hasOlder = l.hasOlder;
-                if (messages.length > WINDOW) {
-                    messages = messages.slice(messages.length - WINDOW);
-                    hasOlder = true;
-                }
-                return replayed({ ...l, messages, hasOlder, hasNewer: got.page.has_newer }, got.since);
-            });
+            setList((l) => replayed(withNewer(l, got.page, above), got.since));
             if (!got.page.has_newer) setNewCount(0);
         } catch (e) {
             setError(e.message);
@@ -202,7 +219,6 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         anchor.current = { jump: id };
         if (next) setList(next);
         else setList((l) => ({ ...l }));
-
         setHighlight(id);
         clearTimeout(highlightTimer.current);
         highlightTimer.current = setTimeout(() => setHighlight(null), 2500);
@@ -305,17 +321,18 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 return;
             }
             const follow = atBottom.current || mine;
+            const { above, below } = far();
+            if (!follow && (below || l.messages.length >= WINDOW)) {
+                // The member is reading further up a run that's full: rather
+                // than grow it, the list lets go of the live tail, as after a
+                // jump, and the bar or scrolling down brings it back.
+                setList((cur) => ({ ...cur, hasNewer: true }));
+                setNewCount((n) => n + 1);
+                return;
+            }
             anchor.current = follow ? { bottom: true } : null;
             if (!follow) setNewCount((n) => n + 1);
-            setList((cur) => {
-                let messages = mergeIn(cur.messages, [d]);
-                let hasOlder = cur.hasOlder;
-                if (messages.length > WINDOW && follow) {
-                    messages = messages.slice(messages.length - WINDOW);
-                    hasOlder = true;
-                }
-                return { ...cur, messages, hasOlder };
-            });
+            setList((cur) => (follow ? atTail(cur, d, above) : { ...cur, messages: mergeIn(cur.messages, [d]) }));
             if (follow) setTimeout(markRead, 0);
         } else if (e.t === 'message.updated') {
             setList((cur) => withUpdate(cur, d));
@@ -386,7 +403,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
             if (!listRef.current.hasNewer) {
                 anchor.current = { bottom: true };
-                setList((cur) => ({ ...cur, messages: mergeIn(cur.messages, [m]) }));
+                const { above } = far();
+                setList((cur) => atTail(cur, m, above));
             } else {
                 loadNewest();
             }
