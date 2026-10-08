@@ -52,11 +52,13 @@ Dens is one static Go binary, forked from Sprout, that always runs the client an
 
 | Path | Transport | Carries |
 | --- | --- | --- |
-| Browser ↔ local service | HTTP + WebSocket on 127.0.0.1 (client listener) | UI, local API, signaling relay |
+| Browser ↔ local service | HTTP + WebSocket on loopback, at `localhost` (client listener) | UI, local API, signaling relay |
 | Local service ↔ remote den | HTTPS + WSS via the den's Caddy | Auth, messages, presence, files, signaling |
 | Local service ↔ own den | HTTP + WebSocket to the den listener on 127.0.0.1 | The same, for the den this install hosts |
 | Browser ↔ den SFU | UDP (DTLS-SRTP), TCP fallback | Voice and screen share media only |
 | CLI ↔ local service | Unix socket (Linux), named pipe (Windows) | Pairing tokens, admin commands, backups |
+| Local service ↔ YouTube | HTTPS | A linked video's title and picture, for a member who turned YouTube players on (M4.1) |
+| Browser ↔ YouTube | HTTPS, in a sandboxed frame | YouTube's player, once that member plays a video (M4.1) |
 
 The browser never talks to a den over HTTP. All den content reaches the page through the local service, so it only ever runs under the localhost origin.
 
@@ -124,7 +126,8 @@ Keep the client listener and den listener separate. Caddy forwards remote reques
 - On Linux the socket is connectable by any local user (mode 0666) and the peer check does the authorization, as the system D-Bus does. On Windows the pipe's DACL grants SYSTEM and the service SID full access and the recorded user read and write-data rights only (`0x12019b`). Never grant the user `GENERIC_WRITE` on the pipe: it includes `FILE_CREATE_PIPE_INSTANCE`, which lets the user add server instances and pose as the service. The service reads the caller's SID by impersonating it at identification level, which needs no `SeImpersonatePrivilege`.
 - The service keeps a listening pipe instance open at all times, creating the next instance before serving the current one, so no other process can re-create the name between connections.
 - The CLI verifies the other end too. On Linux the peer UID must be the service account's. On Windows the pipe's server process ID must match the one the SCM reports for `dens-<name>`, and the service creates the pipe with `FILE_FLAG_FIRST_PIPE_INSTANCE`, so it fails closed if another process claimed the name first.
-- The service returns a one-time token and its client port. The CLI opens `http://127.0.0.1:<port>/#token=…` (`xdg-open` on Linux, `ShellExecute` on Windows).
+- The service returns a one-time token and its client port. The CLI opens `http://localhost:<port>/#token=…` (`xdg-open` on Linux, `ShellExecute` on Windows).
+- The page lives at `localhost`, not `127.0.0.1` (M4.1): YouTube's player won't play for a page at an IP address (see YouTube players). Browsers resolve `localhost` to loopback themselves, never through DNS, and treat it as a secure context, as they do `127.0.0.1`. A browser that loads the page at `127.0.0.1` or `[::1]` as a document is redirected to `localhost`, keeping the path and, since browsers carry a fragment across a redirect, the pairing token. Scripts and tests, which don't load it as a document, get their answer where they asked.
 - The page exchanges it for an `HttpOnly`, `SameSite=Strict` session cookie and clears the fragment. On the first pairing, the page then asks for a new local password before anything else (see Local identity).
 - A paired session lasts 30 days from its last use; the service extends it at most once a day. Its cookie is named for the client port (`dens_session_<port>`), because cookies aren't scoped by port and each instance has its own.
 - The port comes from the authenticated service while it holds that listener on both loopbacks. Neither platform lets another account bind the same address and port, so no separate port-ownership check is needed. On Windows another account can bind the wildcard address on that port, but loopback connections still reach the more specific socket.
@@ -333,7 +336,39 @@ When a message is sent or edited, or a channel's description or a member's bio i
 - A Reddit share link (`reddit.com/r/…/s/…`) stays as it is, apart from tracking parameters. Its code is Reddit's own record of who shared the link, and only Reddit can turn it into a post ID, which would mean Dens fetching from Reddit. Amazon's short links (`amzn.to/…`, `a.co/d/…`) stay as they are for the same reason.
 - Hosts match exactly, as a URL parser reads them, so a lookalike link is never rewritten into a real one.
 - The page shows links without knowing the rule, so the rule can take in more sites later without a protocol change. Links get shorter too, often by 20 to 80 bytes, but that's a side effect.
-- No link previews in v1: fetching them would reveal the den's or members' IPs to those sites. Could be an opt-in feature for v2. Previews would take a fixed height, with their content scaled to fit, so they never shift the message list.
+- No link previews in v1, apart from YouTube's players for members who turn them on (see YouTube players). Fetching a preview would reveal the den's or members' IPs to whoever runs the linked site, which any member can choose. Could be an opt-in feature for v2. Previews would take a fixed height, with their content scaled to fit, so they never shift the message list.
+
+**YouTube players (M4.1)**
+
+A member can play a linked YouTube video where it's posted, in the message list, rather than in a new tab. It's off until they turn it on in the settings' Links section, beside where Reddit links open, since it means their Dens and their browser contact YouTube. The browser keeps the choice, as it keeps the other.
+
+- With players on, a YouTube link in a message gets a cover under the message, after its files: the video's picture with its title and channel over it, and a play button. Only links in the one form the den writes count (`https://www.youtube.com/watch?v=…`, with `&t=` and a start time if there is one), each video once, and at most three per message. A link in a spoiler gets none, and reply quotes, bios and channel descriptions get none either.
+- The cover takes a 16:9 box, 400 pixels wide at most, before anything in it loads, and the player takes the same box, so the message list never moves.
+- Clicking the cover swaps in YouTube's player from `www.youtube-nocookie.com`, which plays at once, from the link's start time.
+- One video plays at a time: starting another puts the first back behind its cover. A playing video carries on while its message is scrolled out of view, so music and picture-in-picture keep going, and stops once its message leaves the part of the list that's loaded, or the member opens another channel.
+- A video whose owner turned off embedding says it plays only on YouTube, with its link, instead of offering to play.
+
+*The cover.* The member's local service fetches the title, channel and picture once a cover comes on screen, and the page shows them from its own origin, so its CSP lets in no image or connection from YouTube.
+
+- The service asks YouTube's oEmbed endpoint for the title and channel, and `i.ytimg.com` for the picture, at addresses it builds from the video's ID: 11 of `A-Z`, `a-z`, `0-9`, `-` and `_`. It follows no redirects, reads at most 64 KiB of an answer and 256 KiB of a picture, and gives up after 10 seconds.
+- The title and channel are cleaned as display names are, and shown as text. Nothing else in oEmbed's answer is used, the ready-made player it offers least of all. The picture must be a JPEG, which `internal/media` reads and strips, and the page gets it with the headers of a member's file, so the browser doesn't keep it.
+- The service sends no cookies, referrer or user agent. It holds what it fetched in memory for an hour, and a failure for a minute, up to 16 MiB in all; asks once for a video that several covers want at the same time; and never logs a video's ID, which comes from a message.
+
+*Who learns what.* The setting says so, in fewer words:
+
+- YouTube sees the member's IP address for each video whose cover comes on screen, in channels and in DMs, and which videos they play. `youtube-nocookie.com` holds YouTube's cookies back until a video plays; after that, the browser's own rules on third-party cookies decide whether YouTube can tie the play to a Google account.
+- Several members of a den looking up one video at about the same time could let YouTube guess they know each other.
+- In a DM, a cover tells YouTube which video the member was sent. The den still can't read it.
+- Nobody but YouTube learns anything. Its addresses are fixed, so a member can't point anyone's Dens at a server of their own, which is why other links get no previews. With players off, links show as they always have, and nothing on the page contacts YouTube.
+
+*The player's frame.* YouTube's player is a frame from another origin, so the browser keeps it from the page, the page's storage and the local API.
+
+- It's sandboxed to scripts, its own origin and popups: it can't navigate the page, download files or open dialogs. A popup, such as YouTube's "Watch on YouTube", opens in a new tab that can't reach the page, since the page's `Cross-Origin-Opener-Policy: same-origin` cuts it off.
+- It's allowed autoplay, encrypted media, picture-in-picture and full screen, and nothing else. The page's `Permissions-Policy` keeps the microphone and camera from it whatever it asks.
+- The page builds the frame's address from the ID and start time it checked itself, since a hostile den or sender could skip the den's rewrite. Its CSP takes frames only from `https://www.youtube-nocookie.com`.
+- The page listens for no messages from the frame, and doesn't use YouTube's player API, which would need it to.
+
+*The page's address.* YouTube's player needs a `Referer` naming the page that embeds it, and won't play for a page at an IP address: `127.0.0.1`, `[::1]` and LAN addresses all get "This video is unavailable", while host names, `localhost` included, play. So the page lives at `localhost` (see Pairing the browser). The frame sends YouTube the page's origin and nothing more (`strict-origin-when-cross-origin`); everything else the page loads sends no referrer at all.
 
 **Presence at 500 online**
 
@@ -761,6 +796,8 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] Everything from a den is hostile input: the client service checks every den response against the protocol's types and limits before storing or forwarding it.
 - [ ] The CSP allows WebAssembly for RNNoise (`'wasm-unsafe-eval'`), but not `eval` (M3).
 - [ ] Rewritten links stay on their own site: hosts match exactly, as a URL parser reads them, so a lookalike is never rewritten into a real link (M3).
+- [ ] The page frames nothing but YouTube's player from `https://www.youtube-nocookie.com` (`frame-src`), only for a member who turned players on and clicked, sandboxed without top navigation, at an address the page built from an ID it checked; it takes no messages from the frame, and its popups can't reach the page (M4.1).
+- [ ] The local service fetches nothing from YouTube but the oEmbed and picture addresses it builds from a checked video ID, follows no redirects, caps what it reads, cleans titles as names, and serves a picture only as a JPEG it read and stripped, with a member's file's headers (M4.1).
 
 **Den listener**
 
@@ -834,7 +871,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
 | M2 | Voice: calls in voice channels through the Pion SFU, on a UDP mux with ICE-TCP fallback; the signaling relay, with offers from the den as members join and leave; mute; the call bar | A clear two-person call across two home networks in the four target browsers, over UDP and with UDP blocked, and from the den owner's own browser |
 | M3 | Group voice: Opus at 96 kbps, speaking indicators, each member's own volume for everyone else, staff disconnecting and muting members in calls, calls that ride out a dropped connection, and RNNoise noise suppression unless a member turns it off. Compact links: Reddit, YouTube, X and Amazon product links in one short form, and tracking parameters off every link. Third-party notices in the binary | A call of everyone the manual test brings together stays stable for an hour, and a YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
-| M4 | Screen share: PLI forwarding, owner limits, viewer caps; a voice channel's bitrate as an owner setting | 2 shares with 20 viewers within owner limits |
+| M4 | YouTube players, for members who turn them on. Screen share: PLI forwarding, owner limits, viewer caps; a voice channel's bitrate as an owner setting | A YouTube link plays where it's posted for a member who turned players on, and 2 shares with 20 viewers within owner limits |
 | M5 | Message retention setting, and managing files: each member's uploads by size against their limit, deleting them, and swapping an attachment for a smaller copy | A member at their limit frees space by deleting and swapping old attachments, and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
 | M7 | Global shortcuts: push to talk and the other voice keys while another program has focus, through a helper in the desktop session (see Global shortcuts) | A member pushes to talk from a full-screen game, on Windows and on GNOME and KDE under Wayland |
@@ -893,6 +930,29 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 - M3.3's page tests: when the gate opens, holds and closes, by level and by RNNoise's judgment of speech, and fades; the processor gating with and without RNNoise, as the page sets it; the voice settings as the browser keeps them; and which key events fire a binding. In the container, both browsers check what each way of sending sends, with almost nothing between words, a held key let go when the page loses focus, the settings dialog closing each way, the composer's menu and guide, and the video player's volume.
 - Before the manual test, Chromium and Firefox in a container with fake microphones, as in M2, check every offer asking for 96 kbps, speaking indicators, a member's volume, RNNoise on from the start and turned off mid-call, staff muting and disconnecting, and a call riding out its member's service restarting and its UDP path breaking, which moves it to TCP on the same connection.
 - The manual test, as in M2: a test build packed with setup steps for friends, on a den the owner hosts on their own domain, which the group uses as its voice chat for a day, with everyone in one call for at least an hour. On the way: RNNoise on and off, speaking indicators in each target browser, turning someone down, staff disconnecting and muting, Wi-Fi dropped for a few seconds, a laptop moving between networks, a Caddy reload mid-call, and a YouTube share link in a channel and in a DM.
+
+**M4 steps.** M4 lands as two pull requests, each built and committed in layers, and each checked in the four target browsers:
+
+| Step | Scope | Done when |
+| --- | --- | --- |
+| M4.1 YouTube players | The page at `localhost`; the setting; covers with the title and picture the local service fetches; YouTube's player in place on a click, one at a time | With players on, a YouTube link plays where it's posted, from its start time, in a channel and in a DM, in the four target browsers; with them off, nothing on the page contacts YouTube |
+| M4.2 Screen share | PLI forwarding, owner limits and viewer caps; a voice channel's bitrate as an owner setting | 2 shares with 20 viewers within owner limits |
+
+**M4.1 testing.**
+
+- Go tests:
+  - The lookups, against a stand-in for YouTube: a title and channel cleaned as names, a video that can't be embedded, one that doesn't exist, a redirect, an answer or a picture too large, a picture that isn't a JPEG, and one whose metadata comes out; one fetch for covers that ask together, a failure held for a minute, and no fetch at all for an ID that isn't one.
+  - The service sends a browser that loads the page at `127.0.0.1` as a document to `localhost`, with its path, and answers a script where it asked. `dens open` gives a `localhost` address.
+- Page tests: which links get covers, starting from the YouTube links in `links.json` as the den writes them: only that form, not in code or a spoiler, each video once, at most three. Also start times, the player's address and the setting.
+- In the container, in both browsers, at `localhost`:
+  - A cover shows the title and picture.
+  - A click plays the video with sound from its start time.
+  - A second video stops the first.
+  - Scrolling away keeps it playing, and opening another channel stops it.
+  - YouTube's popups open a tab that can't reach the page.
+  - With players off, nothing asks the service about a video.
+  - A page loaded at `127.0.0.1` ends up at `localhost`, paired by the token it carried.
+- The manual test: the four target browsers, in a channel and in a DM, with the setting on and off.
 
 **Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
 
