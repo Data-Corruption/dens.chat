@@ -1,12 +1,15 @@
 // A channel's message list and composer.
 //
 // The list holds one contiguous run of at most WINDOW messages, never the
-// whole channel. Scrolling near either end loads the next page and trims
-// the far end, so memory stays flat however far back a member scrolls.
-// While the run holds the newest message the list is attached to the live
-// tail and new messages append; jumping to an old message (a reply's
-// quote) loads the page around it and detaches, and new messages then only
-// update a "jump to present" bar.
+// whole channel, and none that lie more than SCREENS screens beyond what's
+// shown, so a run of photos holds far fewer than a run of text. Scrolling
+// near either end loads the next page and cuts the far end, so memory
+// stays flat however far back a member scrolls (see paging.js). While the
+// run holds the newest message the list is attached to the live tail and
+// new messages append, unless the member is reading far enough up that the
+// run is full; jumping to an old message (a reply's quote) loads the page
+// around it and detaches, and new messages then only update a "jump to
+// present" bar.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -14,6 +17,7 @@ import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
+import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withNewer, withOlder, withUpdate } from './paging.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
@@ -21,8 +25,6 @@ import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
 import { Videos } from './youtube.jsx';
 
-const WINDOW = 200;
-const PAGE = 50;
 const EDGE = 600; // px from an end at which the next page loads
 const READ_EVERY = 2000; // ms between read position updates
 const GROUP_GAP = 5 * 60 * 1000;
@@ -30,25 +32,15 @@ const GROUP_GAP = 5 * 60 * 1000;
 // MAX_EDITORS is how many others may edit a message with its author.
 const MAX_EDITORS = 20;
 
-// withUpdate puts a changed message into the list. A tick's answer can
-// arrive after a newer update, so the higher revision wins.
-function withUpdate(list, d) {
-    const held = list.messages.find((m) => m.id === d.id);
-    if (held && held.revision > d.revision) return list;
-    const reply = { author_id: d.author_id, text: d.text, locked: !!d.locked };
-    return { ...list, messages: list.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)) };
-}
+// FOLD is how tall a message's text shows before it folds, in px: about 16
+// lines. Taller text, such as a pasted log or a wall of blank lines, shows
+// its top under a fade, and opens on request. The den keeps no limit on
+// lines: it can't read a DM, and a hostile sender wouldn't keep one.
+const FOLD = 400;
 
 // joinNames lists names in a sentence.
 function joinNames(names) {
     return names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
-function mergeIn(messages, incoming) {
-    const seen = new Set(messages.map((m) => m.id));
-    const out = messages.concat(incoming.filter((m) => !seen.has(m.id)));
-    out.sort((a, b) => compareIds(a.id, b.id));
-    return out;
 }
 
 let nextKey = 1;
@@ -85,6 +77,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const readTimer = useRef(null);
     const unsentRead = useRef('');
     const highlightTimer = useRef(null);
+    // loads counts the loads that replace the run, so a page that lands
+    // after the run it was for was replaced is dropped. caught holds, for
+    // each load out, the events that came while it was.
+    const loads = useRef(0);
+    const caught = useRef(new Set());
     const base = `/api/dens/${denID}/channels/${channel.id}/messages`;
     // candidates could edit a message here with its author: the members
     // who can see the channel, besides this one.
@@ -123,11 +120,52 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         checkEdges();
     }, [list]);
 
+    // fetchPage fetches a page, keeping the events that come while it's out
+    // for replayed. A page that replaces the run counts as a new load; any
+    // page is null once the run it was for was replaced.
+    async function fetchPage(path, replaces) {
+        const n = replaces ? ++loads.current : loads.current;
+        const since = [];
+        caught.current.add(since);
+        try {
+            const page = await api.get(path);
+            return n === loads.current ? { page, since } : null;
+        } finally {
+            caught.current.delete(since);
+        }
+    }
+
+    // far finds where the run reaches more than SCREENS screens beyond what's
+    // shown, by its rows as they're laid out: those are what a growing run
+    // gives up first.
+    function far() {
+        const box = scroller.current;
+        if (!box) return { above: null, below: null };
+        const view = box.getBoundingClientRect();
+        const rows = [...box.querySelectorAll('[data-id]')].map((el) => {
+            const r = el.getBoundingClientRect();
+            return { id: el.dataset.id, top: r.top, bottom: r.bottom };
+        });
+        return farIds(rows, view.top, view.bottom, SCREENS * box.clientHeight);
+    }
+
+    // nextPage is how many messages the page beyond an end ("older" or
+    // "newer") asks for, by how tall the rows nearest that end are.
+    function nextPage(end) {
+        const box = scroller.current;
+        if (!box) return PAGE;
+        const rows = [...box.querySelectorAll('[data-id]')];
+        const near = end === 'older' ? rows.slice(0, 20) : rows.slice(-20);
+        const height = near.reduce((sum, el) => sum + el.getBoundingClientRect().height, 0) / near.length;
+        return pageSize(height, box.clientHeight);
+    }
+
     async function loadNewest() {
         try {
-            const page = await api.get(`${base}?limit=${PAGE}`);
+            const got = await fetchPage(`${base}?limit=${PAGE}`, true);
+            if (!got) return;
             anchor.current = { bottom: true };
-            setList({ messages: page.messages, hasOlder: page.has_older, hasNewer: page.has_newer, loaded: true });
+            setList(replayed(fromPage(got.page), got.since));
             setNewCount(0);
             setError('');
         } catch (e) {
@@ -135,22 +173,19 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         }
     }
 
+    // loadOlder adds the page before the run, and cuts what lies far below
+    // the view, measured before the page lands: the anchor keeps the view
+    // where it is, so what's below stays put.
     async function loadOlder() {
         const cur = listRef.current;
         if (loading.current.older || !cur.hasOlder || !cur.messages.length) return;
         loading.current.older = true;
         try {
-            const page = await api.get(`${base}?before=${cur.messages[0].id}&limit=${PAGE}`);
+            const got = await fetchPage(`${base}?before=${cur.messages[0].id}&limit=${nextPage('older')}`, false);
+            if (!got) return;
+            const { below } = far();
             captureAnchor();
-            setList((l) => {
-                let messages = mergeIn(l.messages, page.messages);
-                let hasNewer = l.hasNewer;
-                if (messages.length > WINDOW) {
-                    messages = messages.slice(0, WINDOW);
-                    hasNewer = true;
-                }
-                return { ...l, messages, hasOlder: page.has_older, hasNewer };
-            });
+            setList((l) => replayed(withOlder(l, got.page, below), got.since));
         } catch (e) {
             setError(e.message);
         } finally {
@@ -163,18 +198,12 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (loading.current.newer || !cur.hasNewer || !cur.messages.length) return;
         loading.current.newer = true;
         try {
-            const page = await api.get(`${base}?after=${cur.messages[cur.messages.length - 1].id}&limit=${PAGE}`);
+            const got = await fetchPage(`${base}?after=${cur.messages[cur.messages.length - 1].id}&limit=${nextPage('newer')}`, false);
+            if (!got) return;
+            const { above } = far();
             captureAnchor();
-            setList((l) => {
-                let messages = mergeIn(l.messages, page.messages);
-                let hasOlder = l.hasOlder;
-                if (messages.length > WINDOW) {
-                    messages = messages.slice(messages.length - WINDOW);
-                    hasOlder = true;
-                }
-                return { ...l, messages, hasOlder, hasNewer: page.has_newer };
-            });
-            if (!page.has_newer) setNewCount(0);
+            setList((l) => replayed(withNewer(l, got.page, above), got.since));
+            if (!got.page.has_newer) setNewCount(0);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -183,17 +212,19 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     }
 
     async function jumpTo(id) {
-        let page = null;
+        let next = null;
         if (!listRef.current.messages.some((m) => m.id === id)) {
             try {
-                page = await api.get(`${base}?around=${id}&limit=${PAGE}`);
+                const got = await fetchPage(`${base}?around=${id}&limit=${PAGE}`, true);
+                if (!got) return;
+                next = replayed(fromPage(got.page), got.since);
             } catch (e) {
                 setError(e.message);
                 return;
             }
         }
         anchor.current = { jump: id };
-        if (page) setList({ messages: page.messages, hasOlder: page.has_older, hasNewer: page.has_newer, loaded: true });
+        if (next) setList(next);
         else setList((l) => ({ ...l }));
         setHighlight(id);
         clearTimeout(highlightTimer.current);
@@ -218,6 +249,15 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (compareIds(id, readUpTo.current) <= 0) return;
         readUpTo.current = id;
         api.put(`/api/dens/${denID}/channels/${channel.id}/read`, { message_id: id }).catch(() => {});
+    }
+
+    // toggled hears that a folded message opened or folded back. The member
+    // is reading it, so the list stops following the newest until it next
+    // sees where the view is: otherwise it would follow the message's change
+    // of size to the end.
+    function toggled() {
+        atBottom.current = false;
+        requestAnimationFrame(checkEdges);
     }
 
     function checkEdges() {
@@ -279,6 +319,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     function handleEvent(e) {
         const d = e.d;
         if (!d || d.channel_id !== channel.id) return;
+        caught.current.forEach((since) => since.push(e));
         // Once this member checks a DM's key, what it sealed opens.
         if (e.t === 'dm.key') {
             if (listRef.current.messages.some((m) => m.locked)) loadNewest();
@@ -296,26 +337,24 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 return;
             }
             const follow = atBottom.current || mine;
+            const { above, below } = far();
+            if (!follow && (below || l.messages.length >= WINDOW)) {
+                // The member is reading further up a run that's full: rather
+                // than grow it, the list lets go of the live tail, as after a
+                // jump, and the bar or scrolling down brings it back.
+                setList((cur) => ({ ...cur, hasNewer: true }));
+                setNewCount((n) => n + 1);
+                return;
+            }
             anchor.current = follow ? { bottom: true } : null;
             if (!follow) setNewCount((n) => n + 1);
-            setList((cur) => {
-                let messages = mergeIn(cur.messages, [d]);
-                let hasOlder = cur.hasOlder;
-                if (messages.length > WINDOW && follow) {
-                    messages = messages.slice(messages.length - WINDOW);
-                    hasOlder = true;
-                }
-                return { ...cur, messages, hasOlder };
-            });
+            setList((cur) => (follow ? atTail(cur, d, above) : { ...cur, messages: mergeIn(cur.messages, [d]) }));
             if (follow) setTimeout(markRead, 0);
         } else if (e.t === 'message.updated') {
             setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
             setViewing((v) => (v && (d.files || []).includes(v.id) ? null : v));
-            setList((cur) => ({
-                ...cur,
-                messages: cur.messages.filter((m) => m.id !== d.id).map((m) => (m.reply_to === d.id ? { ...m, reply: undefined } : m)),
-            }));
+            setList((cur) => withDelete(cur, d));
         }
     }
 
@@ -380,7 +419,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
             if (!listRef.current.hasNewer) {
                 anchor.current = { bottom: true };
-                setList((cur) => ({ ...cur, messages: mergeIn(cur.messages, [m]) }));
+                const { above } = far();
+                setList((cur) => atTail(cur, m, above));
             } else {
                 loadNewest();
             }
@@ -437,6 +477,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 onEditDone={() => setEditing(null)}
                 onJump={jumpTo}
                 onView={setViewing}
+                onToggle={toggled}
                 denID={denID}
                 channelID={channel.id}
             />,
@@ -491,7 +532,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     {list.hasOlder && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
                     {rows}
-                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onRetry={() => send(p.text, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
+                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onToggle={toggled} onRetry={() => send(p.text, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
                     {list.hasNewer && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                 </div>
             </div>
@@ -559,7 +600,7 @@ function Quoted({ text, locked, me }) {
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID, channelID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState('');
     async function tick(n, checked, text) {
@@ -626,13 +667,15 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} onDone={onEditDone} />
                     ) : (
                         (m.text.trim() || m.edited_at) && (
-                            <div class="wrap-break-word">
-                                {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
-                                {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
-                                {editorNames.length > 0 && (
-                                    <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
-                                )}
-                            </div>
+                            <Fold onToggle={onToggle}>
+                                <div class="wrap-break-word">
+                                    {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
+                                    {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                                    {editorNames.length > 0 && (
+                                        <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
+                                    )}
+                                </div>
+                            </Fold>
                         )
                     )}
                     {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
@@ -657,12 +700,77 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
     );
 }
 
+// Fold holds a message's text to FOLD px when it's taller, under a fade
+// with Show more. The text is held from the first paint, so folding never
+// moves the list; only the button comes after the text is measured, over
+// the fade. onToggle hears that the member opened it or folded it back.
+function Fold({ onToggle, children }) {
+    const box = useRef(null);
+    const content = useRef(null);
+    const folding = useRef(false);
+    const [over, setOver] = useState(false);
+    const [open, setOpen] = useState(false);
+    // Folding back from the end of a long message would leave the view far
+    // below it, so the message comes back into view before the next frame.
+    useLayoutEffect(() => {
+        if (!folding.current) return;
+        folding.current = false;
+        box.current?.scrollIntoView({ block: 'nearest' });
+    }, [open]);
+    useLayoutEffect(() => {
+        const el = content.current;
+        const measure = () => setOver(el.offsetHeight > FOLD);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        // An edit or a narrower window can take the text over the line, or
+        // back under it.
+        const observer = new ResizeObserver(measure);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+    const folded = over && !open;
+    return (
+        <div ref={box} class="relative">
+            <div class={`${open ? '' : 'max-h-100 overflow-hidden'} ${folded ? '[mask-image:linear-gradient(to_bottom,black_70%,transparent)]' : ''}`}>
+                <div ref={content}>{children}</div>
+            </div>
+            {folded && (
+                <button
+                    type="button"
+                    class="btn btn-xs absolute bottom-1 left-0 shadow-sm"
+                    aria-expanded="false"
+                    onClick={() => {
+                        onToggle?.();
+                        setOpen(true);
+                    }}
+                >
+                    Show more
+                </button>
+            )}
+            {over && open && (
+                <button
+                    type="button"
+                    class="btn btn-xs mt-1"
+                    aria-expanded="true"
+                    onClick={() => {
+                        onToggle?.();
+                        folding.current = true;
+                        setOpen(false);
+                    }}
+                >
+                    Show less
+                </button>
+            )}
+        </div>
+    );
+}
+
 // Spine is the corner that joins a reply to the message it quotes.
 function Spine() {
     return <span aria-hidden="true" class="ml-2 mt-1.5 h-2 w-5 shrink-0 self-start rounded-tl border-l-2 border-t-2 border-base-content/30"></span>;
 }
 
-function PendingRow({ p, me, onRetry, onDiscard }) {
+function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
     return (
         <div class="mt-2 flex gap-3 rounded px-2 py-0.5 opacity-60">
             <div class="w-9 shrink-0">
@@ -673,7 +781,11 @@ function PendingRow({ p, me, onRetry, onDiscard }) {
                     <span class="font-semibold">{me.display_name}</span>
                     <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
                 </div>
-                {p.text.trim() && <Markdown text={p.text} me={me} />}
+                {p.text.trim() && (
+                    <Fold onToggle={onToggle}>
+                        <Markdown text={p.text} me={me} />
+                    </Fold>
+                )}
                 {p.attachments?.length > 0 && (
                     <ul class="text-xs text-base-content/70">
                         {p.attachments.map((f) => <li key={f.id} class="truncate">{f.name} · {formatSize(f.size)}</li>)}
@@ -1005,6 +1117,7 @@ function WritingGuide({ onClose }) {
                     <h3 class="font-semibold">Sending</h3>
                     <p>{kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line.</p>
                     <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
+                    <p>A message holds up to 4,000 characters. One taller than about 16 lines shows folded, and readers open the rest.</p>
                 </section>
                 <section class="flex flex-col gap-1">
                     <h3 class="font-semibold">Formatting</h3>
