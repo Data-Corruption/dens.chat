@@ -39,6 +39,10 @@ func securityHeaders(next http.Handler, scriptSrc string) http.Handler {
 	})
 }
 
+// PageOrigin is where browsers load the page: localhost, never an IP
+// address, since YouTube's player won't play for a page at one (M4.1).
+func PageOrigin(port int) string { return "http://localhost:" + strconv.Itoa(port) }
+
 // LoopbackHosts are the Host header values a browser sends for the client
 // listener on port. An exact match defeats DNS rebinding: a hostile page
 // that rebinds its own name to 127.0.0.1 still sends its own name.

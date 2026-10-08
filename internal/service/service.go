@@ -20,6 +20,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/client"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/den"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
 )
@@ -112,7 +113,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 			return err
 		}
 	}
-	a.Log.Infof("Ready: client listener on http://127.0.0.1:%d", a.Instance.ClientPort)
+	a.Log.Infof("Ready: client listener on loopback port %d, the page at %s", a.Instance.ClientPort, guard.PageOrigin(a.Instance.ClientPort))
 	ready()
 
 	<-ctx.Done()
