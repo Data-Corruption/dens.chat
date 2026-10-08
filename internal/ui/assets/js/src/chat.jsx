@@ -63,6 +63,11 @@ function pick(view, denID, channelID) {
     return view.channels.find((c) => c.kind === 'text') || null;
 }
 
+// withStatus takes in the den's status on this computer.
+function withStatus(view, status) {
+    return { ...view, state: status.state, error: status.error, name: status.name, role: status.role };
+}
+
 function applyPresence(online, p) {
     const next = new Set(p.full ? [] : online);
     (p.online || []).forEach((id) => next.add(id));
@@ -113,18 +118,44 @@ export function Chat({ denID, channelID, navigate }) {
     // tab is the list the sidebar shows: the den's channels, or DMs.
     const [tab, setTab] = useState(() => stored(LIST_TAB + denID) || 'den');
     const reloadTimer = useRef(null);
+    // loads counts the view's reloads, so one that lands after a newer one
+    // is dropped. caught holds, for each reload out, the events that came
+    // while it was: the service may have taken the reload's snapshot before
+    // them, so they go again on top of it.
+    const loads = useRef(0);
+    const caught = useRef(new Set());
     useEffect(() => onConnection(setLive), []);
 
     async function load() {
+        const n = ++loads.current;
+        const since = [];
+        caught.current.add(since);
         try {
             const next = await api.get(`/api/dens/${denID}/state`);
-            setView(next);
-            setOnline(new Set(next.online));
-            setError('');
+            if (n === loads.current) {
+                let view = next;
+                let present = new Set(next.online);
+                for (const e of since) {
+                    if (e.t === 'voice.state') view = { ...view, calls: applyCalls(view.calls, e.d) };
+                    else if (e.t === 'presence') present = applyPresence(present, e.d);
+                    else if (e.t === 'dm.key') view = withKey(view, e.d);
+                    else if (e.t === 'dens') view = withStatus(view, e.d);
+                }
+                setView(view);
+                setOnline(present);
+                setError('');
+            }
         } catch (e) {
-            setError(e.message);
+            if (n === loads.current) setError(e.message);
+        } finally {
+            caught.current.delete(since);
         }
         api.get('/api/dens').then((v) => setStatus(v.dens.find((d) => d.den_id === denID) || null), () => {});
+    }
+
+    // catchUp keeps an event for the reloads that are out.
+    function catchUp(e) {
+        caught.current.forEach((since) => since.push(e));
     }
 
     function reloadSoon() {
@@ -139,7 +170,8 @@ export function Chat({ denID, channelID, navigate }) {
             if (msg.t === 'dens') {
                 const status = msg.d.dens.find((d) => d.den_id === denID);
                 if (status) {
-                    setView((v) => (v ? { ...v, state: status.state, error: status.error, name: status.name, role: status.role } : v));
+                    catchUp({ t: 'dens', d: status });
+                    setView((v) => (v ? withStatus(v, status) : v));
                     setStatus(status);
                 }
                 return;
@@ -147,6 +179,7 @@ export function Chat({ denID, channelID, navigate }) {
             if (msg.t !== 'den' || msg.d.den !== denID) return;
             if (msg.d.reset) return reloadSoon();
             for (const e of msg.d.events || []) {
+                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key') catchUp(e);
                 if (STRUCTURAL.has(e.t)) reloadSoon();
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
                 else if (e.t === 'voice.state') setView((v) => (v ? { ...v, calls: applyCalls(v.calls, e.d) } : v));
