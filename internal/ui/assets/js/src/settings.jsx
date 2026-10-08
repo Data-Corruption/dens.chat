@@ -1,13 +1,13 @@
 // The settings: a dialog over whatever the page shows, so a den and a call
 // stay in view (M3.3). Voice holds the microphone, the speaker and how the
 // member sends their voice; General holds the theme, update checks, the
-// local password, logging, where Reddit links open, and signing this
-// browser out.
+// local password, logging, where Reddit links open, whether YouTube videos
+// play in Dens, and signing this browser out.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Card, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
-import { oldReddit, setOldReddit } from './links.js';
+import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
     cancelCapture, captureKey, chooseMic, chooseSpeaker, devices, inCall as callNow, keyLabel, micProblem, noiseSuppression, onCall, onVoiceLevel,
@@ -402,9 +402,11 @@ function SystemSwatch() {
 }
 
 // Links says what happens to links that are sent, and chooses where this
-// browser opens Reddit's.
+// browser opens Reddit's, and whether it plays YouTube's in place (M4.1),
+// saying what YouTube learns from it.
 function Links() {
     const [old, setOld] = useState(oldReddit);
+    const [players, setPlayers] = useState(youTubePlayers);
     return (
         <Card title="Links">
             <p class="text-sm text-base-content/70">
@@ -423,6 +425,24 @@ function Links() {
                 />
                 Open Reddit links on old.reddit.com
             </label>
+            <div>
+                <label class="label gap-3">
+                    <input
+                        type="checkbox"
+                        class="toggle"
+                        checked={players}
+                        onChange={(e) => {
+                            setYouTubePlayers(e.currentTarget.checked);
+                            setPlayers(e.currentTarget.checked);
+                        }}
+                    />
+                    Play YouTube videos in Dens
+                </label>
+                <p class="mt-1 text-sm text-base-content/70">
+                    Shows a YouTube link's title and picture under its message, and plays the video there when you click it. YouTube
+                    then sees your IP address for each video that comes on screen, in channels and DMs, and which ones you play.
+                </p>
+            </div>
         </Card>
     );
 }

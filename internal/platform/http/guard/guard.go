@@ -12,22 +12,27 @@ import (
 // SecurityHeaders sets a strict policy on every response: scripts, styles,
 // media and connections only from the page's own origin, no framing, no
 // referrer, and no MIME sniffing.
-func SecurityHeaders(next http.Handler) http.Handler { return securityHeaders(next, "'self'") }
+func SecurityHeaders(next http.Handler) http.Handler { return securityHeaders(next, "'self'", "") }
 
 // PageSecurityHeaders sets the same policy on the client listener, which
 // serves the page, with WebAssembly allowed (M3): the page compiles RNNoise
 // for calls. 'wasm-unsafe-eval' allows WebAssembly but not eval, so a
-// script on the page gains nothing it couldn't already do.
+// script on the page gains nothing it couldn't already do. Its one frame
+// is YouTube's player, for members who turn players on (M4.1).
 func PageSecurityHeaders(next http.Handler) http.Handler {
-	return securityHeaders(next, "'self' 'wasm-unsafe-eval'")
+	return securityHeaders(next, "'self' 'wasm-unsafe-eval'", "https://www.youtube-nocookie.com")
 }
 
-func securityHeaders(next http.Handler, scriptSrc string) http.Handler {
+func securityHeaders(next http.Handler, scriptSrc, frameSrc string) http.Handler {
+	csp := "default-src 'none'; script-src " + scriptSrc + "; style-src 'self'; " +
+		"img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; "
+	if frameSrc != "" {
+		csp += "frame-src " + frameSrc + "; "
+	}
+	csp += "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src "+scriptSrc+"; style-src 'self'; "+
-			"img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; "+
-			"frame-ancestors 'none'; base-uri 'none'")
+		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
