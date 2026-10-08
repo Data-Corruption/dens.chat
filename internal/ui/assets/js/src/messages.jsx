@@ -31,6 +31,12 @@ const GROUP_GAP = 5 * 60 * 1000;
 // MAX_EDITORS is how many others may edit a message with its author.
 const MAX_EDITORS = 20;
 
+// FOLD is how tall a message's text shows before it folds, in px: about 16
+// lines. Taller text, such as a pasted log or a wall of blank lines, shows
+// its top under a fade, and opens on request. The den keeps no limit on
+// lines: it can't read a DM, and a hostile sender wouldn't keep one.
+const FOLD = 400;
+
 // joinNames lists names in a sentence.
 function joinNames(names) {
     return names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -242,6 +248,15 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (compareIds(id, readUpTo.current) <= 0) return;
         readUpTo.current = id;
         api.put(`/api/dens/${denID}/channels/${channel.id}/read`, { message_id: id }).catch(() => {});
+    }
+
+    // toggled hears that a folded message opened or folded back. The member
+    // is reading it, so the list stops following the newest until it next
+    // sees where the view is: otherwise it would follow the message's change
+    // of size to the end.
+    function toggled() {
+        atBottom.current = false;
+        requestAnimationFrame(checkEdges);
     }
 
     function checkEdges() {
@@ -461,6 +476,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 onEditDone={() => setEditing(null)}
                 onJump={jumpTo}
                 onView={setViewing}
+                onToggle={toggled}
                 denID={denID}
                 channelID={channel.id}
             />,
@@ -515,7 +531,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     {list.hasOlder && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
                     {rows}
-                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onRetry={() => send(p.text, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
+                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onToggle={toggled} onRetry={() => send(p.text, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
                     {list.hasNewer && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                 </div>
             </div>
@@ -583,7 +599,7 @@ function Quoted({ text, locked, me }) {
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, denID, channelID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [confirming, setConfirming] = useState(false);
     const [error, setError] = useState('');
     async function tick(n, checked, text) {
@@ -650,13 +666,15 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} onDone={onEditDone} />
                     ) : (
                         (m.text.trim() || m.edited_at) && (
-                            <div class="wrap-break-word">
-                                {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
-                                {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
-                                {editorNames.length > 0 && (
-                                    <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
-                                )}
-                            </div>
+                            <Fold onToggle={onToggle}>
+                                <div class="wrap-break-word">
+                                    {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
+                                    {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                                    {editorNames.length > 0 && (
+                                        <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
+                                    )}
+                                </div>
+                            </Fold>
                         )
                     )}
                     {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
@@ -680,12 +698,77 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
     );
 }
 
+// Fold holds a message's text to FOLD px when it's taller, under a fade
+// with Show more. The text is held from the first paint, so folding never
+// moves the list; only the button comes after the text is measured, over
+// the fade. onToggle hears that the member opened it or folded it back.
+function Fold({ onToggle, children }) {
+    const box = useRef(null);
+    const content = useRef(null);
+    const folding = useRef(false);
+    const [over, setOver] = useState(false);
+    const [open, setOpen] = useState(false);
+    // Folding back from the end of a long message would leave the view far
+    // below it, so the message comes back into view before the next frame.
+    useLayoutEffect(() => {
+        if (!folding.current) return;
+        folding.current = false;
+        box.current?.scrollIntoView({ block: 'nearest' });
+    }, [open]);
+    useLayoutEffect(() => {
+        const el = content.current;
+        const measure = () => setOver(el.offsetHeight > FOLD);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        // An edit or a narrower window can take the text over the line, or
+        // back under it.
+        const observer = new ResizeObserver(measure);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
+    const folded = over && !open;
+    return (
+        <div ref={box} class="relative">
+            <div class={`${open ? '' : 'max-h-100 overflow-hidden'} ${folded ? '[mask-image:linear-gradient(to_bottom,black_70%,transparent)]' : ''}`}>
+                <div ref={content}>{children}</div>
+            </div>
+            {folded && (
+                <button
+                    type="button"
+                    class="btn btn-xs absolute bottom-1 left-0 shadow-sm"
+                    aria-expanded="false"
+                    onClick={() => {
+                        onToggle?.();
+                        setOpen(true);
+                    }}
+                >
+                    Show more
+                </button>
+            )}
+            {over && open && (
+                <button
+                    type="button"
+                    class="btn btn-xs mt-1"
+                    aria-expanded="true"
+                    onClick={() => {
+                        onToggle?.();
+                        folding.current = true;
+                        setOpen(false);
+                    }}
+                >
+                    Show less
+                </button>
+            )}
+        </div>
+    );
+}
+
 // Spine is the corner that joins a reply to the message it quotes.
 function Spine() {
     return <span aria-hidden="true" class="ml-2 mt-1.5 h-2 w-5 shrink-0 self-start rounded-tl border-l-2 border-t-2 border-base-content/30"></span>;
 }
 
-function PendingRow({ p, me, onRetry, onDiscard }) {
+function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
     return (
         <div class="mt-2 flex gap-3 rounded px-2 py-0.5 opacity-60">
             <div class="w-9 shrink-0">
@@ -696,7 +779,11 @@ function PendingRow({ p, me, onRetry, onDiscard }) {
                     <span class="font-semibold">{me.display_name}</span>
                     <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
                 </div>
-                {p.text.trim() && <Markdown text={p.text} me={me} />}
+                {p.text.trim() && (
+                    <Fold onToggle={onToggle}>
+                        <Markdown text={p.text} me={me} />
+                    </Fold>
+                )}
                 {p.attachments?.length > 0 && (
                     <ul class="text-xs text-base-content/70">
                         {p.attachments.map((f) => <li key={f.id} class="truncate">{f.name} · {formatSize(f.size)}</li>)}
@@ -1028,6 +1115,7 @@ function WritingGuide({ onClose }) {
                     <h3 class="font-semibold">Sending</h3>
                     <p>{kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line.</p>
                     <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
+                    <p>A message holds up to 4,000 characters. One taller than about 16 lines shows folded, and readers open the rest.</p>
                 </section>
                 <section class="flex flex-col gap-1">
                     <h3 class="font-semibold">Formatting</h3>
