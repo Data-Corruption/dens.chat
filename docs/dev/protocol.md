@@ -659,16 +659,16 @@ device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer"
 A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design doc's Voice and screen share).
 
 ```
-call = {"channel_id", "members": [{"id", "muted"?, "staff_muted"? (M3)}, …]}
+call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_muted"? (M3)}, …]}
 ```
 
 Client frames, with `resume` and `voice.restart` from M3:
 
 ```json
-[{"t": "voice.join", "d": {"channel_id": "41", "muted": false}}]
+[{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false}}]
 [{"t": "voice.join", "d": {"channel_id": "41", "resume": true}}]
 [{"t": "voice.answer", "d": {"version": 1, "sdp": "v=0…"}}]
-[{"t": "voice.mute", "d": {"muted": true}}]
+[{"t": "voice.mute", "d": {"muted": true, "deafened": true}}]
 [{"t": "voice.restart", "d": {}}]
 [{"t": "voice.leave", "d": {}}]
 ```
@@ -684,14 +684,14 @@ Den events, all ephemeral, with `voice.resumed` from M3:
 
 ### Joining and leaving
 
-- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` is optional and sets the member's mark from the start. With `"resume": true` (M3), the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection-m3)).
+- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` and `deafened` (M3.3) are optional and set the member's marks from the start. With `"resume": true` (M3), the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection-m3)).
 - A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds 15 members, or the den's calls 30 in all), `rate_limited`, or `failed` when the den couldn't set the call up.
 - `voice.leave` ends the member's call. When the socket a call started on closes, the den holds the call (see below), unless the den closed that socket for good with 4003 or after a logout. So removals, bans, revoked devices, new passwords, starting over, leaving and logging out end calls at once, and a den restart ends every call.
 - The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; with `failed` when its connection doesn't come up or breaks (below); and with `disconnected_by_staff` when staff disconnect its member (M3).
 
 ### Offers and answers
 
-- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle and Opus only. Its first section receives the member's audio (`recvonly` at the den), and each of the rest sends another member's (`sendonly`), with that member's ID as its stream ID (`msid`). Every Opus format in it carries `a=fmtp:111 minptime=10;useinbandfec=1;maxaveragebitrate=96000`, which asks the browser to send at up to 96 kbps with in-band error correction (M3); a re-offer carries it too, whatever the answer said.
+- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle and Opus only. Its first section receives the member's audio (`recvonly` at the den), and each of the rest sends another member's (`sendonly`), with that member's ID as its stream ID (`msid`). Every Opus format in it carries `a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=96000`, which asks the browser to send at up to 96 kbps with in-band error correction (M3), and to send almost nothing while there's nothing to hear (discontinuous transmission, M3.3); a re-offer carries it too, whatever the answer said.
 - An offer carries no candidates. The client writes the den's: each address the den's name resolves to, or for a den on its own machine, the machine's addresses on its other interfaces, each with `udp_port` over UDP and `tcp_port` over TCP (`tcptype passive`). The den answers connectivity checks from any address, so it needs no candidates from the client, and the client sends none.
 - `voice.answer` answers the offer with that `version`, which counts up from 1 in each call. The den keeps one offer outstanding per call, and sends the next only after its answer. An answer to any other version is ignored.
 - When a member joins or leaves a call, each other member in it gets a new offer, which adds their section or retires it (`inactive`). A later join can take a retired section back.
@@ -705,7 +705,7 @@ Den events, all ephemeral, with `voice.resumed` from M3:
 
 ### Who's in a call
 
-- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce. `staff_muted` (M3) is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls-m3)).
+- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce, and so is `deafened` (M3.3), which says the member hears nothing of the call either; a deafened member is muted too. `staff_muted` (M3) is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls-m3)).
 - `ready` carries `calls`, those the member can see that have someone in them. Calls aren't replayed, so after `resumed` the den sends `voice.state` with `"full": true`, which replaces every call the client held.
 
 ### Riding out a dropped connection (M3)

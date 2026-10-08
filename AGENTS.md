@@ -41,7 +41,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
-| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source, and RNNoise for calls: its AudioWorklet (`assets/js/rnnoise.worklet.js`) and module (`assets/wasm/rnnoise.wasm`, generated and committed), with the header its build needs (`rnnoise/`) |
+| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source, and the voice processor for calls: its AudioWorklet (`assets/js/voice.worklet.js`), which gates the microphone and runs RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed), with the header RNNoise's build needs (`rnnoise/`) |
 | `internal/build` | Values baked in at build time, and the third-party notices the binary carries (`notices.txt`, generated and committed) |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
@@ -179,7 +179,7 @@ Runner from `ffmpeg.TestRunner`.
 **So is RNNoise's module.** Never edit `internal/ui/assets/wasm/rnnoise.wasm`.
 Change `scripts/rnnoise.sh` or `internal/ui/rnnoise`, run the script, and
 commit what it writes; CI builds it again and fails on any difference. The
-module imports nothing, and the worklet gives it nothing.
+module imports nothing, and the voice worklet gives it nothing.
 
 ## Build and test
 

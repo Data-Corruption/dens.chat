@@ -10,16 +10,20 @@
 // and takes the call back once the den is back. When the browser's own
 // connection to the den's media ports breaks, the page asks for an ICE
 // restart. The page also measures who is speaking, from the audio it plays,
-// plays each member as loud as the member here chose, and runs RNNoise
-// between the microphone and the call unless they turned it off.
+// plays each member as loud as the member here chose, and runs the
+// microphone through the voice processor: RNNoise, unless the member
+// turned it off, and the gate that sends only what they mean to (M3.3), by
+// voice activity or while they push to talk.
 
 import { onConnection, onEvent, sendCall } from './events.js';
 
 const MIC = 'DENS_MIC';
 const SPEAKER = 'DENS_SPEAKER';
 const MUTED = 'DENS_MUTED';
+const DEAFENED = 'DENS_DEAFENED';
 const RNNOISE = 'DENS_RNNOISE';
 const VOLUMES = 'DENS_VOLUMES';
+const VOICE = 'DENS_VOICE';
 // A call that drops joins again, as the den and this computer's service
 // come back, this many times within this long, before it gives up.
 const REJOINS = 5;
@@ -31,6 +35,9 @@ const RESUME_WAIT = 10 * 1000;
 // A connection disconnected this long asks for an ICE restart, and one
 // still not up this long after asking joins again.
 const RESTART_AFTER = 2000;
+// How long the microphone may take to open, as while the browser asks the
+// member for it, before the call says what it's waiting for.
+const MIC_WAIT = 1500;
 const RESTART_WAIT = 15 * 1000;
 // Speaking: a level above this, in dBFS, measured this often, and held
 // this long after it drops.
@@ -63,11 +70,15 @@ let call = null;
 // notice says why the last call ended, when that's worth saying.
 let notice = null;
 let pc = null;
-// mic is the microphone's stream, and sent the track the call sends: the
-// microphone's own, or what RNNoise makes of it.
+// mic is the microphone's stream, and sent the track the call sends: what
+// the voice processor (chain) makes of it, or the microphone's own where
+// the processor can't run.
 let mic = null;
 let sent = null;
-let cleaner = null;
+let chain = null;
+// warmContext is the voice processor's context, made in the click that
+// joins a call, until the processor takes it.
+let warmContext = null;
 // audios plays each other member's stream, by their member ID: the den
 // labels the stream it sends their audio on with it.
 const audios = new Map();
@@ -89,6 +100,7 @@ let volumes = readVolumes(stored(VOLUMES));
 function start() {
     if (started) return;
     started = true;
+    listenForKeys();
     onEvent(handle);
     onConnection((up) => {
         live = up;
@@ -103,7 +115,10 @@ function start() {
 
 function snapshot() {
     return {
-        call: call && { den: call.den, channel: call.channel, label: call.label, status: call.status, muted: call.muted },
+        call: call && {
+            den: call.den, channel: call.channel, label: call.label, status: call.status, muted: call.muted, deafened: call.deafened,
+            waitingForMic: !!call.waitingForMic,
+        },
         notice,
         speaking,
         volumes,
@@ -113,6 +128,11 @@ function snapshot() {
 function notify() {
     const s = snapshot();
     listeners.forEach((fn) => fn(s));
+}
+
+// inCall says whether the page is in a call now.
+export function inCall() {
+    return !!call;
 }
 
 // onCall calls fn with the call, the last notice, who is speaking and how
@@ -135,10 +155,13 @@ export async function joinCall(den, channel, label) {
     if (call) clearTimers(call);
     closePeer();
     notice = null;
-    call = { den, channel, label, status: 'joining', muted: stored(MUTED) === '1', attempts: 0, connected: false };
+    stopMicTest();
+    call = { den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false };
     // The click that joins lets audio start, so the meters' context starts
-    // here.
+    // here, and the voice processor's: one made after the browser has asked
+    // for the microphone may need another click to start.
     startMeters();
+    if (!mic && !processorFailed) warmContext ??= new AudioContext({ sampleRate: 48000 });
     notify();
     await connect();
 }
@@ -150,13 +173,46 @@ export function leaveCall() {
     finish(null);
 }
 
+// setMuted mutes the member, or unmutes them, which also lets them hear
+// again if they were deafened, as there's no talking without hearing.
 export function setMuted(muted) {
+    if (!muted && isDeafened()) hear(true);
+    mute(muted);
+}
+
+// setDeafened stops the member hearing the call, and mutes them while it
+// lasts; hearing again puts their microphone back as it was.
+export function setDeafened(deafened) {
+    if (deafened === isDeafened()) return;
+    if (deafened) mutedBeforeDeafened = isMuted();
+    hear(!deafened);
+    mute(deafened || mutedBeforeDeafened);
+}
+
+let mutedBeforeDeafened = false;
+
+function mute(muted) {
     store(MUTED, muted ? '1' : '');
     if (!call) return;
     call.muted = muted;
-    if (sent) sent.enabled = !muted;
-    sendCall('voice.mute', { den: call.den, muted });
+    applySending();
+    sendCall('voice.mute', { den: call.den, muted, deafened: call.deafened });
     notify();
+}
+
+function hear(on) {
+    store(DEAFENED, on ? '' : '1');
+    if (call) call.deafened = !on;
+    for (const audio of audios.values()) audio.muted = !on;
+    notify();
+}
+
+function isMuted() {
+    return call ? call.muted : stored(MUTED) === '1';
+}
+
+function isDeafened() {
+    return call ? call.deafened : stored(DEAFENED) === '1';
 }
 
 export function clearNotice() {
@@ -166,13 +222,24 @@ export function clearNotice() {
 
 async function connect() {
     const c = call;
+    const slow = setTimeout(() => {
+        if (call !== c) return;
+        c.waitingForMic = true;
+        notify();
+    }, MIC_WAIT);
     try {
         if (!mic) await openMic();
     } catch (e) {
         if (call === c) finish({ text: micProblem(e) });
         return;
+    } finally {
+        clearTimeout(slow);
     }
     if (call !== c) return;
+    if (c.waitingForMic) {
+        c.waitingForMic = false;
+        notify();
+    }
     c.version = 0;
     c.answer = '';
     c.attached = false;
@@ -185,7 +252,7 @@ async function connect() {
         if (pc !== own || call !== c) return;
         stateChanged(c, own.connectionState);
     };
-    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted })) {
+    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened })) {
         dropped('disconnected');
         return;
     }
@@ -241,11 +308,24 @@ function restart(c) {
 }
 
 async function openMic() {
+    const v = await openVoice();
+    closeChain();
+    mic = v.stream;
+    chain = v.chain;
+    sent = v.track;
+    applySending();
+    meter('self', new MediaStream([sent]));
+}
+
+// openVoice opens the microphone as chosen and runs it through the voice
+// processor: with RNNoise, unless it's off or couldn't start, and with the
+// browser's own suppressor otherwise, since only one runs. Echo
+// cancellation stays, since it needs the raw microphone. Where the
+// processor can't run, the microphone goes as it is.
+async function openVoice() {
+    const module = processorFailed ? null : await rnnoiseOrNone();
+    const audio = { echoCancellation: true, noiseSuppression: !module, autoGainControl: true };
     const want = stored(MIC);
-    const rnnoise = rnnoiseChosen(stored(RNNOISE)) && !rnnoiseFailed;
-    // Only one suppressor runs: the browser's, or RNNoise. Echo
-    // cancellation stays, since it needs the raw microphone.
-    const audio = { echoCancellation: true, noiseSuppression: !rnnoise, autoGainControl: true };
     let stream;
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: want ? { ...audio, deviceId: { exact: want } } : audio });
@@ -255,67 +335,86 @@ async function openMic() {
         store(MIC, '');
         stream = await navigator.mediaDevices.getUserMedia({ audio });
     }
-    let track = stream.getAudioTracks()[0];
-    let chain = null;
-    if (rnnoise) {
-        try {
-            chain = await clean(stream);
-            track = chain.track;
-        } catch {
-            // Without RNNoise the call goes on with the browser's own
-            // suppressor, which the settings say, until the member tries
-            // RNNoise again; their choice stands.
-            stream.getTracks().forEach((t) => t.stop());
-            rnnoiseFailed = true;
-            return openMic();
-        }
+    if (processorFailed) return { stream, chain: null, track: stream.getAudioTracks()[0] };
+    try {
+        const c = await processor(stream, module);
+        return { stream, chain: c, track: c.track };
+    } catch (e) {
+        // The settings say so; the member's choices stand, for the next
+        // call or another browser. The microphone opens again, with the
+        // browser's own suppressor this time.
+        stream.getTracks().forEach((t) => t.stop());
+        if (e.rate) rnnoiseFailed = true;
+        else processorFailed = true;
+        return openVoice();
     }
-    closeCleaner();
-    mic = stream;
-    cleaner = chain;
-    sent = track;
-    sent.enabled = !call?.muted;
-    meter('self', new MediaStream([sent]));
 }
 
-// RNNoise ---------------------------------------------------------------
+// Voice processor ---------------------------------------------------------
 
 let compiled = null;
 let rnnoiseFailed = false;
+let processorFailed = false;
 
-// clean runs a microphone through RNNoise in an AudioWorklet, and returns
-// the track the call sends. The module is compiled once, on the page,
-// under its CSP's 'wasm-unsafe-eval', and posted to the worklet.
-async function clean(stream) {
-    const root = document.getElementById('app');
-    if (!compiled) {
-        const res = await fetch(root.dataset.rnnoiseModule);
-        if (!res.ok) throw new Error(`RNNoise: ${res.status}`);
-        compiled = await WebAssembly.compile(await res.arrayBuffer());
-    }
-    const ctx = new AudioContext({ sampleRate: 48000 });
+// rnnoiseOrNone compiles RNNoise's module once, on the page, under its
+// CSP's 'wasm-unsafe-eval', for the processor; or returns null when the
+// member turned RNNoise off, or it can't be compiled here.
+async function rnnoiseOrNone() {
+    if (!rnnoiseChosen(stored(RNNOISE)) || rnnoiseFailed) return null;
     try {
-        await ctx.audioWorklet.addModule(root.dataset.rnnoiseWorklet);
-        const node = new AudioWorkletNode(ctx, 'rnnoise', { processorOptions: { module: compiled } });
+        if (!compiled) {
+            const res = await fetch(document.getElementById('app').dataset.rnnoiseModule);
+            if (!res.ok) throw new Error(`RNNoise: ${res.status}`);
+            compiled = await WebAssembly.compile(await res.arrayBuffer());
+        }
+        return compiled;
+    } catch {
+        rnnoiseFailed = true;
+        return null;
+    }
+}
+
+// processor runs a microphone through the voice processor in an
+// AudioWorklet, and returns the track the call sends.
+async function processor(stream, module) {
+    const ctx = warmContext || new AudioContext({ sampleRate: 48000 });
+    warmContext = null;
+    // RNNoise works on 48 kHz audio alone, and a browser may run its audio
+    // at another rate whatever the page asks, as some do to resist
+    // fingerprinting: then the processor runs without it, in this context.
+    if (module && ctx.sampleRate !== 48000) {
+        warmContext = ctx;
+        throw Object.assign(new Error(`audio runs at ${ctx.sampleRate} Hz`), { rate: true });
+    }
+    try {
+        await ctx.audioWorklet.addModule(document.getElementById('app').dataset.voiceWorklet);
+        const rnnoise = !!module;
+        const node = new AudioWorkletNode(ctx, 'voice', {
+            outputChannelCount: [1],
+            processorOptions: { module, gate: gateFor(voice, rnnoise, pttHeld) },
+        });
+        node.port.onmessage = (e) => heard(e.data);
+        // One voice, in one channel, all the way to the encoder.
         const dest = ctx.createMediaStreamDestination();
+        dest.channelCount = 1;
         ctx.createMediaStreamSource(stream).connect(node).connect(dest);
         // A context that never runs would send silence, as where a browser
-        // has no audio output, so RNNoise gives way to the browser's
-        // suppressor then. Starting can take seconds, as a Bluetooth headset
-        // wakes, and the join waits only that long, so the wait is generous.
+        // has no audio output, so the microphone goes as it is then.
+        // Starting can take seconds, as a Bluetooth headset wakes, and the
+        // join waits only that long, so the wait is generous.
         await Promise.race([ctx.resume(), new Promise((r) => setTimeout(r, 10 * 1000))]);
-        if (ctx.state !== 'running') throw new Error('this browser kept RNNoise from running');
-        return { ctx, track: dest.stream.getAudioTracks()[0] };
+        if (ctx.state !== 'running') throw new Error("this browser kept the voice processor from running");
+        return { ctx, node, rnnoise, track: dest.stream.getAudioTracks()[0] };
     } catch (e) {
         await ctx.close();
         throw e;
     }
 }
 
-function closeCleaner() {
-    if (cleaner) {
-        cleaner.ctx.close().catch(() => {});
-        cleaner = null;
+function closeChain() {
+    if (chain) {
+        chain.ctx.close().catch(() => {});
+        chain = null;
     }
 }
 
@@ -326,9 +425,10 @@ export function rnnoiseChosen(kept) {
 }
 
 // noiseSuppression is the suppressor this browser uses in calls: the
-// browser's own or RNNoise, and whether RNNoise couldn't start.
+// browser's own or RNNoise, whether RNNoise couldn't start, and whether
+// the voice processor couldn't run at all.
 export function noiseSuppression() {
-    return { rnnoise: rnnoiseChosen(stored(RNNOISE)), failed: rnnoiseFailed };
+    return { rnnoise: rnnoiseChosen(stored(RNNOISE)), failed: rnnoiseFailed, processorFailed };
 }
 
 // setRNNoise turns RNNoise on or off, mid-call too, by replacing the track
@@ -336,27 +436,273 @@ export function noiseSuppression() {
 export async function setRNNoise(on) {
     store(RNNOISE, on ? '' : '0');
     rnnoiseFailed = false;
+    processorFailed = false;
     await reopenMic();
+    await restartMicTest();
 }
 
 // reopenMic opens the microphone again as chosen, and sends it.
 async function reopenMic() {
     if (!call || !mic) return;
     const old = mic;
-    const oldCleaner = cleaner;
-    cleaner = null;
+    const oldChain = chain;
+    chain = null;
     mic = null;
     try {
         await openMic();
     } catch (e) {
         mic = old;
-        cleaner = oldCleaner;
+        chain = oldChain;
         throw e;
     }
     const sender = pc?.getTransceivers()[0]?.sender;
     if (sender && call?.attached) await sender.replaceTrack(sent);
     old.getTracks().forEach((t) => t.stop());
-    if (oldCleaner) oldCleaner.ctx.close().catch(() => {});
+    if (oldChain) oldChain.ctx.close().catch(() => {});
+}
+
+// Sending -----------------------------------------------------------------
+
+// A member sends by voice activity ("voice"), automatically or above a
+// level in dBFS, or while they push to talk ("ptt"), and binds keys for
+// push to talk, toggle mute and push to mute. The browser keeps it all.
+export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50, keys: {} };
+const KEYS = ['ptt', 'toggleMute', 'pushMute'];
+
+// readVoice reads the voice settings the browser kept, falling back to
+// the defaults for anything that isn't one.
+export function readVoice(text) {
+    let kept;
+    try {
+        kept = JSON.parse(text || '{}');
+    } catch {
+        kept = {};
+    }
+    if (!kept || typeof kept !== 'object') kept = {};
+    const keys = {};
+    for (const name of KEYS) {
+        const k = kept.keys?.[name];
+        if (k && typeof k.code === 'string' && k.code && typeof k.label === 'string') {
+            keys[name] = { code: k.code, label: k.label, ctrl: !!k.ctrl, alt: !!k.alt, shift: !!k.shift, meta: !!k.meta };
+        }
+    }
+    return {
+        mode: kept.mode === 'ptt' ? 'ptt' : 'voice',
+        auto: typeof kept.auto === 'boolean' ? kept.auto : VOICE_DEFAULTS.auto,
+        threshold: Number.isFinite(kept.threshold) ? Math.min(0, Math.max(-100, Math.round(kept.threshold))) : VOICE_DEFAULTS.threshold,
+        keys,
+    };
+}
+
+let voice = readVoice(stored(VOICE));
+let pttHeld = false;
+let pushMuted = false;
+
+export function voiceSettings() {
+    return voice;
+}
+
+// setVoice changes the voice settings, which take hold at once, in a call
+// and in the settings' microphone test.
+export function setVoice(changes) {
+    voice = readVoice(JSON.stringify({ ...voice, ...changes }));
+    store(VOICE, JSON.stringify(voice));
+    pttHeld = pushMuted = false;
+    applySending();
+    notify();
+}
+
+// gateFor is the gate the voice processor runs: push to talk opens it
+// while the key is held, and voice activity opens it for speech, by
+// RNNoise's judgment when the member keeps it automatic, or by level.
+export function gateFor(v, rnnoise, held) {
+    if (v.mode === 'ptt') return { mode: held ? 'open' : 'closed' };
+    if (v.auto && rnnoise) return { mode: 'auto' };
+    return { mode: 'level', threshold: v.threshold };
+}
+
+// applySending sends what the member chose: nothing while muted, and what
+// the gate lets through otherwise. Without the processor, push to talk
+// holds the track back itself, and voice activity sends everything.
+function applySending() {
+    for (const c of [chain, testing?.chain]) c?.node.port.postMessage({ gate: gateFor(voice, c.rnnoise, pttHeld) });
+    if (sent) sent.enabled = !isMuted() && (chain || voice.mode !== 'ptt' || pttHeld);
+}
+
+// The voice processor's reports: its level, RNNoise's estimate of speech,
+// and whether the gate was open, every 50 ms, for the settings' meter.
+const levelListeners = new Set();
+
+export function onVoiceLevel(fn) {
+    levelListeners.add(fn);
+    return () => levelListeners.delete(fn);
+}
+
+function heard(report) {
+    levelListeners.forEach((fn) => fn(report));
+}
+
+// The settings' microphone test runs the processor as a call would, for
+// its meter, when no call does.
+let testing = null;
+
+export async function startMicTest() {
+    if (call || testing) return;
+    const t = { stopped: false };
+    testing = t;
+    let v;
+    try {
+        v = await openVoice();
+    } catch (e) {
+        if (testing === t) testing = null;
+        throw e;
+    }
+    if (testing !== t || t.stopped) {
+        v.stream.getTracks().forEach((x) => x.stop());
+        v.chain?.ctx.close().catch(() => {});
+        return;
+    }
+    t.stream = v.stream;
+    t.chain = v.chain;
+    applySending();
+}
+
+export function stopMicTest() {
+    const t = testing;
+    testing = null;
+    if (!t) return;
+    t.stopped = true;
+    t.stream?.getTracks().forEach((x) => x.stop());
+    t.chain?.ctx.close().catch(() => {});
+}
+
+async function restartMicTest() {
+    if (!testing) return;
+    stopMicTest();
+    await startMicTest();
+}
+
+// Keys ----------------------------------------------------------------------
+
+// keyMatches says whether a key event is a binding's key, with exactly its
+// modifiers.
+export function keyMatches(binding, e) {
+    return !!binding && e.code === binding.code && !!e.ctrlKey === binding.ctrl && !!e.altKey === binding.alt &&
+        !!e.shiftKey === binding.shift && !!e.metaKey === binding.meta;
+}
+
+// typesInto says whether a key event would type into the field it's in:
+// keys don't fire there, unless they're function keys or held with Ctrl,
+// Alt or Meta.
+export function typesInto(e) {
+    const t = e.target;
+    const field = t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
+        (t.tagName === 'INPUT' && !UNTYPED.includes(t.type)));
+    return !!field && !e.ctrlKey && !e.altKey && !e.metaKey && !/^F\d+$/.test(e.code);
+}
+
+// UNTYPED are the inputs keys type nothing into.
+const UNTYPED = ['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image'];
+
+// keyLabel names a binding as the member pressed it.
+export function keyLabel(b) {
+    if (!b) return '';
+    const mods = [b.ctrl && 'Ctrl', b.alt && 'Alt', b.shift && 'Shift', b.meta && 'Meta'].filter(Boolean);
+    return [...mods, b.label].join('+');
+}
+
+// captureKey resolves to the next key pressed, as a binding, or null on
+// Escape; nothing else hears it.
+let capture = null;
+
+export function captureKey() {
+    listenForKeys();
+    cancelCapture();
+    return new Promise((resolve) => {
+        capture = resolve;
+    });
+}
+
+export function cancelCapture() {
+    const c = capture;
+    capture = null;
+    c?.(null);
+}
+
+const MODIFIERS = ['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'OS'];
+
+function keydown(e) {
+    if (capture) {
+        if (MODIFIERS.includes(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const done = capture;
+        capture = null;
+        const plain = !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey;
+        if (e.key === 'Escape' && plain) {
+            done(null);
+            return;
+        }
+        const label = e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+        done({ code: e.code, label, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey });
+        return;
+    }
+    if (typesInto(e)) return;
+    const k = voice.keys;
+    if (keyMatches(k.ptt, e)) {
+        e.preventDefault();
+        if (!pttHeld) {
+            pttHeld = true;
+            applySending();
+        }
+    } else if (e.repeat) {
+        // A held toggle toggles once.
+    } else if (keyMatches(k.toggleMute, e)) {
+        e.preventDefault();
+        setMuted(!isMuted());
+    } else if (keyMatches(k.pushMute, e)) {
+        e.preventDefault();
+        if (!pushMuted && !isMuted()) {
+            pushMuted = true;
+            setMuted(true);
+        }
+    }
+}
+
+// keyup ends a push by its key alone, whatever modifiers were let go first.
+function keyup(e) {
+    if (pttHeld && e.code === voice.keys.ptt?.code) {
+        pttHeld = false;
+        applySending();
+    }
+    if (pushMuted && e.code === voice.keys.pushMute?.code) {
+        pushMuted = false;
+        setMuted(false);
+    }
+}
+
+// release lets go of whatever is pushed when the page loses focus, which
+// keeps its key's release from reaching it.
+function release() {
+    if (pttHeld) {
+        pttHeld = false;
+        applySending();
+    }
+    if (pushMuted) {
+        pushMuted = false;
+        setMuted(false);
+    }
+}
+
+let listening = false;
+
+function listenForKeys() {
+    if (listening || typeof window === 'undefined') return;
+    listening = true;
+    window.addEventListener('keydown', keydown, true);
+    window.addEventListener('keyup', keyup, true);
+    window.addEventListener('blur', release);
+    document.addEventListener('visibilitychange', () => document.hidden && release());
 }
 
 // Signaling ---------------------------------------------------------------
@@ -441,6 +787,7 @@ function play(e) {
         audios.set(member, audio);
     }
     audio.volume = volumeIn(volumes, call?.den, member);
+    audio.muted = isDeafened();
     audio.srcObject = stream;
     audio.play().catch(() => {});
     meter(member, stream);
@@ -499,7 +846,7 @@ function tryResume() {
     const c = call;
     if (!c || !c.held || c.resuming || !pc || !live || denStates.get(c.den) !== 'connected') return;
     c.resuming = true;
-    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, resume: true })) {
+    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened, resume: true })) {
         c.resuming = false;
         return;
     }
@@ -525,7 +872,7 @@ function resumed() {
         restart(c);
     }
     // A mark changed while the den was away goes now.
-    sendCall('voice.mute', { den: c.den, muted: c.muted });
+    sendCall('voice.mute', { den: c.den, muted: c.muted, deafened: c.deafened });
     notify();
 }
 
@@ -595,7 +942,9 @@ function finish(why) {
     mic?.getTracks().forEach((t) => t.stop());
     mic = null;
     sent = null;
-    closeCleaner();
+    closeChain();
+    warmContext?.close().catch(() => {});
+    warmContext = null;
     stopMeters();
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
@@ -762,12 +1111,21 @@ export async function devices() {
 export async function chooseMic(id) {
     store(MIC, id);
     await reopenMic();
+    await restartMicTest();
 }
 
 // chooseSpeaker plays the call through a speaker; '' is the default.
 export function chooseSpeaker(id) {
     store(SPEAKER, id);
     for (const audio of audios.values()) audio.setSinkId?.(id).catch(() => {});
+}
+
+// byName orders a call's members by display name for the page, as the
+// member list orders a den's; the den lists them as they joined. members
+// maps IDs to members, and ties go by ID, so the order holds still.
+export function byName(list, members) {
+    const name = (m) => members.get(m.id)?.display_name || '';
+    return [...list].sort((a, b) => name(a).localeCompare(name(b)) || a.id.localeCompare(b.id, undefined, { numeric: true }));
 }
 
 // applyCalls updates who is in each call from a den's voice.state: a call

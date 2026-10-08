@@ -40,10 +40,12 @@ const (
 var ErrClosed = errors.New("calls have stopped")
 
 // opusParams is what every offer asks of the browser's Opus encoder: 96
-// kbps, where a browser left to itself sends 32, and error correction in
-// each packet for the one before, against loss. Browsers read it from the
-// den's offer.
-const opusParams = "minptime=10;useinbandfec=1;maxaveragebitrate=96000"
+// kbps, where a browser left to itself sends 32; error correction in each
+// packet for the one before, against loss; and discontinuous transmission
+// (M3.3), so a member who isn't speaking, or whose gate holds them back,
+// sends a packet every 400 ms instead of 50 a second. Browsers read it
+// from the den's offer.
+const opusParams = "minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=96000"
 
 // opus is the one codec calls carry.
 var opus = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,

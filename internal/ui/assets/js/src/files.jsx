@@ -125,6 +125,33 @@ export function playbackTime(seconds, total) {
     return total > 0 ? `${at} / ${formatDuration(total * 1000)}` : at;
 }
 
+// Videos play at one volume, which the browser keeps (M3.3): set it on any
+// video and every video follows, playing or still to start. Muting stays
+// each video's own.
+const VIDEO_VOLUME = 'DENS_VIDEO_VOLUME';
+const volumeListeners = new Set();
+let videoVolume = readVideoVolume();
+
+function readVideoVolume() {
+    try {
+        const v = Number(localStorage.getItem(VIDEO_VOLUME) ?? '1');
+        return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1;
+    } catch {
+        // Storage can be unavailable; full volume stands in.
+        return 1;
+    }
+}
+
+function setVideoVolume(v) {
+    videoVolume = v;
+    try {
+        localStorage.setItem(VIDEO_VOLUME, String(v));
+    } catch {
+        // As above: it holds for this page.
+    }
+    volumeListeners.forEach((fn) => fn(v));
+}
+
 // VideoTile plays a video in the message list, sized before it loads from
 // the size the den stated, with its preview as the poster, or a plain box
 // of its shape without one. Nothing of the video loads until it plays; the
@@ -144,7 +171,7 @@ function VideoTile({ denID, file, box }) {
     const [time, setTime] = useState(0);
     const [duration, setDuration] = useState((file.duration_ms || 0) / 1000);
     const [muted, setMuted] = useState(false);
-    const [volume, setVolume] = useState(1);
+    const [volume, setVolume] = useState(videoVolume);
     const [waiting, setWaiting] = useState(false);
     const [failed, setFailed] = useState(null);
     const [stirred, setStirred] = useState(false);
@@ -175,15 +202,23 @@ function VideoTile({ denID, file, box }) {
         if (v.paused) v.play().catch(() => {});
         else v.pause();
     }
+    useEffect(() => {
+        const follow = (x) => {
+            if (video.current) video.current.volume = x;
+        };
+        follow(videoVolume);
+        volumeListeners.add(follow);
+        return () => volumeListeners.delete(follow);
+    }, []);
     function toggleMute() {
         const v = video.current;
         v.muted = !v.muted;
-        if (!v.muted && v.volume === 0) v.volume = 1;
+        if (!v.muted && v.volume === 0) setVideoVolume(1);
     }
     function setLevel(e) {
-        const v = video.current;
-        v.volume = Number(e.currentTarget.value);
-        v.muted = v.volume === 0;
+        const x = Number(e.currentTarget.value);
+        setVideoVolume(x);
+        video.current.muted = x === 0;
     }
     function seek(e) {
         const t = Number(e.currentTarget.value);
@@ -227,13 +262,6 @@ function VideoTile({ denID, file, box }) {
                 )
             )}
             {!failed && (
-                // A tile too narrow for the time in the bar, as a phone's
-                // upright video makes, shows it in a corner instead.
-                <span class={`badge badge-neutral badge-sm pointer-events-none absolute left-1 top-1 select-none whitespace-nowrap tabular-nums transition-opacity @min-[13rem]:hidden ${fade}`}>
-                    {playbackTime(time, duration)}
-                </span>
-            )}
-            {!failed && (
                 <div class={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white transition-opacity ${fade}`}>
                     <button type="button" class={button} onClick={toggle} title={paused ? 'Play' : 'Pause'} aria-label={paused ? 'Play' : 'Pause'}>
                         {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
@@ -241,12 +269,20 @@ function VideoTile({ denID, file, box }) {
                     <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
                     <input type="range" class="range range-xs min-w-0 flex-1" min="0" max={duration || 0} step="any" value={time}
                         onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
-                    <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
-                        <SoundIcon muted={silent} />
-                    </button>
-                    <input type="range" class="range range-xs hidden w-14 shrink-0 @min-[20rem]:block" min="0" max="1" step="0.05"
-                        value={silent ? 0 : volume} onInput={setLevel} aria-label="Volume"
-                        aria-valuetext={`${Math.round((silent ? 0 : volume) * 100)}%`} />
+                    {/* The volume shows above the mute button on hover or
+                        keyboard focus, at any width (M3.3). */}
+                    <div class="group/volume relative flex shrink-0">
+                        <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
+                            <SoundIcon muted={silent} />
+                        </button>
+                        <div class="absolute bottom-full left-1/2 hidden -translate-x-1/2 pb-1 group-focus-within/volume:flex group-hover/volume:flex">
+                            <div class="flex rounded bg-black/70 px-1 py-2">
+                                <input type="range" class="h-16 w-4 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
+                                    step="0.05" value={silent ? 0 : volume} onInput={setLevel} aria-label="Volume" aria-orientation="vertical"
+                                    aria-valuetext={`${Math.round((silent ? 0 : volume) * 100)}%`} />
+                            </div>
+                        </div>
+                    </div>
                     {document.fullscreenEnabled && (
                         <button type="button" class={`${button} hidden @min-[9rem]:flex`} onClick={toggleFull}
                             title={full ? 'Exit full screen' : 'Full screen'} aria-label={full ? 'Exit full screen' : 'Full screen'}>

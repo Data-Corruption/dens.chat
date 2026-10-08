@@ -427,7 +427,7 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 			case denproto.EventVoiceMute:
 				var req denproto.VoiceMute
 				if json.Unmarshal(e.D, &req) == nil && d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) == nil {
-					d.muteCall(sock, req.Muted)
+					d.muteCall(sock, req)
 				}
 			case denproto.EventVoiceLeave:
 				d.leaveCall(sock)

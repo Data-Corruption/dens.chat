@@ -15,6 +15,7 @@ import { Avatar } from './avatar.jsx';
 import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { Markdown, Preview } from './markdown.jsx';
+import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
 import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
@@ -465,7 +466,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     Drop to attach
                 </div>
             )}
-            <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 py-2" onScroll={checkEdges}>
+            {/* The room at the bottom is where who's typing shows, over the list. */}
+            <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" onScroll={checkEdges}>
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
@@ -813,10 +815,35 @@ function EditorList({ candidates, selected, onChange }) {
 function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCancelReply, onSend, onEditLast, onTyping }) {
     const [text, setText] = useState('');
     const [sharing, setSharing] = useState(false);
+    // The + menu, and the guide to writing a message (M3.3).
+    const [adding, setAdding] = useState(false);
+    const [guide, setGuide] = useState(false);
+    useEffect(() => {
+        if (!adding) return undefined;
+        const away = (e) => {
+            if (!e.target.closest?.('[data-compose-menu]')) setAdding(false);
+        };
+        const escape = (e) => {
+            if (e.key === 'Escape') setAdding(false);
+        };
+        document.addEventListener('pointerdown', away);
+        document.addEventListener('keydown', escape);
+        return () => {
+            document.removeEventListener('pointerdown', away);
+            document.removeEventListener('keydown', escape);
+        };
+    }, [adding]);
     const box = useRef(null);
     const picker = useRef(null);
     const lastTyping = useRef(0);
     useEffect(() => box.current?.focus(), [replyTo]);
+    // Files added however they came, dropped, pasted or picked, leave the
+    // box ready for Enter.
+    const fileCount = useRef(files.length);
+    useEffect(() => {
+        if (files.length > fileCount.current) box.current?.focus();
+        fileCount.current = files.length;
+    }, [files.length]);
     const length = [...text].length;
     const uploading = files.some((f) => !f.result && !f.error);
     const failed = files.some((f) => f.error);
@@ -836,8 +863,25 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates
         }
     }
     const typers = typingLine(typing.map((m) => m.display_name));
+    // At 73px, a single line's composer lines up with the member's panel
+    // beside it, at the foot of the channel list.
     return (
-        <div class="border-t border-base-300 px-4 py-2">
+        <div class="relative border-t border-base-300 bg-bar px-4 py-3">
+            {/* Who's typing, how the files are doing and the length float just
+                above the composer, so it never jumps as they come and go. The
+                line is always here, empty or not, for screen readers. */}
+            <div class="pointer-events-none absolute inset-x-4 bottom-full flex cursor-default select-none items-end justify-between gap-2 pb-0.5 text-xs text-base-content/50">
+                {typers ? (
+                    <span class="truncate rounded bg-base-100 px-1 font-medium text-base-content/70" aria-live="polite">{typers}</span>
+                ) : uploading ? (
+                    <span class="rounded bg-base-100 px-1" aria-live="polite">Uploading… the message sends once the files are up.</span>
+                ) : failed ? (
+                    <span class="rounded bg-base-100 px-1 text-error" aria-live="polite">Remove the files that couldn't be sent to send the rest.</span>
+                ) : (
+                    <span aria-live="polite"></span>
+                )}
+                {length > MAX_TEXT - 500 && <span class={`rounded bg-base-100 px-1 ${length > MAX_TEXT ? 'text-error' : ''}`}>{length} / {MAX_TEXT}</span>}
+            </div>
             {replyTo && (
                 <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
                     <span class="min-w-0 truncate">
@@ -866,67 +910,150 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates
                 </div>
             )}
             <div class="flex items-end gap-2">
-                <button type="button" class="btn btn-ghost btn-square" aria-label="Attach files" title="Attach files"
-                    disabled={files.length >= MAX_ATTACHMENTS} onClick={() => picker.current?.click()}>
-                    <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                        <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
-                    </svg>
-                </button>
-                <button type="button" class={`btn btn-ghost btn-square ${sharing || editors.length ? 'text-primary' : ''}`}
-                    aria-label="Let others edit this message" title="Let others edit this message" aria-pressed={sharing}
-                    onClick={() => setSharing(!sharing)}>
-                    <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                        <circle cx="6" cy="5" r="2.5" />
-                        <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
-                        <circle cx="11.5" cy="5.5" r="2" />
-                        <path d="M11 9.6c2 .2 3.5 1.9 3.5 4" />
-                    </svg>
-                </button>
+                <div class="relative" data-compose-menu>
+                    <button type="button" class={`btn btn-ghost btn-field btn-square h-12 w-12 ${adding ? 'btn-active' : ''}`} aria-label="Add to this message"
+                        title="Add to this message" aria-haspopup="menu" aria-expanded={adding} onClick={() => setAdding(!adding)}>
+                        <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                            <path d="M8 3v10M3 8h10" />
+                        </svg>
+                    </button>
+                    {adding && (
+                        <ul role="menu" class="menu absolute bottom-full left-0 z-20 mb-1 w-56 rounded-box bg-base-100 p-1 shadow">
+                            <li role="none">
+                                <button type="button" role="menuitem" disabled={files.length >= MAX_ATTACHMENTS}
+                                    onClick={() => { setAdding(false); picker.current?.click(); }}>
+                                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                                        <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
+                                    </svg>
+                                    Attach files
+                                </button>
+                            </li>
+                            <li role="none">
+                                <button type="button" role="menuitem" class={editors.length ? 'text-primary' : ''}
+                                    onClick={() => { setAdding(false); setSharing(true); }}>
+                                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                                        <circle cx="6" cy="5" r="2.5" />
+                                        <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
+                                        <circle cx="11.5" cy="5.5" r="2" />
+                                        <path d="M11 9.6c2 .2 3.5 1.9 3.5 4" />
+                                    </svg>
+                                    Let others edit
+                                </button>
+                            </li>
+                        </ul>
+                    )}
+                </div>
                 <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {
                     onAddFiles(e.currentTarget.files);
                     e.currentTarget.value = '';
                 }} />
-                <textarea
-                    ref={box}
-                    class="textarea h-auto min-h-0 w-full resize-none"
-                    rows={Math.min(8, text.split('\n').length)}
-                    placeholder={placeholder}
-                    value={text}
-                    onPaste={(e) => {
-                        if (e.clipboardData?.files?.length) {
-                            e.preventDefault();
-                            onAddFiles(e.clipboardData.files);
-                        }
-                    }}
-                    onInput={(e) => input(e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-                            e.preventDefault();
-                            submit();
-                        } else if (e.key === 'Escape' && replyTo) {
-                            onCancelReply();
-                        } else if (e.key === 'ArrowUp' && !text) {
-                            e.preventDefault();
-                            onEditLast();
-                        }
-                    }}
-                ></textarea>
+                <div class="relative min-w-0 flex-1">
+                    <textarea
+                        ref={box}
+                        class="textarea h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-10"
+                        rows={Math.min(8, text.split('\n').length)}
+                        placeholder={placeholder}
+                        value={text}
+                        onPaste={(e) => {
+                            if (e.clipboardData?.files?.length) {
+                                e.preventDefault();
+                                onAddFiles(e.clipboardData.files);
+                            }
+                        }}
+                        onInput={(e) => input(e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                                e.preventDefault();
+                                submit();
+                            } else if (e.key === 'Escape' && replyTo) {
+                                onCancelReply();
+                            } else if (e.key === 'ArrowUp' && !text) {
+                                e.preventDefault();
+                                onEditLast();
+                            }
+                        }}
+                    ></textarea>
+                    {/* The guide to writing sits in the box's corner, by the last line. */}
+                    <button type="button"
+                        class="absolute bottom-4 right-3 flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px] leading-none text-base-content/50 hover:text-base-content"
+                        aria-label="How to write a message" title="How to write a message" onClick={() => setGuide(true)}>
+                        ?
+                    </button>
+                </div>
             </div>
-            <div class="flex cursor-default select-none justify-between text-xs text-base-content/50">
-                {typers ? (
-                    <span class="truncate font-medium text-base-content/70" aria-live="polite">{typers}</span>
-                ) : uploading ? (
-                    <span>Uploading… the message sends once the files are up.</span>
-                ) : failed ? (
-                    <span class="text-error">Remove the files that couldn't be sent to send the rest.</span>
-                ) : (
-                    <span>Enter to send, Shift+Enter for a new line</span>
-                )}
-                {length > MAX_TEXT - 500 && <span class={length > MAX_TEXT ? 'text-error' : ''}>{length} / {MAX_TEXT}</span>}
-            </div>
+            {guide && <WritingGuide onClose={() => setGuide(false)} />}
         </div>
     );
 }
+
+// WritingGuide explains how a message is written: sending, the markdown
+// subset with each example rendered as the list shows it, mentions, links,
+// task lines, editing together and files.
+function WritingGuide({ onClose }) {
+    useEffect(() => {
+        const escape = (e) => e.key === 'Escape' && onClose();
+        document.addEventListener('keydown', escape);
+        return () => document.removeEventListener('keydown', escape);
+    }, [onClose]);
+    const kbd = (k) => <kbd class="kbd kbd-xs">{k}</kbd>;
+    return (
+        <Dialog title="Writing a message" onClose={onClose}>
+            <div class="flex flex-col gap-4 text-sm">
+                <section class="flex flex-col gap-1">
+                    <h3 class="font-semibold">Sending</h3>
+                    <p>{kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line.</p>
+                    <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
+                </section>
+                <section class="flex flex-col gap-1">
+                    <h3 class="font-semibold">Formatting</h3>
+                    <table class="table table-sm">
+                        <tbody>
+                            {GUIDE_FORMATS.map(([source, note]) => (
+                                <tr key={source}>
+                                    <td class="whitespace-pre-wrap font-mono text-xs">{source}</td>
+                                    <td><Markdown text={source} />{note && <p class="text-xs text-base-content/60">{note}</p>}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </section>
+                <section class="flex flex-col gap-1">
+                    <h3 class="font-semibold">Mentions and links</h3>
+                    <p>@ and a username lets them know, if they can see the channel. Inside code or a link it's only text.</p>
+                    <p>
+                        A link shows where it goes, as you paste it; there's no way to give one a label. When it's sent, Dens takes its tracking
+                        out, and writes YouTube, Reddit, X and Amazon links in a short form.
+                    </p>
+                </section>
+                <section class="flex flex-col gap-1">
+                    <h3 class="font-semibold">Lists to tick</h3>
+                    <p>
+                        A line that starts with [ ] or [x] is a box to tick. Anyone who may edit the message can tick its boxes, and two people
+                        ticking at once both keep their ticks.
+                    </p>
+                </section>
+                <section class="flex flex-col gap-1">
+                    <h3 class="font-semibold">With the + button</h3>
+                    <p>
+                        Attach files: up to {MAX_ATTACHMENTS} to a message, also by pasting them or dropping them on the messages. Photos lose
+                        their location and camera details before they leave this computer.
+                    </p>
+                    <p>Let others edit: up to {MAX_EDITORS} people who can see the channel can edit the message too, but not delete it.</p>
+                </section>
+            </div>
+        </Dialog>
+    );
+}
+
+const GUIDE_FORMATS = [
+    ['**bold**', ''],
+    ['*italic* or _italic_', ''],
+    ['~~struck through~~', ''],
+    ['||spoiler||', 'Hidden until the reader clicks it.'],
+    ['`code`', ''],
+    ['```\ncode on\nseveral lines\n```', ''],
+    ['> a quote', 'A line that starts with >.'],
+];
 
 // MetadataRemoved marks a file whose metadata came out before it left this
 // computer, and says what that can be on hover or focus.

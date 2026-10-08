@@ -1,12 +1,14 @@
-// A call's controls: the bar at the foot of the channel list, which follows
-// the call from den to den, and who is in each voice channel's call, with
-// who is speaking, how loud each plays here, and staff's controls (M3).
+// A call's controls, which follow the call from den to den: in a block at
+// the foot of a den's channel list, and boxed on the other pages; and who
+// is in each voice channel's call, with who is speaking, how loud each
+// plays here, and staff's controls (M3).
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
 import { rank } from './people.jsx';
-import { chooseMic, chooseSpeaker, clearNotice, devices, leaveCall, micProblem, noiseSuppression, onCall, setMuted, setRNNoise, setVolume, volumeIn } from './voice.js';
+import { openSettings } from './settings.jsx';
+import { byName, clearNotice, leaveCall, onCall, setDeafened, setMuted, setVolume, voiceSettings, volumeIn } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
 // it, and how loud each member plays here.
@@ -16,110 +18,176 @@ export function useCall() {
     return state;
 }
 
+// STATUS says how the call stands, and where.
 const STATUS = {
-    joining: 'Joining…',
-    connecting: 'Connecting…',
-    connected: 'In the call',
-    reconnecting: 'Reconnecting…',
+    joining: (where) => `Joining ${where}…`,
+    connecting: (where) => `Connecting to ${where}…`,
+    connected: (where) => `Connected to ${where}`,
+    reconnecting: (where) => `Reconnecting to ${where}…`,
 };
 
-// CallBar shows the page's call, in this den or another, or why it ended:
-// at the foot of a den's channel list, or boxed on the other pages.
-// staffMuted says staff muted the member in this den's call.
-export function CallBar({ denID, boxed, staffMuted }) {
-    const { call, notice } = useCall();
-    const [settings, setSettings] = useState(false);
-    const frame = boxed ? 'rounded-box bg-base-200 p-2' : 'border-t border-base-300 p-2';
-    if (!call) {
-        if (!notice) return null;
-        return (
-            <div role="status" class={`flex items-start gap-2 text-sm ${frame}`}>
+// notices are what the member should know of their call: why the last one
+// ended, that it waits for the microphone, that staff muted them in this
+// den's, or that push to talk has no key yet.
+function notices(call, notice, denID, staffMuted) {
+    const ptt = voiceSettings();
+    const lines = [];
+    if (!call && notice) {
+        lines.push(
+            <div key="notice" role="status" class="flex items-start gap-2">
                 <span class="min-w-0 flex-1 text-warning">{notice.text}</span>
                 <button type="button" class="btn btn-ghost btn-xs" aria-label="Dismiss" onClick={clearNotice}>✕</button>
-            </div>
+            </div>,
         );
     }
-    const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
+    if (call?.waitingForMic) lines.push(<p key="mic">Waiting for the microphone. If your browser asks for it, allow it.</p>);
+    if (call && staffMuted && call.den === denID) lines.push(<p key="staff" class="text-warning">Muted by staff: nobody hears you</p>);
+    if (call && ptt.mode === 'ptt' && !ptt.keys.ptt) {
+        lines.push(
+            <button key="ptt" type="button" class="link text-left text-warning" onClick={() => openSettings('voice')}>
+                Push to talk has no key: set one
+            </button>,
+        );
+    }
+    return lines;
+}
+
+// CallBlock holds the page's call at the foot of a den's channel list,
+// above the member's panel and in the message bar's shade: its notices,
+// then its controls in a row. Screen sharing's controls will be a row of
+// their own, above the call's.
+export function CallBlock({ denID, staffMuted }) {
+    const { call, notice } = useCall();
+    const lines = notices(call, notice, denID, staffMuted);
+    if (!call && !lines.length) return null;
     return (
-        <div class={frame}>
-            <div class="flex items-center gap-1">
-                <span class={`mx-1 h-2 w-2 shrink-0 rounded-full ${call.status === 'connected' ? 'bg-success' : 'bg-warning'}`} aria-hidden="true"></span>
-                <div class="min-w-0 flex-1 leading-tight">
-                    <div class="text-xs font-semibold" role="status">{STATUS[call.status]}</div>
-                    <div class="truncate text-xs text-base-content/60">{where}</div>
-                    {staffMuted && call.den === denID && <div class="text-xs text-warning">Muted by staff: nobody hears you</div>}
-                </div>
-                <span class="tooltip tooltip-top before:max-w-48" data-tip="Calls aren't end-to-end encrypted: the den can hear them.">
-                    <span class="cursor-default select-none px-1 text-xs text-base-content/50" aria-label="Calls aren't end-to-end encrypted: the den can hear them.">ⓘ</span>
-                </span>
-                <button type="button" class={`btn btn-ghost btn-xs ${call.muted ? 'text-error' : ''}`} aria-pressed={call.muted}
-                    aria-label={call.muted ? 'Unmute' : 'Mute'} title={call.muted ? 'Unmute' : 'Mute'} onClick={() => setMuted(!call.muted)}>
-                    {call.muted ? '🔇' : '🎙'}
-                </button>
-                <button type="button" class={`btn btn-ghost btn-xs ${settings ? 'btn-active' : ''}`} aria-expanded={settings}
-                    aria-label="Microphone and speaker" title="Microphone and speaker" onClick={() => setSettings(!settings)}>⚙</button>
-                <button type="button" class="btn btn-ghost btn-xs text-error" onClick={leaveCall}>Leave</button>
-            </div>
-            {settings && <DevicePicker />}
+        <div class="flex flex-col gap-1 border-t border-base-300 bg-bar px-2 py-1.5">
+            {lines.length > 0 && <div class="flex flex-col gap-1 px-1 py-0.5 text-xs">{lines}</div>}
+            {call && <CallControls denID={denID} call={call} />}
         </div>
     );
 }
 
-// DevicePicker chooses the microphone and, where the browser can, the
-// speaker, and the noise suppression.
-function DevicePicker() {
-    const [list, setList] = useState(null);
-    const [error, setError] = useState('');
-    const [suppression, setSuppression] = useState(noiseSuppression);
-    useEffect(() => {
-        devices().then(setList, () => setError("This browser didn't list its devices."));
-    }, []);
-    if (!list) return error ? <p class="mt-2 text-xs text-error">{error}</p> : null;
-    function pickMic(id) {
-        setList({ ...list, mic: id });
-        setError('');
-        chooseMic(id).catch((e) => setError(micProblem(e)));
-    }
-    function pickSpeaker(id) {
-        setList({ ...list, speaker: id });
-        chooseSpeaker(id);
-    }
-    function pickRNNoise(on) {
-        setSuppression({ rnnoise: on, failed: false });
-        setError('');
-        setRNNoise(on).then(() => setSuppression(noiseSuppression()), (e) => setError(micProblem(e)));
+// CallBar is the call, and its notices, boxed on the pages other than a
+// den's, whose channel lists hold them at their foot.
+export function CallBar() {
+    const { call, notice } = useCall();
+    const lines = notices(call, notice);
+    if (!call && !lines.length) return null;
+    return (
+        <div class="flex flex-col gap-2 rounded-box bg-base-200 p-2">
+            {lines.length > 0 && <div class="flex flex-col gap-1 text-xs">{lines}</div>}
+            {call && <CallControls call={call} labeled />}
+        </div>
+    );
+}
+
+// CallControls are the call, in this den or another, in a row: a speaker
+// for whether it's connected, which says where on hover, and the buttons to
+// mute, deafen, open the voice settings and leave, spread evenly. labeled
+// spells out where beside the speaker, for pages with room for it.
+function CallControls({ denID, call, labeled }) {
+    const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
+    const said = STATUS[call.status](where);
+    const color = call.status === 'connected' ? 'text-success' : 'text-warning';
+    const buttons = (
+        <>
+            <IconButton label={call.muted ? 'Unmute' : 'Mute'} pressed={call.muted} danger={call.muted} onClick={() => setMuted(!call.muted)}>
+                <MicIcon off={call.muted} size="h-[18px] w-[18px]" />
+            </IconButton>
+            <IconButton label={call.deafened ? 'Undeafen' : 'Deafen'} pressed={call.deafened} danger={call.deafened}
+                onClick={() => setDeafened(!call.deafened)}>
+                <HeadphonesIcon off={call.deafened} size="h-[18px] w-[18px]" />
+            </IconButton>
+            <IconButton label="Voice settings" onClick={() => openSettings('voice')}>
+                <CogIcon />
+            </IconButton>
+            <IconButton label="Leave the call" danger onClick={leaveCall}>
+                <LeaveIcon />
+            </IconButton>
+        </>
+    );
+    if (labeled) {
+        return (
+            <div class="flex items-center justify-between gap-1">
+                <span class={`flex min-w-0 items-center gap-2 px-1.5 ${color}`}>
+                    <SpeakerIcon />
+                    <span role="status" class="truncate text-xs text-base-content/80">{said}</span>
+                </span>
+                <span class="flex shrink-0 items-center gap-1">{buttons}</span>
+            </div>
+        );
     }
     return (
-        <div class="mt-2 flex flex-col gap-2 text-xs">
-            <label class="flex flex-col gap-1">
-                <span>Microphone</span>
-                <select class="select select-xs w-full" value={list.mic} onChange={(e) => pickMic(e.currentTarget.value)}>
-                    <option value="">Default</option>
-                    {list.inputs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-                </select>
-            </label>
-            {list.outputs && (
-                <label class="flex flex-col gap-1">
-                    <span>Speaker</span>
-                    <select class="select select-xs w-full" value={list.speaker} onChange={(e) => pickSpeaker(e.currentTarget.value)}>
-                        <option value="">Default</option>
-                        {list.outputs.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
-                    </select>
-                </label>
-            )}
-            <label class="flex items-start gap-2">
-                <input type="checkbox" class="toggle toggle-xs mt-0.5" checked={suppression.rnnoise} onChange={(e) => pickRNNoise(e.currentTarget.checked)} />
-                <span>
-                    Stronger noise suppression
-                    <span class="block text-base-content/60">
-                        RNNoise takes out keyboards and other noise the browser leaves in. It adds 30 ms of delay and uses a little more of this
-                        computer's processor.
-                    </span>
+        <div class="flex items-center justify-between">
+            <span class={`group relative flex h-8 w-8 shrink-0 items-center justify-center ${color}`}>
+                <SpeakerIcon />
+                <span role="status" class="sr-only">{said}</span>
+                <span aria-hidden="true" class="pointer-events-none absolute bottom-full left-0 z-20 mb-2 hidden w-max max-w-52 rounded-lg bg-neutral px-2 py-1 text-xs text-neutral-content shadow group-hover:block">
+                    {said}
                 </span>
-            </label>
-            {suppression.failed && <p class="text-warning">RNNoise couldn't start in this browser, so the browser's own suppression is on.</p>}
-            {error && <p class="text-error">{error}</p>}
+            </span>
+            {buttons}
         </div>
+    );
+}
+
+function IconButton({ label, pressed, danger, onClick, children }) {
+    return (
+        <button type="button" class={`btn btn-ghost btn-sm btn-square ${danger ? 'text-error' : ''}`} aria-label={label} title={label}
+            aria-pressed={pressed} onClick={onClick}>
+            {children}
+        </button>
+    );
+}
+
+const ICON = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' };
+
+export function MicIcon({ off, size = 'h-4 w-4' }) {
+    return (
+        <svg class={size} {...ICON}>
+            <rect x="5.75" y="1.5" width="4.5" height="8" rx="2.25" />
+            <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" />
+            {off && <path d="M2 2l12 12" />}
+        </svg>
+    );
+}
+
+export function HeadphonesIcon({ off, size = 'h-4 w-4' }) {
+    return (
+        <svg class={size} {...ICON}>
+            <path d="M2.5 11.5V8a5.5 5.5 0 0 1 11 0v3.5" />
+            <rect x="2" y="9.5" width="3" height="5" rx="1" />
+            <rect x="11" y="9.5" width="3" height="5" rx="1" />
+            {off && <path d="M2 2l12 12" />}
+        </svg>
+    );
+}
+
+// CogIcon is an eight-toothed cog, for settings.
+export function CogIcon({ size = 'h-[18px] w-[18px]' }) {
+    return (
+        <svg class={size} {...ICON} stroke-width="1.3">
+            <path d="M13.06 6.43 L14.90 6.82 L14.90 9.18 L13.06 9.57 L12.69 10.47 L13.72 12.04 L12.04 13.72 L10.47 12.69 L9.57 13.06 L9.18 14.90 L6.82 14.90 L6.43 13.06 L5.53 12.69 L3.96 13.72 L2.28 12.04 L3.31 10.47 L2.94 9.57 L1.10 9.18 L1.10 6.82 L2.94 6.43 L3.31 5.53 L2.28 3.96 L3.96 2.28 L5.53 3.31 L6.43 2.94 L6.82 1.10 L9.18 1.10 L9.57 2.94 L10.47 3.31 L12.04 2.28 L13.72 3.96 L12.69 5.53Z" />
+            <circle cx="8" cy="8" r="2.2" />
+        </svg>
+    );
+}
+
+function SpeakerIcon() {
+    return (
+        <svg class="h-[18px] w-[18px] shrink-0" {...ICON}>
+            <path d="M2.5 6v4h2.5l3.5 3V3L5 6z" />
+            <path d="M11 5.75a3.25 3.25 0 0 1 0 4.5M12.75 3.75a6 6 0 0 1 0 8.5" />
+        </svg>
+    );
+}
+
+function LeaveIcon() {
+    return (
+        <svg class="h-[18px] w-[18px]" viewBox="0 0 16 16" aria-hidden="true">
+            <path fill="currentColor" d="M1.5 9.4c3.6-3.4 9.4-3.4 13 0l-1.3 1.9-2.6-.8V8.9a8.4 8.4 0 0 0-5.2 0v1.6l-2.6.8z" />
+        </svg>
     );
 }
 
@@ -160,8 +228,9 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
     }
     return (
         <>
-            <ul class="mb-1 ml-8 flex flex-col gap-0.5" aria-label="In the call">
-                {call.members.map((m) => {
+            {/* Rings stand 3px out from each avatar, so rows keep 8px apart. */}
+            <ul class="mb-2 ml-8 mt-1 flex flex-col gap-2" aria-label="In the call">
+                {byName(call.members, members).map((m) => {
                     const member = members.get(m.id);
                     const name = member?.display_name || 'Unknown member';
                     const heard = !m.muted && !m.staff_muted;
@@ -182,7 +251,11 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                                 <span class="truncate">{name}</span>
                             </button>
                             {talking && <span class="sr-only">speaking</span>}
-                            {m.muted && <span class="text-xs" title="Muted" aria-label="muted">🔇</span>}
+                            {m.deafened ? (
+                                <span class="text-base-content/60" title="Deafened: hears nothing of the call" aria-label="deafened"><HeadphonesIcon off size="h-3.5 w-3.5" /></span>
+                            ) : m.muted && (
+                                <span class="text-base-content/60" title="Muted" aria-label="muted"><MicIcon off size="h-3.5 w-3.5" /></span>
+                            )}
                             {m.staff_muted && (
                                 <span class="text-xs text-warning" title="Muted by staff: the den forwards nothing from them" aria-label="muted by staff">
                                     🔇 staff

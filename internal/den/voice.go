@@ -33,8 +33,9 @@ type call struct {
 	sock  atomic.Pointer[socket]
 	staff bool // whether the member is staff, which a held call can't ask its socket
 	peer  *sfu.Peer
-	muted bool
-	hold  *time.Timer // ends a held call that isn't taken back
+	// The member's own marks: muted, and deafened, hearing nothing (M3.3).
+	muted, deafened bool
+	hold            *time.Timer // ends a held call that isn't taken back
 }
 
 // callRoom is a voice channel's call.
@@ -189,7 +190,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		}
 		changed = append(changed, old.channel)
 	}
-	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted}
+	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened}
 	nc.sock.Store(sock)
 	peer, err := r.sfu.Join(denproto.FormatID(cid), denproto.FormatID(s.MemberID), callSignal{d, nc, r.udpPort, r.tcpPort})
 	if err != nil {
@@ -267,15 +268,15 @@ func (d *Den) socketCall(sock *socket) *call {
 }
 
 // muteCall sets the mark of the member whose call this socket holds.
-func (d *Den) muteCall(sock *socket, muted bool) {
+func (d *Den) muteCall(sock *socket, marks denproto.VoiceMute) {
 	r := &d.calls
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c := r.byMember[sock.member]
-	if c == nil || c.sock.Load() != sock || c.muted == muted {
+	if c == nil || c.sock.Load() != sock || (c.muted == marks.Muted && c.deafened == marks.Deafened) {
 		return
 	}
-	c.muted = muted
+	c.muted, c.deafened = marks.Muted, marks.Deafened
 	d.publishCallsLocked(c.channel)
 }
 
@@ -559,7 +560,8 @@ func (d *Den) publishCallsLocked(channels ...int64) {
 func (r *callRegistry) callOf(cid int64, room *callRoom) denproto.Call {
 	c := denproto.Call{ChannelID: denproto.FormatID(cid), Members: []denproto.CallMember{}}
 	for _, x := range room.members {
-		c.Members = append(c.Members, denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, StaffMuted: r.staffMuted[x.member]})
+		c.Members = append(c.Members, denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, Deafened: x.deafened,
+			StaffMuted: r.staffMuted[x.member]})
 	}
 	return c
 }

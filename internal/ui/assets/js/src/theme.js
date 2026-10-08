@@ -1,9 +1,26 @@
 // Theme Management
-// Dark/light switching, remembered per browser, defaulting to the system preference
+// Every DaisyUI theme, chosen in the settings and remembered per browser;
+// until one is chosen, the page follows the system's light or dark
+// preference, with Light and Dark.
 
-const LIGHT_THEME = 'nord';
-const DARK_THEME = 'forest';
+const LIGHT_THEME = 'light';
+const DARK_THEME = 'dark';
 const THEME_KEY = 'DENS_THEME';
+
+// THEMES lists every theme the stylesheet carries, by name.
+export const THEMES = [
+    'abyss', 'acid', 'aqua', 'autumn', 'black', 'bumblebee', 'business', 'caramellatte', 'cmyk', 'coffee', 'corporate', 'cupcake',
+    'cyberpunk', 'dark', 'dim', 'dracula', 'emerald', 'fantasy', 'forest', 'garden', 'halloween', 'lemonade', 'light', 'lofi', 'luxury',
+    'night', 'nord', 'pastel', 'retro', 'silk', 'sunset', 'synthwave', 'valentine', 'winter', 'wireframe',
+];
+
+// NAMES are the themes' names where capitals alone won't do.
+const NAMES = { caramellatte: 'Caramel latte', cmyk: 'CMYK', lofi: 'Lo-fi' };
+
+/** A theme's name, for the menu */
+export function themeName(theme) {
+    return NAMES[theme] || theme[0].toUpperCase() + theme.slice(1);
+}
 
 function stored() {
     try {
@@ -15,28 +32,36 @@ function stored() {
 
 function store(theme) {
     try {
-        localStorage.setItem(THEME_KEY, theme);
+        if (theme) localStorage.setItem(THEME_KEY, theme);
+        else localStorage.removeItem(THEME_KEY);
     } catch {
         // Storage can be unavailable (private windows); the theme still applies.
     }
 }
 
-/** Current theme, defaulting to the system preference */
-export function getTheme() {
-    return stored() ||
-        (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME);
+const dark = () => window.matchMedia?.('(prefers-color-scheme: dark)');
+
+/** The member's choice: a theme's name, or "system" */
+export function themeChoice() {
+    const t = stored();
+    return THEMES.includes(t) ? t : 'system';
 }
 
-export function setTheme(theme) {
-    store(theme);
+function apply() {
+    const choice = themeChoice();
+    const theme = choice === 'system' ? (dark()?.matches ? DARK_THEME : LIGHT_THEME) : choice;
     document.documentElement.setAttribute('data-theme', theme);
 }
 
-export function toggleTheme() {
-    setTheme(getTheme() === DARK_THEME ? LIGHT_THEME : DARK_THEME);
+/** Chooses a theme by name, or "system" to follow the system again */
+export function setTheme(choice) {
+    store(choice === 'system' ? '' : choice);
+    apply();
 }
 
-/** Apply the theme before the page renders, to avoid a flash */
+/** Apply the theme before the page renders, to avoid a flash, and follow
+    the system's preference as it changes while that's the choice */
 export function initTheme() {
-    document.documentElement.setAttribute('data-theme', getTheme());
+    apply();
+    dark()?.addEventListener?.('change', apply);
 }

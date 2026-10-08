@@ -12,8 +12,9 @@ import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, RemoveMember, isStaff } from './people.jsx';
 import { needsCheck } from './private.js';
 import { SignInRequests } from './private.jsx';
+import { openSettings } from './settings.jsx';
 import { applyCalls, joinCall } from './voice.js';
-import { CallBar, CallMembers, useCall } from './voice.jsx';
+import { CallBlock, CallMembers, CogIcon, useCall } from './voice.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -61,6 +62,11 @@ function pick(view, denID, channelID) {
     const last = view.channels.find((c) => c.id === stored(LAST_CHANNEL + denID));
     if (hasMessages(last) && !closedDMs(view).has(last.id)) return last;
     return view.channels.find((c) => c.kind === 'text') || null;
+}
+
+// withStatus takes in the den's status on this computer.
+function withStatus(view, status) {
+    return { ...view, state: status.state, error: status.error, name: status.name, role: status.role };
 }
 
 function applyPresence(online, p) {
@@ -113,18 +119,44 @@ export function Chat({ denID, channelID, navigate }) {
     // tab is the list the sidebar shows: the den's channels, or DMs.
     const [tab, setTab] = useState(() => stored(LIST_TAB + denID) || 'den');
     const reloadTimer = useRef(null);
+    // loads counts the view's reloads, so one that lands after a newer one
+    // is dropped. caught holds, for each reload out, the events that came
+    // while it was: the service may have taken the reload's snapshot before
+    // them, so they go again on top of it.
+    const loads = useRef(0);
+    const caught = useRef(new Set());
     useEffect(() => onConnection(setLive), []);
 
     async function load() {
+        const n = ++loads.current;
+        const since = [];
+        caught.current.add(since);
         try {
             const next = await api.get(`/api/dens/${denID}/state`);
-            setView(next);
-            setOnline(new Set(next.online));
-            setError('');
+            if (n === loads.current) {
+                let view = next;
+                let present = new Set(next.online);
+                for (const e of since) {
+                    if (e.t === 'voice.state') view = { ...view, calls: applyCalls(view.calls, e.d) };
+                    else if (e.t === 'presence') present = applyPresence(present, e.d);
+                    else if (e.t === 'dm.key') view = withKey(view, e.d);
+                    else if (e.t === 'dens') view = withStatus(view, e.d);
+                }
+                setView(view);
+                setOnline(present);
+                setError('');
+            }
         } catch (e) {
-            setError(e.message);
+            if (n === loads.current) setError(e.message);
+        } finally {
+            caught.current.delete(since);
         }
         api.get('/api/dens').then((v) => setStatus(v.dens.find((d) => d.den_id === denID) || null), () => {});
+    }
+
+    // catchUp keeps an event for the reloads that are out.
+    function catchUp(e) {
+        caught.current.forEach((since) => since.push(e));
     }
 
     function reloadSoon() {
@@ -139,7 +171,8 @@ export function Chat({ denID, channelID, navigate }) {
             if (msg.t === 'dens') {
                 const status = msg.d.dens.find((d) => d.den_id === denID);
                 if (status) {
-                    setView((v) => (v ? { ...v, state: status.state, error: status.error, name: status.name, role: status.role } : v));
+                    catchUp({ t: 'dens', d: status });
+                    setView((v) => (v ? withStatus(v, status) : v));
                     setStatus(status);
                 }
                 return;
@@ -147,6 +180,7 @@ export function Chat({ denID, channelID, navigate }) {
             if (msg.t !== 'den' || msg.d.den !== denID) return;
             if (msg.d.reset) return reloadSoon();
             for (const e of msg.d.events || []) {
+                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key') catchUp(e);
                 if (STRUCTURAL.has(e.t)) reloadSoon();
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
                 else if (e.t === 'voice.state') setView((v) => (v ? { ...v, calls: applyCalls(v.calls, e.d) } : v));
@@ -250,9 +284,15 @@ export function Chat({ denID, channelID, navigate }) {
             <div class="flex h-full min-h-0">
                 <aside class={`${listOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col overflow-y-auto bg-base-200 md:flex md:w-64`}>
                     <div class="border-b border-base-300 p-3">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="truncate font-semibold">{view.name}</span>
-                            <span class={`badge badge-xs ${live && view.state === 'connected' ? 'badge-success' : 'badge-warning'}`} title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
+                        <div class="flex items-center gap-2">
+                            <a href="/" class="btn btn-ghost btn-sm btn-square -my-1 -ml-1" aria-label="Home" title="Home"
+                                onClick={(e) => { e.preventDefault(); navigate('/'); }}>
+                                <HomeIcon />
+                            </a>
+                            <span class="min-w-0 flex-1 truncate font-semibold">{view.name}</span>
+                            {!(live && view.state === 'connected') && (
+                                <span class="badge badge-xs badge-warning" title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
+                            )}
                         </div>
                         {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
                     </div>
@@ -265,20 +305,14 @@ export function Chat({ denID, channelID, navigate }) {
                             onOpen={openChannel} onDialog={setDialog} />
                     )}
                     <div class="mt-auto">
-                        <CallBar denID={denID} staffMuted={staffMuted(view, myCall)} />
-                        <div class="flex items-center gap-1 border-t border-base-300 p-2">
-                            <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60"
-                                onClick={() => setDialog({ kind: 'profile', member: members.get(view.me.id) || view.me })} aria-label="Your profile">
-                                <Avatar member={view.me} size="sm" online={live && view.state === 'connected'} />
-                                <span class="truncate text-sm">{view.me.display_name}</span>
-                            </button>
-                            {staff && !gone && (
-                                <>
-                                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
-                                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
-                                </>
-                            )}
-                        </div>
+                        {staff && !gone && (
+                            <div class="flex gap-1 px-2 pb-1">
+                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
+                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
+                            </div>
+                        )}
+                        <CallBlock denID={denID} staffMuted={staffMuted(view, myCall)} />
+                        <UserPanel me={view.me} online={live && view.state === 'connected'} onEdit={() => setDialog({ kind: 'edit' })} />
                     </div>
                 </aside>
                 <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
@@ -387,6 +421,39 @@ function ListTabs({ tab, onTab, view, reads, open }) {
     );
 }
 
+// UserPanel is the member's own corner at the foot of the channel list, as
+// tall as the message bar beside it, which it lines up with: their picture
+// and name, which open their profile to edit, and the cog for the
+// settings. It keeps the list's color, so the call's lighter block above it
+// shows at a glance.
+function UserPanel({ me, online, onEdit }) {
+    return (
+        <div class="flex h-[73px] items-center gap-1 border-t border-base-300 px-2">
+            <button type="button" class="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-1 text-left hover:bg-base-300/60" onClick={onEdit}
+                aria-label="Edit your profile" title="Edit your profile">
+                <Avatar member={me} size="md" online={online} />
+                <span class="min-w-0 leading-tight">
+                    <span class="block truncate text-sm font-medium">{me.display_name}</span>
+                    <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
+                </span>
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Settings" title="Settings" onClick={() => openSettings('general')}>
+                <CogIcon />
+            </button>
+        </div>
+    );
+}
+
+function HomeIcon() {
+    return (
+        <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+            aria-hidden="true">
+            <path d="M2 7.5 8 2.5l6 5" />
+            <path d="M3.5 6.5v7h3.25v-4h2.5v4h3.25v-7" />
+        </svg>
+    );
+}
+
 // staffMuted says whether staff muted this member in their call in this
 // den, which a staff mute outlasts.
 export function staffMuted(view, call) {
@@ -440,7 +507,10 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
                     <div class="flex cursor-default select-none items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
                         <span class="truncate">{g.name}</span>
                         {staff && (
-                            <button type="button" class="btn btn-ghost btn-xs" aria-label={`Group settings for ${g.name}`} onClick={() => onDialog({ kind: 'group', group: g })}>⚙</button>
+                            <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label={`Group settings for ${g.name}`} title="Group settings"
+                                onClick={() => onDialog({ kind: 'group', group: g })}>
+                                <CogIcon size="h-3.5 w-3.5" />
+                            </button>
                         )}
                     </div>
                     <ul class="flex flex-col">
@@ -570,7 +640,9 @@ function ChannelHeader({ channel, dm, me, staff, elsewhere, online, membersOpen,
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
                     {staff && channel.kind === 'text' && (
-                        <button type="button" class="btn btn-ghost btn-xs" onClick={onSettings} aria-label="Channel settings">⚙</button>
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" onClick={onSettings} aria-label="Channel settings" title="Channel settings">
+                            <CogIcon />
+                        </button>
                     )}
                     <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
                         aria-label="Members" aria-pressed={membersOpen} title="Members">

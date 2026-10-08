@@ -1,15 +1,16 @@
-// The app: pairing, the first local password, and the two pages (home and
-// settings), chosen from what /api/status says about this browser.
+// The app: pairing, the first local password, and the pages (home and a
+// den's), chosen from what /api/status says about this browser, with the
+// settings over them. A den's page reaches home and the settings from its
+// channel list; home has a cog of its own for the settings.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onConnection, onUnpaired } from './events.js';
-import { toggleTheme } from './theme.js';
 import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
 import { Home } from './home.jsx';
-import { Settings } from './settings.jsx';
+import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
-import { CallBar } from './voice.jsx';
+import { CallBar, CogIcon } from './voice.jsx';
 
 // chatRoute reads /den/<den>[/<channel>] from a path.
 function chatRoute(path) {
@@ -28,10 +29,21 @@ function takePairingToken() {
     return token;
 }
 
+// takeSettingsPath opens the settings over the home page for /settings,
+// where they were a page of their own.
+function takeSettingsPath() {
+    if (window.location.pathname !== '/settings') return null;
+    history.replaceState(null, '', '/');
+    return 'general';
+}
+
 export function App({ instance, version }) {
     const [state, setState] = useState({ phase: 'loading' });
+    const [settings, setSettings] = useState(takeSettingsPath);
     const [path, setPath] = useState(window.location.pathname);
     const [live, setLive] = useState(true);
+    useEffect(() => onOpenSettings(setSettings), []);
+    const closeSettings = useCallback(() => setSettings(null), []);
 
     async function load() {
         try {
@@ -98,28 +110,12 @@ export function App({ instance, version }) {
         page = <Unpaired instance={instance} error={state.error} />;
     } else if (!passwordSet) {
         page = <SetPassword onDone={load} />;
-    } else if (path === '/settings') {
-        page = <Settings />;
     } else {
         page = <Home status={state.status} navigate={navigate} />;
     }
 
     return (
         <div class="flex h-screen flex-col">
-            <header class="navbar min-h-12 shrink-0 bg-base-200 px-4">
-                <div class="flex-1 gap-2">
-                    <a href="/" class="text-xl font-semibold" onClick={(e) => { e.preventDefault(); navigate('/'); }}>Dens</a>
-                    {instance !== 'main' && <span class="badge badge-ghost">{instance}</span>}
-                </div>
-                <div class="flex-none gap-2">
-                    {passwordSet && (
-                        <a href="/settings" class="btn btn-ghost btn-sm" onClick={(e) => { e.preventDefault(); navigate('/settings'); }}>
-                            Settings
-                        </a>
-                    )}
-                    <button type="button" class="btn btn-ghost btn-sm" aria-label="Toggle theme" onClick={toggleTheme}>◐</button>
-                </div>
-            </header>
             {passwordSet && !live && (
                 <div role="status" class="alert alert-warning alert-soft shrink-0 rounded-none">
                     <span>Lost touch with the Dens service on this computer; reconnecting…</span>
@@ -131,13 +127,25 @@ export function App({ instance, version }) {
                 </div>
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">
-                    <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6">
-                        {passwordSet && <CallBar boxed />}
+                    <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6 pb-20">
+                        {passwordSet && <CallBar />}
                         {page}
-                        {version && <p class="text-center text-xs text-base-content/50">Dens {version}</p>}
+                        {version && (
+                            <p class="text-center text-xs text-base-content/50">
+                                Dens {version}
+                                {instance !== 'main' && `, instance ${instance}`}
+                            </p>
+                        )}
                     </div>
+                    {passwordSet && (
+                        <a href="/settings" class="btn btn-square fixed bottom-4 left-4 shadow-sm" aria-label="Settings" title="Settings"
+                            onClick={(e) => { e.preventDefault(); openSettings('general'); }}>
+                            <CogIcon size="h-5 w-5" />
+                        </a>
+                    )}
                 </main>
             )}
+            {passwordSet && settings && <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} />}
         </div>
     );
 }

@@ -62,7 +62,7 @@ The browser never talks to a den over HTTP. All den content reaches the page thr
 
 The owner's client reaches its own den over loopback, not through the public domain. That works before DNS and Caddy are set up, and on routers that can't route to their own public address (no hairpin NAT). The den still proves its identity key at every login, so loopback loses no authentication. The client-to-den protocol is specified in [protocol.md](protocol.md).
 
-**Client UI.** The page is a Preact app (about 10 KB) built by the pinned esbuild into one hashed bundle. Preact injects no scripts or styles at runtime, so the CSP stays `script-src 'self'` with no inline code. WebSockets, both den and local, use `github.com/coder/websocket`: small, context-first and without dependencies, since the standard library has none.
+**Client UI.** The page is a Preact app (about 10 KB) built by the pinned esbuild into one hashed bundle. Preact injects no scripts or styles at runtime, so the CSP stays `script-src 'self'` with no inline code. The stylesheet carries every DaisyUI theme, which a member picks in the settings and the browser keeps; until they pick one, the page follows the device's light or dark preference, with Light and Dark (M3.3). The page has no header (M3.3): a den's channel list holds the way home, at the left of the den's name, which shows the den's status only while it isn't connected, and the cog for the settings sits in the member's panel at its foot; home has a cog of its own, fixed at the bottom left, and a development instance's tab names it. The page keeps one WebSocket to the local service, and one that hasn't opened within a few seconds counts as down, so the page says it's out of touch rather than looking fine while it hears nothing. Views reload once it's back, and a reload applies again what changed while it was out, since the snapshot it fetched may be older. WebSockets, both den and local, use `github.com/coder/websocket`: small, context-first and without dependencies, since the standard library has none.
 
 **Install and service account**
 
@@ -312,6 +312,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 - Edits carry the revision they were made against, and the den refuses a stale one. Nobody's edit silently overwrites another's, whether it comes from a second device or a co-editor. The member sees the newer text, with their own draft kept to reapply.
 - **Shared messages (M1.6):** when posting, the author can name up to 20 other members who may also edit the message, among those who can see the channel. Editors can't delete it, and only the author changes who may edit. It suits shared lists and plans.
 - **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a change of its own, so two people ticking different boxes at once never lose a tick. A tick names its task's text, so one against a list that changed meanwhile is refused rather than landing on another line. Everyone else sees the boxes read-only.
+- The composer's + opens a small menu above it, for attaching files and choosing who else may edit, and polls later (M8). A ? beside it opens a guide to writing a message: Enter and Shift+Enter, the markdown subset, mentions, links and how they're shortened, task lines and who can tick them, shared editing, ↑ to edit the last message, replies and files (M3.3).
 - Delete removes the row and its files; `secure_delete` overwrites the freed pages. A delete event tells clients to purge caches.
 - Optional den-wide retention (for example 30 or 90 days), off by default, shown to members in den info.
 - Removal and bans revoke all of a member's keys and close their sockets at once (see Leaving, removal and bans).
@@ -405,6 +406,7 @@ Members attach files to messages and put pictures on their profiles. Images lose
 - Everything downloads through the local service. It serves a file inline only when its own look at the bytes finds an image of one of the four kinds, or video or audio in a container the module writes, and then as exactly that type; anything else, SVG and HTML included, goes out as `application/octet-stream` with `Content-Disposition: attachment`. Every file carries `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`, so even one opened on its own can't run anything. The page's policy allows media from itself (`media-src 'self'`).
 - Video and audio play as they download: the den answers byte ranges of a file, decrypting only the chunks a range covers, and the local service passes ranges through, so the page's player starts at once and seeks. A DM's video works the same way, the local service fetching the sealed chunks a range covers and opening them with the file's key.
 - Videos in the message list play with controls of the page's own, since browsers' own can't be kept up: they stay while a video is paused, showing where it stopped and how long it is, and while it plays they hide once the pointer rests or leaves. Audio keeps the browser's controls.
+- A video's volume is a mute button, which shows a vertical volume slider on hover or keyboard focus, at any width (M3.3). The level is every video's: the browser keeps it, and every video follows it, playing or still to start, while muting stays each video's own. A video too narrow for its time beside the seek bar shows none; full screen shows it.
 - The den serves every file as bytes to download, and never states a type a browser would act on.
 - A file's name is text from a den: shown as text, and cleaned before it names a download.
 
@@ -489,11 +491,11 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 **Calls (M2)**
 
 - Calls happen in voice channels. Clicking one joins its call: the member's browser opens one `RTCPeerConnection` to the den, which carries their microphone to the den and everyone else's audio back.
-- Anyone who can see a voice channel can join its call, and sees who is in it and who is muted. A staff-only voice channel's call is staff's, as its text channels are.
+- Anyone who can see a voice channel can join its call, and sees who is in it, listed by name, and who is muted. A staff-only voice channel's call is staff's, as its text channels are.
 - A member is in one call at a time, on one device: joining from another device, or in another channel, moves them there. An install holds one call, which belongs to the page that joined it, so closing or reloading that page leaves the call.
 - The den ends a member's call as soon as they can't see its channel: they leave or are removed or banned, the device is signed out, a role change hides a staff-only channel, or the channel is deleted.
 - A call rides out a dropped connection (M3): the den holds it for 30 seconds after its socket closes, and the page takes it back once it reconnects (see Riding out a dropped connection). A den restart ends every call, and the page joins again once the den is back, trying a few times before it gives up and says why.
-- Mute is the member's own: the page stops sending their microphone's sound, and the others see the mark.
+- Mute is the member's own: the page stops sending their microphone's sound, and the others see the mark. So is deafen (M3.3): the page plays nothing of the call and mutes the member, and the others see that they hear nothing either. Hearing again puts the microphone back as it was, and unmuting while deafened means hearing again too.
 - Each member sets how loud everyone else plays for them (M3), from 0 to 100%, in the call's list. The browser keeps it by den and member, as it keeps the microphone and speaker, so someone turned down stays down in the next call, and the list shows the level beside anyone below full. It's the volume of the media element that plays them, so it stops at 100%: more would mean playing their audio through Web Audio instead.
 - Staff can disconnect a member of a lower rank from a call, or mute them, which the den enforces (M3; see Staff in calls).
 - Speaking indicators (M3): each page measures the audio it plays for each member, and its own microphone's as sent, and rings the avatar of whoever is speaking. Only members in the call see them, since only their pages play its audio, and the den sends nothing for them.
@@ -548,6 +550,29 @@ A call's signaling and its media take different paths: the den socket runs from 
 - A disconnected member can join again at once. One who keeps coming back is removed or banned like anyone else.
 - A staff mute makes the den forward nothing from the member, whatever their page sends. It belongs to the member, not the call, so leaving and joining again doesn't shed it. It lasts until staff lift it, the member leaves the den, or the den restarts, since the den keeps it in memory. Everyone who can see the call sees the mark.
 - The member's page says what happened, without naming who did it.
+
+**Voice controls (M3.3)**
+
+- A member sends their voice one of two ways, chosen in the settings' Voice section. With voice activity, the default, the page sends only while they speak. With push to talk, it sends only while they hold their key.
+- Voice activity is automatic by default: it opens for whatever RNNoise, which judges every 10 ms frame, takes for speech. A member can instead set a level with a slider, against a live meter of their microphone, and the page sends what's above it. Without RNNoise, the level is the only way.
+- The gate runs in the audio thread on every 10 ms frame, after the noise suppressor, so it opens on a word's first syllable, not up to 100 ms late as a meter on the main thread would. It holds for 300 ms after speech stops, so words' ends and the gaps between them aren't cut, and it fades in and out over a few milliseconds, so it doesn't click. With RNNoise off, the same processor runs without it, for the gate alone. Where the processor can't run at all, the microphone goes as it is, with the browser's own suppressor: voice activity then sends everything, push to talk holds the track back itself, and the settings say so.
+- Keys: push to talk, toggle mute (which serves as toggle to talk), and push to mute, which mutes while held. They work while the page has focus, as with any web page, and the settings say so. A key held when the page loses focus counts as released. They don't fire while the member types in a text field, unless the key types nothing there: a function key, or one held with Ctrl, Alt or Meta.
+- What the gate holds back goes as silence, and every offer asks for Opus's discontinuous transmission (`usedtx=1`), so a member who isn't speaking sends a packet every 400 ms instead of 50 a second. That keeps big calls cheap for the den's upload: silent members cost almost nothing.
+- Speaking rings follow what's sent, since they measure what each page plays: a member the gate holds back rings nowhere, and the member's own ring lights while their gate is open.
+- At the foot of a den's channel list, the member's panel shows their picture and name, which open their profile to edit, and the cog for the settings. The panel is as tall as the message bar beside it, which it lines up with, and keeps the channel list's color.
+- While in a call, a block sits above the panel and holds the call in a row: a speaker, green once connected, that names the channel on hover, and buttons to mute, deafen, open the Voice settings and leave. What the member should know of the call, such as a staff mute, shows in the block above the row, and screen sharing's controls will be a row of their own there (M4). The block and the message bar are a shade lighter than the page, or as light where the page is already white, so a call shows at a glance against the channel list and the panel. On the other pages the call shows boxed, with the channel spelled out.
+- Settings open as a dialog over whatever the page shows, so a den and a call stay in view. It closes with its ✕, Escape or a click outside it. Its General section starts with the theme, and its Voice section holds the microphone and speaker, noise suppression, how the member sends, and the keys, which the call's cog opens.
+- Joining waits on the microphone, which the browser may first ask the member for, and the call says so after a moment. The voice processor's audio context is made in the click that joins, since a browser may hold back one made after its prompt until another click. The browser keeps all of these, as it keeps the microphone and speaker.
+
+**Global shortcuts (M7)**
+
+A page sees keys only while it has focus, so push to talk can't reach it from a full-screen game. Discord's web app has the same limit, and its desktop app doesn't. Nor can the local service see keys: on Windows it runs in session 0, where Windows blocks all keyboard input to services, and on Linux it runs as its own account, outside the desktop session.
+
+- A small helper, the same binary, runs as the desktop user in their session, started at login, and watches only the keys they bound. It tells the service over the control endpoint, and the service tells the page.
+- Windows: the helper reads the bound keys' state (`GetAsyncKeyState`), with no keyboard hook, so it sees nothing else typed.
+- Wayland: the desktop's global shortcuts portal, in GNOME 48 and later, KDE Plasma and Hyprland, reports a shortcut's press and release, and the desktop asks the member to confirm it. Desktops without the portal keep the page's keys.
+- X11: the helper reads the bound keys' state (`XQueryKeymap`).
+- The installer registers it to start at login for the desktop user, and removes it on uninstall.
 
 **Media addresses**
 
@@ -809,9 +834,11 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
 | M2 | Voice: calls in voice channels through the Pion SFU, on a UDP mux with ICE-TCP fallback; the signaling relay, with offers from the den as members join and leave; mute; the call bar | A clear two-person call across two home networks in the four target browsers, over UDP and with UDP blocked, and from the den owner's own browser |
 | M3 | Group voice: Opus at 96 kbps, speaking indicators, each member's own volume for everyone else, staff disconnecting and muting members in calls, calls that ride out a dropped connection, and RNNoise noise suppression unless a member turns it off. Compact links: Reddit, YouTube, X and Amazon product links in one short form, and tracking parameters off every link. Third-party notices in the binary | A call of everyone the manual test brings together stays stable for an hour, and a YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
-| M4 | Screen share: PLI forwarding, owner limits, viewer caps | 2 shares with 20 viewers within owner limits |
+| M4 | Screen share: PLI forwarding, owner limits, viewer caps; a voice channel's bitrate as an owner setting | 2 shares with 20 viewers within owner limits |
 | M5 | Message retention setting, and managing files: each member's uploads by size against their limit, deleting them, and swapping an attachment for a smaller copy | A member at their limit frees space by deleting and swapping old attachments, and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: encrypted persistent client cache, per-channel delta sync, cached member lists, dictionary frame encoding | A client restarted after a day offline downloads only what changed |
+| M7 | Global shortcuts: push to talk and the other voice keys while another program has focus, through a helper in the desktop session (see Global shortcuts) | A member pushes to talk from a full-screen game, on Windows and on GNOME and KDE under Wayland |
+| M8 | Polls, planned with the milestone | Planned with the milestone |
 
 M6 can move ahead of M2 if bandwidth shows up as a problem in testing.
 
@@ -835,7 +862,7 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 **M2.** One pull request, built and committed in layers: the den's SFU and calls with their protocol, the local service's relay, the page, the e2e, then the docs.
 
 - A new package, `internal/sfu`, holds the Pion side: the media ports, peer connections, forwarding and offers. `internal/den` decides who may be in which call and sends the events, and `internal/denclient` holds the relay.
-- The page's call lives beside its views, not in a den's, so a member keeps talking while reading another den. A voice channel lists who is in its call. A bar at the foot of the channel list shows the call while it lasts: its channel, whether it's connected, mute, leave, the microphone and speaker, and that calls aren't end-to-end encrypted, so the den can hear them.
+- The page's call lives beside its views, not in a den's, so a member keeps talking while reading another den. A voice channel lists who is in its call, and a block at the foot of the channel list holds the call while it lasts (see Voice controls).
 - Development instances take `--media-udp-port` and `--media-tcp-port`, as they take `--den-port`, so two can host dens on one machine.
 
 **M2 testing.**
@@ -846,12 +873,13 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 - Before the manual test, both browser engines are checked with fake microphones (Chromium's `--use-fake-device-for-media-stream`, Firefox's `media.navigator.streams.fake`), Chromium and Firefox in a container where they share a network with the instances: pages on two instances call each other, over UDP and with UDP blocked, mute, rejoin after a den restart, and, with four members, take a leaver's section back, and `getStats` shows each receiving the others' audio.
 - The manual test: two machines on different networks, a phone's hotspot serving as the second; each target browser; the den owner's own browser; UDP blocked, to force TCP; a den restart during a call; and a denied microphone.
 
-**M3 steps.** M3 lands as two pull requests, each built and committed in layers, and each checked in the four target browsers:
+**M3 steps.** M3 lands as three pull requests, each built and committed in layers, and each checked in the four target browsers. The third answers the manual test of the second:
 
 | Step | Scope | Done when |
 | --- | --- | --- |
 | M3.1 Links | Compact links in channels, DMs, channel descriptions and bios; tracking parameters off every link; the `old.reddit.com` preference; third-party notices in the binary | A YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
 | M3.2 Group voice | Calls that ride out a dropped connection, with ICE restarts; staff disconnecting and muting members; speaking indicators; each member's volume; RNNoise by default; Opus at 96 kbps | A call of everyone the manual test brings together stays stable for an hour |
+| M3.3 Voice controls and polish | Settings as a dialog with a Voice section; voice activity, automatic or by a level the member sets against a live meter, and push to talk, with keys for push to talk, toggle mute and push to mute while the page has focus; deafen; the call's controls in a row above the member's panel, whose picture edits their profile and whose cog opens the settings; no header, with home beside the den's name; every DaisyUI theme, in the settings; Opus's discontinuous transmission; the video player's mute button with its volume on hover, one remembered volume for every video, and no time on narrow videos; the composer's + menu and its formatting guide | A member on voice activity sends nothing while they're silent, and one on push to talk nothing but what they say while holding their key |
 
 **M3 testing.**
 
@@ -862,6 +890,7 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 - Page tests: when an indicator lights and how long it stays lit, the choice to resume, restart or join again, the reasons' text, and the `old.reddit.com` preference.
 - The den e2e gains short checks, on Linux and Windows: a link in a channel and in a DM arrives rewritten; the voice probe's call rides out a Caddy restart, and then the member's service restarting, without a new call, with packets crossing throughout; a staff mute stops the member's packets, and a staff disconnect ends their call with its reason. The hour-long call stays out of the e2e.
 - Before M3.2's code depended on it, a spike built RNNoise with the pinned wasi-sdk and ran it in an AudioWorklet under the page's CSP in the four target browsers. It measured the module's size, its CPU per 10 ms frame and the latency it adds, for the regular and the little model, and checked that the browser keeps echo cancellation on with its own suppressor off. Its findings are under Noise suppression, and the spike is `spikes/rnnoise/` at commit c5a882b.
+- M3.3's page tests: when the gate opens, holds and closes, by level and by RNNoise's judgment of speech, and fades; the processor gating with and without RNNoise, as the page sets it; the voice settings as the browser keeps them; and which key events fire a binding. In the container, both browsers check what each way of sending sends, with almost nothing between words, a held key let go when the page loses focus, the settings dialog closing each way, the composer's menu and guide, and the video player's volume.
 - Before the manual test, Chromium and Firefox in a container with fake microphones, as in M2, check every offer asking for 96 kbps, speaking indicators, a member's volume, RNNoise on from the start and turned off mid-call, staff muting and disconnecting, and a call riding out its member's service restarting and its UDP path breaking, which moves it to TCP on the same connection.
 - The manual test, as in M2: a test build packed with setup steps for friends, on a den the owner hosts on their own domain, which the group uses as its voice chat for a day, with everyone in one call for at least an hour. On the way: RNNoise on and off, speaking indicators in each target browser, turning someone down, staff disconnecting and muting, Wi-Fi dropped for a few seconds, a laptop moving between networks, a Caddy reload mid-call, and a YouTube share link in a channel and in a DM.
 

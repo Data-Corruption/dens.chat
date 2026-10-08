@@ -21,6 +21,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
@@ -145,7 +146,13 @@ func (rt *router) pageData(title string) map[string]any {
 }
 
 func (rt *router) handlePage(w http.ResponseWriter, r *http.Request) {
-	rt.render(w, r, "app.html", rt.pageData("Dens"))
+	// The page has no header, so its tab names an instance other than the
+	// main one, as development and test instances run side by side.
+	title := "Dens"
+	if instance := rt.a.Layout.Instance; instance != layout.DefaultInstance {
+		title += " (" + instance + ")"
+	}
+	rt.render(w, r, "app.html", rt.pageData(title))
 }
 
 func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {

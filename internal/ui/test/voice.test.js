@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { answerFor, applyCalls, clampVolume, endedText, micProblem, readVolumes, rmsDb, rnnoiseChosen, speakingNow, volumeIn, withVolume } from '../assets/js/src/voice.js';
+import {
+    answerFor, applyCalls, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, readVoice, readVolumes, rmsDb, rnnoiseChosen,
+    speakingNow, typesInto, volumeIn, withVolume,
+} from '../assets/js/src/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
 
@@ -101,4 +104,65 @@ test('RNNoise runs unless the member turned it off', () => {
     assert.equal(rnnoiseChosen(''), true);
     assert.equal(rnnoiseChosen('1'), true);
     assert.equal(rnnoiseChosen('0'), false);
+});
+
+test('voice settings fall back to their defaults, piece by piece', () => {
+    const defaults = { mode: 'voice', auto: true, threshold: -50, keys: {} };
+    assert.deepEqual(readVoice(''), defaults);
+    assert.deepEqual(readVoice('not json'), defaults);
+    assert.deepEqual(readVoice('[1]'), { ...defaults });
+    const v = readVoice(JSON.stringify({
+        mode: 'ptt',
+        auto: false,
+        threshold: -63.4,
+        keys: { ptt: { code: 'KeyV', label: 'V', ctrl: 1 }, toggleMute: { code: '', label: 'X' }, pushMute: { code: 'F13' }, other: { code: 'KeyB', label: 'B' } },
+    }));
+    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63, keys: { ptt: { code: 'KeyV', label: 'V', ctrl: true, alt: false, shift: false, meta: false } } });
+    assert.equal(readVoice('{"threshold": 20}').threshold, 0);
+    assert.equal(readVoice('{"threshold": -500}').threshold, -100);
+    assert.equal(readVoice('{"mode": "shout", "auto": "yes"}').mode, 'voice');
+    assert.equal(readVoice('{"auto": "yes"}').auto, true);
+});
+
+test('the gate follows how the member sends', () => {
+    const v = readVoice('');
+    assert.deepEqual(gateFor(v, true, false), { mode: 'auto' });
+    // Automatic needs RNNoise; without it the level decides.
+    assert.deepEqual(gateFor(v, false, false), { mode: 'level', threshold: -50 });
+    assert.deepEqual(gateFor({ ...v, auto: false, threshold: -30 }, true, false), { mode: 'level', threshold: -30 });
+    const ptt = { ...v, mode: 'ptt' };
+    assert.deepEqual(gateFor(ptt, true, false), { mode: 'closed' });
+    assert.deepEqual(gateFor(ptt, false, true), { mode: 'open' });
+});
+
+test('a key fires its binding with exactly its modifiers, and not while it types into a field', () => {
+    const b = { code: 'KeyV', label: 'V', ctrl: false, alt: false, shift: false, meta: false };
+    const key = (o) => ({ code: 'KeyV', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, target: null, ...o });
+    assert.ok(keyMatches(b, key({})));
+    assert.ok(!keyMatches(b, key({ ctrlKey: true })));
+    assert.ok(!keyMatches(b, key({ code: 'KeyB' })));
+    assert.ok(!keyMatches(undefined, key({})));
+    assert.ok(keyMatches({ ...b, ctrl: true, shift: true }, key({ ctrlKey: true, shiftKey: true })));
+    assert.ok(typesInto(key({ target: { tagName: 'TEXTAREA' } })));
+    assert.ok(typesInto(key({ target: { tagName: 'INPUT', type: 'text' } })));
+    assert.ok(typesInto(key({ target: { isContentEditable: true } })));
+    assert.ok(!typesInto(key({ target: { tagName: 'TEXTAREA' }, ctrlKey: true })));
+    assert.ok(!typesInto(key({ target: { tagName: 'TEXTAREA' }, code: 'F13' })));
+    assert.ok(!typesInto(key({ target: { tagName: 'INPUT', type: 'range' } })));
+    assert.ok(!typesInto(key({ target: { tagName: 'BUTTON' } })));
+    assert.ok(!typesInto(key({ target: null })));
+    assert.equal(keyLabel({ ...b, ctrl: true, shift: true }), 'Ctrl+Shift+V');
+    assert.equal(keyLabel(undefined), '');
+});
+
+test("a call's members show by name, whatever order they joined in", () => {
+    const members = new Map([
+        ['3', { id: '3', display_name: 'bob' }],
+        ['10', { id: '10', display_name: 'Alice' }],
+        ['2', { id: '2', display_name: 'Carol' }],
+        ['4', { id: '4', display_name: 'Carol' }],
+    ]);
+    const joined = ['4', '2', '3', '99', '10'].map((id) => ({ id, muted: false }));
+    assert.deepEqual(byName(joined, members).map((m) => m.id), ['99', '10', '3', '2', '4']);
+    assert.deepEqual(joined.map((m) => m.id), ['4', '2', '3', '99', '10'], 'the den\'s order is left as it was');
 });

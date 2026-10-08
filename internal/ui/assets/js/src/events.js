@@ -10,9 +10,13 @@
 // longer after each failure, up to a minute, so sockets retried while the
 // service restarts, or refused because the instance behind this address
 // was replaced, would keep this page, and new ones, waiting long after.
+// A socket that still hasn't opened after a few seconds counts as down, so
+// the page says it's out of touch rather than looking fine while it hears
+// nothing, and its views reload once it opens.
 
 const MIN_DELAY = 250;
 const MAX_DELAY = 3000;
+const OPEN_WAIT = 3000;
 
 const listeners = new Set();
 const connectionListeners = new Set();
@@ -72,15 +76,21 @@ function schedule() {
 
 function connect() {
     const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    socket = new WebSocket(`${scheme}//${window.location.host}/api/events`);
+    const s = new WebSocket(`${scheme}//${window.location.host}/api/events`);
+    socket = s;
+    const slow = setTimeout(() => {
+        if (socket === s && s.readyState === WebSocket.CONNECTING) goneDown();
+    }, OPEN_WAIT);
     socket.addEventListener('open', () => {
+        clearTimeout(slow);
         delay = MIN_DELAY;
         focus.forEach((channel, den) => send({ t: 'focus', d: { den, channel } }));
+        const missed = everConnected || down;
         if (down) {
             down = false;
             connectionListeners.forEach((fn) => fn(true));
         }
-        if (everConnected) dispatch({ t: 'reconnected' });
+        if (missed) dispatch({ t: 'reconnected' });
         everConnected = true;
     });
     socket.addEventListener('message', (event) => {
@@ -94,12 +104,16 @@ function connect() {
         dispatch(message);
     });
     socket.addEventListener('close', () => {
-        if (!down) {
-            down = true;
-            connectionListeners.forEach((fn) => fn(false));
-        }
+        clearTimeout(slow);
+        goneDown();
         schedule();
     });
+}
+
+function goneDown() {
+    if (down) return;
+    down = true;
+    connectionListeners.forEach((fn) => fn(false));
 }
 
 function dispatch(message) {

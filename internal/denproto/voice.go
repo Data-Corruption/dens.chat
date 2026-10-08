@@ -58,6 +58,7 @@ const (
 type VoiceJoin struct {
 	ChannelID string `json:"channel_id"`
 	Muted     bool   `json:"muted,omitempty"`
+	Deafened  bool   `json:"deafened,omitempty"` // M3.3
 	Resume    bool   `json:"resume,omitempty"`
 }
 
@@ -76,8 +77,11 @@ type VoiceAnswer struct {
 	SDP     string `json:"sdp"`
 }
 
+// VoiceMute sets the member's own marks in their call: muted, and deafened
+// (M3.3), which says they hear nothing of it either.
 type VoiceMute struct {
-	Muted bool `json:"muted"`
+	Muted    bool `json:"muted"`
+	Deafened bool `json:"deafened,omitempty"`
 }
 
 // VoiceOffer is the den's offer for a call. Its SDP carries no
@@ -106,6 +110,7 @@ type Call struct {
 type CallMember struct {
 	ID         string `json:"id"`
 	Muted      bool   `json:"muted,omitempty"`
+	Deafened   bool   `json:"deafened,omitempty"`
 	StaffMuted bool   `json:"staff_muted,omitempty"`
 }
 

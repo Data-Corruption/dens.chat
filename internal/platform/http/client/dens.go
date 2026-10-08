@@ -182,12 +182,13 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
-		Den     string `json:"den"`
-		Channel string `json:"channel"`
-		Muted   bool   `json:"muted"`
-		Resume  bool   `json:"resume"`
-		Version int    `json:"version"`
-		SDP     string `json:"sdp"`
+		Den      string `json:"den"`
+		Channel  string `json:"channel"`
+		Muted    bool   `json:"muted"`
+		Deafened bool   `json:"deafened"`
+		Resume   bool   `json:"resume"`
+		Version  int    `json:"version"`
+		SDP      string `json:"sdp"`
 	} `json:"d"`
 }
 
@@ -211,7 +212,8 @@ func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *we
 		case "typing":
 			_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 		case "voice.join":
-			if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, msg.D.Muted, msg.D.Resume, deliver) != nil {
+			marks := denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened}
+			if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, marks, msg.D.Resume, deliver) != nil {
 				deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
 			}
 		case "voice.answer":
@@ -219,7 +221,7 @@ func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *we
 		case "voice.restart":
 			rt.a.Dens.RestartCall(ctx, page, msg.D.Den)
 		case "voice.mute":
-			rt.a.Dens.MuteCall(page, msg.D.Den, msg.D.Muted)
+			rt.a.Dens.MuteCall(page, msg.D.Den, denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened})
 		case "voice.leave":
 			rt.a.Dens.LeaveCall(page, msg.D.Den)
 		}
