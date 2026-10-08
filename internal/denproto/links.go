@@ -277,7 +277,7 @@ func canonical(host, path, query string) (string, bool) {
 }
 
 func youTube(id, start string) (string, bool) {
-	if !videoID(id) {
+	if !VideoID(id) {
 		return "", false
 	}
 	out := "https://www.youtube.com/watch?v=" + id
@@ -338,7 +338,9 @@ func param(query, name string) string {
 	return ""
 }
 
-func videoID(s string) bool {
+// VideoID reports whether s is a YouTube video's ID: 11 of A-Z, a-z, 0-9,
+// - and _. The client's YouTube players fetch only for IDs it passes.
+func VideoID(s string) bool {
 	return len(s) == 11 && strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") == ""
 }
 

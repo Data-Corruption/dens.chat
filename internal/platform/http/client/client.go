@@ -28,6 +28,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
+	"github.com/Data-Corruption/dens.chat/internal/youtube"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
@@ -43,6 +44,7 @@ type router struct {
 	cookieName string
 	// pageOrigin is where browsers load the page (M4.1).
 	pageOrigin string
+	youTube    *youtube.Lookup
 }
 
 // New returns the client listener's handler.
@@ -51,6 +53,7 @@ func New(a *app.App) http.Handler {
 		a:          a,
 		cookieName: "dens_session_" + strconv.Itoa(a.Instance.ClientPort),
 		pageOrigin: guard.PageOrigin(a.Instance.ClientPort),
+		youTube:    youtube.New(),
 	}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
@@ -80,6 +83,7 @@ func New(a *app.App) http.Handler {
 		r.Post("/api/settings", rt.handleSettingsUpdate)
 		r.Post("/api/logout", rt.handleLogout)
 		rt.mountDens(r)
+		rt.mountYouTube(r)
 	})
 	return r
 }
