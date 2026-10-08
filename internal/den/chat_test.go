@@ -257,6 +257,51 @@ func TestSendEditDelete(t *testing.T) {
 	}
 }
 
+// The den takes tracking out of links in every text it keeps from members,
+// then checks the text's limits.
+func TestLinksLoseTheirTracking(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	const shared, clean = "https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42"
+	c := f.newChannel(owner, "general", denproto.ChannelRequest{Description: ptr("rules: " + shared)})
+	if c.Description != "rules: "+clean {
+		t.Fatalf("description %q", c.Description)
+	}
+	c, err := f.d.UpdateChannel(ctx, owner, c.ID, denproto.ChannelRequest{Description: ptr("new rules: " + shared)})
+	if err != nil || c.Description != "new rules: "+clean {
+		t.Fatalf("changed description %q: %v", c.Description, err)
+	}
+	m, err := f.d.Send(ctx, member, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "look " + shared})
+	if err != nil || m.Text != "look "+clean {
+		t.Fatalf("sent %q: %v", m.Text, err)
+	}
+	m, err = f.d.Edit(ctx, member, m.ID, denproto.EditRequest{Revision: m.Revision, Text: "look again " + shared})
+	if err != nil || m.Text != "look again "+clean {
+		t.Fatalf("edited %q: %v", m.Text, err)
+	}
+	if page, _ := f.d.History(ctx, owner, c.ID, HistoryQuery{}); texts(page) != "look again "+clean {
+		t.Fatalf("history %q", texts(page))
+	}
+	me, err := f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Bio: ptr("me: " + shared)})
+	if err != nil || me.Bio != "me: "+clean {
+		t.Fatalf("bio %q: %v", me.Bio, err)
+	}
+
+	// The limits apply to the text the den keeps: one that fits only once
+	// its tracking is out goes through, and one that grows past them
+	// doesn't.
+	long := "https://youtu.be/dQw4w9WgXcQ?si=" + strings.Repeat("x", 100)
+	fits := strings.Repeat("a", denproto.MaxTextRunes-100) + " " + long
+	if _, err := f.d.Send(ctx, member, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: fits}); err != nil {
+		t.Fatalf("a text that fits once rewritten: %v", err)
+	}
+	short := "https://youtu.be/dQw4w9WgXcQ"
+	grows := strings.Repeat("a", denproto.MaxTextRunes-len(short)-1) + " " + short
+	if _, err := f.d.Send(ctx, member, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: grows}); !denproto.IsCode(err, denproto.CodeInvalidField) {
+		t.Fatalf("a text that grows past the limit: %v", err)
+	}
+}
+
 func TestMentionsAndReadState(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()

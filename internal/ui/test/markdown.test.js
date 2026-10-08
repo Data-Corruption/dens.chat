@@ -4,8 +4,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Markdown, Preview, firstLine } from '../assets/js/src/markdown.jsx';
+import { setOldReddit, shownLink, trimLink } from '../assets/js/src/links.js';
 import mentions from '../../denproto/testdata/mentions.json';
 import taskCases from '../../denproto/testdata/tasks.json';
+import linkCases from '../../denproto/testdata/links.json';
 
 // nodes lists every element in a tree, depth first. A component, such as
 // the spoiler, is listed as itself, and its children are walked.
@@ -45,6 +47,37 @@ test('mentions are highlighted exactly where the den counts them', () => {
     for (const c of mentions.cases) {
         const found = mentioned(render(c.text)).map((n) => n.props['data-mention']);
         assert.deepEqual([...new Set(found)], c.mentions, JSON.stringify(c.text));
+    }
+});
+
+const linksIn = (tree) => nodes(tree).filter((n) => n.type === 'a').map((n) => n.props.href);
+
+test('links end exactly where the den finds them to rewrite', () => {
+    for (const c of linkCases.cases) {
+        assert.deepEqual(linksIn(render(c.text)), c.links, JSON.stringify(c.text));
+    }
+});
+
+test("a link keeps a ) that closes its own (, and loses one that closes the sentence's", () => {
+    assert.equal(trimLink('https://en.wikipedia.org/wiki/Go_(programming_language)'), 'https://en.wikipedia.org/wiki/Go_(programming_language)');
+    assert.equal(trimLink('https://en.wikipedia.org/wiki/Go_(programming_language)).'), 'https://en.wikipedia.org/wiki/Go_(programming_language)');
+    assert.equal(trimLink('https://x.com/a)'), 'https://x.com/a');
+    assert.equal(trimLink('https://x.com/a?!]'), 'https://x.com/a');
+});
+
+test('Reddit links show on old.reddit.com in a browser that prefers it', () => {
+    const post = 'https://www.reddit.com/comments/1abc2de/comment/k9xyz12';
+    assert.equal(shownLink(post, true), 'https://old.reddit.com/comments/1abc2de/comment/k9xyz12');
+    assert.equal(shownLink(post, false), post);
+    for (const other of ['https://www.reddit.com/r/golang/s/AbCdEf123', 'https://www.reddit.com.example.org/comments/1abc2de', 'https://example.com/comments/1']) {
+        assert.equal(shownLink(other, true), other);
+    }
+    setOldReddit(true);
+    try {
+        assert.deepEqual(linksIn(render(`see ${post}.`)), ['https://old.reddit.com/comments/1abc2de/comment/k9xyz12']);
+        assert.equal(text(render(`see ${post}.`)), 'see https://old.reddit.com/comments/1abc2de/comment/k9xyz12.');
+    } finally {
+        setOldReddit(false);
     }
 });
 

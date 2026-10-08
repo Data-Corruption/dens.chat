@@ -2,8 +2,19 @@
 package build
 
 import (
+	_ "embed"
 	"encoding/json"
 )
+
+// notices holds the licenses of the third-party software the binary
+// includes, which scripts/notices.sh writes.
+//
+//go:embed notices.txt
+var notices string
+
+// Notices returns the licenses of the third-party software the binary
+// includes.
+func Notices() string { return notices }
 
 // set by build.sh
 var (

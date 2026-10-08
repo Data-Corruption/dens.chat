@@ -235,17 +235,19 @@ func TestAvatar(t *testing.T) {
 func TestFailedUploadHandsBackItsBody(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
-	limits := denproto.Limits{FileSize: 4 << 20, MemberStorage: 5 << 20, DenStorage: 1 << 30}
+	limits := denproto.Limits{FileSize: 32 << 20, MemberStorage: 32 << 20, DenStorage: 1 << 30}
 	if err := owner.UpdateDen(ctx, denID, denproto.DenUpdateRequest{Limits: &limits}); err != nil {
 		t.Fatal(err)
 	}
 	viewOf(t, member, denID, "the new limits", func(v denclient.View) bool { return v.Limits == limits })
-	upload(t, member, denID, "first.bin", make([]byte, 3<<20))
+	upload(t, member, denID, "first.bin", make([]byte, 16<<20))
 	for name, data := range map[string][]byte{
 		// Refused here after its first bytes.
 		"clip.avi": append([]byte("RIFF\x00\x00\x30\x00AVI LIST"), make([]byte, 3<<20)...),
-		// Refused by the den before it reads the body: past the member's space.
-		"second.bin": make([]byte, 3<<20),
+		// Refused by the den before it reads the body: past the member's
+		// space. It's larger than loopback's socket buffers hold, so the
+		// transport can't have sent it all before the refusal arrives.
+		"second.bin": make([]byte, 24<<20),
 	} {
 		body := bytes.NewReader(data)
 		if _, err := member.Upload(ctx, denID, "", name, int64(len(data)), body); err == nil {

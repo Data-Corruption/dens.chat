@@ -1,9 +1,10 @@
-// The settings page: update checks, the local password, logging, and
-// signing this browser out.
+// The settings page: update checks, the local password, logging, where
+// Reddit links open, and signing this browser out.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Card, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
+import { oldReddit, setOldReddit } from './links.js';
 
 export function Settings() {
     const [settings, setSettings] = useState(null);
@@ -60,6 +61,7 @@ export function Settings() {
                 </Field>
             </Card>
             <ErrorText message={save.error} />
+            <Links />
             <Card title="This browser">
                 <p>Signing out unpairs this browser. Run dens open again to pair it.</p>
                 <div>
@@ -75,7 +77,37 @@ export function Settings() {
                     </button>
                 </div>
             </Card>
+            <p class="text-sm text-base-content/60">
+                Dens includes software from other projects, under their own licenses.{' '}
+                <a class="link" href="/licenses" target="_blank" rel="noopener noreferrer">Read them</a>
+            </p>
         </>
+    );
+}
+
+// Links says what happens to links that are sent, and chooses where this
+// browser opens Reddit's.
+function Links() {
+    const [old, setOld] = useState(oldReddit);
+    return (
+        <Card title="Links">
+            <p class="text-sm text-base-content/70">
+                When a link is sent, Dens takes out common tracking parameters, and shortens Reddit, YouTube and X links to the post or
+                video they point to.
+            </p>
+            <label class="label gap-3">
+                <input
+                    type="checkbox"
+                    class="toggle"
+                    checked={old}
+                    onChange={(e) => {
+                        setOldReddit(e.currentTarget.checked);
+                        setOld(e.currentTarget.checked);
+                    }}
+                />
+                Open Reddit links on old.reddit.com
+            </label>
+        </Card>
     );
 }
 

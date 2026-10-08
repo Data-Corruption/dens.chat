@@ -229,6 +229,9 @@ jobs:
       - name: Test Go packages
         run: ./scripts/test.sh
 
+      - name: Check the third-party notices are current
+        run: ./scripts/notices.sh --check
+
       - name: Lint shell scripts
         run: ./scripts/test.sh -lint
 

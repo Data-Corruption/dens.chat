@@ -27,7 +27,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
-| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, and the cryptography of private DMs and device approval |
+| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
 | `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, and who may be in which call |
 | `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, approving new devices, and relaying the page's call, with where its media goes |
 | `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, and forwarding each member's audio to the others within its limits; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
@@ -42,12 +42,13 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
 | `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source |
-| `internal/build` | Values baked in at build time |
+| `internal/build` | Values baked in at build time, and the third-party notices the binary carries (`notices.txt`, generated and committed) |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
+| `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design doc, which names the commit that last held it |
@@ -152,10 +153,18 @@ with the buffer intact. Keep that split when touching the writer.
 `golang.org/x/` is fine. A new third-party module needs to solve a non-trivial
 problem cleanly without dragging a tree behind it.
 
+**The binary carries every third-party license.** After adding or upgrading a
+Go module, or a pinned input whose code ends up in the binary, run
+`./scripts/notices.sh` and commit what it writes. A new input of that kind
+also needs its license copied into `scripts/notices/` from its source at the
+pinned version, and a section in the script. A test fails on a module the
+notices don't name, and CI on notices that aren't current.
+
 **Test files end in `_test.go`, nothing else.** `cmd/hygiene_test.go` fails on
 `*_test_*.go` names and on `testing` reaching the shipped binary.
 
-**Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`. Some
+**Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`, and for
+the notices the binary embeds, which a test reads line by line. Some
 PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 
 **The media module is generated, and committed.** Never edit
@@ -181,6 +190,7 @@ Runner from `ffmpeg.TestRunner`.
 ./scripts/build.sh --prod-all  # all release binaries
 ./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build
 ./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
+./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
@@ -221,8 +231,9 @@ forever). Comments explain why an ordering or check exists, not what the next
 line does. Tests use only the standard `testing` package, open real SQLite in
 `t.TempDir()`, and spawn real subprocesses for cross-process claims. The page's
 tests likewise use only Node's `node:test` and `node:assert`, with no npm
-packages. Where the Go and page code must agree, as on mentions, both test
-against one shared file of cases in a `testdata` directory. Keep it that way.
+packages. Where the Go and page code must agree, as on mentions, tasks and
+links, both test against one shared file of cases in a `testdata` directory.
+Keep it that way.
 
 ## Documentation
 
