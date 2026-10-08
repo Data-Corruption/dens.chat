@@ -14,14 +14,13 @@ import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
+import { PAGE, WINDOW, fromPage, mergeIn, replayed, withDelete, withUpdate } from './paging.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
 import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
 
-const WINDOW = 200;
-const PAGE = 50;
 const EDGE = 600; // px from an end at which the next page loads
 const READ_EVERY = 2000; // ms between read position updates
 const GROUP_GAP = 5 * 60 * 1000;
@@ -29,25 +28,9 @@ const GROUP_GAP = 5 * 60 * 1000;
 // MAX_EDITORS is how many others may edit a message with its author.
 const MAX_EDITORS = 20;
 
-// withUpdate puts a changed message into the list. A tick's answer can
-// arrive after a newer update, so the higher revision wins.
-function withUpdate(list, d) {
-    const held = list.messages.find((m) => m.id === d.id);
-    if (held && held.revision > d.revision) return list;
-    const reply = { author_id: d.author_id, text: d.text, locked: !!d.locked };
-    return { ...list, messages: list.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)) };
-}
-
 // joinNames lists names in a sentence.
 function joinNames(names) {
     return names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
-function mergeIn(messages, incoming) {
-    const seen = new Set(messages.map((m) => m.id));
-    const out = messages.concat(incoming.filter((m) => !seen.has(m.id)));
-    out.sort((a, b) => compareIds(a.id, b.id));
-    return out;
 }
 
 let nextKey = 1;
@@ -84,6 +67,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const readTimer = useRef(null);
     const unsentRead = useRef('');
     const highlightTimer = useRef(null);
+    // loads counts the loads that replace the run, so a page that lands
+    // after the run it was for was replaced is dropped. caught holds, for
+    // each load out, the events that came while it was.
+    const loads = useRef(0);
+    const caught = useRef(new Set());
     const base = `/api/dens/${denID}/channels/${channel.id}/messages`;
     // candidates could edit a message here with its author: the members
     // who can see the channel, besides this one.
@@ -122,11 +110,27 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         checkEdges();
     }, [list]);
 
+    // fetchPage fetches a page, keeping the events that come while it's out
+    // for replayed. A page that replaces the run counts as a new load; any
+    // page is null once the run it was for was replaced.
+    async function fetchPage(path, replaces) {
+        const n = replaces ? ++loads.current : loads.current;
+        const since = [];
+        caught.current.add(since);
+        try {
+            const page = await api.get(path);
+            return n === loads.current ? { page, since } : null;
+        } finally {
+            caught.current.delete(since);
+        }
+    }
+
     async function loadNewest() {
         try {
-            const page = await api.get(`${base}?limit=${PAGE}`);
+            const got = await fetchPage(`${base}?limit=${PAGE}`, true);
+            if (!got) return;
             anchor.current = { bottom: true };
-            setList({ messages: page.messages, hasOlder: page.has_older, hasNewer: page.has_newer, loaded: true });
+            setList(replayed(fromPage(got.page), got.since));
             setNewCount(0);
             setError('');
         } catch (e) {
@@ -139,16 +143,17 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (loading.current.older || !cur.hasOlder || !cur.messages.length) return;
         loading.current.older = true;
         try {
-            const page = await api.get(`${base}?before=${cur.messages[0].id}&limit=${PAGE}`);
+            const got = await fetchPage(`${base}?before=${cur.messages[0].id}&limit=${PAGE}`, false);
+            if (!got) return;
             captureAnchor();
             setList((l) => {
-                let messages = mergeIn(l.messages, page.messages);
+                let messages = mergeIn(l.messages, got.page.messages);
                 let hasNewer = l.hasNewer;
                 if (messages.length > WINDOW) {
                     messages = messages.slice(0, WINDOW);
                     hasNewer = true;
                 }
-                return { ...l, messages, hasOlder: page.has_older, hasNewer };
+                return replayed({ ...l, messages, hasOlder: got.page.has_older, hasNewer }, got.since);
             });
         } catch (e) {
             setError(e.message);
@@ -162,18 +167,19 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         if (loading.current.newer || !cur.hasNewer || !cur.messages.length) return;
         loading.current.newer = true;
         try {
-            const page = await api.get(`${base}?after=${cur.messages[cur.messages.length - 1].id}&limit=${PAGE}`);
+            const got = await fetchPage(`${base}?after=${cur.messages[cur.messages.length - 1].id}&limit=${PAGE}`, false);
+            if (!got) return;
             captureAnchor();
             setList((l) => {
-                let messages = mergeIn(l.messages, page.messages);
+                let messages = mergeIn(l.messages, got.page.messages);
                 let hasOlder = l.hasOlder;
                 if (messages.length > WINDOW) {
                     messages = messages.slice(messages.length - WINDOW);
                     hasOlder = true;
                 }
-                return { ...l, messages, hasOlder, hasNewer: page.has_newer };
+                return replayed({ ...l, messages, hasOlder, hasNewer: got.page.has_newer }, got.since);
             });
-            if (!page.has_newer) setNewCount(0);
+            if (!got.page.has_newer) setNewCount(0);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -182,18 +188,21 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     }
 
     async function jumpTo(id) {
-        let page = null;
+        let next = null;
         if (!listRef.current.messages.some((m) => m.id === id)) {
             try {
-                page = await api.get(`${base}?around=${id}&limit=${PAGE}`);
+                const got = await fetchPage(`${base}?around=${id}&limit=${PAGE}`, true);
+                if (!got) return;
+                next = replayed(fromPage(got.page), got.since);
             } catch (e) {
                 setError(e.message);
                 return;
             }
         }
         anchor.current = { jump: id };
-        if (page) setList({ messages: page.messages, hasOlder: page.has_older, hasNewer: page.has_newer, loaded: true });
+        if (next) setList(next);
         else setList((l) => ({ ...l }));
+
         setHighlight(id);
         clearTimeout(highlightTimer.current);
         highlightTimer.current = setTimeout(() => setHighlight(null), 2500);
@@ -278,6 +287,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     function handleEvent(e) {
         const d = e.d;
         if (!d || d.channel_id !== channel.id) return;
+        caught.current.forEach((since) => since.push(e));
         // Once this member checks a DM's key, what it sealed opens.
         if (e.t === 'dm.key') {
             if (listRef.current.messages.some((m) => m.locked)) loadNewest();
@@ -311,10 +321,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
             setViewing((v) => (v && (d.files || []).includes(v.id) ? null : v));
-            setList((cur) => ({
-                ...cur,
-                messages: cur.messages.filter((m) => m.id !== d.id).map((m) => (m.reply_to === d.id ? { ...m, reply: undefined } : m)),
-            }));
+            setList((cur) => withDelete(cur, d));
         }
     }
 
