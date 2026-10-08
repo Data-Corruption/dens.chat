@@ -99,7 +99,7 @@ func (p *page) run() {
 
 func (p *page) join(denID, channel string) {
 	p.t.Helper()
-	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, false, false, p.deliver); err != nil {
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denproto.VoiceMute{}, false, p.deliver); err != nil {
 		p.t.Fatal(err)
 	}
 }
@@ -108,7 +108,7 @@ func (p *page) join(denID, channel string) {
 // is back.
 func (p *page) resume(denID, channel string) {
 	p.t.Helper()
-	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, false, true, p.deliver); err != nil {
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denproto.VoiceMute{}, true, p.deliver); err != nil {
 		p.t.Fatal(err)
 	}
 	select {
@@ -140,7 +140,7 @@ func (p *page) hears(member string) {
 }
 
 // inCall reads who a view shows in a channel's call; a member ending in
-// "*" is muted.
+// "*" is muted, and "~" after it deafened.
 func inCall(v denclient.View, channel string) []string {
 	got := []string{}
 	for _, c := range v.Calls {
@@ -149,6 +149,9 @@ func inCall(v denclient.View, channel string) []string {
 				id := m.ID
 				if m.Muted {
 					id += "*"
+				}
+				if m.Deafened {
+					id += "~"
 				}
 				got = append(got, id)
 			}
@@ -190,8 +193,10 @@ func TestCallThroughTheClient(t *testing.T) {
 	b.hears(alice)
 	viewOf(t, member, denID, "both in the call", showsCall(lounge, alice, bob))
 
-	member.MuteCall("page-b", denID, true)
+	member.MuteCall("page-b", denID, denproto.VoiceMute{Muted: true})
 	viewOf(t, owner, denID, "bob muted", showsCall(lounge, alice, bob+"*"))
+	member.MuteCall("page-b", denID, denproto.VoiceMute{Muted: true, Deafened: true})
+	viewOf(t, owner, denID, "bob deafened", showsCall(lounge, alice, bob+"*~"))
 
 	// Another page on the member's install takes the call over.
 	c := newPage(t, member, "page-c")
@@ -264,7 +269,7 @@ func TestCallRefusalsReachThePage(t *testing.T) {
 	// The den has no calls running: no media ports in this test.
 	a.join(denID, general)
 	a.waitEnded(denproto.VoiceNotFound)
-	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, false, false, a.deliver); err == nil {
+	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, denproto.VoiceMute{}, false, a.deliver); err == nil {
 		t.Error("joined a call in a den this install hasn't joined")
 	}
 }

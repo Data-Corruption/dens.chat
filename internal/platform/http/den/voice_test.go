@@ -174,7 +174,7 @@ func ended(channel, reason string) (string, func(denproto.Event) bool) {
 }
 
 // inCall matches word of a call with exactly these members, in order; a
-// member ending in "*" is muted.
+// member followed by "*" is muted, and by "~" too, deafened.
 func inCall(channel string, members ...string) (string, func(denproto.Event) bool) {
 	return "the call in " + channel + " to hold " + strings.Join(members, ", "), func(e denproto.Event) bool {
 		var s denproto.VoiceState
@@ -196,6 +196,9 @@ func callMembers(c denproto.Call) []string {
 		id := m.ID
 		if m.Muted {
 			id += "*"
+		}
+		if m.Deafened {
+			id += "~"
 		}
 		got = append(got, id)
 	}
@@ -234,9 +237,11 @@ func TestCallThroughTheDen(t *testing.T) {
 
 	bob.send(denproto.EventVoiceMute, denproto.VoiceMute{Muted: true})
 	alice.wait(inCall(lounge.ID, alice.me, bob.me+"*"))
+	bob.send(denproto.EventVoiceMute, denproto.VoiceMute{Muted: true, Deafened: true})
+	alice.wait(inCall(lounge.ID, alice.me, bob.me+"*~"))
 
 	alice.send(denproto.EventVoiceLeave, struct{}{})
-	bob.wait(inCall(lounge.ID, bob.me+"*"))
+	bob.wait(inCall(lounge.ID, bob.me+"*~"))
 
 	// A call whose socket closes waits for its device, then ends.
 	bob.c.Close(websocket.StatusNormalClosure, "")

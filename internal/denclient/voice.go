@@ -55,7 +55,7 @@ type activeCall struct {
 // connection dropped (M3), which the page's peer connection carries on.
 // Either way, the den's addresses are looked up afresh, since the network
 // may have changed.
-func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, muted, resume bool, deliver func(CallEvent)) error {
+func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, marks denproto.VoiceMute, resume bool, deliver func(CallEvent)) error {
 	if !validID(channel) {
 		return inputError(errors.New("no such channel"))
 	}
@@ -86,7 +86,8 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mut
 			}
 		}
 	}
-	if err := c.sendFrame(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: channel, Muted: muted, Resume: resume}); err != nil {
+	join := denproto.VoiceJoin{ChannelID: channel, Muted: marks.Muted, Deafened: marks.Deafened, Resume: resume}
+	if err := c.sendFrame(denproto.EventVoiceJoin, join); err != nil {
 		if m.takeCall(func(x *activeCall) bool { return x == call }) != nil {
 			end(CallDisconnected)
 		}
@@ -133,13 +134,14 @@ func (m *Manager) RestartCall(ctx context.Context, page, denID string) {
 	_ = c.sendFrame(denproto.EventVoiceRestart, struct{}{})
 }
 
-// MuteCall sets the member's mark in the page's call.
-func (m *Manager) MuteCall(page, denID string, muted bool) {
+// MuteCall sets the member's marks in the page's call: muted, and
+// deafened.
+func (m *Manager) MuteCall(page, denID string, marks denproto.VoiceMute) {
 	if m.currentCall(page, denID) == nil {
 		return
 	}
 	if c, err := m.find(denID); err == nil {
-		_ = c.sendFrame(denproto.EventVoiceMute, denproto.VoiceMute{Muted: muted})
+		_ = c.sendFrame(denproto.EventVoiceMute, marks)
 	}
 }
 
