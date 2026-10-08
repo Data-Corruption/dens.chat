@@ -98,8 +98,10 @@ func TestPairSetPasswordAndBackUp(t *testing.T) {
 	if err := client.Call(control.Request{Op: control.OpPair}, &pair); err != nil {
 		t.Fatal(err)
 	}
+	// The browser opens the page at localhost (M4.1); scripts, like this
+	// test, reach the same listener at 127.0.0.1.
 	token := strings.TrimPrefix(pair.URL[strings.Index(pair.URL, "#"):], "#token=")
-	if !strings.HasPrefix(pair.URL, base+"/#token=") || token == "" {
+	if !strings.HasPrefix(pair.URL, fmt.Sprintf("http://localhost:%d/#token=", a.Instance.ClientPort)) || token == "" {
 		t.Fatalf("pairing URL %q", pair.URL)
 	}
 
@@ -167,6 +169,53 @@ func TestPairSetPasswordAndBackUp(t *testing.T) {
 	}
 	if manifest.Version != "v1.0.0" || manifest.Instance != a.Layout.Instance || !strings.HasSuffix(result.Name, ".backup") {
 		t.Fatalf("manifest %+v, result %+v", manifest, result)
+	}
+}
+
+// A browser that loads the page at 127.0.0.1 is sent to localhost, where
+// YouTube's player plays (M4.1), with the path and query it asked for. A
+// script gets the page where it asked, and so does a browser already at
+// localhost.
+func TestBrowsersLoadThePageAtLocalhost(t *testing.T) {
+	a, _ := startDevService(t)
+	port := a.Instance.ClientPort
+	noFollow := &http.Client{
+		Timeout:       10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	get := func(host, path string, document bool) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d%s", port, path), nil)
+		req.Host = host
+		if document {
+			req.Header.Set("Sec-Fetch-Dest", "document")
+		}
+		resp, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	for _, c := range []struct {
+		host, path string
+		document   bool
+		code       int
+		location   string
+	}{
+		{fmt.Sprintf("127.0.0.1:%d", port), "/den/abc?x=1", true, http.StatusTemporaryRedirect, fmt.Sprintf("http://localhost:%d/den/abc?x=1", port)},
+		{fmt.Sprintf("[::1]:%d", port), "/", true, http.StatusTemporaryRedirect, fmt.Sprintf("http://localhost:%d/", port)},
+		{fmt.Sprintf("127.0.0.1:%d", port), "/den//evil.example/", true, http.StatusTemporaryRedirect, fmt.Sprintf("http://localhost:%d/den//evil.example/", port)},
+		{fmt.Sprintf("127.0.0.1:%d", port), "//evil.example/", true, http.StatusNotFound, ""},
+		{fmt.Sprintf("localhost:%d", port), "/", true, http.StatusOK, ""},
+		{fmt.Sprintf("LocalHost:%d", port), "/settings", true, http.StatusOK, ""},
+		{fmt.Sprintf("127.0.0.1:%d", port), "/", false, http.StatusOK, ""},
+		{fmt.Sprintf("127.0.0.1:%d", port), "/api/status", true, http.StatusUnauthorized, ""},
+	} {
+		resp := get(c.host, c.path, c.document)
+		if resp.StatusCode != c.code || resp.Header.Get("Location") != c.location {
+			t.Errorf("%s%s (document %v): %d to %q, want %d to %q", c.host, c.path, c.document, resp.StatusCode, resp.Header.Get("Location"), c.code, c.location)
+		}
 	}
 }
 

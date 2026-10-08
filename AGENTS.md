@@ -8,8 +8,8 @@ anything, and read the design doc before changing anything it covers.
 Dens is self-hosted chat for small communities: text, DMs, voice and screen
 share. One Go binary runs as a system-level service under its own account. It
 always acts as a client, serving the chat UI to the desktop user's browser on
-`127.0.0.1` and holding their keys, and it can also host one den (a
-community). Linux (systemd) and Windows 11 (SCM) are supported for both roles.
+loopback, at `http://localhost:<port>`, and holding their keys, and it can
+also host one den (a community). Linux (systemd) and Windows 11 (SCM) are supported for both roles.
 The binary's elevated maintenance commands own install, update, restore and
 uninstall; the installer scripts only download, verify and hand off to them.
 
@@ -31,6 +31,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, who may be in which call, the calls it holds for a dropped connection, and staff disconnecting and muting members |
 | `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, approving new devices, and relaying the page's call, with where its media goes |
 | `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, holding a call's signaling and ICE restarts, and forwarding each member's audio to the others within its limits, or none of it under a staff mute; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
+| `internal/youtube` | The covers of YouTube's players (M4.1): a linked video's title and picture, fetched for the page from YouTube's fixed addresses, checked, and held in memory |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, and previews; the client strips with it and the den checks with it |
 | `internal/media/ffmpeg` | The media module: FFmpeg and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
@@ -85,8 +86,11 @@ reject and say why. Never repair silently; a wrong mode is evidence.
 joined den, the vault and the local API, and any den member can send content,
 so all of it is hostile input. No raw HTML, ever: messages go through the
 escaping markdown subset, and usernames, filenames and embeds are untrusted
-text. Keep the CSP strict with no inline scripts. The client listener checks
-`Host` exactly, and `Origin` on every write and WebSocket upgrade.
+text. Keep the CSP strict with no inline scripts. The only frame it allows is
+YouTube's player from `youtube-nocookie.com`, sandboxed, and the page never
+listens to a frame's messages. The client listener checks `Host` exactly, and
+`Origin` on every write and WebSocket upgrade. The page lives at `localhost`,
+not `127.0.0.1`: YouTube's player refuses a page at an IP address.
 
 **Client and den stay apart.** Client routes and den routes live on separate
 routers behind separate listeners. Never mount a client or admin route on the

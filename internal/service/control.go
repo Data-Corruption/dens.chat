@@ -15,6 +15,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
@@ -29,7 +30,7 @@ func controlHandlers(a *app.App) map[string]control.Handler {
 				return control.Reply{}, err
 			}
 			a.Log.Info("Issued a pairing link")
-			url := fmt.Sprintf("http://127.0.0.1:%d/#token=%s", a.Instance.ClientPort, token)
+			url := guard.PageOrigin(a.Instance.ClientPort) + "/#token=" + token
 			return control.Reply{Result: control.Pair{URL: url}}, nil
 		},
 		control.OpBackup: func(ctx context.Context, req control.Request) (control.Reply, error) {
@@ -50,7 +51,7 @@ func statusReply(ctx context.Context, a *app.App) (control.Reply, error) {
 	status := control.Status{
 		Version:     a.BuildInfo().Version,
 		Instance:    a.Layout.Instance,
-		ClientURL:   fmt.Sprintf("http://127.0.0.1:%d/", a.Instance.ClientPort),
+		ClientURL:   guard.PageOrigin(a.Instance.ClientPort) + "/",
 		PasswordSet: passwordSet,
 		DenEnabled:  a.Instance.Den.Enabled,
 	}

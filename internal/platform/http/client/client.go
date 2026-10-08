@@ -28,6 +28,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
+	"github.com/Data-Corruption/dens.chat/internal/youtube"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
@@ -41,11 +42,19 @@ type router struct {
 	// cookieName includes the port: cookies are scoped to a host, not a
 	// port, and several instances can share 127.0.0.1.
 	cookieName string
+	// pageOrigin is where browsers load the page (M4.1).
+	pageOrigin string
+	youTube    *youtube.Lookup
 }
 
 // New returns the client listener's handler.
 func New(a *app.App) http.Handler {
-	rt := &router{a: a, cookieName: "dens_session_" + strconv.Itoa(a.Instance.ClientPort)}
+	rt := &router{
+		a:          a,
+		cookieName: "dens_session_" + strconv.Itoa(a.Instance.ClientPort),
+		pageOrigin: guard.PageOrigin(a.Instance.ClientPort),
+		youTube:    youtube.New(),
+	}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -74,6 +83,7 @@ func New(a *app.App) http.Handler {
 		r.Post("/api/settings", rt.handleSettingsUpdate)
 		r.Post("/api/logout", rt.handleLogout)
 		rt.mountDens(r)
+		rt.mountYouTube(r)
 	})
 	return r
 }
@@ -146,6 +156,15 @@ func (rt *router) pageData(title string) map[string]any {
 }
 
 func (rt *router) handlePage(w http.ResponseWriter, r *http.Request) {
+	// A browser loads the page at localhost, since YouTube's player won't
+	// play for a page at an IP address (M4.1). One that loads it at
+	// 127.0.0.1 or [::1] goes there, keeping the path, and the pairing
+	// token too: browsers carry a fragment across a redirect. Scripts and
+	// tests don't load the page as a document, and get it where they asked.
+	if r.Header.Get("Sec-Fetch-Dest") == "document" && !strings.EqualFold("http://"+r.Host, rt.pageOrigin) {
+		http.Redirect(w, r, rt.pageOrigin+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+		return
+	}
 	// The page has no header, so its tab names an instance other than the
 	// main one, as development and test instances run side by side.
 	title := "Dens"

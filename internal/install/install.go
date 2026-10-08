@@ -18,6 +18,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
 	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 
@@ -521,7 +522,7 @@ func printPlan(p *progress, sys System, bi build.BuildInfo, members []*member, t
 	p.printf("%s %s %s:", action, bi.Name, bi.Version)
 	p.printf("  instance      %s", target.Instance)
 	p.printf("  desktop user  %s", cfg.DesktopUser)
-	p.printf("  client        http://127.0.0.1:%d/ (loopback only)", cfg.ClientPort)
+	p.printf("  client        %s/ (loopback only)", guard.PageOrigin(cfg.ClientPort))
 	if cfg.Den.Enabled {
 		p.printf("  den           127.0.0.1:%d behind Caddy; media %d/udp and %d/tcp from the internet",
 			cfg.Den.Port, cfg.Den.MediaUDPPort, cfg.Den.MediaTCPPort)

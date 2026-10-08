@@ -19,6 +19,7 @@ import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
 import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
+import { Videos } from './youtube.jsx';
 
 const WINDOW = 200;
 const PAGE = 50;
@@ -635,6 +636,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         )
                     )}
                     {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
+                    {!m.locked && !editing && m.text && <Videos text={m.text} />}
                     {error && <p class="text-xs text-error">{error}</p>}
                 </div>
             </div>

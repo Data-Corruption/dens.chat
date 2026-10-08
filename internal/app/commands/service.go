@@ -10,6 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/service"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -140,7 +141,7 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 	}
 	a.UI = pages
 	if l.Dev {
-		fmt.Printf("Development instance %s: http://127.0.0.1:%d (pair with: %s open)\n", l.Instance, a.Instance.ClientPort, bi.Name)
+		fmt.Printf("Development instance %s: %s (pair with: %s open)\n", l.Instance, guard.PageOrigin(a.Instance.ClientPort), bi.Name)
 	}
 	return service.Run(ctx, a, ready)
 }

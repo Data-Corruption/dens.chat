@@ -10,7 +10,7 @@
 // http(s) URL the parser matched.
 
 import { useEffect, useState } from 'preact/hooks';
-import { shownLink, trimLink } from './links.js';
+import { shownLink, trimLink, videoOf } from './links.js';
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/y;
 const NAME_CHAR = /[A-Za-z0-9_]/;
@@ -31,6 +31,21 @@ export function Preview({ text, me, more }) {
     let line = firstLine(text);
     if (more) line = line.trimEnd().replace(/[.,;:]+$/, '');
     return <span>{inline(line, { me, preview: true }, 'p')}{more && '…'}</span>;
+}
+
+// MAX_VIDEOS is how many YouTube covers a message gets at most (M4.1).
+export const MAX_VIDEOS = 3;
+
+// videosIn lists the YouTube videos a message's covers play (M4.1): those
+// its links point to in the one form the den writes, found exactly as the
+// renderer finds links, so none in code, and none in a spoiler, whose
+// cover would show what it hides. Each video comes once, at its first
+// link's start time.
+export function videosIn(text) {
+    const ctx = { videos: [] };
+    blocks(text, ctx);
+    const seen = new Set();
+    return ctx.videos.filter((v) => !seen.has(v.id) && seen.add(v.id)).slice(0, MAX_VIDEOS);
 }
 
 function blocks(text, ctx) {
@@ -140,6 +155,8 @@ function inline(text, ctx, key, prev = '') {
             if (m && !NAME_CHAR.test(before)) {
                 const url = trimLink(m[0]);
                 const shown = shownLink(url);
+                const video = ctx.videos && !ctx.spoiler && videoOf(url);
+                if (video) ctx.videos.push(video);
                 flush();
                 out.push(
                     ctx.preview ? (
@@ -181,7 +198,8 @@ function inline(text, ctx, key, prev = '') {
             const end = findClose(text, d, i + d.length);
             if (end > i + d.length) {
                 flush();
-                out.push(make(inline(text.slice(i + d.length, end), ctx, `${key}-${n}`, d[d.length - 1]), `${key}-${n++}`, ctx));
+                const inner = d === '||' ? { ...ctx, spoiler: true } : ctx;
+                out.push(make(inline(text.slice(i + d.length, end), inner, `${key}-${n}`, d[d.length - 1]), `${key}-${n++}`, ctx));
                 i = end + d.length;
                 continue;
             }
