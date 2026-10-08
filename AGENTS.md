@@ -163,7 +163,8 @@ notices don't name, and CI on notices that aren't current.
 **Test files end in `_test.go`, nothing else.** `cmd/hygiene_test.go` fails on
 `*_test_*.go` names and on `testing` reaching the shipped binary.
 
-**Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`. Some
+**Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`, and for
+the notices the binary embeds, which a test reads line by line. Some
 PowerShell and a few other files are CRLF; do not "fix" them wholesale.
 
 **The media module is generated, and committed.** Never edit
