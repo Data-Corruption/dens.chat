@@ -326,12 +326,12 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 
 An owner can have the den forget old conversations: with retention on, every message older than a period they set is deleted, with its files. A new den has it off.
 
-- The period is a number of days, from 1 to 3,650, set in the den's settings beside the upload limits. Before a change takes effect, the settings say how many messages and files it deletes at once.
+- The period is a number of days, from 1 to 3,650, set in the den's settings beside the upload limits. Before a change takes effect, the settings say how many messages it deletes at once, and how much space their files take.
 - It covers channels and DMs alike. The den can't read a DM, but it knows when each message was sent, which is all retention needs.
 - A message's age counts from when it was sent. Edits don't extend it, and neither do replies: a reply to a message that has passed the period says the original is gone, as with any deleted message.
-- The den deletes messages as they pass the period, the way it deletes anything: rows removed with `secure_delete` on, and files taken off the disk. It deletes a few hundred messages per transaction, so a first pass through years of history never holds the database for long, and it checks at start, so a den restored from a backup deletes what passed the period meanwhile.
-- Clients drop what passed the period too. After each pass the den sends one event naming the time before which nothing is left, not a delete for every message, and each client drops the messages and files it holds from before then: from memory, and from its cache once there is one (M6).
-- Members see the period in the den's info, and a channel's history ends with a line saying older messages were deleted after it, where it would otherwise say the channel starts.
+- The den deletes messages within the hour after they pass the period, the way it deletes anything: rows removed with `secure_delete` on, and files taken off the disk. It deletes the oldest first, in the order they were sent, a few hundred per transaction, so a first pass through years of history never holds the database for long. A change of period starts a pass at once, and so does starting the den, so one restored from a backup deletes what passed the period meanwhile.
+- Clients drop what passed the period too. After each pass the den sends one event, not a delete for every message, naming the last message it deleted: every message up to it, in every channel, is gone. Each client drops the messages it holds up to that one, and the files it cached for the den, from memory, and from its cache once there is one (M6). A channel whose last message went holds none, so nothing in it is unread.
+- Members see the period on the den's card on the home page, and a channel's history starts with a line saying how long messages are kept, where it would otherwise say the channel starts.
 - Profiles, channel descriptions and uploads waiting to be sent aren't messages, and retention leaves them alone. A backup keeps what the den held when it was made, and outlives the period until it's deleted; the docs tell owners so.
 
 **Compact links (M3)**
@@ -1104,7 +1104,7 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 
 **M5.**
 
-- Retention is a column of the `den` table. The den deletes on a timer set for the next message to pass the period, as it sweeps waiting uploads.
+- Retention is a column of the `den` table. The den deletes on a timer set for the oldest message to pass the period, and at most hourly, as it sweeps waiting uploads; the service starts it, so tests run passes themselves.
 - `den_files` gains the file a waiting upload replaces. An edit that changes a message's files names its whole list afterward.
 - The media module gains FFmpeg's JPEG demuxer, so its still takes JPEGs, with the orientation `internal/media` read from the file.
 - The local service keeps the versions it made of a file waiting to be sent in its temporary directory, sealed with a key of the file's own.

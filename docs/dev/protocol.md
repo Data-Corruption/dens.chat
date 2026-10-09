@@ -372,13 +372,13 @@ DELETE /api/messages/{id}                                                       
 ### Retention (M5)
 
 ```
-GET /api/den/retention?days=N   200 {"messages", "files", "bytes"}   (owner only)
-messages.expired {"before"}
+GET /api/den/retention?days=N   200 {"messages", "bytes"}   (owner only)
+messages.expired {"through": "<message id>"}
 ```
 
-- With a retention period, the den deletes every message sent more than that many days ago, in channels and DMs, with its files, as it deletes any message. Edits don't change a message's age, and neither do replies to it.
-- After each pass it sends `messages.expired {before}`, a time in Unix milliseconds: nothing sent before it is left. Clients drop every message from before then, and the files on them. There's no `message.deleted` for each.
-- The owner sets the period with `PATCH /api/den`: 1 to 3,650 days, or 0 to turn it off. `GET /api/den/retention` says what a period of `days` would delete now, for the settings to show before a change.
+- With a retention period, the den deletes the messages sent more than that many days ago, in channels and DMs, with their files, as it deletes any message, within the hour after they pass it. Edits don't change a message's age, and neither do replies to it.
+- It deletes the oldest first, in the order they were sent, so after a pass every message up to the last one it deleted is gone, in every channel. It sends `messages.expired` naming that message, and no `message.deleted` for each. Clients drop every message with an ID up to `through`, the quotes of them in replies, and the files they cached for the den; a channel whose last message is among them holds none, so nothing in it is unread.
+- The owner sets the period with `PATCH /api/den`: 1 to 3,650 days, or 0 to turn it off. A change starts a pass at once. `GET /api/den/retention` says what a period of `days` would delete now, for the settings to show before a change: how many messages, and the bytes their files take.
 
 ### Read state
 
