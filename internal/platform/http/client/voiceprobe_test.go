@@ -40,8 +40,15 @@ import (
 //	                    install's service restarts, as on an update, closing
 //	                    the page's socket too, and the call is taken back the
 //	                    same way once the socket is dialed again; "silence",
-//	                    the member goes quiet, as staff muted them; or
-//	                    "ended:REASON", the call ends for that reason
+//	                    the member goes quiet, as staff muted them;
+//	                    "ended:REASON", the call ends for that reason; and
+//	                    from M4.2 "share", this side shares its screen, with
+//	                    sound, and the den asks it for a keyframe as the
+//	                    other side starts watching; "watch:MEMBER", this
+//	                    side watches MEMBER's share, once it has started, and
+//	                    sees its screen and hears its sound; or
+//	                    "bitrate:BITS", an offer comes asking for that Opus
+//	                    bitrate, as after staff change the channel's
 //	DENS_PROBE_STAY     seconds to stay in the call at the end, 5 if unset
 func TestVoiceProbe(t *testing.T) {
 	base := os.Getenv("DENS_VOICE_PROBE")
@@ -111,6 +118,9 @@ func TestVoiceProbe(t *testing.T) {
 	closed := make(chan struct{}, 1)
 	ended := make(chan string, 4)
 	resumed := make(chan struct{}, 4)
+	// refusals and offers carry what "watch:" and "bitrate:" wait on.
+	refusals := make(chan denclient.CallRefusal, 16)
+	offers := make(chan string, 64)
 	// back signals the den's connection returning after it dropped: the
 	// service says the call's connection dropped before it marks the den
 	// offline, so a "connected" counts only after a state that isn't.
@@ -177,7 +187,16 @@ func TestVoiceProbe(t *testing.T) {
 				ended <- e.Ended
 			case e.Resumed:
 				resumed <- struct{}{}
+			case e.Refused != nil:
+				select {
+				case refusals <- *e.Refused:
+				default:
+				}
 			case e.Offer != nil:
+				select {
+				case offers <- e.Offer.SDP:
+				default:
+				}
 				mu.Lock()
 				if firstAfterResume < 0 {
 					firstAfterResume = e.Offer.Version
@@ -346,6 +365,61 @@ func TestVoiceProbe(t *testing.T) {
 			}
 		}
 		t.Logf("member %s went quiet", hear)
+	case then == "share":
+		// The member shares their screen, with its sound, and the den asks
+		// for a keyframe as the other side starts watching it.
+		caller.Share(true)
+		if err := send("voice.share", map[string]any{"den": den, "on": true, "sound": true}); err != nil {
+			t.Fatal(err)
+		}
+		keyframe := make(chan error, 1)
+		go func() { keyframe <- caller.WaitKeyframeRequests(1, 90*time.Second) }()
+		wait("a keyframe request, as the share was watched", 100*time.Second, keyframe)
+		t.Log("shared the screen, and the den asked for a keyframe as it was watched")
+	case strings.HasPrefix(then, "watch:"):
+		// The member's share may not have started yet, which the den says,
+		// so the probe asks again until it has.
+		sharer := strings.TrimPrefix(then, "watch:")
+		deadline := time.Now().Add(90 * time.Second)
+		for {
+			if err := send("voice.watch", map[string]any{"den": den, "member_id": sharer, "on": true}); err != nil {
+				t.Fatal(err)
+			}
+			if caller.WaitSaw(sharer, 1, 2*time.Second) == nil {
+				break
+			}
+			for len(refusals) > 0 {
+				if r := <-refusals; r.Reason != "not_sharing" {
+					t.Fatalf("watching member %s's share was refused: %s", sharer, r.Reason)
+				}
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("member %s's share never came", sharer)
+			}
+		}
+		screen, sound := make(chan error, 1), make(chan error, 1)
+		go func() { screen <- caller.WaitSaw(sharer, 100, 60*time.Second) }()
+		go func() { sound <- caller.WaitHeardShare(sharer, 50, 60*time.Second) }()
+		wait("member "+sharer+"'s screen", 70*time.Second, screen)
+		wait("member "+sharer+"'s share's sound", 70*time.Second, sound)
+		t.Logf("watched member %s's share: %d packets of its screen and %d of its sound", sharer, caller.Saw(sharer), caller.HeardShare(sharer))
+	case strings.HasPrefix(then, "bitrate:"):
+		want := "maxaveragebitrate=" + strings.TrimPrefix(then, "bitrate:")
+		deadline := time.After(90 * time.Second)
+		for done := false; !done; {
+			select {
+			case sdp := <-offers:
+				done = strings.Contains(sdp, want)
+			case reason := <-ended:
+				t.Fatalf("waiting for an offer with %s, the call ended: %s", want, reason)
+			case err := <-failed:
+				t.Fatal(err)
+			case <-deadline:
+				t.Fatalf("no offer came with %s", want)
+			}
+		}
+		wait("member "+hear+" at the new bitrate", 30*time.Second, heard(50))
+		t.Logf("an offer came with %s, and member %s is heard after it", want, hear)
 	case strings.HasPrefix(then, "ended:"):
 		want := strings.TrimPrefix(then, "ended:")
 		select {
