@@ -44,8 +44,36 @@ const (
 	EventMessageCreated    = "message.created"
 	EventMessageUpdated    = "message.updated"
 	EventMessageDeleted    = "message.deleted"
+	EventMessagesExpired   = "messages.expired"
 	EventReadStateUpdated  = "read_state.updated"
 )
+
+// MaxRetention is the longest retention period an owner sets, in days
+// (M5).
+const MaxRetention = 3650
+
+// CheckRetention checks a retention period: days a message is kept, or 0
+// to keep every message.
+func CheckRetention(days int) error {
+	if days < 0 || days > MaxRetention {
+		return fmt.Errorf("retention is 0, for none, or 1 to %d days", MaxRetention)
+	}
+	return nil
+}
+
+// MessagesExpired names the last message a den's retention pass deleted:
+// every message up to it, in every channel, is gone, and so are their
+// files.
+type MessagesExpired struct {
+	Through string `json:"through"`
+}
+
+// RetentionPreview is what a retention period would delete now: how many
+// messages, and the space their files take.
+type RetentionPreview struct {
+	Messages int64 `json:"messages"`
+	Bytes    int64 `json:"bytes"`
+}
 
 // Channel is a text or voice channel, or a DM. A DM has no name, group or
 // position, and names its two members, lower ID first. A voice channel has

@@ -46,6 +46,9 @@ type Status struct {
 	// sign-ins on new devices waiting for their approval (M1.7).
 	Seal     bool          `json:"seal"`
 	Requests []RequestView `json:"requests,omitempty"`
+	// Retention is the days the den keeps a message, as last heard, or 0
+	// for ever (M5).
+	Retention int `json:"retention,omitempty"`
 }
 
 var errDialUnauthorized = errors.New("the den no longer accepts this session")
@@ -96,12 +99,16 @@ type conn struct {
 func (c *conn) status() Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return Status{
+	s := Status{
 		DenID: c.j.denID.String(), Fingerprint: denproto.Fingerprint(c.j.denID), Name: c.profile.Name, URL: c.profile.URL,
 		Username: c.profile.Member.Username, DisplayName: c.profile.Member.DisplayName, Role: c.profile.Member.Role,
 		Own: c.own, State: c.state, Error: c.errMsg, Since: c.since.UnixMilli(),
 		Seal: c.j.seal != nil, Requests: c.requestsLocked(),
 	}
+	if c.den != nil {
+		s.Retention = c.den.retention
+	}
+	return s
 }
 
 func (c *conn) setState(state State, msg string) {
@@ -481,17 +488,22 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			return e, false, errMalformed
 		}
 		c.mu.Lock()
+		retained := false
 		if c.den != nil {
-			c.den.limits, c.den.callLimits = d.Limits, d.CallLimits
+			retained = c.den.retention != d.Retention
+			c.den.limits, c.den.callLimits, c.den.retention = d.Limits, d.CallLimits, d.Retention
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
 			return e, false, err
 		}
-		// The page shows the den's name and limits; the address is this
-		// install's business.
+		if retained {
+			c.m.notify()
+		}
+		// The page shows the den's name, limits and retention; the address
+		// is this install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
-			CallLimits: d.CallLimits})
+			CallLimits: d.CallLimits, Retention: d.Retention})
 		return out, err == nil, err
 	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused:
 		// These go to the page holding the call, not to every page.
@@ -543,7 +555,9 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.mu.Unlock()
 	}
-	if err == nil && e.T == denproto.EventChannelDeleted {
+	// A deleted channel, or a retention pass (M5), takes files this
+	// service can't tell were theirs, so all the den's cached files go.
+	if err == nil && (e.T == denproto.EventChannelDeleted || e.T == denproto.EventMessagesExpired) {
 		c.m.files.drop(c.j.denID.String())
 	}
 	if err == nil && ok && out.T == denproto.EventMemberUpdated {

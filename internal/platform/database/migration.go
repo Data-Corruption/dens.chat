@@ -74,7 +74,8 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			-- key is sealed with the data key. The upload limits are bytes.
 			-- The limits for calls and screen shares (M4.2) are counts of
 			-- members, bits a second, a 16:9 picture's height and frames a
-			-- second.
+			-- second. The retention period (M5) is the days a message is kept,
+			-- 0 for ever.
 			CREATE TABLE den (
 				id             INTEGER PRIMARY KEY CHECK (id = 1),
 				name           TEXT NOT NULL,
@@ -91,7 +92,8 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				share_viewers  INTEGER NOT NULL,
 				share_bitrate  INTEGER NOT NULL,
 				share_height   INTEGER NOT NULL,
-				share_fps      INTEGER NOT NULL
+				share_fps      INTEGER NOT NULL,
+				retention      INTEGER NOT NULL DEFAULT 0 CHECK (retention BETWEEN 0 AND 3650)
 			) STRICT;
 
 			-- AUTOINCREMENT: a member ID is never reused, even after deletion.

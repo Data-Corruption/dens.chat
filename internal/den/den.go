@@ -74,6 +74,8 @@ type Den struct {
 	sockets  *socketSet
 	presence *presence
 	calls    callRegistry
+	// expiry deletes messages that pass the retention period (M5).
+	expiry expiry
 
 	// PresenceDelay is how long presence changes gather before they're
 	// announced; tests shorten it.
@@ -131,10 +133,12 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	var pub, sealed []byte
 	var limits denproto.Limits
 	var calls denproto.CallLimits
+	var retention int
 	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key, file_size, member_storage, den_storage,
-		call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps FROM den WHERE id = 1`).
+		call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, retention FROM den WHERE id = 1`).
 		Scan(&name, &url, &pub, &sealed, &limits.FileSize, &limits.MemberStorage, &limits.DenStorage,
-			&calls.Members, &calls.Callers, &calls.Shares, &calls.ShareViewers, &calls.ShareBitrate, &calls.ShareHeight, &calls.ShareFPS)
+			&calls.Members, &calls.Callers, &calls.Shares, &calls.ShareViewers, &calls.ShareBitrate, &calls.ShareHeight, &calls.ShareFPS,
+			&retention)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, nil
 	}
@@ -149,7 +153,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -172,11 +176,13 @@ func (d *Den) holdKey(seed, pub []byte) error {
 	return nil
 }
 
-// Close ends calls, stops sweeping uploads and releases the identity key.
+// Close ends calls, stops sweeping uploads and deleting old messages, and
+// releases the identity key.
 func (d *Den) Close() {
 	if err := d.StopCalls(); err != nil {
 		d.log.Warnf("stop calls: %v", err)
 	}
+	d.stopExpiry()
 	d.files.stop()
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -278,8 +284,8 @@ func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) {
 	return code, nil
 }
 
-// Update changes the den's name, address, upload limits or limits for
-// calls. Only the owner may.
+// Update changes the den's name, address, upload limits, limits for calls
+// or retention period. Only the owner may.
 func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequest) (denproto.Den, error) {
 	if s.Role != denproto.RoleOwner {
 		return denproto.Den{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner changes the den")
@@ -313,17 +319,33 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		}
 		info.CallLimits = *req.CallLimits
 	}
+	if req.Retention != nil {
+		if err := denproto.CheckRetention(*req.Retention); err != nil {
+			d.mu.Unlock()
+			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "retention: %v", err)
+		}
+		info.Retention = *req.Retention
+	}
+	retained := d.info.Retention != info.Retention
 	c := info.CallLimits
 	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
-		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ? WHERE id = 1`,
+		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ?,
+		retention = ? WHERE id = 1`,
 		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
-		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS); err != nil {
+		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS, info.Retention); err != nil {
 		d.mu.Unlock()
 		return denproto.Den{}, err
 	}
 	d.info = &info
 	d.mu.Unlock()
-	return info, d.Hub.Publish(denproto.EventDenUpdated, info, Everyone)
+	if err := d.Hub.Publish(denproto.EventDenUpdated, info, Everyone); err != nil {
+		return info, err
+	}
+	// A shorter period deletes what passed it at once.
+	if retained {
+		d.planExpiry(true)
+	}
+	return info, nil
 }
 
 // Challenge proves the den's identity key and issues a single-use nonce.
@@ -406,6 +428,7 @@ func (d *Den) Preview(ctx context.Context, code []byte) (denproto.Den, error) {
 	info, _ := d.Info()
 	info.Limits = denproto.Limits{}
 	info.CallLimits = denproto.CallLimits{}
+	info.Retention = 0
 	return info, nil
 }
 
