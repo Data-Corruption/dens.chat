@@ -14,8 +14,14 @@
 // microphone through the voice processor: RNNoise, unless the member
 // turned it off, and the gate that sends only what they mean to (M3.3), by
 // voice activity or while they push to talk.
+//
+// From M4.2 the page shares its member's screen in the call, and plays the
+// shares they watch, which the player shows. It follows what the den says
+// of the call's den, to know its limits and who shares and watches.
 
+import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
+import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
 
 const MIC = 'DENS_MIC';
 const SPEAKER = 'DENS_SPEAKER';
@@ -24,6 +30,11 @@ const DEAFENED = 'DENS_DEAFENED';
 const RNNOISE = 'DENS_RNNOISE';
 const VOLUMES = 'DENS_VOLUMES';
 const VOICE = 'DENS_VOICE';
+const SHARE = 'DENS_SHARE';
+// How often a share checks its size, since a window it shows can change,
+// and how long it waits for the den to take it.
+const SHARE_CHECK = 2000;
+const SHARE_WAIT = 15 * 1000;
 // A call that drops joins again, as the den and this computer's service
 // come back, this many times within this long, before it gives up.
 const REJOINS = 5;
@@ -96,6 +107,18 @@ let rejoinTimer = null;
 let started = false;
 // volumes is how loud each member plays here, by den and member.
 let volumes = readVolumes(stored(VOLUMES));
+// share is the page's screen share (M4.2), or null: its status ("picking"
+// while the browser asks, "starting" until the den says it's live, then
+// "live"), its stream, tracks and quality, and the timer that checks its
+// size. shareNotice says why the last share or watch didn't go.
+let share = null;
+let shareNotice = null;
+// watched holds the shares the page watches, by member: their label, the
+// stream once it comes, and how loud its sound plays.
+const watched = new Map();
+// denView is what the page knows of the call's den: this member's ID, the
+// den's limits, its calls the member can see, and members' names.
+let denView = null;
 
 function start() {
     if (started) return;
@@ -122,6 +145,10 @@ function snapshot() {
         notice,
         speaking,
         volumes,
+        share: share && { status: share.status, sound: !!share.audio, wanted: share.wanted, preview: !!share.preview, stream: share.stream || null },
+        shareNotice,
+        watched: [...watched.values()].map((w) => ({ ...w })),
+        den: denView,
     };
 }
 
@@ -155,8 +182,12 @@ export async function joinCall(den, channel, label) {
     if (call) clearTimers(call);
     closePeer();
     notice = null;
+    endShare('');
+    watched.clear();
+    denView = null;
     stopMicTest();
     call = { den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false };
+    loadDen(call);
     // The click that joins lets audio start, so the meters' context starts
     // here, and the voice processor's: one made after the browser has asked
     // for the microphone may need another click to start.
@@ -245,6 +276,7 @@ async function connect() {
     c.attached = false;
     c.held = false;
     c.resuming = false;
+    c.screenMid = c.soundMid = null;
     pc = new RTCPeerConnection({ iceServers: [] });
     const own = pc;
     pc.ontrack = (e) => play(e);
@@ -256,6 +288,13 @@ async function connect() {
         dropped('disconnected');
         return;
     }
+    // A call joined again, as after the den restarted, takes the page's
+    // share and the shares it watched back, which the den checks again.
+    if (share && share.status !== 'picking') {
+        awaitShare(share);
+        sendCall('voice.share', { den: c.den, on: true, sound: !!share.audio });
+    }
+    for (const member of watched.keys()) sendCall('voice.watch', { den: c.den, member_id: member, on: true });
     clearTimeout(c.offerBy);
     c.offerBy = setTimeout(() => {
         if (call !== c || pc !== own || c.version) return;
@@ -708,6 +747,15 @@ function listenForKeys() {
 // Signaling ---------------------------------------------------------------
 
 function handle(msg) {
+    if (msg.t === 'den' && call && msg.d.den === call.den) {
+        if (msg.d.reset) loadDen(call);
+        else denEvents(msg.d.events || []);
+        return;
+    }
+    if (msg.t === 'reconnected' && call) {
+        loadDen(call);
+        return;
+    }
     if (msg.t === 'dens') {
         denStates = new Map(msg.d.dens.map((d) => [d.den_id, d.state]));
         // A den that shut this device out ends its call for good.
@@ -724,6 +772,7 @@ function handle(msg) {
     if (e.den !== call.den || e.channel !== call.channel) return;
     if (e.offer) answer(e.offer);
     else if (e.resumed) resumed();
+    else if (e.refused) refused(e.refused);
     else if (e.ended) ended(e.ended);
 }
 
@@ -753,16 +802,23 @@ async function answer(offer) {
         await own.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
         if (!c.attached) {
             // The den's first section takes the microphone; each of the
-            // rest brings another member's audio.
+            // rest brings another member's audio, or a share's (M4.2).
             const mine = own.getTransceivers()[0];
             mine.direction = 'sendonly';
             await mine.sender.replaceTrack(sent);
             c.attached = true;
         }
+        // The den receives the member's screen and its sound on sections it
+        // adds at their first share in the call.
+        const sections = receivingSections(offer.sdp);
+        c.screenMid = sections.screen;
+        c.soundMid = sections.sound;
+        await attachShare(own);
         await own.setLocalDescription();
         if (call !== c || pc !== own) return;
         c.answer = own.localDescription.sdp;
         sendCall('voice.answer', { den: c.den, version: offer.version, sdp: c.answer });
+        sendParams();
         if (c.status === 'joining') {
             c.status = 'connecting';
             notify();
@@ -777,6 +833,17 @@ async function answer(offer) {
 function play(e) {
     const stream = e.streams[0];
     if (!stream) return;
+    // A share the page watches plays in the player; one it didn't ask for,
+    // which only a misbehaving den would send, plays nowhere.
+    const sharer = screenOwner(stream.id);
+    if (sharer || stream.id.startsWith('screen-')) {
+        const w = watched.get(sharer);
+        if (w && w.stream !== stream) {
+            w.stream = stream;
+            notify();
+        }
+        return;
+    }
     const member = stream.id;
     let audio = audios.get(member);
     if (!audio) {
@@ -938,6 +1005,9 @@ function finish(why) {
     clearTimeout(rejoinTimer);
     rejoinTimer = null;
     if (call) clearTimers(call);
+    endShare('');
+    watched.clear();
+    denView = null;
     closePeer();
     mic?.getTracks().forEach((t) => t.stop());
     mic = null;
@@ -948,6 +1018,284 @@ function finish(why) {
     stopMeters();
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
+    notify();
+}
+
+// Screen share --------------------------------------------------------------
+
+// loadDen fetches what the page needs to know of the call's den for
+// sharing and watching, as the call starts and after the page's stream
+// comes back; den events keep it current between.
+async function loadDen(c) {
+    try {
+        const v = await api.get(`/api/dens/${c.den}/state`);
+        if (call !== c) return;
+        denView = {
+            den: c.den,
+            me: v.me.id,
+            limits: v.call_limits,
+            calls: v.calls || [],
+            names: new Map((v.members || []).map((m) => [m.id, m.display_name])),
+        };
+        followDen();
+    } catch {
+        // It comes again with the stream; sharing waits for it.
+    }
+}
+
+// denEvents applies a den's events to what the page knows of it.
+function denEvents(events) {
+    if (!denView) return;
+    for (const e of events) {
+        if (e.t === 'voice.state') denView = { ...denView, calls: applyCalls(denView.calls, e.d) };
+        else if (e.t === 'den.updated' && e.d.call_limits) denView = { ...denView, limits: e.d.call_limits };
+        else if (e.t === 'member.joined' || e.t === 'member.updated') {
+            denView = { ...denView, names: new Map(denView.names).set(e.d.id, e.d.display_name) };
+        }
+    }
+    followDen();
+}
+
+// myCall is the den's word on the page's call, and me this member in it.
+function myCall() {
+    const c = call;
+    const found = c && denView ? denView.calls.find((x) => x.channel_id === c.channel) : null;
+    return { found, me: found?.members.find((m) => m.id === denView.me) };
+}
+
+// followDen keeps the page's share and watching in step with the den: a
+// share the den took goes live, one it ended stops, a share nobody watches
+// pauses, and a share that ended leaves the player.
+function followDen() {
+    const { found, me } = myCall();
+    if (share && found) {
+        if (me?.sharing && share.status === 'starting') {
+            share.status = 'live';
+            clearTimeout(share.startBy);
+        } else if (!me?.sharing && share.status === 'live') {
+            endShare(me?.staff_muted ? 'Staff muted you, which ended your share.' : 'Your share ended.');
+        }
+        sendParams();
+    } else if (!share && me?.sharing && call && !call.held) {
+        // A share this page stopped while the den was away still runs there.
+        sendCall('voice.share', { den: call.den, on: false });
+    }
+    if (found) {
+        for (const member of [...watched.keys()]) {
+            if (!found.members.some((m) => m.id === member && m.sharing)) watched.delete(member);
+        }
+    }
+    notify();
+}
+
+// shareSettings is how the member shares, as the browser kept it.
+export function shareSettings() {
+    return readShare(stored(SHARE));
+}
+
+export function setShareSettings(changes) {
+    store(SHARE, JSON.stringify(readShare(JSON.stringify({ ...shareSettings(), ...changes }))));
+    notify();
+}
+
+// startShare asks the browser for a screen, a window or a tab to share,
+// with its sound if the member wants it and the browser can, and shares it
+// in the call. A share the den doesn't allow now is never asked for.
+export async function startShare() {
+    const c = call;
+    if (!c || share) return;
+    if (!denView) await loadDen(c);
+    if (call !== c || share || !denView) return;
+    shareNotice = null;
+    const blocked = shareBlocked(denView.limits, denView.calls);
+    if (blocked) {
+        shareNotice = { text: blocked };
+        notify();
+        return;
+    }
+    const prefs = shareSettings();
+    const quality = shareQuality(denView.limits, prefs);
+    const mine = { status: 'picking', quality, wanted: prefs.sound };
+    share = mine;
+    notify();
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getDisplayMedia(displayOptions(quality, prefs.sound));
+    } catch (e) {
+        if (share === mine) {
+            share = null;
+            // Closing the browser's picker is no failure.
+            shareNotice = e?.name === 'NotAllowedError' || e?.name === 'AbortError' ? null : { text: "This browser couldn't share your screen." };
+            notify();
+        }
+        return;
+    }
+    if (call !== c || share !== mine) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+    }
+    mine.stream = stream;
+    mine.video = stream.getVideoTracks()[0];
+    mine.audio = stream.getAudioTracks()[0] || null;
+    // The member's own screen shows in the player, from the capture itself,
+    // when the player holds nothing else; otherwise when they ask.
+    mine.preview = watched.size === 0;
+    mine.video.contentHint = prefs.hint === 'motion' ? 'motion' : 'detail';
+    // The browser's own stop button, or the shared window closing, ends it.
+    mine.video.onended = () => share === mine && stopShare();
+    awaitShare(mine);
+    mine.timer = setInterval(sendParams, SHARE_CHECK);
+    if (pc) await attachShare(pc);
+    sendCall('voice.share', { den: c.den, on: true, sound: !!mine.audio });
+    sendParams();
+    notify();
+}
+
+// awaitShare has a share wait for the den to take it, and gives it up if
+// the den never says.
+function awaitShare(s) {
+    s.status = 'starting';
+    clearTimeout(s.startBy);
+    s.startBy = setTimeout(() => {
+        if (share === s && s.status === 'starting') endShare("The den didn't start your share. Try again in a moment.");
+    }, SHARE_WAIT);
+}
+
+// setPreview shows the member's own screen in the player, or hides it.
+export function setPreview(on) {
+    if (!share?.stream) return;
+    share.preview = !!on;
+    notify();
+}
+
+// stopShare ends the page's share, at the member's word.
+export function stopShare() {
+    if (!share) return;
+    if (call) sendCall('voice.share', { den: call.den, on: false });
+    endShare('');
+}
+
+// endShare stops capturing and sending the page's share, and says why when
+// the den ended it. The sections it went on stay, for the next share.
+function endShare(why) {
+    const s = share;
+    if (s) {
+        share = null;
+        clearInterval(s.timer);
+        clearTimeout(s.startBy);
+        s.stream?.getTracks().forEach((t) => t.stop());
+        for (const mid of [call?.screenMid, call?.soundMid]) {
+            const t = mid && pc ? pc.getTransceivers().find((x) => x.mid === mid) : null;
+            t?.sender.replaceTrack(null).catch(() => {});
+        }
+    }
+    shareNotice = why ? { text: why } : null;
+    notify();
+}
+
+// attachShare puts the page's screen and its sound on the den's sections
+// for them, once the den has added them.
+async function attachShare(own) {
+    const c = call;
+    const s = share;
+    if (!c || !s?.video) return;
+    for (const [mid, track] of [[c.screenMid, s.video], [c.soundMid, s.audio]]) {
+        const t = mid && track ? own.getTransceivers().find((x) => x.mid === mid) : null;
+        if (!t) continue;
+        if (t.direction !== 'sendonly') t.direction = 'sendonly';
+        if (t.sender.track !== track) await t.sender.replaceTrack(track);
+    }
+}
+
+// sendParams holds the page's share to the den's bitrate and the size and
+// frame rate it goes at, the size as the window shared is now, and pauses
+// it while nobody watches. Chromium starts again with a keyframe; for
+// Firefox, which doesn't, the den asks for one when packets come again.
+async function sendParams() {
+    const c = call;
+    const s = share;
+    const t = c?.screenMid && pc && s?.video ? pc.getTransceivers().find((x) => x.mid === c.screenMid) : null;
+    if (!t || t.sender.track !== s.video) return;
+    const p = t.sender.getParameters();
+    const e = p.encodings?.[0];
+    if (!e) return;
+    const size = s.video.getSettings();
+    const scale = fitPixels(size.width, size.height, s.quality.height).scale;
+    const active = watchersOf(myCall().found, denView?.me).length > 0;
+    if (e.maxBitrate === s.quality.bitrate && e.maxFramerate === s.quality.fps && Math.abs((e.scaleResolutionDownBy || 1) - scale) < 0.01 &&
+        e.active === active) return;
+    e.maxBitrate = s.quality.bitrate;
+    e.maxFramerate = s.quality.fps;
+    e.scaleResolutionDownBy = scale;
+    e.active = active;
+    await t.sender.setParameters(p).catch(() => {});
+}
+
+// watchShare watches a member's share in the page's call, which plays in
+// the player once it comes. label names the member for the player.
+export function watchShare(member, label) {
+    const c = call;
+    if (!c || watched.has(member) || watched.size >= MAX_WATCHING) return;
+    watched.set(member, { member, label, stream: null, volume: 1 });
+    shareNotice = null;
+    sendCall('voice.watch', { den: c.den, member_id: member, on: true });
+    notify();
+}
+
+// unwatchShare stops watching a member's share, and unwatchAll every one.
+export function unwatchShare(member) {
+    if (!watched.delete(member)) return;
+    if (call) sendCall('voice.watch', { den: call.den, member_id: member, on: false });
+    notify();
+}
+
+export function unwatchAll() {
+    for (const member of [...watched.keys()]) unwatchShare(member);
+}
+
+// closePlayer stops watching every share and hides the member's own.
+export function closePlayer() {
+    if (share) share.preview = false;
+    unwatchAll();
+    notify();
+}
+
+// joinAndWatch joins a voice channel's call to watch a member's share in
+// it, as clicking the share's mark outside the call does.
+export async function joinAndWatch(den, channel, label, member, name) {
+    // Joining sends the join before it returns, and the den takes frames in
+    // order, so the watch finds the member in the call.
+    if (!(call && call.den === den && call.channel === channel)) await joinCall(den, channel, label);
+    if (call && call.den === den && call.channel === channel) watchShare(member, name);
+}
+
+// setShareVolume sets how loud a watched share's sound plays here.
+export function setShareVolume(member, volume) {
+    const w = watched.get(member);
+    if (!w) return;
+    w.volume = clampVolume(volume);
+    notify();
+}
+
+// speakerID is the speaker the member chose, which shares play on too.
+export function speakerID() {
+    return stored(SPEAKER);
+}
+
+// refused is the den refusing the page's share, or its watch of one.
+function refused(r) {
+    const limits = denView?.limits;
+    if (r.what === 'share') {
+        endShare(refusalText('share', r.reason, limits));
+        return;
+    }
+    watched.delete(r.member_id);
+    shareNotice = { text: refusalText('watch', r.reason, limits) };
+    notify();
+}
+
+export function clearShareNotice() {
+    shareNotice = null;
     notify();
 }
 

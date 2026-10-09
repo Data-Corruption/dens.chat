@@ -40,6 +40,7 @@ type page struct {
 	events  chan denclient.CallEvent
 	ended   chan string
 	resumed chan struct{}
+	refused chan denclient.CallRefusal
 	stop    chan struct{}
 	// The last offer answered, and its answer, which goes again if the den
 	// sends that offer again after a resume, as the page does.
@@ -54,7 +55,8 @@ func newPage(t *testing.T, m *denclient.Manager, id string) *page {
 		t.Fatal(err)
 	}
 	p := &page{t: t, m: m, id: id, caller: caller, events: make(chan denclient.CallEvent, 16),
-		ended: make(chan string, 16), resumed: make(chan struct{}, 16), stop: make(chan struct{})}
+		ended: make(chan string, 16), resumed: make(chan struct{}, 16), refused: make(chan denclient.CallRefusal, 16),
+		stop: make(chan struct{})}
 	t.Cleanup(func() {
 		close(p.stop)
 		_ = caller.Close()
@@ -83,6 +85,8 @@ func (p *page) run() {
 				p.ended <- e.Ended
 			case e.Resumed:
 				p.resumed <- struct{}{}
+			case e.Refused != nil:
+				p.refused <- *e.Refused
 			case e.Offer != nil:
 				if e.Offer.Version != p.version {
 					answer, err := p.caller.Answer(e.Offer.SDP)
@@ -271,5 +275,68 @@ func TestCallRefusalsReachThePage(t *testing.T) {
 	a.waitEnded(denproto.VoiceNotFound)
 	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, denproto.VoiceMute{}, false, a.deliver); err == nil {
 		t.Error("joined a call in a den this install hasn't joined")
+	}
+}
+
+// TestShareThroughTheClient checks a share relayed by both installs
+// (M4.2): the den's limits and a voice channel's bitrate in the page's
+// view, an offer with VP9 sections passing the client's check, the
+// marks reaching the views, the share reaching its viewer, and a refusal
+// reaching the page that asked.
+func TestShareThroughTheClient(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.startCalls()
+	name := "Lounge"
+	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+		t.Fatal(err)
+	}
+	var lounge string
+	v := viewOf(t, member, denID, "the voice channel", func(v denclient.View) bool {
+		for _, c := range v.Channels {
+			if c.Name == name && c.Bitrate == denproto.DefaultVoiceBitrate {
+				lounge = c.ID
+			}
+		}
+		return lounge != ""
+	})
+	if v.CallLimits != denproto.DefaultCallLimits {
+		t.Errorf("the page's view has limits %+v", v.CallLimits)
+	}
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	a, b := newPage(t, owner, "page-a"), newPage(t, member, "page-b")
+	a.join(denID, lounge)
+	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
+	b.join(denID, lounge)
+	a.hears(bob)
+
+	b.caller.Share(true)
+	member.ShareCall("page-b", denID, true, true)
+	viewOf(t, owner, denID, "bob sharing", func(v denclient.View) bool {
+		return slices.ContainsFunc(v.Calls, func(c denproto.Call) bool {
+			return slices.ContainsFunc(c.Members, func(m denproto.CallMember) bool { return m.ID == bob && m.Sharing && m.Sound })
+		})
+	})
+	owner.WatchCall("page-a", denID, bob, true)
+	if err := a.caller.WaitSaw(bob, 20, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.caller.WaitHeardShare(bob, 20, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, member, denID, "alice watching bob", func(v denclient.View) bool {
+		return slices.ContainsFunc(v.Calls, func(c denproto.Call) bool {
+			return slices.ContainsFunc(c.Members, func(m denproto.CallMember) bool { return m.ID == alice && slices.Equal(m.Watching, []string{bob}) })
+		})
+	})
+
+	// A new den lets one member share at a time.
+	owner.ShareCall("page-a", denID, true, false)
+	select {
+	case r := <-a.refused:
+		if r.What != denproto.RefusedShare || r.Reason != denproto.RefusedFull {
+			t.Errorf("the refusal reached the page as %+v", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the refusal didn't reach the page")
 	}
 }

@@ -513,19 +513,37 @@ func TestUnansweredCallFails(t *testing.T) {
 	watcher.wait(inCall(lounge.ID))
 }
 
-func TestCallHoldsFifteen(t *testing.T) {
+// TestCallHoldsItsLimit checks the caps on calls as an owner sets them
+// (M4.2): a new den's, then a call of three and calls of four across the
+// den, past which a join is refused as full.
+func TestCallHoldsItsLimit(t *testing.T) {
 	f := newFixture(t)
 	f.startCalls(sfu.Config{})
 	aliceToken, _ := f.owner()
-	lounge := f.channel(f.session(aliceToken), "Lounge", denproto.KindVoice, false)
+	owner := f.session(aliceToken)
+	if info, _ := f.d.Info(); info.CallLimits != denproto.DefaultCallLimits {
+		t.Fatalf("a new den's limits are %+v", info.CallLimits)
+	}
+	limits := denproto.DefaultCallLimits
+	limits.Members, limits.Callers = 3, 4
+	if _, err := f.d.Update(context.Background(), owner, denproto.DenUpdateRequest{CallLimits: &limits}); err != nil {
+		t.Fatal(err)
+	}
+	lounge := f.channel(owner, "Lounge", denproto.KindVoice, false)
+	games := f.channel(owner, "Games", denproto.KindVoice, false)
 	var in []string
-	for i := range denproto.MaxCallMembers {
+	for i := range 3 {
 		m := f.voiceSocket(f.member(aliceToken, "m"+strconv.Itoa(i)), nil)
 		m.join(lounge.ID)
 		in = append(in, m.me)
 		m.wait(inCall(lounge.ID, in...))
 	}
-	late := f.voiceSocket(aliceToken, nil)
+	late := f.voiceSocket(f.member(aliceToken, "late"), nil)
 	late.join(lounge.ID)
 	late.wait(ended(lounge.ID, denproto.VoiceFull))
+	late.join(games.ID)
+	late.wait(inCall(games.ID, late.me))
+	later := f.voiceSocket(aliceToken, nil)
+	later.join(games.ID)
+	later.wait(ended(games.ID, denproto.VoiceFull))
 }

@@ -48,7 +48,8 @@ const (
 )
 
 // Channel is a text or voice channel, or a DM. A DM has no name, group or
-// position, and names its two members, lower ID first.
+// position, and names its two members, lower ID first. A voice channel has
+// a bitrate, in bits a second, for its call's Opus (M4.2).
 type Channel struct {
 	ID          string   `json:"id"`
 	GroupID     *string  `json:"group_id"`
@@ -58,6 +59,7 @@ type Channel struct {
 	Position    int      `json:"position"`
 	StaffOnly   bool     `json:"staff_only"`
 	Members     []string `json:"members,omitempty"`
+	Bitrate     int      `json:"bitrate,omitempty"`
 }
 
 type Group struct {
@@ -204,6 +206,7 @@ type ChannelRequest struct {
 	GroupID     *string `json:"group_id,omitempty"`
 	Position    *int    `json:"position,omitempty"`
 	StaffOnly   *bool   `json:"staff_only,omitempty"`
+	Bitrate     *int    `json:"bitrate,omitempty"` // a voice channel's (M4.2)
 }
 
 type GroupRequest struct {

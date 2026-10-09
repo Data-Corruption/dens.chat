@@ -338,11 +338,10 @@ export function Chat({ denID, channelID, navigate }) {
                     )}
                     {channel ? (
                         <>
-                            <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} staff={staff && !gone} elsewhere={elsewhere}
+                            <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} elsewhere={elsewhere}
                                 online={dm && online.has(dm.id)} membersOpen={membersOpen}
                                 onChannels={() => setListOpen(true)} onMembers={toggleMembers}
-                                onProfile={(m) => setDialog({ kind: 'profile', member: m })}
-                                onSettings={() => setDialog({ kind: 'channel', channel })} />
+                                onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                             <MessagePane
                                 key={`${denID}:${channel.id}`}
                                 denID={denID}
@@ -472,29 +471,45 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
     const ungrouped = listed.filter((c) => !c.group_id).sort((a, b) => a.position - b.position);
     const groups = [...view.groups].sort((a, b) => a.position - b.position);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
-    const { call, speaking, volumes } = useCall();
+    const { call, speaking, volumes, watched, share } = useCall();
+    const watching = new Set(watched.map((w) => w.member));
+    // Staff reach each channel's and group's settings from a ⋯ beside it
+    // (M4.2), which shows on hover or focus, and always on touch screens,
+    // which have no hover.
+    const settings = 'btn btn-ghost btn-xs btn-square md:invisible md:group-hover:visible md:focus:visible';
     const item = (c) => {
         const r = reads.get(c.id);
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
         const voice = c.kind === 'voice';
         const inCall = voice && call?.den === denID && call.channel === c.id;
+        const label = { den: view.name, channel: c.name };
+        const managed = staff && !gone;
         return (
             <li key={c.id}>
-                <button
-                    type="button"
-                    class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
-                    onClick={() => (voice ? joinCall(denID, c.id, { den: view.name, channel: c.name }) : onOpen(c.id))}
-                    disabled={voice && gone}
-                    title={voice ? "Join the call. Calls aren't end-to-end encrypted: the den can hear them." : undefined}
-                >
-                    <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? '🔊' : '#'}</span>
-                    <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
-                    {c.staff_only && <span class="text-xs text-base-content/50" title="Staff only">🔒</span>}
-                    {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
-                </button>
+                <div class="group relative">
+                    <button
+                        type="button"
+                        class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${managed ? 'pr-8' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
+                        onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
+                        disabled={voice && gone}
+                        title={voice ? "Join the call. Calls aren't end-to-end encrypted: the den can hear them." : undefined}
+                    >
+                        <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? '🔊' : '#'}</span>
+                        <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
+                        {c.staff_only && <span class="text-xs text-base-content/50" title="Staff only">🔒</span>}
+                        {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
+                    </button>
+                    {managed && (
+                        <button type="button" class={`${settings} absolute right-1 top-1/2 -translate-y-1/2`} title="Channel settings"
+                            aria-label={`Settings for ${c.name}`} onClick={() => onDialog({ kind: 'channel', channel: c })}>
+                            ⋯
+                        </button>
+                    )}
+                </div>
                 {voice && (
                     <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
-                        volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} />
+                        volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} inCall={inCall} label={label}
+                        watched={watching} previewing={!!share?.preview} />
                 )}
             </li>
         );
@@ -504,12 +519,12 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
             <ul class="flex flex-col">{ungrouped.map(item)}</ul>
             {groups.map((g) => (
                 <div key={g.id}>
-                    <div class="flex cursor-default select-none items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
+                    <div class="group flex h-6 cursor-default select-none items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
                         <span class="truncate">{g.name}</span>
-                        {staff && (
-                            <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label={`Group settings for ${g.name}`} title="Group settings"
+                        {staff && !gone && (
+                            <button type="button" class={`${settings} font-normal normal-case`} aria-label={`Settings for the group ${g.name}`} title="Group settings"
                                 onClick={() => onDialog({ kind: 'group', group: g })}>
-                                <CogIcon size="h-3.5 w-3.5" />
+                                ⋯
                             </button>
                         )}
                     </div>
@@ -585,7 +600,7 @@ function PeopleIcon() {
 // ChannelHeader names the channel or the DM's other member. A channel's
 // description shows its first line, which opens the rest when there is
 // more than fits.
-function ChannelHeader({ channel, dm, me, staff, elsewhere, online, membersOpen, onChannels, onMembers, onProfile, onSettings }) {
+function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
     const clipped = useClipped(line, channel.description);
@@ -639,11 +654,6 @@ function ChannelHeader({ channel, dm, me, staff, elsewhere, online, membersOpen,
                     </button>
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
-                    {staff && channel.kind === 'text' && (
-                        <button type="button" class="btn btn-ghost btn-sm btn-square" onClick={onSettings} aria-label="Channel settings" title="Channel settings">
-                            <CogIcon />
-                        </button>
-                    )}
                     <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
                         aria-label="Members" aria-pressed={membersOpen} title="Members">
                         <PeopleIcon />

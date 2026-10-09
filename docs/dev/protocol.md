@@ -61,15 +61,15 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 ## Objects
 
 ```
-den    = {"id": "<den_id>", "name", "url", "limits"?}
+den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)); it comes in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), and `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
 
 ```
-PATCH /api/den   {"name"?, "url"?, "limits"?}   200 den        (owner only)
+PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?}   200 den        (owner only)
 ```
 
 A change reaches every member as a `den.updated {den}` event.
@@ -273,12 +273,13 @@ Any other failure reconnects with exponential backoff and full jitter, from 0.5 
 ## Channels and groups (M1.2)
 
 ```
-channel = {"id", "group_id", "name", "description"?, "kind": "text" | "voice", "position", "staff_only"}
+channel = {"id", "group_id", "name", "description"?, "kind": "text" | "voice", "position", "staff_only", "bitrate"? (M4.2)}
 group   = {"id", "name", "position"}
 ```
 
 - `group_id` is null for a channel outside any group.
 - Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters. Voice channels have none.
+- A voice channel's `bitrate` is what its call's Opus may send, in bits a second (M4.2): 16000 to 128000, in steps of 8000, and 96000 unless set when it's created or changed. Text channels have none. A change reaches the call in progress with each member's next offer (see [Offers and answers](#offers-and-answers)).
 - A den has at most 500 channels and 100 groups.
 - `ready` carries the channels and groups the member can see. Changes arrive as `channel.created {channel}`, `channel.updated {channel}` and `channel.deleted {id}`, and the same for `group.*`.
 - Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Requests carry the object's fields, and a `PATCH` changes only the ones it names. `"group_id": ""` moves a channel out of its group. Moderators and the owner manage them.
@@ -659,10 +660,11 @@ device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer"
 A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design doc's Voice and screen share).
 
 ```
-call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_muted"? (M3)}, …]}
+call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_muted"? (M3),
+                                   "sharing"? (M4.2), "sound"? (M4.2), "watching"? (M4.2)}, …]}
 ```
 
-Client frames, with `resume` and `voice.restart` from M3:
+Client frames, with `resume` and `voice.restart` from M3, and `voice.share` and `voice.watch` from M4.2:
 
 ```json
 [{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false}}]
@@ -670,14 +672,17 @@ Client frames, with `resume` and `voice.restart` from M3:
 [{"t": "voice.answer", "d": {"version": 1, "sdp": "v=0…"}}]
 [{"t": "voice.mute", "d": {"muted": true, "deafened": true}}]
 [{"t": "voice.restart", "d": {}}]
+[{"t": "voice.share", "d": {"on": true, "sound": true}}]
+[{"t": "voice.watch", "d": {"member_id": "7", "on": true}}]
 [{"t": "voice.leave", "d": {}}]
 ```
 
-Den events, all ephemeral, with `voice.resumed` from M3:
+Den events, all ephemeral, with `voice.resumed` from M3 and `voice.refused` from M4.2:
 
 ```json
 {"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
 {"t": "voice.resumed", "d": {"channel_id": "41"}}
+{"t": "voice.refused", "d": {"channel_id": "41", "what": "watch", "member_id": "7", "reason": "full"}}
 {"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
 {"t": "voice.state", "d": {"calls": [call, …]}}
 ```
@@ -685,27 +690,31 @@ Den events, all ephemeral, with `voice.resumed` from M3:
 ### Joining and leaving
 
 - `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` and `deafened` (M3.3) are optional and set the member's marks from the start. With `"resume": true` (M3), the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection-m3)).
-- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds 15 members, or the den's calls 30 in all), `rate_limited`, or `failed` when the den couldn't set the call up.
+- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds as many members as the den allows, or the den's calls do; see [Limits for calls](#limits-for-calls-m42)), `rate_limited`, or `failed` when the den couldn't set the call up.
 - `voice.leave` ends the member's call. When the socket a call started on closes, the den holds the call (see below), unless the den closed that socket for good with 4003 or after a logout. So removals, bans, revoked devices, new passwords, starting over, leaving and logging out end calls at once, and a den restart ends every call.
 - The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; with `failed` when its connection doesn't come up or breaks (below); and with `disconnected_by_staff` when staff disconnect its member (M3).
 
 ### Offers and answers
 
-- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle and Opus only. Its first section receives the member's audio (`recvonly` at the den), and each of the rest sends another member's (`sendonly`), with that member's ID as its stream ID (`msid`). Every Opus format in it carries `a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=96000`, which asks the browser to send at up to 96 kbps with in-band error correction (M3), and to send almost nothing while there's nothing to hear (discontinuous transmission, M3.3); a re-offer carries it too, whatever the answer said.
+- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle, Opus for audio and, from M4.2, VP9 for video. The den receives on up to three sections (`recvonly` at the den): the first, the member's microphone; from the member's first share in the call, a video section for their screen; and from their first share with sound, an audio section for that sound. Those two stay for the rest of the call, for later shares. Each other section sends the member something (`sendonly`): another member's audio, with that member's ID as its stream ID (`msid`), or a share they watch (M4.2), its video and, if it has sound, its sound, both with `screen-<member ID>` as their stream ID.
+- Every Opus format in a voice section carries `a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=<the channel's bitrate>`, which asks the browser to send at up to the voice channel's `bitrate` (M3, M4.2) with in-band error correction, and to send almost nothing while there's nothing to hear (discontinuous transmission, M3.3). A share's sound carries `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=128000` instead (M4.2). A re-offer carries them too, whatever the answer said.
+- The screen section asks for no more than the den's `share_bitrate` (M4.2), as `b=AS` in kilobits and `b=TIAS` in bits a second, since browsers honor one or the other.
 - An offer carries no candidates. The client writes the den's: each address the den's name resolves to, or for a den on its own machine, the machine's addresses on its other interfaces, each with `udp_port` over UDP and `tcp_port` over TCP (`tcptype passive`). The den answers connectivity checks from any address, so it needs no candidates from the client, and the client sends none.
 - `voice.answer` answers the offer with that `version`, which counts up from 1 in each call. The den keeps one offer outstanding per call, and sends the next only after its answer. An answer to any other version is ignored.
-- When a member joins or leaves a call, each other member in it gets a new offer, which adds their section or retires it (`inactive`). A later join can take a retired section back.
+- When a member joins or leaves a call, each other member in it gets a new offer, which adds their section or retires it (`inactive`). So does a member who starts or stops watching a share, for its sections, and each member of a call whose channel's bitrate changes (M4.2). A later section can take back a retired one of its kind.
 - An offer not answered within 15 seconds, a connection not up within 30 seconds of its answer, a connection that fails, or an answer that doesn't fit its offer ends the call with `failed`.
-- Offers and answers are each at most 32 KiB. The client passes its browser only offers of audio.
+- Offers and answers are each at most 32 KiB. The client passes its browser only offers of audio and video, with audio only as Opus and, from M4.2, video only as VP9 or AV1, every format named, and any other offer fails the call. The den offers VP9; AV1 passes so a later den can offer it without breaking older clients.
 
 ### Media
 
-- The den takes only Opus from each member, on their own section, and forwards each packet's payload to the others under its own headers, without header extensions. It forwards at most 256 kbps and 500 packets a second from each member and drops the rest.
+- The den takes only Opus from each member's microphone, on its own section, and forwards each packet's payload to the others under its own headers, without header extensions. It forwards at most 256 kbps and 500 packets a second from each member and drops the rest.
+- From a share (M4.2), the den takes only VP9 on the member's screen section, and only Opus on its sound section, and only while they share, and forwards them to the members watching it in the same way. It forwards a share's video at up to its `share_bitrate` and a quarter more, with bursts of up to a second of that or 512 KiB, whichever is more, and its sound within a voice's limits, and drops the rest.
+- A viewer's picture loss indication (PLI) or full intra request (FIR) goes to the sharer as a PLI for their screen, and the den sends one as each viewer's section opens, and when a share's packets start again after a pause of half a second or more (M4.2). It sends a share at most one every 500 ms; a request inside that time gets one at its end.
 - `udp_port` and `tcp_port` are the den's media ports. Packets that name no call are dropped, and a TCP connection that doesn't name one within 5 seconds is closed. The TCP port holds at most 128 connections at once.
 
 ### Who's in a call
 
-- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce, and so is `deafened` (M3.3), which says the member hears nothing of the call either; a deafened member is muted too. `staff_muted` (M3) is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls-m3)).
+- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce, and so is `deafened` (M3.3), which says the member hears nothing of the call either; a deafened member is muted too. `staff_muted` (M3) is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls-m3)). `sharing` (M4.2) says the member is sharing their screen, and `sound` that the share has sound; `watching` lists the members whose shares they watch (see [Screen share](#screen-share-m42)).
 - `ready` carries `calls`, those the member can see that have someone in them. Calls aren't replayed, so after `resumed` the den sends `voice.state` with `"full": true`, which replaces every call the client held.
 
 ### Riding out a dropped connection (M3)
@@ -728,7 +737,31 @@ POST /api/members/{id}/voice-mute  {"muted": true}   204
 
 - Staff disconnect and mute members of a lower rank, as they remove them: moderators act on members, and the owner on anyone else. Anyone else gets `403 forbidden`, and an ID that isn't a member in the den gets `404 not_found`.
 - Disconnecting ends the member's call, held or not, with `voice.ended` and `disconnected_by_staff`. It leaves a member in no call as they are. They can join again at once.
-- A staff mute makes the den forward nothing from the member, in their call and in any they join, until staff lift it with `"muted": false`, the member leaves the den, or the den restarts. It can be set whether or not they're in a call. Calls show it as `"staff_muted": true` on the member, beside their own `muted`.
+- A staff mute makes the den forward nothing from the member, in their call and in any they join, until staff lift it with `"muted": false`, the member leaves the den, or the den restarts. It ends their share, and they can't share while it lasts (M4.2). It can be set whether or not they're in a call. Calls show it as `"staff_muted": true` on the member, beside their own `muted`.
+
+### Screen share (M4.2)
+
+A member in a call shares their screen, a window or a tab with the members of the call who choose to watch it (see the design doc's Screen share).
+
+- `voice.share` with `"on": true` starts a share in the call this socket holds, and `sound` says whether the client will send its sound. The den adds whichever of the screen and sound sections the member's offers don't have yet, and sends a new offer if it added one, then marks the member `sharing` in `voice.state`. The client sends its screen on the den's video section, and its sound on the den's second `recvonly` audio section. `"on": false` stops the share: the den forwards nothing more from it, and each viewer's next offer retires its sections. A frame from a socket that holds no call is ignored.
+- A share is refused with `voice.refused`, `"what": "share"`, and a reason: `off` when the den's `shares` is 0, `full` when that many members are sharing already, `staff_muted` while staff mute the member, or `rate_limited`.
+- A share ends when its member stops it, leaves the call or moves to another, when their call ends, and when staff mute them; `voice.state` then shows them without `sharing`. Lowering a limit ends no share.
+- `voice.watch` with `"on": true` watches the share of `member_id`, who must be sharing in the same call; the den adds the share's sections to the member's next offer and lists the sharer in their `watching`. `"on": false` stops watching. Leaving the call, or the share ending, stops it too, and a member doesn't watch their own share.
+- A watch is refused with `voice.refused`, `"what": "watch"`, the `member_id`, and a reason: `full` when the share has `share_viewers` viewers already or the member watches four shares, `not_sharing` when that member isn't sharing in this call, or `rate_limited`.
+- Sharing and watching count toward the member's other writes.
+
+### Limits for calls (M4.2)
+
+```
+call_limits = {"members", "callers", "shares", "share_viewers", "share_bitrate", "share_height", "share_fps"}
+```
+
+- `members` is how many members one call holds, 2 to 30, and `callers` how many may be in calls across the den, 2 to 100. A new den allows 15 and 30. A call holds at most 30 so that its offers fit in 32 KiB.
+- `shares` is how many members may share at once across the den, 0 to 10, where 0 allows none, and `share_viewers` how many may watch one share, 1 to 29. A new den allows 1 and 8.
+- `share_bitrate` is the most a share's video may send, in bits a second, 250,000 to 50,000,000; a new den allows 2,000,000. The den asks for no more in its offers and holds shares to it (see [Media](#media)).
+- `share_height` is a share's size, as the height of a 16:9 picture: 720, 1080, 1440 or 2160. A share may have as many pixels as that picture, whatever its shape. `share_fps` is its frame rate, 5 to 60. A new den allows 1080 and 30. The client keeps its member's shares to them, since the den can't see either.
+- The owner changes them with `PATCH /api/den`, all together. A lower limit applies to what starts afterwards: nobody leaves a call or a share for it.
+- Clients check `call_limits` as they arrive, as they check `limits`, and refuse a den whose limits are out of range.
 
 ## Rate limits
 
@@ -745,5 +778,5 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, and staff disconnecting and muting | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, and staff disconnecting and muting | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

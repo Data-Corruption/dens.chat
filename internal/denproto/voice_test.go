@@ -75,19 +75,84 @@ func TestAddCandidates(t *testing.T) {
 	}
 }
 
+// withVideo is the test offer with a video section added, which maps its
+// formats as rtpmaps says.
+func withVideo(formats string, rtpmaps ...string) string {
+	lines := append([]string{"m=video 9 UDP/TLS/RTP/SAVPF " + formats, "c=IN IP4 0.0.0.0", "a=mid:2"}, rtpmaps...)
+	return testOffer + sdpLines(append(lines, "a=recvonly")...)
+}
+
 func TestCheckOffer(t *testing.T) {
-	if err := CheckOffer(testOffer); err != nil {
-		t.Fatal(err)
+	for name, offer := range map[string]string{
+		"audio": testOffer,
+		"VP9":   withVideo("98", "a=rtpmap:98 VP9/90000"),
+		"AV1":   withVideo("45", "a=rtpmap:45 AV1/90000"),
+		"both":  withVideo("98 45", "a=rtpmap:98 vp9/90000", "a=rtpmap:45 AV1/90000"),
+	} {
+		if err := CheckOffer(offer); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 	for name, offer := range map[string]string{
-		"video":      strings.Replace(testOffer, "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\nc=IN IP4 0.0.0.0\r\na=mid:1", "m=video 9 UDP/TLS/RTP/SAVPF 96\r\nc=IN IP4 0.0.0.0\r\na=mid:1", 1),
-		"data":       strings.Replace(testOffer, "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\nc=IN IP4 0.0.0.0\r\na=mid:1", "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=mid:1", 1),
-		"no media":   sdpLines("v=0", "o=- 1 2 IN IP4 0.0.0.0", "s=-", "t=0 0"),
-		"malformed":  "not an offer",
-		"over limit": testOffer + strings.Repeat("a=x\r\n", MaxSDP/5),
+		"H.264":         withVideo("102", "a=rtpmap:102 H264/90000"),
+		"VP8 beside":    withVideo("98 96", "a=rtpmap:98 VP9/90000", "a=rtpmap:96 VP8/90000"),
+		"an unmapped":   withVideo("98 34", "a=rtpmap:98 VP9/90000"),
+		"PCMU in audio": strings.Replace(testOffer, "a=rtpmap:111 opus/48000/2\r\na=sendonly", "a=rtpmap:111 PCMU/8000\r\na=sendonly", 1),
+		"data":          strings.Replace(testOffer, "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\nc=IN IP4 0.0.0.0\r\na=mid:1", "m=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\nc=IN IP4 0.0.0.0\r\na=mid:1", 1),
+		"no media":      sdpLines("v=0", "o=- 1 2 IN IP4 0.0.0.0", "s=-", "t=0 0"),
+		"malformed":     "not an offer",
+		"over limit":    testOffer + strings.Repeat("a=x\r\n", MaxSDP/5),
 	} {
 		if CheckOffer(offer) == nil {
 			t.Errorf("%s: passed", name)
+		}
+	}
+}
+
+func TestCallLimits(t *testing.T) {
+	if err := CheckCallLimits(DefaultCallLimits); err != nil {
+		t.Fatalf("a new den's limits: %v", err)
+	}
+	if DefaultCallLimits.ShareViewers*DefaultCallLimits.Shares*DefaultCallLimits.ShareBitrate != 16_000_000 {
+		t.Errorf("a new den's shares cost %d bits a second at most, not 16 Mbps", DefaultCallLimits.ShareViewers*DefaultCallLimits.Shares*DefaultCallLimits.ShareBitrate)
+	}
+	edges := DefaultCallLimits
+	edges.Members, edges.Callers, edges.Shares, edges.ShareViewers = MaxCallMembers, MaxDenCallers, 0, MaxCallMembers-1
+	edges.ShareBitrate, edges.ShareHeight, edges.ShareFPS = MaxShareBitrate, 2160, MaxShareFPS
+	if err := CheckCallLimits(edges); err != nil {
+		t.Errorf("limits at the edges of their ranges: %v", err)
+	}
+	for name, change := range map[string]func(*CallLimits){
+		"a call of one":      func(l *CallLimits) { l.Members = 1 },
+		"a call too large":   func(l *CallLimits) { l.Members = MaxCallMembers + 1 },
+		"too many in calls":  func(l *CallLimits) { l.Callers = MaxDenCallers + 1 },
+		"too many shares":    func(l *CallLimits) { l.Shares = MaxShares + 1 },
+		"no viewers":         func(l *CallLimits) { l.ShareViewers = 0 },
+		"too many viewers":   func(l *CallLimits) { l.ShareViewers = MaxCallMembers },
+		"a bitrate too low":  func(l *CallLimits) { l.ShareBitrate = MinShareBitrate - 1 },
+		"a bitrate too high": func(l *CallLimits) { l.ShareBitrate = MaxShareBitrate + 1 },
+		"an odd size":        func(l *CallLimits) { l.ShareHeight = 1200 },
+		"too few frames":     func(l *CallLimits) { l.ShareFPS = MinShareFPS - 1 },
+		"too many frames":    func(l *CallLimits) { l.ShareFPS = MaxShareFPS + 1 },
+		"none at all":        func(l *CallLimits) { *l = CallLimits{} },
+	} {
+		l := DefaultCallLimits
+		change(&l)
+		if CheckCallLimits(l) == nil {
+			t.Errorf("%s: passed", name)
+		}
+	}
+}
+
+func TestVoiceBitrate(t *testing.T) {
+	for _, b := range []int{MinVoiceBitrate, 24000, DefaultVoiceBitrate, MaxVoiceBitrate} {
+		if err := CheckVoiceBitrate(b); err != nil {
+			t.Errorf("%d: %v", b, err)
+		}
+	}
+	for _, b := range []int{0, 8000, MaxVoiceBitrate + VoiceBitrateStep, 100000} {
+		if CheckVoiceBitrate(b) == nil {
+			t.Errorf("%d: passed", b)
 		}
 	}
 }

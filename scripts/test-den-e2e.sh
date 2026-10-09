@@ -313,6 +313,44 @@ run() {
   wait "$member_probe" || { cat "$RUN_LOG_DIR/staff-member.log" >&2; return 1; }
   echo ">> A staff mute silenced the member for the owner, and a staff disconnect ended the member's call"
 
+  # The member shares their screen, with sound, and the owner watches it:
+  # Pion's VP9 packets cross the den's media ports, and the den asks the
+  # sharer for a keyframe as the owner's section opens (M4.2).
+  echo ">> The member shares their screen, and the owner watches it"
+  guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp share 15 >"$RUN_LOG_DIR/share-member.log" 2>&1 &
+  member_probe=$!
+  if ! guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp "watch:$bob_id" >"$RUN_LOG_DIR/share-owner.log" 2>&1; then
+    wait "$member_probe" || :
+    cat "$RUN_LOG_DIR/share-owner.log" "$RUN_LOG_DIR/share-member.log" >&2
+    return 1
+  fi
+  wait "$member_probe" || { cat "$RUN_LOG_DIR/share-member.log" >&2; return 1; }
+  # Both probes said they were ready, which nothing waited for here.
+  guest "$DEN" wait-ready
+  guest "$CLIENT" wait-ready
+  echo ">> The owner watched the member's share, its screen and its sound, and the sharer got a keyframe request"
+
+  # Staff change the voice channel's bitrate mid-call, and both members'
+  # next offers ask for it (M4.2).
+  echo ">> A voice channel's new bitrate reaches the call in progress"
+  guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp bitrate:48000 >"$RUN_LOG_DIR/bitrate-owner.log" 2>&1 &
+  owner=$!
+  guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp bitrate:48000 >"$RUN_LOG_DIR/bitrate-member.log" 2>&1 &
+  member_probe=$!
+  if ! guest "$DEN" wait-ready || ! guest "$CLIENT" wait-ready; then
+    wait "$member_probe" "$owner" || :
+    cat "$RUN_LOG_DIR/bitrate-member.log" "$RUN_LOG_DIR/bitrate-owner.log" >&2
+    return 1
+  fi
+  guest "$DEN" channel-bitrate "$den_id" "$lounge" 48000
+  if ! wait "$owner"; then
+    wait "$member_probe" || :
+    cat "$RUN_LOG_DIR/bitrate-owner.log" "$RUN_LOG_DIR/bitrate-member.log" >&2
+    return 1
+  fi
+  wait "$member_probe" || { cat "$RUN_LOG_DIR/bitrate-member.log" >&2; return 1; }
+  echo ">> Both members' next offers asked for the channel's new bitrate"
+
 
   echo ">> A phone photo with GPS data, through Caddy"
   local upload file stripped size preview kind stored

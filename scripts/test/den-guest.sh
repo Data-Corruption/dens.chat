@@ -291,9 +291,10 @@ voice-probe)
     # call in a voice channel through the paired browser's session, as its
     # page would, with Pion in the browser's place, over that one network,
     # and pass once MEMBER_ID is heard and THEN holds (see TestVoiceProbe):
-    # ride, restart, silence or ended:REASON. With THEN, the probe creates
-    # /root/probe-ready once it hears the member, for wait-ready. STAY is
-    # how many seconds it stays in the call at the end.
+    # ride, restart, silence, ended:REASON, share, watch:MEMBER or
+    # bitrate:BITS. With THEN, the probe creates /root/probe-ready once it
+    # hears the member, for wait-ready. STAY is how many seconds it stays
+    # in the call at the end.
     cookie=$(awk '$6 ~ /^dens_session_/ { print $6 "=" $7 }' "$JAR")
     [ -n "$cookie" ] || fail "no browser session to call with"
     ready=""
@@ -320,6 +321,11 @@ voice-mute)
 disconnect)
     # disconnect DEN_ID MEMBER_ID: end a member's call, as staff.
     api POST "/api/dens/$1/members/$2/disconnect" "{}" >/dev/null
+    ;;
+channel-bitrate)
+    # channel-bitrate DEN_ID CHANNEL_ID BITS: set a voice channel's bitrate,
+    # as staff (M4.2).
+    api PATCH "/api/dens/$1/channels/$2" "{\"bitrate\":$3}" >/dev/null
     ;;
 wait-channel)
     # wait-channel DEN_ID: print the first channel's ID once one exists.

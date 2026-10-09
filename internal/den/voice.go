@@ -18,11 +18,12 @@ import (
 )
 
 // A call joins one member's browser to the den's SFU, in a voice channel
-// (M2). The den decides who may be in which call and tells members who
-// is; the SFU carries the media and makes the offers. A call belongs to
-// the socket that joined it. When that socket closes, the den holds the
-// call for its device to take back on another (M3), unless the den closed
-// the socket for good.
+// (M2). The den decides who may be in which call, and who may share their
+// screen and watch others' (M4.2), and tells members who is; the SFU
+// carries the media and makes the offers. A call belongs to the socket
+// that joined it. When that socket closes, the den holds the call for its
+// device to take back on another (M3), unless the den closed the socket
+// for good.
 
 type call struct {
 	member  int64
@@ -36,6 +37,11 @@ type call struct {
 	// The member's own marks: muted, and deafened, hearing nothing (M3.3).
 	muted, deafened bool
 	hold            *time.Timer // ends a held call that isn't taken back
+	// sharing is whether the member shares their screen, with sound if
+	// sound, and watching whose shares they watch, in the order they
+	// started (M4.2).
+	sharing, sound bool
+	watching       []int64
 }
 
 // callRoom is a voice channel's call.
@@ -176,7 +182,8 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 			in--
 		}
 	}
-	if in >= denproto.MaxCallMembers || total >= denproto.MaxDenCallers {
+	info, _ := d.Info()
+	if in >= info.CallLimits.Members || total >= info.CallLimits.Callers {
 		refuse(denproto.VoiceFull)
 		return
 	}
@@ -192,7 +199,11 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	}
 	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened}
 	nc.sock.Store(sock)
-	peer, err := r.sfu.Join(denproto.FormatID(cid), denproto.FormatID(s.MemberID), callSignal{d, nc, r.udpPort, r.tcpPort})
+	bitrate := c.Bitrate
+	if bitrate == 0 {
+		bitrate = denproto.DefaultVoiceBitrate
+	}
+	peer, err := r.sfu.Join(denproto.FormatID(cid), denproto.FormatID(s.MemberID), bitrate, callSignal{d, nc, r.udpPort, r.tcpPort})
 	if err != nil {
 		d.log.Errorf("join call: %v", err)
 		refuse(denproto.VoiceFailed)
@@ -354,19 +365,188 @@ func (d *Den) endCallLocked(c *call, reason string) {
 	d.log.Infof("The call of member %d in channel %d ended: %s", c.member, c.channel, reason)
 }
 
-// dropCallLocked takes a call out and hangs up its peer. The caller holds
-// the registry's lock, and publishes the change.
+// dropCallLocked takes a call out and hangs up its peer, which retires
+// its sections in the others' calls, its share's among them. The caller
+// holds the registry's lock, and publishes the change.
 func (d *Den) dropCallLocked(c *call) {
 	r := &d.calls
 	delete(r.byMember, c.member)
 	if room := r.rooms[c.channel]; room != nil {
 		room.members = slices.DeleteFunc(room.members, func(x *call) bool { return x == c })
+		if c.sharing {
+			unwatchedLocked(room, c.member)
+		}
 	}
 	if c.hold != nil {
 		c.hold.Stop()
 		c.hold = nil
 	}
 	c.peer.Close()
+}
+
+// shareCall starts or ends the share of the member whose call this socket
+// holds (M4.2), within the den's limits, or tells the socket why not.
+func (d *Den) shareCall(s *Session, sock *socket, req denproto.VoiceShare) {
+	limited := d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) != nil
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := r.byMember[sock.member]
+	if c == nil || c.sock.Load() != sock {
+		return
+	}
+	refuse := func(reason string) {
+		sock.voice(denproto.EventVoiceRefused, denproto.VoiceRefused{ChannelID: denproto.FormatID(c.channel),
+			What: denproto.RefusedShare, Reason: reason})
+	}
+	if limited {
+		refuse(denproto.VoiceRateLimited)
+		return
+	}
+	if !req.On {
+		if c.sharing {
+			d.endShareLocked(c)
+			d.publishCallsLocked(c.channel)
+		}
+		return
+	}
+	info, _ := d.Info()
+	limits := info.CallLimits
+	switch {
+	case limits.Shares == 0:
+		refuse(denproto.RefusedOff)
+	case r.staffMuted[c.member]:
+		refuse(denproto.RefusedStaffMuted)
+	case !c.sharing && r.sharingLocked() >= limits.Shares:
+		refuse(denproto.RefusedFull)
+	default:
+		if err := c.peer.Share(req.Sound, limits.ShareBitrate); err != nil {
+			d.log.Errorf("share: %v", err)
+			return
+		}
+		started := !c.sharing
+		c.sharing, c.sound = true, req.Sound
+		d.publishCallsLocked(c.channel)
+		if started {
+			d.log.Infof("Member %d started sharing in channel %d", c.member, c.channel)
+		}
+	}
+}
+
+// watchCall starts or stops this socket's member watching another
+// member's share in their call (M4.2), within the den's limits, or tells
+// the socket why not.
+func (d *Den) watchCall(s *Session, sock *socket, req denproto.VoiceWatch) {
+	limited := d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) != nil
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := r.byMember[sock.member]
+	if c == nil || c.sock.Load() != sock {
+		return
+	}
+	refuse := func(reason string) {
+		sock.voice(denproto.EventVoiceRefused, denproto.VoiceRefused{ChannelID: denproto.FormatID(c.channel),
+			What: denproto.RefusedWatch, MemberID: req.MemberID, Reason: reason})
+	}
+	if limited {
+		refuse(denproto.VoiceRateLimited)
+		return
+	}
+	mid, err := denproto.ParseID(req.MemberID)
+	watching := err == nil && slices.Contains(c.watching, mid)
+	if !req.On {
+		if watching {
+			c.peer.Unwatch(denproto.FormatID(mid))
+			c.watching = slices.DeleteFunc(c.watching, func(x int64) bool { return x == mid })
+			d.publishCallsLocked(c.channel)
+		}
+		return
+	}
+	if watching {
+		return
+	}
+	sharer := r.byMember[mid]
+	if err != nil || sharer == nil || sharer == c || sharer.channel != c.channel || !sharer.sharing {
+		refuse(denproto.RefusedNotSharing)
+		return
+	}
+	info, _ := d.Info()
+	if len(c.watching) >= denproto.MaxWatching || r.viewersLocked(sharer) >= info.CallLimits.ShareViewers {
+		refuse(denproto.RefusedFull)
+		return
+	}
+	if err := c.peer.Watch(sharer.peer); err != nil {
+		d.log.Warnf("watch: %v", err)
+		refuse(denproto.RefusedNotSharing)
+		return
+	}
+	c.watching = append(c.watching, mid)
+	d.publishCallsLocked(c.channel)
+}
+
+// endShareLocked ends a member's share: the SFU stops forwarding it and
+// retires its viewers' sections, and nobody watches it any more. The
+// caller holds the registry's lock, and publishes the change.
+func (d *Den) endShareLocked(c *call) {
+	if !c.sharing {
+		return
+	}
+	c.sharing, c.sound = false, false
+	c.peer.Unshare()
+	if room := d.calls.rooms[c.channel]; room != nil {
+		unwatchedLocked(room, c.member)
+	}
+	d.log.Infof("Member %d stopped sharing in channel %d", c.member, c.channel)
+}
+
+// unwatchedLocked takes a member whose share ended out of everyone's
+// watching in their call.
+func unwatchedLocked(room *callRoom, sharer int64) {
+	for _, x := range room.members {
+		x.watching = slices.DeleteFunc(x.watching, func(m int64) bool { return m == sharer })
+	}
+}
+
+// sharingLocked counts the members sharing across the den.
+func (r *callRegistry) sharingLocked() int {
+	n := 0
+	for _, c := range r.byMember {
+		if c.sharing {
+			n++
+		}
+	}
+	return n
+}
+
+// viewersLocked counts the members watching a member's share.
+func (r *callRegistry) viewersLocked(sharer *call) int {
+	n := 0
+	if room := r.rooms[sharer.channel]; room != nil {
+		for _, x := range room.members {
+			if slices.Contains(x.watching, sharer.member) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// callBitrateChanged has the call in a voice channel go at the channel's
+// new bitrate, from each member's next offer, which goes now (M4.2).
+func (d *Den) callBitrateChanged(c denproto.Channel) {
+	cid, err := denproto.ParseID(c.ID)
+	if err != nil || c.Bitrate == 0 {
+		return
+	}
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if room := r.rooms[cid]; room != nil {
+		for _, x := range room.members {
+			x.peer.SetVoiceBitrate(c.Bitrate)
+		}
+	}
 }
 
 // remember keeps why a held call ended, for its device's resume, and lets
@@ -530,6 +710,11 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 	}
 	if c := r.byMember[mid]; c != nil {
 		c.peer.SetMuted(muted)
+		if muted {
+			// The den forwards nothing from a muted member, their screen
+			// included, so their share ends rather than freezing (M4.2).
+			d.endShareLocked(c)
+		}
 		d.publishCallsLocked(c.channel)
 	}
 	d.log.Infof("Member %d set member %d's staff mute to %t", s.MemberID, mid, muted)
@@ -560,8 +745,12 @@ func (d *Den) publishCallsLocked(channels ...int64) {
 func (r *callRegistry) callOf(cid int64, room *callRoom) denproto.Call {
 	c := denproto.Call{ChannelID: denproto.FormatID(cid), Members: []denproto.CallMember{}}
 	for _, x := range room.members {
-		c.Members = append(c.Members, denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, Deafened: x.deafened,
-			StaffMuted: r.staffMuted[x.member]})
+		m := denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, Deafened: x.deafened,
+			StaffMuted: r.staffMuted[x.member], Sharing: x.sharing, Sound: x.sound}
+		for _, w := range x.watching {
+			m.Watching = append(m.Watching, denproto.FormatID(w))
+		}
+		c.Members = append(c.Members, m)
 	}
 	return c
 }

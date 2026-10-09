@@ -72,6 +72,9 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 
 			-- The den this install hosts, once created. The identity private
 			-- key is sealed with the data key. The upload limits are bytes.
+			-- The limits for calls and screen shares (M4.2) are counts of
+			-- members, bits a second, a 16:9 picture's height and frames a
+			-- second.
 			CREATE TABLE den (
 				id             INTEGER PRIMARY KEY CHECK (id = 1),
 				name           TEXT NOT NULL,
@@ -81,7 +84,14 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				created_at     INTEGER NOT NULL,
 				file_size      INTEGER NOT NULL,
 				member_storage INTEGER NOT NULL,
-				den_storage    INTEGER NOT NULL
+				den_storage    INTEGER NOT NULL,
+				call_members   INTEGER NOT NULL,
+				den_callers    INTEGER NOT NULL,
+				shares         INTEGER NOT NULL,
+				share_viewers  INTEGER NOT NULL,
+				share_bitrate  INTEGER NOT NULL,
+				share_height   INTEGER NOT NULL,
+				share_fps      INTEGER NOT NULL
 			) STRICT;
 
 			-- AUTOINCREMENT: a member ID is never reused, even after deletion.
@@ -154,7 +164,8 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT;
 
 			-- A DM is a channel between two members, dm_low < dm_high, with no
-			-- name, group or position.
+			-- name, group or position. A voice channel has a bitrate, in bits
+			-- a second, for its call's Opus (M4.2), and no other kind does.
 			CREATE TABLE den_channels (
 				id          INTEGER PRIMARY KEY AUTOINCREMENT,
 				group_id    INTEGER REFERENCES den_groups (id) ON DELETE SET NULL,
@@ -166,7 +177,9 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				dm_low      INTEGER REFERENCES den_members (id),
 				dm_high     INTEGER REFERENCES den_members (id),
 				created_at  INTEGER NOT NULL,
-				CHECK ((kind = 'dm') = (dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high))
+				bitrate     INTEGER,
+				CHECK ((kind = 'dm') = (dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high)),
+				CHECK ((kind = 'voice') = (bitrate IS NOT NULL))
 			) STRICT;
 			CREATE UNIQUE INDEX den_channels_dm ON den_channels (dm_low, dm_high) WHERE kind = 'dm';
 			CREATE INDEX den_channels_dm_high ON den_channels (dm_high) WHERE kind = 'dm';

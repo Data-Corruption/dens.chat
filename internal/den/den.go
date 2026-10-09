@@ -130,8 +130,11 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	var name, url string
 	var pub, sealed []byte
 	var limits denproto.Limits
-	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key, file_size, member_storage, den_storage FROM den WHERE id = 1`).
-		Scan(&name, &url, &pub, &sealed, &limits.FileSize, &limits.MemberStorage, &limits.DenStorage)
+	var calls denproto.CallLimits
+	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key, file_size, member_storage, den_storage,
+		call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps FROM den WHERE id = 1`).
+		Scan(&name, &url, &pub, &sealed, &limits.FileSize, &limits.MemberStorage, &limits.DenStorage,
+			&calls.Members, &calls.Callers, &calls.Shares, &calls.ShareViewers, &calls.ShareBitrate, &calls.ShareHeight, &calls.ShareFPS)
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, nil
 	}
@@ -146,7 +149,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -222,10 +225,14 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	code := denproto.Random(denproto.InviteCodeSize)
 	now := d.now()
 	limits := denproto.Limits{FileSize: denproto.DefaultFileSize, MemberStorage: denproto.DefaultMemberStorage, DenStorage: denproto.DefaultDenStorage}
+	calls := denproto.DefaultCallLimits
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			name, url, []byte(pub), sealed, now.UnixMilli(), limits.FileSize, limits.MemberStorage, limits.DenStorage); err != nil {
+			`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage,
+				call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps)
+			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			name, url, []byte(pub), sealed, now.UnixMilli(), limits.FileSize, limits.MemberStorage, limits.DenStorage,
+			calls.Members, calls.Callers, calls.Shares, calls.ShareViewers, calls.ShareBitrate, calls.ShareHeight, calls.ShareFPS); err != nil {
 			return fmt.Errorf("store den: %w", err)
 		}
 		_, err := tx.ExecContext(ctx,
@@ -239,7 +246,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls}
 	d.log.Infof("Den created")
 	return code, nil
 }
@@ -271,8 +278,8 @@ func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) {
 	return code, nil
 }
 
-// Update changes the den's name, address or upload limits. Only the owner
-// may.
+// Update changes the den's name, address, upload limits or limits for
+// calls. Only the owner may.
 func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequest) (denproto.Den, error) {
 	if s.Role != denproto.RoleOwner {
 		return denproto.Den{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner changes the den")
@@ -299,8 +306,18 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		}
 		info.Limits = *req.Limits
 	}
-	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ? WHERE id = 1`,
-		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage); err != nil {
+	if req.CallLimits != nil {
+		if err := denproto.CheckCallLimits(*req.CallLimits); err != nil {
+			d.mu.Unlock()
+			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "call_limits: %v", err)
+		}
+		info.CallLimits = *req.CallLimits
+	}
+	c := info.CallLimits
+	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
+		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ? WHERE id = 1`,
+		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
+		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS); err != nil {
 		d.mu.Unlock()
 		return denproto.Den{}, err
 	}
@@ -388,6 +405,7 @@ func (d *Den) Preview(ctx context.Context, code []byte) (denproto.Den, error) {
 	}
 	info, _ := d.Info()
 	info.Limits = denproto.Limits{}
+	info.CallLimits = denproto.CallLimits{}
 	return info, nil
 }
 

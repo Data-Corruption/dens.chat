@@ -9,6 +9,7 @@ import {
     useLater,
 } from './components.jsx';
 import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
+import { HEIGHTS, mbps, shareCost } from './share.js';
 
 const VERIFIER_HINT =
     "You'll need this password to sign in to the den from a new device. The den never sees it: it gets a value derived from " +
@@ -555,6 +556,7 @@ function DenSettings({ den }) {
                     )}
                 </div>
                 <UploadLimits key={opened} denID={den.den_id} />
+                <CallLimits key={`calls-${opened}`} denID={den.den_id} />
             </div>
         </details>
     );
@@ -618,6 +620,92 @@ function UploadLimits({ denID }) {
             {saved && <p class="text-sm text-success">Saved.</p>}
             <div>
                 <SubmitButton busy={save.busy}>Save upload limits</SubmitButton>
+            </div>
+        </form>
+    );
+}
+
+// CallLimits sets the den's limits for calls and screen shares (M4.2), and
+// says what they cost this computer's upload at most.
+function CallLimits({ denID }) {
+    const [limits, setLimits] = useState(null);
+    const [voice, setVoice] = useState(96000);
+    const [saved, setSaved] = useState(false);
+    const save = useAction();
+    useEffect(() => {
+        api.get(`/api/dens/${denID}/state`).then((v) => {
+            const l = v.call_limits;
+            setLimits({
+                members: String(l.members), callers: String(l.callers), shares: String(l.shares), viewers: String(l.share_viewers),
+                bitrate: String(l.share_bitrate / 1e6), height: String(l.share_height), fps: String(l.share_fps),
+            });
+            const rates = v.channels.filter((c) => c.kind === 'voice').map((c) => c.bitrate);
+            if (rates.length) setVoice(Math.max(...rates));
+        }, (e) => save.setError(e.message));
+    }, [denID]);
+    if (!limits) return save.error ? <ErrorText message={save.error} /> : null;
+    const set = (key) => (value) => {
+        setSaved(false);
+        setLimits({ ...limits, [key]: value });
+    };
+    const asked = {
+        members: Number(limits.members), callers: Number(limits.callers), shares: Number(limits.shares), share_viewers: Number(limits.viewers),
+        share_bitrate: Math.round(Number(limits.bitrate) * 1e6), share_height: Number(limits.height), share_fps: Number(limits.fps),
+    };
+    const cost = shareCost(asked, voice);
+    const known = Object.values(asked).every(Number.isFinite);
+
+    function submit(e) {
+        e.preventDefault();
+        setSaved(false);
+        save.run(async () => {
+            await api.post(`/api/dens/${denID}/settings`, { call_limits: asked });
+            setSaved(true);
+        });
+    }
+
+    return (
+        <form class="flex flex-col gap-2 border-t border-base-300 pt-3" onSubmit={submit}>
+            <h3 class="font-medium">Calls and screen shares</h3>
+            <p class="text-sm text-base-content/70">
+                Calls go through this computer: each member's voice goes out to everyone else in their call, and each share to everyone watching
+                it, so they use this computer's upload. Set these to what your connection can send.
+            </p>
+            <div class="grid gap-x-3 sm:grid-cols-2">
+                <Field label="Members in one call">
+                    <TextInput type="number" min="2" max="30" step="1" value={limits.members} onInput={set('members')} required />
+                </Field>
+                <Field label="Members in calls across the den">
+                    <TextInput type="number" min="2" max="100" step="1" value={limits.callers} onInput={set('callers')} required />
+                </Field>
+                <Field label="Shares at once" hint="0 turns screen sharing off.">
+                    <TextInput type="number" min="0" max="10" step="1" value={limits.shares} onInput={set('shares')} required />
+                </Field>
+                <Field label="Viewers of one share">
+                    <TextInput type="number" min="1" max="29" step="1" value={limits.viewers} onInput={set('viewers')} required />
+                </Field>
+                <Field label="A share's bitrate (Mbps)">
+                    <TextInput type="number" min="0.25" max="50" step="0.25" value={limits.bitrate} onInput={set('bitrate')} required />
+                </Field>
+                <Field label="A share's size">
+                    <select class="select w-full" value={limits.height} onChange={(e) => set('height')(e.currentTarget.value)}>
+                        {HEIGHTS.map((h) => <option key={h} value={String(h)}>{h === 2160 ? '4K (2160p)' : `${h}p`}</option>)}
+                    </select>
+                </Field>
+                <Field label="A share's frame rate">
+                    <TextInput type="number" min="5" max="60" step="1" value={limits.fps} onInput={set('fps')} required />
+                </Field>
+            </div>
+            {known && (
+                <p class="text-sm">
+                    At most, shares take {mbps(cost.video)} of this computer's upload, and a full call's voice about {mbps(cost.voice)} while two
+                    people talk.
+                </p>
+            )}
+            <ErrorText message={save.error} />
+            {saved && <p class="text-sm text-success">Saved.</p>}
+            <div>
+                <SubmitButton busy={save.busy}>Save call limits</SubmitButton>
             </div>
         </form>
     );

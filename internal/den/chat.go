@@ -169,14 +169,15 @@ func (d *Den) groups(ctx context.Context, q querier) ([]denproto.Group, error) {
 	return out, rows.Err()
 }
 
-const channelColumns = `id, group_id, name, description, kind, position, staff_only, dm_low, dm_high`
+const channelColumns = `id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, bitrate`
 
 func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	var c denproto.Channel
 	var id int64
-	var group, low, high sql.NullInt64
-	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly, &low, &high)
+	var group, low, high, bitrate sql.NullInt64
+	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly, &low, &high, &bitrate)
 	c.ID = denproto.FormatID(id)
+	c.Bitrate = int(bitrate.Int64)
 	if low.Valid && high.Valid {
 		c.Members = []string{denproto.FormatID(low.Int64), denproto.FormatID(high.Int64)}
 	}
@@ -389,6 +390,14 @@ func (d *Den) checkChannelFields(ctx context.Context, req denproto.ChannelReques
 			return nil, invalid("description: %v", err)
 		}
 	}
+	if req.Bitrate != nil {
+		if kind != denproto.KindVoice {
+			return nil, invalid("only voice channels have a bitrate")
+		}
+		if err := denproto.CheckVoiceBitrate(*req.Bitrate); err != nil {
+			return nil, invalid("bitrate: %v", err)
+		}
+	}
 	if req.GroupID != nil && *req.GroupID != "" {
 		g, err := denproto.ParseID(*req.GroupID)
 		if err != nil {
@@ -430,6 +439,16 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		description = *req.Description
 	}
 	staffOnly := req.StaffOnly != nil && *req.StaffOnly
+	// A voice channel's call goes at the default bitrate unless staff set
+	// another (M4.2); other channels have none.
+	var bitrate *int
+	if kind == denproto.KindVoice {
+		b := denproto.DefaultVoiceBitrate
+		if req.Bitrate != nil {
+			b = *req.Bitrate
+		}
+		bitrate = &b
+	}
 	var c denproto.Channel
 	var order []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
@@ -440,8 +459,8 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		if n >= denproto.MaxChannels {
 			return invalid("a den has at most %d channels", denproto.MaxChannels)
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO den_channels (group_id, name, description, kind, position, staff_only, created_at)
-			VALUES (?, ?, ?, ?, 0, ?, ?)`, group, *req.Name, description, kind, staffOnly, d.now().UnixMilli())
+		res, err := tx.ExecContext(ctx, `INSERT INTO den_channels (group_id, name, description, kind, position, staff_only, created_at, bitrate)
+			VALUES (?, ?, ?, ?, 0, ?, ?, ?)`, group, *req.Name, description, kind, staffOnly, d.now().UnixMilli(), bitrate)
 		if err != nil {
 			return err
 		}
@@ -470,7 +489,7 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 }
 
 // UpdateChannel changes a channel: its name, description, group,
-// position or visibility.
+// position or visibility, or a voice channel's bitrate.
 func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denproto.ChannelRequest) (denproto.Channel, error) {
 	if !IsStaff(s.Role) {
 		return denproto.Channel{}, errStaffOnly
@@ -518,6 +537,11 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 				return err
 			}
 		}
+		if req.Bitrate != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET bitrate = ? WHERE id = ?`, *req.Bitrate, cid); err != nil {
+				return err
+			}
+		}
 		if moving {
 			if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET group_id = ? WHERE id = ?`, newGroup, cid); err != nil {
 				return err
@@ -552,6 +576,9 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	})
 	if err != nil {
 		return after, err
+	}
+	if before.Bitrate != after.Bitrate {
+		d.callBitrateChanged(after)
 	}
 	if before.StaffOnly != after.StaffOnly {
 		d.channelChanged(after, false)

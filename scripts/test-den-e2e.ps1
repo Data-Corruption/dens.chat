@@ -380,8 +380,9 @@ function Wait-Channel($Browser, [string]$DenID) {
 # would: the voice probe, with Pion in the browser's place, drives the
 # instance's page socket with the browser's session, over one network,
 # until it hears the given member, and then what Then asks for (see
-# TestVoiceProbe): ride, restart, silence or ended:REASON, creating the Ready file
-# once it hears the member. Stay is how many seconds it stays at the end.
+# TestVoiceProbe): ride, restart, silence, ended:REASON, share, watch:MEMBER or
+# bitrate:BITS, creating the Ready file once it hears the member. Stay is how
+# many seconds it stays at the end.
 function Start-Probe($Browser, [string]$DenID, [string]$Channel, [string]$Hear, [string]$Network,
     [string]$Then = "", [string]$Stay = "", [string]$Ready = "") {
     $cookie = @($Browser.Session.Cookies.GetCookies([Uri]$Browser.Origin) | Where-Object { $_.Name -like "dens_session_*" })
@@ -639,6 +640,32 @@ den.test:$HttpsPort {
     Invoke-Api $owner POST "/api/dens/$denID/members/$bobID/disconnect" @{} | Out-Null
     Wait-Probe $memberSide "the member, disconnected by staff,"
     Write-Host "A staff mute silenced the member for the owner, and a staff disconnect ended the member's call."
+
+    # The member shares their screen, with sound, and the owner watches it:
+    # Pion's VP9 packets cross the den's media ports, and the den asks the
+    # sharer for a keyframe as the owner's section opens (M4.2).
+    Step "the member shares their screen, and the owner watches it"
+    $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "share" -Stay "15" -Ready $memberReady
+    $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Then "watch:$bobID" -Ready $ownerReady
+    Wait-Probe $ownerSide "the owner, watching the member's share,"
+    Wait-Probe $memberSide "the member, sharing their screen,"
+    # Both probes said they were ready, which nothing waited for here.
+    foreach ($ready in @($memberReady, $ownerReady)) {
+        if (Test-Path -LiteralPath $ready) { Remove-Item -LiteralPath $ready }
+    }
+    Write-Host "The owner watched the member's share, its screen and its sound, and the sharer got a keyframe request."
+
+    # Staff change the voice channel's bitrate mid-call, and both members'
+    # next offers ask for it (M4.2).
+    Step "a voice channel's new bitrate reaches the call in progress"
+    $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Then "bitrate:48000" -Ready $ownerReady
+    $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "bitrate:48000" -Ready $memberReady
+    Wait-Ready $ownerReady $ownerSide "the owner"
+    Wait-Ready $memberReady $memberSide "the member"
+    Invoke-Api $owner PATCH "/api/dens/$denID/channels/$lounge" @{ bitrate = 48000 } | Out-Null
+    Wait-Probe $ownerSide "the owner, at the new bitrate,"
+    Wait-Probe $memberSide "the member, at the new bitrate,"
+    Write-Host "Both members' next offers asked for the channel's new bitrate."
 
     Step "a phone photo with GPS data"
     $photo = Join-Path $PSScriptRoot "test\gps-photo.jpg"

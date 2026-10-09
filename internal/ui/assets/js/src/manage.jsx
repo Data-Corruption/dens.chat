@@ -21,12 +21,17 @@ export function Dialog({ title, onClose, children }) {
     );
 }
 
-// ChannelDialog creates a channel, or changes or deletes one.
+// Voice channels' bitrates, in bits a second (M4.2).
+const BITRATE = { min: 16000, max: 128000, step: 8000, default: 96000 };
+
+// ChannelDialog creates a channel, or changes or deletes one, a voice
+// channel's bitrate included.
 export function ChannelDialog({ denID, view, channel, onClose }) {
     const editing = !!channel;
     const [name, setName] = useState(channel?.name || '');
     const [kind, setKind] = useState(channel?.kind || 'text');
     const [description, setDescription] = useState(channel?.description || '');
+    const [bitrate, setBitrate] = useState(channel?.bitrate || BITRATE.default);
     const [group, setGroup] = useState(channel?.group_id || '');
     const [staffOnly, setStaffOnly] = useState(channel?.staff_only || false);
     const save = useAction();
@@ -40,6 +45,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
             if (!editing) {
                 await api.post(`/api/dens/${denID}/channels`, {
                     name, kind, description: kind === 'text' ? description : undefined, group_id: group || undefined, staff_only: staffOnly,
+                    bitrate: kind === 'voice' ? bitrate : undefined,
                 });
             } else {
                 const body = {};
@@ -47,6 +53,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                 if (description !== (channel.description || '')) body.description = description;
                 if (group !== (channel.group_id || '')) body.group_id = group;
                 if (staffOnly !== channel.staff_only) body.staff_only = staffOnly;
+                if (kind === 'voice' && bitrate !== channel.bitrate) body.bitrate = bitrate;
                 await api.patch(`/api/dens/${denID}/channels/${channel.id}`, body);
             }
             onClose();
@@ -61,7 +68,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
     }
 
     return (
-        <Dialog title={editing ? `#${channel.name}` : 'New channel'} onClose={onClose}>
+        <Dialog title={editing ? (channel.kind === 'voice' ? `🔊 ${channel.name}` : `#${channel.name}`) : 'New channel'} onClose={onClose}>
             <form class="flex flex-col gap-2" onSubmit={submit}>
                 <Field label="Name">
                     <TextInput value={name} onInput={setName} required maxlength="32" />
@@ -77,6 +84,13 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                 {kind === 'text' && (
                     <Field label="Description" hint="Shown at the top of the channel. The same formatting as messages works here.">
                         <textarea class="textarea w-full" rows="4" value={description} onInput={(e) => setDescription(e.currentTarget.value)} maxlength="4000"></textarea>
+                    </Field>
+                )}
+                {kind === 'voice' && (
+                    <Field label={`Voice quality: ${bitrate / 1000} kbps`}
+                        hint="The most each voice in the call sends. Higher sounds better, and costs more of the den's upload: each member who talks sends it to everyone else in the call. A change reaches a call in progress at once.">
+                        <input type="range" class="range range-sm w-full" min={BITRATE.min} max={BITRATE.max} step={BITRATE.step} value={bitrate}
+                            onInput={(e) => setBitrate(Number(e.currentTarget.value))} aria-label="Voice quality" aria-valuetext={`${bitrate / 1000} kbps`} />
                     </Field>
                 )}
                 <Field label="Group">

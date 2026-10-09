@@ -10,6 +10,7 @@ import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useActio
 import { Home } from './home.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
+import { SharePlayer } from './player.jsx';
 import { CallBar, CogIcon } from './voice.jsx';
 
 // chatRoute reads /den/<den>[/<channel>] from a path.
@@ -145,6 +146,8 @@ export function App({ instance, version }) {
                     )}
                 </main>
             )}
+            {/* The shares this member watches play over every page (M4.2). */}
+            {passwordSet && <SharePlayer />}
             {passwordSet && settings && <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} />}
         </div>
     );
