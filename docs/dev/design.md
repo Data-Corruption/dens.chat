@@ -289,6 +289,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 **Structure**
 
 - Channel groups are one level deep and contain text and voice channels.
+- Staff open a channel's settings from the ⋯ beside it in the channel list (M4.2), as members' rows in a call have one, which shows on hover or focus, and always on touch screens: its name, its group and its place in the list, whether it's staff-only, a text channel's description, a voice channel's bitrate, and deleting it. A group's ⋯ opens the group's the same way. A voice channel can't be opened, since clicking it joins its call, so its ⋯ is the way to its settings.
 - Text channels can have a description in the same markdown subset, up to 4,000 characters. Its first line shows next to the channel name, and a click expands or collapses the rest.
 - DMs are one-to-one between members of the same den, stored on the den and end-to-end encrypted (see End-to-end encrypted DMs). Closing a DM hides it until a new message arrives in it, and that follows the member across devices, like read positions.
 
@@ -407,7 +408,7 @@ Members attach files to messages and put pictures on their profiles. Images lose
 
 - Max size per file, per member total, and den total. A new den starts at 25 MiB per file, 2 GiB per member and 20 GiB for the den. The page checks a file's size before uploading it, and says why when the den refuses one.
 - Uploads also stop while the den's disk has less than 1 GiB free, so they never fill the disk the database lives on.
-- Screen share and media settings live in the same place (see Voice and screen share).
+- The limits for calls and screen shares live in the same place (M4.2; see Limits for calls).
 
 **Metadata stripping**
 
@@ -536,7 +537,8 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Each member sets how loud everyone else plays for them (M3), from 0 to 100%, in the call's list. The browser keeps it by den and member, as it keeps the microphone and speaker, so someone turned down stays down in the next call, and the list shows the level beside anyone below full. It's the volume of the media element that plays them, so it stops at 100%: more would mean playing their audio through Web Audio instead.
 - Staff can disconnect a member of a lower rank from a call, or mute them, which the den enforces (M3; see Staff in calls).
 - Speaking indicators (M3): each page measures the audio it plays for each member, and its own microphone's as sent, and rings the avatar of whoever is speaking. Only members in the call see them, since only their pages play its audio, and the den sends nothing for them.
-- A voice channel's call holds 15 members, and a den's calls 30 in all. Each member's audio goes out once to every other member of their call, so the den's upload grows with the square of a call's size: a full call of 15 sends about 8 Mbps while two people talk, and up to 24 if everyone does (see the bandwidth table). The caps, and a voice channel's bitrate, become owner settings with the screen share limits (M4).
+- A voice channel's call holds 15 members, and a den's calls 30 in all, unless the owner sets other caps (M4.2; see Limits for calls). Each member's audio goes out once to every other member of their call, so the den's upload grows with the square of a call's size: a full call of 15 sends about 3 Mbps while two people talk, and up to 24 if everyone does (see the bandwidth table).
+- Each voice channel has a bitrate, which staff set in its settings like the rest of the channel (M4.2): from 16 to 128 kbps in steps of 8, and 96 for a new channel. The den writes it into every offer for the channel's call, so a change reaches the call in progress with each member's next offer. A lower bitrate costs the den less upload: each member talking sends it to every other member of the call.
 - Calls aren't end-to-end encrypted. Media is encrypted between each browser and the den (DTLS-SRTP), and the den decrypts it to forward it, so the den's owner could listen in. The page says so on voice channels, as it says on channels that the den's owner can read them. End-to-end encrypted calls would need SFrame (insertable streams), after v1.
 - DMs have no calls until then: a DM's call would pass through the den's SFU like any other, so its owner could listen in, unlike the DM's messages.
 - The den's offer, which carries the fingerprint its DTLS must match, comes over the den socket, so a call reaches the den the member signed in to, as their messages do.
@@ -545,10 +547,10 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 **Client side (browser)**
 
 - Mic: `getUserMedia` with `echoCancellation`, `noiseSuppression` and `autoGainControl` on. The member picks the microphone and the speaker in the call's settings, the speaker through `setSinkId`.
-- Opus at up to 96 kbps (M3), where a browser left to itself sends 32: every offer from the den asks for it (`maxaveragebitrate`), and a browser takes a new offer's parameters for its encoder. Pion builds each offer after the first from the parameters the browser answered with, which don't ask for it, so the den writes its own into every offer.
-- Screen: `getDisplayMedia`, which goes through xdg-desktop-portal and PipeWire on Wayland (M4).
+- Opus at up to the voice channel's bitrate, 96 kbps unless staff set another (M3, M4.2), where a browser left to itself sends 32: every offer from the den asks for it (`maxaveragebitrate`), and a browser takes a new offer's parameters for its encoder. Pion builds each offer after the first from the parameters the browser answered with, which don't ask for it, so the den writes its own into every offer.
+- Screen: `getDisplayMedia`, which goes through xdg-desktop-portal and PipeWire on Wayland (M4.2; see Screen share).
 - The peer connection names no STUN or TURN servers, so a call contacts nothing but the den.
-- The page's `Permissions-Policy` grants the microphone to the page itself (`microphone=(self)`). The camera stays off.
+- The page's `Permissions-Policy` grants the microphone and screen capture to the page itself (`microphone=(self)`, and `display-capture=(self)` from M4.2). The camera stays off.
 - Noise suppression (M3): browsers' own suppressor takes out steady noise such as fans and hum, but not keyboards, a TV or other voices. So RNNoise runs instead unless a member turns it off: Xiph's small noise-suppression network (BSD), compiled to WebAssembly and run in an AudioWorklet between the microphone and the call, at 48 kHz in 10 ms frames. The browser still cancels echo first, since that needs the raw microphone and what the browser plays. Only one suppressor runs at a time, so the browser's is off (`noiseSuppression: false`) while RNNoise is on, and the encoder gets the cleaned audio. Others' audio keeps playing through media elements, which the echo canceller hears. The browser keeps the choice, as it keeps the microphone and speaker, and a change applies mid-call by replacing the track the call sends, without a new offer. Where RNNoise can't start, as in a browser that won't run its audio, the call goes on with the browser's own suppressor, and the call's settings say so; the member's choice stands, for the next call or another browser.
 - `scripts/rnnoise.sh` builds RNNoise with the wasi-sdk and binaryen the media module pins, and writes the module into the page's assets. Its code is RNNoise 0.2's release, which matches the v0.2 tag's file for file; its model is the one that tag names, since the release carries another, without the float copies the model keeps for debugging. RNNoise's generic vector code, which WebAssembly builds take, includes Opus's `os_support.h`, which RNNoise doesn't carry, so `internal/ui/rnnoise` supplies the one macro it needs. The module is committed, as the media module is: CI builds it again and fails if it differs.
 - The module is 1.47 MB and imports nothing. The page loads and compiles it only when a member turns RNNoise on, and posts the compiled module to the worklet, which every target browser takes. Compiling WebAssembly takes `'wasm-unsafe-eval'` in the page's CSP, which allows WebAssembly but not `eval`, and gives a script in the page nothing it couldn't do already; under today's CSP every target browser refuses to compile it.
@@ -597,9 +599,66 @@ A call's signaling and its media take different paths: the den socket runs from 
 - What the gate holds back goes as silence, and every offer asks for Opus's discontinuous transmission (`usedtx=1`), so a member who isn't speaking sends a packet every 400 ms instead of 50 a second. That keeps big calls cheap for the den's upload: silent members cost almost nothing.
 - Speaking rings follow what's sent, since they measure what each page plays: a member the gate holds back rings nowhere, and the member's own ring lights while their gate is open.
 - At the foot of a den's channel list, the member's panel shows their picture and name, which open their profile to edit, and the cog for the settings. The panel is as tall as the message bar beside it, which it lines up with, and keeps the channel list's color.
-- While in a call, a block sits above the panel and holds the call in a row: a speaker, green once connected, that names the channel on hover, and buttons to mute, deafen, open the Voice settings and leave. What the member should know of the call, such as a staff mute, shows in the block above the row, and screen sharing's controls will be a row of their own there (M4). The block and the message bar are a shade lighter than the page, or as light where the page is already white, so a call shows at a glance against the channel list and the panel. On the other pages the call shows boxed, with the channel spelled out.
-- Settings open as a dialog over whatever the page shows, so a den and a call stay in view. It closes with its ✕, Escape or a click outside it. Its General section starts with the theme, and its Voice section holds the microphone and speaker, noise suppression, how the member sends, and the keys, which the call's cog opens.
+- While in a call, a block sits above the panel and holds the call in a row: a speaker, green once connected, that names the channel on hover, and buttons to share their screen (M4.2), mute, deafen, open the Voice settings and leave. What the member should know of the call, such as a staff mute, shows in the block above the row, and while they share, the share's controls show there in a row of their own (M4.2). The block and the message bar are a shade lighter than the page, or as light where the page is already white, so a call shows at a glance against the channel list and the panel. On the other pages the call shows boxed, with the channel spelled out.
+- Settings open as a dialog over whatever the page shows, so a den and a call stay in view. It closes with its ✕, Escape or a click outside it. Its General section starts with the theme, and its Voice section holds the microphone and speaker, noise suppression, how the member sends, the keys, and how they share their screen (M4.2), which the call's cog opens.
 - Joining waits on the microphone, which the browser may first ask the member for, and the call says so after a moment. The voice processor's audio context is made in the click that joins, since a browser may hold back one made after its prompt until another click. The browser keeps all of these, as it keeps the microphone and speaker.
+
+**Screen share (M4.2)**
+
+A member in a call shares a screen, a window or a browser tab with the others in it, and each of them chooses whether to watch. A share passes through the den's SFU like the call's audio, and costs the den's upload once for each member watching it, so watching is opt-in, and the owner sets how much shares may cost (see Limits for calls).
+
+*Sharing*
+
+- The call's row has a button with a screen on it, between the speaker and mute, as the box on other pages has. It opens the browser's own picker, which offers a screen, a window or a tab and, where the browser can share sound, a choice to include it. The page asks the browser to leave the Dens tab out of the picker (`selfBrowserSurface: 'exclude'`), since sharing it would show the page inside itself.
+- While the member shares, the button shows pressed, and stops the share, and a row of the share's own sits above the call's: it says they're live and how many watch, with their names on hover, and holds a button that shows their own screen in the player or hides it, and one to stop. The browser's own stop button, and closing what was shared, stop the share too.
+- The member's own screen shows in the player as a preview, from what their browser captures, not sent back by the den: when they start sharing if the player holds nothing else, and otherwise once they ask, with the share's row or their own LIVE mark. It plays without sound, since they hear what they share already, and its ✕ hides it while they go on sharing. A whole screen shared with its preview in sight shows the preview inside itself, as in any app that has one.
+- The share goes at the quality the member chose in the settings' Voice section, within the den's limits: its size (720p to 2160p) and frame rate (15, 30 or 60 a second), each at most the den's, and whether it suits text, which keeps detail and drops frames first, or motion, which keeps frames and drops detail first (the track's `contentHint`). The page caps the capture to the den's size and frame rate, and the sender to the den's bitrate. Before the member picks anything, the button says so when the den has as many shares as it allows, or allows none.
+- A share nobody watches sends nothing: the page pauses its encoder (`active: false`) until someone watches, which saves the member's upload and processor. Chromium starts again with a keyframe and Firefox doesn't, so a new viewer's first picture comes from the den's keyframe request as their section opens (see The den's part).
+- Sound depends on the browser. Chromium-based browsers share a tab's sound on every platform, and the whole system's on Windows; on Linux, the whole system's only behind a flag (`chrome://flags/#pulseaudio-loopback-for-screen-share`). Firefox shares no sound at all. The page asks for sound unless the member turned it off in the settings, and asks the browser to leave the page's own sound out of a system's (`restrictOwnAudio`, from Chrome 141), so the call's voices don't go back out to the call. A share without sound says so in its row.
+- A share ends when its member stops it, leaves the call, moves to another, or their call ends, and when staff mute them. A call the page joins again after it dropped, as when the den restarts, takes back the share and the shares the member watched, which the den checks again.
+
+*Watching*
+
+- Everyone who can see the voice channel sees who in its call is sharing, with a LIVE mark beside their name, and who watches them. In the same call, the mark is a button that watches; anywhere else it joins the call and watches, as clicking the channel joins it.
+- What a member watches plays in a player that floats over the page, above it and below dialogs such as the settings, so it stays as they open other channels, dens or home, and they keep reading and writing around it. They drag it by its bar and resize it from its corners; the browser keeps where it was and its size, and it stays inside the window as the window changes size.
+- The player holds every share the member watches, and their own while it shows, side by side, two by two for three or four, and three across two rows for five. Clicking a share makes it fill the player while the others go on out of sight, which the bar counts, and clicking it again puts it back beside them. The bar's ✕ stops watching all of them, hides the member's own, and closes the player.
+- Each share in the player has controls of the page's own, the same in every browser, which show on hover or focus: who is sharing, the volume of its sound (a mute button with a slider beside it, like the video player's), full screen, and a button to stop watching it. Deafening mutes shares' sound too, and the call's speaker plays it.
+- A member watches shares in their own call only, and at most four at once. Leaving the call stops watching.
+
+*The den's part*
+
+- A share is VP9, the one video codec the den offers. Every target browser has sent and received it for years, and it keeps fine detail at bitrates a home connection can send, where VP8 blurs it. AV1 keeps more for the same bits: in the test container, held to 200 kbps, Chromium 154's 1080p test screen kept 20 frames a second with AV1, 14 with VP9 and 6 with VP8. But it costs more to encode, few machines have an encoder for it in hardware, and it's newer in Firefox (on by default from 136). H.264 is out: Firefox has it only through Cisco's OpenH264 plugin, which it downloads on its own, and the test container's Firefox ESR 153, without it, offered none.
+- When a member first shares in a call, the den adds two sections to their offers: a video section it receives the screen on and, if the share has sound, an audio section for it. They stay for the rest of the call, for any later share. A member who watches gets the share's video, and its sound if it has any, in sections of their own, which come and go as they start and stop watching, and which later shares reuse as members' audio sections are reused.
+- The den forwards a share as it forwards voice: only VP9, only from the member's own screen section and only while they share, each packet's payload under headers of the den's own, without the sender's header extensions.
+- A viewer's browser can start decoding only at a keyframe, a whole picture, and the sharer's browser sends one only when asked. So the den asks the sharer for one, with a picture loss indication (PLI), as soon as a viewer's answer opens their section, and again when a paused share's packets start again, since a request that reaches a paused encoder may be lost; and it passes on as a PLI each PLI or full intra request (FIR) that a viewer's browser sends, as after packets it lost. A keyframe goes to every viewer and is many times the size of other frames, so the den sends a share at most one PLI every half second; a request inside that time gets one at its end.
+- The den asks the sharer again for packets it lost (NACK), and sends viewers again what they lost from a buffer of what it sent, so a viewer's lost packets cost the sharer a keyframe only when the den no longer has them.
+- The den can't decode a share, so it can't see its size or frame rate: those are the page's to keep, in the member's browser. What the den holds a share to is its bitrate. Its offer asks for no more than the den's share bitrate, in both forms browsers read: Firefox honors only `b=TIAS`, and Chromium `b=AS` and `b=TIAS` alike, as the test container showed. The den also drops whatever goes past the bitrate and a quarter more, with room for a keyframe's burst, so a page that ignores the offer gains nothing. A share's sound is held to a voice's limits, 256 kbps and 500 packets a second, and its Opus asks for stereo at 128 kbps, where voice is mono.
+- Every viewer gets the one stream the sharer sends: a viewer on a slow connection loses frames, rather than getting a smaller stream. Simulcast, where the sharer sends two sizes and the den picks one for each viewer, comes after v1.
+
+*Staff, and who sees what*
+
+- A staff mute ends a member's share and keeps them from sharing until it's lifted, as the den forwards nothing from them. A staff disconnect ends the share with the call.
+- Shares aren't end-to-end encrypted, like the rest of a call: the den decrypts every packet to forward it, so the den's owner could watch any share. The share button says so on hover, as voice channels say it of calls.
+- Everyone who can see the voice channel sees who is sharing and who watches, as they see who is in the call.
+
+**Limits for calls (M4.2)**
+
+The owner sets these in the den's settings, in a section of their own beside the upload limits:
+
+| Limit | New den | Range |
+| --- | --- | --- |
+| Members in one call | 15 | 2 to 30 |
+| Members in calls across the den | 30 | 2 to 100 |
+| Shares at once, across the den | 1 | 0, for none, to 10 |
+| Viewers of one share | 8 | 1 to 29 |
+| A share's bitrate | 2 Mbps | 0.25 to 50 Mbps |
+| A share's size | 1080p | 720p, 1080p, 1440p or 2160p |
+| A share's frame rate | 30 a second | 5 to 60 |
+
+- A share's size caps its pixels, whatever its shape: 1080p allows as many as 1920 × 1080, so an ultrawide window comes out wider and shorter, and a portrait one taller and narrower.
+- Beside the limits, the settings show what they cost the den's upload at most: shares times viewers times bitrate for video, and for voice, a full call at the den's busiest channel bitrate while two people talk. At a new den's limits, video takes at most 16 Mbps, which most home connections can send; an owner with a faster one raises them, and the guide shows how. The ceiling, 50 Mbps, leaves room for a 4K share at 60 frames a second.
+- A call holds at most 30 members, since each offer has a section for every other member and must fit in 32 KiB: one for a member of a call of 30 who shares and watches four shares is about 23 KiB.
+- The den sends its limits to members with its name and upload limits, so each page knows them before it asks, and checks them itself all the same. A lower limit applies to what starts afterwards: nobody is taken out of a call or a share.
 
 **Global shortcuts (M7)**
 
@@ -626,9 +685,9 @@ The den's media ports carry every call: one UDP port, and one TCP port as the fa
 - `SettingEngine.SetICEUDPMux` puts all media on one UDP port; `SetICETCPMux` adds a TCP fallback port. Both listen on every interface, IPv4 and IPv6. The service binds them at start with the den listener, and doesn't start without them, as with its other ports.
 - `SetLite`, with multicast DNS off: the den neither looks up members' `.local` names nor sends queries on its own network.
 - A TCP connection that doesn't name a call within 5 seconds is closed, and the TCP port holds at most 128 at once, so a flood of idle connections costs bounded memory. Packets for no call are dropped.
-- Voice is Opus only. The den reads a member's audio only from the section it asked them to send on, and forwards each packet's payload under headers of its own, without the sender's header extensions, at most 256 kbps and 500 packets a second from each member.
+- Voice is Opus only. The den reads a member's audio only from the section it asked them to send on, and forwards each packet's payload under headers of its own, without the sender's header extensions, at most 256 kbps and 500 packets a second from each member. Screen shares are VP9 only, forwarded the same way within the den's share bitrate (M4.2).
 - Interceptors: NACK, RTCP reports and TWCC for bandwidth estimation.
-- Forward PLI keyframe requests to the sharer when a viewer joins a screen share (M4).
+- A share's keyframe requests: one as each viewer starts watching, and every PLI and FIR from a viewer passed on to the sharer as a PLI, at most one every half second per share (M4.2; see Screen share).
 - A held call keeps its peer connection without a socket, and its offers wait until it's resumed. An ICE restart is Pion's own: the den's offer carries new credentials, which the UDP and TCP muxes match from then on (M3).
 - A staff mute drops the member's packets before they're forwarded (M3).
 - Pion's own log messages name addresses, so they reach the log only in development instances. The den logs each call's start, end and the reason it ended, by member and channel ID.
@@ -640,15 +699,17 @@ The den's media ports carry every call: one UDP port, and one TCP port as the fa
 
 | Case | Per stream | Den upload |
 | --- | --- | --- |
-| 10 people in voice (Opus at 96 kbps) | about 115 kbps talking, 25 silent | about 4 Mbps while two talk, up to 10 Mbps |
-| 1 screen share, 20 viewers | about 3 Mbps | about 60 Mbps |
-| 2 screen shares, 20 viewers each | about 3 Mbps | about 120 Mbps |
+| 10 people in voice (Opus at 96 kbps) | about 115 kbps talking, 1 silent (M3.3) | about 2 Mbps while two talk, up to 10 Mbps |
+| 1 screen share at 2.5 Mbps, 10 viewers | about 2.6 Mbps | about 26 Mbps |
+| 2 screen shares at 2.5 Mbps, 10 viewers each | about 2.6 Mbps | about 52 Mbps |
+| 2 screen shares at 2.5 Mbps, 20 viewers each | about 2.6 Mbps | about 104 Mbps |
 
-Screen share cost scales with viewers, not sharers. Owner settings: max concurrent shares, max resolution and frame rate, max bitrate per share, and max viewers per share. Simulcast (sender uploads high and low layers, SFU picks per viewer) is the later fix.
+Screen share cost scales with viewers, not sharers, which is why watching is each member's choice and the owner caps shares, viewers and bitrate (M4.2; see Limits for calls). Simulcast (sender uploads high and low layers, SFU picks per viewer) is the later fix.
 
 **Known risks**
 
-- System audio in screen share is limited in Linux browsers; Chromium-based browsers on Windows support it. Test early; accept gaps in v1.
+- A share's sound depends on the browser (M4.2): Chromium-based browsers share a tab's sound everywhere and the whole system's on Windows, on Linux only behind a flag, and Firefox shares none. Accepted for v1; a share without sound says so.
+- `restrictOwnAudio` keeps the call's voices out of a shared system's sound only from Chrome 141; the manual test checks it on Windows, where it matters.
 - Firefox and Chromium differ in small WebRTC details; each milestone is tested on all four target browsers.
 - Calls depend on the den's name resolving to the den. If dens behind tunnels need calls, an owner setting for a separate media address could come later.
 
@@ -845,7 +906,7 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] Only members who can see a voice channel join its call, and a call ends as soon as that stops.
 - [x] The local service writes the den's media addresses into every offer, so a den can't point a member's browser anywhere else, and takes the browser's candidates out of every answer, so the den never learns members' local addresses.
 - [x] The page's peer connection names no STUN or TURN server, and its `Permissions-Policy` grants the microphone to the page alone.
-- [x] The local service passes the page only offers of audio, within 32 KiB, and the den takes only answers that fit its offer, within 32 KiB.
+- [x] The local service passes the page only offers within 32 KiB, of audio and, from M4.2, the video below, and the den takes only answers that fit its offer, within 32 KiB.
 - [x] The den forwards only Opus, under its own headers, at most 256 kbps and 500 packets a second from each member.
 - [x] The media ports drop packets for no call, close a TCP connection that doesn't name one within 5 seconds, and hold at most 128 TCP connections.
 - [x] Pion's log messages, which name addresses, stay out of release logs.
@@ -855,6 +916,13 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [ ] Only staff of a higher rank disconnect or mute a member, and the den enforces a mute by forwarding nothing from them.
 - [ ] A held call resumes only on a socket of the device that held it, within 30 seconds, and a socket the den closes for good ends its call at once.
 - [ ] A call that ended while held stays ended: its resume gets the reason, never a new call.
+
+**Screen share (M4.2)**
+
+- [ ] The page's `Permissions-Policy` grants screen capture to the page alone (`display-capture=(self)`), and the page asks the browser's picker to leave out the Dens tab.
+- [ ] The local service passes the page audio only as Opus and video only as VP9 or AV1, so a den can't have the browser decode any other codec. The den offers VP9; AV1 passes too, so a later den can offer it without breaking older clients.
+- [ ] Only members of a call watch its shares, and the den forwards a share only while its member shares, only VP9 from their screen's section, under its own headers, within the den's share bitrate.
+- [ ] A staff mute ends a member's share, and the owner's limits cap the shares at once, a share's viewers and its bitrate, which the den enforces.
 
 **Logs and data**
 
@@ -938,7 +1006,7 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
 | Step | Scope | Done when |
 | --- | --- | --- |
 | M4.1 YouTube players | The page at `localhost`; the setting; covers with the title and picture the local service fetches; YouTube's player in place on a click, one at a time | With players on, a YouTube link plays where it's posted, from its start time, in a channel and in a DM, in the four target browsers; with them off, nothing on the page contacts YouTube |
-| M4.2 Screen share | PLI forwarding, owner limits and viewer caps; a voice channel's bitrate as an owner setting | 2 shares with 20 viewers within owner limits |
+| M4.2 Screen share | Sharing a screen, window or tab, with its sound where the browser shares it; watching in a player that floats over the page; PLI forwarding; the owner's limits for calls and shares, viewer caps among them; a ⋯ beside each channel and group for its settings, a voice channel's bitrate among them | 2 shares with 20 viewers each within the owner's limits, in Go tests; by hand, shares watched across two networks in the four target browsers, with a tab's sound, and on Windows the whole system's without the call's voices |
 
 **M4.1 testing.**
 
@@ -956,13 +1024,28 @@ Not in M1: compact links (M3), message retention (M5), browser notifications, an
   - A page loaded at `127.0.0.1` ends up at `localhost`, paired by the token it carried.
 - The manual test: the four target browsers, in a channel and in a DM, with the setting on and off.
 
+**M4.2.** One pull request, built and committed in layers, as M2 was: the SFU, the den and the client with the protocol, the page, the den e2e, then the docs.
+
+- `internal/sfu` gains the video: the sections a share and its viewers use, VP9's forwarding within the share's bitrate, keyframe requests, and Opus parameters for each section, which carry the channel's bitrate and a share's stereo. `internal/den` decides who may share and watch, keeps the owner's limits and each voice channel's bitrate, and sends the events; `internal/denclient` relays the page's sharing and watching, and checks the den's offers and limits.
+- The limits are columns of the `den` table, and a voice channel's bitrate a column of `den_channels`.
+- Headless Chromium captures only its fake screen (`--use-fake-device-for-media-stream`), and headless Firefox nothing, so for the browser checks Firefox runs headed in the container, on an X server (Xvfb), and shares that screen.
+
+**M4.2 testing.**
+
+- Go tests:
+  - The SFU, with Pion callers: a share's video and sound reaching each viewer and no one else; sections added as members watch and reused after; a keyframe request reaching the sharer as a viewer's section opens and as a paused share starts again, and each viewer's PLI and FIR passed on as a PLI, at most one every half second, with a late one sent at the window's end; a share past its bitrate cut back to it, and packets of another type or from another section dropped; header extensions stripped from video; offers carrying the share's bitrate and the channel's Opus bitrate, and new offers when the channel's changes; a share ending as its member stops, leaves or is muted by staff, which retires its viewers' sections; and two shares with 20 viewers each.
+  - The den: who may share and watch (members of the call, within the shares at once and a share's viewers, not while muted by staff, not their own share), and the reasons for a refusal; the limits as owner settings, checked and kept, and only voice channels with a bitrate; the marks in `voice.state`.
+  - The client: offers with VP9 or AV1 video pass, and any other video codec fails the call; the page's sharing and watching reach the den, and refusals reach the page; the den's limits are checked as they arrive.
+- Page tests: which sections the page sends its screen and its sound on; the player's layout for one to five shares, and its place and size kept inside the window; the capture's size and frame rate, and the sender's bitrate, from the den's limits and the member's choices, for shapes other than 16:9 too; when the encoder pauses; the text for each refusal; the limits' cost at most; the settings as the browser keeps them.
+- The den e2e, on Linux and Windows: the member's voice probe shares (Pion sending VP9 packets), the owner's watches, video crosses, and the sharer gets a keyframe request as the owner starts; then the owner changes the voice channel's bitrate, and both probes' next offers carry it.
+- Before the manual test, in the container: Chromium shares its fake screen and Firefox the X server's, each watched by the other. Frames decode within the den's size and frame rate, the first within a second of watching, and the encoder waits while nobody watches; the share button sits between the speaker and mute; the member's own screen opens in the player, without sound, when they share watching nothing, and waits for them to ask while they watch others, and its ✕, the share's row and their LIVE mark show and hide it; the player drags by its bar and resizes from a corner, which the browser keeps; with a third member's share from the voice probe, two shares lay out side by side, one fills the player at a click, and the bar's ✕ stops both; stopping from the browser takes the share out of the viewer's player; a share past the den's limit is refused before the member picks one; a staff mute ends a share; Chromium's fake sound crosses, and Firefox's share says it has none; the owner's share bitrate reaches the sharer's offer and encoder; and a voice channel's ⋯ opens its settings, whose bitrate reaches the call's next offers.
+- The manual test: the four target browsers on Windows, and on Linux under Wayland (GNOME and KDE), across two networks: a screen, a window and a tab; a tab's sound, and on Windows the whole system's, without the call's voices; two shares at once in the player, full screen, and the player moved and resized; a game at 60 frames a second with the den's rate at 60; and a voice channel's bitrate changed mid-call. A test build for friends, as in M3, with whoever the group brings.
+
 **Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
 
 **After v1 loose ideas:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, and AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos.
 
 ## Open questions
 
-- [ ] Owner defaults for screen share caps.
-- [ ] How much system-audio support in screen share is achievable on each browser.
 - [ ] The static dictionary for frame compression: what it's built from (never members' messages) and how its version is negotiated (M6).
 - [ ] SELinux labels for the binary and `/var/lib/dens` on Fedora and Bazzite, which containers can't test; needs a VM or a real install.
