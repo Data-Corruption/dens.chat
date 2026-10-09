@@ -192,7 +192,8 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	}
 	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened}
 	nc.sock.Store(sock)
-	peer, err := r.sfu.Join(denproto.FormatID(cid), denproto.FormatID(s.MemberID), callSignal{d, nc, r.udpPort, r.tcpPort})
+	// Calls go at 96 kbps until voice channels have bitrates of their own.
+	peer, err := r.sfu.Join(denproto.FormatID(cid), denproto.FormatID(s.MemberID), 96_000, callSignal{d, nc, r.udpPort, r.tcpPort})
 	if err != nil {
 		d.log.Errorf("join call: %v", err)
 		refuse(denproto.VoiceFailed)

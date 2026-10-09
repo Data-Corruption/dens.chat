@@ -13,6 +13,9 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
+// testBitrate is the voice bitrate test calls ask for.
+const testBitrate = 96000
+
 // testSFU runs an SFU on loopback ports.
 func testSFU(t *testing.T, cfg Config) (*SFU, int, int) {
 	t.Helper()
@@ -68,7 +71,7 @@ func join(t *testing.T, s *SFU, udpPort, tcpPort int, room, id string, opts Call
 	}
 	m := &member{t: t, id: id, caller: caller, offers: make(chan offer, 16), failed: make(chan struct{})}
 	t.Cleanup(func() { _ = caller.Close() })
-	if m.peer, err = s.Join(room, id, m); err != nil {
+	if m.peer, err = s.Join(room, id, testBitrate, m); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.peer.Close)
@@ -166,9 +169,6 @@ func TestOverTCPAlone(t *testing.T) {
 	bob.hears(alice)
 }
 
-// TestOffersFollowJoinsAndLeaves checks that each join and leave reaches
-// the others as a new offer, and that a section a leaver retires carries
-// the next joiner, so offers don't grow with every join.
 // TestOffersAskForTheBitrate checks that every offer asks the browser for
 // the den's Opus parameters: the re-offer an earlier member gets when
 // another joins too, which Pion would build from the browser's answer.
@@ -185,14 +185,16 @@ func TestOffersAskForTheBitrate(t *testing.T) {
 					params = append(params, p)
 				}
 			}
-			if len(params) != strings.Count(o.sdp, "m=audio") || slices.ContainsFunc(params, func(p string) bool { return p != opusParams }) {
-				t.Errorf("%s's offer %d asks for %q, not %q in every section", who, o.version, params, opusParams)
+			want := voiceParams(testBitrate)
+			if len(params) != strings.Count(o.sdp, "m=audio") || slices.ContainsFunc(params, func(p string) bool { return p != want }) {
+				t.Errorf("%s's offer %d asks for %q, not %q in every section", who, o.version, params, want)
 			}
 		}
 	}
 }
 
 func TestOpusParamsInAnOffer(t *testing.T) {
+	params := voiceParams(testBitrate)
 	in := strings.Join([]string{
 		"v=0",
 		"m=audio 9 UDP/TLS/RTP/SAVPF 111 0",
@@ -209,16 +211,77 @@ func TestOpusParamsInAnOffer(t *testing.T) {
 		"v=0",
 		"m=audio 9 UDP/TLS/RTP/SAVPF 111 0",
 		"a=rtpmap:111 opus/48000/2",
-		"a=fmtp:111 " + opusParams,
+		"a=fmtp:111 " + params,
 		"a=rtpmap:0 PCMU/8000",
 		"a=fmtp:0 something=1",
 		"m=audio 9 UDP/TLS/RTP/SAVPF 96",
 		"a=rtpmap:96 OPUS/48000/2",
-		"a=fmtp:96 " + opusParams,
+		"a=fmtp:96 " + params,
 		"a=sendonly",
 		"",
 	}, "\r\n")
-	if got := setOpusParams(in, opusParams); got != want {
+	if got := setOpusParams(in, params); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// TestShapeSections checks that each section of an offer gets its own
+// shape: voice's Opus parameters, a share's sound's, and the screen's
+// bitrate as b=AS and b=TIAS after its connection line, in place of any
+// bandwidth lines it had.
+func TestShapeSections(t *testing.T) {
+	in := strings.Join([]string{
+		"v=0",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 111",
+		"c=IN IP4 0.0.0.0",
+		"a=mid:0",
+		"a=rtpmap:111 opus/48000/2",
+		"a=fmtp:111 minptime=10;useinbandfec=1",
+		"m=video 9 UDP/TLS/RTP/SAVPF 98",
+		"c=IN IP4 0.0.0.0",
+		"b=AS:99999",
+		"a=mid:1",
+		"a=rtpmap:98 VP9/90000",
+		"a=fmtp:98 profile-id=0",
+		"a=recvonly",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 111",
+		"c=IN IP4 0.0.0.0",
+		"a=mid:2",
+		"a=rtpmap:111 opus/48000/2",
+		"m=video 9 UDP/TLS/RTP/SAVPF 98",
+		"a=mid:3",
+		"a=rtpmap:98 VP9/90000",
+		"",
+	}, "\r\n")
+	want := strings.Join([]string{
+		"v=0",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 111",
+		"c=IN IP4 0.0.0.0",
+		"a=mid:0",
+		"a=rtpmap:111 opus/48000/2",
+		"a=fmtp:111 " + voiceParams(64000),
+		"m=video 9 UDP/TLS/RTP/SAVPF 98",
+		"c=IN IP4 0.0.0.0",
+		"b=AS:2500",
+		"b=TIAS:2500000",
+		"a=mid:1",
+		"a=rtpmap:98 VP9/90000",
+		"a=fmtp:98 profile-id=0",
+		"a=recvonly",
+		"m=audio 9 UDP/TLS/RTP/SAVPF 111",
+		"c=IN IP4 0.0.0.0",
+		"a=mid:2",
+		"a=rtpmap:111 opus/48000/2",
+		"a=fmtp:111 " + soundParams,
+		"m=video 9 UDP/TLS/RTP/SAVPF 98",
+		"b=AS:1",
+		"b=TIAS:250",
+		"a=mid:3",
+		"a=rtpmap:98 VP9/90000",
+		"",
+	}, "\r\n")
+	shapes := map[string]shape{"0": {opus: voiceParams(64000)}, "1": {bitrate: 2_500_000}, "2": {opus: soundParams}, "3": {bitrate: 250}}
+	if got := shapeSections(in, func(mid string) shape { return shapes[mid] }); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
