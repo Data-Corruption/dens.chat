@@ -327,6 +327,25 @@ channel-bitrate)
     # as staff (M4.2).
     api PATCH "/api/dens/$1/channels/$2" "{\"bitrate\":$3}" >/dev/null
     ;;
+retention)
+    # retention DEN_ID DAYS: keep messages DAYS days, or 0 for ever, as the
+    # owner (M5).
+    api POST "/api/dens/$1/settings" "{\"retention\":$2}" >/dev/null
+    ;;
+retention-preview)
+    # retention-preview DEN_ID DAYS: print how many messages a period of
+    # DAYS would delete now.
+    api GET "/api/dens/$1/retention?days=$2" | json 'd["messages"]'
+    ;;
+wait-retention)
+    # wait-retention DEN_ID DAYS: wait until this client hears that the den
+    # keeps messages DAYS days, 0 for ever.
+    for _ in $(seq 1 40); do
+        [ "$(api GET "/api/dens/$1/state" | json 'd["retention"]')" = "$2" ] && exit 0
+        sleep 0.25
+    done
+    fail "the den's retention never reached $2 days here"
+    ;;
 wait-channel)
     # wait-channel DEN_ID: print the first channel's ID once one exists.
     for _ in $(seq 1 40); do
