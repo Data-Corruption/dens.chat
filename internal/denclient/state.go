@@ -20,6 +20,8 @@ type denState struct {
 	reads    map[string]denproto.ReadState
 	online   map[string]bool
 	limits   denproto.Limits
+	// callLimits are the den's limits for calls and shares (M4.2).
+	callLimits denproto.CallLimits
 	// touched holds the channels whose read state changed since the page
 	// was last told, so the page shows the counts counted here.
 	touched map[string]bool
@@ -46,6 +48,7 @@ type View struct {
 	ReadStates []denproto.ReadState `json:"read_states"`
 	Online     []string             `json:"online"`
 	Limits     denproto.Limits      `json:"limits"`
+	CallLimits denproto.CallLimits  `json:"call_limits"`
 	// DMKeys are the keys of this member's DMs, without anything secret.
 	DMKeys []denproto.DMKey `json:"dm_keys"`
 	// Calls are the calls with someone in them.
@@ -74,7 +77,8 @@ func (s *denState) takeTouched() []denproto.ReadState {
 
 func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
-		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits}
+		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
+		CallLimits: s.callLimits}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -134,12 +138,17 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	}
 	if c.Kind == denproto.KindDM {
 		ok := len(c.Members) == 2 && validID(c.Members[0]) && validID(c.Members[1]) && c.Members[0] != c.Members[1] &&
-			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly
+			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && c.Bitrate == 0
 		return c, ok
 	}
 	name, err := denproto.CleanName(c.Name, denproto.MaxNameRunes)
 	if err != nil || len(c.Members) != 0 || (c.GroupID != nil && !validID(*c.GroupID)) ||
 		(c.Kind != denproto.KindText && c.Kind != denproto.KindVoice) || denproto.CheckDescription(c.Description) != nil {
+		return c, false
+	}
+	// A voice channel's bitrate is one staff could set (M4.2), and a text
+	// channel has none.
+	if (c.Kind == denproto.KindVoice) != (denproto.CheckVoiceBitrate(c.Bitrate) == nil) {
 		return c, false
 	}
 	c.Name = name
@@ -167,20 +176,21 @@ func cleanRead(r denproto.ReadState) (denproto.ReadState, bool) {
 	return r, ok
 }
 
-// cleanLimits checks a den's upload limits. The den checked them when
-// they were set, so any that don't check are the den misbehaving.
-func cleanLimits(l denproto.Limits) bool {
-	return denproto.CheckLimits(l) == nil
+// cleanLimits checks a den's upload limits and its limits for calls. The
+// den checked them when they were set, so any that don't check are the
+// den misbehaving.
+func cleanLimits(d denproto.Den) bool {
+	return denproto.CheckLimits(d.Limits) == nil && denproto.CheckCallLimits(d.CallLimits) == nil
 }
 
 // load replaces the state with a snapshot. Anything malformed in it is a
 // protocol violation.
 func (s *denState) load(r denproto.Ready) error {
 	next := newState()
-	if !cleanLimits(r.Den.Limits) {
+	if !cleanLimits(r.Den) {
 		return errMalformed
 	}
-	next.limits = r.Den.Limits
+	next.limits, next.callLimits = r.Den.Limits, r.Den.CallLimits
 	for _, m := range r.Members {
 		m, ok := cleanMember(m)
 		if !ok || !validID(m.ID) {
@@ -270,10 +280,15 @@ func cleanCall(c denproto.Call) bool {
 	}
 	seen := map[string]bool{}
 	for _, m := range c.Members {
-		if !validID(m.ID) || seen[m.ID] {
+		if !validID(m.ID) || seen[m.ID] || (m.Sound && !m.Sharing) || len(m.Watching) > denproto.MaxWatching {
 			return false
 		}
 		seen[m.ID] = true
+		for i, w := range m.Watching {
+			if !validID(w) || w == m.ID || slices.Contains(m.Watching[:i], w) {
+				return false
+			}
+		}
 	}
 	return true
 }

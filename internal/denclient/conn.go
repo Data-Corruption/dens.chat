@@ -477,12 +477,12 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if err := json.Unmarshal(e.D, &d); err != nil {
 			return e, false, fmt.Errorf("malformed den.updated: %w", err)
 		}
-		if !cleanLimits(d.Limits) {
+		if !cleanLimits(d) {
 			return e, false, errMalformed
 		}
 		c.mu.Lock()
 		if c.den != nil {
-			c.den.limits = d.Limits
+			c.den.limits, c.den.callLimits = d.Limits, d.CallLimits
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -490,9 +490,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		// The page shows the den's name and limits; the address is this
 		// install's business.
-		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits})
+		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
+			CallLimits: d.CallLimits})
 		return out, err == nil, err
-	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed:
+	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(e)
 	case denproto.EventAuthRenewed:

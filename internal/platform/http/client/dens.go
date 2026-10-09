@@ -178,7 +178,8 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 // pageMessage is what the page sends on its event stream: the channel it
 // shows in a den ("focus", with an empty channel for none), typing, and
 // its call: joining or resuming it, answering the den's offers, asking for
-// an ICE restart, muting and leaving.
+// an ICE restart, muting, sharing its screen and watching others' (M4.2),
+// and leaving.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
@@ -189,6 +190,9 @@ type pageMessage struct {
 		Resume   bool   `json:"resume"`
 		Version  int    `json:"version"`
 		SDP      string `json:"sdp"`
+		On       bool   `json:"on"`
+		Sound    bool   `json:"sound"`
+		MemberID string `json:"member_id"`
 	} `json:"d"`
 }
 
@@ -222,6 +226,10 @@ func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *we
 			rt.a.Dens.RestartCall(ctx, page, msg.D.Den)
 		case "voice.mute":
 			rt.a.Dens.MuteCall(page, msg.D.Den, denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened})
+		case "voice.share":
+			rt.a.Dens.ShareCall(page, msg.D.Den, msg.D.On, msg.D.Sound)
+		case "voice.watch":
+			rt.a.Dens.WatchCall(page, msg.D.Den, msg.D.MemberID, msg.D.On)
 		case "voice.leave":
 			rt.a.Dens.LeaveCall(page, msg.D.Den)
 		}

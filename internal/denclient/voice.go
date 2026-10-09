@@ -24,13 +24,23 @@ const CallDisconnected = "disconnected"
 
 // CallEvent goes to the page that holds the install's call: an offer to
 // answer, carrying the den's candidates; that the den took the call back
-// after its connection dropped (M3); or the call's end and why.
+// after its connection dropped (M3); that it refused a share or a watch
+// (M4.2); or the call's end and why.
 type CallEvent struct {
-	DenID   string     `json:"den"`
-	Channel string     `json:"channel"`
-	Offer   *CallOffer `json:"offer,omitempty"`
-	Resumed bool       `json:"resumed,omitempty"`
-	Ended   string     `json:"ended,omitempty"`
+	DenID   string       `json:"den"`
+	Channel string       `json:"channel"`
+	Offer   *CallOffer   `json:"offer,omitempty"`
+	Resumed bool         `json:"resumed,omitempty"`
+	Refused *CallRefusal `json:"refused,omitempty"`
+	Ended   string       `json:"ended,omitempty"`
+}
+
+// CallRefusal is the den refusing the page's share, or its watch of a
+// member's share, and why.
+type CallRefusal struct {
+	What     string `json:"what"`
+	MemberID string `json:"member_id,omitempty"`
+	Reason   string `json:"reason"`
 }
 
 // CallOffer carries the den's media ports beside its SDP, so the page can
@@ -145,6 +155,28 @@ func (m *Manager) MuteCall(page, denID string, marks denproto.VoiceMute) {
 	}
 }
 
+// ShareCall starts or ends the share of the page's call (M4.2), with its
+// sound if sound.
+func (m *Manager) ShareCall(page, denID string, on, sound bool) {
+	if m.currentCall(page, denID) == nil {
+		return
+	}
+	if c, err := m.find(denID); err == nil {
+		_ = c.sendFrame(denproto.EventVoiceShare, denproto.VoiceShare{On: on, Sound: on && sound})
+	}
+}
+
+// WatchCall starts or stops the page's call watching a member's share
+// (M4.2).
+func (m *Manager) WatchCall(page, denID, member string, on bool) {
+	if m.currentCall(page, denID) == nil || !validID(member) {
+		return
+	}
+	if c, err := m.find(denID); err == nil {
+		_ = c.sendFrame(denproto.EventVoiceWatch, denproto.VoiceWatch{MemberID: member, On: on})
+	}
+}
+
 // LeaveCall ends the page's call.
 func (m *Manager) LeaveCall(page, denID string) {
 	if m.takeCall(func(x *activeCall) bool { return x.page == page && x.den == denID }) == nil {
@@ -250,6 +282,21 @@ func (c *conn) callEvent(e denproto.Event) error {
 		if call != nil && call.den == denID && call.channel == x.ChannelID {
 			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Resumed: true})
 		}
+	case denproto.EventVoiceRefused:
+		var x denproto.VoiceRefused
+		if json.Unmarshal(e.D, &x) != nil {
+			return errMalformed
+		}
+		refusal, ok := cleanRefusal(x)
+		if !ok {
+			return errMalformed
+		}
+		m.callMu.Lock()
+		call := m.call
+		m.callMu.Unlock()
+		if call != nil && call.den == denID && call.channel == x.ChannelID {
+			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Refused: &refusal})
+		}
 	case denproto.EventVoiceEnded:
 		var x denproto.VoiceEnded
 		if json.Unmarshal(e.D, &x) != nil {
@@ -261,6 +308,24 @@ func (c *conn) callEvent(e denproto.Event) error {
 		}
 	}
 	return nil
+}
+
+// cleanRefusal checks a den's refusal of a share or a watch, and passes on
+// a reason the page knows, calling any other a failure.
+func cleanRefusal(x denproto.VoiceRefused) (CallRefusal, bool) {
+	r := CallRefusal{What: x.What, MemberID: x.MemberID, Reason: x.Reason}
+	switch {
+	case x.What == denproto.RefusedShare && x.MemberID == "":
+	case x.What == denproto.RefusedWatch && validID(x.MemberID):
+	default:
+		return r, false
+	}
+	switch x.Reason {
+	case denproto.RefusedOff, denproto.RefusedFull, denproto.RefusedStaffMuted, denproto.RefusedNotSharing, denproto.VoiceRateLimited:
+	default:
+		r.Reason = denproto.VoiceFailed
+	}
+	return r, true
 }
 
 // cleanReason passes on a reason the page knows, and calls any other a

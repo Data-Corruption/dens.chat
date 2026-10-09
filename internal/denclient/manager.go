@@ -583,8 +583,8 @@ func (m *Manager) Relocate(ctx context.Context, denID, address string) (Status, 
 	return c.status(), nil
 }
 
-// UpdateDen changes the name, address or upload limits of a den this
-// member owns.
+// UpdateDen changes the name, address, upload limits or limits for calls
+// of a den this member owns.
 func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenUpdateRequest) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -592,6 +592,11 @@ func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenU
 	}
 	if req.Limits != nil {
 		if err := denproto.CheckLimits(*req.Limits); err != nil {
+			return inputError(err)
+		}
+	}
+	if req.CallLimits != nil {
+		if err := denproto.CheckCallLimits(*req.CallLimits); err != nil {
 			return inputError(err)
 		}
 	}
