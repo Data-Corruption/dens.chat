@@ -1,6 +1,7 @@
 // The settings: a dialog over whatever the page shows, so a den and a call
-// stay in view (M3.3). Voice holds the microphone, the speaker and how the
-// member sends their voice; General holds the theme, update checks, the
+// stay in view (M3.3). Voice holds the microphone, the speaker, how the
+// member sends their voice and how they share their screen (M4.2); General
+// holds the theme, update checks, the
 // local password, logging, where Reddit links open, whether YouTube videos
 // play in Dens, and signing this browser out.
 
@@ -8,10 +9,11 @@ import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Card, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
+import { HEIGHTS, RATES } from './share.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
     cancelCapture, captureKey, chooseMic, chooseSpeaker, devices, inCall as callNow, keyLabel, micProblem, noiseSuppression, onCall, onVoiceLevel,
-    setRNNoise, setVoice, startMicTest, stopMicTest, voiceSettings,
+    setRNNoise, setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
 } from './voice.js';
 
 const openers = new Set();
@@ -248,8 +250,60 @@ function VoiceSettings() {
                     let go.
                 </p>
             </Card>
+            <ShareSettings />
             {error && <ErrorText message={error} />}
         </>
+    );
+}
+
+// ShareSettings chooses how the member shares their screen (M4.2): its
+// size and frame rate, each held to what the den allows, whether it suits
+// text or motion, and whether it takes its sound along.
+function ShareSettings() {
+    const [s, setS] = useState(shareSettings);
+    function change(changes) {
+        setShareSettings(changes);
+        setS(shareSettings());
+    }
+    return (
+        <Card title="Sharing your screen">
+            <div class="grid gap-x-3 sm:grid-cols-2">
+                <Field label="Size">
+                    <select class="select w-full" value={s.height} onChange={(e) => change({ height: Number(e.currentTarget.value) })}>
+                        {HEIGHTS.map((h) => <option key={h} value={h}>{h === 2160 ? '4K (2160p)' : `${h}p`}</option>)}
+                    </select>
+                </Field>
+                <Field label="Frame rate">
+                    <select class="select w-full" value={s.fps} onChange={(e) => change({ fps: Number(e.currentTarget.value) })}>
+                        {RATES.map((r) => <option key={r} value={r}>{r} a second</option>)}
+                    </select>
+                </Field>
+            </div>
+            <div class="flex flex-wrap gap-4">
+                <label class="label gap-2">
+                    <input type="radio" class="radio radio-sm" name="hint" checked={s.hint === 'detail'} onChange={() => change({ hint: 'detail' })} />
+                    Text and detail
+                </label>
+                <label class="label gap-2">
+                    <input type="radio" class="radio radio-sm" name="hint" checked={s.hint === 'motion'} onChange={() => change({ hint: 'motion' })} />
+                    Motion
+                </label>
+            </div>
+            <p class="text-sm text-base-content/70">
+                For text, a share keeps its detail and drops frames first; for motion, such as a game or a video, it keeps its frames and loses
+                detail first. A den may allow a smaller size or fewer frames than you choose.
+            </p>
+            <label class="label items-start gap-3 whitespace-normal">
+                <input type="checkbox" class="toggle mt-0.5" checked={s.sound} onChange={(e) => change({ sound: e.currentTarget.checked })} />
+                <span>
+                    Share sound
+                    <span class="block text-sm text-base-content/70">
+                        What you share takes its sound along where the browser can: a tab's in Chromium-based browsers, and on Windows the whole
+                        system's, without the call's voices. Firefox shares no sound.
+                    </span>
+                </span>
+            </label>
+        </Card>
     );
 }
 

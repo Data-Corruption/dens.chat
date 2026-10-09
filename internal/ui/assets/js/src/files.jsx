@@ -311,7 +311,7 @@ function PauseIcon() {
     );
 }
 
-function SoundIcon({ muted }) {
+export function SoundIcon({ muted }) {
     return (
         <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true">
             <path d="M2 6h2.5L8 3v10L4.5 10H2z" fill="currentColor" stroke="none" />
@@ -320,7 +320,7 @@ function SoundIcon({ muted }) {
     );
 }
 
-function FullIcon({ full }) {
+export function FullIcon({ full }) {
     return (
         <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true">
             {full
