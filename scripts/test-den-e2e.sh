@@ -208,6 +208,13 @@ run() {
   history=$(guest "$DEN" history "$den_id" "$channel")
   [[ "$history" == $'hello from the member\nhello back, @bob' ]] || { echo "error: the owner's history is: $history" >&2; return 1; }
 
+  echo ">> The owner has the den keep messages 30 days"
+  [[ "$(guest "$DEN" retention-preview "$den_id" 1)" == "0" ]] ||
+    { echo "error: a period of a day would delete messages sent just now" >&2; return 1; }
+  guest "$DEN" retention "$den_id" 30
+  guest "$CLIENT" wait-retention "$den_id" 30
+  echo ">> The member heard the den's retention period"
+
   echo ">> Restarting the den's service"
   "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
   since=$(guest "$CLIENT" wait-connected "$since")
@@ -218,6 +225,10 @@ run() {
   [[ "$history" == $'hello from the member\nhello back, @bob\nafter the restart' ]] ||
     { echo "error: the member's history after the restart is: $history" >&2; return 1; }
   echo ">> The member's history is complete after the restart"
+  guest "$CLIENT" wait-retention "$den_id" 30
+  guest "$DEN" retention "$den_id" 0
+  guest "$CLIENT" wait-retention "$den_id" 0
+  echo ">> The retention period outlived the restart, and turned off reached the member"
 
   local linked linked_text
   linked=$(guest "$CLIENT" send "$den_id" "$channel" "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42")

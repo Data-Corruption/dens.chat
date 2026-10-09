@@ -249,10 +249,12 @@ type Den struct {
 	ID   Bytes  `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
-	// Limits and CallLimits come to members, in ready and den.updated,
-	// and not in a join preview. CallLimits are from M4.2.
+	// Limits, CallLimits and Retention come to members, in ready and
+	// den.updated, and not in a join preview. CallLimits are from M4.2,
+	// and Retention, the days a message is kept, 0 for ever, from M5.
 	Limits     Limits     `json:"limits,omitzero"`
 	CallLimits CallLimits `json:"call_limits,omitzero"`
+	Retention  int        `json:"retention,omitempty"`
 }
 
 // Roles.
@@ -356,6 +358,8 @@ type DenUpdateRequest struct {
 	URL        *string     `json:"url,omitempty"`
 	Limits     *Limits     `json:"limits,omitempty"`
 	CallLimits *CallLimits `json:"call_limits,omitempty"`
+	// Retention is the days a message is kept, or 0 to keep them all (M5).
+	Retention *int `json:"retention,omitempty"`
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's

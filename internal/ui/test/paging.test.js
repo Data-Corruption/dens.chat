@@ -4,7 +4,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    MIN_PAGE, PAGE, PAGE_SCREENS, WINDOW, atTail, cutAbove, cutBelow, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withNewer, withOlder, withUpdate,
+    MIN_PAGE, PAGE, PAGE_SCREENS, WINDOW, atTail, cutAbove, cutBelow, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer,
+    withOlder, withUpdate,
 } from '../assets/js/src/paging.js';
 
 // IDs grow with time and outgrow JavaScript's numbers, so they compare as
@@ -91,6 +92,26 @@ test("events that came while a load was out apply again on top of its page, and 
     // A run that doesn't hold the newest leaves new messages for its next
     // page.
     assert.deepEqual(ids(replayed({ ...page, hasNewer: true }, events.slice(0, 1))), ['1', '2', '3']);
+});
+
+test('a retention pass takes every message up to the one it names, and the quotes of them', () => {
+    const list = run(8, 12);
+    list.messages[3] = msg(11, { reply_to: '9', reply: { text: 'm9' } });
+    list.messages[4] = msg(12, { reply_to: '7', reply: { text: 'm7' } });
+    const after = withExpired(list, '10');
+    assert.deepEqual(ids(after), ['11', '12']);
+    assert.equal(after.messages[0].reply, undefined);
+    assert.equal(after.messages[1].reply, undefined);
+    // What it lost was the oldest left, so nothing older remains to load.
+    assert.equal(after.hasOlder, false);
+    // A run newer than the pass keeps its messages, and whatever is older.
+    const newer = withExpired(run(20, 22), '10');
+    assert.deepEqual(ids(newer), ['20', '21', '22']);
+    assert.equal(newer.hasOlder, true);
+    // IDs compare as numbers of any length, not as strings.
+    assert.deepEqual(ids(withExpired(run(9, 11), '9')), ['10', '11']);
+    // A pass that came while a load was out applies to its page too.
+    assert.deepEqual(ids(replayed(run(1, 4), [{ t: 'messages.expired', d: { through: '2' } }])), ['3', '4']);
 });
 
 test("a deleted message leaves, and so does the quote of it in its replies", () => {

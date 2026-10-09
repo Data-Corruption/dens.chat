@@ -9,6 +9,7 @@ import {
     useLater,
 } from './components.jsx';
 import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
+import { deletesNow, keptFor } from './retention.js';
 import { HEIGHTS, mbps, shareCost } from './share.js';
 
 const VERIFIER_HINT =
@@ -141,6 +142,9 @@ function DenItem({ den, navigate, onCodes, onSeal, onChanged, onSignIn }) {
             <p class="text-xs text-base-content/60" title="The start of the den's identity. Everyone in this den sees the same one.">
                 Den ID <span class="font-mono">{den.fingerprint}</span>
             </p>
+            {den.retention > 0 && (
+                <p class="text-xs text-base-content/60">Messages here, and their files, are deleted after {keptFor(den.retention)}.</p>
+            )}
             {den.error && <p class="text-sm text-warning">{den.error}</p>}
             <ErrorText message={forget.error} />
             {den.state === 'offline' && !den.own && <NewAddress den={den} onChanged={onChanged} />}
@@ -556,6 +560,7 @@ function DenSettings({ den }) {
                     )}
                 </div>
                 <UploadLimits key={opened} denID={den.den_id} />
+                <Retention key={`retention-${opened}`} denID={den.den_id} />
                 <CallLimits key={`calls-${opened}`} denID={den.den_id} />
             </div>
         </details>
@@ -620,6 +625,85 @@ function UploadLimits({ denID }) {
             {saved && <p class="text-sm text-success">Saved.</p>}
             <div>
                 <SubmitButton busy={save.busy}>Save upload limits</SubmitButton>
+            </div>
+        </form>
+    );
+}
+
+// MAX_RETENTION is the longest a den keeps messages, in days.
+const MAX_RETENTION = 3650;
+
+// Retention sets how long the den keeps messages (M5), or that it keeps
+// them all, and says what a new period would delete at once.
+function Retention({ denID }) {
+    const [current, setCurrent] = useState(null);
+    const [on, setOn] = useState(false);
+    const [days, setDays] = useState('30');
+    const [preview, setPreview] = useState(null);
+    const [saved, setSaved] = useState(false);
+    const save = useAction();
+    useEffect(() => {
+        api.get(`/api/dens/${denID}/state`).then((v) => {
+            setCurrent(v.retention);
+            setOn(v.retention > 0);
+            if (v.retention > 0) setDays(String(v.retention));
+        }, (e) => save.setError(e.message));
+    }, [denID]);
+    const n = Number(days);
+    const valid = Number.isInteger(n) && n >= 1 && n <= MAX_RETENTION;
+    // The den counts what a period would delete as the owner types one.
+    useEffect(() => {
+        setPreview(null);
+        if (!on || !valid || n === current) return undefined;
+        let stale = false;
+        const timer = setTimeout(() => {
+            api.get(`/api/dens/${denID}/retention?days=${n}`).then((p) => !stale && setPreview(p), () => {});
+        }, 300);
+        return () => {
+            stale = true;
+            clearTimeout(timer);
+        };
+    }, [on, days, current]);
+    if (current === null) return save.error ? <ErrorText message={save.error} /> : null;
+
+    function submit(e) {
+        e.preventDefault();
+        setSaved(false);
+        const retention = on ? n : 0;
+        save.run(async () => {
+            await api.post(`/api/dens/${denID}/settings`, { retention });
+            setCurrent(retention);
+            setSaved(true);
+        });
+    }
+
+    return (
+        <form class="flex flex-col gap-2 border-t border-base-300 pt-3" onSubmit={submit}>
+            <h3 class="font-medium">Retention</h3>
+            <p class="text-sm text-base-content/70">
+                The den can delete messages, and their files, once they're older than a number of days, in channels and DMs alike. Members
+                see how long messages are kept. Backups keep what the den held when they were made.
+            </p>
+            <label class="label gap-2">
+                <input type="checkbox" class="toggle" checked={on} onChange={(e) => {
+                    setSaved(false);
+                    setOn(e.currentTarget.checked);
+                }} />
+                Delete old messages
+            </label>
+            {on && (
+                <Field label="Keep messages for (days)">
+                    <TextInput type="number" min="1" max={String(MAX_RETENTION)} step="1" value={days} required onInput={(v) => {
+                        setSaved(false);
+                        setDays(v);
+                    }} />
+                </Field>
+            )}
+            {preview && <p class="text-sm">{deletesNow(preview)}</p>}
+            <ErrorText message={save.error} />
+            {saved && <p class="text-sm text-success">Saved.</p>}
+            <div>
+                <SubmitButton busy={save.busy}>Save retention</SubmitButton>
             </div>
         </form>
     );

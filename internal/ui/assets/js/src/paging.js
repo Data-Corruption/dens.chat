@@ -56,6 +56,17 @@ export function withDelete(list, d) {
     };
 }
 
+// withExpired takes out of the run what a retention pass deleted: every
+// message up to through, in every channel, and the quotes of them in
+// replies (M5). Passes delete the oldest first, so a run that lost any
+// holds the oldest message left.
+export function withExpired(list, through) {
+    const messages = list.messages
+        .filter((m) => compareIds(m.id, through) > 0)
+        .map((m) => (m.reply_to && compareIds(m.reply_to, through) <= 0 ? { ...m, reply: undefined } : m));
+    return { ...list, messages, hasOlder: list.hasOlder && messages.length === list.messages.length };
+}
+
 // withOlder adds a page from before the run, then cuts the run from below
 // (see farIds) and down to WINDOW from its newest end. A run cut there no
 // longer holds the newest message.
@@ -91,6 +102,7 @@ export function replayed(list, events) {
         if (e.t === 'message.created' && !list.hasNewer) list = { ...list, messages: mergeIn(list.messages, [e.d]) };
         else if (e.t === 'message.updated') list = withUpdate(list, e.d);
         else if (e.t === 'message.deleted') list = withDelete(list, e.d);
+        else if (e.t === 'messages.expired') list = withExpired(list, e.d.through);
     }
     return list;
 }

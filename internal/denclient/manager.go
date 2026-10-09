@@ -15,6 +15,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -583,8 +584,8 @@ func (m *Manager) Relocate(ctx context.Context, denID, address string) (Status, 
 	return c.status(), nil
 }
 
-// UpdateDen changes the name, address, upload limits or limits for calls
-// of a den this member owns.
+// UpdateDen changes the name, address, upload limits, limits for calls or
+// retention period of a den this member owns.
 func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenUpdateRequest) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -600,6 +601,31 @@ func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenU
 			return inputError(err)
 		}
 	}
+	if req.Retention != nil {
+		if err := denproto.CheckRetention(*req.Retention); err != nil {
+			return inputError(err)
+		}
+	}
 	var info denproto.Den
 	return c.call(ctx, http.MethodPatch, "/api/den", req, &info)
+}
+
+// RetentionPreview says what a retention period of days would delete now
+// in a den this member owns.
+func (m *Manager) RetentionPreview(ctx context.Context, denID string, days int) (denproto.RetentionPreview, error) {
+	var p denproto.RetentionPreview
+	c, err := m.find(denID)
+	if err != nil {
+		return p, err
+	}
+	if days < 1 || days > denproto.MaxRetention {
+		return p, inputError(fmt.Errorf("retention is 1 to %d days", denproto.MaxRetention))
+	}
+	if err := c.call(ctx, http.MethodGet, "/api/den/retention?days="+strconv.Itoa(days), nil, &p); err != nil {
+		return p, err
+	}
+	if p.Messages < 0 || p.Bytes < 0 {
+		return p, errors.New("the den's answer is malformed")
+	}
+	return p, nil
 }

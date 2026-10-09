@@ -62,6 +62,7 @@ func New(a *app.App) http.Handler {
 			r.Get("/invites", h.invites)
 			r.Delete("/invites/{id}", h.revokeInvite)
 			r.Patch("/den", h.updateDen)
+			r.Get("/den/retention", h.retentionPreview)
 			r.Get("/channels/{id}/messages", h.history)
 			r.Post("/channels/{id}/messages", h.send)
 			r.Put("/channels/{id}/read", h.markRead)
@@ -367,4 +368,19 @@ func (h *handler) updateDen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	denproto.WriteJSON(w, http.StatusOK, info)
+}
+
+// retentionPreview says what a retention period of ?days= would delete now.
+func (h *handler) retentionPreview(w http.ResponseWriter, r *http.Request) {
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil {
+		denproto.WriteError(w, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "days: a number of days"))
+		return
+	}
+	p, err := h.d.RetentionPreview(r.Context(), session(r), days)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, p)
 }

@@ -376,6 +376,18 @@ function Wait-Channel($Browser, [string]$DenID) {
     Fail "no channel reached instance second"
 }
 
+# Wait-Retention waits until an instance hears that the den keeps messages
+# Days days, 0 for ever (M5).
+function Wait-Retention($Browser, [string]$DenID, [int]$Days) {
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $state = Invoke-Api $Browser GET "/api/dens/$DenID/state"
+        if ($state.retention -eq $Days) { return }
+        Start-Sleep -Milliseconds 250
+    }
+    Fail "the den's retention never reached $Days days on that instance"
+}
+
 # Start-Probe joins a voice channel's call for an instance, as its page
 # would: the voice probe, with Pion in the browser's place, drives the
 # instance's page socket with the browser's session, over one network,
@@ -571,6 +583,13 @@ den.test:$HttpsPort {
     $history = Get-History $owner $denID $channel
     if ($history -ne "hello from the member|hello back, @bob") { Fail "the owner's history is: $history" }
 
+    Step "the owner has the den keep messages 30 days"
+    $preview = Invoke-Api $owner GET "/api/dens/$denID/retention?days=1"
+    if ($preview.messages -ne 0) { Fail "a period of a day would delete $($preview.messages) messages sent just now" }
+    Invoke-Api $owner POST "/api/dens/$denID/settings" @{ retention = 30 } | Out-Null
+    Wait-Retention $member $denID 30
+    Write-Host "The member heard the den's retention period."
+
     Step "restart the den's service"
     Invoke-Native -FilePath $Dens -Arguments @("service", "restart") | Out-Null
     $since = Wait-Connected $member $since
@@ -579,6 +598,10 @@ den.test:$HttpsPort {
     Send-Message $owner $denID $channel "after the restart"
     $history = Get-History $member $denID $channel
     if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
+    Wait-Retention $member $denID 30
+    Invoke-Api $owner POST "/api/dens/$denID/settings" @{ retention = 0 } | Out-Null
+    Wait-Retention $member $denID 0
+    Write-Host "The retention period outlived the restart, and turned off reached the member."
     $linked = Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42" }
     $linkedText = Get-MessageText $owner $denID $channel $linked.id
     if ($linkedText -cne "watch https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42") { Fail "a YouTube share link reached the channel as: $linkedText" }

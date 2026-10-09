@@ -355,6 +355,7 @@ export function Chat({ denID, channelID, navigate }) {
                                 typing={typers}
                                 closed={closed}
                                 limits={view.limits}
+                                retention={view.retention}
                                 onProfile={(m) => setDialog({ kind: 'profile', member: m })}
                                 onTyping={() => sendTyping(denID, channel.id)}
                             />

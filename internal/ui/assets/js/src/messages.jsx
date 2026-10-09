@@ -17,7 +17,8 @@ import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
-import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withNewer, withOlder, withUpdate } from './paging.js';
+import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
+import { keptFor } from './retention.js';
 import { Markdown, Preview } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
@@ -47,8 +48,9 @@ let nextKey = 1;
 
 // MessagePane shows a channel or DM. dm is the other member of a DM, and
 // keys the DM's keys; typing lists who is typing here; closed, when set,
-// says why nothing can be sent; limits are the den's upload limits.
-export function MessagePane({ denID, channel, me, members, readPosition, role, dm, keys, typing, closed, limits, onProfile, onTyping }) {
+// says why nothing can be sent; limits are the den's upload limits, and
+// retention the days it keeps a message, 0 for ever (M5).
+export function MessagePane({ denID, channel, me, members, readPosition, role, dm, keys, typing, closed, limits, retention, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -318,6 +320,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
 
     function handleEvent(e) {
         const d = e.d;
+        // A retention pass reaches every channel at once (M5).
+        if (e.t === 'messages.expired' && d) return expired(e);
         if (!d || d.channel_id !== channel.id) return;
         caught.current.forEach((since) => since.push(e));
         // Once this member checks a DM's key, what it sealed opens.
@@ -356,6 +360,22 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             setViewing((v) => (v && (d.files || []).includes(v.id) ? null : v));
             setList((cur) => withDelete(cur, d));
         }
+    }
+
+    // expired drops what a retention pass deleted: every message up to
+    // e.d.through, with the file the viewer shows, the reply being written
+    // and the edit under way, if they were among them.
+    function expired(e) {
+        const { through } = e.d;
+        caught.current.forEach((since) => since.push(e));
+        const gone = (id) => compareIds(id, through) <= 0;
+        const l = listRef.current;
+        setViewing((v) => (v && l.messages.some((m) => gone(m.id) && (m.attachments || []).some((f) => f.id === v.id)) ? null : v));
+        setReplyTo((r) => (r && gone(r.id) ? null : r));
+        setEditing((id) => (id && gone(id) ? null : id));
+        setList((cur) => withExpired(cur, through));
+        // A run that lost every message it held starts again from the newest.
+        if (l.hasNewer && l.messages.length && l.messages.every((m) => gone(m.id))) loadNewest();
     }
 
     // addFiles starts uploading files the member picked, dropped or pasted,
@@ -515,7 +535,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
                             {dm ? (
                                 <>
-                                    <p>This is the start of your conversation with {dm.display_name}.</p>
+                                    <p>
+                                        {retention
+                                            ? `Messages with ${dm.display_name} are deleted after ${keptFor(retention)}.`
+                                            : `This is the start of your conversation with ${dm.display_name}.`}
+                                    </p>
                                     <p class="text-xs">
                                         It's end-to-end encrypted: only the two of you can read it, not the den's owner. The den still
                                         sees who talks to whom, and when.
@@ -523,7 +547,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                                 </>
                             ) : (
                                 <>
-                                    <p>This is the start of #{channel.name}.</p>
+                                    <p>
+                                        {retention
+                                            ? `Messages in #${channel.name} are deleted after ${keptFor(retention)}.`
+                                            : `This is the start of #${channel.name}.`}
+                                    </p>
                                     <p class="text-xs">The den's owner can read what's posted here.</p>
                                 </>
                             )}

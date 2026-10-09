@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
@@ -29,6 +30,7 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Get("/api/dens/{den}/invites", rt.handleInvites)
 	r.Delete("/api/dens/{den}/invites/{invite}", rt.handleRevokeInvite)
 	r.Post("/api/dens/{den}/settings", rt.handleDenSettings)
+	r.Get("/api/dens/{den}/retention", rt.handleRetentionPreview)
 	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
 	r.Post("/api/dens/{den}/address", rt.handleAddress)
 	rt.mountChat(r)
@@ -388,6 +390,22 @@ func (rt *router) handleDenSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleRetentionPreview says what a retention period of ?days= would
+// delete now, for the owner's settings.
+func (rt *router) handleRetentionPreview(w http.ResponseWriter, r *http.Request) {
+	days, err := strconv.Atoi(r.URL.Query().Get("days"))
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, "Retention is a number of days.")
+		return
+	}
+	p, err := rt.a.Dens.RetentionPreview(r.Context(), chi.URLParam(r, "den"), days)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, p)
 }
 
 // handleCheckAddress reaches a den at its public address from here.

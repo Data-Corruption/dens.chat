@@ -61,15 +61,15 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 ## Objects
 
 ```
-den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2)}
+den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), and `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), and `retention` its retention period in days, when it has one (see [Retention](#retention-m5)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
 
 ```
-PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?}   200 den        (owner only)
+PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?}   200 den        (owner only)
 ```
 
 A change reaches every member as a `den.updated {den}` event.
@@ -359,7 +359,7 @@ GET /api/channels/{id}/messages?around=<id>&limit=50     id and about half each 
 
 ```
 POST   /api/channels/{id}/messages   {"nonce": "<16 bytes>", "text", "reply_to"?}   201 message
-PATCH  /api/messages/{id}            {"revision", "text"}                            200 message
+PATCH  /api/messages/{id}            {"revision", "text", "attachments"? (M5)}       200 message
 DELETE /api/messages/{id}                                                            204
 ```
 
@@ -367,7 +367,18 @@ DELETE /api/messages/{id}                                                       
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
-- Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache.
+- Events: `message.created {message}`, `message.updated {message, files?}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way (M5; see [Attachments](#attachments)).
+
+### Retention (M5)
+
+```
+GET /api/den/retention?days=N   200 {"messages", "bytes"}   (owner only)
+messages.expired {"through": "<message id>"}
+```
+
+- With a retention period, the den deletes the messages sent more than that many days ago, in channels and DMs, with their files, as it deletes any message, within the hour after they pass it. Edits don't change a message's age, and neither do replies to it.
+- It deletes the oldest first, in the order they were sent, so after a pass every message up to the last one it deleted is gone, in every channel. It sends `messages.expired` naming that message, and no `message.deleted` for each. Clients drop every message with an ID up to `through`, the quotes of them in replies, and the files they cached for the den; a channel whose last message is among them holds none, so nothing in it is unread.
+- The owner sets the period with `PATCH /api/den`: 1 to 3,650 days, or 0 to turn it off. A change starts a pass at once. `GET /api/den/retention` says what a period of `days` would delete now, for the settings to show before a change: how many messages, and the bytes their files take.
 
 ### Read state
 
@@ -467,7 +478,7 @@ Dens-Filename: <the file's name, UTF-8, percent-encoded>
 
 ### Metadata
 
-Clients take metadata out of images before uploading, so a den never receives it, and the den checks: an image that still has any is refused with `400 invalid_field`. Nothing is re-encoded. What an image keeps:
+Clients take metadata out of images before uploading, so a den never receives it, and the den checks: an image that still has any is refused with `400 invalid_field`. The den re-encodes nothing; a client's smaller copy of a photo (M5) is a new image, checked like any other. What an image keeps:
 
 | Kind | Kept | Everything else goes, including |
 | --- | --- | --- |
@@ -501,13 +512,20 @@ POST /api/uploads/{id}/thumb   (body: a JPEG or PNG)   200 file
 ### Attachments
 
 ```
-POST /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …]}
-GET  /api/files/{id}               200 the file's bytes
-GET  /api/files/{id}/thumb         200 the preview's bytes
-GET  /api/me/storage               200 {"used", "den_used"}
+POST   /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …]}
+PATCH  /api/messages/{id}            {"revision", "text", "attachments"?: ["<file or upload id>", …]}   (M5)
+DELETE /api/uploads/{id}             204                                                         (M5)
+GET    /api/files/{id}               200 the file's bytes
+GET    /api/files/{id}/thumb         200 the preview's bytes
+GET    /api/me/storage               200 {"used", "den_used"}
+GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "next"?}                           (M5)
 ```
 
-- A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent. An edit changes only the text.
+- A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent.
+- An edit changes the text. From M5, the author's edit can change the files too: `attachments` lists them afterward, in order, as files the message already has and the author's waiting uploads. Files it leaves out are deleted, and `message.updated` lists them in `files`. An edit that leaves a message with neither text nor files deletes it instead, with `message.deleted`.
+- An upload made to take a file's place names it, as `Dens-Replaces: <file id>` (M5): one of the member's files, on a message or their profile. The den counts the upload against the member's space less that file's, and it can only take that file's place, in an edit that drops the file or as a picture replacing it. A file has one replacement waiting at most; a newer one drops the older.
+- `DELETE /api/uploads/{id}` drops one of the member's uploads waiting to be used, and frees its space at once (M5).
+- `GET /api/me/files` lists the member's files on the den, largest first, 100 at a time, `next` continuing the list (M5). Each is a `file` with `message_id` and `channel_id`, or `"profile": "avatar"` or `"banner"`, or neither while it waits to be used. A DM's blobs come as sealed files with their message, previews among them, for the client to name from the sealed text.
 - A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image, video or audio.
 - A file answers byte ranges (`Range: bytes=N-`, `206 Partial Content`), and the den decrypts only the chunks a range covers, so a player seeks without fetching the whole file. Its `ETag` is its ID, quoted, since its bytes never change.
 - A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](#dm-files)).
@@ -597,7 +615,7 @@ Everything that feeds the code is fixed before its sender sees the other side's 
 
 ```
 POST  /api/channels/{id}/messages  {"nonce", "sealed", "key_id", "reply_to"?, "attachments"?, "editors"?}  201 message
-PATCH /api/messages/{id}           {"revision", "sealed", "key_id", "editors"?, "unedited"?}              200 message
+PATCH /api/messages/{id}           {"revision", "sealed", "key_id", "editors"?, "unedited"?, "attachments"? (M5)}  200 message
 ```
 
 - `sealed` is `{"text", "files"?}` as JSON, sealed with XChaCha20-Poly1305 under the DM key and bound to `"dens-dm-message-v1" ‖ den_id ‖ channel ‖ author ‖ len(nonce) ‖ nonce ‖ key_id ‖ revision`, as nonce ‖ ciphertext, at most 64 KiB. `text` stays empty. The sealed text follows a message's rules, and lists at most 10 files.
@@ -615,6 +633,7 @@ POST /api/uploads/sealed   (body: the sealed file)   201 {"id", "name": "", "typ
 - A DM's file goes up sealed by the sender's client, which first takes an image's metadata out and makes its preview, as the den does for a channel's. Each file gets a random key of its own. The file and its preview are sealed with it as streams, in the format files at rest use, bound to `"dens-dm-file-v1" ‖ den_id ‖ channel ‖ "file"` or `"thumb"`, and go up as two blobs.
 - The sender's client strips a DM's video and audio, and makes a video's preview, as a den does for a channel's. For a video the module can't decode, the sender's page draws the preview, and the client seals and uploads it as it does its own.
 - The message's sealed text lists each file: `{"id", "key", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"id", "width", "height"}}`. Its `attachments` name every blob, each file's and its preview's, at most 20.
+- From M5, a DM's edit can change its files as a channel's does: the sealed text lists the files afterward, and `attachments` names every blob, as a send's does. Blobs it leaves out are deleted.
 - A sealed file answers byte ranges like any other, and a client opens the chunks a range covers with the file's key, so a DM's video seeks the same way.
 - A DM's message takes only sealed uploads, and a channel's none. The den counts a sealed blob against the upload limits, and serves it like any file, with no preview of its own.
 
