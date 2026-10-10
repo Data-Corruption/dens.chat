@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>WebCodecs probe</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 1rem; max-width: 60rem; }
+  button { font-size: 1rem; padding: .4rem 1rem; }
+  pre { white-space: pre-wrap; background: #f4f4f4; padding: .5rem; font-size: 12px; }
+</style>
+<h1>WebCodecs probe</h1>
+<p>
+  Measures what this browser decodes and encodes with WebCodecs, how fast, and how well, on short phone videos. Keep this tab in
+  front while it runs, a few minutes at most. The report saves itself to the machine serving this page when it's done.
+</p>
+<p><button id="run">Run</button> <span id="status"></span></p>
+<pre id="log"></pre>
+<script type="module">
+const logBox = document.getElementById('log');
+const log = (s) => { logBox.textContent += s + '\n'; };
+const status = (s) => { document.getElementById('status').textContent = s; };
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function browser() {
+  const ua = navigator.userAgent;
+  const v = (re) => (ua.match(re) || [])[1] || '';
+  if (/Waterfox\//.test(ua)) return `Waterfox ${v(/Waterfox\/([\d.]+)/)}`;
+  if (/Firefox\//.test(ua)) return `Firefox ${v(/Firefox\/([\d.]+)/)}`;
+  if (/Edg\//.test(ua)) return `Edge ${v(/Edg\/([\d.]+)/)}`;
+  if (/Chrome\//.test(ua)) return `${/Headless/.test(ua) ? 'HeadlessChrome' : 'Chrome'} ${v(/Chrome\/([\d.]+)/)}`;
+  return ua;
+}
+
+function gpu() {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  } catch {
+    return '';
+  }
+}
+
+async function packets(v) {
+  const buf = await (await fetch(`/api/videos/${v.name}/packets`)).arrayBuffer();
+  const dv = new DataView(buf);
+  const out = [];
+  let off = 0;
+  while (off < buf.byteLength) {
+    const size = dv.getUint32(off, true);
+    const key = dv.getUint8(off + 4) === 1;
+    const ts = dv.getFloat64(off + 5, true);
+    const dur = dv.getFloat64(off + 13, true);
+    off += 21;
+    out.push({ data: new Uint8Array(buf, off, size), key, ts, dur });
+    off += size;
+  }
+  return out;
+}
+
+const decoderConfig = (v, hw = 'no-preference') => ({
+  codec: v.codec, codedWidth: v.width, codedHeight: v.height, description: b64(v.description), hardwareAcceleration: hw,
+});
+
+// fit is the size a copy fitting a longer side takes, never enlarged, in
+// even pixels.
+function fit(w, h, side) {
+  const s = Math.min(1, side / Math.max(w, h));
+  const even = (x) => Math.max(2, Math.round(x * s / 2) * 2);
+  return { width: even(w), height: even(h) };
+}
+
+// run decodes a video's packets, and hands each frame to onFrame, waiting
+// while the decoder, or what waits behind it, has too much queued.
+async function run(v, pkts, onFrame, busy = () => false, hw = 'no-preference') {
+  let frames = 0;
+  let first = null;
+  let error = null;
+  const dec = new VideoDecoder({
+    output: (f) => {
+      frames++;
+      if (!first) {
+        first = { format: f.format, codedWidth: f.codedWidth, codedHeight: f.codedHeight, displayWidth: f.displayWidth,
+          displayHeight: f.displayHeight, colorSpace: f.colorSpace && f.colorSpace.toJSON ? f.colorSpace.toJSON() : null };
+      }
+      try {
+        if (onFrame) onFrame(f);
+      } finally {
+        f.close();
+      }
+    },
+    error: (e) => { error = e.message || String(e); },
+  });
+  dec.configure(decoderConfig(v, hw));
+  const t0 = performance.now();
+  for (const p of pkts) {
+    if (error) break;
+    while (!error && (dec.decodeQueueSize > 4 || busy())) await sleep(1);
+    dec.decode(new EncodedVideoChunk({ type: p.key ? 'key' : 'delta', timestamp: p.ts, duration: p.dur, data: p.data }));
+  }
+  if (!error) await dec.flush().catch((e) => { error = e.message; });
+  const ms = performance.now() - t0;
+  if (dec.state !== 'closed') dec.close();
+  return { frames, ms: Math.round(ms), fps: +(frames / ms * 1000).toFixed(1), first, error };
+}
+
+// ivf writes encoded frames as an IVF file, which FFmpeg reads.
+function ivf(fourcc, width, height, chunks) {
+  const size = 32 + chunks.reduce((n, c) => n + 12 + c.data.length, 0);
+  const out = new Uint8Array(size);
+  const dv = new DataView(out.buffer);
+  out.set(new TextEncoder().encode('DKIF'), 0);
+  dv.setUint16(4, 0, true);
+  dv.setUint16(6, 32, true);
+  out.set(new TextEncoder().encode(fourcc), 8);
+  dv.setUint16(12, width, true);
+  dv.setUint16(14, height, true);
+  dv.setUint32(16, 30, true);
+  dv.setUint32(20, 1, true);
+  dv.setUint32(24, chunks.length, true);
+  let off = 32;
+  chunks.forEach((c, i) => {
+    dv.setUint32(off, c.data.length, true);
+    dv.setBigUint64(off + 4, BigInt(i), true);
+    out.set(c.data, off + 12);
+    off += 12 + c.data.length;
+  });
+  return out;
+}
+
+// encode decodes a video, scales each frame, every keep-th one, and
+// encodes it, and scores what it made.
+async function encode(v, pkts, { codec, side, bitrate, hw = 'no-preference', latencyMode = 'quality', scale = 'canvas', keep = 1, score = true }) {
+  const { width, height } = fit(v.width, v.height, side);
+  const config = { codec, width, height, bitrate, framerate: 30, hardwareAcceleration: hw, latencyMode, bitrateMode: 'variable' };
+  const label = `${codec} ${width}x${height} ${bitrate / 1000}k ${hw} ${latencyMode} ${scale}`;
+  let support;
+  try {
+    support = await VideoEncoder.isConfigSupported(config);
+  } catch (e) {
+    return { label, supported: false, error: e.message };
+  }
+  if (!support.supported) return { label, supported: false };
+  const chunks = [];
+  let error = null;
+  const enc = new VideoEncoder({
+    output: (chunk) => {
+      const data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      chunks.push({ data, key: chunk.type === 'key' });
+    },
+    error: (e) => { error = e.message || String(e); },
+  });
+  enc.configure(config);
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+  let n = 0;
+  let fed = 0;
+  const t0 = performance.now();
+  const decoded = await run(v, pkts, (f) => {
+    if (n++ % keep !== 0 || error) return;
+    let frame = f;
+    if (scale === 'canvas') {
+      ctx.drawImage(f, 0, 0, width, height);
+      frame = new VideoFrame(canvas, { timestamp: f.timestamp, duration: f.duration });
+    }
+    try {
+      enc.encode(frame, { keyFrame: fed % 150 === 0 });
+      fed++;
+    } catch (e) {
+      error = e.message;
+    } finally {
+      if (frame !== f) frame.close();
+    }
+  }, () => enc.encodeQueueSize > 4);
+  if (!error && enc.state === 'configured') await enc.flush().catch((e) => { error = e.message; });
+  const ms = performance.now() - t0;
+  if (enc.state !== 'closed') enc.close();
+  const bytes = chunks.reduce((s, c) => s + c.data.length, 0);
+  const res = { label, supported: true, frames: fed, out: chunks.length, ms: Math.round(ms), fps: +(fed / ms * 1000).toFixed(1),
+    kbps: fed ? Math.round(bytes * 8 / (fed / 30) / 1000) : 0, decodeError: decoded.error, error };
+  if (score && !error && !decoded.error && chunks.length === fed && fed > 0 && keep === 1) {
+    const file = ivf(codec.startsWith('av01') ? 'AV01' : 'VP90', width, height, chunks);
+    const q = new URLSearchParams({ video: v.name, label: codec.slice(0, 4) + '-' + hw, width, height, frames: fed });
+    try {
+      const r = await fetch(`/api/score?${q}`, { method: 'POST', body: file });
+      Object.assign(res, r.ok ? await r.json() : { scoreError: await r.text() });
+    } catch (e) {
+      res.scoreError = e.message;
+    }
+  }
+  return res;
+}
+
+async function main() {
+  const report = { browser: browser(), userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency, gpu: gpu(),
+    webcodecs: typeof VideoEncoder === 'function' && typeof VideoDecoder === 'function', started: new Date().toISOString() };
+  log(`${report.browser} · ${report.cores} cores · ${report.gpu}`);
+  if (!report.webcodecs) {
+    log('No WebCodecs here.');
+    return report;
+  }
+  const videos = await (await fetch('/api/videos')).json();
+
+  status('what it decodes…');
+  report.decoders = {};
+  for (const v of videos) {
+    const row = {};
+    for (const hw of ['no-preference', 'prefer-hardware', 'prefer-software']) {
+      try {
+        row[hw] = (await VideoDecoder.isConfigSupported(decoderConfig(v, hw))).supported;
+      } catch (e) {
+        row[hw] = `error: ${e.message}`;
+      }
+    }
+    report.decoders[`${v.name} (${v.codec})`] = row;
+    log(`decode ${v.name} ${v.codec}: ${JSON.stringify(row)}`);
+  }
+
+  status('what it encodes…');
+  report.encoders = {};
+  for (const codec of ['av01.0.08M.08', 'av01.0.08M.10', 'vp09.00.40.08', 'vp09.02.40.10', 'avc1.640028']) {
+    for (const [width, height] of [[1920, 1080], [1280, 720]]) {
+      const row = {};
+      for (const hw of ['prefer-hardware', 'prefer-software']) {
+        try {
+          row[hw] = (await VideoEncoder.isConfigSupported({ codec, width, height, bitrate: 2_000_000, framerate: 30, hardwareAcceleration: hw })).supported;
+        } catch (e) {
+          row[hw] = `error: ${e.message}`;
+        }
+      }
+      report.encoders[`${codec} ${width}x${height}`] = row;
+      log(`encode ${codec} ${width}x${height}: ${JSON.stringify(row)}`);
+    }
+  }
+
+  const loaded = new Map();
+  for (const v of videos) loaded.set(v.name, await packets(v));
+
+  status('decoding…');
+  report.decoding = {};
+  for (const v of videos) {
+    if (!report.decoders[`${v.name} (${v.codec})`]['no-preference']) {
+      report.decoding[v.name] = { error: 'unsupported' };
+      log(`decoded ${v.name}: unsupported`);
+      continue;
+    }
+    const res = await run(v, loaded.get(v.name)).catch((e) => ({ error: e.message }));
+    report.decoding[v.name] = res;
+    log(`decoded ${v.name}: ${res.frames} frames at ${res.fps} fps ${res.error ? 'error ' + res.error : ''} first ${JSON.stringify(res.first)}`);
+  }
+
+  status('encoding…');
+  report.encoding = [];
+  const decodable = (v) => report.decoding[v.name] && !report.decoding[v.name].error && report.decoding[v.name].frames > 0;
+  const tasks = [];
+  for (const v of videos) {
+    if (!decodable(v)) continue;
+    const scored = v.name !== 'iphone-12-pro-hevc.mov';
+    const keep = v.fps > 45 ? 2 : 1;
+    for (const codec of ['av01.0.08M.08', 'vp09.00.40.08']) {
+      tasks.push([v, { codec, side: 1920, bitrate: 2_500_000, keep, score: scored }]);
+      tasks.push([v, { codec, side: 1280, bitrate: 1_200_000, keep, score: scored }]);
+    }
+  }
+  // What the encoder itself scales, and hardware against software, on one
+  // short video.
+  const short = videos.find((v) => v.name === 'iphone-x-h264.mov' && decodable(v)) || videos.find((v) => decodable(v) && v.fps < 45);
+  if (short) {
+    tasks.push([short, { codec: 'av01.0.08M.08', side: 1280, bitrate: 1_200_000, scale: 'encoder' }]);
+    tasks.push([short, { codec: 'av01.0.08M.08', side: 1280, bitrate: 1_200_000, hw: 'prefer-hardware' }]);
+    tasks.push([short, { codec: 'av01.0.08M.08', side: 1280, bitrate: 1_200_000, hw: 'prefer-software' }]);
+    tasks.push([short, { codec: 'av01.0.08M.08', side: 1280, bitrate: 1_200_000, latencyMode: 'realtime' }]);
+  }
+  for (const [v, opts] of tasks) {
+    status(`encoding ${v.name}: ${opts.codec} ${opts.side}…`);
+    const res = await encode(v, loaded.get(v.name), opts).catch((e) => ({ label: opts.codec, error: e.message }));
+    res.video = v.name;
+    report.encoding.push(res);
+    log(`${v.name} ${res.label}: ${res.supported === false ? 'unsupported' : `${res.frames} frames at ${res.fps} fps, ${res.kbps} kbps` +
+      (res.vmaf !== undefined ? `, VMAF ${res.vmaf.toFixed(1)} SSIM ${res.ssim}` : '') + (res.error ? ` error ${res.error}` : '') +
+      (res.scoreError ? ` scoring ${res.scoreError}` : '')}`);
+  }
+  report.finished = new Date().toISOString();
+  return report;
+}
+
+document.getElementById('run').onclick = async () => {
+  document.getElementById('run').disabled = true;
+  logBox.textContent = '';
+  let report;
+  try {
+    report = await main();
+  } catch (e) {
+    report = { browser: browser(), fatal: e.message };
+    log(`failed: ${e.message}`);
+  }
+  status('saving…');
+  const r = await fetch('/api/results', { method: 'POST', body: JSON.stringify(report) }).catch(() => null);
+  status(r && r.ok ? 'done, and saved' : 'done, but not saved: copy what is above');
+  window.probeDone = report;
+};
+</script>
+</html>
