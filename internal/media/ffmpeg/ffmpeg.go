@@ -42,6 +42,9 @@ const (
 	// OpMux puts a video's copy together from its chunks and the video's
 	// sound.
 	OpMux Op = "mux"
+	// OpDemux hands a video's packets out, for the page to make its copy
+	// with WebCodecs (M5.5).
+	OpDemux Op = "demux"
 )
 
 // Input is a file a job reads.
@@ -173,6 +176,28 @@ type Muxed struct {
 	AudioPackets int   `json:"audio_packets"`
 	AudioStreams int   `json:"audio_streams"`
 	DurationUS   int64 `json:"duration_us"`
+}
+
+// Demuxed describes a video's packets, handed out as records, and what
+// decoding them takes (M5.5).
+type Demuxed struct {
+	// Codec is FFmpeg's name for it, such as "h264", and Extradata, in
+	// hex, its configuration record, an avcC or hvcC for H.264 and HEVC.
+	Codec     string `json:"codec"`
+	Extradata string `json:"extradata"`
+	// Width and Height are the frames' as the stream decodes them, and
+	// Crop the container's crop of them: top, bottom, left and right.
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
+	Crop   [4]int `json:"crop"`
+	SAR    [2]int `json:"sar"`
+	// Profile, Level and BitDepth name the stream, as its codec string
+	// does; -99 is FFmpeg's unknown.
+	Profile  int   `json:"profile"`
+	Level    int   `json:"level"`
+	BitDepth int   `json:"bit_depth"`
+	Packets  int   `json:"packets"`
+	Bytes    int64 `json:"bytes"`
 }
 
 var (

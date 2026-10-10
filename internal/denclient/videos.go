@@ -297,7 +297,7 @@ func (m *Manager) videoCopy(ctx context.Context, full *version, over int64, f *f
 	}
 	full.fps = s.FPS
 	workers := m.Media.Workers()
-	plan, err := media.PlanVideoCopy(v, s, full.size(), over, workers)
+	plan, err := media.PlanVideoCopy(v, s, full.size(), over, media.ByModule, workers)
 	if err != nil {
 		return nil, nil, err
 	}

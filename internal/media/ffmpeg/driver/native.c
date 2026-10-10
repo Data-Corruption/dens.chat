@@ -9,6 +9,7 @@
 //   dm-native scan IN
 //   dm-native encode IN OUT START_US END_US MAX_SIDE FPS KBPS
 //   dm-native mux IN PACKETS OUT WIDTH HEIGHT
+//   dm-native demux IN OUT
 
 #define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
@@ -30,6 +31,7 @@ int32_t dm_poster(int32_t max_side, int32_t quality);
 int32_t dm_scan(void);
 int32_t dm_encode(int64_t start_us, int64_t end_us, int32_t max_side, int32_t fps, int32_t kbps);
 int32_t dm_mux(int32_t width, int32_t height);
+int32_t dm_demux(void);
 int32_t dm_error(int32_t err, char *buf, int32_t size);
 
 static int fds[3] = {-1, -1, -1};
@@ -85,10 +87,10 @@ int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "probe") == 0) {
         fds[0] = open(argv[2], O_RDONLY);
         ret = fds[0] < 0 ? -1 : dm_probe();
-    } else if (argc == 4 && strcmp(argv[1], "strip") == 0) {
+    } else if (argc == 4 && (strcmp(argv[1], "strip") == 0 || strcmp(argv[1], "demux") == 0)) {
         fds[0] = open(argv[2], O_RDONLY);
         fds[1] = open_out(argv[3]);
-        ret = fds[0] < 0 || fds[1] < 0 ? -1 : dm_strip("");
+        ret = fds[0] < 0 || fds[1] < 0 ? -1 : argv[1][0] == 's' ? dm_strip("") : dm_demux();
     } else if ((argc == 7 && strcmp(argv[1], "still") == 0) || (argc == 6 && strcmp(argv[1], "poster") == 0)) {
         fds[0] = open(argv[2], O_RDONLY);
         fds[1] = open_out(argv[3]);
@@ -112,7 +114,7 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "usage: dm-native probe IN | strip IN OUT | still IN OUT MAX_SIDE QUALITY ORIENTATION | "
                         "poster IN OUT MAX_SIDE QUALITY | scan IN | encode IN OUT START_US END_US MAX_SIDE FPS KBPS | "
-                        "mux IN PACKETS OUT WIDTH HEIGHT\n");
+                        "mux IN PACKETS OUT WIDTH HEIGHT | demux IN OUT\n");
         return 2;
     }
     if (ret < 0) {

@@ -114,6 +114,8 @@ func (h *host) run(job Job) (d done) {
 		ret = m.Xdm_encode(job.StartUS, job.EndUS, int32(job.MaxSide), int32(job.FPS), int32(job.KBPS))
 	case OpMux:
 		ret = m.Xdm_mux(int32(job.Width), int32(job.Height))
+	case OpDemux:
+		ret = m.Xdm_demux()
 	default:
 		return done{Failed: fmt.Sprintf("no operation %q", job.Op)}
 	}
