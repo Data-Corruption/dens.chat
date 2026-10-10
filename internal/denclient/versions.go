@@ -127,18 +127,28 @@ func (k *kept) close() {
 // sent, taken off, switched meanwhile, or past the hour.
 var errNotKept = inputError(errors.New("This file's two versions aren't kept any more. Take it off the message and add it again."))
 
+// UploadOptions says how a file for a message goes.
+type UploadOptions struct {
+	// Send is the version of a photo or video to send.
+	Send Send
+	// Replaces names the file it's made to take the place of, if any.
+	Replaces string
+	// Progress, if it's set, is the key the page follows the upload by
+	// (UploadProgress, FollowUpload), and may ask for a video full size by
+	// instead of waiting for its copy (SendFullSize). PageCopies says the
+	// page makes a video's copy itself when it can (M5.5).
+	Progress   string
+	PageCopies bool
+}
+
 // UploadVersions uploads a file for a message, as Upload does, and a photo
-// or video with its two versions: it sends the one send names, or its
-// smaller copy whatever send says when the full size is over the den's
+// or video with its two versions: it sends the one o.Send names, or its
+// smaller copy whatever o.Send says when the full size is over the den's
 // limit and the copy isn't, and keeps both for the page to compare and
 // switch between (OpenVersion, SwitchVersion). A file without a copy worth
-// sending, and anything else, goes as Upload sends it. replaces names the
-// file it's made to take the place of, if any, and key, if it's set, is
-// what the page follows the upload's progress by (UploadProgress), and may
-// ask for a video full size by instead of waiting for its copy
-// (SendFullSize).
-func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name string, size int64, body io.Reader, send Send,
-	replaces, key string) (Uploaded, error) {
+// sending, and anything else, goes as Upload sends it.
+func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name string, size int64, body io.Reader, o UploadOptions) (Uploaded, error) {
+	send, replaces := o.Send, o.Replaces
 	if send != SendSmaller && send != SendFull {
 		return Uploaded{}, inputError(errors.New("a file goes smaller or full size"))
 	}
@@ -152,9 +162,9 @@ func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name str
 		return Uploaded{}, err
 	}
 	var f *following
-	if key != "" {
+	if o.Progress != "" {
 		var done func()
-		if f, done, err = m.follow(denID, key); err != nil {
+		if f, done, err = m.follow(denID, o.Progress, o.PageCopies); err != nil {
 			return Uploaded{}, err
 		}
 		defer done()

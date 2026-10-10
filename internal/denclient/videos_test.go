@@ -76,7 +76,8 @@ func near(a, b int64) bool {
 }
 
 func uploadFollowed(m *denclient.Manager, denID, channel, name string, data []byte, send denclient.Send, key string) (denclient.Uploaded, error) {
-	return m.UploadVersions(context.Background(), denID, channel, name, int64(len(data)), bytes.NewReader(data), send, "", key)
+	return m.UploadVersions(context.Background(), denID, channel, name, int64(len(data)), bytes.NewReader(data),
+		denclient.UploadOptions{Send: send, Progress: key})
 }
 
 // openVersion reads a version kept of a video waiting to be sent, and
