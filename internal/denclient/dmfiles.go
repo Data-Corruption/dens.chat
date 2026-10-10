@@ -39,32 +39,40 @@ type dmUpload struct {
 // makes the file's preview.
 var tempAD = []byte("dens-dm-upload")
 
-// uploadDM strips, previews, seals and uploads a file for a DM. One made
+// uploadDM strips, previews, seals and uploads a file for a DM, or what
+// ready holds when it's set, as the media module made it already. One made
 // to replace a file of the DM's replaces its preview too, with its own.
-func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64, body io.Reader, replaces string) (Uploaded, error) {
+func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64, body io.Reader, replaces string,
+	ready *prepared) (Uploaded, error) {
 	limits := c.limits()
 	if limits.FileSize > 0 && vault.SealedSize(max(size, 0)) > limits.FileSize {
 		return Uploaded{}, ErrTooLarge
 	}
-	g := &gate{r: body}
-	defer g.shut()
-	br := bufio.NewReaderSize(g, media.SniffLen)
-	head, err := br.Peek(media.SniffLen)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return Uploaded{}, err
-	}
-	kind := media.Sniff(head)
-	if kind.Refused() {
-		return Uploaded{}, refusal(head)
-	}
-	var p *prepared
-	if kind.NeedsMedia() {
-		// The copy is sealed again below, so it must fit sealed.
-		fit := limits.FileSize - (vault.SealedSize(limits.FileSize) - limits.FileSize)
-		if p, err = c.m.prepare(ctx, kind, head, name, br, max(limits.FileSize, size), fit); err != nil {
+	p := ready
+	var br *bufio.Reader
+	var head []byte
+	var kind media.Kind
+	var err error
+	if p == nil {
+		g := &gate{r: body}
+		defer g.shut()
+		br = bufio.NewReaderSize(g, media.SniffLen)
+		head, err = br.Peek(media.SniffLen)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return Uploaded{}, err
 		}
-		defer p.close()
+		kind = media.Sniff(head)
+		if kind.Refused() {
+			return Uploaded{}, refusal(head)
+		}
+		if kind.NeedsMedia() {
+			if p, err = c.m.prepare(ctx, kind, head, name, br, max(limits.FileSize, size), dmFit(limits)); err != nil {
+				return Uploaded{}, err
+			}
+			defer p.close()
+		}
+	}
+	if p != nil {
 		kind, name, size = p.kind, p.name, p.out.Size()
 		br = bufio.NewReaderSize(io.NewSectionReader(p.out, 0, size), media.SniffLen)
 		if head, err = br.Peek(media.SniffLen); err != nil && !errors.Is(err, io.EOF) {
@@ -138,7 +146,12 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 	}
 	if p != nil && p.stripped.MIME != "" {
 		file.Width, file.Height, file.Duration = p.stripped.Width, p.stripped.Height, p.stripped.DurationMS
-		if p.stripped.Decodes {
+		switch {
+		case p.poster != nil:
+			// A video's copy takes the preview made from its full size
+			// (M5.4).
+			thumb = p.poster
+		case p.stripped.Decodes:
 			th, err := media.Poster(ctx, c.m.Media, p.out)
 			switch {
 			case err == nil:
@@ -174,7 +187,11 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		oldThumb = c.dmFiles[replaces].thumb
 		c.mu.Unlock()
 	}
-	sent, err := c.uploadSealed(ctx, pr, vault.SealedSize(file.Size), replaces)
+	var sealed io.Reader = pr
+	if p != nil && p.sending != nil {
+		sealed = &counted{r: pr, total: vault.SealedSize(file.Size), report: p.sending}
+	}
+	sent, err := c.uploadSealed(ctx, sealed, vault.SealedSize(file.Size), replaces)
 	if err != nil {
 		return Uploaded{}, err
 	}
@@ -204,6 +221,12 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		up.Stripped, up.Converted = true, p.converted
 	}
 	return up, nil
+}
+
+// dmFit is the largest file that fits a den's limit sealed, as a DM's file
+// goes.
+func dmFit(limits denproto.Limits) int64 {
+	return limits.FileSize - (vault.SealedSize(limits.FileSize) - limits.FileSize)
 }
 
 // dmUploaded describes a DM file to the page as a den describes a

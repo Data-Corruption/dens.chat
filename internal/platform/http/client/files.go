@@ -20,6 +20,8 @@ func (rt *router) mountFiles(r chi.Router) {
 	r.Post("/api/dens/{den}/uploads/{file}/thumb", rt.handleSetThumb)
 	r.Get("/api/dens/{den}/uploads/{file}/versions/{version}", rt.handleVersion)
 	r.Post("/api/dens/{den}/uploads/{file}/switch", rt.handleSwitchVersion)
+	r.Get("/api/dens/{den}/progress/{key}", rt.handleUploadProgress)
+	r.Post("/api/dens/{den}/progress/{key}/full", rt.handleSendFullSize)
 	r.Get("/api/dens/{den}/storage", rt.handleStorage)
 	r.Get("/api/dens/{den}/files", rt.handleOwnFiles)
 	r.Delete("/api/dens/{den}/uploads/{file}", rt.handleDropUpload)
@@ -31,8 +33,9 @@ func (rt *router) mountFiles(r chi.Router) {
 // file's bytes as they are; images lose their metadata on the way. The
 // page names the channel the file is for, since a DM's goes sealed, and
 // the file it replaces, if any (M5). A file for a message says which
-// version of a photo it sends, smaller or full, and a photo then goes with
-// both kept for the page to compare (M5).
+// version of a photo or video it sends, smaller or full, and it then goes
+// with both kept for the page to compare (M5), and names the key the page
+// follows its progress by while a video's copy is made (M5.4).
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {
@@ -48,7 +51,8 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	var up denclient.Uploaded
 	switch {
 	case send != "":
-		up, err = rt.a.Dens.UploadVersions(r.Context(), den, channel, name, r.ContentLength, r.Body, denclient.Send(send), replaces)
+		up, err = rt.a.Dens.UploadVersions(r.Context(), den, channel, name, r.ContentLength, r.Body, denclient.Send(send), replaces,
+			q.Get("progress"))
 	case replaces != "":
 		up, err = rt.a.Dens.Replace(r.Context(), den, channel, replaces, name, r.ContentLength, r.Body)
 	default:
@@ -106,9 +110,10 @@ func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 	}
 }
 
-// handleVersion serves one of the two versions kept of a photo waiting to
-// be sent, smaller or full, for the page to compare them (M5). Each is a
-// JPEG or PNG this service made or stripped, served as any file is.
+// handleVersion serves one of the two versions kept of a photo or video
+// waiting to be sent, smaller or full, for the page to compare them (M5).
+// Each is a JPEG, a PNG or an MP4 this service made or stripped, served as
+// any file is, with byte ranges for a player.
 func (rt *router) handleVersion(w http.ResponseWriter, r *http.Request) {
 	f, err := rt.a.Dens.OpenVersion(chi.URLParam(r, "den"), chi.URLParam(r, "file"), denclient.Send(chi.URLParam(r, "version")))
 	if err != nil {
@@ -119,8 +124,8 @@ func (rt *router) handleVersion(w http.ResponseWriter, r *http.Request) {
 	serveFile(w, r, f)
 }
 
-// handleSwitchVersion switches a photo waiting to be sent to its other
-// version, and answers with the upload that takes its place (M5).
+// handleSwitchVersion switches a photo or video waiting to be sent to its
+// other version, and answers with the upload that takes its place (M5).
 func (rt *router) handleSwitchVersion(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		To string `json:"to"`
@@ -134,6 +139,27 @@ func (rt *router) handleSwitchVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, up)
+}
+
+// handleUploadProgress says how far an upload the page follows has come
+// (M5.4): making a video's smaller copy, then sending it to the den.
+func (rt *router) handleUploadProgress(w http.ResponseWriter, r *http.Request) {
+	p, err := rt.a.Dens.UploadProgress(chi.URLParam(r, "den"), chi.URLParam(r, "key"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, p)
+}
+
+// handleSendFullSize has an upload making a video's copy send the video
+// full size instead, which the upload then answers with (M5.4).
+func (rt *router) handleSendFullSize(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.SendFullSize(chi.URLParam(r, "den"), chi.URLParam(r, "key")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // serveFile serves a file to the page: inline, as exactly what it is, only
