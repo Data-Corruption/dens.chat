@@ -63,6 +63,78 @@ const HeaderFilename = "Dens-Filename"
 // SealedType is the type a den gives a sealed upload, which it can't open.
 const SealedType = "application/octet-stream"
 
+// HeaderReplaces names the file an upload is made to take the place of
+// (M5). The den counts the upload against the space that file frees, and
+// it can take only that file's place.
+const HeaderReplaces = "Dens-Replaces"
+
+// What a picture on a profile is, in a member's list of their files (M5).
+const (
+	ProfileAvatar = "avatar"
+	ProfileBanner = "banner"
+)
+
+// OwnFile is one of a member's files on a den, as they manage them (M5):
+// the file and what uses it. That's a message, with its channel and, in a
+// channel, the start of its text; a picture on their profile; or nothing
+// while it waits to be used. A DM's file is a sealed blob, whose message
+// comes in the page's Messages for the member's client to open.
+type OwnFile struct {
+	File
+	MessageID string `json:"message_id,omitempty"`
+	ChannelID string `json:"channel_id,omitempty"`
+	Profile   string `json:"profile,omitempty"`
+	Excerpt   string `json:"excerpt,omitempty"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+// OwnFiles is a page of a member's files, largest first. Messages are the
+// DM messages its sealed files are on, and Next continues the list.
+type OwnFiles struct {
+	Files    []OwnFile `json:"files"`
+	Messages []Message `json:"messages,omitempty"`
+	Next     string    `json:"next,omitempty"`
+}
+
+// OwnFilesPage is the most files a page of them lists.
+const OwnFilesPage = 50
+
+// CheckOwnFiles checks a page of a member's files as a den sends it.
+func CheckOwnFiles(p OwnFiles) error {
+	if len(p.Files) > OwnFilesPage || len(p.Messages) > OwnFilesPage || len(p.Next) > 64 {
+		return errors.New("the page is too long")
+	}
+	for _, f := range p.Files {
+		if err := CheckFile(f.File); err != nil {
+			return err
+		}
+		onMessage := f.MessageID != "" || f.ChannelID != ""
+		if onMessage {
+			if _, err := ParseID(f.MessageID); err != nil {
+				return errors.New("a file names an invalid message")
+			}
+			if _, err := ParseID(f.ChannelID); err != nil {
+				return errors.New("a file names an invalid channel")
+			}
+		}
+		if f.Profile != "" && (onMessage || f.Profile != ProfileAvatar && f.Profile != ProfileBanner) {
+			return errors.New("a file is used in two places")
+		}
+		if f.Excerpt != "" && (!onMessage || utf8.RuneCountInString(f.Excerpt) > ReplyExcerpt) {
+			return errors.New("a file has an invalid excerpt")
+		}
+		if f.CreatedAt <= 0 {
+			return errors.New("a file has no time")
+		}
+	}
+	for _, m := range p.Messages {
+		if err := CheckMessage(m); err != nil || m.Sealed == nil {
+			return errors.New("the page holds an invalid message")
+		}
+	}
+	return nil
+}
+
 // Error codes for uploads.
 const (
 	// CodeUnsupportedType (415) is a file Dens refuses rather than send

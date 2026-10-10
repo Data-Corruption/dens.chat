@@ -98,6 +98,8 @@ func New(a *app.App) http.Handler {
 			r.Post("/uploads", h.upload(false))
 			r.Post("/uploads/sealed", h.upload(true))
 			r.Post("/uploads/{id}/thumb", h.setThumb)
+			r.Delete("/uploads/{id}", h.dropUpload)
+			r.Get("/me/files", h.ownFiles)
 			r.Get("/files/{id}", h.file(false))
 			r.Get("/files/{id}/thumb", h.file(true))
 			r.Get("/me/storage", h.storage)

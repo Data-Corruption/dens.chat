@@ -1379,7 +1379,7 @@ func (d *Den) message(ctx context.Context, id string) (denproto.Message, int64, 
 
 // Edit replaces a message's text, if nobody changed it since revision. Its
 // author and the members they named may edit it; only the author changes
-// who those are.
+// who those are, and the message's files (M5).
 func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.EditRequest) (denproto.Message, error) {
 	d.changes.Lock()
 	defer d.changes.Unlock()
@@ -1398,9 +1398,24 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if req.Editors != nil && author != s.MemberID {
 		return m, forbidden("only the author changes who may edit a message")
 	}
+	if req.Attachments != nil && author != s.MemberID {
+		return m, forbidden("only the author changes a message's files")
+	}
 	dm := c.Kind == denproto.KindDM
 	if err := checkSealedText(dm, req.Text, req.Sealed, req.KeyID); err != nil {
 		return m, err
+	}
+	hasFiles := len(m.Attachments) > 0
+	var files []int64
+	if req.Attachments != nil {
+		most := denproto.MaxAttachments
+		if dm {
+			most = denproto.MaxDMFiles
+		}
+		if files, err = parseAttachments(*req.Attachments, most); err != nil {
+			return m, err
+		}
+		hasFiles = len(files) > 0
 	}
 	var keyID *int64
 	if dm {
@@ -1413,7 +1428,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		return m, invalid("unedited: only DM messages' edits say so; the den compares other texts itself")
 	} else {
 		req.Text = denproto.CleanLinks(req.Text)
-		if err := denproto.CheckMessageText(req.Text, len(m.Attachments) > 0); err != nil {
+		if err := denproto.CheckMessageText(req.Text, hasFiles); err != nil {
 			return m, invalid("text: %v", err)
 		}
 	}
@@ -1445,12 +1460,22 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	}
 	now := d.now().UnixMilli()
 	// Changing only who may edit leaves the message unmarked. The den can't
-	// compare a DM's texts, so the edit says.
+	// compare a DM's texts, so the edit says; a change of files it sees.
 	edited := req.Text != m.Text
 	if dm {
 		edited = !req.Unedited
 	}
+	var removed []string
+	var removedBlobs [][]byte
 	err = d.tx(ctx, func(tx *sql.Tx) error {
+		if req.Attachments != nil {
+			var filesChanged bool
+			var err error
+			if removed, filesChanged, removedBlobs, err = setAttachments(ctx, tx, mid, author, files, dm, time.UnixMilli(now)); err != nil {
+				return err
+			}
+			edited = edited || filesChanged
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, key_id = ?, revision = revision + 1,
 			edited_at = iif(?, ?, edited_at), edited_by = iif(?, ?, edited_by) WHERE id = ? AND revision = ?`,
 			sealed, keyID, edited, now, edited, s.MemberID, mid, req.Revision)
@@ -1481,9 +1506,16 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if err != nil {
 		return m, err
 	}
+	d.files.remove(removedBlobs)
 	m.Text, m.Revision = req.Text, m.Revision+1
 	if dm {
 		m.Sealed, m.KeyID = req.Sealed, denproto.FormatID(*keyID)
+	} else if req.Attachments != nil {
+		attached, err := d.attachments(ctx, d.db, []int64{mid})
+		if err != nil {
+			return m, err
+		}
+		m.Attachments = attached[mid]
 	}
 	if edited {
 		m.EditedAt, m.EditedBy = now, denproto.FormatID(s.MemberID)
@@ -1491,7 +1523,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if req.Editors != nil {
 		m.Editors = formatIDs(editors)
 	}
-	return m, d.Hub.Publish(denproto.EventMessageUpdated, m, audienceOf(c))
+	return m, d.Hub.Publish(denproto.EventMessageUpdated, denproto.MessageUpdated{Message: m, Files: removed}, audienceOf(c))
 }
 
 // SetTask checks or unchecks task n of a message, for its author or one of

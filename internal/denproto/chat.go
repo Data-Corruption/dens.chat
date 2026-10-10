@@ -204,13 +204,24 @@ type SendRequest struct {
 // only the author changes. A DM message's edit carries it sealed instead,
 // and since the den can't compare texts, Unedited marks one that only
 // ticks a task or changes the editors, which doesn't mark it edited.
+// Attachments, which only the author sets, are the message's files after
+// the edit (M5): files it has and the author's uploads waiting to be used,
+// or in a DM every blob.
 type EditRequest struct {
-	Revision int       `json:"revision"`
-	Text     string    `json:"text"`
-	Editors  *[]string `json:"editors,omitempty"`
-	Sealed   Bytes     `json:"sealed,omitempty"`
-	KeyID    string    `json:"key_id,omitempty"`
-	Unedited bool      `json:"unedited,omitempty"`
+	Revision    int       `json:"revision"`
+	Text        string    `json:"text"`
+	Editors     *[]string `json:"editors,omitempty"`
+	Sealed      Bytes     `json:"sealed,omitempty"`
+	KeyID       string    `json:"key_id,omitempty"`
+	Unedited    bool      `json:"unedited,omitempty"`
+	Attachments *[]string `json:"attachments,omitempty"`
+}
+
+// MessageUpdated is a changed message, with the files the change took off
+// it, which are deleted and leave clients' caches (M5).
+type MessageUpdated struct {
+	Message
+	Files []string `json:"files,omitempty"`
 }
 
 // TaskRequest checks or unchecks one of a message's tasks. Text is the

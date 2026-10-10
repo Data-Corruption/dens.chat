@@ -259,17 +259,34 @@ func sniffType(head []byte) string {
 // doesn't say; the body is read up to the den's file size limit and no
 // further. A sealed upload is a DM's file, which the member's client
 // sealed: the den can't tell what it is, and keeps it as it came.
-func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, body io.Reader, sealed bool) (denproto.File, error) {
+//
+// An upload that replaces one of the member's files in use, by its ID,
+// counts against the space that file takes, so a member at their limit
+// can swap a file for a smaller one (M5). It takes only that file's place,
+// and a newer one made for the same file drops it.
+func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, body io.Reader, sealed bool, replaces string) (denproto.File, error) {
 	info, _ := d.Info()
 	limits := info.Limits
 	if size > limits.FileSize {
 		return denproto.File{}, tooLarge(limits)
 	}
+	var replaced sql.NullInt64
+	if replaces != "" {
+		rid, err := denproto.ParseID(replaces)
+		if err != nil {
+			return denproto.File{}, invalid("%s: no such file of yours in use", denproto.HeaderReplaces)
+		}
+		replaced = sql.NullInt64{Int64: rid, Valid: true}
+	}
 	st, err := usage(ctx, d.db, s.MemberID)
 	if err != nil {
 		return denproto.File{}, err
 	}
-	if err := checkSpace(limits, st, max(size, 0)); err != nil {
+	credit, err := replacedSpace(ctx, d.db, s.MemberID, replaced, sealed)
+	if err != nil {
+		return denproto.File{}, err
+	}
+	if err := checkSpace(limits, st, max(size, 0)-credit); err != nil {
 		return denproto.File{}, err
 	}
 	if free, err := d.files.freeSpace(d.files.dir); err != nil {
@@ -351,13 +368,25 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 
 	now := d.now()
 	var id int64
+	var dropped [][]byte
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		// Other uploads may have finished meanwhile.
+		if replaced.Valid {
+			// A file has one replacement waiting at most.
+			if dropped, err = deleteFiles(ctx, tx, `replaces = ? AND uploader_id = ? AND message_id IS NULL`, replaced, s.MemberID); err != nil {
+				return err
+			}
+		}
+		// Other uploads may have finished meanwhile, and the file this one
+		// replaces may have gone.
 		st, err := usage(ctx, tx, s.MemberID)
 		if err != nil {
 			return err
 		}
-		if err := checkSpace(limits, st, f.Size+thumbSize); err != nil {
+		credit, err := replacedSpace(ctx, tx, s.MemberID, replaced, sealed)
+		if err != nil {
+			return err
+		}
+		if err := checkSpace(limits, st, f.Size+thumbSize-credit); err != nil {
 			return err
 		}
 		var tw, th, ts any
@@ -373,9 +402,9 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 		}
 		result, err := tx.ExecContext(ctx, `INSERT INTO den_files
 			(blob, uploader_id, name, type, size, width, height, animated, thumb_width, thumb_height, thumb_size, duration_ms,
-			sealed, created_at)
-			VALUES (?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			blob, s.MemberID, f.Type, f.Size, w, h, f.Animated, tw, th, ts, duration, sealed, now.UnixMilli())
+			sealed, created_at, replaces)
+			VALUES (?, ?, x'', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			blob, s.MemberID, f.Type, f.Size, w, h, f.Animated, tw, th, ts, duration, sealed, now.UnixMilli(), replaced)
 		if err != nil {
 			return err
 		}
@@ -407,9 +436,44 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 	if thumb != nil {
 		thumb.kept = true
 	}
+	d.files.remove(dropped)
 	f.ID = denproto.FormatID(id)
 	d.files.scheduleSweep(d, now.Add(uploadExpiry))
 	return f, nil
+}
+
+// replacedSpace is the space the file an upload replaces takes, which the
+// upload counts against: one of the member's files, in use on a message or
+// their profile, sealed or not as the upload is. Without one it's 0.
+func replacedSpace(ctx context.Context, q querier, member int64, replaced sql.NullInt64, sealed bool) (int64, error) {
+	if !replaced.Valid {
+		return 0, nil
+	}
+	var space int64
+	err := q.QueryRowContext(ctx, `SELECT size + coalesce(thumb_size, 0) FROM den_files
+		WHERE id = ? AND uploader_id = ? AND sealed = ? AND NOT (`+unused+`)`, replaced.Int64, member, sealed).Scan(&space)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, invalid("%s: no such file of yours in use", denproto.HeaderReplaces)
+	}
+	return space, err
+}
+
+// DropUpload deletes one of the member's uploads waiting to be used, which
+// frees its space at once rather than within the hour (M5).
+func (d *Den) DropUpload(ctx context.Context, s *Session, id string) error {
+	fid, err := denproto.ParseID(id)
+	if err != nil {
+		return errFileNotFound
+	}
+	blobs, err := deleteFiles(ctx, d.db, `id = ? AND uploader_id = ? AND `+unused, fid, s.MemberID)
+	if err != nil {
+		return err
+	}
+	if len(blobs) == 0 {
+		return errFileNotFound
+	}
+	d.files.remove(blobs)
+	return nil
 }
 
 // preview makes an image's preview from what was stored, one image at a
@@ -559,11 +623,11 @@ func (d *Den) attachments(ctx context.Context, q querier, ids []int64) (map[int6
 
 // attach puts pending uploads on a new message within tx. Each must be
 // the author's own, unused and not expired, and sealed for a DM's message
-// or not for a channel's.
+// or not for a channel's; one made to replace a file takes only its place.
 func attach(ctx context.Context, tx *sql.Tx, message, author int64, files []int64, sealed bool, now time.Time) error {
 	for i, id := range files {
 		res, err := tx.ExecContext(ctx, `UPDATE den_files SET message_id = ?, position = ?
-			WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND created_at > ? AND sealed = ?
+			WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND created_at > ? AND sealed = ? AND replaces IS NULL
 			AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)`,
 			message, i, id, author, now.Add(-uploadExpiry).UnixMilli(), sealed)
 		if err != nil {
@@ -744,17 +808,24 @@ func (d *Den) tidyFiles(ctx context.Context) error {
 
 // checkPicture checks an upload a member puts on their profile: their own,
 // waiting to be used, a still image, and the shape the kind of picture
-// takes. It returns the upload's ID.
+// takes. One made to replace a file must replace the picture it takes the
+// place of. It returns the upload's ID.
 func checkPicture(ctx context.Context, tx *sql.Tx, member int64, id string, banner bool, now time.Time) (int64, error) {
 	fid, err := denproto.ParseID(id)
 	if err != nil {
 		return 0, invalid("no such upload")
 	}
+	column := "avatar_id"
+	if banner {
+		column = "banner_id"
+	}
 	var typ string
 	var w, h sql.NullInt64
 	var animated bool
 	err = tx.QueryRowContext(ctx, `SELECT type, width, height, animated FROM den_files
-		WHERE id = ? AND uploader_id = ? AND created_at > ? AND `+unused, fid, member, now.Add(-uploadExpiry).UnixMilli()).
+		WHERE id = ? AND uploader_id = ? AND created_at > ? AND `+unused+`
+		AND (replaces IS NULL OR replaces = (SELECT `+column+` FROM den_members WHERE id = ?))`,
+		fid, member, now.Add(-uploadExpiry).UnixMilli(), member).
 		Scan(&typ, &w, &h, &animated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, invalid("no such upload waiting to be used")

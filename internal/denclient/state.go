@@ -457,12 +457,21 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		}
 		data = r
 	case denproto.EventMessageCreated, denproto.EventMessageUpdated:
-		var m denproto.Message
-		if json.Unmarshal(e.D, &m) != nil || denproto.CheckMessage(m) != nil {
+		var u denproto.MessageUpdated
+		if json.Unmarshal(e.D, &u) != nil || denproto.CheckMessage(u.Message) != nil || len(u.Files) > denproto.MaxDMFiles {
 			return e, false, errMalformed
 		}
+		for _, f := range u.Files {
+			if !validID(f) {
+				return e, false, errMalformed
+			}
+		}
+		m := u.Message
 		if e.T == denproto.EventMessageCreated {
 			s.noteMessage(m, me)
+		} else {
+			// The files an edit took off its message are gone (M5).
+			s.gone = append(s.gone, u.Files...)
 		}
 		data = m
 	case denproto.EventMessageDeleted:

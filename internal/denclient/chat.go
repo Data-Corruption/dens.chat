@@ -234,7 +234,7 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 			changed := p.Text != req.Text
 			p.Text = req.Text
 			return changed, nil
-		})
+		}, false)
 	}
 	return change(ctx, c, http.MethodPatch, "/api/messages/"+messageID, req)
 }
@@ -243,9 +243,10 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 // edit change what it seals, which reports whether that changed the text,
 // and seals it again at the next revision. A revision other than the
 // current one is a conflict, as on the den, and so is errConflict from
-// edit; revision 0 takes the current one.
+// edit; revision 0 takes the current one. With files set, the edit changes
+// the message's files (M5), so it names every blob they take.
 func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision int, editors *[]string,
-	edit func(*denproto.DMPayload) (bool, error)) (PageMessage, error) {
+	edit func(*denproto.DMPayload) (bool, error), files bool) (PageMessage, error) {
 	current, err := c.message(ctx, channelID, messageID)
 	if err != nil {
 		return PageMessage{}, err
@@ -279,6 +280,13 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 		return PageMessage{}, err
 	}
 	req := denproto.EditRequest{Revision: revision, Editors: editors, Sealed: sealed, KeyID: keyID, Unedited: !changed}
+	if files {
+		blobs := []string{}
+		for _, f := range p.Files {
+			blobs = append(blobs, blobsOf(f)...)
+		}
+		req.Attachments = &blobs
+	}
 	return change(ctx, c, http.MethodPatch, "/api/messages/"+messageID, req)
 }
 
@@ -313,7 +321,7 @@ func (m *Manager) SetTask(ctx context.Context, denID, channelID, messageID strin
 			}
 			p.Text, _ = denproto.SetTask(p.Text, n, req.Checked)
 			return false, nil
-		})
+		}, false)
 		var conflict *ErrEditConflict
 		if moved || !errors.As(err, &conflict) || attempt == 2 {
 			return msg, err

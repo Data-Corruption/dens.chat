@@ -50,13 +50,28 @@ var ErrTooLarge = errors.New("the file is larger than this den allows")
 // size is the file's length. A file for a DM, which channel names, goes sealed. Nothing reads
 // body once Upload returns, so the caller can drain what's left of it.
 func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, size int64, body io.Reader) (Uploaded, error) {
+	return m.upload(ctx, denID, channelID, name, size, body, "")
+}
+
+// Replace uploads a file, as Upload does, made to take the place of one of
+// this member's files in use (M5). The den counts it against the space
+// that file frees, so a member at their limit can swap a file for another,
+// and it can take only that file's place, which SwapFile puts it in.
+func (m *Manager) Replace(ctx context.Context, denID, channelID, fileID, name string, size int64, body io.Reader) (Uploaded, error) {
+	if err := checkID("file", fileID); err != nil {
+		return Uploaded{}, err
+	}
+	return m.upload(ctx, denID, channelID, name, size, body, fileID)
+}
+
+func (m *Manager) upload(ctx context.Context, denID, channelID, name string, size int64, body io.Reader, replaces string) (Uploaded, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return Uploaded{}, err
 	}
 	if channelID != "" {
 		if _, dm := c.isDM(channelID); dm {
-			return c.uploadDM(ctx, channelID, name, size, body)
+			return c.uploadDM(ctx, channelID, name, size, body, replaces)
 		}
 	}
 	limits := c.limits()
@@ -126,6 +141,9 @@ func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, siz
 	a.headers(req.Header, token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set(denproto.HeaderFilename, url.PathEscape(denproto.CleanFilename(name)))
+	if replaces != "" {
+		req.Header.Set(denproto.HeaderReplaces, replaces)
+	}
 	res, err := m.Transfer.Do(req)
 	if err != nil {
 		select {

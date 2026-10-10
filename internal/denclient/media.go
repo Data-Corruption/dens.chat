@@ -175,7 +175,7 @@ func (m *Manager) SetThumb(ctx context.Context, denID, fileID string, size int64
 	if dm {
 		return c.setDMThumb(ctx, fileID, u, clean.Bytes(), kind, res)
 	}
-	f, err := c.post(ctx, "/api/uploads/"+fileID+"/thumb", &clean, int64(clean.Len()))
+	f, err := c.post(ctx, "/api/uploads/"+fileID+"/thumb", &clean, int64(clean.Len()), "")
 	if err != nil {
 		return Uploaded{}, err
 	}
@@ -200,7 +200,7 @@ func (c *conn) setDMThumb(ctx context.Context, fileID string, u dmUpload, data [
 		return Uploaded{}, stripError(err)
 	}
 	ch, _ := denproto.ParseID(u.channel)
-	thumb, err := c.uploadDMThumb(ctx, f.Key, ch, th)
+	thumb, err := c.uploadDMThumb(ctx, f.Key, ch, th, "")
 	if err != nil {
 		return Uploaded{}, err
 	}
