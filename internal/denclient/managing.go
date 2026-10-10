@@ -115,6 +115,7 @@ func (m *Manager) DropUpload(ctx context.Context, denID, uploadID string) error 
 		delete(c.dmFiles, uploadID)
 	}
 	c.mu.Unlock()
+	c.dropKept(blobs[:1])
 	for _, id := range blobs {
 		if err := c.call(ctx, http.MethodDelete, "/api/uploads/"+id, nil, nil); err != nil {
 			return err
@@ -179,6 +180,8 @@ func (m *Manager) changeFile(ctx context.Context, denID, channelID, messageID, f
 		if !errors.As(err, &conflict) || attempt == 2 {
 			if err == nil && with != nil {
 				c.sentUploads(blobsOf(*with))
+			} else if err == nil && upload != "" {
+				c.sentUploads([]string{upload})
 			}
 			return err
 		}

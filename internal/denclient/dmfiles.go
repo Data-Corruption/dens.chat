@@ -310,13 +310,15 @@ func (c *conn) takeUploads(channelID string, ids []string) ([]denproto.DMFile, [
 	return files, blobs, nil
 }
 
-// sentUploads forgets uploads a message sent.
+// sentUploads forgets uploads a message sent, and the versions kept of
+// its photos.
 func (c *conn) sentUploads(blobs []string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	for _, id := range blobs {
 		delete(c.uploads, id)
 	}
+	c.mu.Unlock()
+	c.dropKept(blobs)
 }
 
 // sniffType names a file that isn't an image, as a den does, for the page

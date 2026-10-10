@@ -22,6 +22,30 @@ const (
 	posterQuality = 5
 )
 
+// Smaller copies (M5). A photo goes as a copy that fits CopySide, at
+// CopyQuality, unless its sender sends it full size: about as many pixels
+// as the viewer shows on a 4K screen, and several times smaller than a
+// phone's photo.
+const (
+	CopySide    = 2560
+	CopyQuality = 5
+)
+
+// Copyable reports whether an image of kind k, which Strip described as
+// res, gets a smaller copy: a JPEG, and a PNG larger than CopySide, which is
+// only scaled down, so a screenshot's text stays sharp. A photo the module
+// converts gets one too. WebP stills, GIFs and anything animated go as they
+// are.
+func Copyable(k Kind, res Result) bool {
+	switch k {
+	case JPEG, Photo:
+		return true
+	case PNG:
+		return !res.Animated && max(res.Width, res.Height) > CopySide
+	}
+	return false
+}
+
 // Stripped describes a video or audio file the media module stripped.
 type Stripped struct {
 	// MIME is the type the copy plays as, which its container decides.

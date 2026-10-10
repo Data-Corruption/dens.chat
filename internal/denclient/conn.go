@@ -91,6 +91,10 @@ type conn struct {
 	approvals map[string]*approval
 	approved  map[string]RequestView
 
+	// kept are the two versions of each photo waiting to be sent, by its
+	// upload's ID (M5).
+	kept map[string]*kept
+
 	// Only the run goroutine touches these.
 	epoch string
 	seq   uint64

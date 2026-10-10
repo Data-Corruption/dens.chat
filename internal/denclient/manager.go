@@ -216,6 +216,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	m.mu.Lock()
 	for _, c := range m.conns {
 		c.j.close()
+		c.dropAllKept()
 	}
 	m.mu.Unlock()
 	m.dropSignIns()
@@ -228,7 +229,8 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
 		stop: stop, done: make(chan struct{}), wake: make(chan struct{}, 1),
 		due: map[string]bool{}, keysDue: make(chan struct{}, 1), dmFiles: map[string]dmFile{},
-		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{}}
+		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
+		kept: map[string]*kept{}}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
@@ -254,6 +256,7 @@ func (m *Manager) forget(ctx context.Context, c *conn) error {
 	c.stop()
 	<-c.done
 	c.j.close()
+	c.dropAllKept()
 	m.dropDenFocus(c.j.denID.String())
 	m.notify()
 	if _, err := m.db.ExecContext(ctx, `DELETE FROM joined_dens WHERE den_id = ?`, []byte(c.j.denID)); err != nil {

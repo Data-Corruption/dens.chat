@@ -34,11 +34,14 @@ const (
 )
 
 // Uploaded is a file the den stored, whether metadata was taken out of it
-// first, and whether it's a photo turned into a JPEG or PNG to send.
+// first, and whether it's a photo turned into a JPEG or PNG to send. A
+// photo uploaded for a message with its two versions describes them
+// (versions.go).
 type Uploaded struct {
 	denproto.File
-	Stripped  bool `json:"stripped,omitempty"`
-	Converted bool `json:"converted,omitempty"`
+	Stripped  bool      `json:"stripped,omitempty"`
+	Converted bool      `json:"converted,omitempty"`
+	Versions  *Versions `json:"versions,omitempty"`
 }
 
 // ErrTooLarge is an upload over the den's limit, which the page states.
@@ -69,6 +72,11 @@ func (m *Manager) upload(ctx context.Context, denID, channelID, name string, siz
 	if err != nil {
 		return Uploaded{}, err
 	}
+	return m.uploadTo(ctx, c, channelID, name, size, body, replaces)
+}
+
+// uploadTo uploads a file to a den, as upload does.
+func (m *Manager) uploadTo(ctx context.Context, c *conn, channelID, name string, size int64, body io.Reader, replaces string) (Uploaded, error) {
 	if channelID != "" {
 		if _, dm := c.isDM(channelID); dm {
 			return c.uploadDM(ctx, channelID, name, size, body, replaces)
