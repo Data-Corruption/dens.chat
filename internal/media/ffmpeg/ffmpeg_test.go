@@ -435,7 +435,7 @@ func TestWorkerFailures(t *testing.T) {
 		t.Errorf("a worker that died: %v", err)
 	}
 	r := newRunner(t, "hang")
-	r.timeout = func(Op, int64) time.Duration { return 300 * time.Millisecond }
+	r.timeout = func(Job, int64) time.Duration { return 300 * time.Millisecond }
 	start := time.Now()
 	_, err := r.Probe(context.Background(), in)
 	var je *JobError

@@ -3,4 +3,4 @@
 package module
 
 // MinPages is the memory the module needs before it runs, in 64 KiB pages.
-const MinPages = 43
+const MinPages = 54

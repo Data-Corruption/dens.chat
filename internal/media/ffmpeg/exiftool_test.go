@@ -71,9 +71,9 @@ func exiftags(t *testing.T, exiftool, file string) map[string]string {
 }
 
 // TestExiftoolFindsNothingLeft strips every kind of file Dens takes, turns
-// the HEIC into a JPEG, and makes a phone JPEG's smaller copy, and fails on
-// any tag that could be personal left in what comes out. It names tags,
-// never their values.
+// the HEIC into a JPEG, and makes a phone JPEG's smaller copy and a phone
+// video's, and fails on any tag that could be personal left in what comes
+// out. It names tags, never their values.
 func TestExiftoolFindsNothingLeft(t *testing.T) {
 	exiftool := os.Getenv("DENS_EXIFTOOL")
 	if exiftool == "" {
@@ -89,11 +89,16 @@ func TestExiftoolFindsNothingLeft(t *testing.T) {
 	if err := os.WriteFile(phone, phoneJPEG(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A video's smaller copy, made from the phone video stripped (M5.4).
+	const videoCopy = "with-gps.mov, smaller"
 	for _, name := range []string{"with-gps.mov", "with-gps.mp4", "rotated.heic", "meta.mp4", "meta.mkv", "meta.webm",
-		"meta.mp3", "meta.m4a", "meta.flac", "meta.ogg", "meta.wav", phone} {
+		"meta.mp3", "meta.m4a", "meta.flac", "meta.ogg", "meta.wav", phone, videoCopy} {
 		t.Run(filepath.Base(name), func(t *testing.T) {
 			source := name
-			if !filepath.IsAbs(name) {
+			switch {
+			case name == videoCopy:
+				source = filepath.Join("testdata", "with-gps.mov")
+			case !filepath.IsAbs(name):
 				source = filepath.Join("testdata", name)
 			}
 			data, err := os.ReadFile(source)
@@ -106,6 +111,12 @@ func TestExiftoolFindsNothingLeft(t *testing.T) {
 				_, err = r.Still(context.Background(), in, out, 0, 3, 0)
 			case phone:
 				_, err = r.Still(context.Background(), in, out, 2560, 5, 6)
+			case videoCopy:
+				full, packets := stripped(t, r), &memFile{}
+				var e Encoded
+				if e, err = r.Encode(context.Background(), full, packets, Chunk{EndUS: 5e6, MaxSide: 1280, FPS: 30, KBPS: 400}, nil); err == nil {
+					_, err = r.Mux(context.Background(), full, packets, out, e.Width, e.Height)
+				}
 			default:
 				_, err = r.Strip(context.Background(), in, out, "")
 			}

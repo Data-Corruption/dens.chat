@@ -15,13 +15,18 @@ import (
 //	'w' file u8, offset i64, n u32, n bytes  → n' i32
 //	's' file u8                              → size i64, or -1
 //	'l' level i32, n u32, n bytes            (no answer)
+//	'p' done i64                             (how far the job is, no answer)
 //	'd' n u32, n bytes of JSON               (the job's end, no answer)
+//
+// The files are numbered as the driver numbers them: 0 the job's input, 1
+// its output, and 2 a video copy's packets.
 const (
-	reqRead  = 'r'
-	reqWrite = 'w'
-	reqSize  = 's'
-	reqLog   = 'l'
-	reqDone  = 'd'
+	reqRead     = 'r'
+	reqWrite    = 'w'
+	reqSize     = 's'
+	reqLog      = 'l'
+	reqProgress = 'p'
+	reqDone     = 'd'
 )
 
 // maxFrame bounds a frame's payload: the module reads and writes through

@@ -63,8 +63,8 @@ DEFAULT_EXIFTOOL_VERSION="13.55"
 # its v0.2 tag names (model_version), which the release doesn't carry.
 DEFAULT_RNNOISE_VERSION="0.2"
 DEFAULT_RNNOISE_MODEL_VERSION="0b50c45"
-# The video spike (spikes/video) builds libaom, AV1's reference encoder, for
-# WebAssembly with CMake, which its build takes.
+# libaom, AV1's reference encoder, which the media module carries for
+# smaller copies of videos, built for WebAssembly with CMake.
 DEFAULT_AOM_VERSION="3.15.2"
 DEFAULT_CMAKE_VERSION="4.4.4"
 
@@ -647,8 +647,8 @@ vendor_rnnoise_model() {
   printf '🟢 Vendored RNNoise model %s\n' "$RNNOISE_MODEL_VERSION"
 }
 
-# vendor_aom_src resolves to libaom's verified release tarball, which the
-# video spike unpacks where it builds.
+# vendor_aom_src resolves to libaom's verified release tarball, which
+# scripts/ffmpeg.sh unpacks where it builds.
 vendor_aom_src() {
   mkdir -p "$TOOLS_DIR"
   VENDOR_AOM_SRC="$TOOLS_DIR/libaom-${AOM_VERSION}.tar.gz"

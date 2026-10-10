@@ -6,8 +6,9 @@
 
 #include <stdint.h>
 
-// The files a job has: the one it reads, and the one it writes.
-enum { HOST_INPUT = 0, HOST_OUTPUT = 1 };
+// The files a job has: the one it reads, the one it writes, and for a
+// video's copy, the packets it's made of, which it reads too.
+enum { HOST_INPUT = 0, HOST_OUTPUT = 1, HOST_PACKETS = 2 };
 
 #ifdef __wasm__
 #define HOST_IMPORT(name) __attribute__((import_module("dens"), import_name(#name)))
@@ -29,5 +30,8 @@ HOST_IMPORT(size) int64_t host_size(int32_t file);
 HOST_IMPORT(log) void host_log(int32_t level, const char *msg, int32_t len);
 // host_result takes an operation's answer, as JSON.
 HOST_IMPORT(result) void host_result(const char *data, int32_t len);
+// host_progress says how far an operation has come, in its own terms:
+// encode's is the time of the last frame it encoded, in microseconds.
+HOST_IMPORT(progress) void host_progress(int64_t done);
 
 #endif

@@ -91,6 +91,10 @@ generate() {
     "Its libraries are under the GNU LGPL 2.1 or later. Each release publishes" \
     "their source as the binaries include them, as ffmpeg-source.tar.xz."
   section "zlib ${DEFAULT_ZLIB_VERSION}, in the media module" "$TEXTS/zlib.txt" "https://zlib.net"
+  section "libaom ${DEFAULT_AOM_VERSION}, in the media module" "$TEXTS/libaom.txt" \
+    "https://aomedia.googlesource.com/aom" \
+    "Its license, then the Alliance for Open Media's patent license, which it comes under too."
+  section "vector, as libaom includes it" "$TEXTS/vector.txt" "https://github.com/goldsborough/vector"
   section "wasi-libc, from wasi-sdk ${DEFAULT_WASI_SDK_VERSION}, in the media module" "$TEXTS/wasi-libc.txt" \
     "https://github.com/WebAssembly/wasi-libc" \
     "Dens takes it under the MIT license, one of the three it offers."
