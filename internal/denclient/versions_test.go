@@ -110,28 +110,29 @@ func upright(t *testing.T, data []byte, w, h int) {
 
 // A phone photo goes as a smaller copy, upright and without its details,
 // and its sender compares the two and switches to full size and back
-// before it's sent (M5).
+// before it's sent (M5). It's narrow, so it costs the race detector, which
+// slows the module some fifty times over, little.
 func TestPhotoGoesSmaller(t *testing.T) {
 	_, owner, member, denID, channelID := chatDen(t)
 	ctx := context.Background()
-	// 2,800 × 1,200 turned a quarter shows 1,200 × 2,800, and its copy
-	// fits 2,560.
-	data := photo(t, 2800, 1200, 92)
+	// 2,600 × 400 turned a quarter shows 400 × 2,600, and its copy fits
+	// 2,560.
+	data := photo(t, 2600, 400, 92)
 	up := uploadVersions(t, member, denID, channelID, "IMG_3001.jpg", data, denclient.SendSmaller)
 	v := up.Versions
-	if v == nil || v.Sent != denclient.SendSmaller || up.Width != 1097 || up.Height != 2560 || up.Type != "image/jpeg" ||
+	if v == nil || v.Sent != denclient.SendSmaller || up.Width != 394 || up.Height != 2560 || up.Type != "image/jpeg" ||
 		!up.Stripped || up.Name != "IMG_3001.jpg" || up.Thumb == nil {
 		t.Fatalf("the upload: %+v", up)
 	}
-	if v.Smaller != (denclient.Version{Type: "image/jpeg", Size: up.Size, Width: 1097, Height: 2560, Fits: true}) ||
-		v.Full.Width != 1200 || v.Full.Height != 2800 || !v.Full.Fits || v.Full.Size*3 < up.Size*4 {
+	if v.Smaller != (denclient.Version{Type: "image/jpeg", Size: up.Size, Width: 394, Height: 2560, Fits: true}) ||
+		v.Full.Width != 400 || v.Full.Height != 2600 || !v.Full.Fits || v.Full.Size*3 < up.Size*4 {
 		t.Fatalf("the versions: %+v", v)
 	}
 	smaller, kind, err := version(t, member, denID, up.ID, denclient.SendSmaller)
 	if err != nil || kind != media.JPEG || int64(len(smaller)) != v.Smaller.Size {
 		t.Fatalf("the smaller version: %s %d bytes, %v", kind, len(smaller), err)
 	}
-	upright(t, smaller, 1097, 2560)
+	upright(t, smaller, 394, 2560)
 	full, kind, err := version(t, member, denID, up.ID, denclient.SendFull)
 	if err != nil || kind != media.JPEG || int64(len(full)) != v.Full.Size || bytes.Contains(full, []byte("PhoneCam")) {
 		t.Fatalf("the full size: %s %d bytes, %v", kind, len(full), err)
@@ -142,7 +143,7 @@ func TestPhotoGoesSmaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if big.ID == up.ID || big.Size != v.Full.Size || big.Width != 1200 || big.Height != 2800 || big.Versions.Sent != denclient.SendFull {
+	if big.ID == up.ID || big.Size != v.Full.Size || big.Width != 400 || big.Height != 2600 || big.Versions.Sent != denclient.SendFull {
 		t.Fatalf("switched to full size: %+v", big)
 	}
 	page, err := member.Files(ctx, denID, "")
@@ -167,7 +168,7 @@ func TestPhotoGoesSmaller(t *testing.T) {
 	if err != nil || kind != media.JPEG {
 		t.Fatalf("the owner fetching the photo: %v %s", err, kind)
 	}
-	upright(t, got, 1097, 2560)
+	upright(t, got, 394, 2560)
 	if _, _, err := version(t, member, denID, back.ID, denclient.SendFull); err == nil {
 		t.Fatal("the versions are still kept once it's sent")
 	}
@@ -177,7 +178,7 @@ func TestPhotoGoesSmaller(t *testing.T) {
 
 	// Sent full size, it goes as it is, stripped, with both kept until then.
 	full2 := uploadVersions(t, member, denID, channelID, "IMG_3002.jpg", data, denclient.SendFull)
-	if full2.Versions == nil || full2.Versions.Sent != denclient.SendFull || full2.Size != v.Full.Size || full2.Width != 1200 {
+	if full2.Versions == nil || full2.Versions.Sent != denclient.SendFull || full2.Size != v.Full.Size || full2.Width != 400 {
 		t.Fatalf("a photo sent full size: %+v", full2)
 	}
 	// Taken off the message, its versions go too.
@@ -193,6 +194,9 @@ func TestPhotoGoesSmaller(t *testing.T) {
 // can't switch to full size; one whose copy wouldn't save a quarter goes
 // full size, as does what has no copy (M5).
 func TestPhotoCopyRules(t *testing.T) {
+	if raceOn {
+		t.Skip("covered without the race detector")
+	}
 	_, owner, member, denID, channelID := chatDen(t)
 	ctx := context.Background()
 	limits := denproto.Limits{FileSize: denproto.MinFileSize, MemberStorage: 1 << 30, DenStorage: 1 << 31}
@@ -289,6 +293,9 @@ func TestPNGCopy(t *testing.T) {
 // A DM's photo goes as a smaller copy too, sealed, and opens for the other
 // member (M5).
 func TestDMPhotoGoesSmaller(t *testing.T) {
+	if raceOn {
+		t.Skip("covered without the race detector")
+	}
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
 	dm := openDM(t, owner, member, denID)

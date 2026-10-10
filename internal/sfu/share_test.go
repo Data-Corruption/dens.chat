@@ -228,7 +228,9 @@ func TestKeyframeRequests(t *testing.T) {
 		t.Errorf("five PLIs at once reached the sharer as %d, not 2", n)
 	}
 
-	// A FIR asks the same.
+	// A FIR asks the same. The viewer asks again until the sharer is asked,
+	// as a browser does: a loaded machine can drop a datagram, even on
+	// loopback.
 	time.Sleep(keyframeGap)
 	before = alice.caller.KeyframeRequests()
 	var ssrc uint32
@@ -240,11 +242,15 @@ func TestKeyframeRequests(t *testing.T) {
 		}
 	}
 	fir := &rtcp.FullIntraRequest{MediaSSRC: ssrc, FIR: []rtcp.FIREntry{{SSRC: ssrc, SequenceNumber: 1}}}
-	if err := bob.caller.pc.WriteRTCP([]rtcp.Packet{fir}); err != nil {
-		t.Fatal(err)
-	}
-	if err := alice.caller.WaitKeyframeRequests(1, 5*time.Second); err != nil {
-		t.Errorf("a FIR didn't reach the sharer: %v", err)
+	deadline := time.Now().Add(5 * time.Second)
+	for alice.caller.KeyframeRequests() == before {
+		if time.Now().After(deadline) {
+			t.Fatal("a FIR didn't reach the sharer within 5s")
+		}
+		if err := bob.caller.pc.WriteRTCP([]rtcp.Packet{fir}); err != nil {
+			t.Fatal(err)
+		}
+		_ = alice.caller.WaitKeyframeRequests(1, time.Second)
 	}
 }
 
