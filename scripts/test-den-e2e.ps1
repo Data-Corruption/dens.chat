@@ -25,9 +25,10 @@ iPhone HEIC, which must arrive as a JPEG. The owner's retention period must
 reach the member and outlive the restart. At their limit, the member swaps
 a file for a smaller one and deletes another. A HEIC sent smaller must
 arrive as a copy at 1920x2560, and another switched to full size, full
-size. The owner opens a DM, which takes no message until both members type
-each other's check digits, and then carries text, a photo, a photo's
-smaller copy and a video the den stores only sealed. The
+size, and a video over a lowered limit as an AV1 copy that fits, with its
+preview. The owner opens a DM, which takes no message until both members
+type each other's check digits, and then carries text, a photo, a photo's
+and a video's smaller copies and a video the den stores only sealed. The
 owner shares a checklist with the member, and the two tick different boxes
 at the same moment, all of which must stay. Instance fresh stands in for
 the member's new machine: it signs in by the den's address with a recovery
@@ -299,14 +300,15 @@ function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$
 
 # Send-Upload uploads a file as the page does, for a channel, whose DM's go
 # sealed, and returns what the local service answered. Send, for a photo
-# on a message, sends it smaller or full, keeping both versions (M5).
+# or video on a message, sends it smaller or full, keeping both versions
+# (M5); a video's copy takes a while (M5.4).
 function Send-Upload($Browser, [string]$DenID, [string]$Channel, [string]$Path, [string]$Name, [string]$Send = "") {
     $query = "channel=$Channel"
     if ($Send) { $query += "&send=$Send" }
     try {
         $upload = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/uploads?$query" -Method POST `
             -WebSession $Browser.Session -UseBasicParsing -Headers @{ Origin = $Browser.Origin; "Dens-Filename" = $Name } `
-            -ContentType "application/octet-stream" -InFile $Path -TimeoutSec 120
+            -ContentType "application/octet-stream" -InFile $Path -TimeoutSec 600
     } catch {
         Fail "uploading $Name failed: $($_.ErrorDetails.Message) $($_.Exception.Message)"
     }
@@ -872,6 +874,36 @@ den.test:$HttpsPort {
     Get-Photo $owner $denID $switched.id "3024x4032" "the full size"
     Write-Host "The HEIC went as an upright copy at 1920x2560 in its own colors, and the one switched to full size went full size."
 
+    Step "a phone video too large for the den goes as a smaller copy that fits"
+    Invoke-Api $owner POST "/api/dens/$denID/settings" @{ limits = @{ file_size = 1048576; member_storage = 2147483648; den_storage = 21474836480 } } | Out-Null
+    Wait-Value { (Invoke-Api $member GET "/api/dens/$denID/state").limits.file_size -eq 1048576 } "the lowered limit on the member's side" | Out-Null
+    # 1.3 MB of 640x360 at 60 frames a second, sent full size by the setting.
+    $file = Send-Upload $member $denID "" (Join-Path $media "grain-60fps.mp4") "grain.mp4" "full"
+    $versions = Get-Field $file "versions"
+    if ($null -eq $versions -or $versions.sent -ne "smaller" -or $versions.full.fits -or $file.width -ne 640 -or $file.height -ne 360) {
+        Fail "the video went as $($file | ConvertTo-Json -Compress -Depth 4)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $got = Join-Path $Work "grain-copy.mp4"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "video/mp4") { Fail "the copy came as $($resp.Headers['Content-Type'])" }
+    $bytes = (Get-Item $got).Length
+    if (-not $latin1.GetString([IO.File]::ReadAllBytes($got)).Contains("av01") -or $bytes -gt 1048576) {
+        Fail "the copy arrived as $bytes bytes, without AV1 or over the limit"
+    }
+    Test-Clean $got "the copy"
+    Test-Range $owner $denID $file.id $got 100000 199999
+    $preview = Join-Path $Work "grain-preview.jpg"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile $preview -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg" -or (Get-JpegSize $preview) -ne "640x360") {
+        Fail "the copy's preview came as $($resp.Headers['Content-Type']) at $(Get-JpegSize $preview)"
+    }
+    Invoke-Api $owner POST "/api/dens/$denID/settings" @{ limits = @{ file_size = 26214400; member_storage = 2147483648; den_storage = 21474836480 } } | Out-Null
+    Wait-Value { (Invoke-Api $member GET "/api/dens/$denID/state").limits.file_size -eq 26214400 } "the limit back on the member's side" | Out-Null
+    Write-Host "The video went as an AV1 copy of $bytes bytes within the 1 MiB limit, with its preview, and plays from any byte."
+
     Step "a private DM, once both members compare check codes"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"
     $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
@@ -938,6 +970,23 @@ den.test:$HttpsPort {
     if ("$($resp.Headers['Content-Type'])" -ne "video/mp4") { Fail "the DM video came as $($resp.Headers['Content-Type'])" }
     Test-Clean $got "the DM video"
     Test-Range $owner $denID $file.id $got 200000 299999
+    $file = Send-Upload $member $denID $dm (Join-Path $media "with-gps.mov") "IMG_0009.MOV" "smaller"
+    $versions = Get-Field $file "versions"
+    if ($null -eq $versions -or $versions.sent -ne "smaller" -or $file.width -ne 320 -or $file.height -ne 568 -or -not (Get-Field $file "thumb")) {
+        Fail "the DM video went as $($file | ConvertTo-Json -Compress -Depth 4)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    Get-History $owner $denID $dm | Out-Null
+    $got = Join-Path $Work "dm-video-copy.mp4"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "video/mp4" -or -not $latin1.GetString([IO.File]::ReadAllBytes($got)).Contains("av01")) {
+        Fail "the DM video's copy came as $($resp.Headers['Content-Type']), without AV1"
+    }
+    Test-Clean $got "the DM video's copy"
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb" -WebSession $owner.Session `
+        -UseBasicParsing -OutFile (Join-Path $Work "dm-video-copy.jpg") -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the DM video's copy has a preview of $($resp.Headers['Content-Type'])" }
     # The -shm file holds only the write-ahead log's index, where a write in
     # progress locks bytes that would refuse the read.
     $dbFiles = @(Get-ChildItem -File (Join-Path $DataRoot "main\data\db") | Where-Object { $_.Name -notlike "*-shm" })
@@ -945,7 +994,7 @@ den.test:$HttpsPort {
     foreach ($f in $dbFiles) {
         if ($latin1.GetString((Read-Shared $f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
     }
-    Write-Host "The DM took messages only after both typed each other's digits; its text, a link without its tracking, its photo and a photo's smaller copy reached the other side sealed."
+    Write-Host "The DM took messages only after both typed each other's digits; its text, a link without its tracking, its photo, a photo's and a video's smaller copies and a video reached the other side sealed."
 
     Step "two members tick one checklist at the same moment"
     $text = (0..5 | ForEach-Object { "[ ] item $_" }) -join "`n"

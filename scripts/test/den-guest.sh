@@ -346,6 +346,16 @@ wait-retention)
     done
     fail "the den's retention never reached $2 days here"
     ;;
+wait-limit)
+    # wait-limit DEN_ID BYTES: wait until this client hears that the den
+    # takes files of at most BYTES, which a video's copy is fitted to
+    # (M5.4).
+    for _ in $(seq 1 40); do
+        [ "$(api GET "/api/dens/$1/state" | json 'd["limits"]["file_size"]')" = "$2" ] && exit 0
+        sleep 0.25
+    done
+    fail "the den's file size limit never reached $2 bytes here"
+    ;;
 wait-channel)
     # wait-channel DEN_ID: print the first channel's ID once one exists.
     for _ in $(seq 1 40); do
@@ -482,10 +492,11 @@ upload-media)
         json '" ".join([d["id"], d["type"], "%dx%d" % (d.get("width", 0), d.get("height", 0)), "preview" if d.get("thumb") else "none", "converted" if d.get("converted") else "as-is", d["name"], str(d.get("duration_ms", 0))])'
     ;;
 upload-versions)
-    # upload-versions DEN_ID FILE NAME SEND [CHANNEL_ID]: upload a photo for
-    # a message as the page does, sending it smaller or full (M5); print
-    # its ID, the version it went as and its size, and the full size's
-    # size and whether it fits, or "none" for a file without versions.
+    # upload-versions DEN_ID FILE NAME SEND [CHANNEL_ID]: upload a photo or
+    # video for a message as the page does, sending it smaller or full (M5);
+    # print its ID, the version it went as and its size, and the full
+    # size's size and whether it fits, or "none" for a file without
+    # versions.
     curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
         -H "Content-Type: application/octet-stream" -H "Dens-Filename: $3" \
         --data-binary "@$2" "$BASE/api/dens/$1/uploads?channel=${5:-}&send=$4" |
@@ -511,6 +522,16 @@ for marker in (b"com.apple.quicktime", b"iPhone", b"Exif", b"TestPhone"):
         sys.exit("the file still carries " + marker.decode())
 if re.search(rb"[+-]\d{2}\.\d{3,}[+-]\d{3}\.\d{3,}", d):
     sys.exit("the file still carries a location")
+PY
+    ;;
+mp4)
+    # mp4 FILE: print the codec of an MP4's video, as its sample entry names
+    # it, av01 for a video's smaller copy, and its size in bytes (M5.4).
+    python3 - "$1" <<'PY'
+import os, sys
+d = open(sys.argv[1], "rb").read()
+codec = next((c for c in ("av01", "avc1", "hvc1", "hev1") if c.encode() in d), "none")
+print(codec, os.path.getsize(sys.argv[1]))
 PY
     ;;
 range)
