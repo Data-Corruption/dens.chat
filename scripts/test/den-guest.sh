@@ -481,6 +481,25 @@ upload-media)
         --data-binary "@$2" "$BASE/api/dens/$1/uploads?channel=${4:-}" |
         json '" ".join([d["id"], d["type"], "%dx%d" % (d.get("width", 0), d.get("height", 0)), "preview" if d.get("thumb") else "none", "converted" if d.get("converted") else "as-is", d["name"], str(d.get("duration_ms", 0))])'
     ;;
+upload-versions)
+    # upload-versions DEN_ID FILE NAME SEND [CHANNEL_ID]: upload a photo for
+    # a message as the page does, sending it smaller or full (M5); print
+    # its ID, the version it went as and its size, and the full size's
+    # size and whether it fits, or "none" for a file without versions.
+    curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
+        -H "Content-Type: application/octet-stream" -H "Dens-Filename: $3" \
+        --data-binary "@$2" "$BASE/api/dens/$1/uploads?channel=${5:-}&send=$4" |
+        json '" ".join([d["id"], d["versions"]["sent"] if d.get("versions") else "none", "%dx%d" % (d["width"], d["height"])] +
+            (["%dx%d" % (d["versions"]["full"]["width"], d["versions"]["full"]["height"]),
+              "fits" if d["versions"]["full"]["fits"] else "over"] if d.get("versions") else []))'
+    ;;
+switch)
+    # switch DEN_ID UPLOAD_ID TO: switch a photo waiting to be sent to its
+    # other version, smaller or full (M5); print the upload that takes its
+    # place, the version it is and its size.
+    api POST "/api/dens/$1/uploads/$2/switch" "{\"to\":\"$3\"}" |
+        json '" ".join([d["id"], d["versions"]["sent"], "%dx%d" % (d["width"], d["height"])])'
+    ;;
 clean)
     # clean FILE: fail if a video or photo still carries what the phone put
     # in it: its make and model, Apple's keys, EXIF, or a location.

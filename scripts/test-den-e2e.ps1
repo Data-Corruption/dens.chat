@@ -21,9 +21,13 @@ member taking it back on the same connection. A staff mute must silence the
 member, and a staff disconnect end their call. The member sends a phone
 photo with GPS data, which must reach the owner without it, a phone video,
 which must arrive stripped with its preview and play from any byte, and an
-iPhone HEIC, which must arrive as a JPEG. The owner opens a DM, which takes
-no message until both members type each other's check digits, and then
-carries text, a photo and a video the den stores only sealed. The
+iPhone HEIC, which must arrive as a JPEG. The owner's retention period must
+reach the member and outlive the restart. At their limit, the member swaps
+a file for a smaller one and deletes another. A HEIC sent smaller must
+arrive as a copy at 1920x2560, and another switched to full size, full
+size. The owner opens a DM, which takes no message until both members type
+each other's check digits, and then carries text, a photo, a photo's
+smaller copy and a video the den stores only sealed. The
 owner shares a checklist with the member, and the two tick different boxes
 at the same moment, all of which must stay. Instance fresh stands in for
 the member's new machine: it signs in by the den's address with a recovery
@@ -294,16 +298,47 @@ function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$
 }
 
 # Send-Upload uploads a file as the page does, for a channel, whose DM's go
-# sealed, and returns what the local service answered.
-function Send-Upload($Browser, [string]$DenID, [string]$Channel, [string]$Path, [string]$Name) {
+# sealed, and returns what the local service answered. Send, for a photo
+# on a message, sends it smaller or full, keeping both versions (M5).
+function Send-Upload($Browser, [string]$DenID, [string]$Channel, [string]$Path, [string]$Name, [string]$Send = "") {
+    $query = "channel=$Channel"
+    if ($Send) { $query += "&send=$Send" }
     try {
-        $upload = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/uploads?channel=$Channel" -Method POST `
+        $upload = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/uploads?$query" -Method POST `
             -WebSession $Browser.Session -UseBasicParsing -Headers @{ Origin = $Browser.Origin; "Dens-Filename" = $Name } `
             -ContentType "application/octet-stream" -InFile $Path -TimeoutSec 120
     } catch {
         Fail "uploading $Name failed: $($_.ErrorDetails.Message) $($_.Exception.Message)"
     }
     return $upload.Content | ConvertFrom-Json
+}
+
+# Get-JpegSize reads a JPEG's stored size from its frame header, as WxH.
+function Get-JpegSize([string]$Path) {
+    $d = [IO.File]::ReadAllBytes($Path)
+    $i = 2
+    while ($i + 9 -lt $d.Length -and $d[$i] -eq 0xFF) {
+        $marker = $d[$i + 1]
+        if ($marker -ge 0xC0 -and $marker -le 0xC3) {
+            return "$($d[$i + 7] * 256 + $d[$i + 8])x$($d[$i + 5] * 256 + $d[$i + 6])"
+        }
+        $i += 2 + $d[$i + 2] * 256 + $d[$i + 3]
+    }
+    return "none"
+}
+
+# Get-Photo fetches a file as the owner's page gets it, and fails unless it
+# came as a JPEG of the size given, carrying its color profile and nothing
+# of the phone's.
+function Get-Photo($Browser, [string]$DenID, [string]$FileID, [string]$Size, [string]$What) {
+    $got = Join-Path $Work "photo-check.jpg"
+    $resp = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$FileID" -WebSession $Browser.Session `
+        -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
+    if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "$What came as $($resp.Headers['Content-Type'])" }
+    Test-Clean $got $What
+    $stored = Get-JpegSize $got
+    $text = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($got))
+    if ($stored -ne $Size -or -not $text.Contains("ICC_PROFILE")) { Fail "$What arrived at $stored, with its profile: $($text.Contains('ICC_PROFILE'))" }
 }
 
 # Get-Attachments returns a message's files as an instance sees them,
@@ -819,6 +854,24 @@ den.test:$HttpsPort {
     Invoke-Api $owner POST "/api/dens/$denID/settings" @{ limits = @{ file_size = 26214400; member_storage = 2147483648; den_storage = 21474836480 } } | Out-Null
     Write-Host "The swap took the HEIC's place within the member's space, the delete took the video and its message, and the owner sees both."
 
+    Step "photos go as smaller copies, unless the member sends one full size"
+    $file = Send-Upload $member $denID "" (Join-Path $media "rotated.heic") "IMG_0006.HEIC" "smaller"
+    $versions = Get-Field $file "versions"
+    if ($null -eq $versions -or $versions.sent -ne "smaller" -or $file.width -ne 1920 -or $file.height -ne 2560 -or
+        $versions.full.width -ne 3024 -or $versions.full.height -ne 4032 -or -not $versions.full.fits) {
+        Fail "the photo went as $($file | ConvertTo-Json -Compress -Depth 4)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    Get-Photo $owner $denID $file.id "1920x2560" "the copy"
+    $file = Send-Upload $member $denID "" (Join-Path $media "rotated.heic") "IMG_0007.HEIC" "smaller"
+    $switched = Invoke-Api $member POST "/api/dens/$denID/uploads/$($file.id)/switch" @{ to = "full" }
+    if ($switched.id -eq $file.id -or $switched.versions.sent -ne "full" -or $switched.width -ne 3024 -or $switched.height -ne 4032) {
+        Fail "the switch came back as $($switched | ConvertTo-Json -Compress -Depth 4)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($switched.id) } | Out-Null
+    Get-Photo $owner $denID $switched.id "3024x4032" "the full size"
+    Write-Host "The HEIC went as an upright copy at 1920x2560 in its own colors, and the one switched to full size went full size."
+
     Step "a private DM, once both members compare check codes"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"
     $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
@@ -863,6 +916,14 @@ den.test:$HttpsPort {
             if ($text.Contains($marker)) { Fail "the DM photo$variant arrived with '$marker'" }
         }
     }
+    $file = Send-Upload $member $denID $dm (Join-Path $media "rotated.heic") "IMG_0008.HEIC" "smaller"
+    $versions = Get-Field $file "versions"
+    if ($null -eq $versions -or $versions.sent -ne "smaller" -or $file.height -ne 2560 -or $versions.full.height -ne 4032) {
+        Fail "the DM photo went as $($file | ConvertTo-Json -Compress -Depth 4)"
+    }
+    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    Get-History $owner $denID $dm | Out-Null
+    Get-Photo $owner $denID $file.id "1920x2560" "the DM photo's copy"
     $file = Send-Upload $member $denID $dm (Join-Path $media "with-gps.mov") "IMG_0005.MOV"
     if ($file.type -ne "video/mp4" -or $file.width -ne 320 -or -not (Get-Field $file "thumb") -or (Get-Field $file "duration_ms") -lt 3900) {
         Fail "the DM video came back as $($file | ConvertTo-Json -Compress)"
@@ -884,7 +945,7 @@ den.test:$HttpsPort {
     foreach ($f in $dbFiles) {
         if ($latin1.GetString((Read-Shared $f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
     }
-    Write-Host "The DM took messages only after both typed each other's digits; its text, a link without its tracking, and its photo reached the other side sealed."
+    Write-Host "The DM took messages only after both typed each other's digits; its text, a link without its tracking, its photo and a photo's smaller copy reached the other side sealed."
 
     Step "two members tick one checklist at the same moment"
     $text = (0..5 | ForEach-Object { "[ ] item $_" }) -join "`n"
