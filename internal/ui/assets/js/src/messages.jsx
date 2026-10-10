@@ -15,7 +15,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
-import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
+import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
 import { keptFor } from './retention.js';
@@ -45,6 +45,23 @@ function joinNames(names) {
 }
 
 let nextKey = 1;
+
+// pendingJump is a message to show once its channel opens, which the home
+// page's list of files asks for (M5): the pane that opens on its channel
+// jumps there rather than to the newest.
+let pendingJump = null;
+
+// openAt has the next pane that opens on a den's channel jump to a message.
+export function openAt(denID, channelID, messageID) {
+    pendingJump = { denID, channelID, messageID };
+}
+
+// viewed is what the viewer shows from a message: its images, and which.
+function viewed(m, file) {
+    const files = (m.attachments || []).filter((f) => attachmentKind(f) === 'image');
+    const index = files.findIndex((f) => f.id === file.id);
+    return index < 0 ? null : { message: m.id, files, index };
+}
 
 // MessagePane shows a channel or DM. dm is the other member of a DM, and
 // keys the DM's keys; typing lists who is typing here; closed, when set,
@@ -296,7 +313,10 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     }, []);
 
     useEffect(() => {
-        loadNewest();
+        const jump = pendingJump?.denID === denID && pendingJump.channelID === channel.id ? pendingJump.messageID : '';
+        pendingJump = null;
+        if (jump) jumpTo(jump);
+        else loadNewest();
         const onVisible = () => markRead();
         document.addEventListener('visibilitychange', onVisible);
         const stop = onEvent((msg) => {
@@ -355,9 +375,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             setList((cur) => (follow ? atTail(cur, d, above) : { ...cur, messages: mergeIn(cur.messages, [d]) }));
             if (follow) setTimeout(markRead, 0);
         } else if (e.t === 'message.updated') {
+            // A swap or a delete changes what the viewer may show (M5).
+            setViewing((v) => (v && v.message === d.id ? viewed(d, v.files[v.index]) : v));
             setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
-            setViewing((v) => (v && (d.files || []).includes(v.id) ? null : v));
+            setViewing((v) => (v && v.message === d.id ? null : v));
             setList((cur) => withDelete(cur, d));
         }
     }
@@ -370,7 +392,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         caught.current.forEach((since) => since.push(e));
         const gone = (id) => compareIds(id, through) <= 0;
         const l = listRef.current;
-        setViewing((v) => (v && l.messages.some((m) => gone(m.id) && (m.attachments || []).some((f) => f.id === v.id)) ? null : v));
+        setViewing((v) => (v && gone(v.message) ? null : v));
         setReplyTo((r) => (r && gone(r.id) ? null : r));
         setEditing((id) => (id && gone(id) ? null : id));
         setList((cur) => withExpired(cur, through));
@@ -412,9 +434,14 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         setFiles((cur) => cur.map((f) => (f.key === key ? { ...f, ...changes } : f)));
     }
 
+    // removeFile takes a file off the message being written: an upload in
+    // progress stops, and one already up is dropped, so its space is free at
+    // once (M5).
     function removeFile(key) {
-        filesRef.current.find((f) => f.key === key)?.abort?.();
-        setFiles((cur) => cur.filter((f) => f.key !== key));
+        const f = filesRef.current.find((x) => x.key === key);
+        f?.abort?.();
+        if (f?.result) api.del(`/api/dens/${denID}/uploads/${f.result.id}`).catch(() => {});
+        setFiles((cur) => cur.filter((x) => x.key !== key));
     }
 
     async function send(text, pendingEntry) {
@@ -496,7 +523,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 onEdit={() => setEditing(m.id)}
                 onEditDone={() => setEditing(null)}
                 onJump={jumpTo}
-                onView={setViewing}
+                onView={(f) => setViewing(viewed(m, f))}
                 onToggle={toggled}
                 denID={denID}
                 channelID={channel.id}
@@ -598,7 +625,10 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     onTyping={onTyping}
                 />
             )}
-            {viewing && <Viewer denID={denID} file={viewing} onClose={() => setViewing(null)} />}
+            {viewing && (
+                <Viewer denID={denID} files={viewing.files} index={viewing.index} onClose={() => setViewing(null)}
+                    onIndex={(index) => setViewing((v) => v && { ...v, index })} />
+            )}
         </div>
     );
 

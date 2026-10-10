@@ -159,11 +159,13 @@ export function EditProfile({ denID, me, limits, onClose }) {
     }
 
     // savePicture uploads a cropped picture and puts it on the profile; the
-    // den deletes the one it replaces.
+    // den deletes the one it replaces, which the upload names, so a member
+    // at their limit can still change it (M5).
     function savePicture(blob) {
         const { shape } = cropping;
         picture.run(async () => {
-            const up = await upload(denID, '', blob, `${shape}.${blob.type === 'image/webp' ? 'webp' : 'png'}`).done;
+            const name = `${shape}.${blob.type === 'image/webp' ? 'webp' : 'png'}`;
+            const up = await upload(denID, '', blob, name, undefined, me[shape]?.id).done;
             await api.patch(`/api/dens/${denID}/me`, { [shape]: up.id });
             setCropping(null);
         });

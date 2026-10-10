@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { clampOffset, coverScale, sourceRect, zoomAt } from '../assets/js/src/crop.jsx';
-import { attachmentKind, downloadURL, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize } from '../assets/js/src/files.jsx';
+import {
+    attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize, step,
+} from '../assets/js/src/files.jsx';
 
 test('sizes read as people write them', () => {
     assert.equal(formatSize(0), '0 B');
@@ -84,4 +86,26 @@ test('zooming keeps the point under the pointer where it is', () => {
     const r = sourceRect(next, 256, 256, 2);
     assert.equal(r.x + r.w / 2, 228);
     assert.equal(r.y + r.h / 2, 168);
+});
+
+test("the viewer moves through a message's images and stops at the ends", () => {
+    assert.equal(step(0, 3, 1), 1);
+    assert.equal(step(2, 3, 1), 2);
+    assert.equal(step(0, 3, -1), 0);
+    assert.equal(step(1, 3, -1), 0);
+    assert.equal(step(0, 1, 1), 0);
+});
+
+test("a member's list of files says what uses each", () => {
+    const view = {
+        me: { id: '1' },
+        members: [{ id: '1', display_name: 'Alice' }, { id: '2', display_name: 'Bob' }],
+        channels: [{ id: '10', kind: 'text', name: 'general' }, { id: '11', kind: 'dm', members: ['1', '2'] }],
+    };
+    assert.equal(fileWhere({ profile: 'avatar' }, view), 'Your profile picture');
+    assert.equal(fileWhere({ profile: 'banner' }, view), 'Your profile banner');
+    assert.equal(fileWhere({}, view), 'Waiting to be sent');
+    assert.equal(fileWhere({ message_id: '5', channel_id: '10' }, view), 'In #general');
+    assert.equal(fileWhere({ message_id: '6', channel_id: '11' }, view), 'In your DM with Bob');
+    assert.equal(fileWhere({ message_id: '7', channel_id: '12' }, view), "In a channel you can't see");
 });
