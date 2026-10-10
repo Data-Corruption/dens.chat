@@ -12,6 +12,7 @@
 //   dm_scan    reads a video's packets, to plan its smaller copy.
 //   dm_encode  makes a chunk of a video's smaller copy, in AV1.
 //   dm_mux     puts a video's copy together from its chunks and its sound.
+//   dm_demux   hands a video's packets out, for the page to make its copy.
 //
 // Each answers with JSON through host_result, and returns 0 or a negative
 // FFmpeg error, which dm_error describes.
@@ -1882,6 +1883,92 @@ end:
     close_io(&in);
     avformat_free_context(oc);
     close_io(&out);
+    return finish(&b, ret);
+}
+
+// The most configuration demux describes: an avcC or hvcC record is a few
+// hundred bytes.
+#define MAX_EXTRADATA (64 << 10)
+
+// dm_demux writes the input's video packets to the output as records (see
+// Packets), in the order they're stored, which is the order a decoder takes
+// them, for the page to decode with WebCodecs and make the video's copy
+// itself (M5.5). It says what decoding them takes: the codec, its
+// configuration record, the frames' size and the crop the container asks
+// for, and the codec's profile, level and depth, which name it. Packets
+// without a time can't be placed, and aren't written.
+DM_EXPORT(dm_demux) int32_t dm_demux(void) {
+    AVFormatContext *ic = NULL;
+    AVIOContext *io = NULL;
+    AVPacket *pkt = av_packet_alloc();
+    packet_writer w = {0};
+    AVBPrint b;
+    av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
+    int ret = pkt ? open_input(&ic, &io, NULL, 1) : AVERROR(ENOMEM);
+    if (ret < 0) {
+        goto end;
+    }
+    int st = picture_stream(ic);
+    if (st < 0) {
+        ret = st;
+        goto end;
+    }
+    const AVStream *vs = ic->streams[st];
+    const AVCodecParameters *par = vs->codecpar;
+    if (par->extradata_size > MAX_EXTRADATA) {
+        ret = AVERROR_INVALIDDATA;
+        goto end;
+    }
+    for (unsigned i = 0; i < ic->nb_streams; i++) {
+        if ((int)i != st) {
+            ic->streams[i]->discard = AVDISCARD_ALL;
+        }
+    }
+    while ((ret = av_read_frame(ic, pkt)) >= 0) {
+        if (pkt->stream_index == st) {
+            if (pkt->pts == AV_NOPTS_VALUE) {
+                pkt->pts = pkt->dts;
+            }
+            if (pkt->pts != AV_NOPTS_VALUE && pkt->size > 0 && (ret = write_record(&w, pkt, vs->time_base)) < 0) {
+                goto end;
+            }
+        }
+        av_packet_unref(pkt);
+    }
+    if (ret != AVERROR_EOF) {
+        goto end;
+    }
+    if (!w.packets) {
+        ret = AVERROR_INVALIDDATA;
+        goto end;
+    }
+    ret = 0;
+    int crop[4] = {0};
+    const AVPacketSideData *c = side_data(par->coded_side_data, par->nb_coded_side_data, AV_PKT_DATA_FRAME_CROPPING);
+    if (c && c->size >= 16) {
+        for (int i = 0; i < 4; i++) {
+            uint32_t v = AV_RL32(c->data + 4 * i);
+            crop[i] = v < 1u << 16 ? (int)v : 0;
+        }
+    }
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(par->format);
+    AVRational sar = stream_sar(vs);
+    av_bprintf(&b, "{\"codec\":");
+    put_string(&b, avcodec_get_name(par->codec_id));
+    av_bprintf(&b, ",\"extradata\":\"");
+    for (int i = 0; i < par->extradata_size; i++) {
+        av_bprintf(&b, "%02x", par->extradata[i]);
+    }
+    av_bprintf(&b,
+               "\",\"width\":%d,\"height\":%d,\"crop\":[%d,%d,%d,%d],\"sar\":[%d,%d],\"profile\":%d,\"level\":%d,"
+               "\"bit_depth\":%d,\"packets\":%d,\"bytes\":%" PRId64 "}",
+               par->width, par->height, crop[0], crop[1], crop[2], crop[3], sar.num, sar.den, par->profile, par->level,
+               desc ? desc->comp[0].depth : 0, w.packets, w.bytes);
+
+end:
+    av_packet_free(&pkt);
+    avformat_close_input(&ic);
+    close_io(&io);
     return finish(&b, ret);
 }
 

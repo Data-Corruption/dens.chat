@@ -132,6 +132,14 @@ func (r *Runner) Mux(ctx context.Context, in, packets Input, out Output, width, 
 	return m, r.run(ctx, Job{Op: OpMux, Width: width, Height: height}, files{in: in, out: out, packets: packets}, &m)
 }
 
+// Demux writes in's video packets to out as records, in the order a
+// decoder takes them, for the page to decode with WebCodecs and make the
+// video's copy itself, and says what decoding them takes (M5.5).
+func (r *Runner) Demux(ctx context.Context, in Input, out Output) (Demuxed, error) {
+	var d Demuxed
+	return d, r.run(ctx, Job{Op: OpDemux}, files{in: in, out: out}, &d)
+}
+
 // timeoutFor gives a job time in proportion to its file: stripping runs at
 // the disk's pace, several hundred MB/s, and this allows 5. A chunk of a
 // video's copy gets a minute for each second it lasts: one runs a few

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"io"
 	"mime"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 
+	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -20,7 +22,7 @@ func (rt *router) mountFiles(r chi.Router) {
 	r.Post("/api/dens/{den}/uploads/{file}/thumb", rt.handleSetThumb)
 	r.Get("/api/dens/{den}/uploads/{file}/versions/{version}", rt.handleVersion)
 	r.Post("/api/dens/{den}/uploads/{file}/switch", rt.handleSwitchVersion)
-	r.Get("/api/dens/{den}/progress/{key}", rt.handleUploadProgress)
+	r.Get("/api/dens/{den}/progress/{key}", rt.handleFollowUpload)
 	r.Post("/api/dens/{den}/progress/{key}/full", rt.handleSendFullSize)
 	r.Get("/api/dens/{den}/storage", rt.handleStorage)
 	r.Get("/api/dens/{den}/files", rt.handleOwnFiles)
@@ -51,8 +53,8 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	var up denclient.Uploaded
 	switch {
 	case send != "":
-		up, err = rt.a.Dens.UploadVersions(r.Context(), den, channel, name, r.ContentLength, r.Body, denclient.Send(send), replaces,
-			q.Get("progress"))
+		up, err = rt.a.Dens.UploadVersions(r.Context(), den, channel, name, r.ContentLength, r.Body, denclient.UploadOptions{
+			Send: denclient.Send(send), Replaces: replaces, Progress: q.Get("progress"), PageCopies: q.Get("copier") == "page"})
 	case replaces != "":
 		up, err = rt.a.Dens.Replace(r.Context(), den, channel, replaces, name, r.ContentLength, r.Body)
 	default:
@@ -141,15 +143,43 @@ func (rt *router) handleSwitchVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, up)
 }
 
-// handleUploadProgress says how far an upload the page follows has come
-// (M5.4): making a video's smaller copy, then sending it to the den.
-func (rt *router) handleUploadProgress(w http.ResponseWriter, r *http.Request) {
-	p, err := rt.a.Dens.UploadProgress(chi.URLParam(r, "den"), chi.URLParam(r, "key"))
+// handleFollowUpload serves the socket of the page following an upload by
+// its key: how far the upload has come, making a video's smaller copy and
+// sending it to the den (M5.4), and in Chrome and Edge, the copy the page
+// makes itself (M5.5).
+func (rt *router) handleFollowUpload(w http.ResponseWriter, r *http.Request) {
+	// Accept checks the Origin against the Host, which the Host guard has
+	// already pinned to this listener, so other sites can't open it.
+	c, err := websocket.Accept(w, r, nil)
 	if err != nil {
-		rt.denError(w, r, err)
 		return
 	}
-	writeJSON(w, p)
+	defer c.CloseNow()
+	c.SetReadLimit(denclient.MaxPageMessage)
+	if err := rt.a.Dens.FollowUpload(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "key"), pageSocket{c}); err != nil {
+		_ = c.Close(websocket.StatusPolicyViolation, "no such upload to follow")
+		return
+	}
+	_ = c.Close(websocket.StatusNormalClosure, "")
+}
+
+// pageSocket is the page's end of an upload it follows, as denclient reads
+// and writes it.
+type pageSocket struct{ c *websocket.Conn }
+
+func (s pageSocket) Read(ctx context.Context) (bool, []byte, error) {
+	typ, data, err := s.c.Read(ctx)
+	return typ == websocket.MessageText, data, err
+}
+
+func (s pageSocket) Write(ctx context.Context, text bool, data []byte) error {
+	typ := websocket.MessageBinary
+	if text {
+		typ = websocket.MessageText
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return s.c.Write(ctx, typ, data)
 }
 
 // handleSendFullSize has an upload making a video's copy send the video

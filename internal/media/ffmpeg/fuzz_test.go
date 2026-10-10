@@ -50,7 +50,8 @@ func FuzzDriver(f *testing.F) {
 		f.Skip("the race detector slows the module some fifty times over")
 	}
 	seeds := map[string][]Op{
-		"with-gps.mov": {OpStrip, OpPoster, OpScan, OpEncode},
+		"with-gps.mov": {OpStrip, OpPoster, OpScan, OpEncode, OpDemux},
+		"vp9.webm":     {OpDemux},
 		"with-gps.mp4": {OpStrip, OpPoster},
 		"rotated.heic": {OpStill},
 		"meta.mp4":     {OpProbe, OpStrip},
@@ -119,6 +120,8 @@ func FuzzDriver(f *testing.F) {
 		case OpMux:
 			video, packets := splitMux(data)
 			_, err = r.Mux(ctx, &memFile{data: video}, &memFile{data: packets}, out, 64, 36)
+		case OpDemux:
+			_, err = r.Demux(ctx, in, out)
 		}
 		var job *JobError
 		if err != nil && !errors.As(err, &job) {
@@ -131,7 +134,7 @@ func FuzzDriver(f *testing.F) {
 }
 
 // fuzzOps are the operations FuzzDriver runs, by which.
-var fuzzOps = []Op{OpProbe, OpStrip, OpStill, OpPoster, OpScan, OpEncode, OpMux}
+var fuzzOps = []Op{OpProbe, OpStrip, OpStill, OpPoster, OpScan, OpEncode, OpMux, OpDemux}
 
 // stillArgs reads a still's maximum side and orientation from the rest of
 // a fuzz input's which.
@@ -227,6 +230,7 @@ func runNative(t *testing.T, asan string, op Op, which uint8, data []byte) {
 		OpScan:   {"scan", in},
 		OpEncode: {"encode", in, out, itoa(c.StartUS), itoa(c.EndUS), strconv.Itoa(c.MaxSide), strconv.Itoa(c.FPS), strconv.Itoa(c.KBPS)},
 		OpMux:    {"mux", in, packets, out, "64", "36"},
+		OpDemux:  {"demux", in, out},
 	}[op]
 	ctx, cancel := context.WithTimeout(context.Background(), fuzzJobTime)
 	defer cancel()

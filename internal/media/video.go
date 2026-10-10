@@ -43,10 +43,39 @@ const (
 	minKbps = 16
 	// fitShare is the share of a den's limit a fitted copy aims for: libaom
 	// keeps within a few percent of its bitrate, and the container's index
-	// takes some (containerBytes, besides).
+	// takes some (containerBytes, besides). The page's encoders, in the
+	// video spike, kept within a fifth of theirs (pageShare).
 	fitShare       = 0.9
+	pageShare      = 0.8
 	containerBytes = 64 << 10
 )
+
+// CopyBy is who makes a video's copy.
+type CopyBy int
+
+const (
+	// ByModule is the media module, in chunks side by side, up to 720p.
+	ByModule CopyBy = iota
+	// ByPage is the page, with WebCodecs, up to 1080p (M5.5).
+	ByPage
+)
+
+// sides are the longer sides a copy steps down through, as the bitrate
+// that fits a den's limit falls, and share the part of the limit it aims
+// for.
+func (by CopyBy) sides() []int {
+	if by == ByPage {
+		return []int{PageVideoSide, CopyVideoSide, copySmallSide}
+	}
+	return []int{CopyVideoSide, copySmallSide}
+}
+
+func (by CopyBy) share() float64 {
+	if by == ByPage {
+		return pageShare
+	}
+	return fitShare
+}
 
 // Chunks last at least minChunk and at most maxChunk. A chunk not at a
 // keyframe decodes from the one before, which phones put every second or
@@ -57,13 +86,15 @@ const (
 	leastPart = 500 * time.Millisecond
 )
 
-// VideoPlan is how a video's copy is made.
+// VideoPlan is how a video's copy is made, and by whom.
 type VideoPlan struct {
+	By CopyBy
 	// Width and Height are the copy's, as the video stores its frames,
 	// before its turn.
 	Width, Height int
 	FPS, KBPS     int
-	Chunks        []ffmpeg.Chunk
+	// Chunks are the module's; the page makes its copy in one go.
+	Chunks []ffmpeg.Chunk
 	// Estimate is about how large the copy comes out.
 	Estimate int64
 }
@@ -108,14 +139,15 @@ func fitEven(w, h, side int) (int, int) {
 }
 
 // PlanVideoCopy plans the copy of a video whose video stream the module
-// probed as v and whose packets it scanned as s; full is the full size's
-// bytes, and workers how many chunks run at once. With fit above 0, the
-// video is over the den's limit, and the copy takes the bitrate that fits
-// in fit bytes, or the video is TooLong. Otherwise the copy is made at its
-// own bitrate, or not at all when it wouldn't come to three quarters of
-// full: ErrNoSmaller.
-func PlanVideoCopy(v ffmpeg.Stream, s ffmpeg.Scanned, full, fit int64, workers int) (VideoPlan, error) {
-	if !v.Decoder {
+// probed as v and whose packets it scanned as s, made by by; full is the
+// full size's bytes, and workers how many of the module's chunks run at
+// once. With fit above 0, the video is over the den's limit, and the copy
+// takes the bitrate that fits in fit bytes, or the video is TooLong.
+// Otherwise the copy is made at its own bitrate, or not at all when it
+// wouldn't come to three quarters of full: ErrNoSmaller. The module makes
+// no copy of a video it doesn't decode: ErrNoCopy.
+func PlanVideoCopy(v ffmpeg.Stream, s ffmpeg.Scanned, full, fit int64, by CopyBy, workers int) (VideoPlan, error) {
+	if by == ByModule && !v.Decoder {
 		return VideoPlan{}, ErrNoCopy
 	}
 	sw, sh := v.Width, v.Height
@@ -137,20 +169,23 @@ func PlanVideoCopy(v ffmpeg.Stream, s ffmpeg.Scanned, full, fit int64, workers i
 	}
 	plan := func(w, h int, rate float64) VideoPlan {
 		rate = max(rate, minKbps)
-		return VideoPlan{Width: w, Height: h, FPS: CopyFPS, KBPS: int(rate), Estimate: size(rate),
-			Chunks: planChunks(s, workers, w, h, int(rate))}
+		p := VideoPlan{By: by, Width: w, Height: h, FPS: CopyFPS, KBPS: int(rate), Estimate: size(rate)}
+		if by == ByModule {
+			p.Chunks = planChunks(s, workers, w, h, int(rate))
+		}
+		return p
 	}
 
+	sides := by.sides()
 	if fit <= 0 {
-		w, h := fitEven(sw, sh, CopyVideoSide)
+		w, h := fitEven(sw, sh, sides[0])
 		p := plan(w, h, kbps(w, h, copyBPP))
 		if p.Estimate*4 > full*3 {
 			return VideoPlan{}, ErrNoSmaller
 		}
 		return p, nil
 	}
-	rate := (float64(fit)*fitShare - float64(s.AudioBytes) - containerBytes) * 8 / seconds / 1000
-	sides := []int{CopyVideoSide, copySmallSide}
+	rate := (float64(fit)*by.share() - float64(s.AudioBytes) - containerBytes) * 8 / seconds / 1000
 	for i, side := range sides {
 		w, h := fitEven(sw, sh, side)
 		least := stepBPP
@@ -164,7 +199,7 @@ func PlanVideoCopy(v ffmpeg.Stream, s ffmpeg.Scanned, full, fit int64, workers i
 	// About as long as the floor's bitrate fits, with the sound's.
 	w, h := fitEven(sw, sh, copySmallSide)
 	bps := kbps(w, h, floorBPP)*1000 + float64(s.AudioBytes)*8/seconds
-	longest := time.Duration(max(float64(fit)*fitShare-containerBytes, 0) * 8 / bps * float64(time.Second))
+	longest := time.Duration(max(float64(fit)*by.share()-containerBytes, 0) * 8 / bps * float64(time.Second))
 	return VideoPlan{}, &TooLong{Longest: longest.Truncate(time.Second)}
 }
 
@@ -173,7 +208,7 @@ func PlanVideoCopy(v ffmpeg.Stream, s ffmpeg.Scanned, full, fit int64, workers i
 // floor at its size.
 func LowerVideoPlan(p VideoPlan, s ffmpeg.Scanned, got, fit int64, workers int) (VideoPlan, error) {
 	video := float64(got - s.AudioBytes - containerBytes)
-	room := float64(fit)*fitShare - float64(s.AudioBytes) - containerBytes
+	room := float64(fit)*p.By.share() - float64(s.AudioBytes) - containerBytes
 	if video <= 0 || room <= 0 {
 		return VideoPlan{}, &TooLong{}
 	}
@@ -188,7 +223,9 @@ func LowerVideoPlan(p VideoPlan, s ffmpeg.Scanned, got, fit int64, workers int) 
 	}
 	p.KBPS = max(int(rate), minKbps)
 	p.Estimate = int64(float64(p.Estimate) * room / video)
-	p.Chunks = planChunks(s, workers, p.Width, p.Height, p.KBPS)
+	if p.By == ByModule {
+		p.Chunks = planChunks(s, workers, p.Width, p.Height, p.KBPS)
+	}
 	return p, nil
 }
 
@@ -366,6 +403,13 @@ func MakeVideoCopy(ctx context.Context, m *ffmpeg.Runner, full ffmpeg.Input, v f
 	if muxed.VideoPackets != packets || muxed.Bytes != out.Size() {
 		return VideoCopy{}, &ffmpeg.JobError{Err: ffmpeg.ErrFailed, Reason: "a copy that isn't what its chunks made"}
 	}
+	return checkCopy(ctx, m, v, plan, muxed, out)
+}
+
+// checkCopy checks a copy put together as any video a member sends: it
+// must be the MP4 of AV1 it was asked for, at the size planned, turned as
+// the video is, with its sound.
+func checkCopy(ctx context.Context, m *ffmpeg.Runner, v ffmpeg.Stream, plan VideoPlan, muxed ffmpeg.Muxed, out ffmpeg.Output) (VideoCopy, error) {
 	p, err := m.Probe(ctx, out)
 	if err != nil {
 		return VideoCopy{}, err

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -272,5 +273,49 @@ func TestMuxRefusesPacketsThatDontFit(t *testing.T) {
 	in, mixed := copyOf(t, r, 1280, 284)
 	if _, err := r.Mux(ctx, in, &memFile{data: mixed}, &memFile{}, 568, 320); !errors.Is(err, ErrUnreadable) {
 		t.Errorf("chunks of two sizes: %v", err)
+	}
+}
+
+// Demux hands a video's packets out as records, in the order a decoder
+// takes them, with what decoding them takes, for the page to make the
+// copy with WebCodecs (M5.5).
+func TestDemuxHandsAVideosPacketsOut(t *testing.T) {
+	r := newRunner(t)
+	ctx := context.Background()
+	check := func(name string, in Input, codec string, packets, keys int) Demuxed {
+		t.Helper()
+		out := &memFile{}
+		d, err := r.Demux(ctx, in, out)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		recs := records(t, out.data)
+		total, keyed := 0, 0
+		for _, rec := range recs {
+			total += rec.size
+			if rec.key {
+				keyed++
+			}
+		}
+		if d.Codec != codec || d.Packets != packets || len(recs) != packets || int64(total) != d.Bytes || keyed != keys || !recs[0].key {
+			t.Errorf("%s: demuxed %+v, %d records, %d keyframes", name, d, len(recs), keyed)
+		}
+		return d
+	}
+	// An iPhone's H.264, stored as 568 × 320 and turned by its container:
+	// its configuration is an avcC record.
+	d := check("with-gps.mov", stripped(t, r), "h264", 120, 4)
+	if d.Width != 568 || d.Height != 320 || d.Crop != [4]int{} || d.BitDepth != 8 || !strings.HasPrefix(d.Extradata, "01") {
+		t.Errorf("the phone video: %+v", d)
+	}
+	check("grain-60fps.mp4", load(t, "grain-60fps.mp4"), "h264", 360, 6)
+	// VP9 in WebM, which the module doesn't decode, needs no record, and
+	// its depth goes unknown, as its profile says it.
+	if d = check("vp9.webm", load(t, "vp9.webm"), "vp9", 60, 2); d.Width != 640 || d.Profile != 0 || d.BitDepth != 0 {
+		t.Errorf("the WebM: %+v", d)
+	}
+	// Audio alone has no video to hand out.
+	if _, err := r.Demux(ctx, load(t, "meta.m4a"), &memFile{}); !errors.Is(err, ErrUnreadable) {
+		t.Errorf("audio: %v", err)
 	}
 }

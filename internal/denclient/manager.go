@@ -104,6 +104,11 @@ type Manager struct {
 	// follows are uploads the page follows, by its keys (M5.4).
 	followMu sync.Mutex
 	follows  map[string]*following
+	// PageOfferWait is how long the page has to answer an offer of a
+	// video's copy, and PageQuiet how long it may go quiet while it makes
+	// one, before the module makes it instead (M5.5).
+	PageOfferWait time.Duration
+	PageQuiet     time.Duration
 
 	// LookupHost resolves a den's name to the addresses its calls' media
 	// goes to, and LocalAddrs lists this machine's, for a den on it; tests
@@ -167,22 +172,24 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, ResponseHeaderTimeout: requestTimeout}
 	return &Manager{
 		db: db, v: v, log: log, own: own, agent: userAgent, label: deviceLabel(), epoch: denproto.Random(8).String(),
-		HTTP:         &http.Client{Timeout: requestTimeout, Transport: transport},
-		Transfer:     &http.Client{Transport: transport},
-		files:        newFileCache(),
-		MinTokenLife: time.Minute,
-		RenewLead:    10 * time.Minute,
-		RenewRetry:   30 * time.Second,
-		PingInterval: 20 * time.Second,
-		PingTimeout:  10 * time.Second,
-		watches:      map[chan struct{}]struct{}{},
-		streams:      map[chan PageEvent]struct{}{},
-		focus:        map[string]map[string]string{},
-		signIns:      map[string]*pendingSignIn{},
-		follows:      map[string]*following{},
-		LookupHost:   lookupHost,
-		LocalAddrs:   localAddrs,
-		TempDir:      os.TempDir(),
+		HTTP:          &http.Client{Timeout: requestTimeout, Transport: transport},
+		Transfer:      &http.Client{Transport: transport},
+		files:         newFileCache(),
+		MinTokenLife:  time.Minute,
+		RenewLead:     10 * time.Minute,
+		RenewRetry:    30 * time.Second,
+		PingInterval:  20 * time.Second,
+		PingTimeout:   10 * time.Second,
+		watches:       map[chan struct{}]struct{}{},
+		streams:       map[chan PageEvent]struct{}{},
+		focus:         map[string]map[string]string{},
+		signIns:       map[string]*pendingSignIn{},
+		follows:       map[string]*following{},
+		PageOfferWait: pageOfferWait,
+		PageQuiet:     pageQuiet,
+		LookupHost:    lookupHost,
+		LocalAddrs:    localAddrs,
+		TempDir:       os.TempDir(),
 	}
 }
 

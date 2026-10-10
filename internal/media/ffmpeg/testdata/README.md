@@ -27,3 +27,11 @@ ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=60:duration=6,noise=alls=40:allf=
   -c:v libopenh264 -rc_mode bitrate -b:v 1600k -g 60 -allow_skip_frames 0 -c:a aac -b:a 128k -ac 2 \
   -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact -movflags +faststart grain-60fps.mp4
 ```
+
+`vp9.webm` is made with libvpx and libopus from the same build: VP9 at 640 × 360 and 30 frames a second for two seconds, a keyframe every second, of the test pattern under the still grain, with the tone in Opus, at 1.5 Mbps, so a smaller copy is worth making. The module doesn't decode VP9, so only a browser makes the copy (M5.5).
+
+```sh
+ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=30:duration=2,noise=alls=40:allf=u" \
+  -f lavfi -i "sine=frequency=440:duration=2:sample_rate=48000" -c:v libvpx-vp9 -b:v 1500k -g 30 -c:a libopus -b:a 64k \
+  -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact vp9.webm
+```

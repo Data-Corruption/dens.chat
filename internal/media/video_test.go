@@ -28,7 +28,7 @@ func TestPlanVideoCopy(t *testing.T) {
 	v, s := phoneVideo()
 
 	// By default, 720p, as stored, at 0.04 bits a pixel each frame.
-	p, err := PlanVideoCopy(v, s, 34_941_781, 0, 8)
+	p, err := PlanVideoCopy(v, s, 34_941_781, 0, ByModule, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,18 +36,18 @@ func TestPlanVideoCopy(t *testing.T) {
 		t.Errorf("the default copy: %+v", p)
 	}
 	// A video already about that small goes full size.
-	if _, err := PlanVideoCopy(v, s, 4_000_000, 0, 8); !errors.Is(err, ErrNoSmaller) {
+	if _, err := PlanVideoCopy(v, s, 4_000_000, 0, ByModule, 8); !errors.Is(err, ErrNoSmaller) {
 		t.Errorf("a copy that wouldn't be much smaller: %v", err)
 	}
 	// Over a limit with room, the copy takes its own bitrate, no more.
-	if p, err = PlanVideoCopy(v, s, 34_941_781, 25<<20, 8); err != nil || p.KBPS != 1105 || p.Width != 1280 {
+	if p, err = PlanVideoCopy(v, s, 34_941_781, 25<<20, ByModule, 8); err != nil || p.KBPS != 1105 || p.Width != 1280 {
 		t.Errorf("a copy with room: %+v, %v", p, err)
 	}
 
 	// Five minutes in 25 MiB: 435 kbps or so, too few for 720p, so 480p.
 	s.EndUS = 300_000_000
 	s.AudioBytes = 7_200_000
-	if p, err = PlanVideoCopy(v, s, 500_000_000, 25<<20, 8); err != nil {
+	if p, err = PlanVideoCopy(v, s, 500_000_000, 25<<20, ByModule, 8); err != nil {
 		t.Fatal(err)
 	}
 	if p.Width != 854 || p.Height != 480 || p.KBPS < 400 || p.KBPS > 470 {
@@ -61,7 +61,7 @@ func TestPlanVideoCopy(t *testing.T) {
 	// sound.
 	s.EndUS = 1_200_000_000
 	s.AudioBytes = 28_800_000
-	_, err = PlanVideoCopy(v, s, 1<<30, 25<<20, 8)
+	_, err = PlanVideoCopy(v, s, 1<<30, 25<<20, ByModule, 8)
 	var long *TooLong
 	if !errors.As(err, &long) || long.Longest < 7*time.Minute || long.Longest > 7*time.Minute+30*time.Second {
 		t.Errorf("a video too long: %v", err)
@@ -69,14 +69,14 @@ func TestPlanVideoCopy(t *testing.T) {
 
 	// The module makes no copy of what it doesn't decode.
 	v.Decoder = false
-	if _, err := PlanVideoCopy(v, s, 1<<30, 25<<20, 8); !errors.Is(err, ErrNoCopy) {
+	if _, err := PlanVideoCopy(v, s, 1<<30, 25<<20, ByModule, 8); !errors.Is(err, ErrNoCopy) {
 		t.Errorf("a video the module doesn't decode: %v", err)
 	}
 }
 
 func TestLowerVideoPlan(t *testing.T) {
 	v, s := phoneVideo()
-	p, err := PlanVideoCopy(v, s, 34_941_781, 3<<20, 8)
+	p, err := PlanVideoCopy(v, s, 34_941_781, 3<<20, ByModule, 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestMakeVideoCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := PlanVideoCopy(v, s, full.Size(), 0, 2)
+	plan, err := PlanVideoCopy(v, s, full.Size(), 0, ByModule, 2)
 	if err != nil {
 		t.Fatal(err)
 	}

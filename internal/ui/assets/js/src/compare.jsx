@@ -124,11 +124,8 @@ export function usage(storage, limits) {
 }
 
 // A video's copy (M5.4). The page names each upload with a key of its own,
-// and asks how far it has come while the local service makes the copy and
-// sends it.
-
-// How often an upload's progress is asked for.
-const PROGRESS_EVERY = 500;
+// and follows it by that key, over a socket of its own (copier.js), while
+// the copy is made and sent.
 
 // progressKey names an upload for the page to follow it by.
 export function progressKey() {
@@ -142,32 +139,6 @@ export function progressLabel(p) {
     if (p?.stage === 'copying') return `Smaller copy · ${pct}`;
     if (p?.stage === 'sending') return `Sending · ${pct}`;
     return '';
-}
-
-// useUploadProgress follows an upload by its key while active: what it's
-// doing, and how far it is.
-export function useUploadProgress(denID, key, active) {
-    const [progress, setProgress] = useState(null);
-    useEffect(() => {
-        if (!active || !key) return undefined;
-        let stop = false;
-        let timer = 0;
-        const poll = async () => {
-            try {
-                const p = await api.get(`/api/dens/${denID}/progress/${key}`);
-                if (!stop) setProgress(p);
-            } catch {
-                // Not under way yet, or over: the upload's own answer says.
-            }
-            if (!stop) timer = setTimeout(poll, PROGRESS_EVERY);
-        };
-        poll();
-        return () => {
-            stop = true;
-            clearTimeout(timer);
-        };
-    }, [denID, key, active]);
-    return progress;
 }
 
 // formatTime writes a player's time: 0:04, 1:02.

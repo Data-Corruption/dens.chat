@@ -44,7 +44,19 @@ type following struct {
 	fullFits bool
 	full     chan struct{}
 	once     sync.Once
+	// page says the page makes a video's copy itself when it can, copy is
+	// the one on offer to it, and socket says a page follows the upload
+	// (M5.5). closed is closed when the upload ends.
+	page   bool
+	copy   *pageCopy
+	socket bool
+	closed chan struct{}
+	// changed wakes the page's socket when the progress changes.
+	changed chan struct{}
 }
+
+// pageCopies says the page makes a video's copy itself when it can.
+func (f *following) pageCopies() bool { return f != nil && f.page }
 
 func (f *following) set(stage string, done float64) {
 	if f == nil {
@@ -53,6 +65,10 @@ func (f *following) set(stage string, done float64) {
 	f.mu.Lock()
 	f.p = Progress{Stage: stage, Done: min(max(done, 0), 1)}
 	f.mu.Unlock()
+	select {
+	case f.changed <- struct{}{}:
+	default:
+	}
 }
 
 func (f *following) sending(done, total int64) {
@@ -84,22 +100,27 @@ func (f *following) wantsFull() <-chan struct{} {
 var progressKey = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
 
 // follow starts following an upload by the page's key, and returns how to
-// stop.
-func (m *Manager) follow(denID, key string) (*following, func(), error) {
+// stop. page says the page makes a video's copy itself when it can.
+func (m *Manager) follow(denID, key string, page bool) (*following, func(), error) {
 	if !progressKey.MatchString(key) {
 		return nil, nil, inputError(errors.New("an upload's progress key is 8 to 64 letters, digits, - or _"))
 	}
-	f := &following{den: denID, p: Progress{Stage: "preparing"}, full: make(chan struct{})}
+	f := &following{den: denID, p: Progress{Stage: "preparing"}, full: make(chan struct{}), page: page, closed: make(chan struct{}),
+		changed: make(chan struct{}, 1)}
 	m.followMu.Lock()
 	defer m.followMu.Unlock()
 	if _, ok := m.follows[key]; ok {
 		return nil, nil, inputError(errors.New("an upload already goes by that progress key"))
 	}
 	m.follows[key] = f
+	var once sync.Once
 	return f, func() {
-		m.followMu.Lock()
-		delete(m.follows, key)
-		m.followMu.Unlock()
+		once.Do(func() {
+			m.followMu.Lock()
+			delete(m.follows, key)
+			m.followMu.Unlock()
+			close(f.closed)
+		})
 	}, nil
 }
 
@@ -281,7 +302,8 @@ func (m *Manager) stripVideo(ctx context.Context, body io.Reader) (*version, err
 
 // videoCopy makes the smaller copy of a video's full size, fitted to over
 // bytes when the full size is over the den's limit, and the copy's preview
-// from the full size. A copy that comes out over is made once more, lower.
+// from the full size. The page makes the copy when it can (M5.5), and the
+// module otherwise.
 func (m *Manager) videoCopy(ctx context.Context, full *version, over int64, f *following) (*version, *media.Thumb, error) {
 	p, err := m.Media.Probe(ctx, full.file)
 	if err != nil {
@@ -296,45 +318,17 @@ func (m *Manager) videoCopy(ctx context.Context, full *version, over int64, f *f
 		return nil, nil, err
 	}
 	full.fps = s.FPS
-	workers := m.Media.Workers()
-	plan, err := media.PlanVideoCopy(v, s, full.size(), over, workers)
-	if err != nil {
-		return nil, nil, err
-	}
-	f.set("copying", 0)
-	newChunk := func() (media.ChunkFile, error) { return vault.NewScratch(m.TempDir, scratchPattern) }
 	var copied *version
-	for attempt := 0; ; attempt++ {
-		out, err := m.newVersion(media.Video)
-		if err != nil {
-			return nil, nil, err
-		}
-		limited := &ffmpeg.Limited{Output: out.file, Max: denproto.MaxFileSize}
-		c, err := media.MakeVideoCopy(ctx, m.Media, full.file, v, plan, newChunk, limited, func(done float64) {
-			f.set("copying", done)
-		})
-		if err != nil {
-			out.close()
-			if limited.Over() {
-				return nil, nil, ErrTooLarge
+	if f.pageCopies() {
+		if copied, err = m.copyByPage(ctx, full, v, s, over, f); err != nil {
+			if ctx.Err() != nil {
+				return nil, nil, ctx.Err()
 			}
-			return nil, nil, err
+			m.log.Infof("The page made no copy of a video: %v", err)
 		}
-		if over <= 0 || out.size() <= over {
-			out.video = &media.Stripped{MIME: "video/mp4", Width: c.Width, Height: c.Height, DurationMS: c.DurationMS}
-			out.width, out.height = c.Width, c.Height
-			if c.DurationUS > 0 {
-				out.fps = float64(c.VideoPackets) / (float64(c.DurationUS) / 1e6)
-			}
-			copied = out
-			break
-		}
-		got := out.size()
-		out.close()
-		if attempt > 0 {
-			return nil, nil, ErrTooLarge
-		}
-		if plan, err = media.LowerVideoPlan(plan, s, got, over, workers); err != nil {
+	}
+	if copied == nil {
+		if copied, err = m.copyByModule(ctx, full, v, s, over, f); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -349,6 +343,116 @@ func (m *Manager) videoCopy(ctx context.Context, full *version, over int64, f *f
 		return copied, nil, nil
 	}
 	return copied, &th, nil
+}
+
+// copyByModule has the media module make a video's copy, in chunks side by
+// side. A copy that comes out over the den's limit is made once more,
+// lower.
+func (m *Manager) copyByModule(ctx context.Context, full *version, v ffmpeg.Stream, s ffmpeg.Scanned, over int64, f *following) (*version, error) {
+	workers := m.Media.Workers()
+	plan, err := media.PlanVideoCopy(v, s, full.size(), over, media.ByModule, workers)
+	if err != nil {
+		return nil, err
+	}
+	f.set("copying", 0)
+	newChunk := func() (media.ChunkFile, error) { return vault.NewScratch(m.TempDir, scratchPattern) }
+	for attempt := 0; ; attempt++ {
+		out, err := m.newVersion(media.Video)
+		if err != nil {
+			return nil, err
+		}
+		limited := &ffmpeg.Limited{Output: out.file, Max: denproto.MaxFileSize}
+		c, err := media.MakeVideoCopy(ctx, m.Media, full.file, v, plan, newChunk, limited, func(done float64) {
+			f.set("copying", done)
+		})
+		if err != nil {
+			out.close()
+			if limited.Over() {
+				return nil, ErrTooLarge
+			}
+			return nil, err
+		}
+		if over <= 0 || out.size() <= over {
+			out.describeCopy(c)
+			return out, nil
+		}
+		got := out.size()
+		out.close()
+		if attempt > 0 {
+			return nil, ErrTooLarge
+		}
+		if plan, err = media.LowerVideoPlan(plan, s, got, over, workers); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// copyByPage has the page make a video's copy (M5.5): the video's packets
+// demuxed for it, offered with what decoding them takes and the plan, and
+// the AV1 packets it sends back put together with the video's sound. A
+// copy that comes out over the den's limit is offered once more, lower.
+func (m *Manager) copyByPage(ctx context.Context, full *version, v ffmpeg.Stream, s ffmpeg.Scanned, over int64, f *following) (*version, error) {
+	plan, err := media.PlanVideoCopy(v, s, full.size(), over, media.ByPage, 0)
+	if err != nil {
+		return nil, err
+	}
+	packets, err := vault.NewScratch(m.TempDir, scratchPattern)
+	if err != nil {
+		return nil, err
+	}
+	defer packets.Close()
+	d, err := m.Media.Demux(ctx, full.file, &ffmpeg.Limited{Output: packets, Max: denproto.MaxFileSize})
+	if err != nil {
+		return nil, err
+	}
+	dec, err := media.PageDecoding(d)
+	if err != nil {
+		return nil, err
+	}
+	for attempt := 1; ; attempt++ {
+		offer := Offer{ID: attempt, Decoding: dec, Encoding: media.PageEncodingFor(plan, s), Packets: d.Packets, EndUS: s.EndUS}
+		got, err := m.pageMakes(ctx, f, offer, packets)
+		if err != nil {
+			return nil, err
+		}
+		out, err := m.newVersion(media.Video)
+		if err != nil {
+			got.Close()
+			return nil, err
+		}
+		limited := &ffmpeg.Limited{Output: out.file, Max: denproto.MaxFileSize}
+		c, err := media.MuxPageCopy(ctx, m.Media, full.file, v, plan, got, limited)
+		got.Close()
+		if err != nil {
+			out.close()
+			if limited.Over() {
+				return nil, ErrTooLarge
+			}
+			return nil, err
+		}
+		if over <= 0 || out.size() <= over {
+			out.describeCopy(c)
+			return out, nil
+		}
+		size := out.size()
+		out.close()
+		if attempt > 1 {
+			return nil, ErrTooLarge
+		}
+		if plan, err = media.LowerVideoPlan(plan, s, size, over, 0); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// describeCopy says what a version made as a video's copy is: an MP4 of
+// AV1, as it shows, at its frame rate.
+func (v *version) describeCopy(c media.VideoCopy) {
+	v.video = &media.Stripped{MIME: "video/mp4", Width: c.Width, Height: c.Height, DurationMS: c.DurationMS}
+	v.width, v.height = c.Width, c.Height
+	if c.DurationUS > 0 {
+		v.fps = float64(c.VideoPackets) / (float64(c.DurationUS) / 1e6)
+	}
 }
 
 // tooLargeVideo explains why a video over a den's limit of limit bytes

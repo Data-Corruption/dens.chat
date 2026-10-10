@@ -9,7 +9,7 @@ import {
     useLater,
 } from './components.jsx';
 import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
-import { progressKey, progressLabel, sendSmaller, useUploadProgress } from './compare.jsx';
+import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
 import { deletesNow, keptFor } from './retention.js';
@@ -274,14 +274,15 @@ function Files({ den, navigate }) {
         const dm = shown.view.channels.find((c) => c.id === f.channel_id)?.kind === 'dm';
         // The row follows the upload while a video's copy is made (M5.4).
         const key = progressKey();
-        const track = (sent) => setProgress((cur) => ({ ...cur, [f.id]: { sent, key } }));
+        const track = (sent) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], sent } }));
+        const follow = (following) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], following } }));
         track(0);
         act.run(async () => {
             try {
                 // A photo or video swapped in goes smaller like any other,
                 // unless the member turned copies off (M5).
                 const send = sendSmaller() ? 'smaller' : 'full';
-                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send, key).done;
+                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send, key, follow).done;
                 if (needsPreview(up)) up = await addPreview(den.den_id, up);
                 await api.post(`${base}/messages/${f.message_id}/files/${f.id}/swap?channel=${f.channel_id}`, { upload: up.id });
                 await load();
@@ -340,7 +341,7 @@ function Files({ den, navigate }) {
 // size and what uses it, and what they can do with it. A file being
 // swapped shows how far its replacement is, and how far a video's copy.
 function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, onConfirm, onCancel, onRemove }) {
-    const following = useUploadProgress(denID, progress?.key, progress?.sent >= 1);
+    const following = progress?.following;
     const counting = progressLabel(following);
     const onMessage = !!f.message_id;
     const what = f.profile ? 'Take it off your profile?' : onMessage ? "Delete it for good? It comes off its message for everyone." : 'Drop this upload?';
