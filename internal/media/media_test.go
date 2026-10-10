@@ -718,6 +718,32 @@ func TestThumbnailBudget(t *testing.T) {
 	}
 }
 
+// Smaller copies are made of JPEGs, photos the module converts, and PNGs
+// larger than a copy, which are only scaled; never of anything animated,
+// a WebP or a GIF (M5).
+func TestCopyable(t *testing.T) {
+	for _, c := range []struct {
+		k    Kind
+		res  Result
+		want bool
+	}{
+		{JPEG, Result{Width: 640, Height: 480}, true},
+		{Photo, Result{}, true},
+		{PNG, Result{Width: CopySide + 1, Height: 10}, true},
+		{PNG, Result{Width: 10, Height: CopySide + 1}, true},
+		{PNG, Result{Width: CopySide, Height: CopySide}, false},
+		{PNG, Result{Width: 4000, Height: 3000, Animated: true}, false},
+		{GIF, Result{Width: 4000, Height: 3000}, false},
+		{WebP, Result{Width: 4000, Height: 3000}, false},
+		{Video, Result{}, false},
+		{Other, Result{}, false},
+	} {
+		if got := Copyable(c.k, c.res); got != c.want {
+			t.Errorf("Copyable(%s, %+v) = %t", c.k, c.res, got)
+		}
+	}
+}
+
 func TestPlayType(t *testing.T) {
 	for name, want := range map[string]string{
 		"meta.mp4": "video/mp4", "with-gps.mov": "video/mp4", "meta.m4a": "audio/mp4", "meta.mkv": "video/x-matroska",

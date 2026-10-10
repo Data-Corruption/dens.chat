@@ -1,12 +1,13 @@
 // The settings: a dialog over whatever the page shows, so a den and a call
 // stay in view (M3.3). Voice holds the microphone, the speaker, how the
 // member sends their voice and how they share their screen (M4.2); General
-// holds the theme, update checks, the
-// local password, logging, where Reddit links open, whether YouTube videos
-// play in Dens, and signing this browser out.
+// holds the theme, whether photos go as smaller copies (M5), update checks,
+// the local password, logging, where Reddit links open, whether YouTube
+// videos play in Dens, and signing this browser out.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { sendSmaller, setSendSmaller } from './compare.jsx';
 import { Card, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { HEIGHTS, RATES } from './share.js';
@@ -347,6 +348,7 @@ function General() {
     return (
         <>
             <ThemePicker />
+            <Copies />
             {settings.updatesManaged && (
                 <Card title="Updates">
                     <label class="label gap-3">
@@ -402,6 +404,35 @@ function General() {
                 <a class="link" href="/licenses" target="_blank" rel="noopener noreferrer">Read them</a>
             </p>
         </>
+    );
+}
+
+// Copies chooses whether this browser sends photos as smaller copies
+// (M5), which it does unless the member turns it off.
+function Copies() {
+    const [on, setOn] = useState(sendSmaller);
+    return (
+        <Card title="Photos">
+            <div>
+                <label class="label gap-3">
+                    <input
+                        type="checkbox"
+                        class="toggle"
+                        checked={on}
+                        onChange={(e) => {
+                            setSendSmaller(e.currentTarget.checked);
+                            setOn(e.currentTarget.checked);
+                        }}
+                    />
+                    Send photos smaller
+                </label>
+                <p class="mt-1 text-sm text-base-content/70">
+                    A photo goes as a copy at most 2,560 pixels across, which looks the same in a chat and takes a fraction of the
+                    space. Click a photo's size before you send it to compare it with the full size, and to send that instead. A photo
+                    larger than a den allows goes smaller either way.
+                </p>
+            </div>
+        </Card>
     );
 }
 

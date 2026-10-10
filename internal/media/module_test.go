@@ -59,7 +59,7 @@ func TestStillIsAnImageToStrip(t *testing.T) {
 	}
 	m := ffmpeg.TestRunner(nil)
 	var out ffmpeg.Buffer
-	img, err := m.Still(context.Background(), moduleFile(t, "rotated.heic"), &out, 0, StillQuality)
+	img, err := m.Still(context.Background(), moduleFile(t, "rotated.heic"), &out, 0, StillQuality, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,8 @@
 //              metadata, never their values.
 //   dm_strip   copies a file's video and audio into a new container, without
 //              anything else it carried.
-//   dm_still   turns an image a browser can't show into a JPEG or PNG.
+//   dm_still   turns an image a browser can't show into a JPEG or PNG, or
+//              makes a photo's smaller copy.
 //   dm_poster  makes a video's preview from its first frame.
 //
 // Each answers with JSON through host_result, and returns 0 or a negative
@@ -145,7 +146,10 @@ static int io_close_output(struct AVFormatContext *s, AVIOContext *pb) {
     return 0;
 }
 
-static int open_input(AVFormatContext **ic, AVIOContext **io) {
+// open_input opens the job's input, in the format fmt names, or the one
+// FFmpeg finds. With find_info, it reads on to fill in what the header
+// leaves unknown, decoding a frame of each stream if it must.
+static int open_input(AVFormatContext **ic, AVIOContext **io, const AVInputFormat *fmt, int find_info) {
     *io = open_io(HOST_INPUT, 0);
     *ic = avformat_alloc_context();
     if (!*io || !*ic) {
@@ -154,13 +158,32 @@ static int open_input(AVFormatContext **ic, AVIOContext **io) {
         return AVERROR(ENOMEM);
     }
     (*ic)->pb = *io;
-    int ret = avformat_open_input(ic, NULL, NULL, NULL);
+    int ret = avformat_open_input(ic, NULL, fmt, NULL);
     if (ret < 0) {
         return ret;
     }
     // Without decoders some parameters stay unknown, which a copy doesn't need.
-    avformat_find_stream_info(*ic, NULL);
+    if (find_info) {
+        avformat_find_stream_info(*ic, NULL);
+    }
     return 0;
+}
+
+// image_format names the demuxer for a JPEG or a PNG, by its first bytes, as
+// Dens tells them apart: FFmpeg's own guess at a JPEG with neither a JFIF nor
+// an EXIF header is a weak one.
+static const AVInputFormat *image_format(void) {
+    uint8_t head[8];
+    if (host_read(HOST_INPUT, head, sizeof head, 0) != (int32_t)sizeof head) {
+        return NULL;
+    }
+    if (head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) {
+        return av_find_input_format("jpeg_pipe");
+    }
+    if (memcmp(head, "\x89PNG\r\n\x1a\n", 8) == 0) {
+        return av_find_input_format("png_pipe");
+    }
+    return NULL;
 }
 
 static int finish(AVBPrint *b, int ret) {
@@ -213,6 +236,15 @@ static enum turn turn_for(const int32_t *m) {
         return TURN_VFLIP;
     }
     return TURN_NONE;
+}
+
+// turn_for_exif gives the turn an EXIF orientation, 1 to 8, asks for. A
+// JPEG keeps its orientation there, which FFmpeg's demuxer doesn't read, so
+// the host reads it and passes it.
+static enum turn turn_for_exif(int o) {
+    static const enum turn turns[] = {TURN_NONE,      TURN_NONE,  TURN_HFLIP,      TURN_180,   TURN_VFLIP,
+                                      TURN_TRANSPOSE, TURN_CLOCK, TURN_CLOCK_FLIP, TURN_CCLOCK};
+    return o >= 1 && o <= 8 ? turns[o] : TURN_NONE;
 }
 
 static const int32_t *display_matrix(const AVPacketSideData *sd, int nb) {
@@ -297,7 +329,7 @@ DM_EXPORT(dm_probe) int32_t dm_probe(void) {
     AVIOContext *io = NULL;
     AVBPrint b;
     av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
-    int ret = open_input(&ic, &io);
+    int ret = open_input(&ic, &io, NULL, 1);
     if (ret < 0) {
         goto end;
     }
@@ -644,7 +676,7 @@ DM_EXPORT(dm_strip) int32_t dm_strip(const char *muxer) {
     AVBPrint b;
     av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
 
-    int ret = pkt ? open_input(&ic, &in) : AVERROR(ENOMEM);
+    int ret = pkt ? open_input(&ic, &in, NULL, 1) : AVERROR(ENOMEM);
     if (ret < 0) {
         goto end;
     }
@@ -818,16 +850,17 @@ static int crop_as_stored(AVFrame *frame, const AVPacketSideData *sd, int nb) {
 }
 
 // encode_image scales a frame to the size it shows at, stretched by sar, and
-// to fit max_side (0 keeps that size), turns it, and encodes it as a JPEG, or
-// a PNG when it has transparency, carrying only the ICC profile given. The encoders get a fresh frame, so nothing else the
+// to fit max_side (0 keeps that size), turns it by t, and encodes it as a
+// JPEG, or a PNG when it has transparency or png is set, carrying only the
+// ICC profile given. The encoders get a fresh frame, so nothing else the
 // source carried, EXIF included, reaches them. It empties src once it's
 // scaled, and holds at most two full images at a time: a 48-megapixel photo
 // is 73 MB in each.
-static int encode_image(AVFrame *src, AVRational sar, const int32_t *matrix, int max_side, int quality,
+static int encode_image(AVFrame *src, AVRational sar, enum turn t, int png, int max_side, int quality,
                         const uint8_t *icc, int icc_size, AVBPrint *b) {
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(src->format);
     int alpha = desc && (desc->flags & AV_PIX_FMT_FLAG_ALPHA);
-    enum turn t = turn_for(matrix);
+    png = png || alpha;
     int sw = src->width, sh = src->height, dw = sw, dh = sh;
     stretch(&dw, &dh, sar);
     int ow = turn_swaps(t) ? dh : dw, oh = turn_swaps(t) ? dw : dh;
@@ -837,11 +870,12 @@ static int encode_image(AVFrame *src, AVRational sar, const int32_t *matrix, int
         oh = FFMAX(1, (int)lround(oh * k));
     }
     int pw = turn_swaps(t) ? oh : ow, ph = turn_swaps(t) ? ow : oh;
-    enum AVPixelFormat fmt = alpha ? AV_PIX_FMT_RGBA : AV_PIX_FMT_YUVJ420P;
+    enum AVPixelFormat fmt = alpha ? AV_PIX_FMT_RGBA : png ? AV_PIX_FMT_RGB24 : AV_PIX_FMT_YUVJ420P;
 
     AVFrame *scaled = av_frame_alloc(), *out = av_frame_alloc();
     AVPacket *pkt = av_packet_alloc();
     AVCodecContext *enc = NULL;
+    AVDictionary *opts = NULL;
     struct SwsContext *sws = NULL;
     int ret = scaled && out && pkt ? 0 : AVERROR(ENOMEM);
     if (ret < 0) {
@@ -887,8 +921,8 @@ static int encode_image(AVFrame *src, AVRational sar, const int32_t *matrix, int
         if ((ret = av_frame_get_buffer(out, 0)) < 0) {
             goto end;
         }
-        if (alpha) {
-            turn_plane(scaled->data[0], scaled->linesize[0], pw, ph, out->data[0], out->linesize[0], 4, t);
+        if (png) {
+            turn_plane(scaled->data[0], scaled->linesize[0], pw, ph, out->data[0], out->linesize[0], alpha ? 4 : 3, t);
         } else {
             int cw = AV_CEIL_RSHIFT(pw, 1), ch = AV_CEIL_RSHIFT(ph, 1);
             turn_plane(scaled->data[0], scaled->linesize[0], pw, ph, out->data[0], out->linesize[0], 1, t);
@@ -900,7 +934,7 @@ static int encode_image(AVFrame *src, AVRational sar, const int32_t *matrix, int
     }
     out->color_range = AVCOL_RANGE_JPEG;
 
-    const AVCodec *codec = avcodec_find_encoder(alpha ? AV_CODEC_ID_PNG : AV_CODEC_ID_MJPEG);
+    const AVCodec *codec = avcodec_find_encoder(png ? AV_CODEC_ID_PNG : AV_CODEC_ID_MJPEG);
     if (!codec || !(enc = avcodec_alloc_context3(codec))) {
         ret = AVERROR_ENCODER_NOT_FOUND;
         goto end;
@@ -912,11 +946,17 @@ static int encode_image(AVFrame *src, AVRational sar, const int32_t *matrix, int
     enc->color_range = AVCOL_RANGE_JPEG;
     // No comment naming the encoder.
     enc->flags |= AV_CODEC_FLAG_BITEXACT;
-    if (!alpha) {
+    if (png) {
+        // Each row filtered the way that packs it best, as libpng picks;
+        // FFmpeg filters none by default, which packs them worse.
+        if ((ret = av_dict_set(&opts, "pred", "mixed", 0)) < 0) {
+            goto end;
+        }
+    } else {
         enc->flags |= AV_CODEC_FLAG_QSCALE;
         enc->global_quality = out->quality = FF_QP2LAMBDA * quality;
     }
-    if ((ret = avcodec_open2(enc, codec, NULL)) < 0 || (ret = avcodec_send_frame(enc, out)) < 0 ||
+    if ((ret = avcodec_open2(enc, codec, &opts)) < 0 || (ret = avcodec_send_frame(enc, out)) < 0 ||
         (ret = avcodec_send_frame(enc, NULL)) < 0 || (ret = avcodec_receive_packet(enc, pkt)) < 0) {
         goto end;
     }
@@ -925,9 +965,10 @@ static int encode_image(AVFrame *src, AVRational sar, const int32_t *matrix, int
         goto end;
     }
     av_bprintf(b, "\"format\":\"%s\",\"width\":%d,\"height\":%d,\"turn\":\"%s\",\"icc_bytes\":%d,\"bytes\":%d",
-               alpha ? "png" : "jpeg", ow, oh, turn_names[t], icc_size, pkt->size);
+               png ? "png" : "jpeg", ow, oh, turn_names[t], icc_size, pkt->size);
 
 end:
+    av_dict_free(&opts);
     sws_freeContext(sws);
     avcodec_free_context(&enc);
     av_packet_free(&pkt);
@@ -1064,15 +1105,21 @@ end:
 }
 
 // dm_still converts an image the browser can't show or Dens can't strip in
-// place, such as a HEIC, into a JPEG or PNG: upright, scaled to fit max_side
-// if that's above 0, with its ICC profile and nothing else.
-DM_EXPORT(dm_still) int32_t dm_still(int32_t max_side, int32_t quality) {
+// place, such as a HEIC, into a JPEG or PNG, or makes a photo's smaller
+// copy: upright, scaled to fit max_side if that's above 0, with its ICC
+// profile and nothing else. A PNG stays a PNG. orientation is a JPEG's EXIF
+// orientation, from 1 to 8, which the host reads; 0 takes the turn from the
+// display matrix, as a HEIC states it.
+DM_EXPORT(dm_still) int32_t dm_still(int32_t max_side, int32_t quality, int32_t orientation) {
     AVFormatContext *ic = NULL;
     AVIOContext *io = NULL;
     AVFrame *frame = av_frame_alloc();
     AVBPrint b;
     av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
-    int ret = frame ? open_input(&ic, &io) : AVERROR(ENOMEM);
+    // A JPEG or a PNG decodes once, below, which finds what its header
+    // leaves unknown.
+    const AVInputFormat *fmt = image_format();
+    int ret = frame ? open_input(&ic, &io, fmt, !fmt) : AVERROR(ENOMEM);
     if (ret < 0) {
         goto end;
     }
@@ -1084,7 +1131,7 @@ DM_EXPORT(dm_still) int32_t dm_still(int32_t max_side, int32_t quality) {
         }
     }
     const AVPacketSideData *sd = NULL, *icc = NULL;
-    int nb = 0, placed = 0;
+    int nb = 0, placed = 0, png = 0;
     AVRational sar = {0, 1};
     av_bprintf(&b, "{");
     if (grid) {
@@ -1110,6 +1157,7 @@ DM_EXPORT(dm_still) int32_t dm_still(int32_t max_side, int32_t quality) {
         sd = ic->streams[st]->codecpar->coded_side_data;
         nb = ic->streams[st]->codecpar->nb_coded_side_data;
         sar = stream_sar(ic->streams[st]);
+        png = ic->streams[st]->codecpar->codec_id == AV_CODEC_ID_PNG;
         if ((ret = crop_as_stored(frame, sd, nb)) < 0) {
             goto end;
         }
@@ -1123,8 +1171,9 @@ DM_EXPORT(dm_still) int32_t dm_still(int32_t max_side, int32_t quality) {
     const uint8_t *icc_data = icc ? icc->data : ficc ? ficc->data : NULL;
     int icc_size = icc ? (int)icc->size : ficc ? (int)ficc->size : 0;
     av_bprintf(&b, "\"source_width\":%d,\"source_height\":%d,", frame->width, frame->height);
-    ret = encode_image(frame, sar.num ? sar : frame->sample_aspect_ratio, display_matrix(sd, nb), max_side, quality,
-                       icc_data, icc_size, &b);
+    enum turn t = orientation > 0 ? turn_for_exif(orientation) : turn_for(display_matrix(sd, nb));
+    ret = encode_image(frame, sar.num ? sar : frame->sample_aspect_ratio, t, png, max_side, quality, icc_data, icc_size,
+                       &b);
     av_bprintf(&b, "}");
 
 end:
@@ -1142,7 +1191,7 @@ DM_EXPORT(dm_poster) int32_t dm_poster(int32_t max_side, int32_t quality) {
     AVFrame *frame = av_frame_alloc();
     AVBPrint b;
     av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
-    int ret = frame ? open_input(&ic, &io) : AVERROR(ENOMEM);
+    int ret = frame ? open_input(&ic, &io, NULL, 1) : AVERROR(ENOMEM);
     if (ret < 0) {
         goto end;
     }
@@ -1161,7 +1210,8 @@ DM_EXPORT(dm_poster) int32_t dm_poster(int32_t max_side, int32_t quality) {
     av_bprintf(&b, "{\"source_width\":%d,\"source_height\":%d,", frame->width, frame->height);
     AVRational sar = stream_sar(ic->streams[st]);
     ret = encode_image(frame, sar.num ? sar : frame->sample_aspect_ratio,
-                       display_matrix(par->coded_side_data, par->nb_coded_side_data), max_side, quality, NULL, 0, &b);
+                       turn_for(display_matrix(par->coded_side_data, par->nb_coded_side_data)), 0, max_side, quality,
+                       NULL, 0, &b);
     av_bprintf(&b, "}");
 
 end:

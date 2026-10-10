@@ -32,15 +32,15 @@ DRIVER_DIR=internal/media/ffmpeg/driver
 # browsers use and the image formats' own demuxers; the parsers a stream copy
 # needs, VP8, VP9 and AV1 among them, which give a WebM's size without
 # decoding it; the bitstream filters muxers insert; the decoders of phone
-# video and of the photo formats Dens converts; and the JPEG and PNG
-# encoders, with zlib for PNG and TIFF.
+# video, of the photo formats Dens converts, and of JPEG and PNG, for
+# smaller copies; and the JPEG and PNG encoders, with zlib for PNG and TIFF.
 COMPONENTS=(
   --disable-everything
-  "--enable-demuxer=mov,matroska,mp3,flac,ogg,wav,aac,image_tiff_pipe,image_j2k_pipe,image_psd_pipe"
+  "--enable-demuxer=mov,matroska,mp3,flac,ogg,wav,aac,image_tiff_pipe,image_j2k_pipe,image_psd_pipe,image_jpeg_pipe,image_png_pipe"
   "--enable-muxer=mov,mp4,ipod,matroska,webm,mp3,flac,ogg,oga,opus,wav"
   "--enable-parser=h264,hevc,aac,mpegaudio,opus,vorbis,flac,vp8,vp9,av1,mjpeg,ac3"
   "--enable-bsf=aac_adtstoasc,vp9_superframe"
-  "--enable-decoder=hevc,h264,mjpeg,tiff,jpeg2000,psd"
+  "--enable-decoder=hevc,h264,mjpeg,tiff,jpeg2000,psd,png"
   "--enable-encoder=mjpeg,png"
   --enable-zlib
 )

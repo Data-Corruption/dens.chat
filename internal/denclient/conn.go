@@ -91,6 +91,10 @@ type conn struct {
 	approvals map[string]*approval
 	approved  map[string]RequestView
 
+	// kept are the two versions of each photo waiting to be sent, by its
+	// upload's ID (M5).
+	kept map[string]*kept
+
 	// Only the run goroutine touches these.
 	epoch string
 	seq   uint64
@@ -392,9 +396,21 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	}()
 
 	sctx, cancel := context.WithCancel(ctx)
+	// The socket's helpers end before stream does: renew signs with the
+	// device key, which closes once run returns, as the den is forgotten
+	// or the service stops.
+	var helpers sync.WaitGroup
+	defer helpers.Wait()
 	defer cancel()
-	go c.ping(sctx, cancel, ws)
-	go c.renew(sctx, ws)
+	helpers.Add(2)
+	go func() {
+		defer helpers.Done()
+		c.ping(sctx, cancel, ws)
+	}()
+	go func() {
+		defer helpers.Done()
+		c.renew(sctx, ws)
+	}()
 	for {
 		_, data, err := ws.Read(sctx)
 		if err != nil {

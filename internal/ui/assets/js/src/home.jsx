@@ -9,6 +9,7 @@ import {
     useLater,
 } from './components.jsx';
 import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
+import { sendSmaller } from './compare.jsx';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
 import { deletesNow, keptFor } from './retention.js';
@@ -275,7 +276,10 @@ function Files({ den, navigate }) {
         track(0);
         act.run(async () => {
             try {
-                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id).done;
+                // A photo swapped in goes smaller like any other, unless the
+                // member turned copies off (M5).
+                const send = sendSmaller() ? 'smaller' : 'full';
+                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send).done;
                 if (needsPreview(up)) up = await addPreview(den.den_id, up);
                 await api.post(`${base}/messages/${f.message_id}/files/${f.id}/swap?channel=${f.channel_id}`, { upload: up.id });
                 await load();

@@ -15,7 +15,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
-import { Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, upload } from './files.jsx';
+import { Compare, comparable, mayGoSmaller, sendSmaller, sentLabel } from './compare.jsx';
+import {
+    Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
+} from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
 import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
 import { keptFor } from './retention.js';
@@ -82,6 +85,9 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const filesRef = useRef(files);
     filesRef.current = files;
     const [viewing, setViewing] = useState(null);
+    // comparing is the key of the file whose two versions the member
+    // compares (M5).
+    const [comparing, setComparing] = useState(null);
     const [dragging, setDragging] = useState(false);
     const [divider] = useState(readPosition || '');
     const scroller = useRef(null);
@@ -401,22 +407,25 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     }
 
     // addFiles starts uploading files the member picked, dropped or pasted,
-    // up to what a message holds. Uploads go ahead while they write.
+    // up to what a message holds. Uploads go ahead while they write. A
+    // photo goes as a smaller copy unless the member turned copies off, and
+    // one over the den's limit may still go as its copy (M5).
     function addFiles(list) {
         const picked = [...list];
         const room = MAX_ATTACHMENTS - filesRef.current.length;
         if (picked.length > room) setError(`A message holds at most ${MAX_ATTACHMENTS} files.`);
         const added = picked.slice(0, Math.max(0, room)).map((file) => {
             const entry = { key: nextKey++, file, name: file.name || 'pasted image.png', size: file.size, progress: 0 };
-            if (limits?.file_size && file.size > limits.file_size) {
+            if (limits?.file_size && file.size > limits.file_size && !mayGoSmaller(file)) {
                 entry.error = `This file is larger than this den allows (${formatSize(limits.file_size)}).`;
             }
             return entry;
         });
         setFiles((cur) => [...cur, ...added]);
+        const send = sendSmaller() ? 'smaller' : 'full';
         for (const entry of added) {
             if (entry.error) continue;
-            const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }));
+            const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }), '', send);
             entry.abort = up.abort;
             up.done.then(
                 async (result) => {
@@ -432,6 +441,27 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
 
     function updateFile(key, changes) {
         setFiles((cur) => cur.map((f) => (f.key === key ? { ...f, ...changes } : f)));
+    }
+
+    // switchVersions sends photos on the message being written as the
+    // other version, to, which the local service uploads, dropping the one
+    // waiting (M5). The message waits for it, as for an upload. A photo
+    // taken off meanwhile drops what it switched to.
+    function switchVersions(entries, to) {
+        for (const f of entries) {
+            const from = f.result;
+            updateFile(f.key, { switching: true, switchError: '' });
+            api.post(`/api/dens/${denID}/uploads/${from.id}/switch`, { to }).then(
+                (result) => {
+                    if (!filesRef.current.some((x) => x.key === f.key)) {
+                        api.del(`/api/dens/${denID}/uploads/${result.id}`).catch(() => {});
+                        return;
+                    }
+                    updateFile(f.key, { result, switching: false });
+                },
+                (e) => updateFile(f.key, { switching: false, switchError: e.message }),
+            );
+        }
     }
 
     // removeFile takes a file off the message being written: an upload in
@@ -609,6 +639,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
             ) : !canSend ? null : (
                 <Composer
+                    denID={denID}
                     placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
                     replyTo={replyTo}
                     replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
@@ -616,6 +647,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     files={files}
                     onAddFiles={addFiles}
                     onRemoveFile={removeFile}
+                    onCompare={setComparing}
                     onCancelReply={() => setReplyTo(null)}
                     candidates={candidates}
                     editors={editors}
@@ -628,6 +660,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             {viewing && (
                 <Viewer denID={denID} files={viewing.files} index={viewing.index} onClose={() => setViewing(null)}
                     onIndex={(index) => setViewing((v) => v && { ...v, index })} />
+            )}
+            {comparing !== null && comparable(files).some((f) => f.key === comparing) && (
+                <Compare denID={denID} files={comparable(files)} index={comparable(files).findIndex((f) => f.key === comparing)} limits={limits}
+                    onIndex={(i) => setComparing(comparable(filesRef.current)[i]?.key ?? null)} onSwitch={switchVersions}
+                    onClose={() => setComparing(null)} />
             )}
         </div>
     );
@@ -984,7 +1021,7 @@ function EditorList({ candidates, selected, onChange }) {
     );
 }
 
-function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCancelReply, onSend, onEditLast, onTyping }) {
+function Composer({ denID, placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping }) {
     const [text, setText] = useState('');
     const [sharing, setSharing] = useState(false);
     // The + menu, and the guide to writing a message (M3.3).
@@ -1017,7 +1054,7 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates
         fileCount.current = files.length;
     }, [files.length]);
     const length = [...text].length;
-    const uploading = files.some((f) => !f.result && !f.error);
+    const uploading = files.some((f) => (!f.result && !f.error) || f.switching);
     const failed = files.some((f) => f.error);
     function submit() {
         if ((!text.trim() && files.length === 0) || length > MAX_TEXT || uploading || failed) return;
@@ -1064,7 +1101,7 @@ function Composer({ placeholder, replyTo, replyAuthor, typing, files, candidates
             )}
             {files.length > 0 && (
                 <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
-                    {files.map((f) => <FileChip key={f.key} f={f} onRemove={() => onRemoveFile(f.key)} />)}
+                    {files.map((f) => <FileChip key={f.key} denID={denID} f={f} onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />)}
                 </ul>
             )}
             {sharing ? (
@@ -1248,14 +1285,28 @@ function MetadataRemoved({ id }) {
 }
 
 // FileChip is a file waiting to go with the message: its preview or icon,
-// how far its upload is, whether its metadata came out, and whether a
-// photo browsers can't show was turned into one they can.
-function FileChip({ f, onRemove }) {
+// how far its upload is, the size it will send, whether its metadata came
+// out, and whether a photo browsers can't show was turned into one they
+// can, which then shows the preview the upload has. A photo with two
+// versions says which one it goes as, and its size opens the comparison
+// (M5).
+function FileChip({ denID, f, onRemove, onCompare }) {
     const done = !!f.result;
     const name = f.result?.name || f.name;
+    const versions = f.result?.versions;
+    // Once the file is with the local service, it may still be making a
+    // smaller copy, or uploading, or switching versions, with nothing to
+    // count.
+    const busy = !done ? f.progress >= 1 : f.switching;
     return (
         <li class={`flex w-60 max-w-full items-center gap-2 rounded border bg-base-200 p-1.5 ${f.error ? 'border-error' : 'border-base-300'}`}>
-            {isImageFile(f.file) ? <Thumb file={f.file} size={40} /> : <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>}
+            {isImageFile(f.file) ? (
+                <Thumb file={f.file} size={40} />
+            ) : f.result?.thumb ? (
+                <img src={thumbURL(denID, f.result.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" draggable={false} />
+            ) : (
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
+            )}
             <div class="min-w-0 flex-1 text-xs">
                 <p class="truncate font-medium" title={name}>{name}</p>
                 {f.error ? (
@@ -1263,13 +1314,25 @@ function FileChip({ f, onRemove }) {
                 ) : done ? (
                     <>
                         <p class="flex items-center gap-1 text-base-content/60">
-                            {formatSize(f.result.size)}
+                            {versions ? (
+                                <button type="button" class="link link-hover cursor-pointer whitespace-nowrap" onClick={onCompare}
+                                    title={`Compare it with the ${versions.sent === 'smaller' ? 'full size' : 'smaller copy'}`}>
+                                    {formatSize(f.result.size)} · {sentLabel(versions)}
+                                </button>
+                            ) : formatSize(f.result.size)}
                             {f.result.stripped && <MetadataRemoved id={`metadata-${f.key}`} />}
                         </p>
+                        {versions?.sent === 'smaller' && !versions.full.fits && (
+                            <p class="text-base-content/60">Its full size is over this den's limit</p>
+                        )}
                         {f.result.converted && (
                             <p class="text-base-content/60">Sent as {f.result.type === 'image/png' ? 'PNG' : 'JPEG'}, which every browser shows</p>
                         )}
+                        {f.switchError && <p class="text-error" role="alert">{f.switchError}</p>}
+                        {busy && <progress class="progress progress-primary h-1.5 w-full"></progress>}
                     </>
+                ) : busy ? (
+                    <progress class="progress progress-primary h-1.5 w-full"></progress>
                 ) : (
                     <progress class="progress progress-primary h-1.5 w-full" value={Math.round(f.progress * 100)} max="100"></progress>
                 )}

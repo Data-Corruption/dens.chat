@@ -104,7 +104,7 @@ func (m *Manager) convert(ctx context.Context, p *prepared, head []byte, in *vau
 			return inputError(errors.New("Dens can't send a camera raw photo, because it can't take out the details it may carry, " +
 				"such as where it was made. Export it as JPEG and send that."))
 		}
-		img, err := m.Media.Still(ctx, in, out, 0, media.StillQuality)
+		img, err := m.Media.Still(ctx, in, out, 0, media.StillQuality, 0)
 		if out.Over() {
 			return ErrTooLarge
 		}

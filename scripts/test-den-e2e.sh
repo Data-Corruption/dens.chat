@@ -20,9 +20,13 @@
 # member sends a phone photo that must arrive
 # stripped, a phone video that must arrive stripped with its preview and
 # play from any byte, and an iPhone HEIC that must arrive as a JPEG. The
-# owner opens a DM, which takes no message until both members type each
-# other's check digits, and then carries text, a photo and a video the den
-# stores only sealed. The owner shares a checklist with the member, and the
+# owner's retention period must reach the member and outlive the restart.
+# At their limit, the member swaps a file for a smaller one and deletes
+# another. A HEIC sent smaller must arrive as an upright copy in its own
+# colors, and another switched to full size, full size. The owner opens a
+# DM, which takes no message until both members type each other's check
+# digits, and then carries text, a photo, a photo's smaller copy and a
+# video the den stores only sealed. The owner shares a checklist with the member, and the
 # two tick different boxes at the same moment, all of which must stay. A
 # second instance on the member's machine stands in for a fresh one: it
 # signs in by the den's address with a recovery code, whose new password
@@ -432,6 +436,27 @@ run() {
   guest "$DEN" limits "$den_id" 26214400 2147483648 21474836480
   echo ">> The swap took the HEIC's place within the member's space, the delete took the video and its message, and the owner sees both"
 
+  echo ">> Photos go as smaller copies, unless the member sends one full size"
+  local versions sent full fits switched
+  versions=$(guest "$CLIENT" upload-versions "$den_id" /root/rotated.heic IMG_0006.HEIC smaller)
+  read -r file sent size full fits <<<"$versions"
+  [[ "$sent $size $full $fits" == "smaller 1920x2560 3024x4032 fits" ]] || { echo "error: the photo went as: $versions" >&2; return 1; }
+  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/copy.jpg)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/copy.jpg)" == "1920x2560 ICC_PROFILE" ]] ||
+    { echo "error: the copy arrived as $kind $(guest "$DEN" jpeg /root/copy.jpg)" >&2; return 1; }
+  guest "$DEN" clean /root/copy.jpg
+  versions=$(guest "$CLIENT" upload-versions "$den_id" /root/rotated.heic IMG_0007.HEIC smaller)
+  read -r file sent size full fits <<<"$versions"
+  switched=$(guest "$CLIENT" switch "$den_id" "$file" full)
+  read -r switched sent size <<<"$switched"
+  [[ "$switched" != "$file" && "$sent $size" == "full 3024x4032" ]] || { echo "error: the switch came back as: $switched $sent $size" >&2; return 1; }
+  guest "$CLIENT" send-file "$den_id" "$channel" "$switched" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$switched" /root/full.jpg)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/full.jpg)" == "3024x4032 ICC_PROFILE" ]] ||
+    { echo "error: the full size arrived as $kind $(guest "$DEN" jpeg /root/full.jpg)" >&2; return 1; }
+  echo ">> The HEIC went as an upright copy at 1920x2560 in its own colors, and the one switched to full size went full size"
+
   echo ">> A private DM, once both members compare check codes"
   local bob dm owner_half member_half refusal
   bob=$(guest "$DEN" member-id "$den_id" bob)
@@ -464,6 +489,14 @@ run() {
     { echo "error: the DM photo arrived as $kind $(guest "$DEN" jpeg /root/dm-photo.jpg)" >&2; return 1; }
   kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-preview.jpg thumb)
   [[ "$kind" == image/jpeg ]] || { echo "error: the DM photo's preview came as $kind" >&2; return 1; }
+  versions=$(member upload-versions "$den_id" /root/rotated.heic IMG_0008.HEIC smaller "$dm")
+  read -r file sent size full fits <<<"$versions"
+  [[ "$sent $size $full" == "smaller 1920x2560 3024x4032" ]] || { echo "error: the DM photo went as: $versions" >&2; return 1; }
+  member send-file "$den_id" "$dm" "$file" >/dev/null
+  guest "$DEN" history "$den_id" "$dm" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-copy.jpg)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/dm-copy.jpg)" == "1920x2560 ICC_PROFILE" ]] ||
+    { echo "error: the DM photo's copy arrived as $kind $(guest "$DEN" jpeg /root/dm-copy.jpg)" >&2; return 1; }
   read -r file type size preview converted name duration <<<"$(member upload-media "$den_id" /root/with-gps.mov IMG_0005.MOV "$dm")"
   [[ "$type $size $preview" == "video/mp4 320x568 preview" && "$duration" -gt 3900 ]] ||
     { echo "error: the DM video came back as: $file $type $size $preview $duration" >&2; return 1; }
@@ -477,7 +510,7 @@ run() {
   guest "$DEN" range "$den_id" "$file" /root/dm-video.mp4 200000 299999
   guest "$DEN" dm-sealed "a private word"
   stored=$(guest "$DEN" sealed)
-  echo ">> The DM took messages only after both typed each other's digits; its text, a link without its tracking, a photo and a video reached the other side, and the den holds ${stored} sealed files"
+  echo ">> The DM took messages only after both typed each other's digits; its text, a link without its tracking, a photo, a photo's smaller copy and a video reached the other side, and the den holds ${stored} sealed files"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text

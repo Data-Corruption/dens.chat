@@ -18,6 +18,8 @@ func (rt *router) mountFiles(r chi.Router) {
 	r.Get("/api/dens/{den}/files/{file}", rt.handleFile(false))
 	r.Get("/api/dens/{den}/files/{file}/thumb", rt.handleFile(true))
 	r.Post("/api/dens/{den}/uploads/{file}/thumb", rt.handleSetThumb)
+	r.Get("/api/dens/{den}/uploads/{file}/versions/{version}", rt.handleVersion)
+	r.Post("/api/dens/{den}/uploads/{file}/switch", rt.handleSwitchVersion)
 	r.Get("/api/dens/{den}/storage", rt.handleStorage)
 	r.Get("/api/dens/{den}/files", rt.handleOwnFiles)
 	r.Delete("/api/dens/{den}/uploads/{file}", rt.handleDropUpload)
@@ -28,7 +30,9 @@ func (rt *router) mountFiles(r chi.Router) {
 // handleUpload passes a file from the page to a den. The page sends the
 // file's bytes as they are; images lose their metadata on the way. The
 // page names the channel the file is for, since a DM's goes sealed, and
-// the file it replaces, if any (M5).
+// the file it replaces, if any (M5). A file for a message says which
+// version of a photo it sends, smaller or full, and a photo then goes with
+// both kept for the page to compare (M5).
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {
@@ -39,11 +43,15 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusLengthRequired, "The upload didn't say how large it is.")
 		return
 	}
-	den, channel, replaces := chi.URLParam(r, "den"), r.URL.Query().Get("channel"), r.URL.Query().Get("replaces")
+	q := r.URL.Query()
+	den, channel, replaces, send := chi.URLParam(r, "den"), q.Get("channel"), q.Get("replaces"), q.Get("send")
 	var up denclient.Uploaded
-	if replaces != "" {
+	switch {
+	case send != "":
+		up, err = rt.a.Dens.UploadVersions(r.Context(), den, channel, name, r.ContentLength, r.Body, denclient.Send(send), replaces)
+	case replaces != "":
 		up, err = rt.a.Dens.Replace(r.Context(), den, channel, replaces, name, r.ContentLength, r.Body)
-	} else {
+	default:
 		up, err = rt.a.Dens.Upload(r.Context(), den, channel, name, r.ContentLength, r.Body)
 	}
 	if err != nil {
@@ -94,33 +102,70 @@ func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 			return
 		}
 		defer f.Close()
-		h := w.Header()
-		h.Set("Cache-Control", "no-store")
-		h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-		name, download := r.URL.Query()["download"]
-		var inline string
-		switch {
-		case download:
-		case f.Kind.Image():
-			inline = f.Kind.MIME()
-		default:
-			inline = f.PlayType()
-		}
-		if inline != "" {
-			h.Set("Content-Type", inline)
-			h.Set("Content-Disposition", "inline")
-		} else {
-			h.Set("Content-Type", "application/octet-stream")
-			disposition := "attachment"
-			if len(name) > 0 {
-				if d := mime.FormatMediaType("attachment", map[string]string{"filename": denproto.CleanFilename(name[0])}); d != "" {
-					disposition = d
-				}
-			}
-			h.Set("Content-Disposition", disposition)
-		}
-		http.ServeContent(w, r, "", time.Time{}, f)
+		serveFile(w, r, f)
 	}
+}
+
+// handleVersion serves one of the two versions kept of a photo waiting to
+// be sent, smaller or full, for the page to compare them (M5). Each is a
+// JPEG or PNG this service made or stripped, served as any file is.
+func (rt *router) handleVersion(w http.ResponseWriter, r *http.Request) {
+	f, err := rt.a.Dens.OpenVersion(chi.URLParam(r, "den"), chi.URLParam(r, "file"), denclient.Send(chi.URLParam(r, "version")))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	defer f.Close()
+	serveFile(w, r, f)
+}
+
+// handleSwitchVersion switches a photo waiting to be sent to its other
+// version, and answers with the upload that takes its place (M5).
+func (rt *router) handleSwitchVersion(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		To string `json:"to"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	up, err := rt.a.Dens.SwitchVersion(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file"), denclient.Send(body.To))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, up)
+}
+
+// serveFile serves a file to the page: inline, as exactly what it is, only
+// when that's an image of a kind Dens reads, or video or audio in a
+// container the media module writes, and otherwise as a download.
+func serveFile(w http.ResponseWriter, r *http.Request, f *denclient.OpenedFile) {
+	h := w.Header()
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	name, download := r.URL.Query()["download"]
+	var inline string
+	switch {
+	case download:
+	case f.Kind.Image():
+		inline = f.Kind.MIME()
+	default:
+		inline = f.PlayType()
+	}
+	if inline != "" {
+		h.Set("Content-Type", inline)
+		h.Set("Content-Disposition", "inline")
+	} else {
+		h.Set("Content-Type", "application/octet-stream")
+		disposition := "attachment"
+		if len(name) > 0 {
+			if d := mime.FormatMediaType("attachment", map[string]string{"filename": denproto.CleanFilename(name[0])}); d != "" {
+				disposition = d
+			}
+		}
+		h.Set("Content-Disposition", disposition)
+	}
+	http.ServeContent(w, r, "", time.Time{}, f)
 }
 
 func (rt *router) handleStorage(w http.ResponseWriter, r *http.Request) {

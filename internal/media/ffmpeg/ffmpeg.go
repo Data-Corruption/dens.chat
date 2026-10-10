@@ -29,7 +29,8 @@ const (
 	// OpStrip copies a file's video and audio into a new container,
 	// without anything else it carried.
 	OpStrip Op = "strip"
-	// OpStill turns an image a browser can't show into a JPEG or PNG.
+	// OpStill turns an image a browser can't show into a JPEG or PNG, or
+	// makes a photo's smaller copy.
 	OpStill Op = "still"
 	// OpPoster makes a video's preview from its first frame.
 	OpPoster Op = "poster"
@@ -96,7 +97,8 @@ type Stripped struct {
 
 // Image describes a still or a poster.
 type Image struct {
-	// Format is "jpeg", or "png" for an image with transparency.
+	// Format is "jpeg", or "png" for an image with transparency or made
+	// from a PNG.
 	Format       string `json:"format"`
 	Width        int    `json:"width"`
 	Height       int    `json:"height"`
