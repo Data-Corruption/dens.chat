@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { APIError } from './api.js';
+import { canCopy, followUpload } from './copier.js';
 
 // Previews fit these boxes in the message list; one image gets more room
 // than several.
@@ -61,22 +62,28 @@ export const downloadURL = (denID, f) => `/api/dens/${denID}/files/${f.id}?downl
 // it's made to take the place of, if any (M5). send, for a message's file,
 // says which version of a photo or video goes, "smaller" or "full", and the
 // local service keeps both to compare (M5); progress names the upload for
-// the page to follow while a video's copy is made (M5.4). It reports how
-// much of the file went to the local service, from 0 to 1, and returns the
-// upload's promise and a way to stop it.
-export function upload(denID, channelID, file, name, onProgress, replaces, send, progress) {
+// the page to follow, which onFollow hears, while a video's copy is made
+// (M5.4), and in Chrome and Edge, the page makes the copy itself (M5.5). It
+// reports how much of the file went to the local service, from 0 to 1, and
+// returns the upload's promise and a way to stop it.
+export function upload(denID, channelID, file, name, onProgress, replaces, send, progress, onFollow) {
     const xhr = new XMLHttpRequest();
     const query = new URLSearchParams();
     if (channelID) query.set('channel', channelID);
     if (replaces) query.set('replaces', replaces);
     if (send) query.set('send', send);
-    if (progress) query.set('progress', progress);
+    if (progress) {
+        query.set('progress', progress);
+        if (canCopy()) query.set('copier', 'page');
+    }
+    let unfollow = () => {};
     const done = new Promise((resolve, reject) => {
         const qs = String(query);
         xhr.open('POST', `/api/dens/${denID}/uploads${qs ? `?${qs}` : ''}`);
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.setRequestHeader('Dens-Filename', encodeURIComponent(name));
         xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+        xhr.onloadend = () => unfollow();
         xhr.onload = () => {
             let data = null;
             try {
@@ -90,6 +97,9 @@ export function upload(denID, channelID, file, name, onProgress, replaces, send,
         xhr.onerror = () => reject(new APIError("The upload failed. Is Dens still running on this computer?", 0));
         xhr.onabort = () => reject(new APIError('Upload stopped.', 0));
         xhr.send(file);
+        // Followed from the start: Firefox says the file went only once the
+        // whole upload is over.
+        if (progress) unfollow = followUpload(denID, progress, onFollow);
     });
     return { done, abort: () => xhr.abort() };
 }

@@ -15,9 +15,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
-import {
-    Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel, useUploadProgress,
-} from './compare.jsx';
+import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
 } from './files.jsx';
@@ -432,7 +430,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         for (const entry of added) {
             if (entry.error) continue;
             const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }), '', send,
-                entry.progressKey);
+                entry.progressKey, (following) => updateFile(entry.key, { following }));
             entry.abort = up.abort;
             up.done.then(
                 async (result) => {
@@ -1299,9 +1297,10 @@ function MetadataRemoved({ id }) {
 // out, and whether a photo browsers can't show was turned into one they
 // can, which then shows the preview the upload has. A photo or video with
 // two versions says which one it goes as, and its size opens the
-// comparison (M5). While a video's copy is made, it says how far that is,
-// and offers to send the video full size instead when the den takes it
-// (M5.4).
+// comparison (M5). While a video's copy is made, by the local service or
+// this browser, it says how far that is, as the upload's socket tells it
+// (following), and offers to send the video full size instead when the den
+// takes it (M5.4, M5.5).
 function FileChip({ denID, f, limits, onRemove, onCompare }) {
     const done = !!f.result;
     const name = f.result?.name || f.name;
@@ -1309,7 +1308,7 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
     // Once the file is with the local service, it may still be making a
     // smaller copy, or uploading, or switching versions.
     const busy = !done ? f.progress >= 1 : f.switching;
-    const following = useUploadProgress(denID, f.progressKey, !done && !f.error && f.progress >= 1);
+    const following = !done && !f.error ? f.following : null;
     const counting = progressLabel(following);
     const [askedFull, setAskedFull] = useState(false);
     const [fullError, setFullError] = useState('');
