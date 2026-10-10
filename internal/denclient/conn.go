@@ -396,9 +396,21 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	}()
 
 	sctx, cancel := context.WithCancel(ctx)
+	// The socket's helpers end before stream does: renew signs with the
+	// device key, which closes once run returns, as the den is forgotten
+	// or the service stops.
+	var helpers sync.WaitGroup
+	defer helpers.Wait()
 	defer cancel()
-	go c.ping(sctx, cancel, ws)
-	go c.renew(sctx, ws)
+	helpers.Add(2)
+	go func() {
+		defer helpers.Done()
+		c.ping(sctx, cancel, ws)
+	}()
+	go func() {
+		defer helpers.Done()
+		c.renew(sctx, ws)
+	}()
 	for {
 		_, data, err := ws.Read(sctx)
 		if err != nil {
