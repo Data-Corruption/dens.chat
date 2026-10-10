@@ -63,6 +63,10 @@ DEFAULT_EXIFTOOL_VERSION="13.55"
 # its v0.2 tag names (model_version), which the release doesn't carry.
 DEFAULT_RNNOISE_VERSION="0.2"
 DEFAULT_RNNOISE_MODEL_VERSION="0b50c45"
+# libaom, AV1's reference encoder, which the media module carries for
+# smaller copies of videos, built for WebAssembly with CMake.
+DEFAULT_AOM_VERSION="3.15.2"
+DEFAULT_CMAKE_VERSION="4.4.4"
 
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
@@ -83,6 +87,8 @@ ZLIB_VERSION="${ZLIB_VERSION:-$DEFAULT_ZLIB_VERSION}"
 EXIFTOOL_VERSION="${EXIFTOOL_VERSION:-$DEFAULT_EXIFTOOL_VERSION}"
 RNNOISE_VERSION="${RNNOISE_VERSION:-$DEFAULT_RNNOISE_VERSION}"
 RNNOISE_MODEL_VERSION="${RNNOISE_MODEL_VERSION:-$DEFAULT_RNNOISE_MODEL_VERSION}"
+AOM_VERSION="${AOM_VERSION:-$DEFAULT_AOM_VERSION}"
+CMAKE_VERSION="${CMAKE_VERSION:-$DEFAULT_CMAKE_VERSION}"
 
 # Hashes ----------------------------------------------------------------------
 #
@@ -117,6 +123,9 @@ ZLIB_SHA_OVERRIDE="${ZLIB_SHA:-}"
 EXIFTOOL_SHA_OVERRIDE="${EXIFTOOL_SHA:-}"
 RNNOISE_SHA_OVERRIDE="${RNNOISE_SHA:-}"
 RNNOISE_MODEL_SHA_OVERRIDE="${RNNOISE_MODEL_SHA:-}"
+AOM_SHA_OVERRIDE="${AOM_SHA:-}"
+CMAKE_SHA_LINUX_AMD64_OVERRIDE="${CMAKE_SHA_LINUX_AMD64:-}"
+CMAKE_SHA_LINUX_ARM64_OVERRIDE="${CMAKE_SHA_LINUX_ARM64:-}"
 
 TAILWIND_SHA_LINUX_AMD64="${TAILWIND_SHA_LINUX_AMD64:-5036c4fb4328e0bcdbb6065c70d8ac9452e0d4c947113a788a8f94fd390425c1}"
 TAILWIND_SHA_LINUX_ARM64="${TAILWIND_SHA_LINUX_ARM64:-394ddccc2402cfa3abd97dfba56f3587781a3d6e6ce66e65ceada14beb7664b8}"
@@ -160,6 +169,12 @@ EXIFTOOL_SHA="${EXIFTOOL_SHA:-5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4
 RNNOISE_SHA="${RNNOISE_SHA:-90fce4b00b9ff24c08dbfe31b82ffd43bae383d85c5535676d28b0a2b11c0d37}"
 # The model the v0.2 tag names, as Fedora's sources record it by this SHA-256.
 RNNOISE_MODEL_SHA="${RNNOISE_MODEL_SHA:-4ac81c5c0884ec4bd5907026aaae16209b7b76cd9d7f71af582094a2f98f4b43}"
+# The release tarball, whose signature by the AOMedia release signing key
+# (B002F08B74A148DAA01F7123A48E86DB0B830498) checked out.
+AOM_SHA="${AOM_SHA:-67bb54b245f33ed98600e08269e6139986e48114e14042474ddd8885801dfddc}"
+# Release archives, as listed in the release's SHA-256 file.
+CMAKE_SHA_LINUX_AMD64="${CMAKE_SHA_LINUX_AMD64:-e5bb807f7728cb60cd8b27ebc97a2edb469b68655f21e844a600c3575b76f5bb}"
+CMAKE_SHA_LINUX_ARM64="${CMAKE_SHA_LINUX_ARM64:-a1b6cc63636a0e55c63257cf3315a8a5f129e42fade25db1afea4ff8ab06f25e}"
 
 # Downloaded build tools (gitignored). Release-critical tools land here pinned
 # by version and hash; the `go install` ones are authenticated through the Go
@@ -198,7 +213,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
-  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model)
+  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake)
 
 # Pin validation --------------------------------------------------------------
 
@@ -246,6 +261,9 @@ validate_pins() {
   require_hash_overrides "exiftool" "$EXIFTOOL_VERSION" "$DEFAULT_EXIFTOOL_VERSION" "$EXIFTOOL_SHA_OVERRIDE"
   require_hash_overrides "RNNoise" "$RNNOISE_VERSION" "$DEFAULT_RNNOISE_VERSION" "$RNNOISE_SHA_OVERRIDE"
   require_hash_overrides "RNNoise's model" "$RNNOISE_MODEL_VERSION" "$DEFAULT_RNNOISE_MODEL_VERSION" "$RNNOISE_MODEL_SHA_OVERRIDE"
+  require_hash_overrides "libaom" "$AOM_VERSION" "$DEFAULT_AOM_VERSION" "$AOM_SHA_OVERRIDE"
+  require_hash_overrides "CMake" "$CMAKE_VERSION" "$DEFAULT_CMAKE_VERSION" \
+    "$CMAKE_SHA_LINUX_AMD64_OVERRIDE" "$CMAKE_SHA_LINUX_ARM64_OVERRIDE"
 
   validate_sha256 "$TAILWIND_SHA_LINUX_AMD64" "TAILWIND_SHA_LINUX_AMD64"
   validate_sha256 "$TAILWIND_SHA_LINUX_ARM64" "TAILWIND_SHA_LINUX_ARM64"
@@ -273,6 +291,9 @@ validate_pins() {
   validate_sha256 "$EXIFTOOL_SHA" "EXIFTOOL_SHA"
   validate_sha256 "$RNNOISE_SHA" "RNNOISE_SHA"
   validate_sha256 "$RNNOISE_MODEL_SHA" "RNNOISE_MODEL_SHA"
+  validate_sha256 "$AOM_SHA" "AOM_SHA"
+  validate_sha256 "$CMAKE_SHA_LINUX_AMD64" "CMAKE_SHA_LINUX_AMD64"
+  validate_sha256 "$CMAKE_SHA_LINUX_ARM64" "CMAKE_SHA_LINUX_ARM64"
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -626,6 +647,42 @@ vendor_rnnoise_model() {
   printf '🟢 Vendored RNNoise model %s\n' "$RNNOISE_MODEL_VERSION"
 }
 
+# vendor_aom_src resolves to libaom's verified release tarball, which
+# scripts/ffmpeg.sh unpacks where it builds.
+vendor_aom_src() {
+  mkdir -p "$TOOLS_DIR"
+  VENDOR_AOM_SRC="$TOOLS_DIR/libaom-${AOM_VERSION}.tar.gz"
+  download_verified "$VENDOR_AOM_SRC" \
+    "https://storage.googleapis.com/aom-releases/libaom-${AOM_VERSION}.tar.gz" \
+    "$AOM_SHA" "libaom source"
+  printf '🟢 Vendored libaom source %s\n' "$AOM_VERSION"
+}
+
+vendor_cmake() {
+  vendor_require_bins tar gzip
+  local arch sha
+  case "$HOST_GOARCH" in
+    amd64) arch="x86_64"; sha="$CMAKE_SHA_LINUX_AMD64" ;;
+    arm64) arch="aarch64"; sha="$CMAKE_SHA_LINUX_ARM64" ;;
+    *)
+      printf "error: no CMake download configured for %s\n" "$HOST_GOARCH" >&2
+      return 1
+      ;;
+  esac
+  mkdir -p "$TOOLS_DIR"
+  local base="cmake-${CMAKE_VERSION}-linux-${arch}"
+  local archive="$TOOLS_DIR/${base}.tar.gz"
+  download_verified "$archive" \
+    "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/${base}.tar.gz" \
+    "$sha" "CMake $arch"
+  if [[ ! -x "$TOOLS_DIR/$base/bin/cmake" || "${REFETCH_TOOLS:-false}" == "true" ]]; then
+    rm -rf "${TOOLS_DIR:?}/$base"
+    tar --no-same-owner -xzf "$archive" -C "$TOOLS_DIR"
+  fi
+  VENDOR_CMAKE="$TOOLS_DIR/$base/bin/cmake"
+  printf '🟢 Vendored CMake %s\n' "$CMAKE_VERSION"
+}
+
 vendor_wasm2go() {
   vendor_go_tool wasm2go \
     "github.com/ncruces/wasm2go@${WASM2GO_VERSION}" \
@@ -671,6 +728,8 @@ vendor_ensure() {
     exiftool) vendor_exiftool ;;
     rnnoise-src) vendor_rnnoise_src ;;
     rnnoise-model) vendor_rnnoise_model ;;
+    aom-src) vendor_aom_src ;;
+    cmake) vendor_cmake ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -700,6 +759,8 @@ vendor_resolved() {
     exiftool) printf '%s' "$VENDOR_EXIFTOOL" ;;
     rnnoise-src) printf '%s' "$VENDOR_RNNOISE_SRC" ;;
     rnnoise-model) printf '%s' "$VENDOR_RNNOISE_MODEL" ;;
+    aom-src) printf '%s' "$VENDOR_AOM_SRC" ;;
+    cmake) printf '%s' "$VENDOR_CMAKE" ;;
   esac
 }
 
@@ -749,7 +810,7 @@ vendor_main() {
       case "$HOST_GOARCH:$candidate" in
         # The media module's and RNNoise's inputs are large, and only their
         # builds and checks ask for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model) continue ;;
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake) continue ;;
       esac
       tools+=("$candidate")
     done

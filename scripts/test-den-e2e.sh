@@ -23,10 +23,11 @@
 # owner's retention period must reach the member and outlive the restart.
 # At their limit, the member swaps a file for a smaller one and deletes
 # another. A HEIC sent smaller must arrive as an upright copy in its own
-# colors, and another switched to full size, full size. The owner opens a
-# DM, which takes no message until both members type each other's check
-# digits, and then carries text, a photo, a photo's smaller copy and a
-# video the den stores only sealed. The owner shares a checklist with the member, and the
+# colors, and another switched to full size, full size, and a video over a
+# lowered limit as an AV1 copy that fits, with its preview. The owner opens
+# a DM, which takes no message until both members type each other's check
+# digits, and then carries text, a photo, a photo's and a video's smaller
+# copies and a video the den stores only sealed. The owner shares a checklist with the member, and the
 # two tick different boxes at the same moment, all of which must stay. A
 # second instance on the member's machine stands in for a fresh one: it
 # signs in by the den's address with a recovery code, whose new password
@@ -457,6 +458,29 @@ run() {
     { echo "error: the full size arrived as $kind $(guest "$DEN" jpeg /root/full.jpg)" >&2; return 1; }
   echo ">> The HEIC went as an upright copy at 1920x2560 in its own colors, and the one switched to full size went full size"
 
+  echo ">> A phone video too large for the den goes as a smaller copy that fits"
+  local codec bytes
+  "${INCUS[@]}" file push -q internal/media/ffmpeg/testdata/grain-60fps.mp4 "$CLIENT/root/grain-60fps.mp4"
+  guest "$DEN" limits "$den_id" 1048576 2147483648 21474836480
+  guest "$CLIENT" wait-limit "$den_id" 1048576
+  # 1.3 MB of 640x360 at 60 frames a second, sent full size by the setting.
+  versions=$(guest "$CLIENT" upload-versions "$den_id" /root/grain-60fps.mp4 grain.mp4 full)
+  read -r file sent size full fits <<<"$versions"
+  [[ "$sent $size $full $fits" == "smaller 640x360 640x360 over" ]] || { echo "error: the video went as: $versions" >&2; return 1; }
+  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/grain-copy.mp4)
+  read -r codec bytes <<<"$(guest "$DEN" mp4 /root/grain-copy.mp4)"
+  [[ "$kind $codec" == "video/mp4 av01" && "$bytes" -le 1048576 ]] ||
+    { echo "error: the copy arrived as $kind, $codec of $bytes bytes" >&2; return 1; }
+  guest "$DEN" clean /root/grain-copy.mp4
+  guest "$DEN" range "$den_id" "$file" /root/grain-copy.mp4 100000 199999
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/grain-preview.jpg thumb)
+  [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/grain-preview.jpg)" == "640x360 nothing" ]] ||
+    { echo "error: the copy's preview is $kind $(guest "$DEN" jpeg /root/grain-preview.jpg)" >&2; return 1; }
+  guest "$DEN" limits "$den_id" 26214400 2147483648 21474836480
+  guest "$CLIENT" wait-limit "$den_id" 26214400
+  echo ">> The video went as an AV1 copy of ${bytes} bytes within the 1 MiB limit, with its preview, and plays from any byte"
+
   echo ">> A private DM, once both members compare check codes"
   local bob dm owner_half member_half refusal
   bob=$(guest "$DEN" member-id "$den_id" bob)
@@ -508,9 +532,20 @@ run() {
   [[ "$kind" == video/mp4 ]] || { echo "error: the DM video came as $kind" >&2; return 1; }
   guest "$DEN" clean /root/dm-video.mp4
   guest "$DEN" range "$den_id" "$file" /root/dm-video.mp4 200000 299999
+  versions=$(member upload-versions "$den_id" /root/with-gps.mov IMG_0009.MOV smaller "$dm")
+  read -r file sent size full fits <<<"$versions"
+  [[ "$sent $size $full $fits" == "smaller 320x568 320x568 fits" ]] || { echo "error: the DM video went as: $versions" >&2; return 1; }
+  member send-file "$den_id" "$dm" "$file" >/dev/null
+  guest "$DEN" history "$den_id" "$dm" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video-copy.mp4)
+  read -r codec bytes <<<"$(guest "$DEN" mp4 /root/dm-video-copy.mp4)"
+  [[ "$kind $codec" == "video/mp4 av01" ]] || { echo "error: the DM video's copy arrived as $kind $codec" >&2; return 1; }
+  guest "$DEN" clean /root/dm-video-copy.mp4
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video-copy.jpg thumb)
+  [[ "$kind" == image/jpeg ]] || { echo "error: the DM video's copy has a preview of $kind" >&2; return 1; }
   guest "$DEN" dm-sealed "a private word"
   stored=$(guest "$DEN" sealed)
-  echo ">> The DM took messages only after both typed each other's digits; its text, a link without its tracking, a photo, a photo's smaller copy and a video reached the other side, and the den holds ${stored} sealed files"
+  echo ">> The DM took messages only after both typed each other's digits; its text, a link without its tracking, a photo, a photo's and a video's smaller copies and a video reached the other side, and the den holds ${stored} sealed files"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text

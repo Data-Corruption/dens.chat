@@ -1,4 +1,4 @@
-// Dens's driver over FFmpeg's libraries: what Dens does with media, as four
+// Dens's driver over FFmpeg's libraries: what Dens does with media, as the
 // operations a WebAssembly module exports. It reads and writes only through
 // the host's functions (host.h), so the module reaches nothing else.
 //
@@ -9,6 +9,9 @@
 //   dm_still   turns an image a browser can't show into a JPEG or PNG, or
 //              makes a photo's smaller copy.
 //   dm_poster  makes a video's preview from its first frame.
+//   dm_scan    reads a video's packets, to plan its smaller copy.
+//   dm_encode  makes a chunk of a video's smaller copy, in AV1.
+//   dm_mux     puts a video's copy together from its chunks and its sound.
 //
 // Each answers with JSON through host_result, and returns 0 or a negative
 // FFmpeg error, which dm_error describes.
@@ -23,6 +26,7 @@
 #include <libavutil/display.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/intreadwrite.h>
+#include <libavutil/mathematics.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
 
@@ -1218,6 +1222,666 @@ end:
     av_frame_free(&frame);
     avformat_close_input(&ic);
     close_io(&io);
+    return finish(&b, ret);
+}
+
+// Smaller copies of videos (M5.4). A video's copy is AV1, made in chunks of
+// a few seconds, side by side, each in a worker of its own: scan finds the
+// video's keyframes, where chunks start, encode makes each chunk, and mux
+// writes the copy from all of them, with the video's sound.
+
+// Packets. encode writes a chunk's AV1 packets as records, and mux reads a
+// copy's, its chunks' one after another: a header of PACKET_HEADER bytes,
+// then the packet. The header holds, little-endian, the packet's size (u32),
+// its flags (u32: PACKET_KEY for a keyframe), and its time and duration in
+// microseconds (i64 each).
+#define PACKET_HEADER 24
+#define PACKET_KEY 1
+// The largest packet mux takes; a keyframe of a copy is some hundreds of KB.
+#define MAX_PACKET (16 << 20)
+// The furthest from 0 a packet's time may be, about 142 years, so sums of
+// times can't overflow.
+#define MAX_TIME (INT64_C(1) << 52)
+
+// The most keyframes scan lists, each at least SCAN_SPACING after the last:
+// plenty to plan chunks of seconds by, in a few hundred KB of answer.
+#define SCAN_KEYFRAMES 20000
+#define SCAN_SPACING 500000
+
+// A copy's keyframes come at most this many seconds apart, for seeking.
+#define GOP_SECONDS 5
+
+// dm_scan reads a video's packets without decoding them, to plan its smaller
+// copy: when its frames start and end, the times of its keyframes, how many
+// frames it has and their rate, and how many bytes its video takes, and the
+// sound a copy carries. Times are in microseconds, and packets the container
+// says to discard, from before its start, don't count.
+DM_EXPORT(dm_scan) int32_t dm_scan(void) {
+    AVFormatContext *ic = NULL;
+    AVIOContext *io = NULL;
+    AVPacket *pkt = av_packet_alloc();
+    AVBPrint b, keys;
+    av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
+    av_bprint_init(&keys, 0, AV_BPRINT_SIZE_UNLIMITED);
+    int64_t start = INT64_MAX, end = INT64_MIN, last_key = 0, video = 0, audio = 0, frames = 0;
+    int nkeys = 0, sounds = 0;
+    int ret = pkt ? open_input(&ic, &io, NULL, 1) : AVERROR(ENOMEM);
+    if (ret < 0) {
+        goto end;
+    }
+    int st = picture_stream(ic);
+    if (st < 0) {
+        ret = st;
+        goto end;
+    }
+    const AVStream *vs = ic->streams[st];
+    // Only the video and the sound a copy carries are read.
+    for (unsigned i = 0; i < ic->nb_streams; i++) {
+        AVStream *s = ic->streams[i];
+        if ((int)i == st) {
+            continue;
+        }
+        if (copied(s) && s->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            sounds++;
+        } else {
+            s->discard = AVDISCARD_ALL;
+        }
+    }
+    while ((ret = av_read_frame(ic, pkt)) >= 0) {
+        if ((unsigned)pkt->stream_index >= ic->nb_streams || ic->streams[pkt->stream_index]->discard == AVDISCARD_ALL) {
+            av_packet_unref(pkt);
+            continue;
+        }
+        if (pkt->stream_index != st) {
+            audio += pkt->size;
+            av_packet_unref(pkt);
+            continue;
+        }
+        video += pkt->size;
+        int64_t ts = pkt->pts != AV_NOPTS_VALUE ? pkt->pts : pkt->dts;
+        if (ts != AV_NOPTS_VALUE && !(pkt->flags & AV_PKT_FLAG_DISCARD)) {
+            int64_t us = av_rescale_q(ts, vs->time_base, AV_TIME_BASE_Q);
+            int64_t dur = av_rescale_q(FFMAX(pkt->duration, 0), vs->time_base, AV_TIME_BASE_Q);
+            if (us > -MAX_TIME && us < MAX_TIME && dur < MAX_TIME) {
+                frames++;
+                start = FFMIN(start, us);
+                end = FFMAX(end, us + dur);
+                if ((pkt->flags & AV_PKT_FLAG_KEY) && nkeys < SCAN_KEYFRAMES && (!nkeys || us - last_key >= SCAN_SPACING)) {
+                    av_bprintf(&keys, "%s%" PRId64, nkeys ? "," : "", us);
+                    last_key = us;
+                    nkeys++;
+                }
+            }
+        }
+        av_packet_unref(pkt);
+    }
+    if (ret != AVERROR_EOF) {
+        goto end;
+    }
+    if (!frames) {
+        ret = AVERROR_INVALIDDATA;
+        goto end;
+    }
+    ret = 0;
+    AVRational rate = vs->avg_frame_rate;
+    double fps = rate.num > 0 && rate.den > 0 ? av_q2d(rate) : 0;
+    av_bprintf(&b,
+               "{\"start_us\":%" PRId64 ",\"end_us\":%" PRId64 ",\"frames\":%" PRId64 ",\"fps\":%.3f,\"video_bytes\":%" PRId64
+               ",\"audio_bytes\":%" PRId64 ",\"audio_streams\":%d,\"keyframes\":[%s]}",
+               start, end, frames, fps, video, audio, sounds, av_bprint_is_complete(&keys) ? keys.str : "");
+    if (!av_bprint_is_complete(&keys)) {
+        ret = AVERROR(ENOMEM);
+    }
+
+end:
+    av_bprint_finalize(&keys, NULL);
+    av_packet_free(&pkt);
+    avformat_close_input(&ic);
+    close_io(&io);
+    return finish(&b, ret);
+}
+
+// fit_even fits w × h in max_side on its longer side, never enlarged, in
+// even pixels, which a 4:2:0 encoder takes.
+static void fit_even(int w, int h, int max_side, int *ow, int *oh) {
+    double k = FFMAX(w, h) > max_side ? (double)max_side / FFMAX(w, h) : 1;
+    *ow = FFMAX(2, (int)lround(w * k / 2) * 2);
+    *oh = FFMAX(2, (int)lround(h * k / 2) * 2);
+}
+
+// packet_writer writes records to the output.
+typedef struct packet_writer {
+    int64_t pos;
+    int64_t bytes;
+    int packets;
+} packet_writer;
+
+static int write_record(packet_writer *w, const AVPacket *pkt, AVRational tb) {
+    uint8_t h[PACKET_HEADER];
+    AV_WL32(h, (uint32_t)pkt->size);
+    AV_WL32(h + 4, pkt->flags & AV_PKT_FLAG_KEY ? PACKET_KEY : 0);
+    AV_WL64(h + 8, (uint64_t)av_rescale_q(pkt->pts, tb, AV_TIME_BASE_Q));
+    AV_WL64(h + 16, (uint64_t)av_rescale_q(FFMAX(pkt->duration, 0), tb, AV_TIME_BASE_Q));
+    if (host_write(HOST_OUTPUT, h, PACKET_HEADER, w->pos) != PACKET_HEADER ||
+        host_write(HOST_OUTPUT, pkt->data, pkt->size, w->pos + PACKET_HEADER) != pkt->size) {
+        return AVERROR(EIO);
+    }
+    w->pos += PACKET_HEADER + pkt->size;
+    w->bytes += pkt->size;
+    w->packets++;
+    return 0;
+}
+
+// drain writes what the encoder has ready.
+static int drain(AVCodecContext *enc, AVPacket *pkt, packet_writer *w) {
+    int ret;
+    while ((ret = avcodec_receive_packet(enc, pkt)) >= 0) {
+        ret = write_record(w, pkt, enc->time_base);
+        av_packet_unref(pkt);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+    return ret == AVERROR(EAGAIN) || ret == AVERROR_EOF ? 0 : ret;
+}
+
+// dm_encode makes one chunk of a video's smaller copy: the frames it shows
+// from start_us up to end_us, decoded from the keyframe before start_us, at
+// most fps a second, cropped as its container asks, scaled to its shown
+// shape, unturned, fitting max_side, and encoded with libaom's realtime AV1
+// encoder at its fastest, at kbps, starting with a keyframe. It writes the
+// AV1 packets to the output as records (see Packets), each at its frame's
+// time in the video, and reports each frame's time as it encodes it.
+DM_EXPORT(dm_encode)
+int32_t dm_encode(int64_t start_us, int64_t end_us, int32_t max_side, int32_t fps, int32_t kbps) {
+    AVFormatContext *ic = NULL;
+    AVIOContext *io = NULL;
+    AVCodecContext *dec = NULL, *enc = NULL;
+    struct SwsContext *sws = NULL;
+    AVDictionary *opts = NULL;
+    AVPacket *pkt = av_packet_alloc(), *out = av_packet_alloc();
+    AVFrame *frame = av_frame_alloc(), *scaled = av_frame_alloc();
+    packet_writer w = {0};
+    int kept = 0, decoded = 0, skip = 0, sw_w = 0, sw_h = 0, sw_fmt = AV_PIX_FMT_NONE;
+    AVBPrint b;
+    av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
+    int ret = pkt && out && frame && scaled ? 0 : AVERROR(ENOMEM);
+    if (ret < 0) {
+        goto end;
+    }
+    if (fps < 1 || fps > 120 || kbps < 1 || kbps > 100000 || max_side < 16 || max_side > 8192 || end_us <= start_us) {
+        ret = AVERROR(EINVAL);
+        goto end;
+    }
+    if ((ret = open_input(&ic, &io, NULL, 1)) < 0) {
+        goto end;
+    }
+    int st = picture_stream(ic);
+    if (st < 0) {
+        ret = st;
+        goto end;
+    }
+    AVStream *ist = ic->streams[st];
+    const AVCodecParameters *par = ist->codecpar;
+    if (!(dec = open_decoder(par))) {
+        ret = AVERROR_DECODER_NOT_FOUND;
+        goto end;
+    }
+    dec->pkt_timebase = ist->time_base;
+    // A video of more than half again the frames kept doesn't decode the
+    // frames nothing refers to: a phone's 60-frame video carries every
+    // other frame as one, and decoding takes half as long.
+    AVRational rate = ist->avg_frame_rate;
+    if (rate.num > 0 && rate.den > 0 && av_q2d(rate) > fps * 1.5) {
+        dec->skip_frame = AVDISCARD_NONREF;
+        skip = 1;
+    }
+    int sw, sh, ow, oh;
+    shown_size(ist, &sw, &sh);
+    if (sw < 1 || sh < 1) {
+        ret = AVERROR_INVALIDDATA;
+        goto end;
+    }
+    fit_even(sw, sh, max_side, &ow, &oh);
+
+    const AVCodec *codec = avcodec_find_encoder_by_name("libaom-av1");
+    if (!codec || !(enc = avcodec_alloc_context3(codec))) {
+        ret = AVERROR_ENCODER_NOT_FOUND;
+        goto end;
+    }
+    // Frames keep the video's times, in its own time base, so the copy
+    // keeps time with its sound, whatever the video's frame rate does.
+    enc->width = ow;
+    enc->height = oh;
+    enc->pix_fmt = AV_PIX_FMT_YUV420P;
+    enc->time_base = ist->time_base;
+    enc->bit_rate = (int64_t)kbps * 1000;
+    enc->gop_size = fps * GOP_SECONDS;
+    enc->thread_count = 1;
+    // FFmpeg passes encoders their frames' durations only when asked, and
+    // libaom gives a chunk's first frame its budget by its duration.
+    enc->flags |= AV_CODEC_FLAG_FRAME_DURATION;
+    // An HDR video's copy has eight bits, keeping its colors' tags, which
+    // browsers tone-map by.
+    enc->color_range = AVCOL_RANGE_MPEG;
+    enc->color_primaries = par->color_primaries;
+    enc->color_trc = par->color_trc;
+    enc->colorspace = par->color_space;
+    // FFmpeg's own option stops at speed 8; libaom's realtime goes to 10.
+    if ((ret = av_dict_set(&opts, "usage", "realtime", 0)) < 0 || (ret = av_dict_set(&opts, "cpu-used", "8", 0)) < 0 ||
+        (ret = av_dict_set(&opts, "aom-params", "cpu-used=10", 0)) < 0 ||
+        (ret = av_dict_set(&opts, "row-mt", "0", 0)) < 0) {
+        goto end;
+    }
+    if ((ret = avcodec_open2(enc, codec, &opts)) < 0) {
+        goto end;
+    }
+    scaled->format = AV_PIX_FMT_YUV420P;
+    scaled->width = ow;
+    scaled->height = oh;
+    if ((ret = av_frame_get_buffer(scaled, 0)) < 0) {
+        goto end;
+    }
+
+    // From the keyframe before the chunk's start. A seek that fails leaves
+    // the file at its start, which only takes longer to decode from.
+    av_seek_frame(ic, st, av_rescale_q(start_us, AV_TIME_BASE_Q, ist->time_base), AVSEEK_FLAG_BACKWARD);
+    // A frame goes once its time reaches the next slot, a 1/fps second after
+    // the last one kept, give or take a quarter of a slot of jitter.
+    int64_t slot = FFMAX(1, av_rescale_q(1, (AVRational){1, fps}, ist->time_base)), next = AV_NOPTS_VALUE;
+    for (int eof = 0, past = 0; !eof && !past;) {
+        int r = av_read_frame(ic, pkt);
+        if (r < 0) {
+            eof = 1;
+            avcodec_send_packet(dec, NULL);
+        } else if (pkt->stream_index != st) {
+            av_packet_unref(pkt);
+            continue;
+        } else {
+            avcodec_send_packet(dec, pkt);
+            av_packet_unref(pkt);
+        }
+        while (!past && avcodec_receive_frame(dec, frame) >= 0) {
+            decoded++;
+            int64_t ts = frame->best_effort_timestamp;
+            int64_t us = ts == AV_NOPTS_VALUE ? INT64_MIN : av_rescale_q(ts, ist->time_base, AV_TIME_BASE_Q);
+            if (us >= end_us) {
+                past = 1;
+            }
+            if (past || us < start_us || (next != AV_NOPTS_VALUE && ts < next - slot / 4)) {
+                av_frame_unref(frame);
+                continue;
+            }
+            next = ts + slot;
+            if ((ret = crop_as_stored(frame, par->coded_side_data, par->nb_coded_side_data)) < 0) {
+                goto end;
+            }
+            if (!sws || frame->width != sw_w || frame->height != sw_h || frame->format != sw_fmt) {
+                sws_freeContext(sws);
+                // Bicubic, which costs a twentieth more time than bilinear
+                // on a phone's video, and keeps it sharp enough to score
+                // about two points more (VMAF).
+                sws = sws_getContext(frame->width, frame->height, frame->format, ow, oh, AV_PIX_FMT_YUV420P, SWS_BICUBIC,
+                                     NULL, NULL, NULL);
+                if (!sws) {
+                    ret = AVERROR(EINVAL);
+                    goto end;
+                }
+                // The same matrix both ways: only the range changes, to the
+                // limited range video takes.
+                const int *coefs =
+                    sws_getCoefficients(frame->colorspace == AVCOL_SPC_UNSPECIFIED ? SWS_CS_DEFAULT : frame->colorspace);
+                sws_setColorspaceDetails(sws, coefs, frame->color_range == AVCOL_RANGE_JPEG, coefs, 0, 0, 1 << 16, 1 << 16);
+                sw_w = frame->width;
+                sw_h = frame->height;
+                sw_fmt = frame->format;
+            }
+            if ((ret = av_frame_make_writable(scaled)) < 0) {
+                goto end;
+            }
+            if ((ret = sws_scale(sws, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, scaled->data,
+                                 scaled->linesize)) < 0) {
+                goto end;
+            }
+            av_frame_unref(frame);
+            // libaom takes the frame rate from the times between frames'
+            // ends, so a duration of a slot, the same for each, leaves it to
+            // their times.
+            scaled->pts = ts;
+            scaled->duration = slot;
+            if ((ret = avcodec_send_frame(enc, scaled)) < 0 || (ret = drain(enc, out, &w)) < 0) {
+                goto end;
+            }
+            kept++;
+            host_progress(us);
+        }
+    }
+    if ((ret = avcodec_send_frame(enc, NULL)) < 0 || (ret = drain(enc, out, &w)) < 0) {
+        goto end;
+    }
+    av_bprintf(&b,
+               "{\"frames\":%d,\"decoded\":%d,\"packets\":%d,\"bytes\":%" PRId64 ",\"width\":%d,\"height\":%d,\"skip\":%s}",
+               kept, decoded, w.packets, w.bytes, ow, oh, skip ? "true" : "false");
+
+end:
+    av_dict_free(&opts);
+    sws_freeContext(sws);
+    av_frame_free(&frame);
+    av_frame_free(&scaled);
+    av_packet_free(&pkt);
+    av_packet_free(&out);
+    avcodec_free_context(&dec);
+    avcodec_free_context(&enc);
+    avformat_close_input(&ic);
+    close_io(&io);
+    return finish(&b, ret);
+}
+
+// read_full reads n bytes at off from a host file, in as many reads as it
+// takes, and returns how many it read before the file ended, or -1.
+static int read_full(int32_t file, uint8_t *buf, int n, int64_t off) {
+    int done = 0;
+    while (done < n) {
+        int32_t k = host_read(file, buf + done, n - done, off + done);
+        if (k == 0) {
+            break;
+        }
+        if (k < 0 || k > n - done) {
+            return -1;
+        }
+        done += k;
+    }
+    return done;
+}
+
+// packet_reader reads the packets file's records in turn.
+typedef struct packet_reader {
+    int64_t pos;
+    int64_t last;
+    int started;
+} packet_reader;
+
+// read_record reads the next record into pkt, its times in microseconds: 1
+// for a record, 0 at the file's end, or AVERROR_INVALIDDATA for one cut
+// short, too large, or not after the one before it.
+static int read_record(packet_reader *r, AVPacket *pkt) {
+    uint8_t h[PACKET_HEADER];
+    int n = read_full(HOST_PACKETS, h, PACKET_HEADER, r->pos);
+    if (n == 0) {
+        return 0;
+    }
+    if (n != PACKET_HEADER) {
+        return AVERROR_INVALIDDATA;
+    }
+    uint32_t size = AV_RL32(h), flags = AV_RL32(h + 4);
+    int64_t pts = (int64_t)AV_RL64(h + 8), duration = (int64_t)AV_RL64(h + 16);
+    if (!size || size > MAX_PACKET || (flags & ~PACKET_KEY) || pts <= -MAX_TIME || pts >= MAX_TIME || duration < 0 ||
+        duration >= MAX_TIME || (r->started && pts <= r->last)) {
+        return AVERROR_INVALIDDATA;
+    }
+    int ret = av_new_packet(pkt, (int)size);
+    if (ret < 0) {
+        return ret;
+    }
+    if (read_full(HOST_PACKETS, pkt->data, (int)size, r->pos + PACKET_HEADER) != (int)size) {
+        av_packet_unref(pkt);
+        return AVERROR_INVALIDDATA;
+    }
+    pkt->pts = pkt->dts = pts;
+    pkt->duration = duration;
+    pkt->flags = flags & PACKET_KEY ? AV_PKT_FLAG_KEY : 0;
+    r->pos += PACKET_HEADER + size;
+    r->last = pts;
+    r->started = 1;
+    return 1;
+}
+
+// sequence_header finds the sequence header among a packet's AV1 OBUs, each
+// with its size, as encoders write them, and returns its offset, and its
+// size, header and all, through size; or -1.
+static int sequence_header(const uint8_t *p, int n, int *size) {
+    for (int i = 0; i < n;) {
+        int at = i;
+        uint8_t h = p[i++];
+        if ((h & 0x80) || !(h & 0x02)) {
+            return -1; // the forbidden bit, or an OBU without its size
+        }
+        if (h & 0x04) {
+            i++; // the extension header
+        }
+        // The size, in LEB128.
+        uint64_t len = 0;
+        int ended = 0;
+        for (int k = 0; k < 8 && i < n && !ended; k++) {
+            uint8_t c = p[i++];
+            len |= (uint64_t)(c & 0x7f) << (7 * k);
+            ended = !(c & 0x80);
+        }
+        if (!ended || len > (uint64_t)(n - i)) {
+            return -1;
+        }
+        if (((h >> 3) & 15) == 1) {
+            *size = i - at + (int)len;
+            return at;
+        }
+        i += (int)len;
+    }
+    return -1;
+}
+
+// copy_side_data gives par what src has of type, if anything.
+static int copy_side_data(AVCodecParameters *par, const AVCodecParameters *src, enum AVPacketSideDataType type) {
+    const AVPacketSideData *sd = side_data(src->coded_side_data, src->nb_coded_side_data, type);
+    if (!sd) {
+        return 0;
+    }
+    AVPacketSideData *dst = av_packet_side_data_new(&par->coded_side_data, &par->nb_coded_side_data, type, sd->size, 0);
+    if (!dst) {
+        return AVERROR(ENOMEM);
+    }
+    memcpy(dst->data, sd->data, sd->size);
+    return 0;
+}
+
+// dm_mux writes a video's smaller copy as an MP4: the AV1 packets the
+// packets file holds, width × height, with the input's sound copied as it
+// is and the input's turn, layout and HDR light levels. It starts with a
+// keyframe carrying AV1's sequence header, which the copy takes its
+// configuration from; a chunk's keyframe carries it again, and it must be
+// the same. A sound an MP4 can't carry fails the copy, rather than leave it
+// silent.
+DM_EXPORT(dm_mux) int32_t dm_mux(int32_t width, int32_t height) {
+    static const enum AVPacketSideDataType kept_side_data[] = {
+        AV_PKT_DATA_DISPLAYMATRIX,      AV_PKT_DATA_STEREO3D,
+        AV_PKT_DATA_SPHERICAL,          AV_PKT_DATA_CONTENT_LIGHT_LEVEL,
+        AV_PKT_DATA_MASTERING_DISPLAY_METADATA, AV_PKT_DATA_AMBIENT_VIEWING_ENVIRONMENT,
+    };
+    AVFormatContext *ic = NULL, *oc = NULL;
+    AVIOContext *in = NULL, *out = NULL;
+    AVPacket *vpkt = av_packet_alloc(), *apkt = av_packet_alloc();
+    AVDictionary *opts = NULL;
+    int *map = NULL;
+    uint8_t *seq = NULL;
+    packet_reader r = {0};
+    int seq_size = 0, video_packets = 0, audio_packets = 0, keyframes = 0, sounds = 0;
+    int64_t first = 0, last_end = 0;
+    unsigned nb_streams = 0;
+    AVBPrint b;
+    av_bprint_init(&b, 0, AV_BPRINT_SIZE_UNLIMITED);
+    int ret = vpkt && apkt ? 0 : AVERROR(ENOMEM);
+    if (ret < 0) {
+        goto end;
+    }
+    if (width < 2 || height < 2 || width > 8192 || height > 8192) {
+        ret = AVERROR(EINVAL);
+        goto end;
+    }
+    if ((ret = open_input(&ic, &in, NULL, 1)) < 0) {
+        goto end;
+    }
+    int st = picture_stream(ic);
+    if (st < 0) {
+        ret = st;
+        goto end;
+    }
+    const AVCodecParameters *vpar = ic->streams[st]->codecpar;
+    if ((ret = read_record(&r, vpkt)) <= 0) {
+        ret = ret ? ret : AVERROR_INVALIDDATA;
+        goto end;
+    }
+    int off = sequence_header(vpkt->data, vpkt->size, &seq_size);
+    if (!(vpkt->flags & AV_PKT_FLAG_KEY) || off < 0) {
+        ret = AVERROR_INVALIDDATA;
+        goto end;
+    }
+    if (!(seq = av_memdup(vpkt->data + off, seq_size))) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
+    first = vpkt->pts;
+
+    if ((ret = avformat_alloc_output_context2(&oc, NULL, "mp4", NULL)) < 0) {
+        goto end;
+    }
+    out = open_io(HOST_OUTPUT, 1);
+    nb_streams = ic->nb_streams;
+    map = av_calloc(nb_streams, sizeof(*map));
+    if (!out || !map) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
+    oc->pb = out;
+    oc->io_open = io_open_output;
+    oc->io_close2 = io_close_output;
+    oc->flags |= AVFMT_FLAG_BITEXACT;
+
+    AVStream *vst = avformat_new_stream(oc, NULL);
+    if (!vst || !(vst->codecpar->extradata = av_mallocz(seq_size + AV_INPUT_BUFFER_PADDING_SIZE))) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
+    memcpy(vst->codecpar->extradata, seq, seq_size);
+    vst->codecpar->extradata_size = seq_size;
+    vst->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    vst->codecpar->codec_id = AV_CODEC_ID_AV1;
+    vst->codecpar->format = AV_PIX_FMT_YUV420P;
+    vst->codecpar->width = width;
+    vst->codecpar->height = height;
+    vst->codecpar->color_range = AVCOL_RANGE_MPEG;
+    vst->codecpar->color_primaries = vpar->color_primaries;
+    vst->codecpar->color_trc = vpar->color_trc;
+    vst->codecpar->color_space = vpar->color_space;
+    vst->time_base = (AVRational){1, 90000};
+    vst->disposition = AV_DISPOSITION_DEFAULT;
+    for (size_t i = 0; i < FF_ARRAY_ELEMS(kept_side_data); i++) {
+        if ((ret = copy_side_data(vst->codecpar, vpar, kept_side_data[i])) < 0) {
+            goto end;
+        }
+    }
+    for (unsigned i = 0; i < nb_streams; i++) {
+        AVStream *ist = ic->streams[i];
+        map[i] = -1;
+        if ((int)i == st || !copied(ist) || ist->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+            ist->discard = AVDISCARD_ALL;
+            continue;
+        }
+        if (avformat_query_codec(oc->oformat, ist->codecpar->codec_id, FF_COMPLIANCE_NORMAL) != 1) {
+            ret = AVERROR_PATCHWELCOME;
+            goto end;
+        }
+        AVStream *ost = avformat_new_stream(oc, NULL);
+        if (!ost) {
+            ret = AVERROR(ENOMEM);
+            goto end;
+        }
+        if ((ret = avcodec_parameters_copy(ost->codecpar, ist->codecpar)) < 0) {
+            goto end;
+        }
+        drop_side_data(ost->codecpar);
+        ost->codecpar->codec_tag = codec_tag(oc->oformat, ist->codecpar);
+        ost->time_base = ist->time_base;
+        ost->disposition = ist->disposition & AV_DISPOSITION_DEFAULT;
+        map[i] = ost->index;
+        sounds++;
+    }
+    if ((ret = av_dict_set(&opts, "movflags", "+faststart", 0)) < 0 || (ret = avformat_write_header(oc, &opts)) < 0) {
+        goto end;
+    }
+
+    // The video's packets and the sound's, in the order of their times.
+    int have_v = 1, have_a = 0;
+    for (;;) {
+        if (!have_a) {
+            while ((ret = av_read_frame(ic, apkt)) >= 0 &&
+                   ((unsigned)apkt->stream_index >= nb_streams || map[apkt->stream_index] < 0)) {
+                av_packet_unref(apkt);
+            }
+            if (ret < 0 && ret != AVERROR_EOF) {
+                goto end;
+            }
+            have_a = ret >= 0;
+        }
+        if (!have_v && !have_a) {
+            break;
+        }
+        int video = have_v;
+        if (have_v && have_a) {
+            // A sound packet without a time goes as it comes.
+            int64_t at = apkt->dts != AV_NOPTS_VALUE ? apkt->dts : apkt->pts;
+            video = at != AV_NOPTS_VALUE &&
+                    av_compare_ts(vpkt->dts, AV_TIME_BASE_Q, at, ic->streams[apkt->stream_index]->time_base) <= 0;
+        }
+        if (video) {
+            if (vpkt->flags & AV_PKT_FLAG_KEY) {
+                int size, at = sequence_header(vpkt->data, vpkt->size, &size);
+                if (at >= 0 && (size != seq_size || memcmp(vpkt->data + at, seq, size))) {
+                    ret = AVERROR_INVALIDDATA;
+                    goto end;
+                }
+                keyframes++;
+            }
+            last_end = vpkt->pts + vpkt->duration;
+            av_packet_rescale_ts(vpkt, AV_TIME_BASE_Q, vst->time_base);
+            vpkt->stream_index = vst->index;
+            if ((ret = av_interleaved_write_frame(oc, vpkt)) < 0) {
+                goto end;
+            }
+            video_packets++;
+            if ((ret = read_record(&r, vpkt)) < 0) {
+                goto end;
+            }
+            have_v = ret;
+        } else {
+            int o = map[apkt->stream_index];
+            av_packet_rescale_ts(apkt, ic->streams[apkt->stream_index]->time_base, oc->streams[o]->time_base);
+            apkt->stream_index = o;
+            apkt->pos = -1;
+            if ((ret = av_interleaved_write_frame(oc, apkt)) < 0) {
+                goto end;
+            }
+            audio_packets++;
+            have_a = 0;
+        }
+    }
+    if ((ret = av_write_trailer(oc)) < 0) {
+        goto end;
+    }
+    avio_flush(out);
+    av_bprintf(&b,
+               "{\"bytes\":%" PRId64 ",\"video_packets\":%d,\"keyframes\":%d,\"audio_packets\":%d,\"audio_streams\":%d,"
+               "\"duration_us\":%" PRId64 "}",
+               host_size(HOST_OUTPUT), video_packets, keyframes, audio_packets, sounds, last_end - first);
+
+end:
+    av_dict_free(&opts);
+    av_free(map);
+    av_free(seq);
+    av_packet_free(&vpkt);
+    av_packet_free(&apkt);
+    avformat_close_input(&ic);
+    close_io(&in);
+    avformat_free_context(oc);
+    close_io(&out);
     return finish(&b, ret);
 }
 

@@ -101,6 +101,10 @@ type Manager struct {
 	callMu sync.Mutex
 	call   *activeCall
 
+	// follows are uploads the page follows, by its keys (M5.4).
+	followMu sync.Mutex
+	follows  map[string]*following
+
 	// LookupHost resolves a den's name to the addresses its calls' media
 	// goes to, and LocalAddrs lists this machine's, for a den on it; tests
 	// keep both on loopback.
@@ -175,6 +179,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		streams:      map[chan PageEvent]struct{}{},
 		focus:        map[string]map[string]string{},
 		signIns:      map[string]*pendingSignIn{},
+		follows:      map[string]*following{},
 		LookupHost:   lookupHost,
 		LocalAddrs:   localAddrs,
 		TempDir:      os.TempDir(),

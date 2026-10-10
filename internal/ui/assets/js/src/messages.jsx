@@ -15,7 +15,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
-import { Compare, comparable, mayGoSmaller, sendSmaller, sentLabel } from './compare.jsx';
+import {
+    Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel, useUploadProgress,
+} from './compare.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
 } from './files.jsx';
@@ -408,14 +410,18 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
 
     // addFiles starts uploading files the member picked, dropped or pasted,
     // up to what a message holds. Uploads go ahead while they write. A
-    // photo goes as a smaller copy unless the member turned copies off, and
-    // one over the den's limit may still go as its copy (M5).
+    // photo or video goes as a smaller copy unless the member turned copies
+    // off, and one over the den's limit may still go as its copy (M5). Each
+    // upload has a key the chip follows it by while a video's copy is made
+    // (M5.4).
     function addFiles(list) {
         const picked = [...list];
         const room = MAX_ATTACHMENTS - filesRef.current.length;
         if (picked.length > room) setError(`A message holds at most ${MAX_ATTACHMENTS} files.`);
         const added = picked.slice(0, Math.max(0, room)).map((file) => {
-            const entry = { key: nextKey++, file, name: file.name || 'pasted image.png', size: file.size, progress: 0 };
+            const entry = {
+                key: nextKey++, file, name: file.name || 'pasted image.png', size: file.size, progress: 0, progressKey: progressKey(),
+            };
             if (limits?.file_size && file.size > limits.file_size && !mayGoSmaller(file)) {
                 entry.error = `This file is larger than this den allows (${formatSize(limits.file_size)}).`;
             }
@@ -425,7 +431,8 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
         const send = sendSmaller() ? 'smaller' : 'full';
         for (const entry of added) {
             if (entry.error) continue;
-            const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }), '', send);
+            const up = upload(denID, channel.id, entry.file, entry.name, (progress) => updateFile(entry.key, { progress }), '', send,
+                entry.progressKey);
             entry.abort = up.abort;
             up.done.then(
                 async (result) => {
@@ -640,6 +647,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             ) : !canSend ? null : (
                 <Composer
                     denID={denID}
+                    limits={limits}
                     placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
                     replyTo={replyTo}
                     replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
@@ -1021,7 +1029,7 @@ function EditorList({ candidates, selected, onChange }) {
     );
 }
 
-function Composer({ denID, placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping }) {
+function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping }) {
     const [text, setText] = useState('');
     const [sharing, setSharing] = useState(false);
     // The + menu, and the guide to writing a message (M3.3).
@@ -1101,7 +1109,9 @@ function Composer({ denID, placeholder, replyTo, replyAuthor, typing, files, can
             )}
             {files.length > 0 && (
                 <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
-                    {files.map((f) => <FileChip key={f.key} denID={denID} f={f} onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />)}
+                    {files.map((f) => (
+                        <FileChip key={f.key} denID={denID} f={f} limits={limits} onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
+                    ))}
                 </ul>
             )}
             {sharing ? (
@@ -1287,17 +1297,31 @@ function MetadataRemoved({ id }) {
 // FileChip is a file waiting to go with the message: its preview or icon,
 // how far its upload is, the size it will send, whether its metadata came
 // out, and whether a photo browsers can't show was turned into one they
-// can, which then shows the preview the upload has. A photo with two
-// versions says which one it goes as, and its size opens the comparison
-// (M5).
-function FileChip({ denID, f, onRemove, onCompare }) {
+// can, which then shows the preview the upload has. A photo or video with
+// two versions says which one it goes as, and its size opens the
+// comparison (M5). While a video's copy is made, it says how far that is,
+// and offers to send the video full size instead when the den takes it
+// (M5.4).
+function FileChip({ denID, f, limits, onRemove, onCompare }) {
     const done = !!f.result;
     const name = f.result?.name || f.name;
     const versions = f.result?.versions;
     // Once the file is with the local service, it may still be making a
-    // smaller copy, or uploading, or switching versions, with nothing to
-    // count.
+    // smaller copy, or uploading, or switching versions.
     const busy = !done ? f.progress >= 1 : f.switching;
+    const following = useUploadProgress(denID, f.progressKey, !done && !f.error && f.progress >= 1);
+    const counting = progressLabel(following);
+    const [askedFull, setAskedFull] = useState(false);
+    const [fullError, setFullError] = useState('');
+    const fullFits = !limits?.file_size || f.size <= limits.file_size;
+    function sendFull() {
+        setAskedFull(true);
+        setFullError('');
+        api.post(`/api/dens/${denID}/progress/${f.progressKey}/full`, {}).catch((e) => {
+            setAskedFull(false);
+            setFullError(e.message);
+        });
+    }
     return (
         <li class={`flex w-60 max-w-full items-center gap-2 rounded border bg-base-200 p-1.5 ${f.error ? 'border-error' : 'border-base-300'}`}>
             {isImageFile(f.file) ? (
@@ -1330,6 +1354,17 @@ function FileChip({ denID, f, onRemove, onCompare }) {
                         )}
                         {f.switchError && <p class="text-error" role="alert">{f.switchError}</p>}
                         {busy && <progress class="progress progress-primary h-1.5 w-full"></progress>}
+                    </>
+                ) : busy && counting ? (
+                    <>
+                        <p class="truncate text-base-content/60">{counting}</p>
+                        <progress class="progress progress-primary h-1.5 w-full" value={Math.round(following.done * 100)} max="100"></progress>
+                        {following.stage === 'copying' && fullFits && !askedFull && (
+                            <button type="button" class="link link-hover cursor-pointer text-base-content/60" onClick={sendFull}>
+                                Send full size instead
+                            </button>
+                        )}
+                        {fullError && <p class="text-error" role="alert">{fullError}</p>}
                     </>
                 ) : busy ? (
                     <progress class="progress progress-primary h-1.5 w-full"></progress>

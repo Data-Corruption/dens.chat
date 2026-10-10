@@ -77,34 +77,53 @@ func (m *Manager) upload(ctx context.Context, denID, channelID, name string, siz
 
 // uploadTo uploads a file to a den, as upload does.
 func (m *Manager) uploadTo(ctx context.Context, c *conn, channelID, name string, size int64, body io.Reader, replaces string) (Uploaded, error) {
+	return m.uploadFile(ctx, c, channelID, name, size, body, replaces, nil)
+}
+
+// uploadReady uploads what the media module made of a file already, as
+// uploadTo does once it has: a video's version, kept while it waits to be
+// sent (M5.4). The caller keeps the file.
+func (m *Manager) uploadReady(ctx context.Context, c *conn, channelID string, p *prepared, replaces string) (Uploaded, error) {
+	return m.uploadFile(ctx, c, channelID, p.name, p.out.Size(), nil, replaces, p)
+}
+
+// uploadFile uploads body, or what ready holds when it's set.
+func (m *Manager) uploadFile(ctx context.Context, c *conn, channelID, name string, size int64, body io.Reader, replaces string,
+	ready *prepared) (Uploaded, error) {
 	if channelID != "" {
 		if _, dm := c.isDM(channelID); dm {
-			return c.uploadDM(ctx, channelID, name, size, body, replaces)
+			return c.uploadDM(ctx, channelID, name, size, body, replaces, ready)
 		}
 	}
 	limits := c.limits()
 	if limits.FileSize > 0 && size > limits.FileSize {
 		return Uploaded{}, ErrTooLarge
 	}
-	// The stripping goroutine, or the transport sending the file, may
-	// still be reading when the upload fails.
-	g := &gate{r: body}
-	defer g.shut()
-	br := bufio.NewReaderSize(g, media.SniffLen)
-	head, err := br.Peek(media.SniffLen)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return Uploaded{}, err
-	}
-	kind := media.Sniff(head)
-	if kind.Refused() {
-		return Uploaded{}, refusal(head)
-	}
-	var p *prepared
-	if kind.NeedsMedia() {
-		if p, err = m.prepare(ctx, kind, head, name, br, max(limits.FileSize, size), limits.FileSize); err != nil {
+	p := ready
+	var br *bufio.Reader
+	var kind media.Kind
+	if p == nil {
+		// The stripping goroutine, or the transport sending the file, may
+		// still be reading when the upload fails.
+		g := &gate{r: body}
+		defer g.shut()
+		br = bufio.NewReaderSize(g, media.SniffLen)
+		head, err := br.Peek(media.SniffLen)
+		if err != nil && !errors.Is(err, io.EOF) {
 			return Uploaded{}, err
 		}
-		defer p.close()
+		kind = media.Sniff(head)
+		if kind.Refused() {
+			return Uploaded{}, refusal(head)
+		}
+		if kind.NeedsMedia() {
+			if p, err = m.prepare(ctx, kind, head, name, br, max(limits.FileSize, size), limits.FileSize); err != nil {
+				return Uploaded{}, err
+			}
+			defer p.close()
+		}
+	}
+	if p != nil {
 		kind, name, size = p.kind, p.name, p.out.Size()
 		br = bufio.NewReaderSize(io.NewSectionReader(p.out, 0, size), media.SniffLen)
 	}
@@ -136,6 +155,9 @@ func (m *Manager) uploadTo(ctx context.Context, c *conn, channelID, name string,
 		send, length = pr, -1
 	}
 
+	if p != nil && p.sending != nil {
+		send = &counted{r: send, total: length, report: p.sending}
+	}
 	token, err := c.session(ctx)
 	if err != nil {
 		return Uploaded{}, err
@@ -184,8 +206,47 @@ func (m *Manager) uploadTo(ctx context.Context, c *conn, channelID, name string,
 		// of the old one's but its streams, and a converted photo keeps
 		// only its pixels and colors.
 		up.Stripped, up.Converted = true, p.converted
+		// A video's copy, in AV1, which the den can't make a preview of,
+		// takes the one made from its full size (M5.4).
+		if p.poster != nil && up.Thumb == nil {
+			up = c.giveThumb(ctx, up, *p.poster)
+		}
 	}
 	return up, nil
+}
+
+// giveThumb gives an upload of a video the preview this service made of
+// it, as SetThumb gives it the page's. One the den doesn't take leaves the
+// video for the page to draw one, as it does for a WebM.
+func (c *conn) giveThumb(ctx context.Context, up Uploaded, th media.Thumb) Uploaded {
+	f, err := c.post(ctx, "/api/uploads/"+up.ID+"/thumb", bytes.NewReader(th.Data), int64(len(th.Data)), "")
+	if err == nil && (f.ID != up.ID || f.Thumb == nil) {
+		err = errors.New("the den's answer is malformed")
+	}
+	if err != nil {
+		if ctx.Err() == nil {
+			c.m.log.Infof("A video's copy goes without its preview: %v", err)
+		}
+		return up
+	}
+	up.Thumb = f.Thumb
+	return up
+}
+
+// counted reports how much of a body of total bytes was read, as an upload
+// goes (M5.4).
+type counted struct {
+	r      io.Reader
+	n      int64
+	total  int64
+	report func(done, total int64)
+}
+
+func (c *counted) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	c.report(c.n, c.total)
+	return n, err
 }
 
 // strip is how stripping an upload went.

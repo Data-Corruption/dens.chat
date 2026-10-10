@@ -68,7 +68,7 @@ func photo(t *testing.T, w, h, quality int) []byte {
 
 func uploadVersions(t *testing.T, m *denclient.Manager, denID, channel, name string, data []byte, send denclient.Send) denclient.Uploaded {
 	t.Helper()
-	up, err := m.UploadVersions(context.Background(), denID, channel, name, int64(len(data)), bytes.NewReader(data), send, "")
+	up, err := m.UploadVersions(context.Background(), denID, channel, name, int64(len(data)), bytes.NewReader(data), send, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestPhotoCopyRules(t *testing.T) {
 	}
 	// Nothing over the limit without a copy goes.
 	big := bytes.Repeat([]byte("b"), denproto.MinFileSize+1)
-	if _, err := member.UploadVersions(ctx, denID, channelID, "big.bin", int64(len(big)), bytes.NewReader(big), denclient.SendSmaller, ""); !errors.Is(err, denclient.ErrTooLarge) {
+	if _, err := member.UploadVersions(ctx, denID, channelID, "big.bin", int64(len(big)), bytes.NewReader(big), denclient.SendSmaller, "", ""); !errors.Is(err, denclient.ErrTooLarge) {
 		t.Fatalf("a file over the limit: %v", err)
 	}
 
@@ -237,7 +237,7 @@ func TestPhotoCopyRules(t *testing.T) {
 			t.Fatalf("%s: %+v", name, up)
 		}
 	}
-	if _, err := member.UploadVersions(ctx, denID, channelID, "x.jpg", 1, bytes.NewReader([]byte("x")), "tiny", ""); !isInput(err) {
+	if _, err := member.UploadVersions(ctx, denID, channelID, "x.jpg", 1, bytes.NewReader([]byte("x")), "tiny", "", ""); !isInput(err) {
 		t.Fatalf("a version that isn't one: %v", err)
 	}
 }

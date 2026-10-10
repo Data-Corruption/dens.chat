@@ -407,12 +407,12 @@ function General() {
     );
 }
 
-// Copies chooses whether this browser sends photos as smaller copies
-// (M5), which it does unless the member turns it off.
+// Copies chooses whether this browser sends photos and videos as smaller
+// copies (M5), which it does unless the member turns it off.
 function Copies() {
     const [on, setOn] = useState(sendSmaller);
     return (
-        <Card title="Photos">
+        <Card title="Photos and videos">
             <div>
                 <label class="label gap-3">
                     <input
@@ -424,12 +424,13 @@ function Copies() {
                             setOn(e.currentTarget.checked);
                         }}
                     />
-                    Send photos smaller
+                    Send photos and videos smaller
                 </label>
                 <p class="mt-1 text-sm text-base-content/70">
                     A photo goes as a copy at most 2,560 pixels across, which looks the same in a chat and takes a fraction of the
-                    space. Click a photo's size before you send it to compare it with the full size, and to send that instead. A photo
-                    larger than a den allows goes smaller either way.
+                    space. A video goes as a copy at most 720p, made on this computer before it's sent, which takes about as long as
+                    the video lasts, or longer on a small laptop. Click a file's size before you send it to compare it with the full
+                    size, and to send that instead. A photo or video larger than a den allows goes smaller either way.
                 </p>
             </div>
         </Card>

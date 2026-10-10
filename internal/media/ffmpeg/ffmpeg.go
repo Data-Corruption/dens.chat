@@ -34,6 +34,14 @@ const (
 	OpStill Op = "still"
 	// OpPoster makes a video's preview from its first frame.
 	OpPoster Op = "poster"
+	// OpScan reads a video's packets without decoding them, to plan its
+	// smaller copy.
+	OpScan Op = "scan"
+	// OpEncode makes a chunk of a video's smaller copy, in AV1.
+	OpEncode Op = "encode"
+	// OpMux puts a video's copy together from its chunks and the video's
+	// sound.
+	OpMux Op = "mux"
 )
 
 // Input is a file a job reads.
@@ -117,6 +125,54 @@ func (i Image) MIME() string {
 		return "image/png"
 	}
 	return "image/jpeg"
+}
+
+// Scanned describes a video's packets, to plan its smaller copy by. Times
+// are in microseconds, from the video's own start.
+type Scanned struct {
+	// StartUS and EndUS are when the video's frames start and end.
+	StartUS int64   `json:"start_us"`
+	EndUS   int64   `json:"end_us"`
+	Frames  int64   `json:"frames"`
+	FPS     float64 `json:"fps"`
+	// VideoBytes are the video's, and AudioBytes those of the sound a copy
+	// carries, of AudioStreams streams.
+	VideoBytes   int64 `json:"video_bytes"`
+	AudioBytes   int64 `json:"audio_bytes"`
+	AudioStreams int   `json:"audio_streams"`
+	// Keyframes are the times of the video's keyframes, each at least half
+	// a second after the last listed, where a chunk starts without
+	// decoding before it.
+	Keyframes []int64 `json:"keyframes"`
+}
+
+// Chunk is a part of a video's smaller copy: the frames the video shows from
+// StartUS up to EndUS, at most FPS a second, fitting MaxSide, at KBPS.
+type Chunk struct {
+	StartUS, EndUS     int64
+	MaxSide, FPS, KBPS int
+}
+
+// Encoded describes a chunk of a video's copy.
+type Encoded struct {
+	Frames  int   `json:"frames"`
+	Decoded int   `json:"decoded"`
+	Packets int   `json:"packets"`
+	Bytes   int64 `json:"bytes"`
+	Width   int   `json:"width"`
+	Height  int   `json:"height"`
+	// Skip says the frames nothing refers to went undecoded.
+	Skip bool `json:"skip"`
+}
+
+// Muxed describes a video's copy, put together.
+type Muxed struct {
+	Bytes        int64 `json:"bytes"`
+	VideoPackets int   `json:"video_packets"`
+	Keyframes    int   `json:"keyframes"`
+	AudioPackets int   `json:"audio_packets"`
+	AudioStreams int   `json:"audio_streams"`
+	DurationUS   int64 `json:"duration_us"`
 }
 
 var (

@@ -18,3 +18,12 @@ ffmpeg -i av.mp4 -i chapters.txt -i coords.srt -i cover.jpg -map 0:v -map 0:a -m
   -metadata location="+48.8584+002.2945/" -metadata com.apple.quicktime.location.ISO6709="+48.8584+002.2945+035.000/" \
   -metadata make=TestPhone -metadata model=TP-1 meta.mp4
 ```
+
+`grain-60fps.mp4` is made the same way, with OpenH264 for its video, as BtbN's LGPL build of FFmpeg 9.0.2 carries it: H.264 at 60 frames a second, as phones record it, for six seconds, a keyframe every second, of the test pattern at 640 × 360 under a still grain, with a 440 Hz tone in AAC. At 1.3 MB it's over the smallest limit a den takes, 1 MiB, so its smaller copy is fitted to that, and it copies in moments (M5.4).
+
+```sh
+ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=60:duration=6,noise=alls=40:allf=u" \
+  -f lavfi -i "sine=frequency=440:duration=6:sample_rate=48000" \
+  -c:v libopenh264 -rc_mode bitrate -b:v 1600k -g 60 -allow_skip_frames 0 -c:a aac -b:a 128k -ac 2 \
+  -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact -movflags +faststart grain-60fps.mp4
+```

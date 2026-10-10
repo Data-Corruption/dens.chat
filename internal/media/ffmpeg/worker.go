@@ -22,7 +22,16 @@ type Job struct {
 	// Orientation is a JPEG's EXIF orientation for a still, which FFmpeg
 	// doesn't read: 1 to 8, or 0 for the turn the file itself states.
 	Orientation int `json:"orientation,omitempty"`
-	MemoryMB    int `json:"memory_mb"`
+	// A chunk of a video's copy: the frames shown from StartUS up to EndUS,
+	// at most FPS a second, at KBPS (M5.4).
+	StartUS int64 `json:"start_us,omitempty"`
+	EndUS   int64 `json:"end_us,omitempty"`
+	FPS     int   `json:"fps,omitempty"`
+	KBPS    int   `json:"kbps,omitempty"`
+	// Width and Height are a video copy's, which Mux writes.
+	Width    int `json:"width,omitempty"`
+	Height   int `json:"height,omitempty"`
+	MemoryMB int `json:"memory_mb"`
 	// Deadline is when the worker gives up on its own, in Unix
 	// milliseconds, so one whose Runner died can't run on.
 	Deadline int64 `json:"deadline"`
@@ -99,6 +108,12 @@ func (h *host) run(job Job) (d done) {
 		ret = m.Xdm_still(int32(job.MaxSide), int32(job.Quality), int32(job.Orientation))
 	case OpPoster:
 		ret = m.Xdm_poster(int32(job.MaxSide), int32(job.Quality))
+	case OpScan:
+		ret = m.Xdm_scan()
+	case OpEncode:
+		ret = m.Xdm_encode(job.StartUS, job.EndUS, int32(job.MaxSide), int32(job.FPS), int32(job.KBPS))
+	case OpMux:
+		ret = m.Xdm_mux(int32(job.Width), int32(job.Height))
 	default:
 		return done{Failed: fmt.Sprintf("no operation %q", job.Op)}
 	}
@@ -234,6 +249,13 @@ func (h *host) Xlog(level, ptr, n int32) {
 
 func (h *host) Xresult(ptr, n int32) {
 	h.result = append([]byte(nil), h.bytes(ptr, n)...)
+}
+
+// Xprogress goes out with the next request, as a log line does: the module
+// reads and writes often while it encodes.
+func (h *host) Xprogress(done int64) {
+	h.c.putU8(reqProgress)
+	h.c.putI64(done)
 }
 
 // WASI's imports.

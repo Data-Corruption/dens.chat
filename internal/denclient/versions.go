@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"path"
 	"strings"
@@ -17,51 +18,57 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// Smaller copies (M5). A photo added to a message goes as a smaller copy
-// unless its sender sends it full size. This service makes both versions as
-// the photo is added, with the media module, uploads the one to send, and
-// keeps both, each in a scratch file sealed with a key of its own, until the
-// message is sent, the photo is taken off it, or the hour a den keeps an
-// upload waiting is up. Meanwhile the page compares them, and switching
-// uploads the other version and drops the one waiting.
+// Smaller copies (M5). A photo or video added to a message goes as a
+// smaller copy unless its sender sends it full size. This service makes
+// both versions as it's added, with the media module, uploads the one to
+// send, and keeps both, each in a scratch file sealed with a key of its
+// own, until the message is sent, the file is taken off it, or the hour a
+// den keeps an upload waiting is up. Meanwhile the page compares them, and
+// switching uploads the other version and drops the one waiting. A video's
+// copy takes a while (videos.go).
 
-// Send says which version of a photo a message sends.
+// Send says which version of a photo or video a message sends.
 type Send string
 
 const (
-	// SendSmaller sends a photo's smaller copy, when there's one worth
-	// sending: at most three quarters of the full size.
+	// SendSmaller sends a smaller copy, when there's one worth sending: at
+	// most three quarters of the full size.
 	SendSmaller Send = "smaller"
-	// SendFull sends a photo full size, unless the den's limit is below it
+	// SendFull sends a file full size, unless the den's limit is below it
 	// and above its copy.
 	SendFull Send = "full"
 )
 
-// Versions describes a photo's two versions as the page compares them:
-// full size, as it goes without a copy, and its smaller copy, and which
-// one the upload is.
+// Versions describes a file's two versions as the page compares them: full
+// size, as it goes without a copy, and its smaller copy, and which one the
+// upload is.
 type Versions struct {
 	Sent    Send    `json:"sent"`
 	Full    Version `json:"full"`
 	Smaller Version `json:"smaller"`
 }
 
-// Version is one of a photo's versions: its type, its size in bytes, its
-// pixels as it shows, and whether the den takes it, within its size limit
-// as it stood when the photo was added, sealed for a DM.
+// Version is one of a file's versions: its type, its size in bytes, its
+// pixels as it shows, a video's frames a second, and whether the den takes
+// it, within its size limit as it stood when the file was added, sealed for
+// a DM.
 type Version struct {
-	Type   string `json:"type"`
-	Size   int64  `json:"size"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
-	Fits   bool   `json:"fits"`
+	Type   string  `json:"type"`
+	Size   int64   `json:"size"`
+	Width  int     `json:"width"`
+	Height int     `json:"height"`
+	FPS    float64 `json:"fps,omitempty"`
+	Fits   bool    `json:"fits"`
 }
 
-// version is one version of a photo, as it goes: a JPEG or PNG, stripped.
+// version is one version of a file, as it goes: a photo's JPEG or PNG,
+// stripped, or a video's MP4, which video describes.
 type version struct {
 	file          *vault.Scratch
 	kind          media.Kind
 	width, height int
+	video         *media.Stripped
+	fps           float64
 }
 
 func (v *version) size() int64 { return v.file.Size() }
@@ -75,13 +82,17 @@ func (v *version) close() {
 }
 
 func (v *version) describe(fits bool) Version {
-	return Version{Type: v.kind.MIME(), Size: v.size(), Width: v.width, Height: v.height, Fits: fits}
+	d := Version{Type: v.kind.MIME(), Size: v.size(), Width: v.width, Height: v.height, Fits: fits}
+	if v.video != nil {
+		d.Type, d.FPS = v.video.MIME, math.Round(v.fps*100)/100
+	}
+	return d
 }
 
-// kept is a photo's two versions, kept while the upload of one waits to be
+// kept is a file's two versions, kept while the upload of one waits to be
 // sent.
 type kept struct {
-	// mu is held while the photo switches versions.
+	// mu is held while the file switches versions.
 	mu sync.Mutex
 	// id is the upload waiting; the conn's mu guards it.
 	id                  string
@@ -90,10 +101,12 @@ type kept struct {
 	full, smaller       *version
 	fullFits            bool
 	stripped, converted bool
-	sent                Send
-	up                  Uploaded // the upload waiting, as the page has it
-	timer               *time.Timer
-	once                sync.Once
+	// poster is a video copy's preview, made from the full size.
+	poster *media.Thumb
+	sent   Send
+	up     Uploaded // the upload waiting, as the page has it
+	timer  *time.Timer
+	once   sync.Once
 }
 
 func (k *kept) describe() *Versions {
@@ -110,20 +123,24 @@ func (k *kept) close() {
 	})
 }
 
-// errNotKept is a switch or a look at a photo whose versions are gone:
+// errNotKept is a switch or a look at a file whose versions are gone:
 // sent, taken off, switched meanwhile, or past the hour.
-var errNotKept = inputError(errors.New("This photo's two versions aren't kept any more. Take it off the message and add it again."))
+var errNotKept = inputError(errors.New("This file's two versions aren't kept any more. Take it off the message and add it again."))
 
 // UploadVersions uploads a file for a message, as Upload does, and a photo
-// with its two versions: it sends the one send names, or its smaller copy
-// whatever send says when the full size is over the den's limit and the
-// copy isn't, and keeps both for the page to compare and switch between
-// (OpenVersion, SwitchVersion). A photo without a copy worth sending, and
-// anything else, goes as Upload sends it. replaces names the file it's made
-// to take the place of, if any.
-func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name string, size int64, body io.Reader, send Send, replaces string) (Uploaded, error) {
+// or video with its two versions: it sends the one send names, or its
+// smaller copy whatever send says when the full size is over the den's
+// limit and the copy isn't, and keeps both for the page to compare and
+// switch between (OpenVersion, SwitchVersion). A file without a copy worth
+// sending, and anything else, goes as Upload sends it. replaces names the
+// file it's made to take the place of, if any, and key, if it's set, is
+// what the page follows the upload's progress by (UploadProgress), and may
+// ask for a video full size by instead of waiting for its copy
+// (SendFullSize).
+func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name string, size int64, body io.Reader, send Send,
+	replaces, key string) (Uploaded, error) {
 	if send != SendSmaller && send != SendFull {
-		return Uploaded{}, inputError(errors.New("a photo goes smaller or full size"))
+		return Uploaded{}, inputError(errors.New("a file goes smaller or full size"))
 	}
 	if replaces != "" {
 		if err := checkID("file", replaces); err != nil {
@@ -134,6 +151,14 @@ func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name str
 	if err != nil {
 		return Uploaded{}, err
 	}
+	var f *following
+	if key != "" {
+		var done func()
+		if f, done, err = m.follow(denID, key); err != nil {
+			return Uploaded{}, err
+		}
+		defer done()
+	}
 	g := &gate{r: body}
 	defer g.shut()
 	br := bufio.NewReaderSize(g, media.SniffLen)
@@ -142,6 +167,9 @@ func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name str
 		return Uploaded{}, err
 	}
 	kind := media.Sniff(head)
+	if m.Media != nil && kind == media.Video {
+		return m.uploadVideo(ctx, c, channelID, name, size, br, send, replaces, f)
+	}
 	if m.Media == nil || kind != media.JPEG && kind != media.PNG && kind != media.Photo {
 		return m.uploadTo(ctx, c, channelID, name, size, br, replaces)
 	}
@@ -180,12 +208,7 @@ func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name str
 		if !k.fullFits {
 			return Uploaded{}, ErrTooLarge
 		}
-		up, err := m.uploadTo(ctx, c, channelID, k.name, k.full.size(), k.full.reader(), replaces)
-		if err != nil {
-			return Uploaded{}, err
-		}
-		up.Stripped, up.Converted = k.stripped, k.converted
-		return up, nil
+		return m.uploadVersion(ctx, c, k, k.full, f)
 	}
 
 	k.sent = send
@@ -196,12 +219,12 @@ func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name str
 	if k.sent == SendSmaller {
 		v = k.smaller
 	}
-	up, err := m.uploadTo(ctx, c, channelID, k.name, v.size(), v.reader(), replaces)
+	up, err := m.uploadVersion(ctx, c, k, v, f)
 	if err != nil {
 		k.close()
 		return Uploaded{}, err
 	}
-	up.Stripped, up.Converted, up.Versions = k.stripped, k.converted, k.describe()
+	up.Versions = k.describe()
 	k.up, k.id = up, up.ID
 	c.keep(k)
 	return up, nil
@@ -330,8 +353,8 @@ func (m *Manager) newVersion(kind media.Kind) (*version, error) {
 	return &version{file: f, kind: kind}, nil
 }
 
-// keep holds a photo's versions while its upload waits, for as long as
-// the den keeps the upload.
+// keep holds a file's versions while its upload waits, for as long as the
+// den keeps the upload.
 func (c *conn) keep(k *kept) {
 	k.timer = time.AfterFunc(uploadExpiry, func() {
 		c.mu.Lock()
@@ -369,7 +392,7 @@ func (c *conn) dropKept(ids []string) {
 	}
 }
 
-// dropAllKept forgets every photo's versions, as the den's connection
+// dropAllKept forgets every file's versions, as the den's connection
 // ends.
 func (c *conn) dropAllKept() {
 	c.mu.Lock()
@@ -381,8 +404,8 @@ func (c *conn) dropAllKept() {
 	}
 }
 
-// OpenVersion opens a version of a photo waiting to be sent, for the page
-// to compare.
+// OpenVersion opens a version of a photo or video waiting to be sent, for
+// the page to compare.
 func (m *Manager) OpenVersion(denID, uploadID string, which Send) (*OpenedFile, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -402,19 +425,20 @@ func (m *Manager) OpenVersion(denID, uploadID string, which Send) (*OpenedFile, 
 	case SendSmaller:
 		v = k.smaller
 	default:
-		return nil, inputError(errors.New("a photo's versions are full and smaller"))
+		return nil, inputError(errors.New("a file's versions are full and smaller"))
 	}
 	head := make([]byte, media.SniffLen)
 	n, _ := v.file.ReadAt(head, 0)
 	return &OpenedFile{SectionReader: v.reader(), Kind: v.kind, Head: head[:n]}, nil
 }
 
-// SwitchVersion switches a photo waiting to be sent to its other version:
-// it uploads that one, drops the one waiting, so its space is free at
-// once, and returns the new upload, which takes its place in the message.
+// SwitchVersion switches a photo or video waiting to be sent to its other
+// version: it uploads that one, drops the one waiting, so its space is
+// free at once, and returns the new upload, which takes its place in the
+// message.
 func (m *Manager) SwitchVersion(ctx context.Context, denID, uploadID string, to Send) (Uploaded, error) {
 	if to != SendSmaller && to != SendFull {
-		return Uploaded{}, inputError(errors.New("a photo goes smaller or full size"))
+		return Uploaded{}, inputError(errors.New("a file goes smaller or full size"))
 	}
 	c, err := m.find(denID)
 	if err != nil {
@@ -442,7 +466,7 @@ func (m *Manager) SwitchVersion(ctx context.Context, denID, uploadID string, to 
 		}
 		v = k.full
 	}
-	up, err := m.uploadTo(ctx, c, k.channel, k.name, v.size(), v.reader(), k.replaces)
+	up, err := m.uploadVersion(ctx, c, k, v, nil)
 	if err != nil {
 		return Uploaded{}, err
 	}
@@ -450,7 +474,7 @@ func (m *Manager) SwitchVersion(ctx context.Context, denID, uploadID string, to 
 	still := c.kept[uploadID] == k
 	if still {
 		k.sent = to
-		up.Stripped, up.Converted, up.Versions = k.stripped, k.converted, k.describe()
+		up.Versions = k.describe()
 		delete(c.kept, uploadID)
 		k.id, k.up = up.ID, up
 		c.kept[up.ID] = k
@@ -464,7 +488,7 @@ func (m *Manager) SwitchVersion(ctx context.Context, denID, uploadID string, to 
 	}
 	if err := m.DropUpload(ctx, denID, uploadID); err != nil {
 		// It waits out the hour instead.
-		m.log.Infof("Drop the version a photo switched from: %v", err)
+		m.log.Infof("Drop the version a file switched from: %v", err)
 	}
 	return up, nil
 }

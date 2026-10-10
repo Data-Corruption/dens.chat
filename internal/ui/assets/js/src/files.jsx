@@ -59,15 +59,18 @@ export const downloadURL = (denID, f) => `/api/dens/${denID}/files/${f.id}?downl
 // image's metadata out on the way, and seals a DM's. channelID names the
 // channel it's for, empty for a profile's picture, and replaces the file
 // it's made to take the place of, if any (M5). send, for a message's file,
-// says which version of a photo goes, "smaller" or "full", and the local
-// service keeps both to compare (M5). It reports progress from 0 to 1, and
-// returns the upload's promise and a way to stop it.
-export function upload(denID, channelID, file, name, onProgress, replaces, send) {
+// says which version of a photo or video goes, "smaller" or "full", and the
+// local service keeps both to compare (M5); progress names the upload for
+// the page to follow while a video's copy is made (M5.4). It reports how
+// much of the file went to the local service, from 0 to 1, and returns the
+// upload's promise and a way to stop it.
+export function upload(denID, channelID, file, name, onProgress, replaces, send, progress) {
     const xhr = new XMLHttpRequest();
     const query = new URLSearchParams();
     if (channelID) query.set('channel', channelID);
     if (replaces) query.set('replaces', replaces);
     if (send) query.set('send', send);
+    if (progress) query.set('progress', progress);
     const done = new Promise((resolve, reject) => {
         const qs = String(query);
         xhr.open('POST', `/api/dens/${denID}/uploads${qs ? `?${qs}` : ''}`);

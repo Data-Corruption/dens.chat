@@ -59,6 +59,11 @@ type prepared struct {
 	// stripped describes a video or audio copy; its MIME is empty for a
 	// photo.
 	stripped media.Stripped
+	// poster is a preview made already, as a video's copy has from its
+	// full size (M5.4), and sending, if it's set, hears how much of the
+	// file has gone to the den as it goes.
+	poster  *media.Thumb
+	sending func(done, total int64)
 }
 
 func (p *prepared) close() { _ = p.out.Close() }
