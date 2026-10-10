@@ -9,7 +9,7 @@ import {
     useLater,
 } from './components.jsx';
 import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
-import { sendSmaller } from './compare.jsx';
+import { progressKey, progressLabel, sendSmaller, useUploadProgress } from './compare.jsx';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
 import { deletesNow, keptFor } from './retention.js';
@@ -272,14 +272,16 @@ function Files({ den, navigate }) {
         const f = swapping.current;
         if (!file || !f) return;
         const dm = shown.view.channels.find((c) => c.id === f.channel_id)?.kind === 'dm';
-        const track = (p) => setProgress((cur) => ({ ...cur, [f.id]: p }));
+        // The row follows the upload while a video's copy is made (M5.4).
+        const key = progressKey();
+        const track = (sent) => setProgress((cur) => ({ ...cur, [f.id]: { sent, key } }));
         track(0);
         act.run(async () => {
             try {
-                // A photo swapped in goes smaller like any other, unless the
-                // member turned copies off (M5).
+                // A photo or video swapped in goes smaller like any other,
+                // unless the member turned copies off (M5).
                 const send = sendSmaller() ? 'smaller' : 'full';
-                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send).done;
+                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send, key).done;
                 if (needsPreview(up)) up = await addPreview(den.den_id, up);
                 await api.post(`${base}/messages/${f.message_id}/files/${f.id}/swap?channel=${f.channel_id}`, { upload: up.id });
                 await load();
@@ -335,8 +337,11 @@ function Files({ den, navigate }) {
 }
 
 // FileRow is one of a member's files in their list: its preview, name,
-// size and what uses it, and what they can do with it.
+// size and what uses it, and what they can do with it. A file being
+// swapped shows how far its replacement is, and how far a video's copy.
 function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, onConfirm, onCancel, onRemove }) {
+    const following = useUploadProgress(denID, progress?.key, progress?.sent >= 1);
+    const counting = progressLabel(following);
     const onMessage = !!f.message_id;
     const what = f.profile ? 'Take it off your profile?' : onMessage ? "Delete it for good? It comes off its message for everyone." : 'Drop this upload?';
     const action = f.profile ? 'Remove' : onMessage ? 'Delete' : 'Drop';
@@ -355,7 +360,11 @@ function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, o
                 {f.excerpt && <span class="block truncate text-xs text-base-content/50">{f.excerpt}</span>}
             </span>
             {progress !== undefined ? (
-                <progress class="progress progress-primary w-24" value={Math.round(progress * 100)} max="100"></progress>
+                <span class="flex flex-col items-end gap-0.5">
+                    {counting && <span class="text-xs text-base-content/60">{counting}</span>}
+                    <progress class="progress progress-primary w-24" value={Math.round((counting ? following.done : progress.sent) * 100)}
+                        max="100"></progress>
+                </span>
             ) : confirming ? (
                 <span class="flex flex-col items-end gap-1">
                     <span class="max-w-xs text-right text-xs">{what}</span>
