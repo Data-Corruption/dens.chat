@@ -57,12 +57,17 @@ export const downloadURL = (denID, f) => `/api/dens/${denID}/files/${f.id}?downl
 
 // upload sends a file to a den through the local service, which takes an
 // image's metadata out on the way, and seals a DM's. channelID names the
-// channel it's for, empty for a profile's picture. It reports progress
-// from 0 to 1, and returns the upload's promise and a way to stop it.
-export function upload(denID, channelID, file, name, onProgress) {
+// channel it's for, empty for a profile's picture, and replaces the file
+// it's made to take the place of, if any (M5). It reports progress from 0
+// to 1, and returns the upload's promise and a way to stop it.
+export function upload(denID, channelID, file, name, onProgress, replaces) {
     const xhr = new XMLHttpRequest();
+    const query = new URLSearchParams();
+    if (channelID) query.set('channel', channelID);
+    if (replaces) query.set('replaces', replaces);
     const done = new Promise((resolve, reject) => {
-        xhr.open('POST', `/api/dens/${denID}/uploads${channelID ? `?channel=${channelID}` : ''}`);
+        const qs = String(query);
+        xhr.open('POST', `/api/dens/${denID}/uploads${qs ? `?${qs}` : ''}`);
         xhr.setRequestHeader('Content-Type', 'application/octet-stream');
         xhr.setRequestHeader('Dens-Filename', encodeURIComponent(name));
         xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
@@ -81,6 +86,20 @@ export function upload(denID, channelID, file, name, onProgress) {
         xhr.send(file);
     });
     return { done, abort: () => xhr.abort() };
+}
+
+// fileWhere says what uses one of a member's files, as their list of them
+// shows it (M5): a channel or a DM, a picture on their profile, or nothing
+// while it waits to be sent. view is the den as the page has it.
+export function fileWhere(f, view) {
+    if (f.profile === 'avatar') return 'Your profile picture';
+    if (f.profile === 'banner') return 'Your profile banner';
+    if (!f.message_id) return 'Waiting to be sent';
+    const c = view.channels.find((x) => x.id === f.channel_id);
+    if (!c) return "In a channel you can't see";
+    if (c.kind !== 'dm') return `In #${c.name}`;
+    const other = view.members.find((m) => m.id !== view.me.id && (c.members || []).includes(m.id));
+    return `In your DM with ${other?.display_name || 'a former member'}`;
 }
 
 // attachmentKind says how a message shows a file: a video it plays, an
@@ -392,13 +411,30 @@ function FileIcon() {
     );
 }
 
-// Viewer shows an image whole, over everything, fitted to the window. The
-// preview shows at once and the original replaces it as it loads.
-export function Viewer({ denID, file, onClose }) {
+// step moves from image index of count by delta, stopping at the ends.
+export function step(index, count, delta) {
+    return Math.min(count - 1, Math.max(0, index + delta));
+}
+
+// Viewer shows an image whole, over everything, fitted to the window: the
+// one at index of a message's images, files. The preview shows at once
+// and the original replaces it as it loads. With several images, ‹ and ›
+// at its sides, and the ← and → keys, move between them (M5), and onIndex
+// hears where to.
+export function Viewer({ denID, files, index, onIndex, onClose }) {
     const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
     const close = useRef(null);
+    const at = useRef(index);
+    at.current = index;
     useEffect(() => {
-        const onKey = (e) => e.key === 'Escape' && onClose();
+        const onKey = (e) => {
+            if (e.key === 'Escape') onClose();
+            const delta = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
+            if (!delta) return;
+            e.preventDefault();
+            const next = step(at.current, files.length, delta);
+            if (next !== at.current) onIndex(next);
+        };
         const onResize = () => setWin({ w: window.innerWidth, h: window.innerHeight });
         window.addEventListener('keydown', onKey);
         window.addEventListener('resize', onResize);
@@ -407,17 +443,27 @@ export function Viewer({ denID, file, onClose }) {
             window.removeEventListener('keydown', onKey);
             window.removeEventListener('resize', onResize);
         };
-    }, []);
-    const size = fitBox(file.width, file.height, Math.max(64, win.w - 32), Math.max(64, win.h - 112));
+    }, [files]);
+    const file = files[index];
+    const several = files.length > 1;
+    const size = fitBox(file.width, file.height, Math.max(64, win.w - (several ? 128 : 32)), Math.max(64, win.h - 112));
     const box = { width: `${size.width}px`, height: `${size.height}px` };
+    const side = 'btn btn-circle btn-ghost absolute top-1/2 -translate-y-1/2 text-3xl text-white hover:bg-white/15';
     return (
         <div role="dialog" aria-label={file.name} class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-4"
             onClick={(e) => e.target === e.currentTarget && onClose()}>
-            <div class="relative overflow-hidden rounded" style={box}>
+            {several && index > 0 && (
+                <button type="button" class={`${side} left-4`} aria-label="Previous image" onClick={() => onIndex(index - 1)}>‹</button>
+            )}
+            {several && index < files.length - 1 && (
+                <button type="button" class={`${side} right-4`} aria-label="Next image" onClick={() => onIndex(index + 1)}>›</button>
+            )}
+            <div key={file.id} class="relative overflow-hidden rounded" style={box}>
                 {file.thumb && <img src={thumbURL(denID, file.id)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
                 <img src={fileURL(denID, file.id)} alt={file.name} width={size.width} height={size.height} class="relative h-full w-full object-contain" />
             </div>
             <div class="flex max-w-full items-center gap-3 text-sm text-white">
+                {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
                 <span class="truncate" title={file.name}>{file.name}</span>
                 <span class="shrink-0 cursor-default select-none text-white/60">{formatSize(file.size)}</span>
                 <a class="btn btn-sm" href={downloadURL(denID, file)} download={file.name}>Download</a>

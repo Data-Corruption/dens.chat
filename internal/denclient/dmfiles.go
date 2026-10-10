@@ -39,8 +39,9 @@ type dmUpload struct {
 // makes the file's preview.
 var tempAD = []byte("dens-dm-upload")
 
-// uploadDM strips, previews, seals and uploads a file for a DM.
-func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64, body io.Reader) (Uploaded, error) {
+// uploadDM strips, previews, seals and uploads a file for a DM. One made
+// to replace a file of the DM's replaces its preview too, with its own.
+func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64, body io.Reader, replaces string) (Uploaded, error) {
 	limits := c.limits()
 	if limits.FileSize > 0 && vault.SealedSize(max(size, 0)) > limits.FileSize {
 		return Uploaded{}, ErrTooLarge
@@ -167,13 +168,19 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		}
 		pw.CloseWithError(err)
 	}()
-	sent, err := c.uploadSealed(ctx, pr, vault.SealedSize(file.Size))
+	var oldThumb string
+	if replaces != "" {
+		c.mu.Lock()
+		oldThumb = c.dmFiles[replaces].thumb
+		c.mu.Unlock()
+	}
+	sent, err := c.uploadSealed(ctx, pr, vault.SealedSize(file.Size), replaces)
 	if err != nil {
 		return Uploaded{}, err
 	}
 	file.ID = sent.ID
 	if thumb != nil {
-		if file.Thumb, err = c.uploadDMThumb(ctx, file.Key, ch, *thumb); err != nil {
+		if file.Thumb, err = c.uploadDMThumb(ctx, file.Key, ch, *thumb, oldThumb); err != nil {
 			return Uploaded{}, err
 		}
 	}
@@ -211,8 +218,8 @@ func dmUploaded(file denproto.DMFile) Uploaded {
 }
 
 // uploadDMThumb seals a DM file's preview with the file's key and uploads
-// it.
-func (c *conn) uploadDMThumb(ctx context.Context, key denproto.Bytes, channel int64, th media.Thumb) (*denproto.DMThumb, error) {
+// it, made to replace the preview replaces names when it's set.
+func (c *conn) uploadDMThumb(ctx context.Context, key denproto.Bytes, channel int64, th media.Thumb, replaces string) (*denproto.DMThumb, error) {
 	var sealed bytes.Buffer
 	sw, err := vault.SealStreamWith(key, &sealed, denproto.DMFileAD(c.j.denID, channel, true))
 	if err != nil {
@@ -224,16 +231,17 @@ func (c *conn) uploadDMThumb(ctx context.Context, key denproto.Bytes, channel in
 	if err := sw.Close(); err != nil {
 		return nil, err
 	}
-	preview, err := c.uploadSealed(ctx, &sealed, int64(sealed.Len()))
+	preview, err := c.uploadSealed(ctx, &sealed, int64(sealed.Len()), replaces)
 	if err != nil {
 		return nil, err
 	}
 	return &denproto.DMThumb{ID: preview.ID, Width: th.Width, Height: th.Height}, nil
 }
 
-// uploadSealed sends a sealed blob to the den, of the given length.
-func (c *conn) uploadSealed(ctx context.Context, body io.Reader, length int64) (denproto.File, error) {
-	f, err := c.post(ctx, "/api/uploads/sealed", body, length)
+// uploadSealed sends a sealed blob to the den, of the given length, made
+// to replace the blob replaces names when it's set.
+func (c *conn) uploadSealed(ctx context.Context, body io.Reader, length int64, replaces string) (denproto.File, error) {
+	f, err := c.post(ctx, "/api/uploads/sealed", body, length, replaces)
 	if err != nil {
 		return denproto.File{}, err
 	}
@@ -244,8 +252,9 @@ func (c *conn) uploadSealed(ctx context.Context, body io.Reader, length int64) (
 }
 
 // post sends bytes to the den, of the given length, and reads back the
-// file they made or changed.
-func (c *conn) post(ctx context.Context, path string, body io.Reader, length int64) (denproto.File, error) {
+// file they made or changed. replaces names the file an upload is made to
+// take the place of, if any.
+func (c *conn) post(ctx context.Context, path string, body io.Reader, length int64, replaces string) (denproto.File, error) {
 	token, err := c.session(ctx)
 	if err != nil {
 		return denproto.File{}, err
@@ -258,6 +267,9 @@ func (c *conn) post(ctx context.Context, path string, body io.Reader, length int
 	req.ContentLength = length
 	a.headers(req.Header, token)
 	req.Header.Set("Content-Type", "application/octet-stream")
+	if replaces != "" {
+		req.Header.Set(denproto.HeaderReplaces, replaces)
+	}
 	res, err := c.m.Transfer.Do(req)
 	if err != nil {
 		return denproto.File{}, fmt.Errorf("reach the den: %w", err)

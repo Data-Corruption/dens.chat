@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 
 	"github.com/go-chi/chi/v5"
@@ -18,11 +19,16 @@ func (rt *router) mountFiles(r chi.Router) {
 	r.Get("/api/dens/{den}/files/{file}/thumb", rt.handleFile(true))
 	r.Post("/api/dens/{den}/uploads/{file}/thumb", rt.handleSetThumb)
 	r.Get("/api/dens/{den}/storage", rt.handleStorage)
+	r.Get("/api/dens/{den}/files", rt.handleOwnFiles)
+	r.Delete("/api/dens/{den}/uploads/{file}", rt.handleDropUpload)
+	r.Post("/api/dens/{den}/messages/{message}/files/{file}/remove", rt.handleRemoveFile)
+	r.Post("/api/dens/{den}/messages/{message}/files/{file}/swap", rt.handleSwapFile)
 }
 
 // handleUpload passes a file from the page to a den. The page sends the
 // file's bytes as they are; images lose their metadata on the way. The
-// page names the channel the file is for, since a DM's goes sealed.
+// page names the channel the file is for, since a DM's goes sealed, and
+// the file it replaces, if any (M5).
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {
@@ -33,7 +39,13 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusLengthRequired, "The upload didn't say how large it is.")
 		return
 	}
-	up, err := rt.a.Dens.Upload(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), name, r.ContentLength, r.Body)
+	den, channel, replaces := chi.URLParam(r, "den"), r.URL.Query().Get("channel"), r.URL.Query().Get("replaces")
+	var up denclient.Uploaded
+	if replaces != "" {
+		up, err = rt.a.Dens.Replace(r.Context(), den, channel, replaces, name, r.ContentLength, r.Body)
+	} else {
+		up, err = rt.a.Dens.Upload(r.Context(), den, channel, name, r.ContentLength, r.Body)
+	}
 	if err != nil {
 		// The page stops an upload when the member takes the file off;
 		// nobody is left to tell.
@@ -118,4 +130,54 @@ func (rt *router) handleStorage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, st)
+}
+
+// handleOwnFiles lists a page of this member's files on a den, largest
+// first (M5).
+func (rt *router) handleOwnFiles(w http.ResponseWriter, r *http.Request) {
+	page, err := rt.a.Dens.Files(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("after"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, page)
+}
+
+// handleDropUpload deletes an upload waiting to be sent, which the page
+// took off the composer, so its space is free at once.
+func (rt *router) handleDropUpload(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.DropUpload(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleRemoveFile takes one of this member's files off its message.
+func (rt *router) handleRemoveFile(w http.ResponseWriter, r *http.Request) {
+	err := rt.a.Dens.RemoveFile(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"),
+		chi.URLParam(r, "file"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleSwapFile puts an upload made to replace one of this member's files
+// in that file's place.
+func (rt *router) handleSwapFile(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Upload string `json:"upload"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	err := rt.a.Dens.SwapFile(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"),
+		chi.URLParam(r, "file"), body.Upload)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }

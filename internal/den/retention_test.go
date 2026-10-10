@@ -54,7 +54,7 @@ func TestRetentionDeletesOldMessages(t *testing.T) {
 	}
 	file := f.mustUpload(member, "old.txt", []byte("old"))
 	old := f.mustSendFiles(member, general.ID, file.ID)
-	blob, err := f.d.Upload(ctx, member, "", 5, bytes.NewReader([]byte("noise")), true)
+	blob, err := f.d.Upload(ctx, member, "", 5, bytes.NewReader([]byte("noise")), true, "")
 	if err != nil {
 		t.Fatal(err)
 	}

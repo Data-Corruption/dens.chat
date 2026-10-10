@@ -52,7 +52,7 @@ func withComment(jpg []byte) []byte {
 }
 
 func (f *fixture) upload(s *Session, name string, data []byte) (denproto.File, error) {
-	return f.d.Upload(context.Background(), s, name, int64(len(data)), bytes.NewReader(data), false)
+	return f.d.Upload(context.Background(), s, name, int64(len(data)), bytes.NewReader(data), false, "")
 }
 
 func (f *fixture) mustUpload(s *Session, name string, data []byte) denproto.File {
@@ -160,7 +160,7 @@ func TestUploadRefusals(t *testing.T) {
 	_, err = f.upload(member, "big.bin", big)
 	wantCode(t, err, denproto.CodeTooLarge)
 	// Without a stated length, the den stops reading past the limit.
-	_, err = f.d.Upload(ctx, member, "big.bin", -1, bytes.NewReader(big), false)
+	_, err = f.d.Upload(ctx, member, "big.bin", -1, bytes.NewReader(big), false, "")
 	wantCode(t, err, denproto.CodeTooLarge)
 
 	chunk := make([]byte, 1<<20)
@@ -307,7 +307,7 @@ func TestDMFiles(t *testing.T) {
 	_, err = f.d.Send(ctx, member, dm.ID, f.sealedSend(member, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{plain.ID}}))
 	wantCode(t, err, denproto.CodeInvalidField)
 	blob := []byte("sealed by the client, which the den can't tell from noise")
-	file, err := f.d.Upload(ctx, member, "ignored.txt", int64(len(blob)), bytes.NewReader(blob), true)
+	file, err := f.d.Upload(ctx, member, "ignored.txt", int64(len(blob)), bytes.NewReader(blob), true, "")
 	if err != nil || !file.Sealed || file.Name != "" || file.Type != denproto.SealedType || file.Size != int64(len(blob)) || file.Thumb != nil {
 		t.Fatalf("a sealed upload: %+v %v", file, err)
 	}
@@ -331,7 +331,7 @@ func TestDMFiles(t *testing.T) {
 		t.Fatalf("the owner read a DM file through the den: %v", err)
 	}
 	// A sealed upload isn't a profile picture either.
-	another, err := f.d.Upload(ctx, member, "", 3, bytes.NewReader([]byte("abc")), true)
+	another, err := f.d.Upload(ctx, member, "", 3, bytes.NewReader([]byte("abc")), true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestDMFiles(t *testing.T) {
 	// A DM message holds each file and its preview.
 	var ids []string
 	for range denproto.MaxDMFiles + 1 {
-		u, err := f.d.Upload(ctx, member, "", 1, bytes.NewReader([]byte("x")), true)
+		u, err := f.d.Upload(ctx, member, "", 1, bytes.NewReader([]byte("x")), true, "")
 		if err != nil {
 			t.Fatal(err)
 		}

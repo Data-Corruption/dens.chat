@@ -502,6 +502,53 @@ range)
     tail -c +"$(($4 + 1))" "$3" | head -c "$(($5 - $4 + 1))" >/root/want
     cmp -s /root/range /root/want || fail "a range holds the wrong bytes"
     ;;
+storage)
+    # storage DEN_ID: print how many bytes this member's files take.
+    api GET "/api/dens/$1/storage" | json 'd["used"]'
+    ;;
+limits)
+    # limits DEN_ID FILE MEMBER DEN: set the den's upload limits, in bytes,
+    # as the owner.
+    api POST "/api/dens/$1/settings" "{\"limits\":{\"file_size\":$2,\"member_storage\":$3,\"den_storage\":$4}}" >/dev/null
+    ;;
+largest)
+    # largest DEN_ID: print this member's largest file, from their list of
+    # files, and the message it's on (M5).
+    api GET "/api/dens/$1/files" | json 'd["files"][0]["id"] + " " + d["files"][0].get("message_id", "")'
+    ;;
+swap)
+    # swap DEN_ID CHANNEL_ID MESSAGE_ID FILE_ID PATH NAME: upload a file made
+    # to replace one of this member's, and put it in that file's place;
+    # print the new file's ID (M5).
+    id=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
+        -H "Content-Type: application/octet-stream" -H "Dens-Filename: $6" \
+        --data-binary "@$5" "$BASE/api/dens/$1/uploads?replaces=$4" | json 'd["id"]')
+    api POST "/api/dens/$1/messages/$3/files/$4/swap?channel=$2" "{\"upload\":\"$id\"}" >/dev/null
+    printf '%s\n' "$id"
+    ;;
+remove-file)
+    # remove-file DEN_ID CHANNEL_ID MESSAGE_ID FILE_ID: take one of this
+    # member's files off its message (M5).
+    api POST "/api/dens/$1/messages/$3/files/$4/remove?channel=$2" "{}" >/dev/null
+    ;;
+attachments)
+    # attachments DEN_ID CHANNEL_ID MESSAGE_ID: print a message's files, as
+    # this client sees it, or "gone" once it's deleted.
+    api GET "/api/dens/$1/channels/$2/messages?around=$3&limit=1" | MESSAGE=$3 python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+m = next((m for m in d["messages"] if m["id"] == os.environ["MESSAGE"]), None)
+print("gone" if m is None else " ".join(f["id"] for f in m.get("attachments") or []) or "none")'
+    ;;
+wait-gone)
+    # wait-gone DEN_ID FILE_ID: wait until this client no longer serves a
+    # file, once the den's word that it's gone reached it.
+    for _ in $(seq 1 40); do
+        curl -s -o /dev/null --fail -b "$JAR" "$BASE/api/dens/$1/files/$2" || exit 0
+        sleep 0.25
+    done
+    fail "file $2 is still served"
+    ;;
 send-file)
     # send-file DEN_ID CHANNEL_ID FILE_ID: send an upload with no text; print
     # the message's ID.

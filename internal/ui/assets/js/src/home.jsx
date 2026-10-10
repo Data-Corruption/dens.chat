@@ -9,6 +9,8 @@ import {
     useLater,
 } from './components.jsx';
 import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } from './private.jsx';
+import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
+import { openAt } from './messages.jsx';
 import { deletesNow, keptFor } from './retention.js';
 import { HEIGHTS, mbps, shareCost } from './share.js';
 
@@ -155,6 +157,7 @@ function DenItem({ den, navigate, onCodes, onSeal, onChanged, onSignIn }) {
                     {den.role === 'owner' && <DenSettings den={den} />}
                     {staff && <Invites denID={den.den_id} />}
                     {staff && <Bans denID={den.den_id} />}
+                    <Files den={den} navigate={navigate} />
                     <Devices den={den} onCodes={onCodes} onSeal={onSeal} />
                     {!den.own && <Leave den={den} onChanged={onChanged} />}
                 </>
@@ -209,6 +212,165 @@ function Bans({ denID }) {
 
 // Devices lists this member's devices on a den and signs any of them out,
 // changes the den password and recovery codes, and shows the DM seal.
+// Files lists this member's files in a den, largest first, with what uses
+// each, and deletes or swaps them (M5): a member at their limit frees
+// space here. A swap is a new upload that takes the old file's place.
+function Files({ den, navigate }) {
+    const [shown, setShown] = useState(null);
+    const [confirm, setConfirm] = useState('');
+    const [progress, setProgress] = useState({});
+    const act = useAction();
+    const pick = useRef(null);
+    const swapping = useRef(null);
+    const base = `/api/dens/${den.den_id}`;
+    const slow = useLater(shown === null && act.busy, 1000);
+
+    async function load() {
+        const [view, storage, page] = await Promise.all([api.get(`${base}/state`), api.get(`${base}/storage`), api.get(`${base}/files`)]);
+        setShown({ view, storage, files: page.files, next: page.next || '' });
+    }
+
+    // Closing the section forgets what it showed; opening loads it afresh.
+    function toggle(e) {
+        setConfirm('');
+        act.setError('');
+        if (e.currentTarget.open) act.run(load);
+        else setShown(null);
+    }
+
+    function more() {
+        act.run(async () => {
+            const page = await api.get(`${base}/files?after=${encodeURIComponent(shown.next)}`);
+            setShown((s) => ({ ...s, files: [...s.files, ...page.files], next: page.next || '' }));
+        });
+    }
+
+    function open(f) {
+        openAt(den.den_id, f.channel_id, f.message_id);
+        navigate(`/den/${den.den_id}/${f.channel_id}`);
+    }
+
+    function remove(f) {
+        act.run(async () => {
+            if (f.profile) await api.patch(`${base}/me`, { [f.profile]: '' });
+            else if (!f.message_id) await api.del(`${base}/uploads/${f.id}`);
+            else await api.post(`${base}/messages/${f.message_id}/files/${f.id}/remove?channel=${f.channel_id}`);
+            setConfirm('');
+            await load();
+        });
+    }
+
+    function startSwap(f) {
+        swapping.current = f;
+        pick.current.value = '';
+        pick.current.click();
+    }
+
+    function swapPicked(e) {
+        const file = e.currentTarget.files?.[0];
+        const f = swapping.current;
+        if (!file || !f) return;
+        const dm = shown.view.channels.find((c) => c.id === f.channel_id)?.kind === 'dm';
+        const track = (p) => setProgress((cur) => ({ ...cur, [f.id]: p }));
+        track(0);
+        act.run(async () => {
+            try {
+                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id).done;
+                if (needsPreview(up)) up = await addPreview(den.den_id, up);
+                await api.post(`${base}/messages/${f.message_id}/files/${f.id}/swap?channel=${f.channel_id}`, { upload: up.id });
+                await load();
+            } finally {
+                setProgress((cur) => {
+                    const next = { ...cur };
+                    delete next[f.id];
+                    return next;
+                });
+            }
+        });
+    }
+
+    const limit = shown?.view.limits.member_storage || 0;
+    return (
+        <details class="collapse-arrow collapse mt-2 bg-base-200" onToggle={toggle}>
+            <summary class="collapse-title cursor-pointer select-none font-medium">Files</summary>
+            <div class="collapse-content flex flex-col gap-3">
+                <ErrorText message={act.error} />
+                {shown === null ? (
+                    slow && <span class="loading loading-dots loading-sm"></span>
+                ) : (
+                    <>
+                        <div class="flex flex-col gap-1 text-sm">
+                            <p>Your files take {formatSize(shown.storage.used)} of the {formatSize(limit)} you have here.</p>
+                            <progress class="progress progress-primary w-full" value={shown.storage.used} max={limit}></progress>
+                            <p class="text-xs text-base-content/60">
+                                Everyone's files take {formatSize(shown.storage.den_used)} of the den's {formatSize(shown.view.limits.den_storage)}.
+                            </p>
+                        </div>
+                        {shown.files.length === 0 ? (
+                            <p class="text-sm text-base-content/70">You have no files here.</p>
+                        ) : (
+                            <ul class="flex flex-col divide-y divide-base-300">
+                                {shown.files.map((f) => (
+                                    <FileRow key={f.id} denID={den.den_id} f={f} view={shown.view} confirming={confirm === f.id} busy={act.busy}
+                                        progress={progress[f.id]} onOpen={() => open(f)} onSwap={() => startSwap(f)}
+                                        onConfirm={() => setConfirm(f.id)} onCancel={() => setConfirm('')} onRemove={() => remove(f)} />
+                                ))}
+                            </ul>
+                        )}
+                        {shown.next && (
+                            <div>
+                                <button type="button" class="btn btn-sm" disabled={act.busy} onClick={more}>Show more</button>
+                            </div>
+                        )}
+                    </>
+                )}
+                <input ref={pick} type="file" class="hidden" onChange={swapPicked} />
+            </div>
+        </details>
+    );
+}
+
+// FileRow is one of a member's files in their list: its preview, name,
+// size and what uses it, and what they can do with it.
+function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, onConfirm, onCancel, onRemove }) {
+    const onMessage = !!f.message_id;
+    const what = f.profile ? 'Take it off your profile?' : onMessage ? "Delete it for good? It comes off its message for everyone." : 'Drop this upload?';
+    const action = f.profile ? 'Remove' : onMessage ? 'Delete' : 'Drop';
+    return (
+        <li class="flex flex-wrap items-center gap-2 py-2">
+            {f.thumb && !f.locked ? (
+                <img src={thumbURL(denID, f.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" loading="lazy" draggable={false} />
+            ) : (
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
+            )}
+            <span class="min-w-0 flex-1 text-sm">
+                <span class="block truncate font-medium" title={f.name}>{f.locked ? "A file in a DM this device can't open" : f.name}</span>
+                <span class="block truncate text-xs text-base-content/60">
+                    {formatSize(f.size)} · {fileWhere(f, view)} · {day(f.created_at)}
+                </span>
+                {f.excerpt && <span class="block truncate text-xs text-base-content/50">{f.excerpt}</span>}
+            </span>
+            {progress !== undefined ? (
+                <progress class="progress progress-primary w-24" value={Math.round(progress * 100)} max="100"></progress>
+            ) : confirming ? (
+                <span class="flex flex-col items-end gap-1">
+                    <span class="max-w-xs text-right text-xs">{what}</span>
+                    <span class="flex gap-1">
+                        <button type="button" class="btn btn-error btn-xs" disabled={busy} onClick={onRemove}>{action}</button>
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={onCancel}>Cancel</button>
+                    </span>
+                </span>
+            ) : (
+                <span class="flex gap-1">
+                    {onMessage && <button type="button" class="btn btn-ghost btn-xs" onClick={onOpen}>Open</button>}
+                    {onMessage && !f.locked && <button type="button" class="btn btn-ghost btn-xs" disabled={busy} onClick={onSwap}>Swap</button>}
+                    {!f.locked && <button type="button" class="btn btn-ghost btn-xs text-error" onClick={onConfirm}>{action}</button>}
+                </span>
+            )}
+        </li>
+    );
+}
+
 function Devices({ den, onCodes, onSeal }) {
     const [open, setOpen] = useState(false);
     const [list, setList] = useState(null);

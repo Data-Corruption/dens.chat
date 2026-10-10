@@ -18,8 +18,10 @@ const asanExit = 99
 
 // fuzzJobTime bounds each input's job, in the module and natively, well
 // below the Runner's minutes: a damaged file that makes FFmpeg spin ends
-// its job as it would anyway, and a few don't stall the fuzzer.
-const fuzzJobTime = 15 * time.Second
+// its job as it would anyway, and a few don't stall the fuzzer. Both jobs
+// together stay under the ten seconds Go's fuzzer gives one input before
+// it ends the worker as deadlocked, which a loaded machine would reach.
+const fuzzJobTime = 4 * time.Second
 
 // FuzzDriver runs damaged files through the driver, as Dens does with what
 // members send. In the module, every job ends with an answer or a JobError,

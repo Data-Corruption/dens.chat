@@ -37,7 +37,7 @@ func (h *handler) upload(sealed bool) http.HandlerFunc {
 			}
 		}
 		body := &idleReader{r: r.Body, rc: http.NewResponseController(w)}
-		f, err := h.d.Upload(r.Context(), s, name, r.ContentLength, body, sealed)
+		f, err := h.d.Upload(r.Context(), s, name, r.ContentLength, body, sealed, r.Header.Get(denproto.HeaderReplaces))
 		if err != nil {
 			if body.err != nil {
 				// The client stopped sending: it went away, or took the file
@@ -144,4 +144,26 @@ func (h *handler) storage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	denproto.WriteJSON(w, http.StatusOK, st)
+}
+
+// dropUpload deletes one of the member's uploads waiting to be used.
+func (h *handler) dropUpload(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	if err := h.d.DropUpload(r.Context(), session(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ownFiles lists a page of the member's files, largest first.
+func (h *handler) ownFiles(w http.ResponseWriter, r *http.Request) {
+	page, err := h.d.OwnFiles(r.Context(), session(r), r.URL.Query().Get("after"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, page)
 }

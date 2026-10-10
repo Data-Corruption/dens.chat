@@ -367,7 +367,7 @@ DELETE /api/messages/{id}                                                       
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
-- Events: `message.created {message}`, `message.updated {message, files?}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way (M5; see [Attachments](#attachments)).
+- Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way, in `files` beside the message's own fields (M5; see [Attachments](#attachments)).
 
 ### Retention (M5)
 
@@ -518,14 +518,14 @@ DELETE /api/uploads/{id}             204                                        
 GET    /api/files/{id}               200 the file's bytes
 GET    /api/files/{id}/thumb         200 the preview's bytes
 GET    /api/me/storage               200 {"used", "den_used"}
-GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "next"?}                           (M5)
+GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "messages"?: [message, …], "next"?}  (M5)
 ```
 
 - A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent.
-- An edit changes the text. From M5, the author's edit can change the files too: `attachments` lists them afterward, in order, as files the message already has and the author's waiting uploads. Files it leaves out are deleted, and `message.updated` lists them in `files`. An edit that leaves a message with neither text nor files deletes it instead, with `message.deleted`.
+- An edit changes the text. From M5, the author's edit can change the files too: `attachments` lists them afterward, in order, as files the message already has and the author's waiting uploads. Files it leaves out are deleted, and `message.updated` lists them in `files`. A change of files marks the message edited. An edit can't leave a message with neither text nor files; a client deletes the message instead.
 - An upload made to take a file's place names it, as `Dens-Replaces: <file id>` (M5): one of the member's files, on a message or their profile. The den counts the upload against the member's space less that file's, and it can only take that file's place, in an edit that drops the file or as a picture replacing it. A file has one replacement waiting at most; a newer one drops the older.
 - `DELETE /api/uploads/{id}` drops one of the member's uploads waiting to be used, and frees its space at once (M5).
-- `GET /api/me/files` lists the member's files on the den, largest first, 100 at a time, `next` continuing the list (M5). Each is a `file` with `message_id` and `channel_id`, or `"profile": "avatar"` or `"banner"`, or neither while it waits to be used. A DM's blobs come as sealed files with their message, previews among them, for the client to name from the sealed text.
+- `GET /api/me/files` lists the member's files on the den, largest first by the space each takes with its preview, at most 50 at a time, `next` continuing the list (M5). Each is a `file` with `created_at`, and `message_id` and `channel_id`, or `"profile": "avatar"` or `"banner"`, or neither while it waits to be used. A channel's file has `excerpt`, the start of its message's text, as a reply's preview has. A DM's blobs come as sealed files, previews among them, and the page's `messages` carry the DM messages they're on, sealed, for the client to open and name them; a page ends early rather than carry more than 600 KiB of them.
 - A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image, video or audio.
 - A file answers byte ranges (`Range: bytes=N-`, `206 Partial Content`), and the den decrypts only the chunks a range covers, so a player seeks without fetching the whole file. Its `ETag` is its ID, quoted, since its bytes never change.
 - A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](#dm-files)).

@@ -228,7 +228,9 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			-- files are deleted after an hour. Sizes are bytes, as uploaded;
 			-- the thumb columns are set when the den made a preview, and
 			-- duration_ms for video and audio. A sealed file is a DM's, which
-			-- the uploader's client sealed: the den knows only its size.
+			-- the uploader's client sealed: the den knows only its size. A
+			-- waiting upload made to take another file's place names it in
+			-- replaces (M5), and takes only that file's place.
 			CREATE TABLE den_files (
 				id           INTEGER PRIMARY KEY AUTOINCREMENT,
 				blob         BLOB NOT NULL UNIQUE,
@@ -246,11 +248,13 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				thumb_size   INTEGER,
 				duration_ms  INTEGER,
 				sealed       INTEGER NOT NULL DEFAULT 0,
-				created_at   INTEGER NOT NULL
+				created_at   INTEGER NOT NULL,
+				replaces     INTEGER REFERENCES den_files (id) ON DELETE SET NULL
 			) STRICT;
 			CREATE INDEX den_files_message ON den_files (message_id, position);
 			CREATE INDEX den_files_uploader ON den_files (uploader_id);
 			CREATE INDEX den_files_pending ON den_files (created_at) WHERE message_id IS NULL;
+			CREATE INDEX den_files_replaces ON den_files (replaces) WHERE replaces IS NOT NULL;
 
 			-- The keys of DMs. Each comes from an exchange between the two
 			-- members' clients, which the den relays and can't take part in:
