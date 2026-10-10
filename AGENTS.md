@@ -29,11 +29,11 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
 | `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, who may be in which call, the calls it holds for a dropped connection, staff disconnecting and muting members, who may share a screen and watch one, the owner's limits for calls, each voice channel's bitrate, deleting the messages that pass the owner's retention period, and each member's list of their files, with the edits that take one off its message and the uploads that replace one within the space it frees |
-| `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, approving new devices, relaying the page's call, with where its media goes, its share and the shares it watches, this member's files, listed, deleted and swapped, and the two versions of each photo waiting to be sent, full size and a smaller copy, kept until the message goes |
+| `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, caching files for the page, the DM seal, sealing and opening DMs, approving new devices, relaying the page's call, with where its media goes, its share and the shares it watches, this member's files, listed, deleted and swapped, and the two versions of each photo and video waiting to be sent, full size and a smaller copy, kept until the message goes, with a video's copy, made in chunks side by side, which the page follows as it's made |
 | `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, holding a call's signaling and ICE restarts, and forwarding each member's audio to the others, and a member's screen share to those who watch it, each within its limits, or none of it under a staff mute, with the keyframe requests a share's viewers send back; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
 | `internal/youtube` | The covers of YouTube's players (M4.1): a linked video's title and picture, fetched for the page from YouTube's fixed addresses, checked, and held in memory |
-| `internal/media` | What a file is, taking image metadata out without re-encoding, previews, and which photos get smaller copies; the client strips with it and the den checks with it |
-| `internal/media/ffmpeg` | The media module: FFmpeg and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes |
+| `internal/media` | What a file is, taking image metadata out without re-encoding, previews, which photos get smaller copies, and a video's copy, planned to fit and made in chunks; the client strips with it and the den checks with it |
+| `internal/media/ffmpeg` | The media module: FFmpeg, libaom and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes, with the chunks of a video's copy side by side |
 | `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
 | `internal/control` | CLI-to-service protocol over the control endpoint |
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
@@ -212,8 +212,8 @@ Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md)
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
 cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests,
-Caddy for the den e2e, the media module's FFmpeg, zlib, wasi-sdk, binaryen
-and wasm2go, and RNNoise's source and model) are pinned by version and
+Caddy for the den e2e, the media module's FFmpeg, zlib, libaom, CMake,
+wasi-sdk, binaryen and wasm2go, and RNNoise's source and model) are pinned by version and
 SHA-256 in `scripts/vendor.sh` and fetched into the gitignored `tools/`.
 Never depend on `tools/` contents directly.
 
