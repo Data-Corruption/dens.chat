@@ -306,6 +306,33 @@ function Send-Upload($Browser, [string]$DenID, [string]$Channel, [string]$Path, 
     return $upload.Content | ConvertFrom-Json
 }
 
+# Get-Attachments returns a message's files as an instance sees them,
+# joined by spaces, "none" without any, or "gone" once it's deleted.
+function Get-Attachments($Browser, [string]$DenID, [string]$Channel, [string]$Message) {
+    $page = Invoke-Api $Browser GET "/api/dens/$DenID/channels/$Channel/messages?around=$Message&limit=1"
+    $found = @(@($page.messages) | Where-Object { $_.id -eq $Message })
+    if ($found.Count -eq 0) { return "gone" }
+    $files = @(Get-Field $found[0] "attachments")
+    if ($files.Count -eq 0 -or $null -eq $files[0]) { return "none" }
+    return (@($files | ForEach-Object { $_.id }) -join " ")
+}
+
+# Wait-Gone waits until an instance no longer serves a file, once the den's
+# word that it's gone reached it.
+function Wait-Gone($Browser, [string]$DenID, [string]$File) {
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$File" -WebSession $Browser.Session -UseBasicParsing `
+                -OutFile (Join-Path $Work "gone.bin") -TimeoutSec 60 | Out-Null
+        } catch {
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    Fail "file $File is still served"
+}
+
 # Get-Field reads a field the answer may leave out, which strict mode
 # refuses to read directly.
 function Get-Field($Object, [string]$Name) {
@@ -730,7 +757,8 @@ den.test:$HttpsPort {
         -not (Get-Field $file "thumb") -or (Get-Field $file "duration_ms") -lt 3900) {
         Fail "the video came back as $($file | ConvertTo-Json -Compress)"
     }
-    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $videoFile = $file.id
+    $videoMessage = (Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
     $got = Join-Path $Work "video.mp4"
     $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
@@ -745,13 +773,51 @@ den.test:$HttpsPort {
         $file.width -ne 3024 -or $file.height -ne 4032 -or -not (Get-Field $file "thumb")) {
         Fail "the HEIC came back as $($file | ConvertTo-Json -Compress)"
     }
-    Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $heicFile = $file.id
+    $heicMessage = (Invoke-Api $member POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
     $got = Join-Path $Work "heic.jpg"
     $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the HEIC came as $($resp.Headers['Content-Type'])" }
     Test-Clean $got "the HEIC"
     Write-Host "The video arrived stripped with its preview and plays from any byte; the HEIC arrived as a JPEG."
+
+    Step "a member at their limit swaps a file for a smaller one, and deletes another"
+    $used = (Invoke-Api $member GET "/api/dens/$denID/storage").used
+    # The member's space is exactly what their files take.
+    Invoke-Api $owner POST "/api/dens/$denID/settings" @{ limits = @{ file_size = 1048576; member_storage = $used; den_storage = 21474836480 } } | Out-Null
+    $refused = $false
+    try {
+        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/uploads" -Method POST -WebSession $member.Session -UseBasicParsing `
+            -Headers @{ Origin = $member.Origin; "Dens-Filename" = "extra.jpg" } -ContentType "application/octet-stream" -InFile $photo `
+            -TimeoutSec 60 | Out-Null
+    } catch {
+        $refused = $true
+    }
+    if (-not $refused) { Fail "an upload past the member's space went through" }
+    $largest = @((Invoke-Api $member GET "/api/dens/$denID/files").files)
+    if ($largest.Count -eq 0 -or $largest[0].id -ne $heicFile -or (Get-Field $largest[0] "message_id") -ne $heicMessage) {
+        Fail "the member's largest file is listed as $($largest | ConvertTo-Json -Compress -Depth 4)"
+    }
+    try {
+        $upload = Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/uploads?replaces=$heicFile" -Method POST -WebSession $member.Session `
+            -UseBasicParsing -Headers @{ Origin = $member.Origin; "Dens-Filename" = "smaller.jpg" } -ContentType "application/octet-stream" `
+            -InFile $photo -TimeoutSec 60
+    } catch {
+        Fail "the swap's upload failed: $($_.ErrorDetails.Message) $($_.Exception.Message)"
+    }
+    $swapped = ($upload.Content | ConvertFrom-Json).id
+    Invoke-Api $member POST "/api/dens/$denID/messages/$heicMessage/files/$heicFile/swap?channel=$channel" @{ upload = $swapped } | Out-Null
+    $seen = Get-Attachments $owner $denID $channel $heicMessage
+    if ($seen -ne $swapped) { Fail "the owner sees the swapped message with: $seen" }
+    Wait-Gone $owner $denID $heicFile
+    Invoke-Api $member POST "/api/dens/$denID/messages/$videoMessage/files/$videoFile/remove?channel=$channel" @{} | Out-Null
+    $seen = Get-Attachments $owner $denID $channel $videoMessage
+    if ($seen -ne "gone") { Fail "the video's message, left with nothing, stayed: $seen" }
+    $after = (Invoke-Api $member GET "/api/dens/$denID/storage").used
+    if ($after -ge $used / 2) { Fail "the member's files still take $after bytes" }
+    Invoke-Api $owner POST "/api/dens/$denID/settings" @{ limits = @{ file_size = 26214400; member_storage = 2147483648; den_storage = 21474836480 } } | Out-Null
+    Write-Host "The swap took the HEIC's place within the member's space, the delete took the video and its message, and the owner sees both."
 
     Step "a private DM, once both members compare check codes"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"

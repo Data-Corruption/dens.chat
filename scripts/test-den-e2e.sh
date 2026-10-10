@@ -390,7 +390,8 @@ run() {
   # 568x320, turned a quarter, for four seconds.
   [[ "$type $size $preview $converted $name" == "video/mp4 320x568 preview as-is IMG_0003.MOV" && "$duration" -gt 3900 ]] ||
     { echo "error: the video came back as: $file $type $size $preview $converted $name $duration" >&2; return 1; }
-  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  local video_file=$file video_message heic_file heic_message
+  video_message=$(guest "$CLIENT" send-file "$den_id" "$channel" "$file")
   kind=$(guest "$DEN" fetch "$den_id" "$file" /root/video.mp4)
   [[ "$kind" == video/mp4 ]] || { echo "error: the video came as $kind" >&2; return 1; }
   guest "$DEN" clean /root/video.mp4
@@ -401,12 +402,35 @@ run() {
   read -r file type size preview converted name duration <<<"$(guest "$CLIENT" upload-media "$den_id" /root/rotated.heic IMG_0004.HEIC)"
   [[ "$type $size $preview $converted $name" == "image/jpeg 3024x4032 preview converted IMG_0004.jpg" ]] ||
     { echo "error: the HEIC came back as: $file $type $size $preview $converted $name" >&2; return 1; }
-  guest "$CLIENT" send-file "$den_id" "$channel" "$file" >/dev/null
+  heic_file=$file
+  heic_message=$(guest "$CLIENT" send-file "$den_id" "$channel" "$file")
   kind=$(guest "$DEN" fetch "$den_id" "$file" /root/heic.jpg)
   [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/heic.jpg)" == "3024x4032 ICC_PROFILE" ]] ||
     { echo "error: the HEIC arrived as $kind $(guest "$DEN" jpeg /root/heic.jpg)" >&2; return 1; }
   guest "$DEN" clean /root/heic.jpg
   echo ">> The video arrived stripped with its preview and plays from any byte; the HEIC arrived as an upright JPEG in its own colors"
+
+  echo ">> A member at their limit swaps a file for a smaller one, and deletes another"
+  local used largest swapped
+  used=$(guest "$CLIENT" storage "$den_id")
+  # The member's space is exactly what their files take.
+  guest "$DEN" limits "$den_id" 1048576 "$used" 21474836480
+  if guest "$CLIENT" upload "$den_id" /root/gps-photo.jpg extra.jpg >/dev/null 2>&1; then
+    echo "error: an upload past the member's space went through" >&2
+    return 1
+  fi
+  largest=$(guest "$CLIENT" largest "$den_id")
+  [[ "$largest" == "$heic_file $heic_message" ]] || { echo "error: the member's largest file is listed as: $largest" >&2; return 1; }
+  swapped=$(guest "$CLIENT" swap "$den_id" "$channel" "$heic_message" "$heic_file" /root/gps-photo.jpg smaller.jpg)
+  [[ "$(guest "$DEN" attachments "$den_id" "$channel" "$heic_message")" == "$swapped" ]] ||
+    { echo "error: the owner sees the swapped message with: $(guest "$DEN" attachments "$den_id" "$channel" "$heic_message")" >&2; return 1; }
+  guest "$DEN" wait-gone "$den_id" "$heic_file"
+  guest "$CLIENT" remove-file "$den_id" "$channel" "$video_message" "$video_file"
+  [[ "$(guest "$DEN" attachments "$den_id" "$channel" "$video_message")" == gone ]] ||
+    { echo "error: the video's message, left with nothing, stayed" >&2; return 1; }
+  (( $(guest "$CLIENT" storage "$den_id") < used / 2 )) || { echo "error: the member's files still take $(guest "$CLIENT" storage "$den_id") bytes" >&2; return 1; }
+  guest "$DEN" limits "$den_id" 26214400 2147483648 21474836480
+  echo ">> The swap took the HEIC's place within the member's space, the delete took the video and its message, and the owner sees both"
 
   echo ">> A private DM, once both members compare check codes"
   local bob dm owner_half member_half refusal
