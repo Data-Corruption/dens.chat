@@ -1,13 +1,17 @@
 package ffmpeg
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,9 +70,10 @@ func exiftags(t *testing.T, exiftool, file string) map[string]string {
 	return tags
 }
 
-// TestExiftoolFindsNothingLeft strips every kind of file Dens takes, and
-// turns the HEIC into a JPEG, and fails on any tag that could be personal
-// left in the copy. It names tags, never their values.
+// TestExiftoolFindsNothingLeft strips every kind of file Dens takes, turns
+// the HEIC into a JPEG, and makes a phone JPEG's smaller copy, and fails on
+// any tag that could be personal left in what comes out. It names tags,
+// never their values.
 func TestExiftoolFindsNothingLeft(t *testing.T) {
 	exiftool := os.Getenv("DENS_EXIFTOOL")
 	if exiftool == "" {
@@ -78,15 +83,30 @@ func TestExiftoolFindsNothingLeft(t *testing.T) {
 		t.Skip("covered without the race detector")
 	}
 	r := newRunner(t)
+	// A phone's JPEG, as a smaller copy turns and scales it (M5), as well
+	// as the files in testdata.
+	phone := filepath.Join(t.TempDir(), "phone.jpg")
+	if err := os.WriteFile(phone, phoneJPEG(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range []string{"with-gps.mov", "with-gps.mp4", "rotated.heic", "meta.mp4", "meta.mkv", "meta.webm",
-		"meta.mp3", "meta.m4a", "meta.flac", "meta.ogg", "meta.wav"} {
-		t.Run(name, func(t *testing.T) {
-			in := load(t, name)
-			out := &memFile{}
-			var err error
-			if name == "rotated.heic" {
-				_, err = r.Still(context.Background(), in, out, 0, 3)
-			} else {
+		"meta.mp3", "meta.m4a", "meta.flac", "meta.ogg", "meta.wav", phone} {
+		t.Run(filepath.Base(name), func(t *testing.T) {
+			source := name
+			if !filepath.IsAbs(name) {
+				source = filepath.Join("testdata", name)
+			}
+			data, err := os.ReadFile(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in, out := &memFile{data: data}, &memFile{}
+			switch name {
+			case "rotated.heic":
+				_, err = r.Still(context.Background(), in, out, 0, 3, 0)
+			case phone:
+				_, err = r.Still(context.Background(), in, out, 2560, 5, 6)
+			default:
 				_, err = r.Strip(context.Background(), in, out, "")
 			}
 			if err != nil {
@@ -96,7 +116,7 @@ func TestExiftoolFindsNothingLeft(t *testing.T) {
 			if err := os.WriteFile(path, out.data, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			before := exiftags(t, exiftool, filepath.Join("testdata", name))
+			before := exiftags(t, exiftool, source)
 			after := exiftags(t, exiftool, path)
 			found := 0
 			for k := range before {
@@ -118,4 +138,44 @@ func TestExiftoolFindsNothingLeft(t *testing.T) {
 			t.Logf("%d tags before, %d of them telling; %d after", len(before), found, len(after))
 		})
 	}
+}
+
+// phoneJPEG is a phone's photo: EXIF with the camera, a quarter turn, the
+// time it was taken and where, and XMP that repeats the place.
+func phoneJPEG(t *testing.T) []byte {
+	t.Helper()
+	var img bytes.Buffer
+	if err := jpeg.Encode(&img, cornered(640, 480, false), nil); err != nil {
+		t.Fatal(err)
+	}
+	le := binary.LittleEndian
+	entry := func(tag, typ uint16, count, value uint32) []byte {
+		e := le.AppendUint16(le.AppendUint16(nil, tag), typ)
+		return le.AppendUint32(le.AppendUint32(e, count), value)
+	}
+	// IFD0 at 8: make (at 62), orientation 6, the time (at 70), and the GPS
+	// directory (at 90).
+	tiff := append([]byte("II*\x00"), le.AppendUint32(nil, 8)...)
+	tiff = append(tiff, le.AppendUint16(nil, 4)...)
+	tiff = append(tiff, entry(0x010F, 2, 8, 62)...)
+	tiff = append(tiff, entry(0x0112, 3, 1, 6)...)
+	tiff = append(tiff, entry(0x0132, 2, 20, 70)...)
+	tiff = append(tiff, entry(0x8825, 4, 1, 90)...)
+	tiff = append(tiff, 0, 0, 0, 0)
+	tiff = append(tiff, "PhoneCam"...)
+	tiff = append(tiff, "2026:10:10 12:00:00\x00"...)
+	// The GPS directory: latitude 47/1 36/1 2297/100 north.
+	tiff = append(tiff, le.AppendUint16(nil, 2)...)
+	tiff = append(tiff, entry(1, 2, 2, 'N')...)
+	tiff = append(tiff, entry(2, 5, 3, 90+2+24+4)...)
+	tiff = append(tiff, 0, 0, 0, 0)
+	for _, v := range []uint32{47, 1, 36, 1, 2297, 100} {
+		tiff = le.AppendUint32(tiff, v)
+	}
+	seg := func(marker byte, payload []byte) []byte {
+		n := len(payload) + 2
+		return append([]byte{0xFF, marker, byte(n >> 8), byte(n)}, payload...)
+	}
+	return slices.Concat(img.Bytes()[:2], seg(0xE1, append([]byte("Exif\x00\x00"), tiff...)),
+		seg(0xE1, []byte("http://ns.adobe.com/xap/1.0/\x00<exif:GPSLatitude>47,36.38N</exif:GPSLatitude>")), img.Bytes()[2:])
 }

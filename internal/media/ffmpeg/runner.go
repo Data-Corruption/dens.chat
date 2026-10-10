@@ -82,11 +82,14 @@ func (r *Runner) Strip(ctx context.Context, in Input, out Output, muxer string) 
 	return s, r.run(ctx, Job{Op: OpStrip, Muxer: muxer}, in, out, &s)
 }
 
-// Still writes in, an image, to out as a JPEG or PNG, upright, fitting
-// maxSide when that's above 0, at JPEG quality quality (2 is best).
-func (r *Runner) Still(ctx context.Context, in Input, out Output, maxSide, quality int) (Image, error) {
+// Still writes in, an image, to out as a JPEG, or a PNG when it has
+// transparency or is one, upright, fitting maxSide when that's above 0, at
+// JPEG quality quality (2 is best). orientation is a JPEG's EXIF
+// orientation, from 1 to 8, which FFmpeg doesn't read; 0 turns the image as
+// the file itself says, as a HEIC does.
+func (r *Runner) Still(ctx context.Context, in Input, out Output, maxSide, quality, orientation int) (Image, error) {
 	var i Image
-	return i, r.run(ctx, Job{Op: OpStill, MaxSide: maxSide, Quality: quality}, in, out, &i)
+	return i, r.run(ctx, Job{Op: OpStill, MaxSide: maxSide, Quality: quality, Orientation: orientation}, in, out, &i)
 }
 
 // Poster writes in's first video frame to out as a JPEG, upright, fitting

@@ -4,7 +4,8 @@
 //
 //   dm-native probe IN
 //   dm-native strip IN OUT
-//   dm-native still|poster IN OUT MAX_SIDE QUALITY
+//   dm-native still IN OUT MAX_SIDE QUALITY ORIENTATION
+//   dm-native poster IN OUT MAX_SIDE QUALITY
 
 #define _FILE_OFFSET_BITS 64
 #define _GNU_SOURCE
@@ -21,7 +22,7 @@
 void dm_init(int32_t level);
 int32_t dm_probe(void);
 int32_t dm_strip(const char *muxer);
-int32_t dm_still(int32_t max_side, int32_t quality);
+int32_t dm_still(int32_t max_side, int32_t quality, int32_t orientation);
 int32_t dm_poster(int32_t max_side, int32_t quality);
 int32_t dm_error(int32_t err, char *buf, int32_t size);
 
@@ -78,15 +79,16 @@ int main(int argc, char **argv) {
         fds[0] = open(argv[2], O_RDONLY);
         fds[1] = open(argv[3], O_RDWR | O_CREAT | O_TRUNC, 0600);
         ret = fds[0] < 0 || fds[1] < 0 ? -1 : dm_strip("");
-    } else if (argc == 6 && (strcmp(argv[1], "still") == 0 || strcmp(argv[1], "poster") == 0)) {
+    } else if ((argc == 7 && strcmp(argv[1], "still") == 0) || (argc == 6 && strcmp(argv[1], "poster") == 0)) {
         fds[0] = open(argv[2], O_RDONLY);
         fds[1] = open(argv[3], O_RDWR | O_CREAT | O_TRUNC, 0600);
         int32_t max_side = atoi(argv[4]), quality = atoi(argv[5]);
         ret = fds[0] < 0 || fds[1] < 0 ? -1
-              : argv[1][1] == 't'      ? dm_still(max_side, quality)
+              : argc == 7              ? dm_still(max_side, quality, atoi(argv[6]))
                                        : dm_poster(max_side, quality);
     } else {
-        fprintf(stderr, "usage: dm-native probe IN | strip IN OUT | still|poster IN OUT MAX_SIDE QUALITY\n");
+        fprintf(stderr, "usage: dm-native probe IN | strip IN OUT | still IN OUT MAX_SIDE QUALITY ORIENTATION | "
+                        "poster IN OUT MAX_SIDE QUALITY\n");
         return 2;
     }
     if (ret < 0) {

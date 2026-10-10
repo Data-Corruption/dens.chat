@@ -2,10 +2,16 @@ package ffmpeg
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"hash/crc32"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -209,7 +215,7 @@ func TestStillTurnsAHEICIntoAJPEG(t *testing.T) {
 	r := newRunner(t)
 	in := load(t, "rotated.heic")
 	out := &memFile{}
-	img, err := r.Still(context.Background(), in, out, 0, 3)
+	img, err := r.Still(context.Background(), in, out, 0, 3, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +233,132 @@ func TestStillTurnsAHEICIntoAJPEG(t *testing.T) {
 			t.Errorf("the still holds %q", leak)
 		}
 	}
+}
+
+// cornered is an image whose top left corner is red, and the rest a dark
+// gradient, which tells how a still turned it; with alpha, its right half
+// is see-through.
+func cornered(w, h int, alpha bool) *image.NRGBA {
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := range h {
+		for x := range w {
+			c := color.NRGBA{R: 0, G: uint8(x * 100 / w), B: uint8(y * 100 / h), A: 255}
+			if x < w/4 && y < h/4 {
+				c = color.NRGBA{R: 255, A: 255}
+			}
+			if alpha && x >= w/2 {
+				c.A = 0
+			}
+			img.SetNRGBA(x, y, c)
+		}
+	}
+	return img
+}
+
+// fakeICC stands in for a color profile: the module copies a profile's
+// bytes without reading them.
+var fakeICC = bytes.Repeat([]byte("profile!"), 40)
+
+// red reports whether the pixel at x, y is about the red of a corner.
+func red(img image.Image, x, y int) bool {
+	r, g, b, _ := img.At(x, y).RGBA()
+	return r > 0xC000 && g < 0x4000 && b < 0x4000
+}
+
+// A JPEG's copy turns as its EXIF orientation says, which the host reads,
+// fits the side it's given, and keeps the JPEG's color profile (M5).
+func TestStillMakesAJPEGsCopy(t *testing.T) {
+	r := newRunner(t)
+	var src bytes.Buffer
+	if err := jpeg.Encode(&src, cornered(400, 300, false), &jpeg.Options{Quality: 95}); err != nil {
+		t.Fatal(err)
+	}
+	icc := append([]byte("ICC_PROFILE\x00\x01\x01"), fakeICC...)
+	app2 := append([]byte{0xFF, 0xE2, byte((len(icc) + 2) >> 8), byte(len(icc) + 2)}, icc...)
+	data := slices.Concat(src.Bytes()[:2], app2, src.Bytes()[2:])
+
+	// Orientation 6 asks for a quarter turn clockwise, which takes the red
+	// corner to the top right.
+	out := &memFile{}
+	img, err := r.Still(context.Background(), &memFile{data: data}, out, 200, 5, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Image{Format: "jpeg", Width: 150, Height: 200, SourceWidth: 400, SourceHeight: 300, Turn: "clock",
+		ICCBytes: len(fakeICC), Bytes: len(out.data)}
+	if img != want {
+		t.Errorf("copy: %+v, want %+v", img, want)
+	}
+	copied, err := jpeg.Decode(bytes.NewReader(out.data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := copied.Bounds(); b.Dx() != 150 || b.Dy() != 200 || !red(copied, 140, 10) || red(copied, 10, 10) {
+		t.Errorf("the copy is %v, red at its top right %t and top left %t", b, red(copied, 140, 10), red(copied, 10, 10))
+	}
+	if !bytes.Contains(out.data, fakeICC) {
+		t.Error("the copy lost its profile")
+	}
+
+	// Without an orientation, it stays as it's stored, and at its own size.
+	out = &memFile{}
+	if img, err = r.Still(context.Background(), &memFile{data: data}, out, 0, 5, 0); err != nil {
+		t.Fatal(err)
+	}
+	if img.Width != 400 || img.Height != 300 || img.Turn != "none" {
+		t.Errorf("a still without an orientation: %+v", img)
+	}
+}
+
+// A PNG's copy stays a PNG, with or without transparency, and keeps its
+// color profile (M5).
+func TestStillKeepsAPNGAPNG(t *testing.T) {
+	r := newRunner(t)
+	for _, alpha := range []bool{false, true} {
+		var src bytes.Buffer
+		if err := png.Encode(&src, cornered(400, 300, alpha)); err != nil {
+			t.Fatal(err)
+		}
+		var z bytes.Buffer
+		zw := zlib.NewWriter(&z)
+		zw.Write(fakeICC)
+		zw.Close()
+		data := slices.Concat(src.Bytes()[:33], pngChunk("iCCP", slices.Concat([]byte("fake\x00\x00"), z.Bytes())), src.Bytes()[33:])
+
+		out := &memFile{}
+		img, err := r.Still(context.Background(), &memFile{data: data}, out, 200, 5, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if img.Format != "png" || img.Width != 200 || img.Height != 150 || img.ICCBytes != len(fakeICC) {
+			t.Errorf("alpha %t: %+v", alpha, img)
+		}
+		copied, err := png.Decode(bytes.NewReader(out.data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// IHDR's color type: 2 is truecolor, 6 truecolor with alpha.
+		wantType := byte(2)
+		if alpha {
+			wantType = 6
+		}
+		if out.data[25] != wantType || !red(copied, 10, 10) {
+			t.Errorf("alpha %t: color type %d, red %t", alpha, out.data[25], red(copied, 10, 10))
+		}
+		if _, _, _, a := copied.At(190, 140).RGBA(); alpha != (a == 0) {
+			t.Errorf("alpha %t: the right half's alpha is %d", alpha, a)
+		}
+		if !bytes.Contains(out.data, []byte("iCCP")) {
+			t.Errorf("alpha %t: the copy lost its profile", alpha)
+		}
+	}
+}
+
+// pngChunk makes a PNG chunk, with its checksum.
+func pngChunk(typ string, data []byte) []byte {
+	c := binary.BigEndian.AppendUint32(nil, uint32(len(data)))
+	c = append(append(c, typ...), data...)
+	return binary.BigEndian.AppendUint32(c, crc32.ChecksumIEEE(c[4:]))
 }
 
 func TestPosterFitsAPreview(t *testing.T) {

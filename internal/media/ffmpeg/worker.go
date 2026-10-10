@@ -15,11 +15,14 @@ import (
 
 // Job is one operation, as a Runner hands it to its worker.
 type Job struct {
-	Op       Op     `json:"op"`
-	Muxer    string `json:"muxer,omitempty"`
-	MaxSide  int    `json:"max_side,omitempty"`
-	Quality  int    `json:"quality,omitempty"`
-	MemoryMB int    `json:"memory_mb"`
+	Op      Op     `json:"op"`
+	Muxer   string `json:"muxer,omitempty"`
+	MaxSide int    `json:"max_side,omitempty"`
+	Quality int    `json:"quality,omitempty"`
+	// Orientation is a JPEG's EXIF orientation for a still, which FFmpeg
+	// doesn't read: 1 to 8, or 0 for the turn the file itself states.
+	Orientation int `json:"orientation,omitempty"`
+	MemoryMB    int `json:"memory_mb"`
 	// Deadline is when the worker gives up on its own, in Unix
 	// milliseconds, so one whose Runner died can't run on.
 	Deadline int64 `json:"deadline"`
@@ -93,7 +96,7 @@ func (h *host) run(job Job) (d done) {
 		copy(h.bytes(muxer, int32(len(job.Muxer))+1), job.Muxer+"\x00")
 		ret = m.Xdm_strip(muxer)
 	case OpStill:
-		ret = m.Xdm_still(int32(job.MaxSide), int32(job.Quality))
+		ret = m.Xdm_still(int32(job.MaxSide), int32(job.Quality), int32(job.Orientation))
 	case OpPoster:
 		ret = m.Xdm_poster(int32(job.MaxSide), int32(job.Quality))
 	default:
