@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -468,5 +469,83 @@ func TestSigningOutClosesThatDevicesSockets(t *testing.T) {
 				t.Fatalf("the desktop got %+v", events)
 			}
 		})
+	}
+}
+
+func TestChangesOverHTTP(t *testing.T) {
+	f := newFixture(t)
+	token, _ := f.owner()
+	ctx := context.Background()
+	s, _ := f.d.Authenticate(ctx, token)
+	name := "general"
+	c, err := f.d.CreateChannel(ctx, s, denproto.ChannelRequest{Name: &name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := f.d.Send(ctx, s, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "before"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.Edit(ctx, s, m.ID, denproto.EditRequest{Revision: 1, Text: "after"}); err != nil {
+		t.Fatal(err)
+	}
+	get := func(query string) *http.Response {
+		req, _ := http.NewRequest(http.MethodGet, f.srv.URL+"/api/changes?"+query, nil)
+		req.Header.Set(denproto.HeaderVersion, "1")
+		req.Header.Set("Authorization", "Bearer "+token.String())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	resp := get("since=0&upto=" + m.ID)
+	var changes denproto.Changes
+	err = json.NewDecoder(resp.Body).Decode(&changes)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK || !resp.Uncompressed || len(changes.Messages) != 1 ||
+		changes.Messages[0].Text != "after" || changes.Version != 1 {
+		t.Fatalf("changes: %d %+v %v (gzipped: %v)", resp.StatusCode, changes, err, resp.Uncompressed)
+	}
+	for _, query := range []string{"", "since=x", "since=-1", "since=0&upto=x"} {
+		wantError(t, get(query), http.StatusBadRequest, denproto.CodeInvalidField)
+	}
+	wantError(t, get("since=2"), http.StatusGone, denproto.CodeChangesGone)
+}
+
+func TestSocketCompression(t *testing.T) {
+	f := newFixture(t)
+	token, _ := f.owner()
+	h := http.Header{}
+	h.Set(denproto.HeaderVersion, "1")
+	h.Set("Authorization", "Bearer "+token.String())
+	c, resp, err := websocket.Dial(context.Background(), f.srv.URL+"/api/ws",
+		&websocket.DialOptions{HTTPHeader: h, CompressionMode: websocket.CompressionNoContextTakeover})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseNow()
+	if ext := resp.Header.Get("Sec-WebSocket-Extensions"); !strings.Contains(ext, "permessage-deflate") {
+		t.Fatalf("the den answered extensions %q", ext)
+	}
+	c.SetReadLimit(denproto.MaxBody)
+	if events := read(t, c); events[0].T != denproto.EventReady {
+		t.Fatalf("first frame %+v", events)
+	}
+	// A frame that shrinks to almost nothing on the wire still counts at
+	// its size as it inflates.
+	big := `[{"t":"typing","d":{"channel_id":"` + strings.Repeat("1", denproto.MaxClientFrame) + `"}}]`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Write(ctx, websocket.MessageText, []byte(big)); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, _, err = c.Read(ctx); err != nil {
+			break
+		}
+	}
+	if websocket.CloseStatus(err) != websocket.StatusMessageTooBig {
+		t.Fatalf("an oversized compressed frame: %v", err)
 	}
 }

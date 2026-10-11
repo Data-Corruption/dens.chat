@@ -62,6 +62,24 @@ func New(
 	}
 	path := filepath.Join(directory, FileName)
 
+	db, err := Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := prepareSchema(db, logger, buildInfo, migrationPolicy); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to prepare database schema: %w", err)
+	}
+	logger.Infof("SQLite initialized at %s", path)
+
+	return db, nil
+}
+
+// Open opens (creating if needed) the SQLite database at path, with the
+// connection behavior New describes, in WAL mode, and leaves its schema to
+// the caller: the client's cache keeps a format of its own (M6).
+func Open(path string) (*sql.DB, error) {
 	dsn := "file:" + filepath.ToSlash(path) +
 		"?_txlock=immediate" +
 		"&_pragma=busy_timeout(10000)" +
@@ -81,13 +99,6 @@ func New(
 		db.Close()
 		return nil, fmt.Errorf("failed to enable WAL journal mode: %w", err)
 	}
-
-	if err := prepareSchema(db, logger, buildInfo, migrationPolicy); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to prepare database schema: %w", err)
-	}
-	logger.Infof("SQLite initialized at %s", path)
-
 	return db, nil
 }
 

@@ -95,6 +95,13 @@ type conn struct {
 	// upload's ID (M5).
 	kept map[string]*kept
 
+	// The cache (M6): what the files of channels' messages the page got
+	// are on; the latest snapshot's say on what the cache keeps, for its
+	// worker; and the worker's wake.
+	owners    map[string]fileOwner
+	readySync *pendingSync
+	syncDue   chan struct{}
+
 	// Only the run goroutine touches these.
 	epoch string
 	seq   uint64
@@ -137,6 +144,7 @@ func (c *conn) run(ctx context.Context) {
 			}
 			if revoked(err) {
 				c.setState(StateRevoked, "This den no longer accepts this device.")
+				c.dropCache()
 				return
 			}
 			c.setState(StateOffline, describe(err))
@@ -162,6 +170,7 @@ func (c *conn) run(ctx context.Context) {
 			wait = b.next()
 		case code == denproto.CloseRevoked:
 			c.setState(farewell(err))
+			c.dropCache()
 			return
 		case code == denproto.CloseTooSlow:
 		case code == denproto.CloseRateLimited:
@@ -372,7 +381,8 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	h := http.Header{}
 	a.headers(h, token)
 	c.setState(StateConnecting, "")
-	ws, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: a.client, HTTPHeader: h})
+	ws, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: a.client, HTTPHeader: h,
+		CompressionMode: websocket.CompressionNoContextTakeover})
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return time.Time{}, -1, errDialUnauthorized
@@ -489,10 +499,12 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		clear(c.dmFiles)
 		c.mu.Unlock()
 		c.m.notify()
-		// What the member can see may have changed, so cached files go
-		// too, and the page drops what it holds for this den and loads it
+		// What the member can see may have changed, so files cached in
+		// memory go too, those on disk as far as the den's changes say
+		// (M6), and the page drops what it holds for this den and loads it
 		// again.
 		c.m.files.drop(c.j.denID.String())
+		c.cacheReady(r)
 		c.m.publish(PageEvent{DenID: c.j.denID.String(), Reset: true})
 		return e, false, nil
 	case denproto.EventDenUpdated:
@@ -549,8 +561,12 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	case e.T == denproto.EventMessageCreated || e.T == denproto.EventMessageUpdated:
 		// A DM's message reaches the page opened, or saying why it can't be.
 		var m denproto.Message
-		if json.Unmarshal(out.D, &m) == nil && m.Sealed != nil {
-			out, err = denproto.NewEvent(out.T, out.Seq, c.openLocked(m))
+		if json.Unmarshal(out.D, &m) == nil {
+			if m.Sealed != nil {
+				out, err = denproto.NewEvent(out.T, out.Seq, c.openLocked(m))
+			} else {
+				c.noteLocked(m)
+			}
 		}
 	case e.T == denproto.EventDMKey:
 		var k denproto.DMKey
@@ -565,16 +581,19 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	}
 	if len(gone) > 0 {
 		c.m.files.drop(c.j.denID.String(), gone...)
+		c.dropFiles(gone)
 		c.mu.Lock()
 		for _, id := range gone {
 			delete(c.dmFiles, id)
 		}
 		c.mu.Unlock()
 	}
-	// A deleted channel, or a retention pass (M5), takes files this
-	// service can't tell were theirs, so all the den's cached files go.
+	// A deleted channel, or a retention pass (M5), takes files the memory
+	// cache can't tell were theirs, so all of them go; the cache on disk
+	// knows what each file is on (M6).
 	if err == nil && (e.T == denproto.EventChannelDeleted || e.T == denproto.EventMessagesExpired) {
 		c.m.files.drop(c.j.denID.String())
+		c.cacheEvent(e)
 	}
 	if err == nil && ok && out.T == denproto.EventMemberUpdated {
 		var m denproto.Member

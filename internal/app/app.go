@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -58,6 +59,8 @@ type App struct {
 	Den *den.Den
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
+	// Cache is the client's cache of other dens' files (M6).
+	Cache *cache.Store
 	// Media runs the media module's jobs, the den's and the client's, one
 	// at a time.
 	Media *ffmpeg.Runner
@@ -220,10 +223,17 @@ func (a *App) open(opts OpenOptions) error {
 		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, storage); err != nil {
 			return err
 		}
+		a.AddCleanup(func() error { a.Den.Close(); return nil })
+		if lease.State.Phase == maintenance.PhaseRestoring {
+			// A backup can give a new message an ID that a member's client
+			// holds for another, so their caches of this den go (M6).
+			if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
+				return fmt.Errorf("start the restored den's sync epoch: %w", err)
+			}
+		}
 		if a.DevMode() {
 			a.Den.RelaxLimits()
 		}
-		a.AddCleanup(func() error { a.Den.Close(); return nil })
 	}
 
 	cfg, err := config.View(a.DB)
@@ -247,6 +257,11 @@ func (a *App) open(opts OpenOptions) error {
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
 	a.Dens.TempDir = l.Temp
 	a.Dens.Media = a.Media
+	if a.Cache, err = cache.Open(l.Cache, a.Vault, a.Log, cfg.CacheLimit); err != nil {
+		return err
+	}
+	a.AddCleanup(a.Cache.Close)
+	a.Dens.Cache = a.Cache
 	return nil
 }
 

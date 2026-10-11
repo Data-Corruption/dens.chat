@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice) and M3 (links, calls that ride out a dropped connection, and staff in calls) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice), M3 (links, calls that ride out a dropped connection, and staff in calls), M4.2 (screen share and the limits for calls), M5 (retention and managing files) and M6.1 (compressed frames and what changed while away) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -38,7 +38,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code), `no_other_device` (a password sign-in with no other device to approve it) |
 | 404 | `not_found` |
 | 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step) |
-| 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed) |
+| 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed), `changes_gone` (a version the den no longer has the changes since; M6) |
 | 413 | `too_large` |
 | 415 | `unsupported_type` |
 | 426 | `protocol_unsupported` |
@@ -212,13 +212,15 @@ Authorization: Bearer <token>
 Dens-Protocol: 1
 ```
 
-`resume` is left out on a first connection. The den accepts without compression. Frames are JSON text, each an array of one or more events, of at most 1 MiB from the den and 64 KiB from the client:
+`resume` is left out on a first connection. Frames are JSON text, each an array of one or more events, of at most 1 MiB from the den and 64 KiB from the client:
 
 ```json
 [{"t": "message.created", "seq": 5021, "d": {…}}, {"t": "read_state.updated", "seq": 5022, "d": {…}}]
 ```
 
 The den keeps each frame under 1 MiB: events queued behind a large one go in the next frame.
+
+From M6, client and den negotiate permessage-deflate without context takeover: either side may compress a frame of more than 512 bytes, each on its own, as `ready` and replays are. The limits apply to a frame as it inflates.
 
 - **Durable events** record a change a member can see, and carry `seq`. `seq` increases strictly within a den epoch. It has holes, because a member only receives the events they're allowed to see.
 - **Ephemeral events** (presence, typing, `auth.renewed`) carry no `seq`, and are never replayed.
@@ -228,14 +230,34 @@ The den keeps each frame under 1 MiB: events queued behind a large one go in the
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); and from M2, `calls` (see [Voice](#voice-m2)).
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); and from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)).
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
 
 The den may also send `ready` mid-stream when what the member can see changes, such as a role change or a channel becoming staff-only. The client handles it the same way: drop and replace. A member whose view changed that way while they were offline gets `ready` on reconnect too, rather than a resume that skips the change.
 
-The client remembers `epoch` and the `seq` of the last durable event it applied, and sends them on every reconnect. After a `ready`, it keeps nothing from before, and refetches only what's on screen.
+The client remembers `epoch` and the `seq` of the last durable event it applied, and sends them on every reconnect. After a `ready`, it keeps nothing from before but what it cached, which it checks against what changed while it was away (M6), and refetches only what's on screen.
+
+### What changed while away (M6)
+
+A client that caches what a den sends asks, after each `ready`, what changed in it meanwhile. The den keeps a log of its changes, by ID only, for 30 days.
+
+```
+sync = {"epoch": "<16 bytes>", "version": 1300, "floor": 1000, "expired"?: "<message id>"}
+
+GET /api/changes?since=<version>&upto=<message id>
+200 {"version": 1300, "messages": [message, …], "deleted": [{"id", "channel_id"}, …], "more": false}
+```
+
+- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
+- A client keeps what it cached from an earlier `ready` only when its version is from the same `epoch`, no older than `floor` and no newer than `version`; otherwise it drops it. It takes the `version` of a `ready` that finds it holding nothing.
+- `GET /api/changes` returns the messages edited or deleted after `since`, in channels the member can see now, and with IDs up to `upto` when it's given: the newest message the client holds. An edited message comes as history has it now, and a deleted one as its ID and channel. A change in a channel that's gone is left out, since the channel is missing from `ready` and the client drops it whole.
+- New messages aren't changes: a client fetches them as history. Retention and deleted channels aren't in the log either: `expired` and the channel list say what they took.
+- A page holds at most 1,000 changes, within about 900 KiB. `more` says the log goes on past its `version`, and the client asks again from there; the last page's `version` is the client's from then on.
+- `since` older than `floor`, or newer than the den's version, gets `410 changes_gone`, and the client drops what it holds for the den.
+- Responses are gzip-compressed when the client sends `Accept-Encoding: gzip`.
+- A client connected throughout asks once a day, which keeps its version above the floor. Changes it already applied as events apply again harmlessly.
 
 ### Client frames
 
@@ -377,7 +399,7 @@ messages.expired {"through": "<message id>"}
 ```
 
 - With a retention period, the den deletes the messages sent more than that many days ago, in channels and DMs, with their files, as it deletes any message, within the hour after they pass it. Edits don't change a message's age, and neither do replies to it.
-- It deletes the oldest first, in the order they were sent, so after a pass every message up to the last one it deleted is gone, in every channel. It sends `messages.expired` naming that message, and no `message.deleted` for each. Clients drop every message with an ID up to `through`, the quotes of them in replies, and the files they cached for the den; a channel whose last message is among them holds none, so nothing in it is unread.
+- It deletes the oldest first, in the order they were sent, so after a pass every message up to the last one it deleted is gone, in every channel. It sends `messages.expired` naming that message, and no `message.deleted` for each. Clients drop every message with an ID up to `through`, the quotes of them in replies, and the files on them; a channel whose last message is among them holds none, so nothing in it is unread. `ready` names the last message retention deleted as `sync.expired` (M6), for a client that was away.
 - The owner sets the period with `PATCH /api/den`: 1 to 3,650 days, or 0 to turn it off. A change starts a pass at once. `GET /api/den/retention` says what a period of `days` would delete now, for the settings to show before a change: how many messages, and the bytes their files take.
 
 ### Read state
@@ -530,7 +552,7 @@ GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "messages"?: [me
 - A file answers byte ranges (`Range: bytes=N-`, `206 Partial Content`), and the den decrypts only the chunks a range covers, so a player seeks without fetching the whole file. Its `ETag` is its ID, quoted, since its bytes never change.
 - A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](#dm-files)).
 - A member may fetch a file when they can see the message it's on, any member may fetch a picture on a profile, and only its uploader may fetch an upload waiting to be used. Anyone else gets `404 not_found`.
-- A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, and `channel.deleted` and a fresh `ready` can leave anything unreachable.
+- A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, `channel.deleted` takes the channel's, and `messages.expired` those of the messages it ends. After a `ready`, the changes since the client's version say which messages lost files or went (M6; see [What changed while away](#what-changed-while-away-m6)).
 - `GET /api/me/storage` says how much space the member's files take and how much everyone's do, in bytes, previews included.
 
 ### Pictures on a profile

@@ -74,8 +74,10 @@ type Den struct {
 	sockets  *socketSet
 	presence *presence
 	calls    callRegistry
-	// expiry deletes messages that pass the retention period (M5).
+	// expiry deletes messages that pass the retention period (M5), and
+	// pruner forgets changes older than clients may ask for (M6).
 	expiry expiry
+	pruner pruner
 
 	// PresenceDelay is how long presence changes gather before they're
 	// announced; tests shorten it.
@@ -183,6 +185,7 @@ func (d *Den) Close() {
 		d.log.Warnf("stop calls: %v", err)
 	}
 	d.stopExpiry()
+	d.stopPruning()
 	d.files.stop()
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -235,10 +238,11 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage,
-				call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps)
-			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, sync_epoch)
+			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			name, url, []byte(pub), sealed, now.UnixMilli(), limits.FileSize, limits.MemberStorage, limits.DenStorage,
-			calls.Members, calls.Callers, calls.Shares, calls.ShareViewers, calls.ShareBitrate, calls.ShareHeight, calls.ShareFPS); err != nil {
+			calls.Members, calls.Callers, calls.Shares, calls.ShareViewers, calls.ShareBitrate, calls.ShareHeight, calls.ShareFPS,
+			denproto.Random(denproto.SyncEpochSize)); err != nil {
 			return fmt.Errorf("store den: %w", err)
 		}
 		_, err := tx.ExecContext(ctx,

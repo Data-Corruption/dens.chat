@@ -44,6 +44,12 @@ func invalid(format string, args ...any) error {
 func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64) (denproto.Ready, error) {
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
+	// The version comes first: a change made while the rest is read has a
+	// higher one, so a client that starts from it misses nothing (M6).
+	var err error
+	if r.Sync, err = syncState(ctx, d.db); err != nil {
+		return r, err
+	}
 	r.Den, _ = d.Info()
 	rows, err := d.db.QueryContext(ctx, `SELECT `+memberColumns+` FROM den_members ORDER BY id`)
 	if err != nil {
@@ -1492,9 +1498,11 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 			return err
 		}
 		if req.Editors != nil {
-			return setEditors(ctx, tx, mid, editors)
+			if err := setEditors(ctx, tx, mid, editors); err != nil {
+				return err
+			}
 		}
-		return nil
+		return logMessage(ctx, tx, mid, cid, time.UnixMilli(now))
 	})
 	if errors.Is(err, errRaced) {
 		current, _, lerr := d.message(ctx, id)
@@ -1538,7 +1546,7 @@ func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req den
 	if err != nil {
 		return m, err
 	}
-	c, _, err := d.visibleChannel(ctx, s, m.ChannelID)
+	c, cid, err := d.visibleChannel(ctx, s, m.ChannelID)
 	if err != nil {
 		return m, errMessageNotFound
 	}
@@ -1560,14 +1568,20 @@ func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req den
 	if err != nil {
 		return m, err
 	}
-	res, err := d.db.ExecContext(ctx, `UPDATE den_messages SET text = ?, revision = revision + 1 WHERE id = ? AND revision = ?`,
-		sealed, mid, m.Revision)
+	err = d.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, revision = revision + 1 WHERE id = ? AND revision = ?`,
+			sealed, mid, m.Revision)
+		if err != nil {
+			return err
+		}
+		// Edits and ticks wait their turn, so only a delete gets here first.
+		if changed, _ := res.RowsAffected(); changed == 0 {
+			return errMessageNotFound
+		}
+		return logMessage(ctx, tx, mid, cid, d.now())
+	})
 	if err != nil {
 		return m, err
-	}
-	// Edits and ticks wait their turn, so only a delete gets here first.
-	if changed, _ := res.RowsAffected(); changed == 0 {
-		return m, errMessageNotFound
 	}
 	m.Text, m.Revision = text, m.Revision+1
 	return m, d.Hub.Publish(denproto.EventMessageUpdated, m, audienceOf(c))
@@ -1597,7 +1611,7 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return err
 	}
-	c, _, err := d.visibleChannel(ctx, s, m.ChannelID)
+	c, cid, err := d.visibleChannel(ctx, s, m.ChannelID)
 	if err != nil {
 		return errMessageNotFound
 	}
@@ -1614,7 +1628,13 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := d.db.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
+	err = d.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
+			return err
+		}
+		return logMessage(ctx, tx, mid, cid, d.now())
+	})
+	if err != nil {
 		return err
 	}
 	d.files.remove(blobs)

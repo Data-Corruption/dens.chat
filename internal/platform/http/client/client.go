@@ -21,6 +21,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
@@ -81,6 +82,7 @@ func New(a *app.App) http.Handler {
 		r.Post("/api/password/change", rt.handleChangePassword)
 		r.Get("/api/settings", rt.handleSettings)
 		r.Post("/api/settings", rt.handleSettingsUpdate)
+		r.Post("/api/cache/clear", rt.handleClearCache)
 		r.Post("/api/logout", rt.handleLogout)
 		rt.mountDens(r)
 		rt.mountYouTube(r)
@@ -180,13 +182,25 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		xhttp.Error(r.Context(), w, err)
 		return
 	}
+	usage := rt.a.Dens.CacheUsage()
 	writeJSON(w, map[string]any{
 		"logLevel":               cfg.LogLevel,
 		"logLevels":              strings.Split(xlog.ValidLevels, "|"),
 		"updateNotifications":    cfg.UpdateNotifications,
 		"backgroundUpdateChecks": cfg.BackgroundUpdateChecks,
 		"updatesManaged":         rt.a.Instance.ReleaseURL != "" && !rt.a.DevMode(),
+		"cacheLimit":             usage.Limit,
+		"cacheUsed":              usage.Used,
 	})
+}
+
+// handleClearCache empties the client's cache of files (M6).
+func (rt *router) handleClearCache(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.ClearCache(); err != nil {
+		xhttp.Error(r.Context(), w, err)
+		return
+	}
+	writeJSON(w, rt.a.Dens.CacheUsage())
 }
 
 func (rt *router) render(w http.ResponseWriter, r *http.Request, name string, data map[string]any) {
@@ -349,11 +363,21 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		LogLevel               *string `json:"logLevel"`
 		UpdateNotifications    *bool   `json:"updateNotifications"`
 		BackgroundUpdateChecks *bool   `json:"backgroundUpdateChecks"`
+		CacheLimit             *int64  `json:"cacheLimit"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
+	if body.CacheLimit != nil {
+		if *body.CacheLimit < cache.MinLimit || *body.CacheLimit > cache.MaxLimit || rt.a.Cache == nil {
+			http.Error(w, "the cache's size is 512 MiB to 50 GiB", http.StatusBadRequest)
+			return
+		}
+	}
 	cfg, err := config.Update(rt.a.DB, func(cfg *types.Configuration) error {
+		if body.CacheLimit != nil {
+			cfg.CacheLimit = *body.CacheLimit
+		}
 		if body.LogLevel != nil {
 			cfg.LogLevel = *body.LogLevel
 		}
@@ -371,6 +395,12 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.LogLevel != nil && !rt.a.DevMode() {
 		if err := rt.a.Log.SetLevel(cfg.LogLevel); err != nil {
+			xhttp.Error(r.Context(), w, err)
+			return
+		}
+	}
+	if body.CacheLimit != nil {
+		if err := rt.a.Cache.SetLimit(cfg.CacheLimit); err != nil {
 			xhttp.Error(r.Context(), w, err)
 			return
 		}

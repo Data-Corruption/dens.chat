@@ -58,6 +58,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 			return err
 		}
 		a.Den.StartRetention()
+		a.Den.StartPruning()
 	}
 
 	ctx, cancel := context.WithCancel(ctx)

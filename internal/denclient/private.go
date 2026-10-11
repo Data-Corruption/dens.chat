@@ -66,6 +66,9 @@ type dmFile struct {
 	channel int64
 	key     []byte
 	thumb   string
+	// message is the message the file is on, which the cache drops it
+	// with (M6); 0 for one waiting to be sent.
+	message int64
 }
 
 // maxDMFiles bounds the DM files a den connection remembers keys for; past
@@ -127,6 +130,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	out := m
 	out.Reply = nil
 	if m.Sealed == nil {
+		c.noteLocked(m)
 		return PageMessage{Message: out, Reply: reply}
 	}
 	out.Sealed = nil
@@ -136,8 +140,9 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	}
 	out.Text = p.Text
 	channel, _ := denproto.ParseID(m.ChannelID)
+	message, _ := denproto.ParseID(m.ID)
 	for _, f := range p.Files {
-		df := dmFile{channel: channel, key: f.Key}
+		df := dmFile{channel: channel, key: f.Key, message: message}
 		if f.Thumb != nil {
 			df.thumb = f.Thumb.ID
 		}

@@ -589,6 +589,15 @@ wait-gone)
     done
     fail "file $2 is still served"
     ;;
+delete)
+    # delete DEN_ID MESSAGE_ID: delete a message for good.
+    api DELETE "/api/dens/$1/messages/$2" >/dev/null
+    ;;
+cache)
+    # cache: print how many bytes of other dens' files this client keeps
+    # (M6).
+    api GET /api/settings | json 'd["cacheUsed"]'
+    ;;
 send-file)
     # send-file DEN_ID CHANNEL_ID FILE_ID: send an upload with no text; print
     # the message's ID.

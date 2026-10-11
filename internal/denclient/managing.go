@@ -60,6 +60,7 @@ func (m *Manager) Files(ctx context.Context, denID, after string) (FilesPage, er
 		}
 	}
 	out := FilesPage{Files: []PageFile{}, Next: page.Next}
+	c.noteOwnFiles(page.Files)
 	for _, f := range page.Files {
 		pf := PageFile{OwnFile: f}
 		if f.Sealed {

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/media"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
@@ -321,7 +322,8 @@ func inMemory(data []byte, kind media.Kind) *OpenedFile {
 
 // OpenFile opens a file, or its preview, from a den, or from the cache. A
 // DM's file opens with the key its message sealed, chunk by chunk as it's
-// read.
+// read. Another den's files come through the cache on disk (M6); the
+// install's own den, on the same disk, keeps a small one in memory.
 func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool) (*OpenedFile, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -330,10 +332,39 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	if err := checkID("file", fileID); err != nil {
 		return nil, err
 	}
+	if m.Cache != nil && !c.own {
+		return c.openCached(ctx, fileID, thumb)
+	}
 	key := cacheKey{den: denID, file: fileID, thumb: thumb}
 	if data, kind, ok := m.files.get(key); ok {
 		return inMemory(data, kind), nil
 	}
+	r, err := c.fileSource(ctx, fileID, thumb)
+	if err != nil {
+		return nil, err
+	}
+	size := r.Size()
+	if size <= cacheFileSize {
+		defer r.Close()
+		data := make([]byte, size)
+		if _, err := r.ReadAt(data, 0); err != nil && size > 0 {
+			return nil, err
+		}
+		kind := media.Sniff(data[:min(len(data), media.SniffLen)])
+		m.files.put(key, data, kind)
+		return inMemory(data, kind), nil
+	}
+	head := make([]byte, media.SniffLen)
+	if _, err := r.ReadAt(head, 0); err != nil {
+		r.Close()
+		return nil, err
+	}
+	return &OpenedFile{SectionReader: io.NewSectionReader(r, 0, size), Kind: media.Sniff(head), Head: head, close: r.Close}, nil
+}
+
+// fileSource starts fetching a file, or its preview, from the den: a DM's
+// opened with the key its message sealed, chunk by chunk as it's read.
+func (c *conn) fileSource(ctx context.Context, fileID string, thumb bool) (cache.Source, error) {
 	c.mu.Lock()
 	df, sealed := c.dmFiles[fileID]
 	c.mu.Unlock()
@@ -352,38 +383,30 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	if err != nil {
 		return nil, err
 	}
-	var r interface {
-		io.ReaderAt
-		Size() int64
-	} = rf
+	var src cache.Source = rf
 	if sealed {
-		if r, err = vault.OpenStreamAtWith(df.key, rf, rf.size, denproto.DMFileAD(c.j.denID, df.channel, thumb)); err != nil {
+		opened, err := vault.OpenStreamAtWith(df.key, rf, rf.size, denproto.DMFileAD(c.j.denID, df.channel, thumb))
+		if err != nil {
 			rf.Close()
 			return nil, err
 		}
+		src = openedSource{opened, rf}
 	}
-	size := r.Size()
-	if size > denproto.MaxFileSize {
-		rf.Close()
+	if src.Size() > denproto.MaxFileSize {
+		src.Close()
 		return nil, errors.New("the den's answer is malformed")
 	}
-	if size <= cacheFileSize {
-		defer rf.Close()
-		data := make([]byte, size)
-		if _, err := r.ReadAt(data, 0); err != nil && size > 0 {
-			return nil, err
-		}
-		kind := media.Sniff(data[:min(len(data), media.SniffLen)])
-		m.files.put(key, data, kind)
-		return inMemory(data, kind), nil
-	}
-	head := make([]byte, media.SniffLen)
-	if _, err := r.ReadAt(head, 0); err != nil {
-		rf.Close()
-		return nil, err
-	}
-	return &OpenedFile{SectionReader: io.NewSectionReader(r, 0, size), Kind: media.Sniff(head), Head: head, close: rf.Close}, nil
+	return src, nil
 }
+
+// openedSource is a DM's file as it opens, over the sealed one the den
+// sends.
+type openedSource struct {
+	*vault.StreamReaderAt
+	sealed *remoteFile
+}
+
+func (o openedSource) Close() error { return o.sealed.Close() }
 
 // transfer fetches a file from the den, whole, or from byte from on when
 // from isn't negative, signing in again once if the den no longer accepts

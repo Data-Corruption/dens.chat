@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
@@ -65,6 +66,10 @@ type Manager struct {
 	// a home connection. A transfer ends with its request instead.
 	Transfer *http.Client
 	files    *fileCache
+	// Cache keeps what other dens send on disk (M6); without it, as in
+	// most tests, files come from the den each time, but for the small
+	// ones the memory cache keeps.
+	Cache *cache.Store
 
 	// Timings from protocol.md; tests shorten them. A token is used only
 	// while it has MinTokenLife left, and renewed RenewLead before expiry.
@@ -242,7 +247,7 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 		stop: stop, done: make(chan struct{}), wake: make(chan struct{}, 1),
 		due: map[string]bool{}, keysDue: make(chan struct{}, 1), dmFiles: map[string]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
-		kept: map[string]*kept{}}
+		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1)}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
@@ -254,8 +259,14 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 			defer close(work)
 			c.keyWork(ctx)
 		}()
+		syncing := make(chan struct{})
+		go func() {
+			defer close(syncing)
+			c.cacheWork(ctx)
+		}()
 		c.run(ctx)
 		<-work
+		<-syncing
 	}()
 }
 
@@ -269,6 +280,7 @@ func (m *Manager) forget(ctx context.Context, c *conn) error {
 	<-c.done
 	c.j.close()
 	c.dropAllKept()
+	c.dropCache()
 	m.dropDenFocus(c.j.denID.String())
 	m.notify()
 	if _, err := m.db.ExecContext(ctx, `DELETE FROM joined_dens WHERE den_id = ?`, []byte(c.j.denID)); err != nil {

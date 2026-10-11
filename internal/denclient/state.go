@@ -191,7 +191,7 @@ func cleanLimits(d denproto.Den) bool {
 // protocol violation.
 func (s *denState) load(r denproto.Ready) error {
 	next := newState()
-	if !cleanLimits(r.Den) {
+	if !cleanLimits(r.Den) || denproto.CheckSync(r.Sync) != nil {
 		return errMalformed
 	}
 	next.limits, next.callLimits, next.retention = r.Den.Limits, r.Den.CallLimits, r.Den.Retention

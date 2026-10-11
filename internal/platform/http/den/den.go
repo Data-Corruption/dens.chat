@@ -64,6 +64,7 @@ func New(a *app.App) http.Handler {
 			r.Patch("/den", h.updateDen)
 			r.Get("/den/retention", h.retentionPreview)
 			r.Get("/channels/{id}/messages", h.history)
+			r.Get("/changes", h.changes)
 			r.Post("/channels/{id}/messages", h.send)
 			r.Put("/channels/{id}/read", h.markRead)
 			r.Patch("/messages/{id}", h.editMessage)

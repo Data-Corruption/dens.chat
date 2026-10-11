@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -270,7 +271,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		}
 		if req.DeleteMessages > 0 {
 			// DMs stay: staff can't see them, so they don't clean them up.
-			if deleted, blobs, err = deleteRecent(ctx, tx, mid, now-req.DeleteMessages*1000); err != nil {
+			if deleted, blobs, err = deleteRecent(ctx, tx, mid, now-req.DeleteMessages*1000, time.UnixMilli(now)); err != nil {
 				return err
 			}
 		}
@@ -311,13 +312,13 @@ type deletedMessage struct {
 // deleteRecent deletes a member's messages in channels, not DMs, from since
 // on, and returns what it deleted, and the blobs of their files to remove
 // once tx commits.
-func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64) ([]deletedMessage, [][]byte, error) {
+func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64, now time.Time) ([]deletedMessage, [][]byte, error) {
 	const where = `m.author_id = ? AND m.created_at >= ? AND m.channel_id IN (SELECT id FROM den_channels WHERE kind != 'dm')`
 	files, blobs, err := filesOf(ctx, tx, where, member, since)
 	if err != nil {
 		return nil, nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT m.id, m.channel_id FROM den_messages m WHERE `+where, member, since)
+	rows, err := tx.QueryContext(ctx, `SELECT m.id, m.channel_id FROM den_messages m WHERE `+where+` ORDER BY m.id`, member, since)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -335,8 +336,15 @@ func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64) ([]delet
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	_, err = tx.ExecContext(ctx, `DELETE FROM den_messages AS m WHERE `+where, member, since)
-	return out, blobs, err
+	if _, err = tx.ExecContext(ctx, `DELETE FROM den_messages AS m WHERE `+where, member, since); err != nil {
+		return nil, nil, err
+	}
+	for _, m := range out {
+		if err := logMessage(ctx, tx, m.id, m.channel, now); err != nil {
+			return nil, nil, err
+		}
+	}
+	return out, blobs, nil
 }
 
 func (d *Den) publishDeleted(ctx context.Context, deleted []deletedMessage) error {

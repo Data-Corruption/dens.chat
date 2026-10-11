@@ -22,6 +22,10 @@ type Configuration struct {
 	// LastShutdownVersion is the version that last stopped cleanly, which
 	// tells a restarted service whether it was updated.
 	LastShutdownVersion string `json:"lastShutdownVersion"`
+
+	// CacheLimit is the size of the client's cache in bytes, which the
+	// member chooses (M6); 0 until they do, for the default.
+	CacheLimit int64 `json:"cacheLimit,omitempty"`
 }
 
 // DefaultConfig returns the preferences of a new installation.
