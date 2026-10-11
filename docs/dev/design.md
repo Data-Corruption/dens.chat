@@ -763,7 +763,7 @@ A page sees keys only while it has focus, so push to talk can't reach it from a 
 - The helper reads the bound keys' state every 10 ms (`GetAsyncKeyState`), with no keyboard hook, so it sees nothing else typed.
 - While a program run as administrator has focus, Windows hides every key from the helper, as it does from Discord (User Interface Privilege Isolation). The settings say so.
 - The installer registers a scheduled task that starts the helper at the desktop user's logon, with their interactive token, at normal priority, since a task's default of below normal could fall behind a game, and with no time limit. It runs the task at once, so nobody signs out after installing. Uninstalling the last instance ends the task and deletes it.
-- `dens.exe` carries a manifest whose `consoleAllocationPolicy` is `detached`, which Windows 11 24H2 and later honor: started outside a console, as at logon, it gets none, so the helper opens no window, while in a shell it runs as any console program does. Go doesn't embed manifests, so a resource file generated for each architecture sits beside `cmd/main.go`, and CI checks that it's current.
+- `dens.exe` carries a manifest whose `consoleAllocationPolicy` is `detached`, which Windows 11 24H2 and later honor: started outside a console, as at logon, it gets none, not even one `CREATE_NEW_CONSOLE` asks for, so the helper opens no window, while in a shell it runs as any console program does. Go doesn't embed manifests, so a resource file generated for each architecture sits beside `cmd/main.go`, and CI checks that it's current.
 
 *Linux*
 
