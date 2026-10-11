@@ -88,9 +88,11 @@ The installer scripts run `dens install` with the release they downloaded. It in
 3. Read each member's state. Journal a restart of the services that were running, as the last step to undo, then publish `installing` (a fresh instance, or one whose first install never finished) or `updating` from the recorded version.
 4. Stop the services and take each `lifecycle.lock`.
 5. Create the account, install the binary and cosign, register each member's service and set its permissions.
-6. Write the target's instance config and generate and host-wrap a data key for a fresh instance. On Windows, also add the den's firewall rules, a scheduled task that starts the shortcut helper (`dens shortcuts`, M7) at the desktop user's sign-in, the `PATH` entry and the error-reporting exclusion. The task is the desktop user's, named for their SID (`Dens shortcuts-<SID>`), and serves every instance that answers them.
+6. Write the target's instance config and generate and host-wrap a data key for a fresh instance. Have the shortcut helper (`dens shortcuts`, M7) start at the desktop user's sign-in; it serves every instance that answers them.
+   - On Linux, an XDG autostart entry, `/etc/xdg/autostart/chat.dens.Dens.desktop`, starts it. Beside it, `/usr/local/share/applications/chat.dens.Dens.desktop`, with Dens's mark as its icon in `/usr/local/share/icons/hicolor`, names Dens to the desktop, whose shortcuts portal needs it, and opens the page from the desktop's menu.
+   - On Windows, a scheduled task, the desktop user's and named for their SID (`Dens shortcuts-<SID>`), starts it. Also add the den's firewall rules, the `PATH` entry and the error-reporting exclusion.
 7. Release the lifecycle locks and commit the journal. This is the point of no return.
-8. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate. Then end the shortcut helper's task, if it runs the last version, and run it again, so a desktop user who is signed in needn't sign out. A helper started otherwise takes up the new binary itself when its services come back at a newer version.
+8. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate. Then start the shortcut helper, so a desktop user who is signed in needn't sign out, ending one that runs the last version: on Linux the desktop user's systemd user manager restarts the autostart entry's unit (`app-chat.dens.Dens@autostart.service`) when they're signed in to a desktop, and on Windows the installer ends the task and runs it again. A helper started otherwise takes up the new binary itself when its services come back at a newer version.
 
 A failure before step 7 undoes the journal in reverse. A failure after it leaves the transitional state; running the installer again starts a new transition to its version from the recorded one.
 
@@ -108,7 +110,7 @@ A failure before step 7 undoes the journal in reverse. A failure after it leaves
 
 ### Uninstall
 
-`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service, its event log source on Windows and its firewall rules, and deletes the instance root and the account. The last instance also removes the binary, cosign and the unit template on Linux, or the shortcut helpers' scheduled tasks, ending the helpers they run, the `PATH` entry and the error-reporting exclusion on Windows. A helper whose instances are all gone stops by itself. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
+`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service, its event log source on Windows and its firewall rules, and deletes the instance root and the account. The last instance also removes the binary, cosign, the unit template and the shortcut helper's autostart entry, `.desktop` file and icon on Linux, or the shortcut helpers' scheduled tasks, ending the helpers they run, the `PATH` entry and the error-reporting exclusion on Windows. A helper whose instances are all gone stops by itself. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
 
 Uninstall has no undo. Running it again finishes an interrupted one.
 
@@ -149,7 +151,7 @@ Both harnesses install unsigned fixture releases built by `scripts/test/fixture-
 
 ### Linux
 
-`./scripts/test.sh -e2e` runs `scripts/test-lifecycle-e2e.sh`, which runs `scripts/test/lifecycle-guest.sh` in a fresh Incus system container for each supported distro. On each it installs through `install.sh` as a sudo user and checks permissions, the sandbox and the unit's `systemd-analyze security` rating. Then it pairs a browser, sets the password, backs up, checks another local user is refused, reboots, updates, adds a second instance that hosts a den, restores, and uninstalls.
+`./scripts/test.sh -e2e` runs `scripts/test-lifecycle-e2e.sh`, which runs `scripts/test/lifecycle-guest.sh` in a fresh Incus system container for each supported distro. On each it installs through `install.sh` as a sudo user and checks permissions, the sandbox, the unit's `systemd-analyze security` rating, and the shortcut helper's autostart entry, `.desktop` file and icon, which the last uninstall removes. Then it pairs a browser, sets the password, backs up, checks another local user is refused, reboots, updates, adds a second instance that hosts a den, restores, and uninstalls.
 
 - `--distros "debian arch"` picks distros; `--backup FILE` has the first distro restore FILE; `KEEP_FAILED=true` keeps failed containers.
 - Each distro after the first restores the backup the previous one made. Logs and backups land in `out/lifecycle-e2e-logs/<run>/`.
