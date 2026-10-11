@@ -318,7 +318,7 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 - Edits carry the revision they were made against, and the den refuses a stale one. Nobody's edit silently overwrites another's, whether it comes from a second device or a co-editor. The member sees the newer text, with their own draft kept to reapply.
 - **Shared messages (M1.6):** when posting, the author can name up to 20 other members who may also edit the message, among those who can see the channel. Editors can't delete it, and only the author changes who may edit. It suits shared lists and plans.
 - **Task checkboxes (M1.6):** lines starting with `[ ]` or `[x]` render as checkboxes in any message. Anyone who may edit the message can tick one, which the den applies as a change of its own, so two people ticking different boxes at once never lose a tick. A tick names its task's text, so one against a list that changed meanwhile is refused rather than landing on another line. Everyone else sees the boxes read-only.
-- The composer's + opens a small menu above it, for attaching files and choosing who else may edit, and polls later (M8). A ? beside it opens a guide to writing a message: Enter and Shift+Enter, the markdown subset, mentions, links and how they're shortened, task lines and who can tick them, shared editing, ↑ to edit the last message, replies and files (M3.3).
+- The composer's + opens a small menu above it, for attaching files and choosing who else may edit. A ? beside it opens a guide to writing a message: Enter and Shift+Enter, the markdown subset, mentions, links and how they're shortened, task lines and who can tick them, shared editing, ↑ to edit the last message, replies and files (M3.3).
 - Delete removes the row and its files; `secure_delete` overwrites the freed pages. A delete event tells clients to purge caches, and the den keeps the message's ID and channel, never its text, author or files, for 30 days, so a client that was away drops its copies when it comes back (M6; see What changed while away).
 - Optional den-wide retention, off by default: messages older than a period the owner sets are deleted with their files (M5; see Retention).
 - Removal and bans revoke all of a member's keys and close their sockets at once (see Leaving, removal and bans).
@@ -680,13 +680,13 @@ A call's signaling and its media take different paths: the den socket runs from 
 - A member sends their voice one of two ways, chosen in the settings' Voice section. With voice activity, the default, the page sends only while they speak. With push to talk, it sends only while they hold their key.
 - Voice activity is automatic by default: it opens for whatever RNNoise, which judges every 10 ms frame, takes for speech. A member can instead set a level with a slider, against a live meter of their microphone, and the page sends what's above it. Without RNNoise, the level is the only way.
 - The gate runs in the audio thread on every 10 ms frame, after the noise suppressor, so it opens on a word's first syllable, not up to 100 ms late as a meter on the main thread would. It holds for 300 ms after speech stops, so words' ends and the gaps between them aren't cut, and it fades in and out over a few milliseconds, so it doesn't click. With RNNoise off, the same processor runs without it, for the gate alone. Where the processor can't run at all, the microphone goes as it is, with the browser's own suppressor: voice activity then sends everything, push to talk holds the track back itself, and the settings say so.
-- Keys: push to talk, toggle mute (which serves as toggle to talk), and push to mute, which mutes while held. They work while the page has focus, as with any web page, and the settings say so. A key held when the page loses focus counts as released. They don't fire while the member types in a text field, unless the key types nothing there: a function key, or one held with Ctrl, Alt or Meta.
+- Keys: push to talk, toggle mute (which serves as toggle to talk), and push to mute, which mutes while held. They work while the page has focus, as with any web page, and in other programs through the helper (M7; see Global shortcuts). A key held when the page loses focus counts as released, unless the helper covers it. They don't fire while the member types in a text field, unless the key types nothing there: a function key, or one held with Ctrl, Alt or Meta. A key fires while its own modifiers are held, whatever else is, so a player holding Shift to run still pushes to talk; of two actions on one key, the one with more modifiers takes the press. From M7 a mouse's side button can be a key too.
 - What the gate holds back goes as silence, and every offer asks for Opus's discontinuous transmission (`usedtx=1`), so a member who isn't speaking sends a packet every 400 ms instead of 50 a second. That keeps big calls cheap for the den's upload: silent members cost almost nothing.
 - Speaking rings follow what's sent, since they measure what each page plays: a member the gate holds back rings nowhere, and the member's own ring lights while their gate is open.
 - At the foot of a den's channel list, the member's panel shows their picture and name, which open their profile to edit, and the cog for the settings. The panel is as tall as the message bar beside it, which it lines up with, and keeps the channel list's color.
 - While in a call, a block sits above the panel and holds the call in a row: a speaker, green once connected, that names the channel on hover, and buttons to share their screen (M4.2), mute, deafen, open the Voice settings and leave. What the member should know of the call, such as a staff mute, shows in the block above the row, and while they share, the share's controls show there in a row of their own (M4.2). The block and the message bar are a shade lighter than the page, or as light where the page is already white, so a call shows at a glance against the channel list and the panel. On the other pages the call shows boxed, with the channel spelled out.
 - Settings open as a dialog over whatever the page shows, so a den and a call stay in view. It closes with its ✕, Escape or a click outside it. Its General section starts with the theme, and its Voice section holds the microphone and speaker, noise suppression, how the member sends, the keys, and how they share their screen (M4.2), which the call's cog opens.
-- Joining waits on the microphone, which the browser may first ask the member for, and the call says so after a moment. The voice processor's audio context is made in the click that joins, since a browser may hold back one made after its prompt until another click. The browser keeps all of these, as it keeps the microphone and speaker.
+- Joining waits on the microphone, which the browser may first ask the member for, and the call says so after a moment. The voice processor's audio context is made in the click that joins, since a browser may hold back one made after its prompt until another click. The browser keeps all of these, as it keeps the microphone and speaker, except the keys, which the service keeps from M7 so the helper can watch them.
 
 **Screen share (M4.2)**
 
@@ -749,11 +749,38 @@ The owner sets these in the den's settings, in a section of their own beside the
 
 A page sees keys only while it has focus, so push to talk can't reach it from a full-screen game. Discord's web app has the same limit, and its desktop app doesn't. Nor can the local service see keys: on Windows it runs in session 0, where Windows blocks all keyboard input to services, and on Linux it runs as its own account, outside the desktop session.
 
-- A small helper, the same binary, runs as the desktop user in their session, started at login, and watches only the keys they bound. It tells the service over the control endpoint, and the service tells the page.
-- Windows: the helper reads the bound keys' state (`GetAsyncKeyState`), with no keyboard hook, so it sees nothing else typed.
-- Wayland: the desktop's global shortcuts portal, in GNOME 48 and later, KDE Plasma and Hyprland, reports a shortcut's press and release, and the desktop asks the member to confirm it. Desktops without the portal keep the page's keys.
-- X11: the helper reads the bound keys' state (`XQueryKeymap`).
-- The installer registers it to start at login for the desktop user, and removes it on uninstall.
+*The helper*
+
+- A small helper, `dens shortcuts`, the same binary, runs as the desktop user in their session from login. One helper serves every instance on the machine: it finds them in the instance roots, which users may list, and holds a stream on each one's control endpoint, which answers only that instance's desktop user.
+- The service sends the helper the member's keys, and whether one of its pages is in a call. The helper sends back each press and release as the action it's bound to: push to talk, toggle mute or push to mute. The service passes them to its pages, and the page in the call acts on them.
+- The helper watches keys only while a page is in a call. Outside calls it watches nothing and costs nothing.
+- The service keeps the keys, since the helper needs them, so every browser paired with the instance shares them. How the member sends, and the level, stay with the browser.
+- A key is a keyboard key with any modifiers or, on Windows and in the page, one of the mouse's side buttons, which many players push to talk with. The page names a key by its place on the keyboard (`KeyboardEvent.code`), and the helper finds what the current layout makes of it.
+- When the service comes back from an update at another version, the helper starts the new binary and exits.
+
+*Windows*
+
+- The helper reads the bound keys' state every 10 ms (`GetAsyncKeyState`), with no keyboard hook, so it sees nothing else typed.
+- While a program run as administrator has focus, Windows hides every key from the helper, as it does from Discord (User Interface Privilege Isolation). The settings say so.
+- The installer registers a scheduled task that starts the helper at the desktop user's logon, with their interactive token, at normal priority, since a task's default of below normal could fall behind a game, and with no time limit. It runs the task at once, so nobody signs out after installing. Uninstalling the last instance ends the task and deletes it.
+- `dens.exe` carries a manifest whose `consoleAllocationPolicy` is `detached`, which Windows 11 24H2 and later honor: started outside a console, as at logon, it gets none, so the helper opens no window, while in a shell it runs as any console program does. Go doesn't embed manifests, so a resource file generated for each architecture sits beside `cmd/main.go`, and CI checks that it's current.
+
+*Linux*
+
+- Wayland: the desktop's global shortcuts portal, in GNOME 48 and later, KDE Plasma and Hyprland, reports a shortcut's press and release. There the desktop owns the keys. When the member turns the helper on in the settings, it binds the three actions with the member's keys as the preferred triggers, and the desktop asks the member to confirm or change them. The settings then show the desktop's names for the keys, and changing one opens the desktop's own shortcut settings where its portal can (`ConfigureShortcuts`), or says where they are. The shortcuts' IDs never change, so the desktop asks only once.
+- A key bound on the desktop reaches no program but the helper, a game included, and the settings say so.
+- The portal refuses an unsandboxed app whose app ID no installed `.desktop` file backs (xdg-desktop-portal 1.21 and later), so the helper registers as `chat.dens.Dens` before anything else (`org.freedesktop.host.portal.Registry`), and the installer adds `chat.dens.Dens.desktop`. Older portals take the app ID from the helper's systemd unit, which the autostart entry's name sets.
+- Desktops without the portal (GNOME before 48, Sway, COSMIC) keep the page's keys.
+- X11: the helper reads the bound keys' state every 10 ms (`XQueryKeymap`), over a small X11 client of its own.
+- The installer adds an XDG autostart entry, which GNOME and KDE run as a systemd user unit, and starts the helper in the desktop user's running session. Uninstalling the last instance removes both entries.
+- The helper speaks D-Bus through `godbus/dbus/v5`, which needs nothing beyond `golang.org/x/sys`.
+
+*The page*
+
+- The settings' keys say whether they work in other programs, with an unobtrusive mark.
+- While the helper covers a key, during a call the page ignores its own presses of it and acts on the helper's: on Windows and X11 the helper sees a key pressed in the page too, and toggle mute would fire twice. Outside a call the helper reads nothing, and the page's own keys work as before. A key that types something still doesn't fire while the member types in a text field.
+- A side button the member bound is the page's while it has focus: its press and release don't take the browser back or forward.
+- The helper tells the service what its keys can do (whether the desktop confirms and names them) and what the system keeps from them, as a note the settings show, never which system it runs on, so no platform difference reaches the local API.
 
 **Media addresses**
 
@@ -865,7 +892,7 @@ With the rules above, SteamOS support later means: detect `ID=steamos`, put the 
 
 ### Windows
 
-Windows 11, current supported releases, Home and Pro. Windows 10 and Windows Server are cut.
+Windows 11, current supported releases (24H2 and later), Home and Pro. Windows 10 and Windows Server are cut.
 
 **Service setup**
 
@@ -900,8 +927,9 @@ All OS-specific runtime code lives in one package (`internal/platform/host`). Ea
 | Locked key memory | `mlock` | `VirtualLock` |
 | Low-priority child process | nice 19 and `SCHED_IDLE` on the forking thread | `IDLE_PRIORITY_CLASS` |
 | Open a URL | `xdg-open` | `ShellExecute` |
+| Keys for the helper (M7) | The global shortcuts portal under Wayland, `XQueryKeymap` under X11 | `GetAsyncKeyState` |
 
-Everything else that differs is install-time: the two installers, the unit file and SCM registration, account creation, ACLs and firewall rules.
+Everything else that differs is install-time: the two installers, the unit file and SCM registration, account creation, ACLs and firewall rules, and how the helper starts at login: a scheduled task, or an autostart entry and a `.desktop` file (M7).
 
 Rules that keep the two implementations from drifting:
 
@@ -1023,6 +1051,13 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [ ] A restored den starts a new sync epoch, and a client never keeps a cache across epochs or from below the floor.
 - [ ] Compressed frames are held to the same limits as plain ones, as they inflate, and the cache keeps no file over a quarter of its size.
 
+**Global shortcuts (M7)**
+
+- [ ] The helper watches only the bound keys, and only while a page is in a call, with no keyboard hook, and sends nothing but the bound actions' presses and releases; neither it nor the service logs them.
+- [ ] The helper's stream is a control request like any other: it answers only the instance's desktop user, by the identity the system reports.
+- [ ] The page acts on the helper's keys only in a call it holds, and never while the member types a key that types something.
+- [ ] Each desktop user's helper task runs as them, with their limited token; nothing of the helper runs elevated.
+
 **Logs and data**
 
 - [ ] No message content, tokens, keys or IPs in logs; log IDs and event types only.
@@ -1032,7 +1067,7 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 ## Milestones
 
-Each milestone ends usable on its own and is tested on Linux and Windows with all four target browsers. All platform-specific code lands in M0, while the seams are still cheap to change; later milestones are shared code.
+Each milestone ends usable on its own and is tested on Linux and Windows with all four target browsers. All platform-specific code lands in M0, while the seams are still cheap to change; later milestones are shared code, but for M7's keys and the helper's start at login.
 
 | # | Milestone | Done when |
 | --- | --- | --- |
@@ -1044,7 +1079,6 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | M5 | Message retention. Managing files: each member's uploads by size against their limit, deleting and swapping them. Smaller copies of photos and videos by default, compared with full size before sending. ← and → through a message's images in the viewer | A member at their limit frees space by deleting and swapping old attachments; a phone photo goes as a smaller copy unless its sender sends it full size, and a phone video too large for the den as a copy that fits; and a den with retention on removes messages and their files once they pass it |
 | M6 | Sync efficiency: the client's encrypted cache of files and history, the changes since it last synced, cached member lists, offline reading, compressed large frames | A client restarted after a day offline downloads only what changed |
 | M7 | Global shortcuts: push to talk and the other voice keys while another program has focus, through a helper in the desktop session (see Global shortcuts) | A member pushes to talk from a full-screen game, on Windows and on GNOME and KDE under Wayland |
-| M8 | Polls, planned with the milestone | Planned with the milestone |
 
 **M1 steps.** M1 lands as eight steps, each its own pull request, each ending with a check in the four target browsers:
 
@@ -1209,9 +1243,31 @@ Dens takes both: the module makes a copy in any browser, in parallel to make up 
 - In the container, both browsers: a video seeks through the parts it played, from the cache, after the service restarts; the storage card; from M6.2, the offline banner and reading.
 - The manual test: the four target browsers; a den with photos, videos and a few days of history; the member's machine off overnight; the den restarted as for an update; and the cache's size lowered and the cache emptied.
 
-**Before the first release:** onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone.
+**M7 steps.** M7 lands as two pull requests, each starting with a throwaway spike that answers its platform's questions, built and committed in layers (the helper and the service, the page, the installer with the lifecycle harnesses, then the docs), and checked in the four target browsers:
 
-**After v1 loose ideas:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, a static dictionary for compressing the den socket's small frames, should measurements show live events matter (built from the protocol's shapes, never members' messages, and named in the upgrade so client and den agree on its version), AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos, and dedup of each member's own channel uploads: their Dens hashes a file once it's stripped, the den keeps the hashes keyed with its data key so its database doesn't show which files it holds, and a file on several messages goes with the last of them.
+| Step | Scope | Done when |
+| --- | --- | --- |
+| M7.1 Windows | The spike; the helper and its stream on the control endpoint; the keys kept by the service, with the mouse's side buttons; the page acting on the helper's keys, and the settings saying whether they work in other programs; the manifest; the scheduled task | A member pushes to talk, toggles mute and pushes to mute from a full-screen game on Windows, with a key and with a mouse button |
+| M7.2 Linux | The spike; the portal, with the desktop's confirmation and its names for the keys; X11; the autostart entry and the `.desktop` file | A member pushes to talk from a full-screen game on GNOME and on KDE under Wayland |
+
+**M7.**
+
+- The control endpoint gains a stream (`shortcuts`): the helper's request opens it, and JSON lines then go both ways until either side closes it, each side pinging every 15 seconds and giving up on the other after 45 without a line. The service sends `hello` with its version, then `state` (the keys and whether it holds a call) as either changes; the helper sends `source` (what it covers) after each state, and `press` for each press and release. An instance holds one stream from its desktop user's helper: a newer one replaces it, and the old one, told `replaced`, exits. `internal/shortcuts` holds the service's side, the hub, and the helper's.
+- The keys are the service's setting `voiceKeys`, which the settings' API takes whole. The page learns of them, and of the helper, over its socket with the service: `keys` with the keys and whether a helper is connected, which actions it covers and its note, as either changes, and `key` for each press during a call, which the hub drops outside one.
+- The helper's key sources are a seam in `internal/platform/host`: polling on Windows, and the portal or X11 on Linux, chosen by the session. A page's key names a physical key; Windows' reader maps the layout's keys (letters, digits, punctuation) from scan codes through the current layout, and the rest directly to their virtual keys.
+- The Windows spike (its findings in `spikes/README.md` at commit a03d820) ran on Windows 11 24H2 with a Ryzen 7 9800X3D. Reads saw a key pressed with a game focused full screen (PRAGMATA) and in Steam, and saw nothing with an elevated Windows Terminal in front. At normal and below-normal priority, with the game running, 10 ms reads came at a median and p99 of 10 ms, one gap in some 15,000 reaching 20 ms, for 0.2% to 1% of one core. Started from Explorer, Task Scheduler and WSL, the manifest left it without a console, and no window showed. No game with anti-cheat was at hand. The manual test then pushed to talk, toggled mute and pushed to mute from a game through the helper, with keys and a mouse's side button, and found the helper running again after signing in and after an update.
+- The Linux spike asks how the portal's dialog, presses and releases behave on GNOME and KDE, and whether they remember the keys across logins.
+
+**M7 testing.**
+
+- Go tests: the stream, with its heartbeats and a newer helper replacing an older one; the service passing keys to its pages and calls to the helper; the helper matching presses to actions, and its maps from the page's key names to Windows' scan codes and virtual keys, X11's keycodes and the portal's triggers; the portal client against a fake portal on a private D-Bus; the X11 client against a virtual X server; and the manifest's resource file regenerated and compared.
+- Page tests: the helper's keys acting in place of the page's own, never counted twice, and still not firing while the member types.
+- The lifecycle harnesses: the scheduled task on Windows, and the autostart entry and the `.desktop` file on Linux, appear with the first install and go with the last uninstall.
+- The manual test: on Windows, a full-screen game in front, with a key and a mouse button, and a program run as administrator to see the limit; on GNOME and KDE under Wayland, in VMs, the desktop's dialog, a game in front, and the keys still bound after signing out and in.
+
+**Before the first release:** a deep audit of the whole project: its security first, against the checklist in Security hardening, whose unticked items it verifies, then its code, tests and docs, with what it finds fixed. Then onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone. Then the public site is polished, and v1 published.
+
+**After v1 loose ideas:** bookmarks (per member and per den, so a den's bookmarks always resolve against that den), polls from the composer's + menu, SteamOS, TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, a static dictionary for compressing the den socket's small frames, should measurements show live events matter (built from the protocol's shapes, never members' messages, and named in the upgrade so client and den agree on its version), AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos, and dedup of each member's own channel uploads: their Dens hashes a file once it's stripped, the den keeps the hashes keyed with its data key so its database doesn't show which files it holds, and a file on several messages goes with the last of them.
 
 ## Open questions
 

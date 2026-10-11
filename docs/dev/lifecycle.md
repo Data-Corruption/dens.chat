@@ -88,9 +88,9 @@ The installer scripts run `dens install` with the release they downloaded. It in
 3. Read each member's state. Journal a restart of the services that were running, as the last step to undo, then publish `installing` (a fresh instance, or one whose first install never finished) or `updating` from the recorded version.
 4. Stop the services and take each `lifecycle.lock`.
 5. Create the account, install the binary and cosign, register each member's service and set its permissions.
-6. Write the target's instance config and generate and host-wrap a data key for a fresh instance. On Windows, also add the den's firewall rules, the `PATH` entry and the error-reporting exclusion.
+6. Write the target's instance config and generate and host-wrap a data key for a fresh instance. On Windows, also add the den's firewall rules, a scheduled task that starts the shortcut helper (`dens shortcuts`, M7) at the desktop user's sign-in, the `PATH` entry and the error-reporting exclusion. The task is the desktop user's, named for their SID (`Dens shortcuts-<SID>`), and serves every instance that answers them.
 7. Release the lifecycle locks and commit the journal. This is the point of no return.
-8. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate.
+8. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate. Then end the shortcut helper's task, if it runs the last version, and run it again, so a desktop user who is signed in needn't sign out. A helper started otherwise takes up the new binary itself when its services come back at a newer version.
 
 A failure before step 7 undoes the journal in reverse. A failure after it leaves the transitional state; running the installer again starts a new transition to its version from the recorded one.
 
@@ -108,7 +108,7 @@ A failure before step 7 undoes the journal in reverse. A failure after it leaves
 
 ### Uninstall
 
-`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service, its event log source on Windows and its firewall rules, and deletes the instance root and the account. The last instance also removes the binary, cosign and the unit template on Linux, or the `PATH` entry and error-reporting exclusion on Windows. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
+`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service, its event log source on Windows and its firewall rules, and deletes the instance root and the account. The last instance also removes the binary, cosign and the unit template on Linux, or the shortcut helpers' scheduled tasks, ending the helpers they run, the `PATH` entry and the error-reporting exclusion on Windows. A helper whose instances are all gone stops by itself. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
 
 Uninstall has no undo. Running it again finishes an interrupted one.
 
@@ -160,7 +160,7 @@ Both harnesses install unsigned fixture releases built by `scripts/test/fixture-
 
 ### Windows
 
-`scripts/test-lifecycle-e2e.ps1` runs the same flows against the real SCM service, with a service restart standing in for the reboot. It also checks the service's virtual account, restricted SID and single privilege, the directory DACLs, the `PATH` entry, the error-reporting exclusion and the den's firewall rules. It refuses to run where Dens is installed and uninstalls on failure. CI runs it with the exact installer candidate (`-InstallerCandidate`).
+`scripts/test-lifecycle-e2e.ps1` runs the same flows against the real SCM service, with a service restart standing in for the reboot. It also checks the service's virtual account, restricted SID and single privilege, the directory DACLs, the `PATH` entry, the error-reporting exclusion, the den's firewall rules, and the shortcut helper's scheduled task, which the last uninstall removes. It refuses to run where Dens is installed and uninstalls on failure. CI runs it with the exact installer candidate (`-InstallerCandidate`).
 
 To run it on a spare Windows machine:
 
