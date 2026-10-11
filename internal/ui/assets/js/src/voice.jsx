@@ -12,8 +12,8 @@ import { rank } from './people.jsx';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import {
-    byName, clearNotice, clearShareNotice, joinAndWatch, leaveCall, onCall, setDeafened, setMuted, setPreview, setVolume, startShare, stopShare,
-    unwatchShare, voiceSettings, volumeIn, watchShare,
+    byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, setDeafened, setMuted, setPreview, setVolume, startShare,
+    stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
@@ -57,7 +57,8 @@ function notices(call, notice, denID, staffMuted, shareNotice) {
     }
     if (call?.waitingForMic) lines.push(<p key="mic">Waiting for the microphone. If your browser asks for it, allow it.</p>);
     if (call && staffMuted && call.den === denID) lines.push(<p key="staff" class="text-warning">Muted by staff: nobody hears you</p>);
-    if (call && ptt.mode === 'ptt' && !ptt.keys.ptt) {
+    // A key the desktop runs counts as much as one the page knows (M7.2).
+    if (call && ptt.mode === 'ptt' && !ptt.keys.ptt && !keysElsewhere().covers.includes('ptt')) {
         lines.push(
             <button key="ptt" type="button" class="link text-left text-warning" onClick={() => openSettings('voice')}>
                 Push to talk has no key: set one

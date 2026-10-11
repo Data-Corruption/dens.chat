@@ -545,15 +545,29 @@ export function readKeys(keys) {
 // readKeyStatus reads what the service says of the keys and its helper:
 // the keys, whether a helper is connected, the actions it reads in other
 // programs during a call, what the system keeps from it, and why it reads
-// none, where it can't.
+// none, where it can't. Where the desktop owns the keys (M7.2) it also says
+// so (confirms), whether the member can set them up with it (bindable),
+// whether its dialog is up (binding), its names for the keys, whether it
+// can show its settings for them (configurable), and whether the member
+// uses them (desktop).
 export function readKeyStatus(d) {
     const helper = !!d?.helper;
+    const names = {};
+    for (const name of KEYS) {
+        if (helper && typeof d.names?.[name] === 'string' && d.names[name]) names[name] = d.names[name];
+    }
     return {
         keys: readKeys(d?.keys),
         helper,
         covers: helper && Array.isArray(d.covers) ? KEYS.filter((a) => d.covers.includes(a)) : [],
         note: helper && typeof d.note === 'string' ? d.note : '',
         problem: helper && typeof d.problem === 'string' ? d.problem : '',
+        confirms: helper && !!d.confirms,
+        bindable: helper && !!d.bindable,
+        binding: helper && !!d.binding,
+        names,
+        configurable: helper && !!d.configurable,
+        desktop: !!d?.desktop,
     };
 }
 
@@ -767,10 +781,10 @@ function releaseAction(action) {
 }
 
 // The page acts on its own keys, except those the helper reads during a
-// call: the helper sees them pressed here too, and a toggle would fire
-// twice.
+// call, since it sees them pressed here too and a toggle would fire twice,
+// and those the desktop owns, whose keys may be others.
 function ownKey(action) {
-    return !(call && covered(action));
+    return !(covered(action) && (call || keyStatus.confirms));
 }
 
 // captureKey resolves to the next key or side button pressed, as a binding,
@@ -884,9 +898,17 @@ function helperPress(p) {
         releaseAction(p.action);
         return;
     }
-    // A key that types doesn't fire while the member types in a field here.
-    if (document.hasFocus() && isField(document.activeElement) && bindingTypes(keyStatus.keys[p.action])) return;
+    // A key that types doesn't fire while the member types in a field
+    // here. One the desktop owns never reaches the field.
+    if (!keyStatus.confirms && document.hasFocus() && isField(document.activeElement) && bindingTypes(keyStatus.keys[p.action])) return;
     pressAction(p.action);
+}
+
+// desktopKeys asks a desktop that owns the keys to bind them ("bind"),
+// which shows its dialog, to show its settings for them ("configure"), or
+// stops using them ("stop").
+export async function desktopKeys(what) {
+    await api.post('/api/shortcuts/desktop', { do: what });
 }
 
 // handleKeys follows the keys and the helper from the service: what the
