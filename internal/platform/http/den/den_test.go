@@ -503,14 +503,15 @@ func TestChangesOverHTTP(t *testing.T) {
 	var changes denproto.Changes
 	err = json.NewDecoder(resp.Body).Decode(&changes)
 	resp.Body.Close()
+	// The owner joining was the den's first change, the edit its second.
 	if err != nil || resp.StatusCode != http.StatusOK || !resp.Uncompressed || len(changes.Messages) != 1 ||
-		changes.Messages[0].Text != "after" || changes.Version != 1 {
+		changes.Messages[0].Text != "after" || changes.Version != 2 {
 		t.Fatalf("changes: %d %+v %v (gzipped: %v)", resp.StatusCode, changes, err, resp.Uncompressed)
 	}
 	for _, query := range []string{"", "since=x", "since=-1", "since=0&upto=x"} {
 		wantError(t, get(query), http.StatusBadRequest, denproto.CodeInvalidField)
 	}
-	wantError(t, get("since=2"), http.StatusGone, denproto.CodeChangesGone)
+	wantError(t, get("since=3"), http.StatusGone, denproto.CodeChangesGone)
 }
 
 func TestSocketCompression(t *testing.T) {

@@ -211,6 +211,10 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	defer cancel()
 
 	epoch, after := parseResume(r.URL.Query().Get("resume"))
+	var members *membersCursor
+	if e, v, ok := denproto.ParseMembersCursor(r.URL.Query().Get("members")); ok {
+		members = &membersCursor{epoch: e, version: v}
+	}
 	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, IsStaff(s.Role), epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 
@@ -230,7 +234,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	sendReady := func(seq uint64) bool {
 		// The role can change while the socket is open; the hub knows the
 		// current one.
-		snap, err := d.snapshot(ctx, s.MemberID, d.Hub.Staff(sub), seq)
+		snap, err := d.snapshot(ctx, s.MemberID, d.Hub.Staff(sub), seq, members)
 		if err != nil {
 			d.log.Errorf("den snapshot: %v", err)
 			c.Close(websocket.StatusInternalError, "")

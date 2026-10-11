@@ -527,6 +527,11 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 				return err
 			}
 		}
+		// Clients that kept the list of members get the joiner's record
+		// with their next snapshot (M6.2).
+		if err := logMember(ctx, tx, id, now); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO den_devices (key_id, member_id, public_key, label, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)`,
 			[]byte(keyID), id, []byte(req.PublicKey), label, now.UnixMilli(), now.UnixMilli()); err != nil {

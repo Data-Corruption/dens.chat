@@ -111,7 +111,7 @@ func TestStaffOnlyChannels(t *testing.T) {
 	if _, err := f.d.History(ctx, member, staff.ID, HistoryQuery{}); !denproto.IsCode(err, denproto.CodeNotFound) {
 		t.Fatalf("a member read a staff-only channel: %v", err)
 	}
-	snap, err := f.d.snapshot(ctx, member.MemberID, false, 0)
+	snap, err := f.d.snapshot(ctx, member.MemberID, false, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestMentionsAndReadState(t *testing.T) {
 		return m
 	}
 	state := func(s *Session, staff bool) denproto.ReadState {
-		snap, err := f.d.snapshot(ctx, s.MemberID, staff, 0)
+		snap, err := f.d.snapshot(ctx, s.MemberID, staff, 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

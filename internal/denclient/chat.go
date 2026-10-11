@@ -56,14 +56,20 @@ type HistoryQuery struct {
 	Limit                 int
 }
 
-// History fetches a page of a channel's messages from the den. A DM's
-// come opened, or saying why they can't be.
+// History fetches a page of a channel's messages: from the cache where it
+// holds them, and from the den otherwise (M6.2). A DM's come opened, or
+// saying why they can't be.
 func (m *Manager) History(ctx context.Context, denID, channelID string, q HistoryQuery) (PageHistory, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return PageHistory{}, err
 	}
-	h, err := c.history(ctx, channelID, q)
+	var h denproto.History
+	if c.cached() {
+		h, err = c.cachedHistory(ctx, channelID, q)
+	} else {
+		h, err = c.history(ctx, channelID, q)
+	}
 	if err != nil {
 		return PageHistory{}, err
 	}

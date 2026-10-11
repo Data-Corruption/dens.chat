@@ -8,6 +8,7 @@ import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane } from './messages.jsx';
+import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, RemoveMember, isStaff } from './people.jsx';
 import { needsCheck } from './private.js';
@@ -356,6 +357,7 @@ export function Chat({ denID, channelID, navigate }) {
                                 closed={closed}
                                 limits={view.limits}
                                 retention={view.retention}
+                                offline={showsOffline(live, view.state)}
                                 onProfile={(m) => setDialog({ kind: 'profile', member: m })}
                                 onTyping={() => sendTyping(denID, channel.id)}
                             />

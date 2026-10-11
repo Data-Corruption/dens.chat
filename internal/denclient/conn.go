@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -101,10 +103,27 @@ type conn struct {
 	owners    map[string]fileOwner
 	readySync *pendingSync
 	syncDue   chan struct{}
+	// From M6.2: the connection's generation, new with each snapshot, in
+	// which a run of messages that reached a channel's newest still does;
+	// where the kept list of members stands, and whether the state and
+	// the members changed since the cache last kept them.
+	gen          atomic.Int64
+	members      *membersCursor
+	stateDirty   bool
+	membersDirty bool
 
-	// Only the run goroutine touches these.
-	epoch string
-	seq   uint64
+	// Only the run goroutine touches these, and sentMembers, the cursor
+	// this socket's upgrade named.
+	epoch       string
+	seq         uint64
+	sentMembers *membersCursor
+}
+
+// membersCursor is where a list of members stands: the den's sync epoch
+// and version it's current as of (M6.2).
+type membersCursor struct {
+	epoch   denproto.Bytes
+	version int64
 }
 
 func (c *conn) status() Status {
@@ -375,8 +394,21 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	}
 	a := c.remote()
 	u := a.base + "/api/ws"
+	q := url.Values{}
 	if c.epoch != "" {
-		u += "?resume=" + c.epoch + "." + strconv.FormatUint(c.seq, 10)
+		q.Set("resume", c.epoch+"."+strconv.FormatUint(c.seq, 10))
+	}
+	// A client that kept the list of members asks only for the changes to
+	// it (M6.2).
+	c.mu.Lock()
+	c.sentMembers = nil
+	if c.members != nil && c.den != nil {
+		c.sentMembers = c.members
+		q.Set("members", denproto.MembersCursor(c.members.epoch, c.members.version))
+	}
+	c.mu.Unlock()
+	if len(q) > 0 {
+		u += "?" + q.Encode()
 	}
 	h := http.Header{}
 	a.headers(h, token)
@@ -485,16 +517,28 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if err := json.Unmarshal(e.D, &r); err != nil {
 			return e, false, fmt.Errorf("malformed ready: %w", err)
 		}
+		// Only the members changed since the list this socket named.
+		var prev map[string]denproto.Member
+		if since := r.Sync.MembersSince; since != nil {
+			c.mu.Lock()
+			if c.den != nil && c.sentMembers != nil && *since == c.sentMembers.version {
+				prev = c.den.members
+			}
+			c.mu.Unlock()
+		}
 		state := newState()
-		if err := state.load(r); err != nil {
+		if err := state.load(r, prev); err != nil {
 			return e, false, err
 		}
+		c.gen.Store(time.Now().UnixNano())
 		c.epoch, c.seq = r.Epoch, r.Seq
 		if err := c.updateProfile(ctx, r.Den, &r.Me); err != nil {
 			return e, false, err
 		}
 		c.mu.Lock()
 		c.den = state
+		c.members = &membersCursor{epoch: r.Sync.Epoch, version: r.Sync.Version}
+		c.stateDirty, c.membersDirty = true, true
 		c.markDueLocked(c.dueKeysLocked()...)
 		clear(c.dmFiles)
 		c.mu.Unlock()
@@ -556,12 +600,22 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	me := c.profile.Member.ID
 	gone := c.den.gone
 	c.den.gone = nil
+	// The message as the den sent it, for the cache, which keeps a DM's
+	// sealed (M6.2).
+	var kept *denproto.Message
+	if err == nil && ok && e.Seq != 0 {
+		c.stateDirty = true
+		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {
+			c.membersDirty = true
+		}
+	}
 	switch {
 	case err != nil:
 	case e.T == denproto.EventMessageCreated || e.T == denproto.EventMessageUpdated:
 		// A DM's message reaches the page opened, or saying why it can't be.
 		var m denproto.Message
 		if json.Unmarshal(out.D, &m) == nil {
+			kept = &m
 			if m.Sealed != nil {
 				out, err = denproto.NewEvent(out.T, out.Seq, c.openLocked(m))
 			} else {
@@ -578,6 +632,9 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	c.mu.Unlock()
 	if requests && err == nil {
 		c.requestChanged(e)
+	}
+	if err == nil {
+		c.cacheMessageEvent(e, kept)
 	}
 	if len(gone) > 0 {
 		c.m.files.drop(c.j.denID.String(), gone...)

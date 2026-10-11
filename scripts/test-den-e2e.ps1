@@ -909,6 +909,8 @@ den.test:$HttpsPort {
     $cachedMessage = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedPhoto.id) }).id
     $cachedVideo = Send-Upload $owner $denID $channel (Join-Path $media "with-gps.mov") "cached.mov"
     Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedVideo.id) } | Out-Null
+    $toEdit = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = "to be edited" }).id
+    $toDelete = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = "to be deleted" }).id
     # The member's page loads the channel, and shows its photo and video.
     Get-History $member $denID $channel | Out-Null
     $videoCopy = Join-Path $Work "cached-video.mp4"
@@ -921,13 +923,21 @@ den.test:$HttpsPort {
     # restarts, so nothing remains of the delete but the den's changes.
     Invoke-Native -FilePath $Dens -Arguments @("service", "stop", "--instance", "second") | Out-Null
     Invoke-Api $owner DELETE "/api/dens/$denID/messages/$cachedMessage" | Out-Null
+    Invoke-Api $owner PATCH "/api/dens/$denID/messages/$($toEdit)?channel=$channel" @{ revision = 1; text = "edited while away" } | Out-Null
+    Invoke-Api $owner DELETE "/api/dens/$denID/messages/$toDelete" | Out-Null
     Invoke-Native -FilePath $Dens -Arguments @("service", "restart") | Out-Null
     Wait-Connected $owner 0 | Out-Null
     Invoke-Native -FilePath $Dens -Arguments @("service", "start", "--instance", "second") | Out-Null
     Wait-Connected $member 0 | Out-Null
     Wait-Gone $member $denID $cachedPhoto.id
-    # With the den stopped, the video plays from the member's cache.
+    # The edit and the delete reached the member's history (M6.2).
+    $readsRight = { param($h) $h.Contains("edited while away") -and -not $h.Contains("to be deleted") }
+    Wait-Value { & $readsRight (Get-History $member $denID $channel) } "the edit and the delete in the member's history" | Out-Null
+    # With the den stopped, the video plays from the member's cache, and the
+    # channel reads from it.
     Invoke-Native -FilePath $Dens -Arguments @("service", "stop") | Out-Null
+    $history = Get-History $member $denID $channel
+    if (-not (& $readsRight $history)) { Fail "the member's history with the den stopped: $history" }
     $again = Join-Path $Work "cached-video-again.mp4"
     Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($cachedVideo.id)" -WebSession $member.Session -UseBasicParsing `
         -OutFile $again -TimeoutSec 60 | Out-Null
@@ -939,7 +949,7 @@ den.test:$HttpsPort {
     Invoke-Native -FilePath $Dens -Arguments @("service", "start") | Out-Null
     Wait-Connected $owner 0 | Out-Null
     Wait-Connected $member $restarted | Out-Null
-    Write-Host "The deleted photo left the member's cache as they came back, and the video played from it with the den stopped."
+    Write-Host "The deleted photo left the member's cache as they came back, an edit and a delete reached their history, and the video and the channel read from the cache with the den stopped."
 
     Step "a private DM, once both members compare check codes"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"

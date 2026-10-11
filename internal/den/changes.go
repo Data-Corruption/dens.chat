@@ -46,6 +46,30 @@ func logMessage(ctx context.Context, tx *sql.Tx, message, channel int64, at time
 	return logChange(ctx, tx, changeMessage, message, &channel, at)
 }
 
+// logMember records a change to a member's record (M6.2): what ready
+// sends of them, so a client that kept the list gets them again.
+func logMember(ctx context.Context, tx *sql.Tx, member int64, at time.Time) error {
+	return logChange(ctx, tx, changeMember, member, nil, at)
+}
+
+// changedMembers lists the members whose records changed after a version.
+func changedMembers(ctx context.Context, q querier, since int64) (map[int64]bool, error) {
+	rows, err := q.QueryContext(ctx, `SELECT ref FROM den_changes WHERE kind = ? AND id > ?`, changeMember, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}
+
 // version is the newest change's number, or 0 before the first.
 func version(ctx context.Context, q querier) (int64, error) {
 	var v int64

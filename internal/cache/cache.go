@@ -26,7 +26,7 @@ import (
 // Format is the cache's format, kept as its database's user_version. A
 // cache of another format starts again from empty: it holds nothing that
 // can't be fetched again.
-const Format = 1
+const Format = 2
 
 // The cache's size, which the member chooses in the settings.
 const (
@@ -62,6 +62,7 @@ type Store struct {
 	entries map[key]*entry
 	idle    []*entry // entries no handle reads, least recently used first
 	dens    map[string]int64
+	guards  map[int64]*guards
 	closed  bool
 }
 
@@ -70,7 +71,7 @@ type Store struct {
 // DefaultLimit.
 func Open(dir string, v *vault.Vault, log *xlog.Logger, limit int64) (*Store, error) {
 	s := &Store{dir: dir, v: v, log: log, now: time.Now, limit: clampLimit(limit), entries: map[key]*entry{},
-		dens: map[string]int64{}}
+		dens: map[string]int64{}, guards: map[int64]*guards{}}
 	if err := s.open(); err != nil {
 		return nil, err
 	}
@@ -166,13 +167,58 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 
 		-- The dens the cache holds anything of, and the epoch and version
 		-- of their changes the client last synced at; epoch is NULL before
-		-- the first.
+		-- the first. From M6.2 also the den's state as the client last had
+		-- it, and its members, current as of members_epoch and
+		-- members_version, each sealed; and the last message retention
+		-- deleted, as last heard.
 		CREATE TABLE dens (
-			den     INTEGER PRIMARY KEY,
-			den_id  BLOB NOT NULL UNIQUE,
-			epoch   BLOB,
-			version INTEGER NOT NULL DEFAULT 0
+			den             INTEGER PRIMARY KEY,
+			den_id          BLOB NOT NULL UNIQUE,
+			epoch           BLOB,
+			version         INTEGER NOT NULL DEFAULT 0,
+			state           BLOB,
+			members         BLOB,
+			members_epoch   BLOB,
+			members_version INTEGER NOT NULL DEFAULT 0,
+			expired         INTEGER NOT NULL DEFAULT 0
 		) STRICT;
+
+		-- Messages, each as the den sent it, as JSON, sealed (M6.2).
+		CREATE TABLE messages (
+			den      INTEGER NOT NULL,
+			id       INTEGER NOT NULL,
+			channel  INTEGER NOT NULL,
+			revision INTEGER NOT NULL,
+			reply_to INTEGER,
+			body     BLOB NOT NULL,
+			PRIMARY KEY (den, id)
+		) STRICT, WITHOUT ROWID;
+		CREATE INDEX messages_channel ON messages (den, channel, id);
+		CREATE INDEX messages_reply ON messages (den, reply_to) WHERE reply_to IS NOT NULL;
+
+		-- Ranges of a channel's IDs for which the cache holds every message:
+		-- first says nothing comes before lo, and gen is the connection in
+		-- which the run reached the channel's newest message, or 0.
+		CREATE TABLE runs (
+			den     INTEGER NOT NULL,
+			channel INTEGER NOT NULL,
+			lo      INTEGER NOT NULL,
+			hi      INTEGER NOT NULL,
+			first   INTEGER NOT NULL DEFAULT 0,
+			gen     INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (den, channel, lo)
+		) STRICT;
+
+		-- The channels the cache holds messages of: the bytes they take, and
+		-- when the member last read them, which eviction goes by.
+		CREATE TABLE channels (
+			den     INTEGER NOT NULL,
+			channel INTEGER NOT NULL,
+			bytes   INTEGER NOT NULL DEFAULT 0,
+			used_at INTEGER NOT NULL,
+			PRIMARY KEY (den, channel)
+		) STRICT;
+		CREATE INDEX channels_used ON channels (used_at);
 
 		-- Files and their previews (thumb), each held in the file name
 		-- names, of which held bytes are on disk, as slots of sealed chunks.
@@ -265,7 +311,7 @@ func (s *Store) tidy() error {
 			}
 		}
 	}
-	return s.db.QueryRowContext(ctx, `SELECT coalesce(sum(held), 0) FROM files`).Scan(&s.used)
+	return s.db.QueryRowContext(ctx, `SELECT (SELECT coalesce(sum(held), 0) FROM files) + (SELECT coalesce(sum(bytes), 0) FROM channels)`).Scan(&s.used)
 }
 
 // Close closes the cache's database. Handles still open keep reading what
@@ -302,12 +348,20 @@ func (s *Store) SetLimit(n int64) error {
 	return s.evictLocked()
 }
 
-// Clear empties the cache of files. Where each den's changes stood stays:
-// an empty cache is as current as any.
+// Clear empties the cache of files and messages. Where each den's changes
+// stood stays, and its state: an empty cache is as current as any.
 func (s *Store) Clear() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.dropLocked(`1`)
+	if err := s.dropLocked(`1`); err != nil {
+		return err
+	}
+	for _, table := range []string{"messages", "runs", "channels"} {
+		if _, err := s.db.Exec(`DELETE FROM ` + table); err != nil {
+			return err
+		}
+	}
+	return s.db.QueryRow(`SELECT coalesce(sum(held), 0) FROM files`).Scan(&s.used)
 }
 
 // den returns a den's number in the cache, adding the den first if the
@@ -375,7 +429,11 @@ func (s *Store) DropDen(denID []byte) error {
 	if err := s.dropLocked(`den = ?`, den); err != nil {
 		return err
 	}
+	if err := s.dropMessagesLocked(den, ""); err != nil {
+		return err
+	}
 	delete(s.dens, string(denID))
+	delete(s.guards, den)
 	_, err := s.db.Exec(`DELETE FROM dens WHERE den = ?`, den)
 	return err
 }

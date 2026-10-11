@@ -589,6 +589,11 @@ wait-gone)
     done
     fail "file $2 is still served"
     ;;
+edit)
+    # edit DEN_ID CHANNEL_ID MESSAGE_ID TEXT: edit a message at its first
+    # revision, as the page does.
+    api PATCH "/api/dens/$1/messages/$3?channel=$2" "{\"revision\":1,\"text\":\"$4\"}" >/dev/null
+    ;;
 delete)
     # delete DEN_ID MESSAGE_ID: delete a message for good.
     api DELETE "/api/dens/$1/messages/$2" >/dev/null
