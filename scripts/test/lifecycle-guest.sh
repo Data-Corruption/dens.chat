@@ -89,6 +89,14 @@ phase_install() {
         sh /release/install.sh
     systemctl is-active --quiet dens@main || fail "dens@main is not running"
     expect_state main "$V1"
+    # The shortcut helper starts at each desktop sign-in, and the .desktop
+    # file its portal needs names Dens, with its icon.
+    grep -qx 'Exec=/usr/local/bin/dens shortcuts' /etc/xdg/autostart/chat.dens.Dens.desktop ||
+        fail "no autostart entry starts the shortcut helper"
+    grep -qx 'Exec=/usr/local/bin/dens open' /usr/local/share/applications/chat.dens.Dens.desktop ||
+        fail "no .desktop file names Dens"
+    grep -q '<svg' /usr/local/share/icons/hicolor/scalable/apps/chat.dens.Dens.svg || fail "Dens's icon is missing"
+    expect_mode /etc/xdg/autostart/chat.dens.Dens.desktop "root:root 644"
     expect_mode /var/lib/dens/main/control "root:dens-main 750"
     expect_mode /var/lib/dens/main/control/state.json "root:dens-main 640"
     expect_mode /var/lib/dens/main/control/datakey.cred "root:root 600"
@@ -186,8 +194,11 @@ phase_after_reboot() {
     step "uninstall both instances"
     dens uninstall --instance second --yes
     [ -x /usr/local/bin/dens ] || fail "uninstalling one instance removed the shared binary"
+    [ -e /etc/xdg/autostart/chat.dens.Dens.desktop ] || fail "uninstalling one instance removed the shortcut helper's autostart entry"
     dens uninstall --yes
-    for path in /var/lib/dens /usr/local/bin/dens /etc/systemd/system/dens@.service /etc/sysusers.d/dens-main.conf; do
+    for path in /var/lib/dens /usr/local/bin/dens /etc/systemd/system/dens@.service /etc/sysusers.d/dens-main.conf \
+        /etc/xdg/autostart/chat.dens.Dens.desktop /usr/local/share/applications/chat.dens.Dens.desktop \
+        /usr/local/share/icons/hicolor/scalable/apps/chat.dens.Dens.svg; do
         [ ! -e "$path" ] || fail "$path survived uninstall"
     done
     if id dens-main >/dev/null 2>&1; then
