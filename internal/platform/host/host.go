@@ -56,6 +56,22 @@ type ControlServer struct {
 	ServiceName string
 }
 
+// DesktopAction is a shortcut the helper binds with the desktop (M7.2): its
+// ID, what it does, and the trigger it would like, in the XDG shortcuts
+// format, or none.
+type DesktopAction struct {
+	ID, Description, Trigger string
+}
+
+// DesktopPress is a bound shortcut going down or up.
+type DesktopPress struct {
+	ID   string
+	Down bool
+}
+
+// ErrDesktopCancelled is the member turning the desktop's dialog down.
+var ErrDesktopCancelled = errors.New("cancelled")
+
 // ServiceState is what service control reports about an installed service.
 type ServiceState struct {
 	Running bool

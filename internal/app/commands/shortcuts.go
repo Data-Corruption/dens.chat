@@ -33,9 +33,24 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 				},
 				Logf: func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
 			}
-			keys, err := host.OpenKeyState()
-			if err != nil {
-				h.Problem = err.Error()
+			// Under Wayland the desktop owns the keys, through its portal;
+			// elsewhere the helper reads them itself.
+			if desk, deskErr := host.OpenDesktopKeys(shortcuts.AppID); deskErr == nil {
+				first := desk
+				h.OpenDesktop = func() (shortcuts.DesktopKeys, error) {
+					if first != nil {
+						d := first
+						first = nil
+						return d, nil
+					}
+					d, err := host.OpenDesktopKeys(shortcuts.AppID)
+					if err != nil {
+						return nil, err
+					}
+					return d, nil
+				}
+			} else if keys, err := host.OpenKeyState(); err != nil {
+				h.Problem = errors.Join(deskErr, err).Error()
 			} else {
 				defer keys.Close()
 				h.Keys, h.Note = keys, keys.Note()
@@ -43,7 +58,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 			if l, err := layout.New(bi.Name, layout.DefaultInstance, bi.DevMode); err == nil && l.Binary != "" {
 				h.Restart = func() error { return host.ReplaceProcess(l.Binary, shortcuts.Command) }
 			}
-			err = h.Run(ctx)
+			err := h.Run(ctx)
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}

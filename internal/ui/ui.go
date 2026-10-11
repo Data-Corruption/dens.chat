@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"github.com/Data-Corruption/dens.chat/internal/build"
 )
 
 //go:embed templates/*.html
@@ -67,7 +69,7 @@ func (ui *UI) PageData(title, version string) map[string]any {
 	return map[string]any{
 		"CSS":     ui.CSS.URLPath,
 		"JS":      ui.JS.URLPath,
-		"Favicon": template.URL(`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23c2703d' d='M2 21v-6a10 10 0 0 1 20 0v6h-6v-5a4 4 0 0 0-8 0v5Z'/></svg>`),
+		"Favicon": template.URL("data:image/svg+xml," + strings.NewReplacer("#", "%23", `"`, "'").Replace(build.Mark)),
 		"Title":   title,
 		"Version": version,
 	}

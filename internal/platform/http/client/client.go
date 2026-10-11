@@ -27,6 +27,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
+	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/internal/youtube"
@@ -83,6 +84,7 @@ func New(a *app.App) http.Handler {
 		r.Get("/api/settings", rt.handleSettings)
 		r.Post("/api/settings", rt.handleSettingsUpdate)
 		r.Post("/api/cache/clear", rt.handleClearCache)
+		r.Post("/api/shortcuts/desktop", rt.handleShortcutsDesktop)
 		r.Post("/api/logout", rt.handleLogout)
 		rt.mountDens(r)
 		rt.mountYouTube(r)
@@ -193,6 +195,26 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"cacheUsed":              usage.Used,
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
 	})
+}
+
+// handleShortcutsDesktop passes what the member asks of a desktop that owns
+// the voice keys to the shortcut helper: to bind them, to show its
+// settings for them, or to stop using them (M7.2).
+func (rt *router) handleShortcutsDesktop(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Do string `json:"do"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	switch err := rt.a.Shortcuts.Desktop(body.Do); {
+	case err == nil:
+		writeJSON(w, map[string]bool{"ok": true})
+	case errors.Is(err, shortcuts.ErrNoHelper):
+		http.Error(w, "Dens's helper isn't running.", http.StatusConflict)
+	default:
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	}
 }
 
 // handleClearCache empties the client's cache of files (M6).
