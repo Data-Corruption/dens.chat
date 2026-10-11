@@ -20,6 +20,7 @@ import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
 } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
+import { OFFLINE_NOTE } from './offline.js';
 import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
 import { keptFor } from './retention.js';
 import { Markdown, Preview } from './markdown.jsx';
@@ -70,7 +71,7 @@ function viewed(m, file) {
 // keys the DM's keys; typing lists who is typing here; closed, when set,
 // says why nothing can be sent; limits are the den's upload limits, and
 // retention the days it keeps a message, 0 for ever (M5).
-export function MessagePane({ denID, channel, me, members, readPosition, role, dm, keys, typing, closed, limits, retention, onProfile, onTyping }) {
+export function MessagePane({ denID, channel, me, members, readPosition, role, dm, keys, typing, closed, limits, retention, offline, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -98,6 +99,10 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     const lastTop = useRef(0);
     const listRef = useRef(list);
     listRef.current = list;
+    // While the den is offline (M6.2), the note over the messages says why
+    // the pages beyond what this computer kept don't load.
+    const offlineRef = useRef(offline);
+    offlineRef.current = offline;
     const readUpTo = useRef(readPosition || '');
     const readTimer = useRef(null);
     const unsentRead = useRef('');
@@ -212,7 +217,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             captureAnchor();
             setList((l) => replayed(withOlder(l, got.page, below), got.since));
         } catch (e) {
-            setError(e.message);
+            if (!offlineRef.current) setError(e.message);
         } finally {
             loading.current.older = false;
         }
@@ -230,7 +235,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
             setList((l) => replayed(withNewer(l, got.page, above), got.since));
             if (!got.page.has_newer) setNewCount(0);
         } catch (e) {
-            setError(e.message);
+            if (!offlineRef.current) setError(e.message);
         } finally {
             loading.current.newer = false;
         }
@@ -590,6 +595,11 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                     Drop to attach
                 </div>
             )}
+            {offline && (
+                <div role="status" class="cursor-default select-none border-b border-warning/40 bg-warning/10 px-4 py-1 text-sm">
+                    {OFFLINE_NOTE}
+                </div>
+            )}
             {/* The room at the bottom is where who's typing shows, over the list. */}
             <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" onScroll={checkEdges}>
                 <div ref={content}>
@@ -619,7 +629,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                             )}
                         </div>
                     )}
-                    {list.hasOlder && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
+                    {list.hasOlder && !offline && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
                     {rows}
                     {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onToggle={toggled} onRetry={() => send(p.text, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
