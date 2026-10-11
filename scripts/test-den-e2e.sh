@@ -482,13 +482,15 @@ run() {
   echo ">> The video went as an AV1 copy of ${bytes} bytes within the 1 MiB limit, with its preview, and plays from any byte"
 
   echo ">> The member's cache keeps what they viewed across both restarts, and drops what went"
-  local cached_photo cached_message cached_video cached started
+  local cached_photo cached_message cached_video cached started to_edit to_delete
   "${INCUS[@]}" file push -q scripts/test/gps-photo.jpg "$DEN/root/gps-photo.jpg"
   "${INCUS[@]}" file push -q internal/media/ffmpeg/testdata/with-gps.mov "$DEN/root/with-gps.mov"
   read -r cached_photo _ <<<"$(guest "$DEN" upload "$den_id" /root/gps-photo.jpg cached.jpg "$channel")"
   cached_message=$(guest "$DEN" send-file "$den_id" "$channel" "$cached_photo")
   read -r cached_video _ <<<"$(guest "$DEN" upload-media "$den_id" /root/with-gps.mov cached.mov "$channel")"
   guest "$DEN" send-file "$den_id" "$channel" "$cached_video" >/dev/null
+  to_edit=$(guest "$DEN" send "$den_id" "$channel" "to be edited")
+  to_delete=$(guest "$DEN" send "$den_id" "$channel" "to be deleted")
   # The member's page loads the channel, and shows its photo and video.
   guest "$CLIENT" history "$den_id" "$channel" >/dev/null
   guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-photo.jpg >/dev/null
@@ -500,12 +502,26 @@ run() {
   # restarts, so nothing remains of the delete but the den's changes.
   "${INCUS[@]}" exec "$CLIENT" -- systemctl stop dens@main
   guest "$DEN" delete "$den_id" "$cached_message"
+  guest "$DEN" edit "$den_id" "$channel" "$to_edit" "edited while away"
+  guest "$DEN" delete "$den_id" "$to_delete"
   "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
   "${INCUS[@]}" exec "$CLIENT" -- systemctl start dens@main
   guest "$CLIENT" wait-connected 0 >/dev/null
   guest "$CLIENT" wait-gone "$den_id" "$cached_photo"
-  # With the den stopped, the video plays from the member's cache.
+  # The edit and the delete reached the member's history (M6.2).
+  for _ in $(seq 20); do
+    history=$(guest "$CLIENT" history "$den_id" "$channel")
+    [[ "$history" == *"edited while away"* && "$history" != *"to be deleted"* ]] && break
+    sleep 0.5
+  done
+  [[ "$history" == *"edited while away"* && "$history" != *"to be deleted"* ]] ||
+    { echo "error: the member's history after the day away: $history" >&2; return 1; }
+  # With the den stopped, the video plays from the member's cache, and the
+  # channel reads from it.
   "${INCUS[@]}" exec "$DEN" -- systemctl stop dens@main
+  history=$(guest "$CLIENT" history "$den_id" "$channel")
+  [[ "$history" == *"edited while away"* && "$history" != *"to be deleted"* ]] ||
+    { echo "error: the member's history with the den stopped: $history" >&2; return 1; }
   guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video-again.mp4 >/dev/null
   "${INCUS[@]}" exec "$CLIENT" -- cmp -s /root/cached-video.mp4 /root/cached-video-again.mp4 ||
     { echo "error: the cached video came back changed" >&2; return 1; }
@@ -513,7 +529,7 @@ run() {
   started=$(date +%s%3N)
   "${INCUS[@]}" exec "$DEN" -- systemctl start dens@main
   guest "$CLIENT" wait-connected "$started" >/dev/null
-  echo ">> The deleted photo left the member's cache as they came back, and the video played from it with the den stopped"
+  echo ">> The deleted photo left the member's cache as they came back, an edit and a delete reached their history, and the video and the channel read from the cache with the den stopped"
 
   echo ">> A private DM, once both members compare check codes"
   local bob dm owner_half member_half refusal
