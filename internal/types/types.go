@@ -31,6 +31,10 @@ type Configuration struct {
 	// service keeps them, not the browser, so the shortcut helper can watch
 	// them in other programs (M7).
 	VoiceKeys map[string]VoiceKey `json:"voiceKeys,omitempty"`
+	// DesktopKeys is whether the member had the desktop take the voice
+	// keys, where it owns them (M7.2), so the helper binds them with it as
+	// it starts.
+	DesktopKeys bool `json:"desktopKeys,omitempty"`
 }
 
 // VoiceActions are what keys are bound to: push to talk, toggle mute and

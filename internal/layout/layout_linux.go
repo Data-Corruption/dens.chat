@@ -36,6 +36,9 @@ func (l *Layout) resolve() error {
 	l.Account = l.App + "-" + l.Instance
 	l.UnitFile = filepath.Join("/etc/systemd/system", l.App+"@.service")
 	l.SysusersFile = filepath.Join("/etc/sysusers.d", l.Account+".conf")
+	l.AutostartFile = filepath.Join("/etc/xdg/autostart", DesktopID+".desktop")
+	l.DesktopFile = filepath.Join("/usr/local/share/applications", DesktopID+".desktop")
+	l.IconFile = filepath.Join("/usr/local/share/icons/hicolor/scalable/apps", DesktopID+".svg")
 	return nil
 }
 

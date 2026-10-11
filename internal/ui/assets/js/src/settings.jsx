@@ -16,8 +16,9 @@ import { HEIGHTS, RATES } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
-    cancelCapture, captureKey, chooseMic, chooseSpeaker, devices, inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall,
-    onKeys, onVoiceLevel, setKeys, setRNNoise, setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
+    cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel, keysElsewhere, micProblem,
+    noiseSuppression, onCall, onKeys, onVoiceLevel, setKeys, setRNNoise, setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest,
+    voiceSettings,
 } from './voice.js';
 
 const openers = new Set();
@@ -140,6 +141,14 @@ function VoiceSettings() {
             setError(e.message || "The keys weren't saved.");
         }
     }
+    async function desktop(what) {
+        setError('');
+        try {
+            await desktopKeys(what);
+        } catch (e) {
+            setError(e.message || "Your desktop wasn't asked.");
+        }
+    }
     async function bind(name) {
         setCapturing(name);
         const key = await captureKey();
@@ -226,7 +235,11 @@ function VoiceSettings() {
                 ) : (
                     <div class="flex flex-col gap-1">
                         <p class="text-sm text-base-content/70">
-                            {v.keys.ptt ? `Hold ${keyLabel(v.keys.ptt)} to send your voice.` : 'Set a push-to-talk key below, or nothing is sent.'}
+                            {elsewhere.confirms && elsewhere.covers.includes('ptt')
+                                ? 'Hold the push-to-talk key your desktop runs to send your voice.'
+                                : v.keys.ptt
+                                ? `Hold ${keyLabel(v.keys.ptt)} to send your voice.`
+                                : 'Set a push-to-talk key below, or nothing is sent.'}
                         </p>
                         <Meter report={report} threshold={null} />
                     </div>
@@ -248,7 +261,12 @@ function VoiceSettings() {
                             <p>{title}</p>
                             <p class="text-sm text-base-content/70">{hint}</p>
                         </div>
-                        {capturing === name ? (
+                        {elsewhere.confirms && elsewhere.covers.includes(name) ? (
+                            <span class="flex items-center gap-1.5">
+                                <kbd class="kbd kbd-sm">{elsewhere.names[name]}</kbd>
+                                <WorksElsewhere id={`elsewhere-${name}`} />
+                            </span>
+                        ) : capturing === name ? (
                             <span class="text-sm">Press a key or a mouse's side button. Escape cancels.</span>
                         ) : v.keys[name] ? (
                             <span class="flex items-center gap-1.5">
@@ -258,15 +276,17 @@ function VoiceSettings() {
                         ) : (
                             <span class="text-sm text-base-content/50">Not set</span>
                         )}
-                        <button type="button" class="btn btn-sm" disabled={!!capturing} onClick={() => bind(name)}>{v.keys[name] ? 'Change' : 'Set'}</button>
-                        {v.keys[name] && (
+                        {!(elsewhere.confirms && elsewhere.covers.includes(name)) && (
+                            <button type="button" class="btn btn-sm" disabled={!!capturing} onClick={() => bind(name)}>{v.keys[name] ? 'Change' : 'Set'}</button>
+                        )}
+                        {v.keys[name] && !(elsewhere.confirms && elsewhere.covers.includes(name)) && (
                             <button type="button" class="btn btn-ghost btn-sm" disabled={!!capturing} onClick={() => saveKeys({ ...v.keys, [name]: undefined })}>
                                 Clear
                             </button>
                         )}
                     </div>
                 ))}
-                <KeysNote elsewhere={elsewhere} />
+                <KeysNote elsewhere={elsewhere} onDesktop={desktop} />
             </Card>
             <ShareSettings />
             {error && <ErrorText message={error} />}
@@ -345,9 +365,44 @@ function WorksElsewhere({ id }) {
 }
 
 // KeysNote says where the keys work: in other programs while the helper
-// reads them, and otherwise while Dens has focus, as any web page's keys.
-function KeysNote({ elsewhere }) {
+// reads them, or the desktop runs them, and otherwise while Dens has focus,
+// as any web page's keys. Where the desktop owns the keys (M7.2), the
+// member sets them up with it, changes them in its settings, or stops.
+function KeysNote({ elsewhere, onDesktop }) {
     const text = 'text-sm text-base-content/70';
+    if (elsewhere.helper && elsewhere.confirms) {
+        if (elsewhere.covers.length > 0) {
+            return (
+                <div class="flex flex-col gap-2">
+                    <p class={text}>
+                        Your desktop runs these keys in every program, Dens included, and Dens acts on them during a call. {elsewhere.note}
+                    </p>
+                    <div class="flex flex-wrap gap-2">
+                        {elsewhere.configurable && (
+                            <button type="button" class="btn btn-sm" onClick={() => onDesktop('configure')}>Change them</button>
+                        )}
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDesktop('stop')}>Stop using them</button>
+                    </div>
+                </div>
+            );
+        }
+        if (elsewhere.binding) {
+            return <p class={text} role="status">Confirm the keys in your desktop's dialog.</p>;
+        }
+        return (
+            <div class="flex flex-col gap-2">
+                <p class={text}>
+                    Keys work while Dens is the window and tab you're in. Set them up with your desktop to have them work in other programs too:
+                    it asks you to confirm or change them, and keeps them.
+                </p>
+                <div>
+                    <button type="button" class="btn btn-sm" disabled={!elsewhere.bindable} onClick={() => onDesktop('bind')}>
+                        Set up with your desktop
+                    </button>
+                </div>
+            </div>
+        );
+    }
     if (elsewhere.helper && elsewhere.covers.length > 0) {
         return (
             <p class={text}>

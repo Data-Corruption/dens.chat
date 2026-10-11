@@ -260,6 +260,14 @@ func (a *App) open(opts OpenOptions) error {
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
 	a.Shortcuts = shortcuts.NewHub(bi.Version, cfg.VoiceKeys, a.Log)
+	a.Shortcuts.UseDesktop(cfg.DesktopKeys, func(on bool) {
+		if _, err := config.Update(a.DB, func(c *types.Configuration) error {
+			c.DesktopKeys = on
+			return nil
+		}); err != nil {
+			a.Log.Warnf("Couldn't keep the member's use of the desktop's keys: %v", err)
+		}
+	})
 	a.Dens.OnCall = a.Shortcuts.SetCall
 	a.Dens.TempDir = l.Temp
 	a.Dens.Media = a.Media

@@ -32,6 +32,20 @@ type KeyReader interface {
 	Modifiers() (ctrl, alt, shift, meta bool)
 }
 
+// DesktopKeys is a session with a desktop that owns the keys (M7.2):
+// host.DesktopKeys, the portal under Wayland, or a test's. A session binds
+// once.
+type DesktopKeys interface {
+	Bind(ctx context.Context, actions []host.DesktopAction) (map[string]string, error)
+	Presses() <-chan host.DesktopPress
+	Changes() <-chan map[string]string
+	Closed() <-chan struct{}
+	CanConfigure() bool
+	Configure() error
+	Note() string
+	Close() error
+}
+
 // Helper is the desktop user's side, which dens shortcuts runs at login.
 // It keeps a stream to every instance that answers it, reads the keys
 // bound there while that instance holds a call, and sends it each press
@@ -49,6 +63,12 @@ type Helper struct {
 	Keys    KeyReader
 	Problem string
 	Note    string
+	// OpenDesktop opens a session with a desktop that owns the keys; nil,
+	// or failing, where there's none. The helper binds the actions with it
+	// once the member asks, or as it starts once they have, and opens
+	// another when the desktop ends one or the member turns its dialog
+	// down, since a session binds once.
+	OpenDesktop func() (DesktopKeys, error)
 	// Restart takes up the installed binary when a service runs a newer
 	// version than this helper; Run returns what it returns.
 	Restart func() error
@@ -57,12 +77,26 @@ type Helper struct {
 	mu      sync.Mutex
 	remotes map[*remote]struct{}
 	wake    chan struct{}
+	ctx     context.Context
+
+	// desk is the desktop's session, deskNames its names for the actions
+	// it bound (nil until it binds), deskBusy whether its dialog is up, and
+	// deskDeclined whether the member turned it down this run, after which
+	// only their asking binds again. deskHeld holds what the desktop
+	// reported down, since it may repeat a held key's press.
+	desk         DesktopKeys
+	deskNames    map[string]string
+	deskBusy     bool
+	deskDeclined bool
+	deskHeld     map[string]bool
+	deskWake     chan struct{}
 }
 
 // remote is one instance's stream and what it asks the helper to watch.
 type remote struct {
 	name   string
 	stream *control.Stream
+	keys   map[string]types.VoiceKey
 	call   bool
 	bound  map[string]bound
 	held   map[string]bool
@@ -98,7 +132,13 @@ func (h *Helper) Run(ctx context.Context) error {
 	defer cancel(nil)
 	h.remotes = make(map[*remote]struct{})
 	h.wake = make(chan struct{}, 1)
+	h.deskWake = make(chan struct{}, 1)
+	h.ctx = ctx
 	go h.poll(ctx)
+	if h.OpenDesktop != nil {
+		h.reopenDesktop(nil)
+		go h.desktopLoop(ctx)
+	}
 
 	started := make(map[string]bool)
 	refused := make(chan string, 16)
@@ -216,6 +256,15 @@ func (h *Helper) serve(ctx context.Context, cancel context.CancelCauseFunc, name
 			if err := s.Send(msgSource, h.setState(r, st)); err != nil {
 				return err
 			}
+			if st.Desktop {
+				go h.bindDesktop(st.Keys, false)
+			}
+		case msgDesktop:
+			var req desktopRequest
+			if json.Unmarshal(msg.D, &req) != nil {
+				continue
+			}
+			h.desktopRequest(r, req.Do)
 		case msgReplaced:
 			cancel(errReplaced)
 			return nil
@@ -231,8 +280,8 @@ func newer(service, helper string) bool {
 
 // setState resolves an instance's keys and reports what the helper covers.
 func (h *Helper) setState(r *remote, st state) Source {
-	src := Source{Covers: []string{}, Problem: h.Problem, Note: h.Note}
 	h.mu.Lock()
+	r.keys = st.Keys
 	r.call = st.Call
 	r.bound = map[string]bound{}
 	if !r.call {
@@ -249,16 +298,236 @@ func (h *Helper) setState(r *remote, st state) Source {
 			continue
 		}
 		r.bound[action] = bound{key: key, ctrl: k.Ctrl, alt: k.Alt, shift: k.Shift, meta: k.Meta}
-		src.Covers = append(src.Covers, action)
 	}
 	for action := range r.held {
 		if _, ok := r.bound[action]; !ok {
 			delete(r.held, action)
 		}
 	}
+	src := h.sourceLocked(r)
 	h.mu.Unlock()
 	h.nudge()
 	return src
+}
+
+// sourceLocked is what the helper covers for an instance: the actions the
+// desktop bound where one owns the keys, and otherwise those whose keys it
+// reads itself.
+func (h *Helper) sourceLocked(r *remote) Source {
+	if h.desk != nil {
+		src := Source{
+			Covers:       []string{},
+			Confirms:     true,
+			Bindable:     h.deskNames == nil && !h.deskBusy,
+			Binding:      h.deskBusy,
+			Configurable: h.desk.CanConfigure(),
+			Note:         h.desk.Note(),
+		}
+		if h.deskNames != nil {
+			src.Names = map[string]string{}
+			for _, action := range types.VoiceActions {
+				if name := h.deskNames[action]; name != "" {
+					src.Covers = append(src.Covers, action)
+					src.Names[action] = name
+				}
+			}
+		}
+		return src
+	}
+	src := Source{Covers: []string{}, Problem: h.Problem, Note: h.Note}
+	for _, action := range types.VoiceActions {
+		if _, ok := r.bound[action]; ok {
+			src.Covers = append(src.Covers, action)
+		}
+	}
+	return src
+}
+
+// sendSources tells every instance what the helper covers now.
+func (h *Helper) sendSources() {
+	type sourceFor struct {
+		r   *remote
+		src Source
+	}
+	h.mu.Lock()
+	var out []sourceFor
+	for r := range h.remotes {
+		out = append(out, sourceFor{r, h.sourceLocked(r)})
+	}
+	h.mu.Unlock()
+	for _, x := range out {
+		if x.r.stream.Send(msgSource, x.src) != nil {
+			_ = x.r.stream.Close()
+		}
+	}
+}
+
+// desktopRequest does what the member asked of the desktop.
+func (h *Helper) desktopRequest(r *remote, do string) {
+	h.mu.Lock()
+	d, keys := h.desk, r.keys
+	h.mu.Unlock()
+	if d == nil {
+		return
+	}
+	switch do {
+	case DesktopBind:
+		go h.bindDesktop(keys, true)
+	case DesktopConfigure:
+		if err := d.Configure(); err != nil {
+			h.Logf("The desktop didn't show its settings for the keys: %v", err)
+		}
+	case DesktopStop:
+		h.reopenDesktop(d)
+		h.sendSources()
+	}
+}
+
+// bindDesktop binds the actions with the desktop, preferring the member's
+// keys, unless it has them already, its dialog is up, or the member turned
+// it down this run and didn't ask again. A bind the member asked for that
+// succeeds tells the instances, which then bind as the helper starts.
+func (h *Helper) bindDesktop(keys map[string]types.VoiceKey, asked bool) {
+	h.mu.Lock()
+	d := h.desk
+	if d == nil || h.deskBusy || h.deskNames != nil || (!asked && h.deskDeclined) {
+		h.mu.Unlock()
+		return
+	}
+	h.deskBusy = true
+	h.mu.Unlock()
+	h.sendSources()
+
+	actions := make([]host.DesktopAction, 0, len(types.VoiceActions))
+	for _, a := range types.VoiceActions {
+		k := keys[a]
+		actions = append(actions, host.DesktopAction{ID: a, Description: actionNames[a],
+			Trigger: desktopTrigger(k)})
+	}
+	names, err := d.Bind(h.ctx, actions)
+	h.mu.Lock()
+	h.deskBusy = false
+	current := h.desk == d
+	if err == nil && current {
+		h.deskNames, h.deskHeld, h.deskDeclined = names, map[string]bool{}, false
+	} else if err != nil {
+		h.deskDeclined = true
+	}
+	h.mu.Unlock()
+	if err != nil {
+		if errors.Is(err, host.ErrDesktopCancelled) {
+			h.Logf("The member turned the desktop's dialog down.")
+		} else if h.ctx.Err() == nil {
+			h.Logf("The desktop didn't bind the keys: %v", err)
+		}
+		// A session binds once; another try needs another session.
+		h.reopenDesktop(d)
+	} else if asked && current {
+		h.mu.Lock()
+		var all []*remote
+		for r := range h.remotes {
+			all = append(all, r)
+		}
+		h.mu.Unlock()
+		for _, r := range all {
+			_ = r.stream.Send(msgBound, nil)
+		}
+	}
+	h.sendSources()
+}
+
+// reopenDesktop replaces the desktop's session old, if it's still the
+// helper's, with a new one, which binds nothing yet. With no old one, it
+// opens the first.
+func (h *Helper) reopenDesktop(old DesktopKeys) {
+	h.mu.Lock()
+	if h.desk != old {
+		h.mu.Unlock()
+		return
+	}
+	h.desk, h.deskNames, h.deskHeld = nil, nil, nil
+	h.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	if h.ctx.Err() != nil {
+		return
+	}
+	d, err := h.OpenDesktop()
+	h.mu.Lock()
+	if err == nil {
+		h.desk = d
+	} else if old == nil {
+		h.Logf("No desktop owns the keys here: %v", err)
+	} else {
+		h.Logf("The desktop's session couldn't open again: %v", err)
+	}
+	h.mu.Unlock()
+	select {
+	case h.deskWake <- struct{}{}:
+	default:
+	}
+}
+
+// desktopLoop passes on what the desktop's session reports: presses,
+// changed keys and its end.
+func (h *Helper) desktopLoop(ctx context.Context) {
+	for {
+		h.mu.Lock()
+		d := h.desk
+		h.mu.Unlock()
+		if d == nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-h.deskWake:
+				continue
+			}
+		}
+		select {
+		case <-ctx.Done():
+			_ = d.Close()
+			return
+		case <-h.deskWake:
+		case p := <-d.Presses():
+			h.desktopPress(d, p)
+		case names := <-d.Changes():
+			h.mu.Lock()
+			if h.desk == d && h.deskNames != nil {
+				h.deskNames = names
+			}
+			h.mu.Unlock()
+			h.sendSources()
+		case <-d.Closed():
+			h.reopenDesktop(d)
+			h.sendSources()
+		}
+	}
+}
+
+// desktopPress sends a press the desktop reported to every instance in a
+// call: its keys are the desktop's, not an instance's. A press of a key
+// already down is the desktop repeating it, and a release of one that
+// isn't, late.
+func (h *Helper) desktopPress(d DesktopKeys, p host.DesktopPress) {
+	h.mu.Lock()
+	if h.desk != d || h.deskNames == nil || h.deskNames[p.ID] == "" || p.Down == h.deskHeld[p.ID] {
+		h.mu.Unlock()
+		return
+	}
+	h.deskHeld[p.ID] = p.Down
+	var targets []*remote
+	for r := range h.remotes {
+		if r.call {
+			targets = append(targets, r)
+		}
+	}
+	h.mu.Unlock()
+	for _, r := range targets {
+		if r.stream.Send(msgPress, Press{Action: p.ID, Down: p.Down}) != nil {
+			_ = r.stream.Close()
+		}
+	}
 }
 
 func (h *Helper) nudge() {

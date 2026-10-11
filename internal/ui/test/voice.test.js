@@ -136,7 +136,7 @@ test('the keys and the helper come from the service, kept to what they can be', 
         ptt: { code: 'KeyV', label: 'V', ctrl: 1 }, toggleMute: { code: '', label: 'X' }, pushMute: { code: 'F13' }, other: { code: 'KeyB', label: 'B' },
     }), { ptt: { code: 'KeyV', label: 'V', ctrl: true, alt: false, shift: false, meta: false } });
     assert.deepEqual(readKeys(undefined), {});
-    const none = { keys: {}, helper: false, covers: [], note: '', problem: '' };
+    const none = { keys: {}, helper: false, covers: [], note: '', problem: '', confirms: false, bindable: false, binding: false, names: {}, configurable: false, desktop: false };
     assert.deepEqual(readKeyStatus(null), none);
     // Without a helper, nothing is covered, whatever came.
     assert.deepEqual(readKeyStatus({ keys: {}, helper: false, covers: ['ptt'], note: 'n' }), none);
@@ -144,6 +144,15 @@ test('the keys and the helper come from the service, kept to what they can be', 
     assert.deepEqual(st.covers, ['ptt', 'pushMute']);
     assert.equal(st.note, 'limits');
     assert.equal(st.keys.ptt.code, 'Mouse4');
+    // A desktop that owns the keys, which named two of them.
+    const desk = readKeyStatus({
+        keys: {}, helper: true, covers: ['ptt'], confirms: true, bindable: false, names: { ptt: 'Press F8', toggleMute: '', shout: 'x' },
+        configurable: true, desktop: true,
+    });
+    assert.deepEqual([desk.confirms, desk.bindable, desk.configurable, desk.desktop], [true, false, true, true]);
+    assert.deepEqual(desk.names, { ptt: 'Press F8' });
+    // Without a helper the desktop says nothing, but the member's use of it stays.
+    assert.deepEqual(readKeyStatus({ helper: false, confirms: true, names: { ptt: 'F8' }, desktop: true }), { ...none, desktop: true });
 });
 
 test('a key fires its binding with at least its modifiers, and not while it types into a field', () => {

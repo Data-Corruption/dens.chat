@@ -15,10 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 )
 
 // minimumSystemd is the first release with LoadCredentialEncrypted=.
@@ -274,12 +276,97 @@ func (linuxSystem) ConfigureFirewall(layout.Layout, instance.Config) error { ret
 // RegisterExtras has nothing to do: /usr/local/bin is already on PATH.
 func (linuxSystem) RegisterExtras(layout.Layout) error { return nil }
 
-// The shortcut helper starts at login on Linux from M7.2.
-func (linuxSystem) RegisterHelper(layout.Layout, host.Identity) (func() error, error) {
-	return nil, nil
+// RegisterHelper has the desktop start the shortcut helper at sign-in, for
+// every account (it stops where no instance answers its account), and
+// names Dens to the desktop: the .desktop file its global shortcuts portal
+// needs, which also opens the page from the desktop's menu, and its icon.
+func (linuxSystem) RegisterHelper(l layout.Layout, _ host.Identity) (func() error, error) {
+	files := []struct {
+		path string
+		data []byte
+	}{
+		{l.AutostartFile, []byte(fmt.Sprintf(autostartEntry, l.Binary, shortcuts.Command, layout.DesktopID))},
+		{l.DesktopFile, []byte(fmt.Sprintf(desktopEntry, l.Binary, layout.DesktopID))},
+		{l.IconFile, []byte(build.Mark + "\n")},
+	}
+	var undo []func() error
+	rollback := func() error {
+		var joined error
+		for i := len(undo) - 1; i >= 0; i-- {
+			joined = errors.Join(joined, undo[i]())
+		}
+		return joined
+	}
+	for _, f := range files {
+		previous, err := os.ReadFile(f.path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, errors.Join(err, rollback())
+		}
+		existed := err == nil
+		if existed && bytes.Equal(previous, f.data) {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil {
+			return nil, errors.Join(err, rollback())
+		}
+		if err := maintenance.WriteFileAtomic(f.path, f.data, chmodTo(0o644)); err != nil {
+			return nil, errors.Join(err, rollback())
+		}
+		path := f.path
+		if existed {
+			undo = append(undo, func() error { return maintenance.WriteFileAtomic(path, previous, chmodTo(0o644)) })
+		} else {
+			undo = append(undo, func() error { return os.Remove(path) })
+		}
+	}
+	return rollback, nil
 }
 
-func (linuxSystem) StartHelper(layout.Layout, host.Identity) error { return nil }
+// autostartEntry starts the helper as the desktop session starts. GNOME and
+// KDE run it as the systemd user unit app-<its name>@autostart.service,
+// from which older portals take the helper's app ID.
+const autostartEntry = `[Desktop Entry]
+Type=Application
+Name=Dens shortcuts
+Comment=Carries Dens's voice keys from other programs to its calls
+Exec=%s %s
+Icon=%s
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+`
+
+// desktopEntry names Dens to the desktop, and opens its page.
+const desktopEntry = `[Desktop Entry]
+Type=Application
+Name=Dens
+GenericName=Chat
+Comment=Self-hosted chat for small communities
+Exec=%s open
+Icon=%s
+Terminal=false
+Categories=Network;Chat;InstantMessaging;
+`
+
+// StartHelper starts the helper in the desktop user's session now, through
+// their systemd user manager, if they're signed in to a desktop. An update
+// restarts it on the new binary.
+func (linuxSystem) StartHelper(l layout.Layout, user host.Identity) error {
+	machine := "--machine=" + user.Name + "@"
+	env, err := exec.Command("systemctl", "--user", machine, "show-environment").Output()
+	if err != nil {
+		return fmt.Errorf("%s isn't signed in", user.Name)
+	}
+	if !bytes.Contains(env, []byte("\nWAYLAND_DISPLAY=")) && !bytes.Contains(env, []byte("\nDISPLAY=")) &&
+		!bytes.HasPrefix(env, []byte("WAYLAND_DISPLAY=")) && !bytes.HasPrefix(env, []byte("DISPLAY=")) {
+		return fmt.Errorf("%s has no desktop session", user.Name)
+	}
+	// The autostart entry's unit comes from systemd's generator, which runs
+	// again on a reload.
+	if err := run("systemctl", "--user", machine, "daemon-reload"); err != nil {
+		return err
+	}
+	return run("systemctl", "--user", machine, "restart", "app-"+layout.DesktopID+"@autostart.service")
+}
 
 func (linuxSystem) ServiceRunning(l layout.Layout) (bool, error) {
 	state, err := host.ServiceStatus(l.ServiceName)
@@ -306,7 +393,8 @@ func (linuxSystem) UnregisterService(l layout.Layout) error {
 
 func (linuxSystem) RemoveShared(l layout.Layout) error {
 	var joined error
-	for _, path := range []string{l.UnitFile, l.Binary, l.Cosign} {
+	// A helper still running stops once no instance answers it.
+	for _, path := range []string{l.UnitFile, l.Binary, l.Cosign, l.AutostartFile, l.DesktopFile, l.IconFile} {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			joined = errors.Join(joined, err)
 		}
@@ -356,6 +444,7 @@ func (s linuxSystem) Plan(l layout.Layout) []string {
 		fmt.Sprintf("data          %s (control %s, data %s)", l.Root, l.Control, l.Data),
 		fmt.Sprintf("data key      %s, bound to this host by systemd-creds", l.HostKey),
 		fmt.Sprintf("CLI endpoint  %s", l.ControlEndpoint),
+		fmt.Sprintf("shortcuts     %s %s at each desktop sign-in (%s), named by %s", l.Binary, shortcuts.Command, l.AutostartFile, l.DesktopFile),
 	}
 }
 
@@ -366,6 +455,7 @@ func (linuxSystem) UninstallPlan(l layout.Layout, last bool) []string {
 	}
 	if last {
 		lines = append(lines, fmt.Sprintf("removes %s, %s and %s (no instances remain)", l.Binary, l.UnitFile, l.Cosign))
+		lines = append(lines, fmt.Sprintf("removes the shortcut helper's %s, %s and %s", l.AutostartFile, l.DesktopFile, l.IconFile))
 	}
 	return lines
 }

@@ -17,6 +17,10 @@ import (
 	"path/filepath"
 )
 
+// DesktopID names Dens to Linux desktops: its .desktop file, and the app ID
+// the shortcut helper gives the desktop's portal (M7.2).
+const DesktopID = "chat.dens.Dens"
+
 // DefaultInstance is the instance name used when none is given.
 const DefaultInstance = "main"
 
@@ -69,6 +73,13 @@ type Layout struct {
 	// UnitFile and SysusersFile are Linux-only.
 	UnitFile     string
 	SysusersFile string
+	// AutostartFile starts the shortcut helper at the desktop user's
+	// sign-in, and DesktopFile, with its icon, names Dens to the desktop,
+	// whose shortcuts portal needs it, and opens the page from its menu
+	// (M7.2). All three are Linux-only.
+	AutostartFile string
+	DesktopFile   string
+	IconFile      string
 }
 
 // New returns the layout of instance for application app. Development
