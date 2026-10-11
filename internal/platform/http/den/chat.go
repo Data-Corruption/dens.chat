@@ -47,6 +47,31 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 	writeGzip(w, r, page)
 }
 
+// changes answers what changed since a version, for a client checking what
+// it cached (M6). since is required; upto, the newest message the client
+// holds, is optional.
+func (h *handler) changes(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	since, err := strconv.ParseInt(q.Get("since"), 10, 64)
+	if err != nil || since < 0 {
+		h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "since must be a version"))
+		return
+	}
+	var upto int64
+	if v := q.Get("upto"); v != "" {
+		if upto, err = denproto.ParseID(v); err != nil {
+			h.fail(w, r, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "upto must be a message ID"))
+			return
+		}
+	}
+	page, err := h.d.Changes(r.Context(), session(r), since, upto)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeGzip(w, r, page)
+}
+
 // writeGzip writes a JSON response, gzipped when the client accepts it. A
 // history page shrinks to about a third.
 func writeGzip(w http.ResponseWriter, r *http.Request, v any) {

@@ -193,7 +193,10 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	defer d.sockets.remove(sock)
 	// A call waits for its device when its socket closes, or ends with it.
 	defer d.socketClosed(sock)
-	c, err := websocket.Accept(w, r, nil)
+	// Frames past the library's threshold, such as ready and replays, go
+	// compressed, each on its own, so no connection holds a compressor
+	// (M6). The read limit applies to a frame as it inflates.
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionNoContextTakeover})
 	if err != nil {
 		return
 	}

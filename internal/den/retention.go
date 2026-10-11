@@ -191,7 +191,12 @@ func (d *Den) expireBatch(ctx context.Context, cutoff int64) (through, n int64, 
 		if _, blobs, err = filesOf(ctx, tx, `m.id <= ?`, through); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `DELETE FROM den_messages WHERE id <= ?`, through)
+		if _, err := tx.ExecContext(ctx, `DELETE FROM den_messages WHERE id <= ?`, through); err != nil {
+			return err
+		}
+		// Clients that were away learn how far retention reached from
+		// ready, rather than from a change for every message (M6).
+		_, err = tx.ExecContext(ctx, `UPDATE den SET expired_through = max(expired_through, ?) WHERE id = 1`, through)
 		return err
 	})
 	if err != nil {

@@ -15,11 +15,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -40,12 +42,14 @@ func TestMain(m *testing.M) {
 }
 
 // store is one install's database, vault and log, and its media module,
-// which its den and client share.
+// which its den and client share; and its client's cache, when the test
+// gives it one (M6).
 type store struct {
 	db      *sql.DB
 	v       *vault.Vault
 	log     *xlog.Logger
 	storage den.Storage
+	cache   *cache.Store
 }
 
 func newStore(t *testing.T) store {
@@ -75,7 +79,21 @@ func newStore(t *testing.T) store {
 			t.Fatal(err)
 		}
 	}
-	return store{db, v, log, storage}
+	return store{db, v, log, storage, nil}
+}
+
+// newCachedStore is an install whose client keeps a cache, which outlasts
+// the client's restarts as the install's does.
+func newCachedStore(t *testing.T) store {
+	t.Helper()
+	s := newStore(t)
+	c, err := cache.Open(filepath.Join(t.TempDir(), "cache"), s.v, s.log, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	s.cache = c
+	return s
 }
 
 // denHost runs a den the way an install does: a public TLS address (Caddy's
@@ -87,6 +105,8 @@ type denHost struct {
 	d        *den.Den
 	public   *httptest.Server
 	loopback *httptest.Server
+	// files counts the requests for files and previews the den answers.
+	files atomic.Int64
 }
 
 func startDen(t *testing.T, s store, lifetime time.Duration) *denHost {
@@ -108,7 +128,13 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 	d.TokenLifetime = lifetime
 	d.PresenceDelay = 50 * time.Millisecond
 	h.d = d
-	handler := denhttp.New(&app.App{Den: d, Log: h.s.log})
+	routes := denhttp.New(&app.App{Den: d, Log: h.s.log})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/files/") {
+			h.files.Add(1)
+		}
+		routes.ServeHTTP(w, r)
+	})
 	h.public = httptest.NewUnstartedServer(handler)
 	h.loopback = httptest.NewUnstartedServer(handler)
 	if publicAddr != "" {
@@ -189,6 +215,7 @@ func (h *denHost) clientFrom(t *testing.T, s store, own denclient.OwnDen) (*denc
 func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address string) (*denclient.Manager, func()) {
 	t.Helper()
 	m := denclient.New(s.db, s.v, s.log, "dens-test", own)
+	m.Cache = s.cache
 	m.TempDir = t.TempDir()
 	m.Media = s.storage.Media
 	transport := h.public.Client().Transport.(*http.Transport).Clone()

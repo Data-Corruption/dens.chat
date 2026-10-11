@@ -75,7 +75,10 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			-- The limits for calls and screen shares (M4.2) are counts of
 			-- members, bits a second, a 16:9 picture's height and frames a
 			-- second. The retention period (M5) is the days a message is kept,
-			-- 0 for ever.
+			-- 0 for ever. The sync epoch names the den's run of change numbers,
+			-- and a restore from a backup replaces it; the changes floor is the
+			-- oldest version the den still has the changes since; and expired
+			-- through is the last message retention deleted (M6).
 			CREATE TABLE den (
 				id             INTEGER PRIMARY KEY CHECK (id = 1),
 				name           TEXT NOT NULL,
@@ -93,7 +96,10 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				share_bitrate  INTEGER NOT NULL,
 				share_height   INTEGER NOT NULL,
 				share_fps      INTEGER NOT NULL,
-				retention      INTEGER NOT NULL DEFAULT 0 CHECK (retention BETWEEN 0 AND 3650)
+				retention      INTEGER NOT NULL DEFAULT 0 CHECK (retention BETWEEN 0 AND 3650),
+				sync_epoch     BLOB NOT NULL,
+				changes_floor  INTEGER NOT NULL DEFAULT 0,
+				expired_through INTEGER NOT NULL DEFAULT 0
 			) STRICT;
 
 			-- AUTOINCREMENT: a member ID is never reused, even after deletion.
@@ -292,6 +298,21 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 				CHECK ((sealed IS NULL) = (checked_at IS NULL))
 			) STRICT, WITHOUT ROWID;
 			CREATE INDEX den_dm_key_members_member ON den_dm_key_members (member_id);
+
+			-- What changed, by ID only, for clients that cached it and were
+			-- away (M6): each message edited or deleted, with its channel, and
+			-- each member whose record changed. A thing has one row, its
+			-- latest change, and the rows are numbered in the order the changes
+			-- happened; the newest number is the den's version. Rows older
+			-- than 30 days go, and den.changes_floor says how far that reached.
+			CREATE TABLE den_changes (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				kind       TEXT NOT NULL CHECK (kind IN ('message', 'member')),
+				ref        INTEGER NOT NULL,
+				channel_id INTEGER, -- a message's, kept for one that's gone
+				at         INTEGER NOT NULL,
+				UNIQUE (kind, ref)
+			) STRICT;
 
 			-- closed is a DM the member closed; a new message reopens it.
 			CREATE TABLE den_read_states (

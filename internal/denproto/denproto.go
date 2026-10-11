@@ -381,6 +381,9 @@ type Ready struct {
 	DeviceRequests []DeviceRequest `json:"device_requests"`
 	// M2: the calls the member can see that have someone in them.
 	Calls []Call `json:"calls"`
+	// M6: where the den's changes stand, for a client to check what it
+	// cached against.
+	Sync Sync `json:"sync"`
 }
 
 type Renew struct {

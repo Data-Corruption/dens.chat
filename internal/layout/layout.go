@@ -48,6 +48,9 @@ type Layout struct {
 	Logs    string
 	Uploads string
 	Temp    string
+	// Cache holds the client's cache of other dens' files (M6), which
+	// backups leave out.
+	Cache string
 
 	// Runtime is the directory holding the control socket on Linux. It is
 	// empty on Windows, where the control endpoint is a named pipe.
@@ -97,11 +100,12 @@ func (l *Layout) derive() {
 	l.Logs = filepath.Join(l.Data, "logs")
 	l.Uploads = filepath.Join(l.Data, "uploads")
 	l.Temp = filepath.Join(l.Data, "tmp")
+	l.Cache = filepath.Join(l.Data, "cache")
 }
 
 // DataDirs are the service-owned directories below Data.
 func (l Layout) DataDirs() []string {
-	return []string{l.Data, l.DB, l.Logs, l.Uploads, l.Temp}
+	return []string{l.Data, l.DB, l.Logs, l.Uploads, l.Temp, l.Cache}
 }
 
 // ValidateApp checks an application name used in paths and account names.
