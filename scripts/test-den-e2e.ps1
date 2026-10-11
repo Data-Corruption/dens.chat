@@ -904,6 +904,43 @@ den.test:$HttpsPort {
     Wait-Value { (Invoke-Api $member GET "/api/dens/$denID/state").limits.file_size -eq 26214400 } "the limit back on the member's side" | Out-Null
     Write-Host "The video went as an AV1 copy of $bytes bytes within the 1 MiB limit, with its preview, and plays from any byte."
 
+    Step "the member's cache keeps what they viewed across both restarts, and drops what went"
+    $cachedPhoto = Send-Upload $owner $denID $channel $photo "cached.jpg"
+    $cachedMessage = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedPhoto.id) }).id
+    $cachedVideo = Send-Upload $owner $denID $channel (Join-Path $media "with-gps.mov") "cached.mov"
+    Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedVideo.id) } | Out-Null
+    # The member's page loads the channel, and shows its photo and video.
+    Get-History $member $denID $channel | Out-Null
+    $videoCopy = Join-Path $Work "cached-video.mp4"
+    foreach ($fetch in @(@("$($cachedPhoto.id)", "cached-photo.jpg"), @("$($cachedPhoto.id)/thumb", "cached-preview.jpg"), @("$($cachedVideo.id)", "cached-video.mp4"))) {
+        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($fetch[0])" -WebSession $member.Session -UseBasicParsing `
+            -OutFile (Join-Path $Work $fetch[1]) -TimeoutSec 60 | Out-Null
+    }
+    if ((Invoke-Api $member GET "/api/settings").cacheUsed -le 0) { Fail "the member's cache holds nothing" }
+    # The member's service stops, the owner deletes the photo, and the den
+    # restarts, so nothing remains of the delete but the den's changes.
+    Invoke-Native -FilePath $Dens -Arguments @("service", "stop", "--instance", "second") | Out-Null
+    Invoke-Api $owner DELETE "/api/dens/$denID/messages/$cachedMessage" | Out-Null
+    Invoke-Native -FilePath $Dens -Arguments @("service", "restart") | Out-Null
+    Wait-Connected $owner 0 | Out-Null
+    Invoke-Native -FilePath $Dens -Arguments @("service", "start", "--instance", "second") | Out-Null
+    Wait-Connected $member 0 | Out-Null
+    Wait-Gone $member $denID $cachedPhoto.id
+    # With the den stopped, the video plays from the member's cache.
+    Invoke-Native -FilePath $Dens -Arguments @("service", "stop") | Out-Null
+    $again = Join-Path $Work "cached-video-again.mp4"
+    Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($cachedVideo.id)" -WebSession $member.Session -UseBasicParsing `
+        -OutFile $again -TimeoutSec 60 | Out-Null
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($again)) -ne [Convert]::ToBase64String([IO.File]::ReadAllBytes($videoCopy))) {
+        Fail "the cached video came back changed"
+    }
+    Test-Range $member $denID $cachedVideo.id $videoCopy 100000 199999
+    $restarted = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    Invoke-Native -FilePath $Dens -Arguments @("service", "start") | Out-Null
+    Wait-Connected $owner 0 | Out-Null
+    Wait-Connected $member $restarted | Out-Null
+    Write-Host "The deleted photo left the member's cache as they came back, and the video played from it with the den stopped."
+
     Step "a private DM, once both members compare check codes"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"
     $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
@@ -1071,6 +1108,9 @@ den.test:$HttpsPort {
     if ($out.Took -gt 5000) { Fail "the ban took $($out.Took) ms to reach the member" }
     $freshOut = Wait-Out $fresh "removed" $started
     if ($freshOut.Reason -ne "You were banned from this den.") { Fail "instance fresh was told: '$($freshOut.Reason)'" }
+    $cached = (Invoke-Api $member GET "/api/settings").cacheUsed
+    if ($cached -ne 0) { Fail "the banned member's cache still holds $cached bytes" }
+    Write-Host "The ban emptied the member's cache of the den."
     Write-Host "The ban closed the member's connections within $($out.Took) ms."
     $invite = (Invoke-Api $owner POST "/api/dens/$denID/invites" @{ expires_in = 3600; max_uses = 1 }).invite
     $refused = Invoke-Refused $member "/api/dens/join" @{ invite = $invite; username = "bob"; display_name = "Bob"; password = "bob password" }

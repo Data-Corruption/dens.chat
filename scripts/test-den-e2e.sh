@@ -481,6 +481,40 @@ run() {
   guest "$CLIENT" wait-limit "$den_id" 26214400
   echo ">> The video went as an AV1 copy of ${bytes} bytes within the 1 MiB limit, with its preview, and plays from any byte"
 
+  echo ">> The member's cache keeps what they viewed across both restarts, and drops what went"
+  local cached_photo cached_message cached_video cached started
+  "${INCUS[@]}" file push -q scripts/test/gps-photo.jpg "$DEN/root/gps-photo.jpg"
+  "${INCUS[@]}" file push -q internal/media/ffmpeg/testdata/with-gps.mov "$DEN/root/with-gps.mov"
+  read -r cached_photo _ <<<"$(guest "$DEN" upload "$den_id" /root/gps-photo.jpg cached.jpg "$channel")"
+  cached_message=$(guest "$DEN" send-file "$den_id" "$channel" "$cached_photo")
+  read -r cached_video _ <<<"$(guest "$DEN" upload-media "$den_id" /root/with-gps.mov cached.mov "$channel")"
+  guest "$DEN" send-file "$den_id" "$channel" "$cached_video" >/dev/null
+  # The member's page loads the channel, and shows its photo and video.
+  guest "$CLIENT" history "$den_id" "$channel" >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-photo.jpg >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-preview.jpg thumb >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video.mp4 >/dev/null
+  cached=$(guest "$CLIENT" cache)
+  (( cached > 0 )) || { echo "error: the member's cache holds nothing" >&2; return 1; }
+  # The member's service stops, the owner deletes the photo, and the den
+  # restarts, so nothing remains of the delete but the den's changes.
+  "${INCUS[@]}" exec "$CLIENT" -- systemctl stop dens@main
+  guest "$DEN" delete "$den_id" "$cached_message"
+  "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
+  "${INCUS[@]}" exec "$CLIENT" -- systemctl start dens@main
+  guest "$CLIENT" wait-connected 0 >/dev/null
+  guest "$CLIENT" wait-gone "$den_id" "$cached_photo"
+  # With the den stopped, the video plays from the member's cache.
+  "${INCUS[@]}" exec "$DEN" -- systemctl stop dens@main
+  guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video-again.mp4 >/dev/null
+  "${INCUS[@]}" exec "$CLIENT" -- cmp -s /root/cached-video.mp4 /root/cached-video-again.mp4 ||
+    { echo "error: the cached video came back changed" >&2; return 1; }
+  guest "$CLIENT" range "$den_id" "$cached_video" /root/cached-video.mp4 100000 199999
+  started=$(date +%s%3N)
+  "${INCUS[@]}" exec "$DEN" -- systemctl start dens@main
+  guest "$CLIENT" wait-connected "$started" >/dev/null
+  echo ">> The deleted photo left the member's cache as they came back, and the video played from it with the den stopped"
+
   echo ">> A private DM, once both members compare check codes"
   local bob dm owner_half member_half refusal
   bob=$(guest "$DEN" member-id "$den_id" bob)
@@ -625,6 +659,9 @@ run() {
   reason=$(fresh wait-out removed)
   [[ "$reason" == "You were banned from this den." ]] || { echo "error: the fresh install was told: $reason" >&2; return 1; }
   echo ">> The ban closed the member's connections within ${took} ms"
+  cached=$(guest "$CLIENT" cache)
+  [[ "$cached" == 0 ]] || { echo "error: the banned member's cache still holds $cached bytes" >&2; return 1; }
+  echo ">> The ban emptied the member's cache of the den"
   invite=$(guest "$DEN" invite "$den_id")
   refusal=$(guest "$CLIENT" join-refused "$invite")
   [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }
