@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice), M3 (links, calls that ride out a dropped connection, and staff in calls), M4.2 (screen share and the limits for calls), M5 (retention and managing files) and M6.1 (compressed frames and what changed while away) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice), M3 (links, calls that ride out a dropped connection, and staff in calls), M4.2 (screen share and the limits for calls), M5 (retention and managing files) and M6 (compressed frames, what changed while away and the members changed since) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -74,7 +74,7 @@ PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?}   20
 
 A change reaches every member as a `den.updated {den}` event.
 
-`ready` carries `members`: everyone who has been in the den, so clients can name authors and resolve mentions. A member who left or was removed keeps their record with `left_at` set. A new or returning member reaches everyone as `member.joined {member}`; see [Members and roles](#members-and-roles-m13) for the rest.
+`ready` carries `members`: everyone who has been in the den, so clients can name authors and resolve mentions; from M6.2, to a client that kept the list, only those whose records changed since (see [What changed while away](#what-changed-while-away-m6)). A member who left or was removed keeps their record with `left_at` set. A new or returning member reaches everyone as `member.joined {member}`; see [Members and roles](#members-and-roles-m13) for the rest.
 
 ## Authentication
 
@@ -207,12 +207,12 @@ device = {"key_id", "label", "created_at", "last_seen_at", "current"?}
 ## The WebSocket
 
 ```
-GET /api/ws?resume=<epoch>.<seq>
+GET /api/ws?resume=<epoch>.<seq>&members=<sync epoch>.<version>
 Authorization: Bearer <token>
 Dens-Protocol: 1
 ```
 
-`resume` is left out on a first connection. Frames are JSON text, each an array of one or more events, of at most 1 MiB from the den and 64 KiB from the client:
+`resume` is left out on a first connection, and `members` by a client that kept no list of members (M6.2; see [What changed while away](#what-changed-while-away-m6)). Frames are JSON text, each an array of one or more events, of at most 1 MiB from the den and 64 KiB from the client:
 
 ```json
 [{"t": "message.created", "seq": 5021, "d": {…}}, {"t": "read_state.updated", "seq": 5022, "d": {…}}]
@@ -244,14 +244,15 @@ The client remembers `epoch` and the `seq` of the last durable event it applied,
 A client that caches what a den sends asks, after each `ready`, what changed in it meanwhile. The den keeps a log of its changes, by ID only, for 30 days.
 
 ```
-sync = {"epoch": "<16 bytes>", "version": 1300, "floor": 1000, "expired"?: "<message id>"}
+sync = {"epoch": "<16 bytes>", "version": 1300, "floor": 1000, "expired"?: "<message id>", "members_since"?: 1200}
 
 GET /api/changes?since=<version>&upto=<message id>
 200 {"version": 1300, "messages": [message, …], "deleted": [{"id", "channel_id"}, …], "more": false}
 ```
 
-- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
+- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
 - A client keeps what it cached from an earlier `ready` only when its version is from the same `epoch`, no older than `floor` and no newer than `version`; otherwise it drops it. It takes the `version` of a `ready` that finds it holding nothing.
+- **Members since (M6.2).** A client that kept the list of members from a `ready` names the epoch and version of that `ready` on the socket's upgrade, as `members`. When the den can still say what changed since, `ready` carries only the members whose records changed after that version, and says so with `sync.members_since`, the version they changed after; the client changes its list by them and takes the new `version` for its list. Otherwise `ready` carries everyone, without `members_since`. A `ready` the den sends mid-stream goes by the same cursor, which the socket's own events kept current.
 - `GET /api/changes` returns the messages edited or deleted after `since`, in channels the member can see now, and with IDs up to `upto` when it's given: the newest message the client holds. An edited message comes as history has it now, and a deleted one as its ID and channel. A change in a channel that's gone is left out, since the channel is missing from `ready` and the client drops it whole.
 - New messages aren't changes: a client fetches them as history. Retention and deleted channels aren't in the log either: `expired` and the channel list say what they took.
 - A page holds at most 1,000 changes, within about 900 KiB. `more` says the log goes on past its `version`, and the client asks again from there; the last page's `version` is the client's from then on.
