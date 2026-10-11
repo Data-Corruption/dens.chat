@@ -39,6 +39,10 @@ type fakeSystem struct {
 	sharedGone bool
 	failOn     string
 	startErr   error
+	// helpers are the desktop users whose shortcut helper starts at login,
+	// and helperStarts how often one was started now.
+	helpers      map[string]bool
+	helperStarts int
 }
 
 func newFake(t *testing.T) *fakeSystem {
@@ -48,6 +52,7 @@ func newFake(t *testing.T) *fakeSystem {
 		registered: map[string]bool{},
 		running:    map[string]bool{},
 		firewall:   map[string]bool{},
+		helpers:    map[string]bool{},
 	}
 }
 
@@ -131,6 +136,20 @@ func (f *fakeSystem) ConfigureFirewall(l layout.Layout, cfg instance.Config) err
 	return nil
 }
 func (f *fakeSystem) RegisterExtras(layout.Layout) error { return f.fail("RegisterExtras") }
+func (f *fakeSystem) RegisterHelper(_ layout.Layout, user host.Identity) (func() error, error) {
+	if err := f.fail("RegisterHelper"); err != nil {
+		return nil, err
+	}
+	if f.helpers[user.ID] {
+		return nil, nil
+	}
+	f.helpers[user.ID] = true
+	return func() error { delete(f.helpers, user.ID); return nil }, nil
+}
+func (f *fakeSystem) StartHelper(layout.Layout, host.Identity) error {
+	f.helperStarts++
+	return f.fail("StartHelper")
+}
 func (f *fakeSystem) ServiceRunning(l layout.Layout) (bool, error) {
 	return f.running[l.Instance], nil
 }
@@ -168,6 +187,7 @@ func (f *fakeSystem) UnregisterService(l layout.Layout) error {
 }
 func (f *fakeSystem) RemoveShared(layout.Layout) error {
 	f.sharedGone = true
+	clear(f.helpers)
 	return nil
 }
 func (f *fakeSystem) PrepareRestore(l layout.Layout, _ host.Identity) (string, error) {
@@ -243,6 +263,20 @@ func TestFreshInstall(t *testing.T) {
 	if cfg.DesktopUser.Name != "alice" || cfg.ReleaseURL != "https://releases.dens.chat/" || cfg.Name != "main" {
 		t.Fatalf("instance config = %+v", cfg)
 	}
+	if !f.helpers["1000"] || f.helperStarts != 1 {
+		t.Fatalf("shortcut helper registered %v, started %d times; want alice's, once", f.helpers, f.helperStarts)
+	}
+}
+
+func TestHelperThatWontStartLeavesTheInstall(t *testing.T) {
+	f := newFake(t)
+	f.failOn = "StartHelper"
+	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
+		t.Fatalf("install failed because the helper didn't start now: %v", err)
+	}
+	if !f.helpers["1000"] {
+		t.Fatal("the helper isn't registered to start at login")
+	}
 }
 
 func TestUpdateMovesEveryInstance(t *testing.T) {
@@ -302,6 +336,9 @@ func TestFailedFreshInstallLeavesNothing(t *testing.T) {
 	}
 	if f.accounts["main"] || f.registered["main"] {
 		t.Fatal("account or service survived the rollback")
+	}
+	if len(f.helpers) != 0 {
+		t.Fatalf("the shortcut helper's start at login survived the rollback: %v", f.helpers)
 	}
 }
 
@@ -390,6 +427,9 @@ func TestUninstall(t *testing.T) {
 	}
 	if f.accounts["main"] || f.registered["main"] || !f.sharedGone {
 		t.Fatalf("account %v registered %v shared removed %v", f.accounts, f.registered, f.sharedGone)
+	}
+	if len(f.helpers) != 0 {
+		t.Fatalf("the shortcut helper still starts at login: %v", f.helpers)
 	}
 	if err := Uninstall(context.Background(), f, buildInfo("v1.0.0"), Options{Instance: "main", Out: io.Discard}); err != nil {
 		t.Fatalf("second uninstall: %v", err)

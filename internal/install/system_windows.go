@@ -2,6 +2,9 @@ package install
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/csv"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -10,12 +13,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"github.com/Data-Corruption/dens.chat/internal/instance"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
@@ -367,6 +372,148 @@ func (windowsSystem) RegisterExtras(l layout.Layout) error {
 	return setSystemPath(l.BinaryDir, true)
 }
 
+// helperTask names the scheduled task that starts the shortcut helper at
+// user's login (M7). Each desktop user has one, at the library's root and
+// named for their SID, as OneDrive's are.
+func helperTask(l layout.Layout, user host.Identity) string {
+	return helperTaskPrefix(l) + user.ID
+}
+
+func helperTaskPrefix(l layout.Layout) string {
+	return `\` + strings.ToUpper(l.App[:1]) + l.App[1:] + " shortcuts-"
+}
+
+// RegisterHelper has Task Scheduler start the helper as user signs in,
+// with their interactive token, at normal priority, since a task's default
+// of below normal could fall behind a game, and with no time limit.
+func (windowsSystem) RegisterHelper(l layout.Layout, user host.Identity) (func() error, error) {
+	if _, err := windows.StringToSid(user.ID); err != nil {
+		return nil, fmt.Errorf("desktop user %q is not a SID: %w", user.ID, err)
+	}
+	name := helperTask(l, user)
+	existed := schtasks("/Query", "/TN", name) == nil
+	file, err := os.CreateTemp("", "dens-task-*.xml")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(file.Name())
+	_, err = file.Write(helperTaskXML(l.Binary, user, name))
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := schtasks("/Create", "/TN", name, "/XML", file.Name(), "/F"); err != nil {
+		return nil, err
+	}
+	if existed {
+		return nil, nil
+	}
+	return func() error { return schtasks("/Delete", "/TN", name, "/F") }, nil
+}
+
+// StartHelper runs the task now; Task Scheduler starts it only while user
+// is signed in. A helper the task already runs, from the last version, ends
+// first, so the new binary takes over at once.
+func (windowsSystem) StartHelper(l layout.Layout, user host.Identity) error {
+	name := helperTask(l, user)
+	_ = schtasks("/End", "/TN", name)
+	return schtasks("/Run", "/TN", name)
+}
+
+// helperTaskXML is the task's definition, in UTF-16 as its declaration says.
+func helperTaskXML(exe string, user host.Identity, name string) []byte {
+	esc := func(v string) string {
+		var b strings.Builder
+		_ = xml.EscapeText(&b, []byte(v))
+		return b.String()
+	}
+	text := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Carries Dens's voice keys from other programs to its calls.</Description>
+    <URI>%[1]s</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>%[2]s</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>%[2]s</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>5</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>%[3]s</Command>
+      <Arguments>%[4]s</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+`, esc(name), esc(user.ID), esc(exe), shortcuts.Command)
+	units := utf16.Encode([]rune(text))
+	out := make([]byte, 2+2*len(units))
+	out[0], out[1] = 0xFF, 0xFE
+	for i, u := range units {
+		binary.LittleEndian.PutUint16(out[2+2*i:], u)
+	}
+	return out
+}
+
+// removeHelperTasks ends and deletes every desktop user's helper task, so
+// the helpers they run let go of the binary.
+func removeHelperTasks(l layout.Layout) error {
+	out, err := exec.Command("schtasks", "/Query", "/FO", "CSV", "/NH").Output()
+	if err != nil {
+		return fmt.Errorf("list scheduled tasks: %w", err)
+	}
+	rows, err := csv.NewReader(strings.NewReader(string(out))).ReadAll()
+	if err != nil {
+		return fmt.Errorf("read scheduled tasks: %w", err)
+	}
+	var joined error
+	for _, row := range rows {
+		if len(row) == 0 || !strings.HasPrefix(row[0], helperTaskPrefix(l)) {
+			continue
+		}
+		_ = schtasks("/End", "/TN", row[0])
+		joined = errors.Join(joined, schtasks("/Delete", "/TN", row[0], "/F"))
+	}
+	return joined
+}
+
+func schtasks(args ...string) error {
+	out, err := exec.Command("schtasks", args...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("schtasks %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func (windowsSystem) ServiceRunning(l layout.Layout) (bool, error) {
 	state, err := host.ServiceStatus(l.ServiceName)
 	if errors.Is(err, host.ErrServiceNotInstalled) {
@@ -389,7 +536,7 @@ func (windowsSystem) UnregisterService(l layout.Layout) error {
 }
 
 func (windowsSystem) RemoveShared(l layout.Layout) error {
-	joined := errors.Join(setSystemPath(l.BinaryDir, false), werExclusion(filepath.Base(l.Binary), false))
+	joined := errors.Join(removeHelperTasks(l), setSystemPath(l.BinaryDir, false), werExclusion(filepath.Base(l.Binary), false))
 	removeStaleBinaries(l)
 	_ = os.Remove(l.Cosign)
 	if err := os.Remove(l.Binary); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -429,6 +576,7 @@ func (windowsSystem) Plan(l layout.Layout) []string {
 		fmt.Sprintf("data          %s (control %s, data %s)", l.Root, l.Control, l.Data),
 		fmt.Sprintf("data key      %s, machine-scope DPAPI", l.HostKey),
 		fmt.Sprintf("CLI endpoint  %s", l.ControlEndpoint),
+		fmt.Sprintf("shortcuts     %s %s at the desktop user's sign-in, by a scheduled task", l.Binary, shortcuts.Command),
 	}
 }
 
@@ -436,6 +584,7 @@ func (windowsSystem) UninstallPlan(l layout.Layout, last bool) []string {
 	lines := []string{fmt.Sprintf("stops and deletes the service %s, its event log source and its firewall rules", l.ServiceName)}
 	if last {
 		lines = append(lines, fmt.Sprintf("removes %s from the system PATH and deletes it (no instances remain)", l.BinaryDir))
+		lines = append(lines, "ends and deletes the shortcut helper's scheduled tasks")
 	}
 	return lines
 }

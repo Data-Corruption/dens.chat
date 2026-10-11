@@ -274,6 +274,13 @@ func (linuxSystem) ConfigureFirewall(layout.Layout, instance.Config) error { ret
 // RegisterExtras has nothing to do: /usr/local/bin is already on PATH.
 func (linuxSystem) RegisterExtras(layout.Layout) error { return nil }
 
+// The shortcut helper starts at login on Linux from M7.2.
+func (linuxSystem) RegisterHelper(layout.Layout, host.Identity) (func() error, error) {
+	return nil, nil
+}
+
+func (linuxSystem) StartHelper(layout.Layout, host.Identity) error { return nil }
+
 func (linuxSystem) ServiceRunning(l layout.Layout) (bool, error) {
 	state, err := host.ServiceStatus(l.ServiceName)
 	if errors.Is(err, host.ErrServiceNotInstalled) {

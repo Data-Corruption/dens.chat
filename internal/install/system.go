@@ -67,6 +67,12 @@ type System interface {
 	ConfigureFirewall(l layout.Layout, cfg instance.Config) error
 	// RegisterExtras applies machine-wide integration: PATH, crash reporting.
 	RegisterExtras(l layout.Layout) error
+	// RegisterHelper has the shortcut helper start at user's login (M7),
+	// and returns an undo.
+	RegisterHelper(l layout.Layout, user host.Identity) (undo func() error, err error)
+	// StartHelper starts the shortcut helper in user's session now, if
+	// they're signed in, so nobody signs out after installing.
+	StartHelper(l layout.Layout, user host.Identity) error
 
 	ServiceRunning(l layout.Layout) (bool, error)
 	StartService(l layout.Layout) error
@@ -75,7 +81,8 @@ type System interface {
 	// UnregisterService removes the service and its firewall rules.
 	UnregisterService(l layout.Layout) error
 	// RemoveShared removes what every instance shares, after the last one
-	// is uninstalled: the binary, cosign, the unit template, PATH entries.
+	// is uninstalled: the binary, cosign, the unit template, PATH entries,
+	// and what starts the shortcut helper.
 	RemoveShared(l layout.Layout) error
 	// PrepareRestore makes an empty directory beside the data directory,
 	// with the data directory's permissions, to extract a backup into.
