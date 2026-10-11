@@ -1,16 +1,19 @@
 // The settings: a dialog over whatever the page shows, so a den and a call
 // stay in view (M3.3). Voice holds the microphone, the speaker, how the
 // member sends their voice and how they share their screen (M4.2); General
-// holds the theme, whether photos go as smaller copies (M5), update checks,
-// the local password, logging, where Reddit links open, whether YouTube
-// videos play in Dens, and signing this browser out.
+// holds the theme, whether photos go as smaller copies (M5), how much of
+// other dens' files this computer keeps (M6), update checks, the local
+// password, logging, where Reddit links open, whether YouTube videos play
+// in Dens, and signing this browser out.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
 import { Card, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
+import { formatSize } from './files.jsx';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { HEIGHTS, RATES } from './share.js';
+import { cacheSizes, cacheUsage } from './storage.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
     cancelCapture, captureKey, chooseMic, chooseSpeaker, devices, inCall as callNow, keyLabel, micProblem, noiseSuppression, onCall, onVoiceLevel,
@@ -349,6 +352,7 @@ function General() {
         <>
             <ThemePicker />
             <Copies />
+            <Storage settings={settings} onChange={setSettings} />
             {settings.updatesManaged && (
                 <Card title="Updates">
                     <label class="label gap-3">
@@ -433,6 +437,52 @@ function Copies() {
                     size, and to send that instead. A photo or video larger than a den allows goes smaller either way.
                 </p>
             </div>
+        </Card>
+    );
+}
+
+// Storage shows how much of other dens' files this computer keeps, which
+// open without downloading again, up to a size the member chooses, and
+// empties it (M6).
+function Storage({ settings, onChange }) {
+    const save = useAction();
+    const reload = async () => onChange(await api.get('/api/settings'));
+    return (
+        <Card title="Storage">
+            <p class="text-sm text-base-content/70">
+                This computer keeps the photos, videos and files it fetched from other dens, sealed with its key, so they open without
+                downloading again. {cacheUsage(settings.cacheUsed, settings.cacheLimit)}
+            </p>
+            <Field label="Keep up to">
+                <select
+                    class="select"
+                    value={settings.cacheLimit}
+                    disabled={save.busy}
+                    onChange={(e) => {
+                        const limit = Number(e.currentTarget.value);
+                        save.run(async () => {
+                            await api.post('/api/settings', { cacheLimit: limit });
+                            await reload();
+                        });
+                    }}
+                >
+                    {cacheSizes(settings.cacheLimit).map((n) => <option key={n} value={n}>{formatSize(n)}</option>)}
+                </select>
+            </Field>
+            <div>
+                <button
+                    type="button"
+                    class="btn btn-outline"
+                    disabled={save.busy || !settings.cacheUsed}
+                    onClick={() => save.run(async () => {
+                        await api.post('/api/cache/clear');
+                        await reload();
+                    })}
+                >
+                    Empty
+                </button>
+            </div>
+            <ErrorText message={save.error} />
         </Card>
     );
 }
