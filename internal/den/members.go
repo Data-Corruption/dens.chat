@@ -145,10 +145,14 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 			}
 		}
 		if len(sets) > 0 {
-			_, err := tx.ExecContext(ctx, "UPDATE den_members SET "+strings.Join(sets, ", ")+" WHERE id = ?", append(args, s.MemberID)...)
-			return err
+			if _, err := tx.ExecContext(ctx, "UPDATE den_members SET "+strings.Join(sets, ", ")+" WHERE id = ?", append(args, s.MemberID)...); err != nil {
+				return err
+			}
 		}
-		return nil
+		if len(sets) == 0 && req.Avatar == nil && req.Banner == nil {
+			return nil
+		}
+		return logMember(ctx, tx, s.MemberID, now)
 	})
 	if err != nil {
 		return denproto.Member{}, err
@@ -180,12 +184,18 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 	if mid == s.MemberID {
 		return denproto.Member{}, invalid("the owner stays the owner until the den changes hands")
 	}
-	res, err := d.db.ExecContext(ctx, `UPDATE den_members SET role = ? WHERE id = ? AND left_at IS NULL AND role != 'owner'`, req.Role, mid)
+	err = d.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE den_members SET role = ? WHERE id = ? AND left_at IS NULL AND role != 'owner'`, req.Role, mid)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return errMemberNotFound
+		}
+		return logMember(ctx, tx, mid, d.now())
+	})
 	if err != nil {
 		return denproto.Member{}, err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return denproto.Member{}, errMemberNotFound
 	}
 	m, err := d.Member(ctx, mid)
 	if err != nil {
@@ -219,6 +229,9 @@ func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 		if _, err := tx.ExecContext(ctx, stmt, now, id); err != nil {
 			return nil, err
 		}
+	}
+	if err := logMember(ctx, tx, id, time.UnixMilli(now)); err != nil {
+		return nil, err
 	}
 	return deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL`, id)
 }

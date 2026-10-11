@@ -570,34 +570,48 @@ func (h *File) Close() error {
 	return err
 }
 
-// evictLocked lets go of the files used longest ago until the cache fits
-// its size, skipping those being read. The caller holds s.mu.
+// evictLocked lets go of what was used longest ago until the cache fits
+// its size: a file, skipping those being read, or a channel's messages,
+// whichever was used first. The caller holds s.mu.
 func (s *Store) evictLocked() error {
 	for s.used > s.limit {
-		rows, err := s.db.Query(`SELECT den, id, thumb, name, held FROM files ORDER BY used_at LIMIT 64`)
+		var file *droppedFile
+		var fileUsed int64
+		rows, err := s.db.Query(`SELECT den, id, thumb, name, held, used_at FROM files ORDER BY used_at LIMIT 64`)
 		if err != nil {
 			return err
 		}
-		var out []droppedFile
-		over := s.used - s.limit
-		for rows.Next() && over > 0 {
+		for rows.Next() {
 			var d droppedFile
-			if err := rows.Scan(&d.key.den, &d.key.id, &d.key.thumb, &d.name, &d.held); err != nil {
+			var used int64
+			if err := rows.Scan(&d.key.den, &d.key.id, &d.key.thumb, &d.name, &d.held, &used); err != nil {
 				rows.Close()
 				return err
 			}
 			if e := s.entries[d.key]; e != nil && e.refs > 0 {
 				continue
 			}
-			out = append(out, d)
-			over -= d.held
+			file, fileUsed = &d, used
+			break
 		}
 		rows.Close()
-		if len(out) == 0 {
-			return rows.Err()
-		}
-		if err := s.dropEntriesLocked(out); err != nil {
+		var den, channel, chanUsed int64
+		err = s.db.QueryRow(`SELECT den, channel, used_at FROM channels ORDER BY used_at LIMIT 1`).Scan(&den, &channel, &chanUsed)
+		hasChannel := err == nil
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		switch {
+		case hasChannel && (file == nil || chanUsed <= fileUsed):
+			if err := s.dropMessagesLocked(den, `channel = ?`, channel); err != nil {
+				return err
+			}
+		case file != nil:
+			if err := s.dropEntriesLocked([]droppedFile{*file}); err != nil {
+				return err
+			}
+		default:
+			return nil // everything left is being read
 		}
 	}
 	return nil
@@ -698,18 +712,41 @@ func (s *Store) DropFiles(denID []byte, ids ...int64) error {
 	return s.drop(denID, `id IN (?`+strings.Repeat(", ?", len(ids)-1)+`)`, anys(ids)...)
 }
 
-// DropChannel forgets the files on a channel's messages.
+// DropChannel forgets a channel's messages, and the files on them.
 func (s *Store) DropChannel(denID []byte, channel int64) error {
-	return s.drop(denID, `channel = ?`, channel)
+	if err := s.drop(denID, `channel = ?`, channel); err != nil {
+		return err
+	}
+	return s.dropMessages(denID, `channel = ?`, channel)
 }
 
-// DropChannelsExcept forgets the files on messages in channels other than
-// these, as after a ready that no longer lists the rest.
+// DropChannelsExcept forgets the messages, and the files on them, of
+// channels other than these, as after a ready that no longer lists the
+// rest.
 func (s *Store) DropChannelsExcept(denID []byte, channels []int64) error {
 	if len(channels) == 0 {
-		return s.drop(denID, `channel IS NOT NULL`)
+		if err := s.drop(denID, `channel IS NOT NULL`); err != nil {
+			return err
+		}
+		return s.dropMessages(denID, "")
 	}
-	return s.drop(denID, `channel IS NOT NULL AND channel NOT IN (?`+strings.Repeat(", ?", len(channels)-1)+`)`, anys(channels)...)
+	in := `channel NOT IN ` + channelsIn(channels)
+	if err := s.drop(denID, `channel IS NOT NULL AND `+in, anys(channels)...); err != nil {
+		return err
+	}
+	return s.dropMessages(denID, in, anys(channels)...)
+}
+
+// dropMessages forgets a den's messages in the channels a condition
+// selects, or all of them with none.
+func (s *Store) dropMessages(denID []byte, where string, args ...any) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	den, ok, err := s.denNumberLocked(denID)
+	if err != nil || !ok {
+		return err
+	}
+	return s.dropMessagesLocked(den, where, args...)
 }
 
 // DropThrough forgets the files on messages up to one, as a retention
@@ -750,19 +787,6 @@ func (s *Store) Pictures(denID []byte) (map[int64]int64, error) {
 		out[id] = member
 	}
 	return out, rows.Err()
-}
-
-// Newest is the newest message the cache holds a file of, in a den, or 0.
-func (s *Store) Newest(denID []byte) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	den, ok, err := s.denNumberLocked(denID)
-	if err != nil || !ok {
-		return 0, err
-	}
-	var n sql.NullInt64
-	err = s.db.QueryRow(`SELECT max(message) FROM files WHERE den = ?`, den).Scan(&n)
-	return n.Int64, err
 }
 
 // Holds reports whether the cache holds anything of a den.

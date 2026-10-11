@@ -216,7 +216,7 @@ func TestLeave(t *testing.T) {
 	if f.sessions(member.MemberID) != 0 {
 		t.Fatal("a member who left still has sessions")
 	}
-	snap, err := f.d.snapshot(ctx, owner.MemberID, true, 0)
+	snap, err := f.d.snapshot(ctx, owner.MemberID, true, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestDirectMessages(t *testing.T) {
 	wantCode(t, err, denproto.CodeNotFound)
 	_, err = f.d.Send(ctx, carol, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "let me in"})
 	wantCode(t, err, denproto.CodeNotFound)
-	snap, _ := f.d.snapshot(ctx, owner.MemberID, true, 0)
+	snap, _ := f.d.snapshot(ctx, owner.MemberID, true, 0, nil)
 	found := false
 	for _, r := range snap.ReadStates {
 		if r.ChannelID == dm.ID {
@@ -278,7 +278,7 @@ func TestDirectMessages(t *testing.T) {
 	if !found {
 		t.Fatalf("the owner's unread DM: %+v", snap.ReadStates)
 	}
-	snap, _ = f.d.snapshot(ctx, carol.MemberID, false, 0)
+	snap, _ = f.d.snapshot(ctx, carol.MemberID, false, 0, nil)
 	for _, c := range snap.Channels {
 		if c.ID == dm.ID {
 			t.Fatal("carol's snapshot has their DM")
@@ -344,7 +344,7 @@ func TestProfiles(t *testing.T) {
 
 func (f *fixture) readState(member int64, channel string) denproto.ReadState {
 	f.t.Helper()
-	snap, err := f.d.snapshot(context.Background(), member, false, 0)
+	snap, err := f.d.snapshot(context.Background(), member, false, 0, nil)
 	if err != nil {
 		f.t.Fatal(err)
 	}

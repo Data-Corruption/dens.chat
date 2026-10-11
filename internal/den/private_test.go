@@ -393,7 +393,7 @@ func TestDMKeyExchange(t *testing.T) {
 	if states != 0 {
 		t.Fatalf("%d states outlived the exchange", states)
 	}
-	snap, err := f.d.snapshot(ctx, bob.MemberID, false, 0)
+	snap, err := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
 	if err != nil || len(snap.DMKeys) != 1 || snap.DMKeys[0].Exchange != nil || snap.DMKeys[0].Sealed == nil {
 		t.Fatalf("bob's snapshot: %+v %v", snap.DMKeys, err)
 	}
@@ -570,7 +570,7 @@ func TestStartOver(t *testing.T) {
 		retired.Retired != denproto.RetiredStartedOver || retired.RetiredBy != denproto.FormatID(bob.MemberID) || retired.Sealed == nil {
 		t.Fatalf("the owner heard %s %s", e.T, e.D)
 	}
-	snap, _ := f.d.snapshot(ctx, bob.MemberID, false, 0)
+	snap, _ := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
 	if !denproto.Equal(snap.SealCheck, check) || len(snap.DMKeys) != 2 {
 		t.Fatalf("bob's snapshot: %+v", snap.DMKeys)
 	}
@@ -652,7 +652,7 @@ func TestDeviceApproval(t *testing.T) {
 	if len(reqs) != 1 || !denproto.Equal(reqs[0].KeyID, dev.id()) || reqs[0].Label != "laptop" || len(f.d.memberRequests(owner.MemberID)) != 0 {
 		t.Fatalf("requests: %+v", reqs)
 	}
-	snap, _ := f.d.snapshot(ctx, bob.MemberID, false, 0)
+	snap, _ := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
 	if len(snap.DeviceRequests) != 1 {
 		t.Fatalf("bob's snapshot: %+v", snap.DeviceRequests)
 	}

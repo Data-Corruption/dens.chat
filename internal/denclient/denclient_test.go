@@ -105,8 +105,13 @@ type denHost struct {
 	d        *den.Den
 	public   *httptest.Server
 	loopback *httptest.Server
-	// files counts the requests for files and previews the den answers.
-	files atomic.Int64
+	// files counts the requests for files and previews the den answers,
+	// history those for pages of history, and changes those for what
+	// changed since a version (M6); upgrades are the members cursors the
+	// socket upgrades named.
+	files, history, changes atomic.Int64
+	upgradeMu               sync.Mutex
+	upgrades                []string
 }
 
 func startDen(t *testing.T, s store, lifetime time.Duration) *denHost {
@@ -130,8 +135,17 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 	h.d = d
 	routes := denhttp.New(&app.App{Den: d, Log: h.s.log})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/files/") {
+		switch p := r.URL.Path; {
+		case strings.HasPrefix(p, "/api/files/"):
 			h.files.Add(1)
+		case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/channels/") && strings.HasSuffix(p, "/messages"):
+			h.history.Add(1)
+		case p == "/api/changes":
+			h.changes.Add(1)
+		case p == "/api/ws":
+			h.upgradeMu.Lock()
+			h.upgrades = append(h.upgrades, r.URL.Query().Get("members"))
+			h.upgradeMu.Unlock()
 		}
 		routes.ServeHTTP(w, r)
 	})

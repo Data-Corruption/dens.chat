@@ -1,6 +1,7 @@
 package den
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -40,14 +41,36 @@ func invalid(format string, args ...any) error {
 
 // Snapshot --------------------------------------------------------------------
 
-// snapshot is the state a member's client starts from.
-func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64) (denproto.Ready, error) {
+// membersCursor is where a client's list of members stood, as it named it
+// on the socket's upgrade (M6.2).
+type membersCursor struct {
+	epoch   []byte
+	version int64
+}
+
+// snapshot is the state a member's client starts from. With a cursor the
+// den can still answer from, its members are only those changed since.
+func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64, mc *membersCursor) (denproto.Ready, error) {
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
 	// The version comes first: a change made while the rest is read has a
-	// higher one, so a client that starts from it misses nothing (M6).
-	var err error
-	if r.Sync, err = syncState(ctx, d.db); err != nil {
+	// higher one, so a client that starts from it misses nothing (M6). The
+	// log is read with it, so pruning can't take changes from between them.
+	var only map[int64]bool
+	err := d.readTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		if r.Sync, err = syncState(ctx, tx); err != nil {
+			return err
+		}
+		if mc == nil || !bytes.Equal(mc.epoch, r.Sync.Epoch) || mc.version < r.Sync.Floor || mc.version > r.Sync.Version {
+			return nil
+		}
+		since := mc.version
+		r.Sync.MembersSince = &since
+		only, err = changedMembers(ctx, tx, since)
+		return err
+	})
+	if err != nil {
 		return r, err
 	}
 	r.Den, _ = d.Info()
@@ -64,7 +87,9 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 		if m.ID == denproto.FormatID(member) {
 			r.Me = m
 		}
-		r.Members = append(r.Members, m)
+		if id, _ := denproto.ParseID(m.ID); only == nil || only[id] {
+			r.Members = append(r.Members, m)
+		}
 	}
 	rows.Close()
 	r.Online = d.online()

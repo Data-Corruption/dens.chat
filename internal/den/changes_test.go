@@ -29,7 +29,7 @@ func (f *fixture) changes(s *Session, since, upto int64) denproto.Changes {
 // sync is where the den's changes stand, as ready has it for a member.
 func (f *fixture) sync(s *Session) denproto.Sync {
 	f.t.Helper()
-	r, err := f.d.snapshot(context.Background(), s.MemberID, IsStaff(s.Role), 0)
+	r, err := f.d.snapshot(context.Background(), s.MemberID, IsStaff(s.Role), 0, nil)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -59,8 +59,9 @@ func TestChangesLogEditsTicksAndDeletes(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()
 	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	// The two joins were the den's first changes (M6.2).
 	start := f.sync(member)
-	if start.Version != 0 || start.Floor != 0 || start.Expired != "" {
+	if start.Version != 2 || start.Floor != 0 || start.Expired != "" {
 		t.Fatalf("a new den's sync: %+v", start)
 	}
 	a := f.send(member, general.ID, "first")
@@ -68,7 +69,7 @@ func TestChangesLogEditsTicksAndDeletes(t *testing.T) {
 	c := f.send(owner, general.ID, "going")
 	d := f.send(owner, general.ID, "staying")
 	// Sending isn't a change: new messages come as history.
-	if v := f.sync(member).Version; v != 0 {
+	if v := f.sync(member).Version; v != start.Version {
 		t.Fatalf("sending moved the version to %d", v)
 	}
 
@@ -91,7 +92,7 @@ func TestChangesLogEditsTicksAndDeletes(t *testing.T) {
 		t.Fatalf("four changes took the version from 0 to %d", now.Version)
 	}
 
-	all := f.changes(member, 0, 0)
+	all := f.changes(member, start.Version, 0)
 	edited, deleted := changed(all)
 	if !slices.Equal(edited, []string{b.ID, a.ID}) || !slices.Equal(deleted, []string{c.ID}) || all.Version != now.Version || all.More {
 		t.Fatalf("changes since 0: edited %v, deleted %v, %+v", edited, deleted, all)
@@ -108,7 +109,7 @@ func TestChangesLogEditsTicksAndDeletes(t *testing.T) {
 	if e, x := changed(f.changes(member, afterEdit, 0)); !slices.Equal(e, []string{b.ID, a.ID}) || !slices.Equal(x, []string{c.ID}) {
 		t.Fatalf("changes since %d: %v %v", afterEdit, e, x)
 	}
-	if e, x := changed(f.changes(member, 0, id(b.ID))); !slices.Equal(e, []string{b.ID, a.ID}) || len(x) != 0 {
+	if e, x := changed(f.changes(member, start.Version, id(b.ID))); !slices.Equal(e, []string{b.ID, a.ID}) || len(x) != 0 {
 		t.Fatalf("changes up to %s: %v %v", b.ID, e, x)
 	}
 	if e, x := changed(f.changes(member, now.Version, 0)); len(e)+len(x) != 0 {
@@ -270,12 +271,14 @@ func TestChangesComeInPages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The members' joins came first, as changes a page of messages' skips.
+	joins := int64(2)
 	first := f.changes(member, 0, 0)
-	if !first.More || len(first.Messages) != denproto.ChangesPage || first.Version != int64(denproto.ChangesPage) {
+	if !first.More || len(first.Messages) != denproto.ChangesPage || first.Version != joins+int64(denproto.ChangesPage) {
 		t.Fatalf("the first page: more %v, %d messages, version %d", first.More, len(first.Messages), first.Version)
 	}
 	rest := f.changes(member, first.Version, 0)
-	if rest.More || len(rest.Messages) != 5 || rest.Version != int64(len(ids)) {
+	if rest.More || len(rest.Messages) != 5 || rest.Version != joins+int64(len(ids)) {
 		t.Fatalf("the second page: more %v, %d messages, version %d", rest.More, len(rest.Messages), rest.Version)
 	}
 
@@ -335,5 +338,86 @@ func TestNewSyncEpoch(t *testing.T) {
 	f.open()
 	if again := f.sync(member); !bytes.Equal(again.Epoch, after.Epoch) {
 		t.Fatalf("the epoch after opening again: %x, want %x", again.Epoch, after.Epoch)
+	}
+}
+
+// members lists the usernames a snapshot sends, with the cursor it took.
+func (f *fixture) membersSince(s *Session, mc *membersCursor) ([]string, *int64) {
+	f.t.Helper()
+	r, err := f.d.snapshot(context.Background(), s.MemberID, IsStaff(s.Role), 0, mc)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if err := denproto.CheckSync(r.Sync); err != nil {
+		f.t.Fatal(err)
+	}
+	var names []string
+	for _, m := range r.Members {
+		names = append(names, m.Username)
+	}
+	slices.Sort(names)
+	return names, r.Sync.MembersSince
+}
+
+func TestReadySendsOnlyTheMembersChangedSince(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	carol := f.member(owner, "carol")
+	dave := f.member(owner, "dave")
+	start := f.sync(member)
+	cursor := &membersCursor{epoch: start.Epoch, version: start.Version}
+	if names, since := f.membersSince(member, cursor); len(names) != 0 || since == nil || *since != start.Version {
+		t.Fatalf("with nothing changed: %v since %v", names, since)
+	}
+
+	// A join, a new display name, a role and a departure each send their
+	// member again; nobody else's record goes.
+	f.member(owner, "erin")
+	name := "Carol C"
+	if _, err := f.d.UpdateProfile(ctx, carol, denproto.ProfileRequest{DisplayName: &name}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.SetRole(ctx, owner, denproto.FormatID(dave.MemberID), denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.Leave(ctx, member); err != nil {
+		t.Fatal(err)
+	}
+	names, since := f.membersSince(owner, cursor)
+	if !slices.Equal(names, []string{"bob", "carol", "dave", "erin"}) || since == nil || *since != start.Version {
+		t.Fatalf("members changed since %d: %v (since %v)", start.Version, names, since)
+	}
+
+	// A cursor of another epoch, past the version, or below the floor gets
+	// every member.
+	all := []string{"alice", "bob", "carol", "dave", "erin"}
+	for _, mc := range []*membersCursor{
+		nil,
+		{epoch: denproto.Random(denproto.SyncEpochSize), version: start.Version},
+		{epoch: start.Epoch, version: f.sync(owner).Version + 1},
+	} {
+		if names, since := f.membersSince(owner, mc); !slices.Equal(names, all) || since != nil {
+			t.Fatalf("cursor %+v: %v (since %v)", mc, names, since)
+		}
+	}
+	f.clock = f.clock.Add(changeLogAge + time.Hour)
+	if err := f.d.pruneChanges(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if names, since := f.membersSince(owner, cursor); !slices.Equal(names, all) || since != nil {
+		t.Fatalf("a cursor below the floor: %v (since %v)", names, since)
+	}
+}
+
+func TestMembersCursorRoundTrips(t *testing.T) {
+	epoch := denproto.Random(denproto.SyncEpochSize)
+	e, v, ok := denproto.ParseMembersCursor(denproto.MembersCursor(epoch, 42))
+	if !ok || !bytes.Equal(e, epoch) || v != 42 {
+		t.Fatalf("round trip: %x %d %v", e, v, ok)
+	}
+	for _, bad := range []string{"", "x", "abc.1", denproto.Bytes(epoch[:8]).String() + ".1", epoch.String() + ".-1", epoch.String() + ".x"} {
+		if _, _, ok := denproto.ParseMembersCursor(bad); ok {
+			t.Fatalf("parsed %q", bad)
+		}
 	}
 }

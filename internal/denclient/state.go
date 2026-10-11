@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 
@@ -188,11 +189,19 @@ func cleanLimits(d denproto.Den) bool {
 }
 
 // load replaces the state with a snapshot. Anything malformed in it is a
-// protocol violation.
-func (s *denState) load(r denproto.Ready) error {
+// protocol violation. A snapshot that sends only the members changed since
+// the client's list (M6.2) changes that list, prev, which the client named
+// on the socket's upgrade.
+func (s *denState) load(r denproto.Ready, prev map[string]denproto.Member) error {
 	next := newState()
 	if !cleanLimits(r.Den) || denproto.CheckSync(r.Sync) != nil {
 		return errMalformed
+	}
+	if r.Sync.MembersSince != nil {
+		if prev == nil {
+			return errMalformed
+		}
+		maps.Copy(next.members, prev)
 	}
 	next.limits, next.callLimits, next.retention = r.Den.Limits, r.Den.CallLimits, r.Den.Retention
 	for _, m := range r.Members {
@@ -270,6 +279,73 @@ func (s *denState) load(r denproto.Ready) error {
 	}
 	*s = *next
 	return nil
+}
+
+// keptState is a den's state as the cache keeps it between runs of the
+// service (M6.2), for the page to show while the den is away: all of it
+// but who's online, in calls and asking to sign in, which only a
+// connection knows. The members are kept apart, since they change least
+// and take most of the room.
+type keptState struct {
+	Den       denproto.Den         `json:"den"`
+	Groups    []denproto.Group     `json:"groups"`
+	Channels  []denproto.Channel   `json:"channels"`
+	Reads     []denproto.ReadState `json:"reads"`
+	Keys      []denproto.DMKey     `json:"keys"`
+	SealCheck denproto.Bytes       `json:"seal_check"`
+}
+
+// kept returns the state as the cache keeps it, and its members.
+func (s *denState) kept() (keptState, []denproto.Member) {
+	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention},
+		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
+		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck}
+	return k, slices.Collect(maps.Values(s.members))
+}
+
+// restore makes a state of what the cache kept. The cache sealed it with
+// the data key, but it's checked as a den's answer is all the same.
+func restore(k keptState, members []denproto.Member) (*denState, error) {
+	s := newState()
+	if !cleanLimits(k.Den) {
+		return nil, errMalformed
+	}
+	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
+	for _, m := range members {
+		m, ok := cleanMember(m)
+		if !ok {
+			return nil, errMalformed
+		}
+		s.members[m.ID] = m
+	}
+	for _, g := range k.Groups {
+		g, ok := cleanGroup(g)
+		if !ok {
+			return nil, errMalformed
+		}
+		s.groups[g.ID] = g
+	}
+	for _, c := range k.Channels {
+		c, ok := cleanChannel(c)
+		if !ok {
+			return nil, errMalformed
+		}
+		s.channels[c.ID] = c
+	}
+	for _, r := range k.Reads {
+		r, ok := cleanRead(r)
+		if !ok {
+			return nil, errMalformed
+		}
+		s.reads[r.ChannelID] = r
+	}
+	for _, key := range k.Keys {
+		if denproto.CheckDMKey(key) != nil {
+			return nil, errMalformed
+		}
+		s.keys[key.ID] = key
+	}
+	return s, nil
 }
 
 // maxCallMembers bounds the members a den says are in one call: more than

@@ -362,7 +362,7 @@ func TestProfilePictures(t *testing.T) {
 	if _, err := f.read(owner, avatar.ID, false); err != nil {
 		t.Fatalf("anyone sees an avatar: %v", err)
 	}
-	snap, err := f.d.snapshot(ctx, owner.MemberID, true, 0)
+	snap, err := f.d.snapshot(ctx, owner.MemberID, true, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

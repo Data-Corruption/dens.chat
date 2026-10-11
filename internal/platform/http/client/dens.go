@@ -459,7 +459,7 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 		jsonError(w, http.StatusConflict, "You're already in this den on this computer.")
 	case errors.Is(err, denclient.ErrUnknownDen):
 		jsonError(w, http.StatusNotFound, "You haven't joined that den.")
-	case errors.Is(err, denclient.ErrNotStarted):
+	case errors.Is(err, denclient.ErrNotStarted), errors.Is(err, denclient.ErrOffline):
 		jsonError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, denclient.ErrTooLarge):
 		jsonError(w, http.StatusRequestEntityTooLarge, "This file is larger than this den allows.")

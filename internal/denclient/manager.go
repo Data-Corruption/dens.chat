@@ -249,6 +249,9 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1)}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
+	// The page shows the den as it last was until it sends a snapshot, or
+	// while it's away (M6.2).
+	c.restoreKept()
 	m.conns = append(m.conns, c)
 	m.wg.Add(1)
 	go func() {
