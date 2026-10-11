@@ -191,6 +191,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"updatesManaged":         rt.a.Instance.ReleaseURL != "" && !rt.a.DevMode(),
 		"cacheLimit":             usage.Limit,
 		"cacheUsed":              usage.Used,
+		"voiceKeys":              rt.a.Shortcuts.Keys(),
 	})
 }
 
@@ -364,6 +365,8 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		UpdateNotifications    *bool   `json:"updateNotifications"`
 		BackgroundUpdateChecks *bool   `json:"backgroundUpdateChecks"`
 		CacheLimit             *int64  `json:"cacheLimit"`
+		// VoiceKeys replaces the member's keys, all of them (M7).
+		VoiceKeys *map[string]types.VoiceKey `json:"voiceKeys"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -377,6 +380,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	cfg, err := config.Update(rt.a.DB, func(cfg *types.Configuration) error {
 		if body.CacheLimit != nil {
 			cfg.CacheLimit = *body.CacheLimit
+		}
+		if body.VoiceKeys != nil {
+			cfg.VoiceKeys = *body.VoiceKeys
 		}
 		if body.LogLevel != nil {
 			cfg.LogLevel = *body.LogLevel
@@ -404,6 +410,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			xhttp.Error(r.Context(), w, err)
 			return
 		}
+	}
+	if body.VoiceKeys != nil {
+		rt.a.Shortcuts.SetKeys(cfg.VoiceKeys)
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

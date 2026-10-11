@@ -105,6 +105,11 @@ type Manager struct {
 	// call is the install's one call, if it holds one (M2).
 	callMu sync.Mutex
 	call   *activeCall
+	// OnCall hears whether the install holds a call as that changes: the
+	// shortcut helper reads keys only during one (M7). hookMu keeps its
+	// calls in order, each with the state as it is then.
+	OnCall func(active bool)
+	hookMu sync.Mutex
 
 	// follows are uploads the page follows, by its keys (M5.4).
 	followMu sync.Mutex

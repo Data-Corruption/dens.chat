@@ -116,6 +116,8 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer stop()
 	stream, stopStream := rt.a.Dens.Stream()
 	defer stopStream()
+	keys, stopKeys := rt.a.Shortcuts.Watch()
+	defer stopKeys()
 	send := func() bool {
 		data, err := json.Marshal(map[string]any{"t": "dens", "d": rt.densView()})
 		if err != nil {
@@ -157,6 +159,27 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			data, err := json.Marshal(map[string]any{"t": "den", "d": e})
+			if err != nil {
+				return
+			}
+			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			err = c.Write(wctx, websocket.MessageText, data)
+			cancel()
+			if err != nil {
+				return
+			}
+		case e, ok := <-keys:
+			if !ok {
+				c.Close(websocket.StatusTryAgainLater, "fell behind")
+				return
+			}
+			// The voice keys' status, and the helper's presses during a
+			// call, which only the page holding it acts on (M7).
+			msg := map[string]any{"t": "keys", "d": e.Status}
+			if e.Press != nil {
+				msg = map[string]any{"t": "key", "d": e.Press}
+			}
+			data, err := json.Marshal(msg)
 			if err != nil {
 				return
 			}

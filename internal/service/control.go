@@ -36,6 +36,9 @@ func controlHandlers(a *app.App) map[string]control.Handler {
 		control.OpBackup: func(ctx context.Context, req control.Request) (control.Reply, error) {
 			return backupReply(ctx, a, req.Password)
 		},
+		control.OpShortcuts: func(context.Context, control.Request) (control.Reply, error) {
+			return control.Reply{Stream: a.Shortcuts.Serve}, nil
+		},
 	}
 }
 
