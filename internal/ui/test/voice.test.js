@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    answerFor, applyCalls, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, readVoice, readVolumes, rmsDb, rnnoiseChosen,
-    speakingNow, typesInto, volumeIn, withVolume,
+    actionFor, answerFor, applyCalls, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, readKeyStatus, readKeys,
+    readVoice, readVolumes, rmsDb, rnnoiseChosen, speakingNow, typesInto, volumeIn, withVolume,
 } from '../assets/js/src/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
@@ -107,17 +107,13 @@ test('RNNoise runs unless the member turned it off', () => {
 });
 
 test('voice settings fall back to their defaults, piece by piece', () => {
-    const defaults = { mode: 'voice', auto: true, threshold: -50, keys: {} };
+    const defaults = { mode: 'voice', auto: true, threshold: -50 };
     assert.deepEqual(readVoice(''), defaults);
     assert.deepEqual(readVoice('not json'), defaults);
     assert.deepEqual(readVoice('[1]'), { ...defaults });
-    const v = readVoice(JSON.stringify({
-        mode: 'ptt',
-        auto: false,
-        threshold: -63.4,
-        keys: { ptt: { code: 'KeyV', label: 'V', ctrl: 1 }, toggleMute: { code: '', label: 'X' }, pushMute: { code: 'F13' }, other: { code: 'KeyB', label: 'B' } },
-    }));
-    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63, keys: { ptt: { code: 'KeyV', label: 'V', ctrl: true, alt: false, shift: false, meta: false } } });
+    // Keys the browser kept before the service kept them are left behind.
+    const v = readVoice(JSON.stringify({ mode: 'ptt', auto: false, threshold: -63.4, keys: { ptt: { code: 'KeyV', label: 'V' } } }));
+    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63 });
     assert.equal(readVoice('{"threshold": 20}').threshold, 0);
     assert.equal(readVoice('{"threshold": -500}').threshold, -100);
     assert.equal(readVoice('{"mode": "shout", "auto": "yes"}').mode, 'voice');
@@ -135,14 +131,46 @@ test('the gate follows how the member sends', () => {
     assert.deepEqual(gateFor(ptt, false, true), { mode: 'open' });
 });
 
-test('a key fires its binding with exactly its modifiers, and not while it types into a field', () => {
+test('the keys and the helper come from the service, kept to what they can be', () => {
+    assert.deepEqual(readKeys({
+        ptt: { code: 'KeyV', label: 'V', ctrl: 1 }, toggleMute: { code: '', label: 'X' }, pushMute: { code: 'F13' }, other: { code: 'KeyB', label: 'B' },
+    }), { ptt: { code: 'KeyV', label: 'V', ctrl: true, alt: false, shift: false, meta: false } });
+    assert.deepEqual(readKeys(undefined), {});
+    const none = { keys: {}, helper: false, covers: [], note: '', problem: '' };
+    assert.deepEqual(readKeyStatus(null), none);
+    // Without a helper, nothing is covered, whatever came.
+    assert.deepEqual(readKeyStatus({ keys: {}, helper: false, covers: ['ptt'], note: 'n' }), none);
+    const st = readKeyStatus({ keys: { ptt: { code: 'Mouse4', label: 'Mouse 4' } }, helper: true, covers: ['pushMute', 'shout', 'ptt'], note: 'limits' });
+    assert.deepEqual(st.covers, ['ptt', 'pushMute']);
+    assert.equal(st.note, 'limits');
+    assert.equal(st.keys.ptt.code, 'Mouse4');
+});
+
+test('a key fires its binding with at least its modifiers, and not while it types into a field', () => {
     const b = { code: 'KeyV', label: 'V', ctrl: false, alt: false, shift: false, meta: false };
     const key = (o) => ({ code: 'KeyV', ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, target: null, ...o });
     assert.ok(keyMatches(b, key({})));
-    assert.ok(!keyMatches(b, key({ ctrlKey: true })));
+    // A player holds Shift to run, and still pushes to talk.
+    assert.ok(keyMatches(b, key({ shiftKey: true })));
+    assert.ok(!keyMatches({ ...b, ctrl: true }, key({ shiftKey: true })));
     assert.ok(!keyMatches(b, key({ code: 'KeyB' })));
     assert.ok(!keyMatches(undefined, key({})));
     assert.ok(keyMatches({ ...b, ctrl: true, shift: true }, key({ ctrlKey: true, shiftKey: true })));
+    // Of two actions on one key, the one with more modifiers takes it.
+    const keys = { ptt: b, toggleMute: { ...b, ctrl: true }, pushMute: { ...b, code: 'Mouse4', label: 'Mouse 4' } };
+    assert.equal(actionFor(keys, key({})), 'ptt');
+    assert.equal(actionFor(keys, key({ ctrlKey: true })), 'toggleMute');
+    assert.equal(actionFor(keys, key({ ctrlKey: true, altKey: true })), 'toggleMute');
+    assert.equal(actionFor(keys, key({ code: 'Mouse4' })), 'pushMute');
+    assert.equal(actionFor(keys, key({ code: 'KeyB' })), null);
+    // A binding types into a field unless a modifier, a function key or a
+    // mouse button makes it.
+    assert.ok(bindingTypes(b));
+    assert.ok(bindingTypes({ ...b, shift: true }));
+    assert.ok(!bindingTypes({ ...b, ctrl: true }));
+    assert.ok(!bindingTypes({ ...b, code: 'F13' }));
+    assert.ok(!bindingTypes({ ...b, code: 'Mouse5' }));
+    assert.ok(!bindingTypes(undefined));
     assert.ok(typesInto(key({ target: { tagName: 'TEXTAREA' } })));
     assert.ok(typesInto(key({ target: { tagName: 'INPUT', type: 'text' } })));
     assert.ok(typesInto(key({ target: { isContentEditable: true } })));

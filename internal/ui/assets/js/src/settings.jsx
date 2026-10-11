@@ -16,8 +16,8 @@ import { HEIGHTS, RATES } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
-    cancelCapture, captureKey, chooseMic, chooseSpeaker, devices, inCall as callNow, keyLabel, micProblem, noiseSuppression, onCall, onVoiceLevel,
-    setRNNoise, setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
+    cancelCapture, captureKey, chooseMic, chooseSpeaker, devices, inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall,
+    onKeys, onVoiceLevel, setKeys, setRNNoise, setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
 } from './voice.js';
 
 const openers = new Set();
@@ -82,7 +82,12 @@ function VoiceSettings() {
     const [inCall, setInCall] = useState(callNow);
     const [testing, setTesting] = useState(false);
     const [capturing, setCapturing] = useState('');
+    const [elsewhere, setElsewhere] = useState(keysElsewhere);
     useEffect(() => onCall((c) => setInCall(!!c.call)), []);
+    useEffect(() => onKeys(() => {
+        setV(voiceSettings());
+        setElsewhere(keysElsewhere());
+    }), []);
     useEffect(() => {
         devices().then(setList, () => setError("This browser didn't list its devices."));
         const off = onVoiceLevel(setReport);
@@ -126,11 +131,20 @@ function VoiceSettings() {
             setError(micProblem(e));
         }
     }
+    async function saveKeys(keys) {
+        setError('');
+        try {
+            await setKeys(keys);
+            setV(voiceSettings());
+        } catch (e) {
+            setError(e.message || "The keys weren't saved.");
+        }
+    }
     async function bind(name) {
         setCapturing(name);
         const key = await captureKey();
         setCapturing('');
-        if (key) change({ keys: { ...v.keys, [name]: key } });
+        if (key) await saveKeys({ ...v.keys, [name]: key });
     }
     const rnnoise = suppression.rnnoise && !suppression.failed && !suppression.processorFailed;
     const auto = v.mode === 'voice' && v.auto && rnnoise;
@@ -235,24 +249,24 @@ function VoiceSettings() {
                             <p class="text-sm text-base-content/70">{hint}</p>
                         </div>
                         {capturing === name ? (
-                            <span class="text-sm">Press a key. Escape cancels.</span>
+                            <span class="text-sm">Press a key or a mouse's side button. Escape cancels.</span>
                         ) : v.keys[name] ? (
-                            <kbd class="kbd kbd-sm">{keyLabel(v.keys[name])}</kbd>
+                            <span class="flex items-center gap-1.5">
+                                <kbd class="kbd kbd-sm">{keyLabel(v.keys[name])}</kbd>
+                                {elsewhere.covers.includes(name) && <WorksElsewhere id={`elsewhere-${name}`} />}
+                            </span>
                         ) : (
                             <span class="text-sm text-base-content/50">Not set</span>
                         )}
                         <button type="button" class="btn btn-sm" disabled={!!capturing} onClick={() => bind(name)}>{v.keys[name] ? 'Change' : 'Set'}</button>
                         {v.keys[name] && (
-                            <button type="button" class="btn btn-ghost btn-sm" disabled={!!capturing} onClick={() => change({ keys: { ...v.keys, [name]: undefined } })}>
+                            <button type="button" class="btn btn-ghost btn-sm" disabled={!!capturing} onClick={() => saveKeys({ ...v.keys, [name]: undefined })}>
                                 Clear
                             </button>
                         )}
                     </div>
                 ))}
-                <p class="text-sm text-base-content/70">
-                    Keys work while Dens is the window and tab you're in, as any web page's do. A key you're holding when you switch away counts as
-                    let go.
-                </p>
+                <KeysNote elsewhere={elsewhere} />
             </Card>
             <ShareSettings />
             {error && <ErrorText message={error} />}
@@ -308,6 +322,47 @@ function ShareSettings() {
                 </span>
             </label>
         </Card>
+    );
+}
+
+// WorksElsewhere marks a key the helper reads in other programs during a
+// call, and says so on hover or focus.
+function WorksElsewhere({ id }) {
+    return (
+        <span class="tooltip">
+            <span id={id} role="tooltip" class="tooltip-content rounded-lg px-3 py-2 text-left">
+                Works in other programs too, during a call.
+            </span>
+            <span tabIndex={0} role="img" aria-label="Works in other programs" aria-describedby={id} class="flex cursor-help text-success">
+                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.5" />
+                    <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
+                </svg>
+            </span>
+        </span>
+    );
+}
+
+// KeysNote says where the keys work: in other programs while the helper
+// reads them, and otherwise while Dens has focus, as any web page's keys.
+function KeysNote({ elsewhere }) {
+    const text = 'text-sm text-base-content/70';
+    if (elsewhere.helper && elsewhere.covers.length > 0) {
+        return (
+            <p class={text}>
+                During a call, keys work in other programs too, such as a game in full screen. {elsewhere.note}
+            </p>
+        );
+    }
+    return (
+        <p class={text}>
+            Keys work while Dens is the window and tab you're in, as any web page's do. A key you're holding when you switch away counts as let
+            go.{' '}
+            {elsewhere.helper
+                ? "Dens's helper can't read keys in other programs on this computer."
+                : "In other programs, they need Dens's helper, which starts when you sign in to this computer."}
+        </p>
     );
 }
 
