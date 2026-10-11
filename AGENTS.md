@@ -19,7 +19,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 
 | Path | Owns |
 |------|------|
-| `cmd/main.go` | Process entry, global flags, signal handling, final error print |
+| `cmd/main.go` | Process entry, global flags, signal handling, final error print; beside it, the Windows resource objects that carry `dens.exe`'s manifest (generated and committed) |
 | `internal/app` | `App` composition root, cleanup stack, update checks |
 | `internal/app/commands` | CLI commands: desktop-user commands talk to the service; maintenance commands run transactions |
 | `internal/service` | The service process: listeners, control handlers, readiness |
@@ -32,11 +32,12 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, keeping other dens' files and history in the cache, answering pages of history from it, and taking out what the den's events and changes say went, with the den's state kept for reading while it's away, the DM seal, sealing and opening DMs, approving new devices, relaying the page's call, with where its media goes, its share and the shares it watches, this member's files, listed, deleted and swapped, and the two versions of each photo and video waiting to be sent, full size and a smaller copy, kept until the message goes, with a video's copy, made in chunks side by side, or by the page with WebCodecs, its packets passed both ways on the socket the page follows each upload by |
 | `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, holding a call's signaling and ICE restarts, and forwarding each member's audio to the others, and a member's screen share to those who watch it, each within its limits, or none of it under a staff mute, with the keyframe requests a share's viewers send back; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
 | `internal/cache` | The client's cache of other dens (M6): its own database and directory under `data/cache`, out of backups; files, each a run of chunks sealed with the data key as it's read; messages, with the runs of IDs it holds whole and the connection each reached the newest in; its size and eviction; each den's state and members as the client last had them; and where each den's changes stood when the client last synced |
+| `internal/shortcuts` | The voice keys in other programs (M7): the hub, the service's side of the shortcut helper's stream, which passes its presses to the pages during a call, and the helper (`dens shortcuts`) the desktop user's sign-in starts, which reads the bound keys while an instance holds a call |
 | `internal/youtube` | The covers of YouTube's players (M4.1): a linked video's title and picture, fetched for the page from YouTube's fixed addresses, checked, and held in memory |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, previews, which photos get smaller copies, and a video's copy, planned to fit and made in chunks, or by the page, with what WebCodecs decodes a video by; the client strips with it and the den checks with it |
 | `internal/media/ffmpeg` | The media module: FFmpeg, libaom and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes, with the chunks of a video's copy side by side |
-| `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory |
-| `internal/control` | CLI-to-service protocol over the control endpoint |
+| `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory, the shortcut helper's reading of keys and its taking up a new binary |
+| `internal/control` | CLI-to-service protocol over the control endpoint, with the stream the shortcut helper keeps |
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
 | `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
 | `internal/platform/database` | SQLite open and pool, ordered migrations, focused accessors per table |
@@ -44,7 +45,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
 | `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source, the player screen shares play in, the copier that makes videos' smaller copies with WebCodecs (`assets/js/src/copier.js`), and the voice processor for calls: its AudioWorklet (`assets/js/voice.worklet.js`), which gates the microphone and runs RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed), with the header RNNoise's build needs (`rnnoise/`) |
-| `internal/build` | Values baked in at build time, and the third-party notices the binary carries (`notices.txt`, generated and committed) |
+| `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
@@ -203,6 +204,7 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
 ./scripts/rnnoise.sh           # rebuild RNNoise's module for the page after changing its build
 ./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes
+go test ./internal/build/winres -args -update  # rewrite cmd's Windows resource objects after changing the manifest
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 

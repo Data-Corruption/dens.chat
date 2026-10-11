@@ -24,6 +24,7 @@ var constructors = []constructor{
 	restoreCommand,
 	licensesCommand,
 	mediaWorkerCommand,
+	shortcutsCommand,
 }
 
 // All builds the commands for this build.

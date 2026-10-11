@@ -27,9 +27,11 @@ let down = false;
 let everConnected = false;
 let delay = MIN_DELAY;
 let retry = null;
-// The service sends den statuses when the stream opens and when they
-// change, so a view that starts listening later gets the latest from here.
+// The service sends den statuses, and the voice keys' (M7), when the
+// stream opens and when they change, so a view that starts listening later
+// gets the latest from here.
 let latestDens = null;
+let latestKeys = null;
 // The channel shown in each den, sent again after a reconnect, since the
 // service forgets it when the stream closes.
 const focus = new Map();
@@ -101,6 +103,7 @@ function connect() {
             return;
         }
         if (message.t === 'dens') latestDens = message;
+        if (message.t === 'keys') latestKeys = message;
         dispatch(message);
     });
     socket.addEventListener('close', () => {
@@ -150,14 +153,13 @@ export function sendCall(t, d) {
 }
 
 // onEvent calls fn with every message from the service, starting with the
-// latest den statuses if they already came; it returns a function that
-// stops.
+// latest den statuses and keys if they already came; it returns a function
+// that stops.
 export function onEvent(fn) {
     start();
     listeners.add(fn);
-    if (latestDens) {
-        const replay = latestDens;
-        queueMicrotask(() => listeners.has(fn) && fn(replay));
+    for (const replay of [latestDens, latestKeys]) {
+        if (replay) queueMicrotask(() => listeners.has(fn) && fn(replay));
     }
     return () => listeners.delete(fn);
 }

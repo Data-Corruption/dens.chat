@@ -26,6 +26,28 @@ type Configuration struct {
 	// CacheLimit is the size of the client's cache in bytes, which the
 	// member chooses (M6); 0 until they do, for the default.
 	CacheLimit int64 `json:"cacheLimit,omitempty"`
+
+	// VoiceKeys are the member's keys for the voice actions, by action. The
+	// service keeps them, not the browser, so the shortcut helper can watch
+	// them in other programs (M7).
+	VoiceKeys map[string]VoiceKey `json:"voiceKeys,omitempty"`
+}
+
+// VoiceActions are what keys are bound to: push to talk, toggle mute and
+// push to mute.
+var VoiceActions = []string{"ptt", "toggleMute", "pushMute"}
+
+// VoiceKey is a key bound to a voice action. Code names it by its place on
+// the keyboard, as the page's KeyboardEvent.code does, or names a mouse's
+// side button, Mouse4 or Mouse5; Label is what the page shows for it. A
+// key fires only with exactly its modifiers held.
+type VoiceKey struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+	Ctrl  bool   `json:"ctrl"`
+	Alt   bool   `json:"alt"`
+	Shift bool   `json:"shift"`
+	Meta  bool   `json:"meta"`
 }
 
 // DefaultConfig returns the preferences of a new installation.

@@ -123,10 +123,14 @@ let denView = null;
 function start() {
     if (started) return;
     started = true;
-    listenForKeys();
+    watchKeys();
     onEvent(handle);
     onConnection((up) => {
         live = up;
+        // The helper's releases come over the stream too.
+        if (!up) {
+            for (const action of ['ptt', 'pushMute']) if (covered(action)) releaseAction(action);
+        }
         // The service's stream dropped, and the den's connection with it:
         // the den holds the call, which this page takes back when both are
         // back.
@@ -503,9 +507,10 @@ async function reopenMic() {
 // Sending -----------------------------------------------------------------
 
 // A member sends by voice activity ("voice"), automatically or above a
-// level in dBFS, or while they push to talk ("ptt"), and binds keys for
-// push to talk, toggle mute and push to mute. The browser keeps it all.
-export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50, keys: {} };
+// level in dBFS, or while they push to talk ("ptt"), which the browser
+// keeps. Their keys for push to talk, toggle mute and push to mute live in
+// the service from M7, so its helper can read them in other programs.
+export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50 };
 const KEYS = ['ptt', 'toggleMute', 'pushMute'];
 
 // readVoice reads the voice settings the browser kept, falling back to
@@ -518,36 +523,86 @@ export function readVoice(text) {
         kept = {};
     }
     if (!kept || typeof kept !== 'object') kept = {};
-    const keys = {};
-    for (const name of KEYS) {
-        const k = kept.keys?.[name];
-        if (k && typeof k.code === 'string' && k.code && typeof k.label === 'string') {
-            keys[name] = { code: k.code, label: k.label, ctrl: !!k.ctrl, alt: !!k.alt, shift: !!k.shift, meta: !!k.meta };
-        }
-    }
     return {
         mode: kept.mode === 'ptt' ? 'ptt' : 'voice',
         auto: typeof kept.auto === 'boolean' ? kept.auto : VOICE_DEFAULTS.auto,
         threshold: Number.isFinite(kept.threshold) ? Math.min(0, Math.max(-100, Math.round(kept.threshold))) : VOICE_DEFAULTS.threshold,
-        keys,
+    };
+}
+
+// readKeys keeps the bindings among keys, by action.
+export function readKeys(keys) {
+    const out = {};
+    for (const name of KEYS) {
+        const k = keys?.[name];
+        if (k && typeof k.code === 'string' && k.code && typeof k.label === 'string') {
+            out[name] = { code: k.code, label: k.label, ctrl: !!k.ctrl, alt: !!k.alt, shift: !!k.shift, meta: !!k.meta };
+        }
+    }
+    return out;
+}
+
+// readKeyStatus reads what the service says of the keys and its helper:
+// the keys, whether a helper is connected, the actions it reads in other
+// programs during a call, what the system keeps from it, and why it reads
+// none, where it can't.
+export function readKeyStatus(d) {
+    const helper = !!d?.helper;
+    return {
+        keys: readKeys(d?.keys),
+        helper,
+        covers: helper && Array.isArray(d.covers) ? KEYS.filter((a) => d.covers.includes(a)) : [],
+        note: helper && typeof d.note === 'string' ? d.note : '',
+        problem: helper && typeof d.problem === 'string' ? d.problem : '',
     };
 }
 
 let voice = readVoice(stored(VOICE));
+let keyStatus = readKeyStatus(null);
 let pttHeld = false;
 let pushMuted = false;
 
+// voiceSettings is how the member sends, with their keys.
 export function voiceSettings() {
-    return voice;
+    watchKeys();
+    return { ...voice, keys: keyStatus.keys };
 }
 
-// setVoice changes the voice settings, which take hold at once, in a call
-// and in the settings' microphone test.
+// keysElsewhere says what the helper does with the keys.
+export function keysElsewhere() {
+    watchKeys();
+    return keyStatus;
+}
+
+// onKeys calls fn whenever the keys or the helper change; it returns a
+// function that stops.
+const keyListeners = new Set();
+
+export function onKeys(fn) {
+    watchKeys();
+    keyListeners.add(fn);
+    return () => keyListeners.delete(fn);
+}
+
+// setVoice changes how the member sends, which takes hold at once, in a
+// call and in the settings' microphone test.
 export function setVoice(changes) {
     voice = readVoice(JSON.stringify({ ...voice, ...changes }));
     store(VOICE, JSON.stringify(voice));
     pttHeld = pushMuted = false;
     applySending();
+    notify();
+}
+
+// setKeys gives the service the member's keys, which it sends every page
+// and its helper.
+export async function setKeys(keys) {
+    const next = readKeys(keys);
+    await api.post('/api/settings', { voiceKeys: next });
+    keyStatus = { ...keyStatus, keys: next };
+    pttHeld = pushMuted = false;
+    applySending();
+    keyListeners.forEach((fn) => fn());
     notify();
 }
 
@@ -623,25 +678,55 @@ async function restartMicTest() {
 
 // Keys ----------------------------------------------------------------------
 
-// keyMatches says whether a key event is a binding's key, with exactly its
-// modifiers.
+// keyMatches says whether a key event is a binding's key, with all its
+// modifiers held. Others may be held too, as a player holds Shift to run
+// in a game and still pushes to talk.
 export function keyMatches(binding, e) {
-    return !!binding && e.code === binding.code && !!e.ctrlKey === binding.ctrl && !!e.altKey === binding.alt &&
-        !!e.shiftKey === binding.shift && !!e.metaKey === binding.meta;
+    return !!binding && e.code === binding.code && (!binding.ctrl || !!e.ctrlKey) && (!binding.alt || !!e.altKey) &&
+        (!binding.shift || !!e.shiftKey) && (!binding.meta || !!e.metaKey);
+}
+
+// actionFor is the action a key event fires: of the bindings it matches,
+// the one with the most modifiers, so Ctrl+V fires its own action and not
+// V's.
+export function actionFor(keys, e) {
+    let action = null;
+    let most = -1;
+    for (const name of KEYS) {
+        const b = keys[name];
+        if (!keyMatches(b, e)) continue;
+        const mods = [b.ctrl, b.alt, b.shift, b.meta].filter(Boolean).length;
+        if (mods > most) {
+            action = name;
+            most = mods;
+        }
+    }
+    return action;
 }
 
 // typesInto says whether a key event would type into the field it's in:
 // keys don't fire there, unless they're function keys or held with Ctrl,
 // Alt or Meta.
 export function typesInto(e) {
-    const t = e.target;
-    const field = t && (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
+    return isField(e.target) && !e.ctrlKey && !e.altKey && !e.metaKey && !/^F\d+$/.test(e.code);
+}
+
+// bindingTypes says whether a binding's key types something into a field.
+export function bindingTypes(b) {
+    return !!b && !b.ctrl && !b.alt && !b.meta && !/^F\d+$/.test(b.code) && !/^Mouse\d$/.test(b.code);
+}
+
+function isField(t) {
+    return !!t && !!(t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
         (t.tagName === 'INPUT' && !UNTYPED.includes(t.type)));
-    return !!field && !e.ctrlKey && !e.altKey && !e.metaKey && !/^F\d+$/.test(e.code);
 }
 
 // UNTYPED are the inputs keys type nothing into.
 const UNTYPED = ['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image'];
+
+// MOUSE names a mouse's side buttons as keys, by MouseEvent.button: back is
+// Mouse4, and forward Mouse5.
+const MOUSE = { 3: 'Mouse4', 4: 'Mouse5' };
 
 // keyLabel names a binding as the member pressed it.
 export function keyLabel(b) {
@@ -650,9 +735,50 @@ export function keyLabel(b) {
     return [...mods, b.label].join('+');
 }
 
-// captureKey resolves to the next key pressed, as a binding, or null on
-// Escape; nothing else hears it.
+// covered says whether the helper reads an action's key in other programs,
+// which during a call it does in this page too.
+function covered(action, status = keyStatus) {
+    return status.helper && status.covers.includes(action);
+}
+
+function pressAction(action) {
+    if (action === 'ptt') {
+        if (!pttHeld) {
+            pttHeld = true;
+            applySending();
+        }
+    } else if (action === 'toggleMute') {
+        setMuted(!isMuted());
+    } else if (action === 'pushMute' && !pushMuted && !isMuted()) {
+        pushMuted = true;
+        setMuted(true);
+    }
+}
+
+function releaseAction(action) {
+    if (action === 'ptt' && pttHeld) {
+        pttHeld = false;
+        applySending();
+    }
+    if (action === 'pushMute' && pushMuted) {
+        pushMuted = false;
+        setMuted(false);
+    }
+}
+
+// The page acts on its own keys, except those the helper reads during a
+// call: the helper sees them pressed here too, and a toggle would fire
+// twice.
+function ownKey(action) {
+    return !(call && covered(action));
+}
+
+// captureKey resolves to the next key or side button pressed, as a binding,
+// or null on Escape; nothing else hears it.
 let capture = null;
+// swallow is a side button just captured, whose release mustn't take the
+// browser back or forward.
+let swallow = null;
 
 export function captureKey() {
     listenForKeys();
@@ -687,61 +813,119 @@ function keydown(e) {
         return;
     }
     if (typesInto(e)) return;
-    const k = voice.keys;
-    if (keyMatches(k.ptt, e)) {
-        e.preventDefault();
-        if (!pttHeld) {
-            pttHeld = true;
-            applySending();
-        }
-    } else if (e.repeat) {
-        // A held toggle toggles once.
-    } else if (keyMatches(k.toggleMute, e)) {
-        e.preventDefault();
-        setMuted(!isMuted());
-    } else if (keyMatches(k.pushMute, e)) {
-        e.preventDefault();
-        if (!pushMuted && !isMuted()) {
-            pushMuted = true;
-            setMuted(true);
-        }
-    }
+    const action = actionFor(keyStatus.keys, e);
+    if (!action) return;
+    e.preventDefault();
+    // A held toggle toggles once.
+    if (!ownKey(action) || (e.repeat && action !== 'ptt')) return;
+    pressAction(action);
 }
 
 // keyup ends a push by its key alone, whatever modifiers were let go first.
 function keyup(e) {
-    if (pttHeld && e.code === voice.keys.ptt?.code) {
-        pttHeld = false;
-        applySending();
+    for (const action of ['ptt', 'pushMute']) {
+        if (keyStatus.keys[action]?.code === e.code && ownKey(action)) releaseAction(action);
     }
-    if (pushMuted && e.code === voice.keys.pushMute?.code) {
-        pushMuted = false;
-        setMuted(false);
+}
+
+function mouseKey(e) {
+    return { code: MOUSE[e.button], ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey, metaKey: e.metaKey };
+}
+
+// boundButton says whether a side button is any action's key, so its
+// press and release are the page's, not the browser's back and forward.
+function boundButton(code) {
+    return KEYS.some((a) => keyStatus.keys[a]?.code === code);
+}
+
+function mousedown(e) {
+    const code = MOUSE[e.button];
+    if (!code) return;
+    if (capture) {
+        e.preventDefault();
+        e.stopPropagation();
+        const done = capture;
+        capture = null;
+        swallow = code;
+        done({ code, label: code === 'Mouse4' ? 'Mouse 4' : 'Mouse 5', ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey });
+        return;
     }
+    if (!boundButton(code)) return;
+    e.preventDefault();
+    const action = actionFor(keyStatus.keys, mouseKey(e));
+    if (action && ownKey(action)) pressAction(action);
+}
+
+function mouseup(e) {
+    const code = MOUSE[e.button];
+    if (!code) return;
+    if (swallow === code || boundButton(code)) e.preventDefault();
+    if (swallow === code) swallow = null;
+    for (const action of ['ptt', 'pushMute']) {
+        if (keyStatus.keys[action]?.code === code && ownKey(action)) releaseAction(action);
+    }
+}
+
+function auxclick(e) {
+    const code = MOUSE[e.button];
+    if (code && (swallow === code || boundButton(code))) e.preventDefault();
 }
 
 // release lets go of whatever is pushed when the page loses focus, which
-// keeps its key's release from reaching it.
+// keeps its key's release from reaching it, unless the helper reads it.
 function release() {
-    if (pttHeld) {
-        pttHeld = false;
-        applySending();
+    for (const action of ['ptt', 'pushMute']) if (ownKey(action)) releaseAction(action);
+}
+
+// helperPress acts on a press the helper read, in this page's call.
+function helperPress(p) {
+    if (!call || !p || !KEYS.includes(p.action) || !covered(p.action)) return;
+    if (!p.down) {
+        releaseAction(p.action);
+        return;
     }
-    if (pushMuted) {
-        pushMuted = false;
-        setMuted(false);
+    // A key that types doesn't fire while the member types in a field here.
+    if (document.hasFocus() && isField(document.activeElement) && bindingTypes(keyStatus.keys[p.action])) return;
+    pressAction(p.action);
+}
+
+// handleKeys follows the keys and the helper from the service: what the
+// helper read is let go once it stops reading it.
+function handleKeys(msg) {
+    if (msg.t === 'key') {
+        helperPress(msg.d);
+        return;
     }
+    if (msg.t !== 'keys') return;
+    const before = keyStatus;
+    keyStatus = readKeyStatus(msg.d);
+    for (const action of ['ptt', 'pushMute']) {
+        if (covered(action, before) && !covered(action)) releaseAction(action);
+    }
+    keyListeners.forEach((fn) => fn());
+    notify();
 }
 
 let listening = false;
+let watchingKeys = false;
 
 function listenForKeys() {
     if (listening || typeof window === 'undefined') return;
     listening = true;
     window.addEventListener('keydown', keydown, true);
     window.addEventListener('keyup', keyup, true);
+    window.addEventListener('mousedown', mousedown, true);
+    window.addEventListener('mouseup', mouseup, true);
+    window.addEventListener('auxclick', auxclick, true);
     window.addEventListener('blur', release);
     document.addEventListener('visibilitychange', () => document.hidden && release());
+}
+
+function watchKeys() {
+    if (watchingKeys || typeof window === 'undefined') return;
+    watchingKeys = true;
+    listenForKeys();
+    onEvent(handleKeys);
 }
 
 // Signaling ---------------------------------------------------------------

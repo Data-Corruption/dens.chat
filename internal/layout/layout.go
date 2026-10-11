@@ -10,7 +10,10 @@
 package layout
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 )
 
@@ -83,6 +86,30 @@ func New(app, instance string, dev bool) (Layout, error) {
 		return Layout{}, err
 	}
 	return l, nil
+}
+
+// Instances lists the instances of app on this computer by the names of
+// their roots, which every account may list, whether or not it may read
+// them. The shortcut helper tries each one's control endpoint (M7).
+func Instances(app string, dev bool) ([]string, error) {
+	l, err := New(app, DefaultInstance, dev)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(filepath.Dir(l.Root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() && ValidateInstance(e.Name()) == nil {
+			names = append(names, e.Name())
+		}
+	}
+	return names, nil
 }
 
 // derive fills every path below Root. resolve sets Root and the platform

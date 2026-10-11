@@ -258,6 +258,11 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 		}
 		return sys.ConfigureFirewall(target, restore)
 	})
+	undo, err = sys.RegisterHelper(target, cfg.DesktopUser)
+	if err != nil {
+		return fmt.Errorf("have the shortcut helper start at login: %w", err)
+	}
+	j.add(undo)
 	if err := sys.RegisterExtras(target); err != nil {
 		return err
 	}
@@ -294,6 +299,10 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 				return err
 			}
 		}
+	}
+
+	if err := sys.StartHelper(target, cfg.DesktopUser); err != nil {
+		p.printf("The shortcut helper starts when %s next signs in (%v).", cfg.DesktopUser.Name, err)
 	}
 
 	if previous == nil {

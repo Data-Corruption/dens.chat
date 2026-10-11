@@ -34,6 +34,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/release"
+	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
@@ -59,6 +60,9 @@ type App struct {
 	Den *den.Den
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
+	// Shortcuts carries the voice keys from the desktop user's helper to
+	// the pages (M7).
+	Shortcuts *shortcuts.Hub
 	// Cache is the client's cache of other dens' files (M6).
 	Cache *cache.Store
 	// Media runs the media module's jobs, the den's and the client's, one
@@ -255,6 +259,8 @@ func (a *App) open(opts OpenOptions) error {
 	a.UserAgent = fmt.Sprintf("Mozilla/5.0 (compatible; %s/%s; +%s)", bi.Name, mmVer, bi.ContactURL)
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
+	a.Shortcuts = shortcuts.NewHub(bi.Version, cfg.VoiceKeys, a.Log)
+	a.Dens.OnCall = a.Shortcuts.SetCall
 	a.Dens.TempDir = l.Temp
 	a.Dens.Media = a.Media
 	if a.Cache, err = cache.Open(l.Cache, a.Vault, a.Log, cfg.CacheLimit); err != nil {

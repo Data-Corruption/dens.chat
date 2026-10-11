@@ -84,6 +84,7 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mar
 	old := m.call
 	m.call = call
 	m.callMu.Unlock()
+	m.callChanged()
 	if old != nil {
 		if old.page != page {
 			old.deliver(CallEvent{DenID: old.den, Channel: old.channel, Ended: denproto.VoiceMoved})
@@ -210,13 +211,27 @@ func (m *Manager) currentCall(page, denID string) *activeCall {
 // takeCall clears the install's call if it matches, and returns it.
 func (m *Manager) takeCall(match func(*activeCall) bool) *activeCall {
 	m.callMu.Lock()
-	defer m.callMu.Unlock()
 	call := m.call
 	if call == nil || !match(call) {
+		m.callMu.Unlock()
 		return nil
 	}
 	m.call = nil
+	m.callMu.Unlock()
+	m.callChanged()
 	return call
+}
+
+// callChanged tells OnCall whether the install holds a call now.
+func (m *Manager) callChanged() {
+	m.hookMu.Lock()
+	defer m.hookMu.Unlock()
+	m.callMu.Lock()
+	active := m.call != nil
+	m.callMu.Unlock()
+	if m.OnCall != nil {
+		m.OnCall(active)
+	}
 }
 
 // failCall hangs up a call this install can't go on with, and tells its page.

@@ -49,6 +49,8 @@ $RunId = [Guid]::NewGuid().ToString("N").Substring(0, 8)
 $Work = Join-Path $env:ProgramData "dens-e2e-$RunId"
 $TaskName = "dens-e2e-$RunId"
 $WerKey = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\ExcludedApplications"
+# The shortcut helper's task for the desktop user, this account (M7).
+$HelperTask = "Dens shortcuts-" + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $script:CurrentStep = "setup"
 $script:Session = $null
 
@@ -179,6 +181,10 @@ function Test-Installed {
 function Test-OnPath {
     $path = [Environment]::GetEnvironmentVariable("Path", "Machine")
     return @($path -split ";" | Where-Object { $_.TrimEnd("\") -ieq $BinaryDir }).Count -gt 0
+}
+
+function Get-HelperTask {
+    return Get-ScheduledTask -TaskPath "\" -TaskName $HelperTask -ErrorAction SilentlyContinue
 }
 
 function Test-EventSource([string]$Service) {
@@ -339,6 +345,23 @@ try {
     }
     if (-not (Test-OnPath)) { Fail "$BinaryDir isn't on the system PATH" }
     if (-not (Test-WerExcluded)) { Fail "dens.exe isn't excluded from Windows Error Reporting" }
+    # The shortcut helper starts at the desktop user's sign-in, as them, at
+    # normal priority and with no time limit.
+    $task = Get-HelperTask
+    if ($null -eq $task) { Fail "no scheduled task starts the shortcut helper" }
+    $actions = @($task.Actions)
+    if ($actions.Count -ne 1 -or $actions[0].Execute -ne $Dens -or $actions[0].Arguments -ne "shortcuts") {
+        Fail "the shortcut helper's task runs something else"
+    }
+    if ($task.Principal.UserId -notmatch [regex]::Escape(($me -split "\\")[-1]) -and $task.Principal.UserId -ne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value) {
+        Fail "the shortcut helper's task runs as $($task.Principal.UserId)"
+    }
+    if ("$($task.Principal.LogonType)" -ne "Interactive" -or "$($task.Principal.RunLevel)" -ne "Limited") {
+        Fail "the shortcut helper's task runs as $($task.Principal.LogonType), $($task.Principal.RunLevel)"
+    }
+    if ($task.Settings.Priority -ne 5 -or $task.Settings.ExecutionTimeLimit -ne "PT0S") {
+        Fail "the shortcut helper's task has priority $($task.Settings.Priority) and limit $($task.Settings.ExecutionTimeLimit)"
+    }
     if (-not (Test-EventSource "dens-main")) { Fail "dens-main isn't registered as an event log source" }
 
     Step "pair a browser and set the local password"
@@ -423,6 +446,7 @@ try {
     Step "uninstall both instances"
     Invoke-Dens @("uninstall", "--instance", "second", "--yes") | Out-Null
     if (-not (Test-Path -LiteralPath $Dens)) { Fail "uninstalling one instance removed the shared binary" }
+    if ($null -eq (Get-HelperTask)) { Fail "uninstalling one instance removed the shortcut helper's task" }
     if (@(Get-MediaRules).Count -ne 0) { Fail "the den's firewall rules survived its uninstall" }
     Invoke-Dens @("uninstall", "--yes") | Out-Null
     if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { Fail "a service survived uninstall" }
@@ -433,6 +457,7 @@ try {
     if ($left.Count -gt 0) { Fail "uninstall left $($left.Name -join ', ') in $BinaryDir" }
     if (Test-OnPath) { Fail "$BinaryDir is still on the system PATH" }
     if (Test-WerExcluded) { Fail "dens.exe is still excluded from Windows Error Reporting" }
+    if ($null -ne (Get-HelperTask)) { Fail "the shortcut helper's task survived uninstall" }
     foreach ($service in @("dens-main", "dens-second")) {
         if (Test-EventSource $service) { Fail "the $service event log source survived uninstall" }
     }

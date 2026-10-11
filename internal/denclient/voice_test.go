@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -185,6 +186,31 @@ func TestCallThroughTheClient(t *testing.T) {
 		return lounge != ""
 	})
 	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	// The shortcut helper reads keys only while the install holds a call
+	// (M7), which OnCall says as it changes.
+	var hookMu sync.Mutex
+	var holds []bool
+	member.OnCall = func(active bool) {
+		hookMu.Lock()
+		holds = append(holds, active)
+		hookMu.Unlock()
+	}
+	holding := func(want bool) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			hookMu.Lock()
+			got := len(holds) > 0 && holds[len(holds)-1] == want
+			hookMu.Unlock()
+			if got {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("OnCall said %v, want %v last", holds, want)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
 
 	// The owner's install reaches its own den over loopback, and the
 	// member's by name: both put media through the den's ports.
@@ -193,6 +219,7 @@ func TestCallThroughTheClient(t *testing.T) {
 	// A call lists members in the order the den heard them join.
 	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
 	b.join(denID, lounge)
+	holding(true)
 	a.hears(bob)
 	b.hears(alice)
 	viewOf(t, member, denID, "both in the call", showsCall(lounge, alice, bob))
@@ -208,17 +235,22 @@ func TestCallThroughTheClient(t *testing.T) {
 	b.waitEnded(denproto.VoiceMoved)
 	c.hears(alice)
 
+	holding(true)
+
 	// Closing the page that holds the call leaves it.
 	member.DropPage("page-c")
+	holding(false)
 	viewOf(t, owner, denID, "bob gone", showsCall(lounge, alice))
 
 	// A den restart ends calls, which their pages hear as the dropped
 	// connection it is.
 	b.join(denID, lounge)
 	viewOf(t, owner, denID, "bob back", showsCall(lounge, alice, bob))
+	holding(true)
 	h.restart()
 	a.waitEnded(denclient.CallDisconnected)
 	b.waitEnded(denclient.CallDisconnected)
+	holding(false)
 }
 
 // TestCallRidesOutADroppedConnection checks that a call goes on when its

@@ -1,7 +1,8 @@
 // Package control is the protocol between the dens CLI, run by the desktop
 // user, and the service. Each connection carries one request: a JSON line
 // from the client, then a JSON line back, optionally followed by a raw body
-// that runs until the service closes the connection.
+// that runs until the service closes the connection, or by a stream of JSON
+// lines both ways, as the shortcut helper keeps (M7).
 //
 // The endpoint is a Unix socket or named pipe from internal/platform/host.
 // The service answers only the one desktop user recorded at install, by the
@@ -17,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
@@ -28,6 +30,9 @@ const (
 	OpStatus = "status"
 	OpPair   = "pair"
 	OpBackup = "backup"
+	// OpShortcuts opens the stream between the desktop user's shortcut
+	// helper and the service (M7).
+	OpShortcuts = "shortcuts"
 )
 
 const maxLine = 64 * 1024
@@ -64,10 +69,12 @@ type Pair struct {
 }
 
 // Reply is what a handler returns. Body, if set, is streamed after the
-// response line and closed afterwards.
+// response line and closed afterwards. Stream, if set, takes the connection
+// after the response line, until it returns.
 type Reply struct {
 	Result any
 	Body   io.ReadCloser
+	Stream func(ctx context.Context, s *Stream) error
 }
 
 // Handler serves one operation.
@@ -119,7 +126,8 @@ func (s *Server) serve(ctx context.Context, conn net.Conn) {
 		readTimeout = 10 * time.Second
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
-	line, err := readLine(bufio.NewReader(conn))
+	reader := bufio.NewReader(conn)
+	line, err := readLine(reader)
 	if err != nil {
 		s.Log.Debugf("control: read request: %v", err)
 		return
@@ -169,10 +177,20 @@ func (s *Server) serve(ctx context.Context, conn net.Conn) {
 			resp = Response{Error: "internal error; see the service log"}
 		}
 	}
-	s.reply(conn, resp, reply.Body)
+	if !s.reply(conn, resp, reply.Body) || !resp.OK || reply.Stream == nil {
+		return
+	}
+	// The stream keeps its own deadlines, line by line.
+	_ = conn.SetDeadline(time.Time{})
+	stream := &Stream{conn: conn, r: reader}
+	if err := reply.Stream(ctx, stream); err != nil && ctx.Err() == nil {
+		s.Log.Debugf("control: %s: %v", req.Op, err)
+	}
 }
 
-func (s *Server) reply(conn net.Conn, resp Response, body io.ReadCloser) {
+// reply writes the response line and any body, and reports whether the
+// line went.
+func (s *Server) reply(conn net.Conn, resp Response, body io.ReadCloser) bool {
 	if body != nil {
 		defer body.Close()
 	}
@@ -183,17 +201,18 @@ func (s *Server) reply(conn net.Conn, resp Response, body io.ReadCloser) {
 	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	data, err := json.Marshal(resp)
 	if err != nil {
-		return
+		return false
 	}
 	if _, err := conn.Write(append(data, '\n')); err != nil {
 		s.Log.Debugf("control: write reply: %v", err)
-		return
+		return false
 	}
 	if body != nil && resp.OK {
 		if _, err := io.Copy(conn, body); err != nil {
 			s.Log.Warnf("control: stream reply body: %v", err)
 		}
 	}
+	return true
 }
 
 func readLine(r *bufio.Reader) ([]byte, error) {
@@ -274,6 +293,133 @@ func (c Client) CallBody(req Request, result any, body io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// Open sends req and, once the service accepts it, returns the stream the
+// reply opens.
+func (c Client) Open(req Request) (*Stream, error) {
+	timeout := c.Timeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	conn, err := host.DialControl(c.Endpoint, c.Server, timeout)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+	reader := bufio.NewReader(conn)
+	line, err := readLine(reader)
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("read reply: %w", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(line, &resp); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("decode reply: %w", err)
+	}
+	if !resp.OK {
+		_ = conn.Close()
+		return nil, &UserError{Msg: resp.Error}
+	}
+	_ = conn.SetDeadline(time.Time{})
+	return &Stream{conn: conn, r: reader}, nil
+}
+
+// Each side of a stream sends a line at least every StreamPing, a ping if
+// it has nothing else to say, and gives up on the other after StreamIdle
+// without one. Tests shorten them.
+var (
+	StreamPing = 15 * time.Second
+	StreamIdle = 45 * time.Second
+)
+
+// Message is one line of a stream: its type, and what it carries.
+type Message struct {
+	T string          `json:"t"`
+	D json.RawMessage `json:"d,omitempty"`
+}
+
+// MessagePing is the line that only says a side is still there.
+const MessagePing = "ping"
+
+// Stream carries JSON lines both ways on a control connection, once its
+// request is answered. Send is safe from several goroutines; Recv is for one.
+type Stream struct {
+	conn net.Conn
+	r    *bufio.Reader
+	mu   sync.Mutex
+	once sync.Once
+}
+
+// Send writes a message of type t carrying d, which may be nil.
+func (s *Stream) Send(t string, d any) error {
+	msg := Message{T: t}
+	if d != nil {
+		data, err := json.Marshal(d)
+		if err != nil {
+			return err
+		}
+		msg.D = data
+	}
+	line, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err = s.conn.Write(append(line, '\n'))
+	return err
+}
+
+// Recv reads the next message, failing once the other side has been quiet
+// for StreamIdle.
+func (s *Stream) Recv() (Message, error) {
+	_ = s.conn.SetReadDeadline(time.Now().Add(StreamIdle))
+	line, err := readLine(s.r)
+	if err != nil {
+		return Message{}, err
+	}
+	var msg Message
+	if err := json.Unmarshal(line, &msg); err != nil {
+		return Message{}, fmt.Errorf("decode message: %w", err)
+	}
+	return msg, nil
+}
+
+// KeepAlive pings every StreamPing until ctx ends or a ping fails, which
+// closes the stream.
+func (s *Stream) KeepAlive(ctx context.Context) {
+	ticker := time.NewTicker(StreamPing)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if s.Send(MessagePing, nil) != nil {
+				_ = s.Close()
+				return
+			}
+		}
+	}
+}
+
+// Close closes the connection; Recv then fails.
+func (s *Stream) Close() error {
+	var err error
+	s.once.Do(func() { err = s.conn.Close() })
+	return err
 }
 
 // idleTimeoutReader extends the read deadline before every read, so a slow

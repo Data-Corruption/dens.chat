@@ -1,7 +1,9 @@
 package layout
 
 import (
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -81,5 +83,34 @@ func TestDevelopmentDirectoriesPassTheirChecks(t *testing.T) {
 	}
 	if err := l.EnsureData(); err != nil {
 		t.Fatalf("EnsureData: %v", err)
+	}
+}
+
+func TestInstancesListsTheRootsByName(t *testing.T) {
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
+	t.Setenv("LOCALAPPDATA", data)
+	if names, err := Instances("dens", true); err != nil || len(names) != 0 {
+		t.Fatalf("Instances before any = %v, %v", names, err)
+	}
+	l, err := New("dens", "main", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Dir(l.Root)
+	for _, dir := range []string{"main", "second", "Not-An-Instance"} {
+		if err := os.MkdirAll(filepath.Join(base, dir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(base, "third"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	names, err := Instances("dens", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(names, []string{"main", "second"}) {
+		t.Fatalf("Instances = %v, want main and second", names)
 	}
 }
