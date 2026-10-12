@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 )
 
 // testBitrate is the voice bitrate test calls ask for.
@@ -48,7 +49,7 @@ type member struct {
 	t      *testing.T
 	id     string
 	peer   *Peer
-	caller *TestCaller
+	caller *sfutest.Caller
 	offers chan offer
 
 	mu      sync.Mutex
@@ -62,10 +63,10 @@ func (m *member) Failed()                       { m.closing.Do(func() { close(m.
 
 // join adds a member to a room. Unless answer is false, a goroutine
 // answers each offer as the member's client and browser would.
-func join(t *testing.T, s *SFU, udpPort, tcpPort int, room, id string, opts CallerOptions, answer bool) *member {
+func join(t *testing.T, s *SFU, udpPort, tcpPort int, room, id string, opts sfutest.Options, answer bool) *member {
 	t.Helper()
 	opts.Loopback = true
-	caller, err := NewTestCaller(opts)
+	caller, err := sfutest.NewCaller(opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,9 +93,7 @@ func join(t *testing.T, s *SFU, udpPort, tcpPort int, room, id string, opts Call
 				}
 			}
 			// A test that has ended closes its callers first.
-			select {
-			case <-caller.stop:
-			default:
+			if !caller.Closed() {
 				t.Error(err)
 			}
 			return
@@ -132,8 +131,8 @@ func (m *member) hears(other *member) {
 
 func TestTwoMembersHearEachOther(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	alice.hears(bob)
 	bob.hears(alice)
 	if n := alice.caller.Leaked() + bob.caller.Leaked(); n != 0 {
@@ -155,16 +154,16 @@ func TestTwoMembersHearEachOther(t *testing.T) {
 func TestOnOneCPU(t *testing.T) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	alice.hears(bob)
 	bob.hears(alice)
 }
 
 func TestOverTCPAlone(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{TCP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{TCP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	alice.hears(bob)
 	bob.hears(alice)
 }
@@ -174,8 +173,8 @@ func TestOverTCPAlone(t *testing.T) {
 // another joins too, which Pion would build from the browser's answer.
 func TestOffersAskForTheBitrate(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	alice.hears(bob)
 	for who, offers := range map[string][]offer{"alice": alice.waitOffers(2), "bob": bob.waitOffers(1)} {
 		for _, o := range offers {
@@ -220,7 +219,7 @@ func TestOpusParamsInAnOffer(t *testing.T) {
 		"a=sendonly",
 		"",
 	}, "\r\n")
-	if got := setOpusParams(in, params); got != want {
+	if got := shapeSections(in, func(string) shape { return shape{opus: params} }); got != want {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -288,10 +287,10 @@ func TestShapeSections(t *testing.T) {
 
 func TestOffersFollowJoinsAndLeaves(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	alice.hears(bob)
-	carol := join(t, s, udpPort, tcpPort, "41", "1003", CallerOptions{}, true)
+	carol := join(t, s, udpPort, tcpPort, "41", "1003", sfutest.Options{}, true)
 	carol.hears(alice)
 	carol.hears(bob)
 	alice.hears(carol)
@@ -309,7 +308,7 @@ func TestOffersFollowJoinsAndLeaves(t *testing.T) {
 	// Bob is still heard once the offer that retires carol is answered.
 	alice.hears(bob)
 
-	dave := join(t, s, udpPort, tcpPort, "41", "1004", CallerOptions{}, true)
+	dave := join(t, s, udpPort, tcpPort, "41", "1004", sfutest.Options{}, true)
 	dave.hears(alice)
 	alice.hears(dave)
 	got = alice.waitOffers(5)
@@ -327,9 +326,9 @@ func TestOffersFollowJoinsAndLeaves(t *testing.T) {
 // ends its member's call, and the others' offers retire their section.
 func TestHangingUpEndsTheCall(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	// Over UDP, so the den hears bob hang up; see TestCaller.Close.
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, true)
+	// Over UDP, so the den hears bob hang up; see sfutest.Caller.Close.
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	alice.hears(bob)
 	_ = bob.caller.Close()
 	select {
@@ -345,14 +344,14 @@ func TestHangingUpEndsTheCall(t *testing.T) {
 
 func TestUnansweredOfferFails(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{AnswerTimeout: 200 * time.Millisecond})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, false)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, false)
 	select {
 	case <-alice.failed:
 	case <-time.After(5 * time.Second):
 		t.Fatal("an offer that went unanswered didn't fail the call")
 	}
 	// A failed peer is out of the room: a newcomer gets no section for it.
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	if n := strings.Count(bob.waitOffers(1)[0].sdp, "m=audio"); n != 1 {
 		t.Errorf("a newcomer's offer has %d sections, not 1", n)
 	}
@@ -360,7 +359,7 @@ func TestUnansweredOfferFails(t *testing.T) {
 
 func TestAnswers(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, false)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, false)
 	o := alice.waitOffers(1)[0]
 	sdp, err := denproto.AddCandidates(o.sdp, []netip.Addr{netip.MustParseAddr("127.0.0.1")}, udpPort, tcpPort)
 	if err != nil {
@@ -387,8 +386,8 @@ func TestAnswers(t *testing.T) {
 
 func TestRateLimit(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	loud := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{Rate: 2000}, true)
-	ear := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	loud := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{Rate: 2000}, true)
+	ear := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	ear.hears(loud)
 	start, from := time.Now(), ear.caller.Heard(loud.id)
 	time.Sleep(time.Second)
@@ -407,8 +406,8 @@ func TestRateLimit(t *testing.T) {
 // changes need goes out once it resumes.
 func TestHeldCallKeepsItsMedia(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	alice.hears(bob)
 	bob.hears(alice)
 	before := len(alice.waitOffers(2))
@@ -416,7 +415,7 @@ func TestHeldCallKeepsItsMedia(t *testing.T) {
 	alice.peer.Hold()
 	bob.hears(alice)
 	alice.hears(bob)
-	carol := join(t, s, udpPort, tcpPort, "41", "1003", CallerOptions{}, true)
+	carol := join(t, s, udpPort, tcpPort, "41", "1003", sfutest.Options{}, true)
 	carol.hears(bob)
 	time.Sleep(300 * time.Millisecond)
 	if n := len(alice.offersSeen()); n != before {
@@ -437,8 +436,8 @@ func TestHeldCallKeepsItsMedia(t *testing.T) {
 // once the call resumes, when the answer the client kept is taken.
 func TestHoldSendsTheOfferThatWasOutAgain(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{AnswerTimeout: time.Second})
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, false)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, false)
 	o := alice.waitOffers(1)[0]
 	// The socket closes with the offer out, and the call is held at once,
 	// well within the answer's timeout even under the race detector.
@@ -477,7 +476,7 @@ func TestHoldSendsTheOfferThatWasOutAgain(t *testing.T) {
 // credentials, and that the call's audio crosses again after it.
 func TestICERestart(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, false)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, false)
 	// Before the first answer there's nothing to restart.
 	alice.peer.Restart()
 	time.Sleep(100 * time.Millisecond)
@@ -486,8 +485,8 @@ func TestICERestart(t *testing.T) {
 	}
 	alice.peer.Close()
 
-	alice = join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice = join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	alice.hears(bob)
 	bob.hears(alice)
 	ufrag := func(sdp string) string {
@@ -512,8 +511,8 @@ func TestICERestart(t *testing.T) {
 // comes back once the mute is lifted.
 func TestStaffMute(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
 	bob.hears(alice)
 	alice.peer.SetMuted(true)
 	// Packets already on their way may still land.

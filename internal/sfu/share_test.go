@@ -8,8 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/rtcp"
-	"github.com/pion/webrtc/v4"
+	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 )
 
 // waitOffer waits for an offer the member had, or has yet, that passes ok.
@@ -100,9 +99,9 @@ func (m *member) seenOver(sharer *member, d time.Duration) int {
 // the den's headers, and a keyframe request as the viewer's section opens.
 func TestShareReachesItsViewers(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
-	carol := join(t, s, udpPort, tcpPort, "41", "1003", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
+	carol := join(t, s, udpPort, tcpPort, "41", "1003", sfutest.Options{UDP: true}, true)
 	alice.hears(carol)
 
 	alice.share(true, 2_000_000)
@@ -146,8 +145,8 @@ func TestShareReachesItsViewers(t *testing.T) {
 // and that watching again takes the retired section back.
 func TestWatchingComesAndGoes(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	bob.hears(alice)
 	alice.share(false, 2_000_000)
 	bob.watch(alice)
@@ -174,8 +173,8 @@ func TestWatchingComesAndGoes(t *testing.T) {
 // again once they leave; and that a share that ended can't be watched.
 func TestShareEnds(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	bob.hears(alice)
 	alice.share(true, 2_000_000)
 	bob.watch(alice)
@@ -206,8 +205,8 @@ func TestShareEnds(t *testing.T) {
 // gets one at once and one more once the gap has passed.
 func TestKeyframeRequests(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	bob.hears(alice)
 	alice.share(false, 2_000_000)
 	bob.watch(alice)
@@ -233,21 +232,12 @@ func TestKeyframeRequests(t *testing.T) {
 	// loopback.
 	time.Sleep(keyframeGap)
 	before = alice.caller.KeyframeRequests()
-	var ssrc uint32
-	for _, r := range bob.caller.pc.GetReceivers() {
-		for _, tr := range r.Tracks() {
-			if tr.Kind() == webrtc.RTPCodecTypeVideo {
-				ssrc = uint32(tr.SSRC())
-			}
-		}
-	}
-	fir := &rtcp.FullIntraRequest{MediaSSRC: ssrc, FIR: []rtcp.FIREntry{{SSRC: ssrc, SequenceNumber: 1}}}
 	deadline := time.Now().Add(5 * time.Second)
 	for alice.caller.KeyframeRequests() == before {
 		if time.Now().After(deadline) {
 			t.Fatal("a FIR didn't reach the sharer within 5s")
 		}
-		if err := bob.caller.pc.WriteRTCP([]rtcp.Packet{fir}); err != nil {
+		if err := bob.caller.RequestFIR(alice.id); err != nil {
 			t.Fatal(err)
 		}
 		_ = alice.caller.WaitKeyframeRequests(before+1, time.Second)
@@ -259,8 +249,8 @@ func TestKeyframeRequests(t *testing.T) {
 // request when they start again.
 func TestPausedShareAsksForAKeyframe(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	bob.hears(alice)
 	alice.share(false, 2_000_000)
 	bob.watch(alice)
@@ -281,8 +271,8 @@ func TestPausedShareAsksForAKeyframe(t *testing.T) {
 func TestShareBitrate(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
 	// 400 packets of 1,000 bytes a second, about 3.2 Mbps, against 250 kbps.
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true, ScreenRate: 400, ScreenBytes: 1000}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true, ScreenRate: 400, ScreenBytes: 1000}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	bob.hears(alice)
 	const bitrate = 250_000
 	alice.share(false, bitrate)
@@ -305,8 +295,8 @@ func TestShareBitrate(t *testing.T) {
 // muted member's share.
 func TestStaffMuteHoldsBackTheShare(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	bob.hears(alice)
 	alice.share(true, 2_000_000)
 	bob.watch(alice)
@@ -321,8 +311,8 @@ func TestStaffMuteHoldsBackTheShare(t *testing.T) {
 // offer of its own, in every voice section.
 func TestVoiceBitrate(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{})
-	alice := join(t, s, udpPort, tcpPort, "41", "1001", CallerOptions{UDP: true}, true)
-	bob := join(t, s, udpPort, tcpPort, "41", "1002", CallerOptions{UDP: true}, true)
+	alice := join(t, s, udpPort, tcpPort, "41", "1001", sfutest.Options{UDP: true}, true)
+	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{UDP: true}, true)
 	alice.hears(bob)
 	alice.peer.SetVoiceBitrate(48000)
 	o := alice.waitOffer("at 48 kbps", func(sdp string) bool { return strings.Contains(sdp, "maxaveragebitrate=48000") })
@@ -338,7 +328,7 @@ func TestTwoSharesTwentyViewers(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{AnswerTimeout: time.Minute, ConnectTimeout: time.Minute})
 	// Quiet voices and small screens, so the test measures the den's
 	// handling, not the machine's.
-	quiet := CallerOptions{UDP: true, Rate: 5, ScreenRate: 30, ScreenBytes: 300}
+	quiet := sfutest.Options{UDP: true, Rate: 5, ScreenRate: 30, ScreenBytes: 300}
 	var sharers, viewers []*member
 	for i := range 22 {
 		m := join(t, s, udpPort, tcpPort, "41", strconv.Itoa(2000+i), quiet, true)

@@ -71,7 +71,7 @@ ensure_ui_placeholders() {
   [[ -f internal/ui/assets/css/output.css ]] || : > internal/ui/assets/css/output.css
   [[ -f internal/ui/assets/js/output.js ]] || : > internal/ui/assets/js/output.js
   [[ -f internal/ui/assets/manifest.json ]] ||
-    printf '{"css/output.css":"test","js/output.js":"test"}' > internal/ui/assets/manifest.json
+    printf '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","wasm/rnnoise.wasm":"test"}' > internal/ui/assets/manifest.json
 }
 
 # run_windows_tests cross-compiles every package's tests and runs them on

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
-	"github.com/Data-Corruption/dens.chat/internal/sfu"
+	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 
 	"github.com/coder/websocket"
 )
@@ -69,7 +69,7 @@ func TestVoiceProbe(t *testing.T) {
 		}
 		stay = time.Duration(n) * time.Second
 	}
-	caller, err := sfu.NewTestCaller(sfu.CallerOptions{UDP: network == "udp", TCP: network == "tcp"})
+	caller, err := sfutest.NewCaller(sfutest.Options{UDP: network == "udp", TCP: network == "tcp"})
 	if err != nil {
 		t.Fatal(err)
 	}

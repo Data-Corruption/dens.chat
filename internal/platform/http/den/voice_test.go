@@ -16,6 +16,7 @@ import (
 	dens "github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
+	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 
 	"github.com/coder/websocket"
 )
@@ -62,7 +63,7 @@ type voiceSocket struct {
 	t      *testing.T
 	c      *websocket.Conn
 	me     string
-	caller *sfu.TestCaller
+	caller *sfutest.Caller
 	events chan denproto.Event
 	// The last offer answered, and its answer, which goes again if the den
 	// sends that offer again, as after a resume.
@@ -70,7 +71,7 @@ type voiceSocket struct {
 	answer  string
 }
 
-func (f *fixture) voiceSocket(token denproto.Bytes, caller *sfu.TestCaller) *voiceSocket {
+func (f *fixture) voiceSocket(token denproto.Bytes, caller *sfutest.Caller) *voiceSocket {
 	f.t.Helper()
 	c, first := f.dial(token, "")
 	var ready denproto.Ready
@@ -83,9 +84,9 @@ func (f *fixture) voiceSocket(token denproto.Bytes, caller *sfu.TestCaller) *voi
 	return v
 }
 
-func newCaller(t *testing.T) *sfu.TestCaller {
+func newCaller(t *testing.T) *sfutest.Caller {
 	t.Helper()
-	c, err := sfu.NewTestCaller(sfu.CallerOptions{Loopback: true})
+	c, err := sfutest.NewCaller(sfutest.Options{Loopback: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +266,7 @@ func TestCallRidesOutItsSocket(t *testing.T) {
 	bob.wait(inCall(lounge.ID, alice.me))
 	bob.join(lounge.ID)
 	alice.wait(inCall(lounge.ID, alice.me, bob.me))
-	heard := func(c *sfu.TestCaller, from string) {
+	heard := func(c *sfutest.Caller, from string) {
 		t.Helper()
 		if err := c.WaitHeard(from, 20, 10*time.Second); err != nil {
 			t.Fatal(err)

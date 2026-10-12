@@ -237,6 +237,10 @@ type VoiceState struct {
 	Full  bool   `json:"full,omitempty"`
 }
 
+// ScreenStream names the stream a member's share reaches those who watch
+// it in (M4.2), as "screen-<member ID>", which the page reads.
+func ScreenStream(member string) string { return "screen-" + member }
+
 // StripCandidates takes every candidate out of an SDP, and puts the
 // unspecified address in its connection (c=), RTCP (a=rtcp:) and origin
 // (o=) lines. Neither side sends an address: the den answers checks from
