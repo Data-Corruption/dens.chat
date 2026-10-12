@@ -35,7 +35,7 @@ to disk, deletions remove data for real, and a den can set messages to expire.
 ## How it works
 
 - **Every install is a client.** A small background service on your computer
-  serves the chat page to your own browser at `127.0.0.1` and keeps your keys.
+  serves the chat page to your own browser at `localhost` and keeps your keys.
   You log in to each den with a key that never leaves your machine.
 - **Any install can also host one den.** A den is sized for about 1,000
   members, 500 online at once, 10 people in voice and 2 screen shares.
