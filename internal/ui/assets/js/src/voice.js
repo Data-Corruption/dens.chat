@@ -166,6 +166,13 @@ export function inCall() {
     return !!call;
 }
 
+// callLimits are the limits of the den the page's call is in, once known,
+// or null outside a call, for the share settings to name a den's lower
+// limits while they apply (M8.3).
+export function callLimits() {
+    return call ? denView?.limits || null : null;
+}
+
 // onCall calls fn with the call, the last notice, who is speaking and how
 // loud each member plays, now and on every change; it returns a function
 // that stops.

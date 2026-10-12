@@ -1,13 +1,16 @@
 // The app: pairing, the first local password, and the pages (home and a
 // den's), chosen from what /api/status says about this browser, with the
-// settings over them. A den's page reaches home and the settings from its
-// channel list; home has a cog of its own for the settings.
+// app's settings and a den's Manage dialog over them (M8.3). A den's page
+// reaches home and the settings from its channel list; home has a button
+// of its own for the settings.
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onConnection, onUnpaired } from './events.js';
 import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
+import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
+import { ManageDialog } from './manageden.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
 import { SharePlayer } from './player.jsx';
@@ -35,7 +38,7 @@ function takePairingToken() {
 function takeSettingsPath() {
     if (window.location.pathname !== '/settings') return null;
     history.replaceState(null, '', '/');
-    return 'general';
+    return 'appearance';
 }
 
 export function App({ instance, version }) {
@@ -43,7 +46,9 @@ export function App({ instance, version }) {
     const [settings, setSettings] = useState(takeSettingsPath);
     const [path, setPath] = useState(window.location.pathname);
     const [live, setLive] = useState(true);
+    const [manage, setManage] = useState(null);
     useEffect(() => onOpenSettings(setSettings), []);
+    useEffect(() => onOpenManage(setManage), []);
     const closeSettings = useCallback(() => setSettings(null), []);
 
     async function load() {
@@ -131,24 +136,25 @@ export function App({ instance, version }) {
                     <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6 pb-20">
                         {passwordSet && <CallBar />}
                         {page}
-                        {version && (
-                            <p class="text-center text-xs text-base-content/50">
-                                Dens {version}
-                                {instance !== 'main' && `, instance ${instance}`}
-                            </p>
-                        )}
                     </div>
                     {passwordSet && (
-                        <a href="/settings" class="btn btn-square fixed bottom-4 left-4 shadow-sm" aria-label="Settings" title="Settings"
-                            onClick={(e) => { e.preventDefault(); openSettings('general'); }}>
+                        <a href="/settings" class="btn fixed bottom-4 left-4 shadow-sm" aria-label="App settings"
+                            onClick={(e) => { e.preventDefault(); openSettings('appearance'); }}>
                             <CogIcon size="h-5 w-5" />
+                            App settings
                         </a>
                     )}
                 </main>
             )}
             {/* The shares this member watches play over every page (M4.2). */}
             {passwordSet && <SharePlayer />}
-            {passwordSet && settings && <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} />}
+            {passwordSet && settings && (
+                <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} instance={instance} version={version} />
+            )}
+            {passwordSet && manage && (
+                <ManageDialog key={manage.denID} denID={manage.denID} section={manage.section} navigate={navigate}
+                    onSection={(section) => setManage((m) => ({ ...m, section }))} onClose={() => setManage(null)} />
+            )}
         </div>
     );
 }

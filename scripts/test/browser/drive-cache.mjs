@@ -5,7 +5,7 @@
 //
 //   run.sh cache chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { BOB, HOME, SETTINGS, checks, launch, lib, openSettings as openTab, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, PHOTO: photo, PHOTO_MESSAGE: photoMessage, CLIP: clip } = process.env;
@@ -41,12 +41,12 @@ const seek = (to) => `(async () => {
     await within(new Promise((r) => (v.readyState >= 2 ? r() : v.addEventListener('loadeddata', r, { once: true }))), 'data');
     return v.readyState + ' at ' + v.currentTime.toFixed(1) + ' of ' + v.duration.toFixed(1);
 })()`;
+const storage = `[...${SETTINGS}.querySelectorAll('section')].find((s) => s.querySelector('h2')?.textContent === 'Cache')`;
 const openSettings = async () => {
-    await bob.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
-    await waitFor(() => bob.eval(`[...document.querySelectorAll('[aria-label=Settings] h2')].some((h) => h.textContent === 'Storage')`), 'the storage card');
+    await openTab(bob, 'System');
+    await waitFor(() => bob.eval(`!!${storage}`), 'the cache card');
 };
-const storage = `[...document.querySelectorAll('[aria-label=Settings] section')].find((s) => s.querySelector('h2')?.textContent === 'Storage')`;
-const closeSettings = () => bob.eval(`document.querySelector('[aria-label=Settings] button[aria-label=Close]').click(), true`);
+const closeSettings = () => bob.eval(`${SETTINGS}.querySelector('button[aria-label=Close]').click(), true`);
 const escape = () => bob.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })), true`);
 
 try {
@@ -64,14 +64,14 @@ try {
     await waitFor(() => bob.eval(`!!document.querySelector('video')`), 'the clip');
     ok(`the clip seeks: ${await bob.eval(seek('v.duration / 2'))}, and back: ${await bob.eval(seek('0.5'))}`);
 
-    step('the storage card');
+    step('the cache card');
     await openSettings();
     const text = await bob.eval(`${storage}.innerText.replace(/\\s+/g, ' ')`);
-    if (!/It holds [\d.]+ [KM]B of 2 GB now\./.test(text)) throw new Error(`the storage card says: ${text}`);
-    ok(`the storage card: ${text.match(/It holds .*? now\./)[0]}`);
+    if (!/Using [\d.]+ [KM]B of 2 GB/.test(text)) throw new Error(`the cache card says: ${text}`);
+    ok(`the cache card: ${text.match(/Using .*? of 2 GB/)[0]}`);
     await shot('storage');
     await bob.eval(`(() => { const s = ${storage}.querySelector('select'); s.value = String(1024 ** 3); s.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
-    await waitFor(() => bob.eval(`${storage}.innerText.includes('of 1 GB now')`), 'the size changed to 1 GB');
+    await waitFor(() => bob.eval(`${storage}.innerText.includes('of 1 GB')`), 'the size changed to 1 GB');
     const limit = JSON.parse(api('bob', 'GET', '/api/settings')).cacheLimit;
     if (limit !== 1024 ** 3) throw new Error(`the service's cache size: ${limit}`);
     ok('the size changed to 1 GB, which the service keeps');
@@ -105,10 +105,10 @@ try {
 
     step('emptying the cache');
     await openSettings();
-    await bob.eval(`[...${storage}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Empty').click(), true`);
-    await waitFor(() => bob.eval(`${storage}.innerText.includes('It holds nothing now.')`), 'the cache emptied');
+    await bob.eval(`[...${storage}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Clear cache').click(), true`);
+    await waitFor(() => bob.eval(`${storage}.innerText.includes('Using 0 B of 1 GB')`), 'the cache emptied');
     await shot('emptied');
-    ok('Empty emptied the cache');
+    ok('Clear cache emptied the cache');
 } catch (e) {
     c.fail(e);
     await shot('failed').catch(() => {});

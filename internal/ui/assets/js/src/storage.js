@@ -17,8 +17,7 @@ export function cacheSizes(limit) {
     return [...CACHE_SIZES, limit].sort((a, b) => a - b);
 }
 
-// cacheUsage says how much of its size the cache holds.
+// cacheUsage says how much of its size the cache holds, as a figure.
 export function cacheUsage(used, limit) {
-    if (!used) return 'It holds nothing now.';
-    return `It holds ${formatSize(used)} of ${formatSize(limit)} now.`;
+    return `Using ${formatSize(used || 0)} of ${formatSize(limit)}`;
 }

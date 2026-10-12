@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
+import { openManage } from './dialogs.js';
+import { HashIcon, LockIcon, SpeakerIcon } from './icons.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane } from './messages.jsx';
@@ -106,7 +108,12 @@ export function Chat({ denID, channelID, navigate }) {
     const [dialog, setDialog] = useState(null);
     // On a narrow screen the channel list and the channel take turns.
     const [listOpen, setListOpen] = useState(!channelID);
-    const [membersOpen, setMembersOpen] = useState(() => stored(MEMBERS_OPEN) === '1');
+    // The member list starts open where it fits beside the channel, until
+    // the member closes it (M8.3).
+    const [membersOpen, setMembersOpen] = useState(() => {
+        const kept = stored(MEMBERS_OPEN);
+        return kept ? kept === '1' : window.matchMedia?.('(min-width: 768px)').matches ?? false;
+    });
     const [online, setOnline] = useState(() => new Set());
     const [typing, setTyping] = useState(() => new Map());
     const [visible, setVisible] = useState(document.visibilityState === 'visible');
@@ -331,10 +338,12 @@ export function Chat({ denID, channelID, navigate }) {
                         <div role="status" class="alert alert-info alert-soft m-2 flex flex-wrap">
                             <span>
                                 A new device signed in to your account here: <span class="font-medium">{newDevice.label}</span>. If it wasn't
-                                you, change your den password under Devices and password on the home page, which signs out every other
-                                device.
+                                you, change your den password, which signs out every other device.
                             </span>
-                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => setNewDevice(null)}>Dismiss</button>
+                            <span class="flex gap-2">
+                                <button type="button" class="btn btn-sm" onClick={() => openManage(denID, 'password')}>Change password</button>
+                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => setNewDevice(null)}>Dismiss</button>
+                            </span>
                         </div>
                     )}
                     {channel ? (
@@ -407,9 +416,13 @@ function withKey(view, key) {
 }
 
 // ListTabs switches the sidebar between the den's channels and DMs, and
-// shows whether the other has anything unread.
+// shows whether the other has anything waiting: a channel or DM unread,
+// or a DM whose check codes this member hasn't compared, as one someone
+// just started (M8.3).
 function ListTabs({ tab, onTab, view, reads, open }) {
-    const waiting = (dms) => view.channels.some((c) => (c.kind === 'dm') === dms && c.id !== open && hasMessages(c) && unread(reads.get(c.id)) && !reads.get(c.id)?.closed);
+    const keys = view.dm_keys || [];
+    const waits = (c) => (unread(reads.get(c.id)) || (c.kind === 'dm' && needsCheck(keys, c.id, view.me.id)));
+    const waiting = (dms) => view.channels.some((c) => (c.kind === 'dm') === dms && c.id !== open && hasMessages(c) && waits(c) && !reads.get(c.id)?.closed);
     const tabs = [['den', 'Den', waiting(false)], ['dms', 'Direct messages', waiting(true)]];
     return (
         <div role="tablist" class="tabs tabs-border px-2 pt-1">
@@ -439,7 +452,7 @@ function UserPanel({ me, online, onEdit }) {
                     <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
                 </span>
             </button>
-            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Settings" title="Settings" onClick={() => openSettings('general')}>
+            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="App settings" title="App settings" onClick={() => openSettings('appearance')}>
                 <CogIcon />
             </button>
         </div>
@@ -495,11 +508,11 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
                         class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${managed ? 'pr-8' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
                         onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
-                        title={voice ? "Join the call. Calls aren't end-to-end encrypted: the den can hear them." : undefined}
+                        title={voice ? 'Join the call' : undefined}
                     >
-                        <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? '🔊' : '#'}</span>
+                        <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}</span>
                         <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
-                        {c.staff_only && <span class="text-xs text-base-content/50" title="Staff only">🔒</span>}
+                        {c.staff_only && <span class="text-base-content/50" title="Staff only" aria-label="staff only"><LockIcon /></span>}
                         {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                     </button>
                     {managed && (
@@ -632,10 +645,16 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, onChan
                         <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
                         <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
                         {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
-                        <span class="shrink-0 text-xs text-base-content/50" title="End-to-end encrypted: only the two of you can read it">🔒 Encrypted</span>
+                        <span class="flex shrink-0 items-center gap-1 text-xs text-base-content/50" title="End-to-end encrypted: only the two of you can read it">
+                            <LockIcon size="h-3 w-3" />
+                            Encrypted
+                        </span>
                     </button>
                 ) : (
-                    <span class="shrink-0 font-semibold"># {channel.name}</span>
+                    <span class="flex shrink-0 items-center gap-1 font-semibold">
+                        <span class="text-base-content/50"><HashIcon /></span>
+                        {channel.name}
+                    </span>
                 )}
                 {channel.description && (
                     <button

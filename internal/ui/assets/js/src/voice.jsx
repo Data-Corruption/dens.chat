@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
+import { ICON, SpeakerIcon } from './icons.jsx';
 import { rank } from './people.jsx';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
@@ -166,7 +167,7 @@ function ShareButton({ call, share, den }) {
     const why = call.status === 'joining' ? 'Joining the call' : shareWhy(call, den);
     return (
         <IconButton label="Share your screen" disabled={!!why}
-            title={why || "Share your screen, a window or a tab with the call. Shares aren't end-to-end encrypted: the den can see them."}
+            title={why || 'Share your screen, a window or a tab with the call'}
             onClick={startShare}>
             <ScreenIcon />
         </IconButton>
@@ -269,8 +270,6 @@ function IconButton({ label, pressed, danger, disabled, title, onClick, children
     );
 }
 
-const ICON = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' };
-
 export function MicIcon({ off, size = 'h-4 w-4' }) {
     return (
         <svg class={size} {...ICON}>
@@ -298,15 +297,6 @@ export function CogIcon({ size = 'h-[18px] w-[18px]' }) {
         <svg class={size} {...ICON} stroke-width="1.3">
             <path d="M13.06 6.43 L14.90 6.82 L14.90 9.18 L13.06 9.57 L12.69 10.47 L13.72 12.04 L12.04 13.72 L10.47 12.69 L9.57 13.06 L9.18 14.90 L6.82 14.90 L6.43 13.06 L5.53 12.69 L3.96 13.72 L2.28 12.04 L3.31 10.47 L2.94 9.57 L1.10 9.18 L1.10 6.82 L2.94 6.43 L3.31 5.53 L2.28 3.96 L3.96 2.28 L5.53 3.31 L6.43 2.94 L6.82 1.10 L9.18 1.10 L9.57 2.94 L10.47 3.31 L12.04 2.28 L13.72 3.96 L12.69 5.53Z" />
             <circle cx="8" cy="8" r="2.2" />
-        </svg>
-    );
-}
-
-function SpeakerIcon() {
-    return (
-        <svg class="h-[18px] w-[18px] shrink-0" {...ICON}>
-            <path d="M2.5 6v4h2.5l3.5 3V3L5 6z" />
-            <path d="M11 5.75a3.25 3.25 0 0 1 0 4.5M12.75 3.75a6 6 0 0 1 0 8.5" />
         </svg>
     );
 }
@@ -429,8 +419,9 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                                 <span class="text-base-content/60" title="Muted" aria-label="muted"><MicIcon off size="h-3.5 w-3.5" /></span>
                             )}
                             {m.staff_muted && (
-                                <span class="text-xs text-warning" title="Muted by staff: the den forwards nothing from them" aria-label="muted by staff">
-                                    🔇 staff
+                                <span class="flex items-center gap-0.5 text-xs text-warning" title="Muted by staff: nobody hears them" aria-label="muted by staff">
+                                    <MicIcon off size="h-3.5 w-3.5" />
+                                    staff
                                 </span>
                             )}
                             {m.sharing && (

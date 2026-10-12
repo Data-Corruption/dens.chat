@@ -445,7 +445,7 @@ func TestNewDevicesAndStartingOver(t *testing.T) {
 	if _, err := denproto.ParseSeal(seal); err != nil {
 		t.Fatalf("the new seal %q: %v", seal, err)
 	}
-	waitFor(t, member, "the first device signed out", revoked("You started over"))
+	waitFor(t, member, "the first device signed out", revoked("You reset your DM recovery key"))
 	if shown, err := laptop.ShowSeal(denID); err != nil || shown != seal {
 		t.Fatalf("the seal kept: %q %v", shown, err)
 	}

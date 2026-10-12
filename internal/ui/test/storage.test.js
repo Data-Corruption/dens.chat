@@ -16,7 +16,7 @@ test("a size that isn't one of them shows among them", () => {
     assert.deepEqual(cacheSizes(3 * 1024 ** 3).map(formatSize), ['512 MB', '1 GB', '2 GB', '3 GB', '5 GB', '10 GB', '20 GB', '50 GB']);
 });
 
-test('the cache says how much it holds', () => {
-    assert.equal(cacheUsage(0, 2 * 1024 ** 3), 'It holds nothing now.');
-    assert.equal(cacheUsage(1536 * 1024 ** 2, 2 * 1024 ** 3), 'It holds 1.5 GB of 2 GB now.');
+test('the cache says how much it holds, as a figure', () => {
+    assert.equal(cacheUsage(0, 2 * 1024 ** 3), 'Using 0 B of 2 GB');
+    assert.equal(cacheUsage(1536 * 1024 ** 2, 2 * 1024 ** 3), 'Using 1.5 GB of 2 GB');
 });

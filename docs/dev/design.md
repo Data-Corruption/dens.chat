@@ -42,7 +42,7 @@ Design rules that follow from this:
 - Collect less: no IP addresses written to disk by default, and Caddy access logs stay off.
 - Delete for real: deletions remove rows, with SQLite `secure_delete` on.
 - Let conversations evaporate: an optional den-wide message retention period.
-- Say plainly who can read what, in the UI as well as the docs.
+- Say plainly who can read what: in onboarding and the docs, once, and on the page by marking what's end-to-end encrypted (M8.3).
 
 ## Architecture
 
@@ -616,7 +616,7 @@ The page says where to compare, best first: in person; a voice or video call; an
 **In the app**
 
 - The channel list has two tabs: Den and Direct messages.
-- DMs say they're end-to-end encrypted; channels say the den's owner can read them.
+- DMs say they're end-to-end encrypted, with a lock. Onboarding and the docs say the den's owner can read channels; the page doesn't repeat it in each one (M8.3).
 - A DM waiting for its check shows who started it, the digits to read out, a box for the other's digits, and the advice on where to compare.
 
 ## Voice and screen share
@@ -636,7 +636,7 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Speaking indicators (M3): each page measures the audio it plays for each member, and its own microphone's as sent, and rings the avatar of whoever is speaking. Only members in the call see them, since only their pages play its audio, and the den sends nothing for them.
 - A voice channel's call holds 15 members, and a den's calls 30 in all, unless the owner sets other caps (M4.2; see Limits for calls). Each member's audio goes out once to every other member of their call, so the den's upload grows with the square of a call's size: a full call of 15 sends about 3 Mbps while two people talk, and up to 24 if everyone does (see the bandwidth table).
 - Each voice channel has a bitrate, which staff set in its settings like the rest of the channel (M4.2): from 16 to 128 kbps in steps of 8, and 96 for a new channel. The den writes it into every offer for the channel's call, so a change reaches the call in progress with each member's next offer. A lower bitrate costs the den less upload: each member talking sends it to every other member of the call.
-- Calls aren't end-to-end encrypted. Media is encrypted between each browser and the den (DTLS-SRTP), and the den decrypts it to forward it, so the den's owner could listen in. The page says so on voice channels, as it says on channels that the den's owner can read them. End-to-end encrypted calls would need SFrame (insertable streams), after v1.
+- Calls aren't end-to-end encrypted. Media is encrypted between each browser and the den (DTLS-SRTP), and the den decrypts it to forward it, so the den's owner could listen in. Onboarding and the docs say so, as they say the den's owner can read channels. End-to-end encrypted calls would need SFrame (insertable streams), after v1.
 - DMs have no calls until then: a DM's call would pass through the den's SFU like any other, so its owner could listen in, unlike the DM's messages.
 - The den's offer, which carries the fingerprint its DTLS must match, comes over the den socket, so a call reaches the den the member signed in to, as their messages do.
 - Members in a call never see each other's addresses: everything passes through the den, which sees the address each member's media comes from, as it sees the address of each of their connections already.
@@ -1126,7 +1126,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows with al
 | --- | --- | --- |
 | M8.1 Den and service | Each member's message budget across channels and DMs, and the event ring held to 64 MiB; bans deleting recent DM messages, deletes in DMs left to their authors, and bans lifted by their placer's rank; owner invites from the den's machine; the Windows control pipe answering after an early close, the control server accepting again after an error, and the SCM restarting a service that fails after starting; `tmp` emptied at start, and backups holding back deletes; snapshots without a scan of every message; a deadline for request bodies; nonces, names and the den's update lock; NixOS and SteamOS refused, and LXC's service drop-in; the keyframe test that raced | A member flooding every channel and DM is held to their budget, and the den's ring to 64 MiB; Dens on Windows answers after a client closes the pipe at once, and comes back after a failure; an owner locked out of their account takes the den back with `dens den owner-invite`; a backup taken while files are deleted restores every file its database names |
 | M8.2 Client, page and install | Answers without addresses; markdown in linear time, parsed once per text; no downgrades; flags, not the environment, for release sources and skipping verification; error codes, address changes and redirects from a hostile den; the browser drivers in the repository; the docs; Sprout's leftovers | The den finds no address in any answer from Chrome or Firefox; a channel of 200 hostile messages scrolls and takes typing notices without stalling; an older release won't install over a newer one, and nothing in the environment changes where an install fetches from or whether it verifies |
-| M8.3 Polish | A pass over the page before the first release, from notes taken in its browser tests: wording, where things sit, and small details, none of which changes what it does | Every note is done, or set aside by agreement, and the page works as before in the four target browsers |
+| M8.3 Polish | A pass over the page before the first release, from notes taken in its browser tests: its wording, the settings in four tabs, home as a launcher with a Manage dialog for each den, one way to add a den, and smaller details; nothing outside the page changes | Every note is done, or set aside by agreement, and the page does everything it did in the four target browsers |
 
 **M8.** The audit before the first release ran on 2026-10-11, at commit 1172baf. It verified the security checklist's open items against the code, and found what the first two steps fix. Two of its findings it confirmed with probes: the Windows control pipe's early close, run natively, and the address in Chrome's answers, with headless Chrome on Windows. It measured two more: the markdown parser on hostile text, in the pinned Node, and the snapshot's scan, in SQLite at a million messages.
 
@@ -1170,7 +1170,65 @@ M8.2:
 
 M8.3:
 
-- *Polish.* The page's wording, where things sit, and small details, from a list of notes taken in its browser tests, which joins this plan as the step starts. It's the one pass over the page's words before the first release, so wording held back for it comes due here. Nothing the page does changes: no protocol, den or service changes, and the page's tests change only where they check wording.
+- *Scope.* The page alone, from the notes taken in M8.2's browser tests: its words, where things sit, and how its forms and flows go. The den, the protocol and the local API stay as they are, since the page already gets everything the notes need; only the local service's messages that name the DM seal change, to the page's word for it. It's the one pass over the page's words before the first release, so wording held back for it comes due here. The page's tests change where they check wording, and gain cases for what the page now works out itself; the browser checks follow its new structure.
+- *Its rules.*
+  - Helper text is one line. The label does the work, and details, such as 2,560 pixels or 30 ms of delay, go in a tooltip.
+  - The words people know: compress, cache, resolution, fps and shortcuts, not "goes smaller", "sealed with its key", "size", "a second" and "keys".
+  - No implementation names: noise suppression, not RNNoise.
+  - Only what applies. The page knows its browser and system, so it describes theirs alone, and it shows a figure, such as how much the cache holds, rather than a sentence about it.
+  - A warning comes with the action it's about, in its confirmation, rather than ahead of it in a paragraph.
+  - Nothing says the den or its owner can see something, which members take as given in a place someone else hosts (see Choices).
+- *Settings,* in four tabs:
+  - **Appearance**: the theme, with System, Light and Dark as three large choices, and the other themes in a menu of swatches under More themes. No footnote.
+  - **Chat & media**:
+    - Compress photos and videos: "Sends faster and saves space. You can still choose the original before sending." The sizes go in a tooltip.
+    - Links: "Dens removes tracking parameters and shortens links," with a tooltip of examples, and Open Reddit links on old.reddit.com.
+    - Play YouTube videos in Dens: "YouTube will see your IP address when previews load."
+  - **Voice & video**:
+    - Microphone and speaker.
+    - Noise suppression: "Removes keyboard, fan and background noise."
+    - Sending your voice: Voice activity or Push to talk. Under voice activity, Automatic sensitivity ("Detects when you're speaking") sits with the sensitivity slider it stands in for, which hides while it's on. The meter keeps no paragraph, and Test microphone sits beside it.
+    - Keyboard shortcuts: each a field that reads Not set or its key, and records a key when clicked, with Clear beside a set one, and no description under its name. One line says where they work: "Work while Dens is focused. To use them in other apps, keep the Dens helper running," or, where the desktop holds them (M7.2), how to set them up with it, change them or stop. Nothing about a held key let go on switching away.
+    - Screen share: Resolution, and Frame rate as 30 fps; Optimize for Clarity or Smoothness, with no paragraph; and Share audio, with one line for this browser and system: a tab's audio, or on Windows the system's too, or off where Firefox shares none. A den's lower limits show only in a call whose den sets them.
+  - **System**:
+    - Cache: "Reduces network use, and lets you view what's cached offline. Using 0 MB of 2 GB," with Keep up to and Clear cache.
+    - Updates, as now.
+    - Local password: "Protects Dens on this computer. It's separate from your den passwords." Change password shows the fields.
+    - Logging.
+    - This browser: Sign out, with `dens open` set as code.
+    - About: the version, with the instance when it isn't main, which the home page's footer showed, and the licenses.
+- *Home, a launcher.* Five sections in each den's card don't scale past two or three dens.
+  - Each den is one row: its name, a dot for its state, named in words when it isn't connected, "Signed in as john · Owner", a large Open and a small Manage. A den that signed this device out, or no longer has its member, keeps Sign in again and Remove from this computer in its row.
+  - Sign-ins waiting for this device's approval show above the list, as sign-ins in progress on this device do, and each says to refuse one that isn't yours and change your den password. So does a den whose DM recovery key this device lacks.
+  - Add a den is one button, which asks for one thing: "Paste an invite or den address". An invite shows its den, then asks whether to join as someone new or sign in to the account you have; an address goes to signing in. Signing in goes a screen at a time: the username and den password, with "Forgot your password? Use a recovery code"; then "Approve this on another device", with "No other device? Use a recovery code"; then the digits to compare; then done. The service holds a sign-in under way, so a reload comes back to its screen.
+  - The cog reads App settings, as the den page's does.
+  - Creating the den this install hosts stays a card above the list until its owner account exists.
+  - How long a den keeps messages, which its card said, shows in Manage's General.
+- *Manage,* a dialog for each den, in two parts:
+  - **This den**:
+    - General: the den's address and Den ID, with copy buttons, which every member sees, since members compare Den IDs. The owner edits the name and the public address here ("The address members use to connect", with Test beside it), and the note to keep the old address working for a while shows once the address is edited.
+    - Invites, for staff: Expires after, Max uses as a number, and Create invite; the new invite to copy; and Active invites (n), listed with Revoke.
+    - Bans, for staff: "bob (@bob) · Banned Oct 12, 2026", with Unban and a tooltip on what a ban does.
+    - Limits, the owner's: Uploads (Max file size, Storage per member and Total storage, with their units in the fields); Auto-delete messages after [90] days ("Applies to channels and DMs. Members can see this," with the count of what a new period deletes at once); and Calls ("Calls and screen shares pass through this computer's network. Lower these if calls stutter."). Calls offers Small group, a new den's limits, which need about 20 Mbps of upload at full load; Large group, 30 in a call, 60 in calls across the den and 2 shares of 15 viewers, about 70 Mbps; and Custom, the only one that shows the fields: Max people per call, Max people in calls (whole den), Allow screen sharing, Max shares at once, Max viewers per share, and a share's max bitrate, resolution and frame rate. "Upload needed at full load: about 20 Mbps" follows them as they change.
+    - The edits in General and Limits gather under one Save changes bar, shown while something has changed, which sends them as one update. Closing with changes unsaved asks first.
+  - **You in this den**:
+    - Devices: the list, and Sign out, whose confirmation says it ends that device's access at once, and that signing in again takes the den password and another device's approval.
+    - Password and recovery: Change password shows the fields, with "Signs out your other devices"; "10 codes left. Use one to sign in if you forget your password," with Generate new codes, whose confirmation says new codes replace all the old ones; and the DM recovery key, "You'll need this to read your DMs if you lose all your devices. Keep it secret," with Show key and Reset key, whose confirmation says what starting over does.
+    - Your files: "0 B of 2 GB used", and the den's total for its owner only.
+  - A den that isn't connected shows General alone, with Den moved? for one that can't be reached. Leave den sits at the foot of the sections.
+- *The den page.*
+  - The member list starts open, in every channel, until the member closes it, on screens wide enough to show it beside the channel.
+  - A text channel's #, a voice channel's speaker, the one the call bar shows, and the lock on staff-only channels and DMs are drawn icons of one size and weight, in place of emoji.
+  - The Direct messages tab shows its dot when a DM waits for this member: unread, or with check codes to compare, as when someone starts one.
+  - The notes that the den or its owner can see something go: at the start of a channel, on a voice channel and the share button, and in the profile editor. A DM keeps its lock and Encrypted.
+  - The alerts that point at the home page's sections, for a new device signed in or a sign-in refused, open Manage instead.
+- *Dates* take one form, the medium one, as Oct 12, 2026, with the time where it matters, as when an invite expires.
+- *The browser checks* open the settings at a tab and a den's Manage dialog at a section through two helpers in `browsers.mjs`, and find a channel by its name, since its # is an icon.
+- *Choices.*
+  - Who can read what. "Say plainly who can read what, in the UI as well as the docs" (see Identity and encryption) becomes: the page marks what's end-to-end encrypted, DMs, and onboarding, the milestone after this one, and the public docs say what a den's owner can read and hear, once, rather than a note in every place.
+  - The DM seal is the DM recovery key on the page, the name other encrypted apps have taught people; recovery codes keep theirs. This document keeps "DM seal" for the thing itself.
+  - No warning ahead of a full disk, which would take the den reporting its free space: the upload it refuses says so then ("This den is out of space for uploads").
+  - Moderators keep Invites and Bans; General's edits and the limits are the owner's.
 
 **M8 testing.**
 
@@ -1223,7 +1281,7 @@ M8.3:
   - An owner invite redeemed on another machine.
   - On Windows, the SCM's recovery actions on the service (`sc.exe qfailure dens-main`). Nothing outside the service makes it fail on purpose, so `TestServiceFailureEndsAsACrash`, run natively, checks that a failure ends the process as a crash, which those actions answer.
   - Optionally, M7.2's X11 path on a real X11 desktop, such as Linux Mint with Cinnamon.
-- M8.3: the page's tests, and the four target browsers on every screen a note touches.
+- M8.3: the page's tests, with cases for what the page now works out itself: whether a pasted text is an invite or an address, which preset a den's call limits match and the upload a set of them needs, the share-audio line for each browser and system, and the one form of dates. The browser checks, following the page's new structure, in both browsers. The four target browsers on every screen a note touches.
 
 **Before the first release:** a deep audit of the whole project, done on 2026-10-11: its security first, against the checklist in Security hardening, whose unticked items it verified, then its code, tests and docs. What it found is M8's first two steps. Then onboarding that teaches what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. Few apps ask people to understand these, so the public site and the page's first steps need simple, careful explanations, tried on people who haven't seen Dens. It deserves the effort of a milestone. Then the public site is polished, and v1 published.
 

@@ -184,13 +184,13 @@ try {
 
     // The settings open as a dialog over the den; their Voice section holds
     // RNNoise and how the member sends.
-    const SETTINGS = `document.querySelector('[role=dialog][aria-label=Settings]')`;
+    const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
     const inSection = (title, path) => `document.evaluate("//section[.//h2[text()='${title}']]${path}", document, null, 9, null).singleNodeValue`;
     const openVoice = async (s) => {
-        await s.b.eval(`document.querySelector('[aria-label=Settings]').click(), true`);
+        await s.b.eval(`document.querySelector('button[aria-label="App settings"]').click(), true`);
         await waitFor(() => s.b.eval(`!!${SETTINGS}`), `${s.browser} settings`);
-        await s.b.eval(`[...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Voice').click(), true`);
-        await waitFor(() => s.b.eval(`!!${inSection('Noise suppression', '//input')}`), `${s.browser} voice settings`);
+        await s.b.eval(`[...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Voice & video').click(), true`);
+        await waitFor(() => s.b.eval(`!!document.getElementById('noise')`), `${s.browser} voice settings`);
     };
     const closeSettings = async (s, how) => {
         const act = {
@@ -202,13 +202,13 @@ try {
         return waitFor(() => s.b.eval(`!${SETTINGS}`), `${s.browser} settings closed by ${how}`, 3000).then(() => true, () => false);
     };
 
-    // RNNoise runs from the start on both sides, with the browser's own
+    // Noise suppression runs from the start on both sides, with the browser's own
     // suppressor off; B turns it off mid-call, and on again, the call going
     // on throughout.
     const SENT = `(() => { const t = window.__pcs.at(-1).getTransceivers()[0].sender.track; return t ? t.id + ' ' + t.readyState : 'none'; })()`;
     const CONTEXTS = `JSON.stringify(window.__acs.map((c) => c.sampleRate + ' ' + c.state))`;
     const NS = `JSON.parse((window.__gum || []).at(-1) || '{}').audio?.noiseSuppression`;
-    const RNNOISE = inSection('Noise suppression', '//input');
+    const RNNOISE = `document.getElementById('noise')`;
     const atStart = await Promise.all(sides.map(async (s) => JSON.parse(await s.b.eval(CONTEXTS)).includes('48000 running') && (await s.b.eval(NS)) === false));
     const sent0 = await B.b.eval(SENT);
     await openVoice(B);
@@ -256,9 +256,11 @@ try {
     const key = (type, target) => B.b.eval(`(${target}.dispatchEvent(new KeyboardEvent('${type}', { code: 'KeyV', key: 'v', bubbles: true })), true)`);
     const auto = await B.b.eval(RATE);
     await openVoice(B);
-    const LEVEL = `document.querySelector('input[aria-label="Voice activity level"]')`;
+    const LEVEL = `document.querySelector('input[aria-label="Sensitivity"]')`;
     const setLevel = (db) => B.b.eval(`(() => { const r = ${LEVEL}; r.value = '${db}'; r.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await B.b.eval(`${inSection('Sending your voice', "//label[contains(., 'Automatically')]//input")}.click(), true`);
+    // The slider shows once automatic sensitivity is off.
+    await B.b.eval(`document.getElementById('auto-sensitivity').click(), true`);
+    await waitFor(() => B.b.eval(`!!${LEVEL}`), `${B.browser} the sensitivity slider`);
     await setLevel(0);
     await sleep(500);
     const shut = await B.b.eval(RATE);
@@ -268,7 +270,7 @@ try {
     await B.b.eval(`${inSection('Sending your voice', "//label[contains(., 'Push to talk')]//input")}.click(), true`);
     await sleep(200);
     const warned = await B.b.eval(`document.body.innerText.includes('Push to talk has no key')`);
-    await B.b.eval(`${inSection('Keys', "//div[div/p[text()='Push to talk']]//button[text()='Set']")}.click(), true`);
+    await B.b.eval(`${inSection('Keyboard shortcuts', "//div[span[text()='Push to talk']]//button")}.click(), true`);
     await sleep(200);
     await key('keydown', 'window');
     await sleep(300);
@@ -294,14 +296,14 @@ try {
     await openVoice(B);
     await B.b.eval(`${inSection('Sending your voice', "//label[contains(., 'Voice activity')]//input")}.click(), true`);
     await sleep(200);
-    await B.b.eval(`${inSection('Sending your voice', "//label[contains(., 'Automatically')]//input")}.click(), true`);
+    await B.b.eval(`document.getElementById('auto-sensitivity').click(), true`);
     await closeSettings(B, 'close');
 
     // Staff mute: the owner mutes Bob, whose packets stop reaching her.
     await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);
     await click(A, byText('Mute for everyone'));
     const barMuted = await waitFor(() => B.b.eval(`document.body.innerText.includes('Muted by staff')`), `${B.browser} told of the staff mute`, 10000).catch((e) => e.message);
-    const listMuted = await waitFor(() => A.b.eval(`document.body.innerText.includes('🔇 staff')`), `${A.browser} marks the staff mute`, 10000).catch((e) => e.message);
+    const listMuted = await waitFor(() => A.b.eval(`!!document.querySelector('[aria-label="muted by staff"]')`), `${A.browser} marks the staff mute`, 10000).catch((e) => e.message);
     await sleep(1000);
     const quiet = await flowing(A, 'alice hears muted bob');
     report(barMuted === true && listMuted === true && !quiet.moving, `staff mute: ${B.browser} told ${barMuted}, ${A.browser} marks ${listMuted}, packets ${quiet.before}->${quiet.after}`);
@@ -480,7 +482,7 @@ try {
     const EDIT = `document.querySelector('[role=dialog][aria-label="Your profile in this den"]')`;
     const edit = await waitFor(() => B.b.eval(`!!${EDIT}`), `${B.browser} edits the profile`, 3000).catch(() => false);
     await B.b.eval(`(${EDIT}?.querySelector('button[aria-label="Close"]').click(), true)`);
-    await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').parentElement.querySelector('[aria-label=Settings]').click(), true)`);
+    await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').parentElement.querySelector('[aria-label="App settings"]').click(), true)`);
     const cog = await waitFor(() => B.b.eval(`${SETTINGS}?.querySelector('[role=tab][aria-selected=true]')?.textContent.trim() || false`), `${B.browser} settings from the panel`, 3000).catch(() => false);
     await closeSettings(B, 'close');
     // The den's header: home at the left of its name, and no status while
@@ -493,28 +495,34 @@ try {
     report(outOfCall.panel === outOfCall.bar && inCall.panel === inCall.bar && inCall.avatar === outOfCall.avatar && outOfCall.avatar >= 32
         && row.labels === 'Share your screen|Mute|Deafen|Voice settings|Leave the call' && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
         && row.status === lounge && row.shade && row.standsOut >= 15
-        && tip.text === lounge && tip.hidden === 'none' && tip.onHover && tip.inside && edit === true && cog === 'General'
+        && tip.text === lounge && tip.hidden === 'none' && tip.onHover && tip.inside && edit === true && cog === 'Appearance'
         && head.home && !head.dot && !head.header,
         `${B.browser} panel and bar line up: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, its tip ${JSON.stringify(tip)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
 
-    // Every theme, with its colors, in the settings' General section; a pick
-    // takes hold at once, and System follows the device again.
-    const PICKER = `${SETTINGS}?.querySelector('[role=radiogroup][aria-label=Theme]')`;
+    // Every theme, with its colors, in the settings' Appearance tab: System,
+    // Light and Dark, and the rest under More themes; a pick takes hold at
+    // once, and System follows the device again.
+    const PICKER = `${SETTINGS}?.querySelector('[role=tabpanel]')`;
+    const MORE = `${SETTINGS}?.querySelector('[role=radiogroup][aria-label="More themes"]')`;
     const openGeneral = async () => {
-        if (!(await B.b.eval(`!!${SETTINGS}`))) await B.b.eval(`(document.querySelector('[aria-label=Settings]').click(), true)`);
+        if (!(await B.b.eval(`!!${SETTINGS}`))) await B.b.eval(`(document.querySelector('button[aria-label="App settings"]').click(), true)`);
         await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
-        await B.b.eval(`([...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'General').click(), true)`);
-        await waitFor(() => B.b.eval(`!!${PICKER}`), `${B.browser} theme picker`);
+        await B.b.eval(`([...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Appearance').click(), true)`);
+        await waitFor(() => B.b.eval(`!!${SETTINGS}?.querySelector('[role=radiogroup][aria-label=Theme]')`), `${B.browser} theme picker`);
+        if (!(await B.b.eval(`!!${MORE}`))) {
+            await B.b.eval(`([...${SETTINGS}.querySelectorAll('button')].find((b) => b.textContent.startsWith('More themes')).click(), true)`);
+        }
+        await waitFor(() => B.b.eval(`!!${MORE}`), `${B.browser} more themes`);
     };
     const pickTheme = async (name) => {
         await openGeneral();
-        await B.b.eval(`([...${PICKER}.querySelectorAll('label')].find((l) => l.textContent.trim() === '${name}').querySelector('input').click(), true)`);
+        await B.b.eval(`([...${PICKER}.querySelectorAll('[role=radiogroup] label')].find((l) => l.textContent.trim() === '${name}').querySelector('input').click(), true)`);
         await sleep(300);
     };
     await openGeneral();
     const menu = JSON.parse(await B.b.eval(`(() => {
         const menu = ${PICKER};
-        const items = [...menu.querySelectorAll('label')];
+        const items = [...menu.querySelectorAll('[role=radiogroup] label')];
         const primaries = new Set(items.slice(1).map((i) => getComputedStyle(i.querySelector('[data-theme] > :nth-child(2)')).backgroundColor));
         // Role badges, in every theme, against WCAG's 4.5:1 for small text.
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
@@ -595,11 +603,11 @@ try {
         `${B.browser} themes: picker ${JSON.stringify(menu)}, Dracula ${JSON.stringify(dracula)}, lighter in Dark ${JSON.stringify(dark)} and Light ${JSON.stringify(white)}, System ${JSON.stringify(system)}`);
 
     await B.b.eval(`(document.querySelector('button[aria-label="Leave the call"]').click(), true)`);
-    await B.b.eval(`(document.querySelector('[aria-label=Settings]').click(), true)`);
+    await B.b.eval(`(document.querySelector('button[aria-label="App settings"]').click(), true)`);
     await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
     const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('[role=tab]')].map((t) => t.textContent.trim()).join('|')`);
     await closeSettings(B, 'close');
-    report(tabs === 'General|Voice', `${B.browser} settings tabs: ${tabs}`);
+    report(tabs === 'Appearance|Chat & media|Voice & video|System', `${B.browser} settings tabs: ${tabs}`);
 
     // A join that waits on the microphone, as while the browser asks for
     // it, says so; the voice processor's context comes from the click.
@@ -723,17 +731,21 @@ try {
     report(shared.videos >= 1 && shared.volumes.length === 1 && shared.volumes[0] === 0.5 && shared.kept === '0.5',
         `${B.browser} video volume shared: ${JSON.stringify(shared)}`);
     await B.b.go(`http://127.0.0.1:${B.port}/`);
-    await waitFor(() => B.b.eval(`!!document.querySelector('a[aria-label=Settings]')`), `${B.browser} home`);
+    await waitFor(() => B.b.eval(`!!document.querySelector('a[aria-label="App settings"]')`), `${B.browser} home`);
     const home = JSON.parse(await B.b.eval(`(() => {
-        const cog = document.querySelector('a[aria-label=Settings]');
+        const cog = document.querySelector('a[aria-label="App settings"]');
         const r = cog.getBoundingClientRect();
-        return JSON.stringify({ fixed: getComputedStyle(cog).position, left: Math.round(r.left), fromBottom: Math.round(innerHeight - r.bottom), header: !!document.querySelector('header.navbar'), title: document.title, footer: [...document.querySelectorAll('main p')].at(-1)?.textContent });
+        return JSON.stringify({ fixed: getComputedStyle(cog).position, left: Math.round(r.left), fromBottom: Math.round(innerHeight - r.bottom), header: !!document.querySelector('header.navbar'), title: document.title, label: cog.textContent.trim() });
     })()`));
-    await B.b.eval(`(document.querySelector('a[aria-label=Settings]').click(), true)`);
+    await B.b.eval(`(document.querySelector('a[aria-label="App settings"]').click(), true)`);
     const homeSettings = await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings from home`, 3000).catch(() => false);
+    // The version and instance moved from home's foot to the settings' About.
+    await B.b.eval(`([...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'System').click(), true)`);
+    const about = await waitFor(() => B.b.eval(`[...${SETTINGS}.querySelectorAll('section')].find((x) => x.querySelector('h2')?.textContent === 'About')?.innerText || ''`), `${B.browser} About`, 5000).catch(() => '');
     await closeSettings(B, 'close');
-    report(home.fixed === 'fixed' && home.left <= 24 && home.fromBottom <= 24 && !home.header && home.title === 'Dens (m2b)' && home.footer?.includes('instance m2b') && homeSettings === true,
-        `${B.browser} home: ${JSON.stringify(home)}, settings ${homeSettings}`);
+    report(home.fixed === 'fixed' && home.left <= 24 && home.fromBottom <= 24 && !home.header && home.title === 'Dens (m2b)' && home.label === 'App settings'
+        && about.includes('instance m2b') && homeSettings === true,
+        `${B.browser} home: ${JSON.stringify(home)}, settings ${homeSettings}, about ${JSON.stringify(about)}`);
 } catch (e) {
     c.fail(e);
     for (const s of sides) if (s.b) console.log(`  ${s.browser}:`, await s.b.eval(STATS).catch((x) => x.message));

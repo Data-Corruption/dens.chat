@@ -33,6 +33,32 @@ export async function waitFor(fn, what, ms = 20000) {
     throw new Error(`timed out waiting for ${what}: ${typeof last === 'string' ? last : JSON.stringify(last)}`);
 }
 
+// The app's settings (M8.3): the dialog, a tab of it by name, and opening
+// it at a tab from the cog on either page, as expressions for a page's
+// eval and a step that waits.
+export const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
+export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="App settings"] [role=tab]')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
+export async function openSettings(b, tab) {
+    if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="App settings"], a[aria-label="App settings"]').click(), true`);
+    await waitFor(() => b.eval(`!!${settingsTab(tab)}`), 'the settings');
+    await b.eval(`${settingsTab(tab)}.click(), true`);
+    await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-selected') === 'true'`), `the settings' ${tab} tab`);
+}
+
+// openManage opens the Manage dialog of the first den on home's list
+// (M8.3) at a section, from the home page.
+export const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
+export async function openManage(b, section) {
+    const manage = `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Manage')`;
+    if (!(await b.eval(`!!${MANAGE}`))) {
+        await waitFor(() => b.eval(`!!${manage}`), 'the Manage button');
+        await b.eval(`${manage}.click(), true`);
+    }
+    const item = `[...document.querySelectorAll('[role=dialog] nav button')].find((x) => x.textContent.trim() === ${JSON.stringify(section)})`;
+    await waitFor(() => b.eval(`!!${item}`), `Manage's ${section}`);
+    await b.eval(`${item}.click(), true`);
+}
+
 // token is a pairing token for an instance's page.
 export const token = (instance) =>
     execFileSync(`${HOME}/dens-dev`, ['-i', instance, 'open', '--print']).toString().trim().split('#token=')[1];
