@@ -552,7 +552,8 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		data = m
 	case denproto.EventMessageDeleted:
 		var d denproto.MessageDeleted
-		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) || !validID(d.ChannelID) || len(d.Files) > denproto.MaxAttachments {
+		// A DM's message holds a preview beside each file (MaxDMFiles).
+		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) || !validID(d.ChannelID) || len(d.Files) > denproto.MaxDMFiles {
 			return e, false, errMalformed
 		}
 		for _, f := range d.Files {

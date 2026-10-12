@@ -1,6 +1,7 @@
 package denclient
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -44,5 +45,30 @@ func TestMessagesExpired(t *testing.T) {
 		if cleanLimits(den) {
 			t.Errorf("a retention of %d days checked", days)
 		}
+	}
+}
+
+// A deleted DM message lists every sealed upload on it, a preview beside
+// each file, which is twice as many as a channel's message holds; a client
+// refusing that would miss the delete, and drop its connection over it.
+func TestDeletedDMFiles(t *testing.T) {
+	s := newState()
+	files := make([]string, denproto.MaxDMFiles)
+	for i := range files {
+		files[i] = strconv.Itoa(100 + i)
+	}
+	e, err := denproto.NewEvent(denproto.EventMessageDeleted, 1, denproto.MessageDeleted{ID: "50", ChannelID: "9", Files: files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.applyEvent(e, denproto.Member{ID: "7"}); !ok || err != nil {
+		t.Fatalf("a DM message's delete: %t %v", ok, err)
+	}
+	if len(s.gone) != denproto.MaxDMFiles {
+		t.Fatalf("%d files gone, want %d", len(s.gone), denproto.MaxDMFiles)
+	}
+	e, _ = denproto.NewEvent(denproto.EventMessageDeleted, 2, denproto.MessageDeleted{ID: "51", ChannelID: "9", Files: append(files, "999")})
+	if _, _, err := s.applyEvent(e, denproto.Member{ID: "7"}); err != errMalformed {
+		t.Fatalf("a delete listing more files than a message holds: %v", err)
 	}
 }
