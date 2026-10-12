@@ -35,10 +35,24 @@ func freePort(t *testing.T) int {
 }
 
 // startDevService opens and runs a development instance in temporary
-// directories and returns a control client for it.
+// directories and returns a control client for it. The port freePort finds
+// can go to a test of another package, running at the same time, before
+// the service binds it, so a start that fails goes again on another port.
 func startDevService(t *testing.T) (*app.App, control.Client) {
 	t.Helper()
-	return startDevServiceWith(t, func(*app.OpenOptions) {})
+	a, err := runDevService(t)
+	if err != nil {
+		t.Logf("starting again on another port: %v", err)
+		if a, err = runDevService(t); err != nil {
+			t.Fatalf("service stopped before ready: %v", err)
+		}
+	}
+	me, err := host.CurrentUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := control.Client{Endpoint: a.Layout.ControlEndpoint, Server: host.ControlServer{Account: me}, Timeout: 10 * time.Second}
+	return a, client
 }
 
 // devHome points a development instance's directories into the test's own.
@@ -54,14 +68,14 @@ var devBuild = build.BuildInfo{Name: "dens", Version: "v1.0.0", DefaultLogLevel:
 
 func devInstance() string { return fmt.Sprintf("t%d", time.Now().UnixNano()%1_000_000) }
 
-// startDevServiceWith is startDevService with the options set changes.
-func startDevServiceWith(t *testing.T, set func(*app.OpenOptions)) (*app.App, control.Client) {
+// runDevService opens a development instance in temporary directories and
+// runs it until the test ends. It returns why the service stopped, if it
+// stopped before it was ready, having closed what it opened.
+func runDevService(t *testing.T) (*app.App, error) {
 	t.Helper()
 	devHome(t)
 	a := app.New(devBuild)
-	opts := app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}
-	set(&opts)
-	if err := a.Open(opts); err != nil {
+	if err := a.Open(app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	pages, err := ui.New()
@@ -74,6 +88,16 @@ func startDevServiceWith(t *testing.T, set func(*app.OpenOptions)) (*app.App, co
 	ready := make(chan struct{})
 	done := make(chan error, 1)
 	go func() { done <- service.Run(ctx, a, func() { close(ready) }) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		cancel()
+		_ = a.Close()
+		return nil, err
+	case <-time.After(30 * time.Second):
+		cancel()
+		t.Fatal("service did not become ready")
+	}
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -83,20 +107,7 @@ func startDevServiceWith(t *testing.T, set func(*app.OpenOptions)) (*app.App, co
 			t.Errorf("Close: %v", err)
 		}
 	})
-	select {
-	case <-ready:
-	case err := <-done:
-		t.Fatalf("service stopped before ready: %v", err)
-	case <-time.After(30 * time.Second):
-		t.Fatal("service did not become ready")
-	}
-
-	me, err := host.CurrentUser()
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := control.Client{Endpoint: a.Layout.ControlEndpoint, Server: host.ControlServer{Account: me}, Timeout: 10 * time.Second}
-	return a, client
+	return a, nil
 }
 
 func TestPairSetPasswordAndBackUp(t *testing.T) {
