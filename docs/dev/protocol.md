@@ -124,7 +124,7 @@ POST /api/join
 - The client runs the challenge before preview, so a member never sees a name from a den that failed its identity check.
 - The invite is consumed only by a successful join.
 - `seal_check` identifies the DM seal the joining client holds (see [Private DMs](#private-dms-m17)). A former member who comes back with another seal starts over (see [Starting over](#starting-over)).
-- **Owner bootstrap:** creating a den also creates a one-use owner invite, which the owner's own client redeems over loopback. The den makes the first member to redeem it the owner. There is no second path for creating the owner account. If that first join fails, the install can issue a fresh owner invite, but only while the den has no owner.
+- **Owner bootstrap:** creating a den also creates a one-use owner invite, which the owner's own client redeems over loopback. The den makes the first member to redeem it the owner. There is no second path for creating the owner account. If that first join fails, the page can have the install issue a fresh owner invite, but only while the den has no owner. From M8 the den's machine also makes one for a den that has an owner, with the local password (see [Invites](#invites)).
 
 ### Invites
 
@@ -137,6 +137,7 @@ DELETE /api/invites/{id}                                            204
 - The client builds the invite string from `den.id`, `code` and `den.url`, and shows it once. The den stores only `SHA-256(code)`, so a code can't be shown again, only revoked.
 - `expires_in` is at most 30 days. `max_uses` is 1 to 100 and defaults to 1.
 - Moderators and the owner create, list and revoke invites. The list names who made each (`created_by`).
+- An owner invite has the owner role, and only the den's own machine makes one: as the den is created, and with `dens den owner-invite` (M8). It lasts an hour and is used once, and doesn't appear in the list. Redeeming it makes the joiner the owner and the owner before them a moderator: the joiner reaches everyone as `member.joined`, as any joiner does, and the owner before them as `member.updated`.
 
 ### Sessions
 
@@ -389,7 +390,7 @@ DELETE /api/messages/{id}                                                       
 - `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history, except on a DM's messages, whose sealed text is bound to it.
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
-- The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's.
+- The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's. In a DM only the author deletes a message (M8).
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way, in `files` beside the message's own fields (M5; see [Attachments](#attachments)).
 
 ### Retention (M5)
@@ -439,8 +440,8 @@ DELETE /api/bans/{id}                                                           
 
 - A member who leaves or is removed keeps their record, with `left_at` set, so their messages keep a name. They lose their role, devices and sessions, recovery codes, read state, the invites they made, the pictures on their profile and the uploads they hadn't used. Their sockets close with 4003, and everyone gets `member.left {id, left_at}`.
 - The owner can't leave or be removed.
-- `ban` keeps the username out: joining with it is refused with `403 banned`. `delete_messages` also deletes the member's messages from that many seconds back, one of 0, 3600, 86400 or 604800, except in DMs, with a `message.deleted` for each. `revoke_invite` revokes the invite they joined with, if it can still be used. Someone who already left can still be banned.
-- Staff list and lift bans. Lifting one doesn't bring the member back.
+- `ban` keeps the username out: joining with it is refused with `403 banned`. `delete_messages` also deletes the member's messages from that many seconds back, one of 0, 3600, 86400 or 604800, in DMs too from M8, with a `message.deleted` for each to whoever can see it. `revoke_invite` revokes the invite they joined with, if it can still be used. Someone who already left can still be banned.
+- Staff list and lift bans. Lifting one takes staff of the rank of whoever placed it, or higher, so only the owner lifts the owner's (M8). Lifting one doesn't bring the member back.
 - **Coming back.** A former member who isn't banned can join again with a new invite, as themselves: their username with the right password (the verifier) reclaims their record, history and first join time, with a new device and recovery codes. A wrong password gets `username_taken`, the same as a name in use, so an invite can't reveal who used to be here.
 - The den stores no IP addresses, and a client makes a new key for each join, so a ban can't stop someone who joins under a new name with a valid invite. Invites are the real door.
 
@@ -817,8 +818,10 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Password sign-in and recovery | 10, then 1 every 6 minutes, per IP and per username. A signed-in member's password checks count against the username's |
 | A new device asking after its sign-in, and revealing | 30 per minute per IP |
 | Sending messages | 5 per 5 seconds per member, per channel |
+| A member's messages, across every channel and DM (M8) | 10, then 1 every half second; and 256 KiB of text, then 16 KiB a second |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
+| A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
 | Other writes, including mute, ICE restarts, sharing and watching, and staff disconnecting and muting | 30 per 10 seconds per member |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |
