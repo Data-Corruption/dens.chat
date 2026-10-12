@@ -68,6 +68,16 @@ DEFAULT_RNNOISE_MODEL_VERSION="0b50c45"
 DEFAULT_AOM_VERSION="3.15.2"
 DEFAULT_CMAKE_VERSION="4.4.4"
 
+# Phone photos and videos the browser checks send (scripts/test/browser):
+# public test fixtures, each at a fixed commit of its repository, with
+# their GPS and camera metadata, as a phone's are. Name, SHA-256, address.
+BROWSER_MEDIA=(
+  "iphone-5.jpg 662e58cc178ebab64139d7cb6ef2fe7f23e2f18ccb96606f5f86827a653c53ba https://raw.githubusercontent.com/drewnoakes/metadata-extractor-images/651ad0e67aa8d43d358ad05f9bc07b52d8b9ac6e/jpg/Apple%20iPhone%205.jpg"
+  "pixel-2.jpg 624dd02ad1550f2b504945ab0f85bbcfe4ab0a0778bb9a3ad3f1a6d636429370 https://raw.githubusercontent.com/drewnoakes/metadata-extractor-images/651ad0e67aa8d43d358ad05f9bc07b52d8b9ac6e/jpg/Google%20Pixel%202.jpg"
+  "iphone-x-h264.mov 66376238496b6e424133f428773ed95300efc27f593e261bbcbd592c8523cda8 https://raw.githubusercontent.com/drewnoakes/metadata-extractor-images/651ad0e67aa8d43d358ad05f9bc07b52d8b9ac6e/mov/Issue%20234%20dotnet.mov"
+  "iphone-12-pro-hevc.mov 41cc5f00b7318627f83a67ef8be08aca65a26e6d39d265a6079717e520d6e096 https://raw.githubusercontent.com/immich-app/test-assets/ec56cc6c1d76c45bc9615dc6ea232470a2b0a3a1/videos/train.mov"
+)
+
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
 DAISYUI_VERSION="${DAISYUI_VERSION:-$DEFAULT_DAISYUI_VERSION}"
@@ -204,6 +214,7 @@ VENDOR_WASM2GO=""
 VENDOR_EXIFTOOL=""
 VENDOR_RNNOISE_SRC=""
 VENDOR_RNNOISE_MODEL=""
+VENDOR_BROWSER_MEDIA=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -213,7 +224,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
-  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake)
+  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake browser-media)
 
 # Pin validation --------------------------------------------------------------
 
@@ -294,6 +305,11 @@ validate_pins() {
   validate_sha256 "$AOM_SHA" "AOM_SHA"
   validate_sha256 "$CMAKE_SHA_LINUX_AMD64" "CMAKE_SHA_LINUX_AMD64"
   validate_sha256 "$CMAKE_SHA_LINUX_ARM64" "CMAKE_SHA_LINUX_ARM64"
+  local entry
+  for entry in "${BROWSER_MEDIA[@]}"; do
+    read -r _ sha _ <<<"$entry"
+    validate_sha256 "$sha" "BROWSER_MEDIA"
+  done
 }
 
 # Fetchers --------------------------------------------------------------------
@@ -658,6 +674,19 @@ vendor_aom_src() {
   printf '🟢 Vendored libaom source %s\n' "$AOM_VERSION"
 }
 
+# vendor_browser_media resolves to a directory of the browser checks' phone
+# media, each file verified against its pin.
+vendor_browser_media() {
+  VENDOR_BROWSER_MEDIA="$TOOLS_DIR/browser-media"
+  mkdir -p "$VENDOR_BROWSER_MEDIA"
+  local entry name sha url
+  for entry in "${BROWSER_MEDIA[@]}"; do
+    read -r name sha url <<<"$entry"
+    download_verified "$VENDOR_BROWSER_MEDIA/$name" "$url" "$sha" "$name"
+  done
+  printf '🟢 Vendored the browser checks'"'"' media\n'
+}
+
 vendor_cmake() {
   vendor_require_bins tar gzip
   local arch sha
@@ -730,6 +759,7 @@ vendor_ensure() {
     rnnoise-model) vendor_rnnoise_model ;;
     aom-src) vendor_aom_src ;;
     cmake) vendor_cmake ;;
+    browser-media) vendor_browser_media ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -761,6 +791,7 @@ vendor_resolved() {
     rnnoise-model) printf '%s' "$VENDOR_RNNOISE_MODEL" ;;
     aom-src) printf '%s' "$VENDOR_AOM_SRC" ;;
     cmake) printf '%s' "$VENDOR_CMAKE" ;;
+    browser-media) printf '%s' "$VENDOR_BROWSER_MEDIA" ;;
   esac
 }
 
@@ -808,9 +839,9 @@ vendor_main() {
     local candidate
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
-        # The media module's and RNNoise's inputs are large, and only their
-        # builds and checks ask for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake) continue ;;
+        # The media module's and RNNoise's inputs, and the browser checks'
+        # media, are large, and only their builds and checks ask for them.
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake|*:browser-media) continue ;;
       esac
       tools+=("$candidate")
     done

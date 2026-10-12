@@ -141,6 +141,7 @@ run_shell_lint() {
     scripts/test/fixture-releases.sh
     scripts/test-den-e2e.sh
     scripts/test/den-guest.sh
+    scripts/test/browser/*.sh
     scripts/dev/seed-chat.sh
     scripts/install.sh
   )
