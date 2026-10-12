@@ -166,7 +166,13 @@ func TestNames(t *testing.T) {
 	if got, err := CleanName("Zoë 🦊", MaxNameRunes); err != nil || got != "Zoë 🦊" {
 		t.Fatalf("CleanName kept %q, %v", got, err)
 	}
-	for _, bad := range []string{"", "​‮", strings.Repeat("x", 33), "\xff"} {
+	// Format characters go, and so do the fillers that render as blanks,
+	// which leave the name around them.
+	if got, err := CleanName("\u3164Al\u2061ice\U000E0041\u2800", MaxNameRunes); err != nil || got != "Alice" {
+		t.Fatalf("CleanName = %q, %v", got, err)
+	}
+	for _, bad := range []string{"", "​‮", strings.Repeat("x", 33), "\xff",
+		"\u3164", "\u115F\u1160", "\uFFA0 \u2800", "\u200D\u2062", "\u0301\u0302"} {
 		if _, err := CleanName(bad, MaxNameRunes); err == nil {
 			t.Errorf("CleanName(%q) accepted", bad)
 		}

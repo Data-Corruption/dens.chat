@@ -119,12 +119,29 @@ invite)
     api POST "/api/dens/$1/invites" '{"expires_in":3600,"max_uses":1}' | json 'd["invite"]'
     ;;
 join)
-    # join INVITE: join as bob; print the role, and keep the recovery codes.
+    # join INVITE [USERNAME DISPLAY_NAME]: join, as bob unless named; print
+    # the role, and keep the recovery codes.
+    user=${2:-bob}
     name=$(api POST /api/dens/preview "{\"invite\":\"$1\"}" | json 'd["den"]["name"]')
     [ "$name" = "E2E Den" ] || fail "the preview named the den $name"
-    api POST /api/dens/join "{\"invite\":\"$1\",\"username\":\"bob\",\"display_name\":\"Bob\",\"password\":\"bob password\"}" \
+    api POST /api/dens/join "{\"invite\":\"$1\",\"username\":\"$user\",\"display_name\":\"${3:-Bob}\",\"password\":\"$user password\"}" \
         > /root/join.json
     json 'd["den"]["role"] if len(d["recovery_codes"]) == 10 else "no codes"' < /root/join.json
+    ;;
+owner-invite)
+    # owner-invite: make an owner invite on the den's machine, as its
+    # desktop user with the local password; print it.
+    printf 'local password\n' | runuser -u alice -- dens den owner-invite --password-stdin --instance "$INSTANCE" |
+        grep '^dens1:' || fail "dens den owner-invite printed no invite"
+    ;;
+wait-role)
+    # wait-role ROLE: wait until this member's role in the only den is ROLE.
+    for _ in $(seq 1 40); do
+        [ "$(api GET /api/dens | json 'd["dens"][0]["role"]')" = "$1" ] && exit 0
+        sleep 0.25
+    done
+    api GET /api/dens >&2
+    fail "the role never became $1"
     ;;
 code)
     # code N: print the Nth recovery code from joining.

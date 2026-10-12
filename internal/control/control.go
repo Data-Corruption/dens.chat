@@ -33,9 +33,17 @@ const (
 	// OpShortcuts opens the stream between the desktop user's shortcut
 	// helper and the service (M7).
 	OpShortcuts = "shortcuts"
+	// OpOwnerInvite makes an invite that hands the den this instance hosts
+	// to whoever redeems it (M8).
+	OpOwnerInvite = "owner-invite"
 )
 
 const maxLine = 64 * 1024
+
+// maxConns is how many connections the server serves at once. The rest
+// wait to be accepted: in the socket's backlog, or for the pipe's one
+// listening instance on Windows.
+const maxConns = 64
 
 // Request is one client request.
 type Request struct {
@@ -66,6 +74,13 @@ type Status struct {
 // Pair is the result of OpPair: a URL carrying a one-time pairing token.
 type Pair struct {
 	URL string `json:"url"`
+}
+
+// OwnerInvite is the result of OpOwnerInvite: an invite string for the
+// page's Join box, and the name of the den it hands on.
+type OwnerInvite struct {
+	Invite string `json:"invite"`
+	Den    string `json:"den"`
 }
 
 // Reply is what a handler returns. Body, if set, is streamed after the
@@ -103,24 +118,51 @@ type Server struct {
 	WriteTimeout time.Duration
 }
 
-// Serve accepts connections until ctx is cancelled, then closes ln.
+// Serve accepts connections until ctx is cancelled or ln closes, then
+// closes ln. A failed accept is tried again after a pause, as net/http
+// does, rather than ending the service over one client (M8).
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	stop := context.AfterFunc(ctx, func() { _ = ln.Close() })
 	defer stop()
+	slots := make(chan struct{}, maxConns)
+	var pause time.Duration
 	for {
+		select {
+		case slots <- struct{}{}:
+		case <-ctx.Done():
+			return nil
+		}
 		conn, err := ln.Accept()
 		if err != nil {
+			<-slots
 			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			return fmt.Errorf("accept control connection: %w", err)
+			pause = min(max(2*pause, 5*time.Millisecond), time.Second)
+			s.Log.Warnf("control: accept a connection: %v; trying again in %s", err, pause)
+			select {
+			case <-time.After(pause):
+			case <-ctx.Done():
+				return nil
+			}
+			continue
 		}
-		go s.serve(ctx, conn)
+		pause = 0
+		go func() {
+			defer func() { <-slots }()
+			s.serve(ctx, conn)
+		}()
 	}
 }
 
 func (s *Server) serve(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
+	// Where the system names the account on a connection as it connects,
+	// as Linux does, another account is refused before anything it sent is
+	// read. A Windows pipe names its client only from data read from it.
+	if host.PeerBeforeRequest && !s.authorize(conn) {
+		return
+	}
 	readTimeout := s.ReadTimeout
 	if readTimeout == 0 {
 		readTimeout = 10 * time.Second
@@ -132,17 +174,7 @@ func (s *Server) serve(ctx context.Context, conn net.Conn) {
 		s.Log.Debugf("control: read request: %v", err)
 		return
 	}
-	// The peer is identified only after its first message was read, which
-	// the Windows pipe requires.
-	peer, err := host.PeerIdentity(conn)
-	if err != nil {
-		s.Log.Warnf("control: identify peer: %v", err)
-		s.reply(conn, Response{Error: "cannot identify caller"}, nil)
-		return
-	}
-	if !peer.Equal(s.Allowed) {
-		s.Log.Warnf("control: refused account %s", peer.ID)
-		s.reply(conn, Response{Error: fmt.Sprintf("this instance only answers %s", s.Allowed.Name)}, nil)
+	if !host.PeerBeforeRequest && !s.authorize(conn) {
 		return
 	}
 	var req Request
@@ -186,6 +218,23 @@ func (s *Server) serve(ctx context.Context, conn net.Conn) {
 	if err := reply.Stream(ctx, stream); err != nil && ctx.Err() == nil {
 		s.Log.Debugf("control: %s: %v", req.Op, err)
 	}
+}
+
+// authorize checks the account on the other end of conn against the one
+// the server answers, and tells any other why it's refused.
+func (s *Server) authorize(conn net.Conn) bool {
+	peer, err := host.PeerIdentity(conn)
+	if err != nil {
+		s.Log.Warnf("control: identify peer: %v", err)
+		s.reply(conn, Response{Error: "cannot identify caller"}, nil)
+		return false
+	}
+	if !peer.Equal(s.Allowed) {
+		s.Log.Warnf("control: refused account %s", peer.ID)
+		s.reply(conn, Response{Error: fmt.Sprintf("this instance only answers %s", s.Allowed.Name)}, nil)
+		return false
+	}
+	return true
 }
 
 // reply writes the response line and any body, and reports whether the
@@ -257,22 +306,9 @@ func (c Client) CallBody(req Request, result any, body io.Writer) error {
 		return err
 	}
 	defer conn.Close()
-	data, err := json.Marshal(req)
+	resp, reader, err := exchange(conn, req, timeout)
 	if err != nil {
 		return err
-	}
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	if _, err := conn.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-	reader := bufio.NewReader(conn)
-	line, err := readLine(reader)
-	if err != nil {
-		return fmt.Errorf("read reply: %w", err)
-	}
-	var resp Response
-	if err := json.Unmarshal(line, &resp); err != nil {
-		return fmt.Errorf("decode reply: %w", err)
 	}
 	if !resp.OK {
 		return &UserError{Msg: resp.Error}
@@ -306,26 +342,10 @@ func (c Client) Open(req Request) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := json.Marshal(req)
+	resp, reader, err := exchange(conn, req, timeout)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
-	}
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	if _, err := conn.Write(append(data, '\n')); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("send request: %w", err)
-	}
-	reader := bufio.NewReader(conn)
-	line, err := readLine(reader)
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("read reply: %w", err)
-	}
-	var resp Response
-	if err := json.Unmarshal(line, &resp); err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("decode reply: %w", err)
 	}
 	if !resp.OK {
 		_ = conn.Close()
@@ -333,6 +353,40 @@ func (c Client) Open(req Request) (*Stream, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	return &Stream{conn: conn, r: reader}, nil
+}
+
+// exchange sends req and reads the service's reply line, with timeout for
+// both.
+func exchange(conn net.Conn, req Request, timeout time.Duration) (Response, *bufio.Reader, error) {
+	data, err := json.Marshal(req)
+	if err != nil {
+		return Response{}, nil, err
+	}
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+	reader := bufio.NewReader(conn)
+	if _, err := conn.Write(append(data, '\n')); err != nil {
+		// A service refusing this account answers before it reads the
+		// request, and may have closed before the request went. Its answer
+		// is still there to read.
+		if resp, readErr := readResponse(reader); readErr == nil && !resp.OK {
+			return resp, reader, nil
+		}
+		return Response{}, nil, fmt.Errorf("send request: %w", err)
+	}
+	resp, err := readResponse(reader)
+	return resp, reader, err
+}
+
+func readResponse(r *bufio.Reader) (Response, error) {
+	line, err := readLine(r)
+	if err != nil {
+		return Response{}, fmt.Errorf("read reply: %w", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return Response{}, fmt.Errorf("decode reply: %w", err)
+	}
+	return resp, nil
 }
 
 // Each side of a stream sends a line at least every StreamPing, a ping if

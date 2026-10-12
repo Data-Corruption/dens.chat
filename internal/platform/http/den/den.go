@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	dens "github.com/Data-Corruption/dens.chat/internal/den"
@@ -197,9 +198,15 @@ func (h *handler) limitIP(w http.ResponseWriter, r *http.Request, kind int) bool
 	return true
 }
 
+// bodyDeadline is how long a request's body has to arrive in full, as an
+// upload has for each read (uploadIdle), so a client sending slowly can't
+// hold a handler and what it reads forever (M8). Tests shorten it.
+var bodyDeadline = time.Minute
+
 // decode reads a JSON body of at most MaxBody bytes. Unknown fields are
 // ignored, as the protocol requires; the den checks every field it uses.
 func (h *handler) decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(bodyDeadline))
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, denproto.MaxBody))
 	if err != nil {
 		var tooBig *http.MaxBytesError

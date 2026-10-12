@@ -4,7 +4,8 @@
 # stays connected across a den restart, and calls the owner through the
 # den's media ports, over UDP and over TCP alone; the two start a private
 # DM; the member recovers their account on a fresh install and signs the
-# old one out; then a ban shuts them out.
+# old one out; then a ban shuts them out, and an owner invite from the den's
+# machine hands the den on.
 #
 # One Incus container hosts the den behind the pinned Caddy, serving
 # https://den.test with Caddy's internal certificate authority. Another, on
@@ -38,7 +39,10 @@
 # the fresh one's device list, it signs in again the same way, with the
 # digits typed into the fresh one first, which must go on showing its own.
 # The owner then bans the member, whose connections must close at once and
-# who can't join again under the same name. Both install from unsigned
+# who can't join again under the same name. Last, the den's machine makes an
+# owner invite with dens den owner-invite, and whoever redeems it, on the
+# member's machine under a new name, must own the den, with the owner before
+# them a moderator. Both install from unsigned
 # fixture releases through install.sh, like the lifecycle harness; the guest
 # steps are in scripts/test/den-guest.sh.
 #
@@ -682,6 +686,14 @@ run() {
   refusal=$(guest "$CLIENT" join-refused "$invite")
   [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }
   echo ">> The banned member can't come back as bob"
+
+  # The den's machine has the last word on who owns it (M8).
+  echo ">> The den's machine hands the den on with an owner invite"
+  invite=$(guest "$DEN" owner-invite)
+  role=$(guest "$CLIENT" join "$invite" carol Carol)
+  [[ "$role" == owner ]] || { echo "error: the owner invite joined carol as $role" >&2; return 1; }
+  guest "$DEN" wait-role moderator
+  echo ">> Whoever redeemed the owner invite owns the den, and the owner before them is a moderator"
   echo
   "${INCUS[@]}" exec "$DEN" -- journalctl -u dens@main -b --no-pager -o cat | tail -n 20
 }

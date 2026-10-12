@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -36,12 +37,16 @@ func newLimiter(burst int, interval time.Duration, capacity int) *limiter {
 }
 
 // allow takes a token for key, and reports whether one was available.
-func (l *limiter) allow(key string) bool {
+func (l *limiter) allow(key string) bool { return l.allowN(key, 1) }
+
+// allowN takes n tokens for key at once, and reports whether there were
+// that many; if not, it takes none.
+func (l *limiter) allowN(key string, n int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if el, ok := l.index[key]; ok {
 		l.order.MoveToFront(el)
-		return el.Value.(*bucket).lim.Allow()
+		return el.Value.(*bucket).lim.AllowN(time.Now(), n)
 	}
 	if l.order.Len() >= l.cap {
 		oldest := l.order.Back()
@@ -50,7 +55,7 @@ func (l *limiter) allow(key string) bool {
 	}
 	b := &bucket{key: key, lim: rate.NewLimiter(rate.Every(l.every), l.burst)}
 	l.index[key] = l.order.PushFront(b)
-	return b.lim.Allow()
+	return b.lim.AllowN(time.Now(), n)
 }
 
 // ipKey keys IPv6 addresses by their /64, so rotating addresses within one
@@ -106,7 +111,23 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.write
 	}
 	if !l.allow(key) {
-		return denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited, "slow down")
+		return errRateLimited
+	}
+	return nil
+}
+
+var errRateLimited = denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited, "slow down")
+
+// AllowMessage takes a message from its author's budget, which holds their
+// messages in every channel and DM together, counted one by one and by
+// size, the bytes of its text or of a DM's sealed text (M8). Each channel's
+// own limit (LimitSend) can't stop a member spreading a flood over many
+// channels and DMs, and message text counts against no storage limit, so
+// this budget is what bounds how fast one member grows the den's database.
+func (d *Den) AllowMessage(member int64, size int) error {
+	key := strconv.FormatInt(member, 10)
+	if !d.limits.messages.allow(key) || !d.limits.messageBytes.allowN(key, size) {
+		return errRateLimited
 	}
 	return nil
 }
@@ -114,9 +135,10 @@ func (d *Den) Allow(kind int, key string) error {
 // RelaxLimits lifts the rate limits, for development instances, where a
 // developer seeds thousands of messages to test the message list.
 func (d *Den) RelaxLimits() {
-	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload, &d.limits.password, &d.limits.passwordName, &d.limits.call} {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload, &d.limits.password, &d.limits.passwordName, &d.limits.call, &d.limits.messages} {
 		*l = newLimiter(1_000_000, time.Microsecond, 1000)
 	}
+	d.limits.messageBytes = newLimiter(1<<40, time.Nanosecond, 1000)
 }
 
 // IPKey is the rate-limit key for a client address.

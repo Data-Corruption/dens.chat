@@ -129,7 +129,7 @@ func (m *Manager) SetStaffMute(ctx context.Context, denID, memberID string, mute
 }
 
 // Bans lists a den's banned members.
-func (m *Manager) Bans(ctx context.Context, denID string) ([]denproto.Ban, error) {
+func (m *Manager) Bans(ctx context.Context, denID string) ([]Ban, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return nil, err
@@ -138,16 +138,30 @@ func (m *Manager) Bans(ctx context.Context, denID string) ([]denproto.Ban, error
 	if err := c.call(ctx, http.MethodGet, "/api/bans", nil, &list); err != nil {
 		return nil, err
 	}
-	out := make([]denproto.Ban, 0, len(list.Bans))
+	out := make([]Ban, 0, len(list.Bans))
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, b := range list.Bans {
 		member, ok := cleanMember(b.Member)
 		if !ok || b.BannedAt <= 0 || (b.BannedBy != "" && !validID(b.BannedBy)) {
 			return nil, errors.New("the den's answer is malformed")
 		}
 		b.Member = member
-		out = append(out, b)
+		ban := Ban{Ban: b}
+		if c.den != nil {
+			ban.BannedByRole = c.den.members[b.BannedBy].Role
+		}
+		out = append(out, ban)
 	}
 	return out, nil
+}
+
+// Ban is a ban as the page shows it, with the role whoever placed it has
+// now, as the client last heard: staff lift the bans of their rank or
+// below (M8).
+type Ban struct {
+	denproto.Ban
+	BannedByRole string `json:"banned_by_role,omitempty"`
 }
 
 // Unban lifts a ban.

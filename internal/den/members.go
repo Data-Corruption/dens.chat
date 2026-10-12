@@ -283,7 +283,8 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			}
 		}
 		if req.DeleteMessages > 0 {
-			// DMs stay: staff can't see them, so they don't clean them up.
+			// DMs too (M8): the den deletes them without reading them, and
+			// a member flooding DMs leaves no other way to clear them.
 			if deleted, blobs, err = deleteRecent(ctx, tx, mid, now-req.DeleteMessages*1000, time.UnixMilli(now)); err != nil {
 				return err
 			}
@@ -322,11 +323,11 @@ type deletedMessage struct {
 	files       []string
 }
 
-// deleteRecent deletes a member's messages in channels, not DMs, from since
+// deleteRecent deletes a member's messages, in channels and DMs, from since
 // on, and returns what it deleted, and the blobs of their files to remove
 // once tx commits.
 func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64, now time.Time) ([]deletedMessage, [][]byte, error) {
-	const where = `m.author_id = ? AND m.created_at >= ? AND m.channel_id IN (SELECT id FROM den_channels WHERE kind != 'dm')`
+	const where = `m.author_id = ? AND m.created_at >= ?`
 	files, blobs, err := filesOf(ctx, tx, where, member, since)
 	if err != nil {
 		return nil, nil, err
@@ -430,7 +431,9 @@ func (d *Den) Bans(ctx context.Context, s *Session) (denproto.BanList, error) {
 }
 
 // Unban lets a banned member's username come back. They stay out of the
-// den until someone invites them again.
+// den until someone invites them again. Staff lift a ban placed by someone
+// of their rank or lower, as that member's role is now, so a ban the owner
+// placed only the owner lifts (M8).
 func (d *Den) Unban(ctx context.Context, s *Session, id string) error {
 	if !IsStaff(s.Role) {
 		return forbidden("only moderators and the owner lift bans")
@@ -439,12 +442,21 @@ func (d *Den) Unban(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return errMemberNotFound
 	}
-	res, err := d.db.ExecContext(ctx, `UPDATE den_members SET banned_at = NULL, banned_by = NULL WHERE id = ? AND banned_at IS NOT NULL`, mid)
-	if err != nil {
+	return d.tx(ctx, func(tx *sql.Tx) error {
+		// NULL when nobody placed it, or whoever did is gone from the table.
+		var placer sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT b.role FROM den_members m LEFT JOIN den_members b ON b.id = m.banned_by
+			WHERE m.id = ? AND m.banned_at IS NOT NULL`, mid).Scan(&placer)
+		if errors.Is(err, sql.ErrNoRows) {
+			return denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such ban")
+		}
+		if err != nil {
+			return err
+		}
+		if placer.Valid && denproto.Rank(placer.String) > denproto.Rank(s.Role) {
+			return forbidden("only staff of the rank of whoever placed a ban, or higher, lift it")
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE den_members SET banned_at = NULL, banned_by = NULL WHERE id = ?`, mid)
 		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such ban")
-	}
-	return nil
+	})
 }

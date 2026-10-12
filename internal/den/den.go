@@ -56,9 +56,18 @@ type Den struct {
 	mu   sync.RWMutex
 	info *denproto.Den
 	key  *vault.SigningKey
+	// update keeps changes to the den's description in order, so mu is held
+	// only to swap the new one in, never across a database write that every
+	// request reading the description would wait on.
+	update sync.Mutex
 
-	nonceMu sync.Mutex
-	nonces  map[string]time.Time
+	// nonces are the sign-in nonces outstanding, and nonceOrder[nonceHead:]
+	// the same in the order they were handed out, which is the order they
+	// expire in.
+	nonceMu    sync.Mutex
+	nonces     map[string]time.Time
+	nonceOrder []issuedNonce
+	nonceHead  int
 
 	// changes orders edits and ticks, and their events, so a message's
 	// updates go out in the order of its revisions.
@@ -70,6 +79,9 @@ type Den struct {
 
 	limits struct {
 		challenge, join, login, socket, write, send, typing, upload, password, passwordName, call *limiter
+		// messages and messageBytes are each member's budget across every
+		// channel and DM (M8).
+		messages, messageBytes *limiter
 	}
 	sockets  *socketSet
 	presence *presence
@@ -130,6 +142,8 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	d.limits.password = newLimiter(10, 6*time.Minute, 100_000)
 	d.limits.passwordName = newLimiter(10, 6*time.Minute, 100_000)
 	d.limits.call = newLimiter(10, 6*time.Second, 100_000)
+	d.limits.messages = newLimiter(10, time.Second/2, 100_000)
+	d.limits.messageBytes = newLimiter(256<<10, time.Second/(16<<10), 100_000)
 
 	var name, url string
 	var pub, sealed []byte
@@ -261,21 +275,33 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	return code, nil
 }
 
-// OwnerInvite issues a fresh owner invite while the den has no owner, so
-// setup can finish if the owner's first join failed.
-func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) {
+// OwnerInvite issues a one-time owner invite, which lasts an hour.
+// Whoever redeems it becomes the owner, and the owner before them a
+// moderator (M8). The den's machine has the last word on who owns it, so
+// only its desktop user asks for one, with the local password, through
+// the service's control endpoint (dens den owner-invite).
+func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) { return d.ownerInvite(ctx, false) }
+
+// SetupInvite issues an owner invite while the den has no owner, so setup
+// can finish if the owner's first join failed. The page asks for it
+// without the local password, so it never hands on a den with an owner.
+func (d *Den) SetupInvite(ctx context.Context) ([]byte, error) { return d.ownerInvite(ctx, true) }
+
+func (d *Den) ownerInvite(ctx context.Context, unowned bool) ([]byte, error) {
 	if _, ok := d.Info(); !ok {
 		return nil, errors.New("the den hasn't been created")
 	}
 	code := denproto.Random(denproto.InviteCodeSize)
 	now := d.now()
 	err := d.tx(ctx, func(tx *sql.Tx) error {
-		var owners int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_members WHERE role = 'owner'`).Scan(&owners); err != nil {
-			return err
-		}
-		if owners > 0 {
-			return errors.New("the den already has an owner")
+		if unowned {
+			var owners int
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_members WHERE role = 'owner'`).Scan(&owners); err != nil {
+				return err
+			}
+			if owners > 0 {
+				return errors.New("the den already has an owner")
+			}
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO den_invites (code_hash, role, created_by, created_at, expires_at, max_uses) VALUES (?, 'owner', NULL, ?, ?, 1)`,
@@ -294,54 +320,51 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 	if s.Role != denproto.RoleOwner {
 		return denproto.Den{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner changes the den")
 	}
-	d.mu.Lock()
-	info := *d.info
+	d.update.Lock()
+	defer d.update.Unlock()
+	before, _ := d.Info()
+	info := before
 	var err error
 	if req.Name != nil {
 		if info.Name, err = denproto.CleanName(*req.Name, denproto.MaxNameRunes); err != nil {
-			d.mu.Unlock()
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "name: %v", err)
 		}
 	}
 	if req.URL != nil {
 		if info.URL, err = denproto.NormalizeDenURL(*req.URL); err != nil {
-			d.mu.Unlock()
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "url: %v", err)
 		}
 	}
 	if req.Limits != nil {
 		if err := denproto.CheckLimits(*req.Limits); err != nil {
-			d.mu.Unlock()
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "limits: %v", err)
 		}
 		info.Limits = *req.Limits
 	}
 	if req.CallLimits != nil {
 		if err := denproto.CheckCallLimits(*req.CallLimits); err != nil {
-			d.mu.Unlock()
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "call_limits: %v", err)
 		}
 		info.CallLimits = *req.CallLimits
 	}
 	if req.Retention != nil {
 		if err := denproto.CheckRetention(*req.Retention); err != nil {
-			d.mu.Unlock()
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "retention: %v", err)
 		}
 		info.Retention = *req.Retention
 	}
-	retained := d.info.Retention != info.Retention
 	c := info.CallLimits
 	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
 		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ?,
 		retention = ? WHERE id = 1`,
 		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
 		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS, info.Retention); err != nil {
-		d.mu.Unlock()
 		return denproto.Den{}, err
 	}
+	d.mu.Lock()
 	d.info = &info
 	d.mu.Unlock()
+	retained := before.Retention != info.Retention
 	if err := d.Hub.Publish(denproto.EventDenUpdated, info, Everyone); err != nil {
 		return info, err
 	}
@@ -352,27 +375,19 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 	return info, nil
 }
 
+// issuedNonce is a nonce the den handed out, and when it expires.
+type issuedNonce struct {
+	nonce   string
+	expires time.Time
+}
+
 // Challenge proves the den's identity key and issues a single-use nonce.
 func (d *Den) Challenge(clientNonce []byte) (denproto.ChallengeResponse, error) {
 	if err := denproto.Size("client_nonce", clientNonce, denproto.NonceSize); err != nil {
 		return denproto.ChallengeResponse{}, err
 	}
-	now := d.now()
-	d.nonceMu.Lock()
-	if len(d.nonces) >= maxNonces {
-		for n, exp := range d.nonces {
-			if now.After(exp) {
-				delete(d.nonces, n)
-			}
-		}
-	}
-	if len(d.nonces) >= maxNonces {
-		d.nonceMu.Unlock()
-		return denproto.ChallengeResponse{}, denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRateLimited, "too many sign-ins in progress")
-	}
 	nonce := denproto.Random(denproto.NonceSize)
-	d.nonces[string(nonce)] = now.Add(nonceLifetime)
-	d.nonceMu.Unlock()
+	d.issueNonce(string(nonce))
 
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -382,6 +397,37 @@ func (d *Den) Challenge(clientNonce []byte) (denproto.ChallengeResponse, error) 
 		DenSig: d.key.Sign(denproto.DenChallengeMessage(clientNonce, nonce, d.info.URL)),
 		URL:    d.info.URL,
 	}, nil
+}
+
+// issueNonce records a nonce as outstanding. With maxNonces outstanding, the
+// oldest goes (M8), rather than the den refusing every sign-in until some
+// expire. A client uses its nonce within moments of getting it, so to take
+// one a flood would have to win maxNonces challenges in those moments.
+func (d *Den) issueNonce(nonce string) {
+	now := d.now()
+	d.nonceMu.Lock()
+	defer d.nonceMu.Unlock()
+	// The order is the order of expiry, so what expired is at its front, as
+	// are nonces spent already, which consumeNonce leaves here.
+	for d.nonceHead < len(d.nonceOrder) {
+		oldest := &d.nonceOrder[d.nonceHead]
+		if len(d.nonceOrder)-d.nonceHead < maxNonces && !now.After(oldest.expires) {
+			break
+		}
+		delete(d.nonces, oldest.nonce)
+		*oldest = issuedNonce{}
+		d.nonceHead++
+	}
+	// The rest move down once they take less than half the slice, so
+	// handing out a nonce never copies them all.
+	if d.nonceHead > 0 && d.nonceHead >= len(d.nonceOrder)-d.nonceHead {
+		n := copy(d.nonceOrder, d.nonceOrder[d.nonceHead:])
+		clear(d.nonceOrder[n:])
+		d.nonceOrder, d.nonceHead = d.nonceOrder[:n], 0
+	}
+	expires := now.Add(nonceLifetime)
+	d.nonces[nonce] = expires
+	d.nonceOrder = append(d.nonceOrder, issuedNonce{nonce: nonce, expires: expires})
 }
 
 // consumeNonce spends a nonce, reporting whether it was outstanding.
@@ -479,7 +525,7 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 	}
 	keyID := denproto.ID(ed25519.PublicKey(req.PublicKey))
 	var member denproto.Member
-	var retired []int64
+	var retired, demoted []int64
 	d.keys.Lock()
 	defer d.keys.Unlock()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
@@ -497,6 +543,13 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		id, joinedAt, err := claimUsername(ctx, tx, username, req.Verifier)
 		if err != nil {
 			return err
+		}
+		if role == denproto.RoleOwner {
+			// A den has one owner: whoever redeems an owner invite takes
+			// over, and the owner before them stays on as a moderator (M8).
+			if demoted, err = demoteOwner(ctx, tx, now); err != nil {
+				return err
+			}
 		}
 		if id != 0 {
 			if _, err := tx.ExecContext(ctx,
@@ -563,10 +616,52 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 	if err := d.Hub.Publish(denproto.EventMemberJoined, member, Everyone); err != nil {
 		return denproto.JoinResponse{}, err
 	}
+	for _, id := range demoted {
+		d.log.Infof("Member %s is the owner now, and member %d a moderator", member.ID, id)
+		m, err := d.Member(ctx, id)
+		if err != nil {
+			return denproto.JoinResponse{}, err
+		}
+		if err := d.Hub.Publish(denproto.EventMemberUpdated, m, Everyone); err != nil {
+			return denproto.JoinResponse{}, err
+		}
+	}
 	if err := d.publishKeys(ctx, retired...); err != nil {
 		return denproto.JoinResponse{}, err
 	}
 	return denproto.JoinResponse{Member: member, Token: token, ExpiresAt: now.Add(d.TokenLifetime).UnixMilli(), RecoveryCodes: shown}, nil
+}
+
+// demoteOwner makes the den's owner a moderator within tx, as an owner
+// invite is redeemed, and returns who it was. Moderators are staff too, so
+// what they see stays the same.
+func demoteOwner(ctx context.Context, tx *sql.Tx, now time.Time) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM den_members WHERE role = 'owner'`)
+	if err != nil {
+		return nil, err
+	}
+	var owners []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		owners = append(owners, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, id := range owners {
+		if _, err := tx.ExecContext(ctx, `UPDATE den_members SET role = 'moderator' WHERE id = ?`, id); err != nil {
+			return nil, err
+		}
+		if err := logMember(ctx, tx, id, now); err != nil {
+			return nil, err
+		}
+	}
+	return owners, nil
 }
 
 var errUsernameTaken = denproto.Errorf(http.StatusConflict, denproto.CodeUsernameTaken, "that username is taken")

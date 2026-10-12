@@ -129,19 +129,48 @@ func TestRemoveBanAndReclaim(t *testing.T) {
 		t.Fatal(err)
 	}
 	private := f.send(member, dm.ID, "a DM")
+	blob := []byte("sealed by bob's client")
+	file, err := f.d.Upload(ctx, member, "", int64(len(blob)), bytes.NewReader(blob), true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withFile := f.mustSendFiles(member, dm.ID, file.ID)
+	ownerSub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
 
-	// A ban also deletes their recent messages, but not DMs, and revokes
-	// the invite they came back with, which had a use left.
+	// A ban also deletes their recent messages, DMs and their files among
+	// them (M8), and revokes the invite they came back with, which had a
+	// use left.
 	if err := f.d.Remove(ctx, carol, bob, denproto.RemoveRequest{Ban: true, DeleteMessages: 3600, RevokeInvite: true}); err != nil {
 		t.Fatalf("ban: %v", err)
 	}
-	for _, m := range []denproto.Message{old, private} {
-		if _, _, err := f.d.message(ctx, m.ID); err != nil {
-			t.Fatalf("%q was deleted: %v", m.Text, err)
+	if _, _, err := f.d.message(ctx, old.ID); err != nil {
+		t.Fatalf("an older message was deleted: %v", err)
+	}
+	for _, m := range []denproto.Message{recent, private, withFile} {
+		if _, _, err := f.d.message(ctx, m.ID); err == nil {
+			t.Fatalf("message %s survived the ban", m.ID)
 		}
 	}
-	if _, _, err := f.d.message(ctx, recent.ID); err == nil {
-		t.Fatal("the recent message survived the ban")
+	if _, err := f.read(owner, file.ID, false); !denproto.IsCode(err, denproto.CodeNotFound) {
+		t.Fatalf("a DM's file survived the ban: %v", err)
+	}
+	// The DM's other member hears of each, as of any delete.
+	deleted := map[string][]string{}
+	for len(ownerSub.Events) > 0 {
+		e := <-ownerSub.Events
+		if e.T == denproto.EventMessageDeleted {
+			var d denproto.MessageDeleted
+			if err := json.Unmarshal(e.D, &d); err != nil {
+				t.Fatal(err)
+			}
+			deleted[d.ID] = d.Files
+		}
+	}
+	if files, ok := deleted[withFile.ID]; !ok || len(files) != 1 || files[0] != file.ID {
+		t.Fatalf("the DM's other member heard of deletes %v", deleted)
+	}
+	if _, ok := deleted[private.ID]; !ok {
+		t.Fatalf("the DM's other member heard of deletes %v", deleted)
 	}
 	invites, _ := f.d.Invites(ctx, owner)
 	for _, i := range invites {
@@ -160,7 +189,22 @@ func TestRemoveBanAndReclaim(t *testing.T) {
 	_, err = f.join(f.invite(owner, 1).Code, "bob", newDevice())
 	wantCode(t, err, denproto.CodeBanned)
 
-	// Lifting the ban lets them reclaim their name again.
+	// Lifting the ban lets them reclaim their name again. Staff lift the
+	// bans of their rank or below, and only the owner the owner's (M8).
+	erin := f.member(owner, "erin")
+	if err := f.d.Remove(ctx, owner, denproto.FormatID(erin.MemberID), denproto.RemoveRequest{Ban: true}); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, f.d.Unban(ctx, carol, denproto.FormatID(erin.MemberID)), denproto.CodeForbidden)
+	if err := f.d.Unban(ctx, owner, denproto.FormatID(erin.MemberID)); err != nil {
+		t.Fatalf("the owner lifting their own ban: %v", err)
+	}
+	if err := f.d.Unban(ctx, dave, bob); err != nil {
+		t.Fatalf("a moderator lifting another moderator's ban: %v", err)
+	}
+	if err := f.d.Remove(ctx, carol, bob, denproto.RemoveRequest{Ban: true}); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.d.Unban(ctx, carol, bob); err != nil {
 		t.Fatal(err)
 	}
@@ -200,6 +244,22 @@ func (f *fixture) sessions(member int64) int {
 		f.t.Fatal(err)
 	}
 	return n
+}
+
+// TestDMDeletesAreTheAuthors checks that staff powers stop at DMs: in a
+// DM only a message's author deletes it, whoever outranks them (M8).
+func TestDMDeletesAreTheAuthors(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	dm, err := f.d.OpenDM(ctx, member, denproto.DMRequest{MemberID: denproto.FormatID(owner.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := f.send(member, dm.ID, "between us")
+	wantCode(t, f.d.Delete(ctx, owner, m.ID), denproto.CodeForbidden)
+	if err := f.d.Delete(ctx, member, m.ID); err != nil {
+		t.Fatalf("the author deleting their DM's message: %v", err)
+	}
 }
 
 func TestLeave(t *testing.T) {

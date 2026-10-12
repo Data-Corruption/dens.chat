@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -466,4 +469,167 @@ func TestLimiterEvictsOldest(t *testing.T) {
 	if len(l.index) != 2 {
 		t.Fatalf("limiter holds %d keys, capacity 2", len(l.index))
 	}
+}
+
+// TestHubDropsBySize checks that the ring holds its events to maxBytes as
+// well as to maxLen (M8), and that a resume point the drop took gets a
+// snapshot rather than a replay with a hole in it.
+func TestHubDropsBySize(t *testing.T) {
+	h := NewHub()
+	big := strings.Repeat("x", 1000)
+	h.Publish("a", big, Everyone) // seq 1
+	size := h.bytes
+	h.maxBytes = 3 * size
+	h.Publish("b", big, Everyone) // seq 2
+	h.Publish("c", big, Everyone) // seq 3
+	if _, missed, resumed, _ := h.Subscribe(1, false, h.Epoch(), 0); !resumed || len(missed) != 3 {
+		t.Fatalf("within the size: resumed=%v, %d missed", resumed, len(missed))
+	}
+	h.Publish("d", big, Everyone) // seq 4, which takes seq 1 out
+	if h.bytes > h.maxBytes || h.first != 2 {
+		t.Fatalf("the ring holds %d bytes of at most %d, from seq %d", h.bytes, h.maxBytes, h.first)
+	}
+	if _, _, resumed, _ := h.Subscribe(1, false, h.Epoch(), 0); resumed {
+		t.Fatal("resumed from before the events the size took out")
+	}
+	if _, missed, resumed, _ := h.Subscribe(1, false, h.Epoch(), 1); !resumed || len(missed) != 3 || missed[0].Seq != 2 {
+		t.Fatalf("resuming at the ring's edge: resumed=%v, missed %+v", resumed, missed)
+	}
+}
+
+// TestHubTrimsInPlace checks that the ring replays what it holds as its
+// oldest events go and the rest move down within its slice.
+func TestHubTrimsInPlace(t *testing.T) {
+	h := NewHub()
+	h.maxLen = 5
+	for i := 1; i <= 100; i++ {
+		h.Publish("e", i, Everyone)
+		_, missed, resumed, _ := h.Subscribe(1, false, h.Epoch(), uint64(max(i-5, 0)))
+		if !resumed || len(missed) != min(i, 5) {
+			t.Fatalf("after %d events: resumed=%v, %d missed", i, resumed, len(missed))
+		}
+		for j, e := range missed {
+			if want := uint64(i - len(missed) + j + 1); e.Seq != want || string(e.D) != strconv.FormatUint(want, 10) {
+				t.Fatalf("after %d events, replayed %+v where seq %d belongs", i, e, want)
+			}
+		}
+		if len(h.ring) > 2*h.maxLen {
+			t.Fatalf("after %d events the ring's slice holds %d", i, len(h.ring))
+		}
+	}
+}
+
+// TestOldestNonceGoes checks that with maxNonces outstanding, a challenge
+// takes the place of the oldest nonce rather than being refused (M8).
+func TestOldestNonceGoes(t *testing.T) {
+	f := newFixture(t)
+	f.create()
+	nonce := func(i int) string { return fmt.Sprintf("%032d", i) }
+	for i := range maxNonces {
+		f.d.issueNonce(nonce(i))
+	}
+	f.d.consumeNonce([]byte(nonce(5))) // spent, so the order holds it until it reaches the front
+	if _, err := f.d.Challenge(denproto.Random(denproto.NonceSize)); err != nil {
+		t.Fatalf("a challenge with every nonce outstanding: %v", err)
+	}
+	if f.d.consumeNonce([]byte(nonce(0))) {
+		t.Fatal("the oldest nonce is still outstanding")
+	}
+	if !f.d.consumeNonce([]byte(nonce(1))) || !f.d.consumeNonce([]byte(nonce(maxNonces-1))) {
+		t.Fatal("a nonce newer than the oldest went")
+	}
+	if len(f.d.nonces) > maxNonces || len(f.d.nonceOrder)-f.d.nonceHead > maxNonces {
+		t.Fatalf("%d nonces outstanding, %d in order", len(f.d.nonces), len(f.d.nonceOrder)-f.d.nonceHead)
+	}
+	// Those that expired go first.
+	f.clock = f.clock.Add(2 * nonceLifetime)
+	f.d.issueNonce(nonce(-1))
+	if len(f.d.nonces) != 1 || len(f.d.nonceOrder)-f.d.nonceHead != 1 {
+		t.Fatalf("%d nonces outstanding after the rest expired", len(f.d.nonces))
+	}
+}
+
+// TestMessageBudget checks each member's budget across every channel and
+// DM (M8): ten messages at once, then one every half second; and 256 KiB
+// of text at once, then 16 KiB a second.
+func TestMessageBudget(t *testing.T) {
+	f := newFixture(t)
+	for i := range 10 {
+		if err := f.d.AllowMessage(1, 100); err != nil {
+			t.Fatalf("message %d: %v", i+1, err)
+		}
+	}
+	wantCode(t, f.d.AllowMessage(1, 100), denproto.CodeRateLimited)
+	if err := f.d.AllowMessage(2, 100); err != nil {
+		t.Fatalf("another member's budget: %v", err)
+	}
+	// Large texts spend the bytes first, and a refused one spends none.
+	for range 4 {
+		if err := f.d.AllowMessage(3, 64<<10); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantCode(t, f.d.AllowMessage(3, 64<<10), denproto.CodeRateLimited)
+	time.Sleep(time.Second)
+	if err := f.d.AllowMessage(3, 15<<10); err != nil {
+		t.Fatalf("after a second's refill: %v", err)
+	}
+}
+
+// TestOwnerInvite checks that an owner invite from the den's machine hands
+// the den on (M8): whoever redeems it is the owner, the owner before them a
+// moderator, and every member hears of both.
+func TestOwnerInvite(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	alice, err := f.join(f.create(), "alice", newDevice())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.SetupInvite(ctx); err == nil {
+		t.Fatal("the page's setup made an owner invite for a den with an owner")
+	}
+	code, err := f.d.OwnerInvite(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := f.d.Authenticate(ctx, alice.Token)
+	if list, err := f.d.Invites(ctx, s); err != nil || len(list) != 0 {
+		t.Fatalf("staff see the owner invite: %+v %v", list, err)
+	}
+	sub, _, _, _ := f.d.Hub.Subscribe(s.MemberID, true, "", 0)
+	_, err = f.join(code, "alice", newDevice())
+	wantCode(t, err, denproto.CodeUsernameTaken)
+	bob, err := f.join(code, "bob", newDevice())
+	if err != nil || bob.Member.Role != denproto.RoleOwner {
+		t.Fatalf("redeeming the owner invite: %+v %v", bob.Member, err)
+	}
+	if e := <-sub.Events; e.T != denproto.EventMemberJoined {
+		t.Fatalf("event %+v", e)
+	}
+	e := <-sub.Events
+	var m denproto.Member
+	if e.T != denproto.EventMemberUpdated || json.Unmarshal(e.D, &m) != nil || m.ID != alice.Member.ID || m.Role != denproto.RoleModerator {
+		t.Fatalf("event %+v", e)
+	}
+	if s, err = f.d.Authenticate(ctx, alice.Token); err != nil || s.Role != denproto.RoleModerator {
+		t.Fatalf("the owner before: %+v %v", s, err)
+	}
+	_, err = f.join(code, "carol", newDevice())
+	wantCode(t, err, denproto.CodeInviteInvalid)
+	// The new owner runs the den, and the one before can't remove them.
+	b, _ := f.d.Authenticate(ctx, bob.Token)
+	name := "Bob's den"
+	if _, err := f.d.Update(ctx, b, denproto.DenUpdateRequest{Name: &name}); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, f.d.Remove(ctx, s, bob.Member.ID, denproto.RemoveRequest{}), denproto.CodeForbidden)
+	// An owner invite lasts an hour.
+	code, err = f.d.OwnerInvite(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.clock = f.clock.Add(ownerInviteLifetime + time.Second)
+	_, err = f.join(code, "dave", newDevice())
+	wantCode(t, err, denproto.CodeInviteInvalid)
 }

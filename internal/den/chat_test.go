@@ -345,3 +345,61 @@ func TestMentionsAndReadState(t *testing.T) {
 		t.Fatalf("after reading: %+v", st)
 	}
 }
+
+// TestSnapshotLastMessages checks that each read state's last message, found
+// a channel at a time from the index (M8), is what the scan of every message
+// it replaced found, on a den with staff-only channels, an empty channel, a
+// voice channel and DMs, for staff and for a member.
+func TestSnapshotLastMessages(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	carol := f.member(owner, "carol")
+	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	staff := f.newChannel(owner, "staff", denproto.ChannelRequest{StaffOnly: ptr(true)})
+	f.newChannel(owner, "empty", denproto.ChannelRequest{})
+	f.newChannel(owner, "voice", denproto.ChannelRequest{Kind: denproto.KindVoice})
+	f.seed(general, member, 3)
+	f.seed(staff, owner, 2)
+	for _, pair := range [][2]*Session{{member, owner}, {member, carol}, {owner, carol}} {
+		dm, err := f.d.OpenDM(ctx, pair[0], denproto.DMRequest{MemberID: denproto.FormatID(pair[1].MemberID)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.send(pair[0], dm.ID, "hello")
+	}
+	f.seed(general, owner, 2)
+
+	scanned := map[string]string{}
+	rows, err := f.db.Query(`SELECT channel_id, max(id) FROM den_messages GROUP BY channel_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var ch, id int64
+		if err := rows.Scan(&ch, &id); err != nil {
+			t.Fatal(err)
+		}
+		scanned[denproto.FormatID(ch)] = denproto.FormatID(id)
+	}
+	rows.Close()
+	for _, s := range []*Session{owner, member, carol} {
+		snap, err := f.d.snapshot(ctx, s.MemberID, IsStaff(s.Role), 0, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := 0
+		for _, c := range snap.Channels {
+			if hasMessages(c) {
+				seen++
+			}
+		}
+		if len(snap.ReadStates) != seen {
+			t.Fatalf("member %d: %d read states for %d channels with messages", s.MemberID, len(snap.ReadStates), seen)
+		}
+		for _, st := range snap.ReadStates {
+			if st.LastMessage != scanned[st.ChannelID] {
+				t.Fatalf("member %d, channel %s: last message %q, the scan says %q", s.MemberID, st.ChannelID, st.LastMessage, scanned[st.ChannelID])
+			}
+		}
+	}
+}

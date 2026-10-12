@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 
 	"golang.org/x/sys/windows/svc"
@@ -13,10 +14,15 @@ import (
 // RunService runs fn under the SCM when the process was started as a
 // service, and directly otherwise (a development run from a console). The
 // SCM sees RUNNING once fn calls ready; a stop or shutdown request cancels
-// fn's context. An error ends the service with a service-specific exit code
-// (ExitRefused for ErrRefused), which the SCM treats as a non-crash failure,
-// and its message goes to the Application event log under the service's
-// name, which the installer registers as an event source.
+// fn's context. An error's message goes to the Application event log under
+// the service's name, which the installer registers as an event source.
+//
+// A refusal (ErrRefused) stops the service with ExitRefused, a
+// service-specific exit code, which the SCM treats as a stop rather than a
+// failure, so it doesn't start a service the lifecycle state won't let run.
+// Any other error ends the process without reporting the stop. The SCM
+// takes that for a crash, the only failure its recovery actions answer, and
+// restarts the service, as systemd's Restart=on-failure does (M8).
 func RunService(ctx context.Context, name string, fn RunFunc) error {
 	isService, err := svc.IsWindowsService()
 	if err != nil {
@@ -39,6 +45,12 @@ type serviceHandler struct {
 	err  error
 }
 
+// Tests replace how a failed service records why it stopped, and ends.
+var (
+	recordFailure = reportFailure
+	crash         = func() { os.Exit(1) }
+)
+
 func (h *serviceHandler) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	// Migrations run before readiness; the hint only tells the SCM to be
 	// patient, the installer does its own waiting.
@@ -60,15 +72,16 @@ func (h *serviceHandler) Execute(_ []string, requests <-chan svc.ChangeRequest, 
 			status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 		case err := <-done:
 			h.err = err
-			if err != nil {
-				reportFailure(h.name, err)
-			}
 			switch {
 			case err == nil:
 				return false, 0
 			case errors.Is(err, ErrRefused):
+				recordFailure(h.name, err)
 				return true, ExitRefused
 			default:
+				// fn has closed what it opened, so ending here loses nothing.
+				recordFailure(h.name, err)
+				crash()
 				return true, 1
 			}
 		case req := <-requests:

@@ -554,7 +554,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
                 canEdit={!m.locked && (m.author_id === me.id || (m.editors || []).includes(me.id))}
-                canDelete={m.author_id === me.id || rank(role) > rank(members.get(m.author_id)?.role)}
+                canDelete={m.author_id === me.id || (channel.kind !== 'dm' && rank(role) > rank(members.get(m.author_id)?.role))}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
                 candidates={candidates}
                 onUpdated={(u) => setList((cur) => withUpdate(cur, u))}

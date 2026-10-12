@@ -4,7 +4,8 @@ Den e2e on Windows: an instance joins a den through Caddy, chats, sends a
 photo, stays connected across a den restart, and calls the owner through
 the den's media ports, over UDP and over TCP alone; the two start a private
 DM; the member recovers their account on a fresh instance and signs the old
-one out; then a ban shuts them out. Every end runs on one machine.
+one out; then a ban shuts them out, and an owner invite from the den's
+machine hands the den on. Every end runs on one machine.
 
 Instance main hosts the den. Caddy runs as a Windows service (it supports
 the Service Control Manager natively) and serves https://den.test with its
@@ -39,8 +40,11 @@ hands it the seal, with which it reads the DM. Signed out once more from
 fresh's device list, second signs in again the same way, with the digits
 typed into fresh first, which must go on showing its own. The owner then
 bans the member, whose connections must close at once and who can't join
-again under the same name. The photo is scripts\test\gps-photo.jpg, next to
-this script, and the video and HEIC are in internal\media\ffmpeg\testdata.
+again under the same name. Last, main makes an owner invite with dens den
+owner-invite, and whoever redeems it, on instance second under a new name,
+must own the den, with the owner before them a moderator. The photo is
+scripts\test\gps-photo.jpg, next to this script, and the video and HEIC are
+in internal\media\ffmpeg\testdata.
 
 It installs real services and changes the machine's certificate store and
 hosts file, and undoes all of it at the end. It refuses to run where Dens
@@ -1126,6 +1130,30 @@ den.test:$HttpsPort {
     $refused = Invoke-Refused $member "/api/dens/join" @{ invite = $invite; username = "bob"; display_name = "Bob"; password = "bob password" }
     if ($refused -notmatch "banned") { Fail "rejoining after the ban: $refused" }
     Write-Host "The banned member can't come back as bob."
+
+    # The den's machine has the last word on who owns it (M8).
+    Step "hand the den on with an owner invite from its machine"
+    $saved = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = "local password" | & $Dens den owner-invite --password-stdin 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $saved
+    }
+    $lines = @(@($output) | ForEach-Object { "$_" })
+    if ($code -ne 0) { Fail "dens den owner-invite exited with ${code}: $($lines -join ' ')" }
+    $ownerInvite = @($lines | Where-Object { $_ -like "dens1:*" })
+    if ($ownerInvite.Count -ne 1) { Fail "dens den owner-invite printed: $($lines -join ' ')" }
+    $joined = Invoke-Api $member POST "/api/dens/join" @{
+        invite = $ownerInvite[0]; username = "carol"; display_name = "Carol"; password = "carol password"
+    }
+    if ($joined.den.role -ne "owner") { Fail "the owner invite joined carol as $($joined.den.role)" }
+    Wait-Value {
+        $dens = @((Invoke-Api $owner GET "/api/dens").dens)
+        if ($dens.Count -eq 1 -and $dens[0].role -eq "moderator") { $true }
+    } "the owner before to be a moderator" | Out-Null
+    Write-Host "Whoever redeemed the owner invite owns the den, and the owner before them is a moderator."
     $passed = $true
 } catch {
     Write-Host ""

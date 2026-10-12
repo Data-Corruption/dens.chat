@@ -60,6 +60,13 @@ type fileStore struct {
 	mu    sync.Mutex
 	sweep *time.Timer
 	next  time.Time
+
+	// holds counts the backups being written. While there are any, the
+	// files remove would take off the disk wait in held, so an archive has
+	// every file its database snapshot names (M8).
+	holdMu sync.Mutex
+	holds  int
+	held   [][]byte
 }
 
 func newFileStore(s Storage) *fileStore {
@@ -195,12 +202,48 @@ func (s *fileStore) open(v *vault.Vault, blob []byte, thumb bool) (StoredFile, e
 	return StoredFile{io.NewSectionReader(r, 0, r.Size()), closer}, nil
 }
 
-// remove deletes stored files and their previews. Their rows are already
-// gone, so a file left behind only takes space until the next start.
+// remove deletes stored files and their previews, or while a backup is
+// written, once it's done. Their rows are already gone, so a file left
+// behind only takes space until the next start.
 func (s *fileStore) remove(blobs [][]byte) {
+	s.holdMu.Lock()
+	if s.holds > 0 {
+		s.held = append(s.held, blobs...)
+		s.holdMu.Unlock()
+		return
+	}
+	s.holdMu.Unlock()
+	s.unlink(blobs)
+}
+
+func (s *fileStore) unlink(blobs [][]byte) {
 	for _, blob := range blobs {
 		_ = os.Remove(filepath.Join(s.dir, blobName(blob, false)))
 		_ = os.Remove(filepath.Join(s.dir, blobName(blob, true)))
+	}
+}
+
+// HoldFiles keeps the den from taking files off the disk until release is
+// called, as a backup is written: from before its database snapshot is
+// taken until its archive holds the uploads, so every file the snapshot
+// names is still there (M8). Rows go as ever; only their files wait.
+func (d *Den) HoldFiles() (release func()) {
+	s := d.files
+	s.holdMu.Lock()
+	s.holds++
+	s.holdMu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.holdMu.Lock()
+			s.holds--
+			var held [][]byte
+			if s.holds == 0 {
+				held, s.held = s.held, nil
+			}
+			s.holdMu.Unlock()
+			s.unlink(held)
+		})
 	}
 }
 
@@ -752,21 +795,11 @@ func (d *Den) sweepUploads() {
 	}
 }
 
-// tidyFiles clears what an interrupted upload or delete left behind:
-// temporary files, and stored files no row names, which nothing can reach.
-// Then it sweeps expired uploads.
+// tidyFiles clears what an interrupted delete left behind: stored files no
+// row names, which nothing can reach. The service empties the temporary
+// directory before the den opens, so no upload's part survives a crash
+// either (M8). Then it sweeps expired uploads.
 func (d *Den) tidyFiles(ctx context.Context) error {
-	temps, err := os.ReadDir(d.files.temp)
-	if err != nil {
-		return err
-	}
-	for _, e := range temps {
-		if strings.HasPrefix(e.Name(), partPrefix) {
-			if err := os.Remove(filepath.Join(d.files.temp, e.Name())); err != nil {
-				return err
-			}
-		}
-	}
 	known := map[string]bool{}
 	rows, err := d.db.QueryContext(ctx, `SELECT blob FROM den_files`)
 	if err != nil {

@@ -95,7 +95,7 @@ func (rt *router) handleBans(w http.ResponseWriter, r *http.Request) {
 		rt.denError(w, r, err)
 		return
 	}
-	writeJSON(w, denproto.BanList{Bans: bans})
+	writeJSON(w, map[string]any{"bans": bans})
 }
 
 func (rt *router) handleUnban(w http.ResponseWriter, r *http.Request) {
