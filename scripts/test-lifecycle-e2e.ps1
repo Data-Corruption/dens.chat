@@ -94,16 +94,12 @@ function Invoke-Dens {
     return Invoke-Native -FilePath $Dens -Arguments $Arguments -Stdin $Stdin -AllowFailure:$AllowFailure
 }
 
+# Invoke-Installer installs the fixture release at Root, which is unsigned.
 function Invoke-Installer {
     param([string]$Root, [string[]]$Arguments)
-    $env:APP_RELEASE_URL = ConvertTo-FileUrl $Root
-    try {
-        $script = Join-Path $Root "install.ps1"
-        Invoke-Native -FilePath "powershell.exe" -Arguments (@("-NoProfile", "-NonInteractive",
-                "-ExecutionPolicy", "Bypass", "-File", $script) + $Arguments) | Out-Null
-    } finally {
-        Remove-Item Env:APP_RELEASE_URL -ErrorAction SilentlyContinue
-    }
+    $script = Join-Path $Root "install.ps1"
+    Invoke-Native -FilePath "powershell.exe" -Arguments (@("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", $script, "-ReleaseUrl", (ConvertTo-FileUrl $Root), "-SkipVerify") + $Arguments) | Out-Null
 }
 
 function ConvertTo-FileUrl([string]$Path) {
@@ -294,7 +290,6 @@ try {
     }
     $V1 = ([IO.File]::ReadAllText((Join-Path $Release "version"))).Trim()
     $V2 = ([IO.File]::ReadAllText((Join-Path $Next "version"))).Trim()
-    $env:APP_SKIP_VERIFY = "true"
 
     # The installer defaults to the account at the console; name one only
     # where nobody is signed in there, as on a CI runner.
@@ -396,7 +391,7 @@ try {
     if ((Invoke-Api GET "/api/status").Content -notmatch '"passwordSet":true') { Fail "the browser session didn't survive" }
 
     Step "update to $V2 through dens update"
-    Invoke-Dens @("update", "--release-url", (ConvertTo-FileUrl $Next)) | Out-Null
+    Invoke-Dens @("update", "--release-url", (ConvertTo-FileUrl $Next), "--skip-verify") | Out-Null
     Assert-State "main" $V2
     Wait-Status "main"
     Assert-Status "main" ("version:\s+" + [regex]::Escape($V2))
@@ -474,7 +469,6 @@ try {
         Write-Host "Kept the failed installation (-KeepOnFailure)."
     }
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-    Remove-Item Env:APP_SKIP_VERIFY -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
 }
 

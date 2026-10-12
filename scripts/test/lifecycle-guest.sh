@@ -85,8 +85,7 @@ phase_install() {
     useradd -m mallory
 
     step "install as alice through sudo"
-    SUDO_UID=$(alice_uid) SUDO_USER=alice APP_SKIP_VERIFY=true APP_RELEASE_URL=file:///release/ \
-        sh /release/install.sh
+    SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify
     systemctl is-active --quiet dens@main || fail "dens@main is not running"
     expect_state main "$V1"
     # The shortcut helper starts at each desktop sign-in, and the .desktop
@@ -151,18 +150,31 @@ phase_after_reboot() {
     version=$V1
     if [ -n "$V2" ]; then
         step "update through dens update"
-        APP_SKIP_VERIFY=true dens update --release-url file:///release/next/
+        dens update --release-url file:///release/next/ --skip-verify
         expect_state main "$V2"
         as_alice dens status | grep -q "version:   $V2" || fail "the service didn't come back as $V2"
         as_alice dens status | grep -q "password:  set" || fail "the update lost the vault"
         version=$V2
+
+        step "an older release won't install over a newer one"
+        if dens update --release-url file:///release/ --skip-verify >/tmp/older.out 2>&1; then
+            fail "dens update took an older release"
+        fi
+        grep -q "older than this $V2" /tmp/older.out || fail "unexpected update refusal: $(cat /tmp/older.out)"
+        if SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify \
+            >/tmp/older.out 2>&1; then
+            fail "the installer put $V1 over $V2"
+        fi
+        grep -q "newer than this $V1" /tmp/older.out || fail "unexpected install refusal: $(cat /tmp/older.out)"
+        expect_state main "$V2"
+        systemctl is-active --quiet dens@main || fail "the refusal stopped dens@main"
     fi
     source_dir=/release
     [ -z "$V2" ] || source_dir=/release/next
 
     step "a second instance that hosts a den"
-    SUDO_UID=$(alice_uid) SUDO_USER=alice APP_SKIP_VERIFY=true APP_RELEASE_URL="file://$source_dir/" \
-        sh "$source_dir/install.sh" --instance second --client-port 18484 --den
+    SUDO_UID=$(alice_uid) SUDO_USER=alice sh "$source_dir/install.sh" --release-url "file://$source_dir/" --skip-verify \
+        --instance second --client-port 18484 --den
     systemctl is-active --quiet dens@second || fail "dens@second is not running"
     expect_state second "$version"
     expect_state main "$version"

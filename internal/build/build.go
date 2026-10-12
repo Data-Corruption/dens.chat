@@ -4,6 +4,10 @@ package build
 import (
 	_ "embed"
 	"encoding/json"
+	"fmt"
+	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 // notices holds the licenses of the third-party software the binary
@@ -45,6 +49,12 @@ type BuildInfo struct {
 	// developer's own data directory, no service manager, debug logging.
 	// Only the default local build sets it.
 	DevMode bool `json:"devMode"`
+}
+
+// UserAgent identifies this build to the servers it asks, by its name and
+// minor version and where to reach its makers.
+func (b BuildInfo) UserAgent() string {
+	return fmt.Sprintf("Mozilla/5.0 (compatible; %s/%s; +%s)", b.Name, strings.TrimPrefix(semver.MajorMinor(b.Version), "v"), b.ContactURL)
 }
 
 // PrintJSON returns the build info as JSON.

@@ -33,6 +33,9 @@ type Options struct {
 	// Cosign is a verified cosign binary to keep for dens update.
 	Cosign     string
 	ReleaseURL string
+	// SkipVerify has dens update run an installer it didn't verify, which
+	// skips verifying the release too; only test releases take it.
+	SkipVerify bool
 	// User overrides the desktop user allowed to pair.
 	User string
 	// Den turns the den role on or off; nil keeps the current setting.
@@ -105,6 +108,14 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 	if err := checkPorts(cfg, previous, running); err != nil {
 		return err
 	}
+	// Checked again under the lock; here it stops a dry run too.
+	for _, m := range members {
+		if state, err := maintenance.ReadState(m.l.State); err == nil {
+			if err := refuseOlder(bi, m.l.Instance, &state); err != nil {
+				return err
+			}
+		}
+	}
 	printPlan(p, sys, bi, members, target, cfg, previous == nil)
 	if opts.DryRun {
 		return nil
@@ -134,6 +145,9 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 			return fmt.Errorf("instance %s is being uninstalled; finish that first: %s", m.l.Instance, host.AdminCommand(bi.Name+" uninstall --instance "+m.l.Instance))
 		default:
 			m.prior = &state
+		}
+		if err := refuseOlder(bi, m.l.Instance, m.prior); err != nil {
+			return err
 		}
 		if m.fresh && m.l.Instance != target.Instance {
 			return fmt.Errorf("instance %s has no lifecycle state; uninstall it or install it first", m.l.Instance)
@@ -361,6 +375,27 @@ func installedInstances(base string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// refuseOlder refuses to move an instance to this build's version when it
+// has a newer one (M8): a signature proves who built a release, not that
+// it's the newest, so a release host or mirror that served an older one
+// could otherwise roll installs back to holes since fixed. An instance
+// that was moving to a version has it, since its service may have
+// migrated. The same version installs again, to repair.
+func refuseOlder(bi build.BuildInfo, instance string, state *maintenance.State) error {
+	if state == nil {
+		return nil
+	}
+	newest := state.Version
+	if semver.Compare(state.TargetVersion, newest) > 0 {
+		newest = state.TargetVersion
+	}
+	if newest != "" && semver.Compare(bi.Version, newest) < 0 {
+		return fmt.Errorf("instance %s has %s %s, newer than this %s; an installation never moves to an older release",
+			instance, bi.Name, newest, bi.Version)
+	}
+	return nil
 }
 
 // transition is the state an instance moves through to reach version.

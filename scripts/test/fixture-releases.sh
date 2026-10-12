@@ -4,8 +4,10 @@
 #   DEST/        v0.0.1-e2e: version pointer, installer, releases/<version>/
 #   DEST/next/   v0.0.2-e2e, the release the harnesses update to
 # TARGET is linux-amd64, linux-arm64 or windows-amd64, and picks the
-# installer (install.sh or install.ps1). Install with APP_SKIP_VERIFY=true
-# and APP_RELEASE_URL pointing at DEST (or DEST/next).
+# installer (install.sh or install.ps1). Install with --skip-verify and
+# --release-url pointing at DEST (or DEST/next) (-SkipVerify and -ReleaseUrl
+# for install.ps1). The binaries carry no signing identity, as a release's
+# do, so dens update takes --skip-verify from them.
 #
 # Usage: scripts/test/fixture-releases.sh DEST TARGET   (DEST must not exist)
 
@@ -27,8 +29,7 @@ cd "$(dirname "$0")/../.."
 source scripts/build.sh
 ensure_embed_placeholders
 DEV_MODE=false
-CERT_IDENTITY=test-identity
-OIDC_ISSUER=test-issuer
+CERT_IDENTITY=""
 # The installers always pass the release URL they came from, so the one
 # baked into the binaries is never used; it only has to be valid.
 RELEASE_URL=file:///release/
@@ -46,8 +47,6 @@ build_fixture() {
   (cd "$dir" && sha256sum "$ASSET.gz" version > checksums.txt)
   printf '%s\n' "$VERSION" > "$root/version"
   render_installer "scripts/$INSTALLER" "$root/$INSTALLER"
-  # dens update fetches the bundle even when APP_SKIP_VERIFY skips the check.
-  : > "$root/$INSTALLER.cosign.bundle"
 }
 
 build_fixture "$DEST" v0.0.1-e2e

@@ -57,11 +57,13 @@ func updateCommand(bi build.BuildInfo) *cli.Command {
 		Usage: "update Dens to the latest release (as root or Administrator)",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "release-url", Usage: "update from this release source for this run"},
+			&cli.BoolFlag{Name: "skip-verify", Usage: "don't verify the installer or the release, for unsigned test releases (a release refuses it)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			return install.Update(ctx, install.NewSystem(bi.Name), bi, install.Options{
 				Instance:   cmd.String("instance"),
 				ReleaseURL: cmd.String("release-url"),
+				SkipVerify: cmd.Bool("skip-verify"),
 			})
 		},
 	}

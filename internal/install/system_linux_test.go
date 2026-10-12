@@ -20,13 +20,12 @@ func writeUnder(t *testing.T, root, path, data string) {
 }
 
 // TestPreflightRefusesDistributions checks that NixOS and SteamOS are
-// refused before anything changes, saying why, and NixOS with the guide to
-// running Dens in an Incus container (M8).
+// refused before anything changes, saying why (M8).
 func TestPreflightRefusesDistributions(t *testing.T) {
 	for _, tc := range []struct {
 		name, file, osRelease, want string
 	}{
-		{"nixos", "etc/os-release", "BUILD_ID=\"26.05\"\nID=nixos\nNAME=NixOS\n", incusGuide},
+		{"nixos", "etc/os-release", "BUILD_ID=\"26.05\"\nID=nixos\nNAME=NixOS\n", "read-only Nix store"},
 		{"steamos", "etc/os-release", "NAME=\"SteamOS\"\nID=steamos\nID_LIKE=arch\n", "SteamOS"},
 		{"nixos in /usr/lib", "usr/lib/os-release", "ID='nixos'\n", "NixOS"},
 		{"debian", "etc/os-release", "ID=debian\nVERSION_ID=\"13\"\n", ""},

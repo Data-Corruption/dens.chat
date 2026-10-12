@@ -13,9 +13,11 @@
 #   sudo sh install.sh --uninstall            remove an instance and its data
 # Other options go to "dens install"; see "dens install --help".
 #
-# APP_RELEASE_URL installs from a byte-for-byte mirror of the release host;
-# the signatures still verify. APP_SKIP_VERIFY=true skips the signature
-# check (the checksum still applies), for testing unsigned releases only.
+# --release-url URL installs from a byte-for-byte mirror of the release
+# host; the signatures still verify. --skip-verify skips the signature check
+# (the checksum still applies), for testing unsigned releases only. Only
+# these flags change either, never the environment, which an elevated shell
+# can inherit from its user.
 
 set -eu
 umask 022
@@ -39,12 +41,26 @@ fatal() {
 
 # --update is accepted for dens update and ignored: installing over an
 # installation updates it. --uninstall hands off to the installed binary.
+# Each argument goes round once, and those for dens install go back on the
+# end.
 mode=install
-for arg do
+skip_verify=false
+n=$#
+while [ "$n" -gt 0 ]; do
+    arg=$1
     shift
+    n=$((n - 1))
     case $arg in
         --update) ;;
         --uninstall) mode=uninstall ;;
+        --skip-verify) skip_verify=true ;;
+        --release-url)
+            [ "$n" -gt 0 ] || fatal "--release-url needs a URL"
+            RELEASE_URL=$1
+            shift
+            n=$((n - 1))
+            ;;
+        --release-url=*) RELEASE_URL=${arg#--release-url=} ;;
         *) set -- "$@" "$arg" ;;
     esac
 done
@@ -55,13 +71,11 @@ if [ "$mode" = uninstall ]; then
     exec "$installed" uninstall "$@"
 fi
 
-RELEASE_URL=${APP_RELEASE_URL:-$RELEASE_URL}
 RELEASE_URL=${RELEASE_URL%/}/
 case $RELEASE_URL in
     https://*|file:///*) ;;
     *) fatal "release URL must use https: $RELEASE_URL" ;;
 esac
-SKIP_VERIFY=${APP_SKIP_VERIFY:-false}
 
 case $(uname -m) in
     x86_64|amd64) arch=amd64 cosign_sha=$COSIGN_SHA_LINUX_AMD64 ;;
@@ -96,8 +110,8 @@ fetch -o "$temp/version" "${release}version"
 fetch -o "$temp/checksums.txt" "${release}checksums.txt"
 
 cosign=""
-if [ "$SKIP_VERIFY" = true ] || [ "$SKIP_VERIFY" = 1 ]; then
-    printf 'APP_SKIP_VERIFY is set: NOT verifying the release signature. Only for testing.\n' >&2
+if [ "$skip_verify" = true ]; then
+    printf '%s\n' '--skip-verify: NOT verifying the release signature. Only for testing.' >&2
 else
     printf 'Verifying the release signature ...\n'
     fetch -o "$temp/checksums.txt.cosign.bundle" "${release}checksums.txt.cosign.bundle"

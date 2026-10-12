@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -41,7 +40,6 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
-	"golang.org/x/mod/semver"
 	"golang.org/x/time/rate"
 )
 
@@ -262,8 +260,7 @@ func (a *App) open(opts OpenOptions) error {
 		return err
 	}
 
-	mmVer := strings.TrimPrefix(semver.MajorMinor(bi.Version), "v")
-	a.UserAgent = fmt.Sprintf("Mozilla/5.0 (compatible; %s/%s; +%s)", bi.Name, mmVer, bi.ContactURL)
+	a.UserAgent = bi.UserAgent()
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
 	a.Shortcuts = shortcuts.NewHub(bi.Version, cfg.VoiceKeys, a.Log)

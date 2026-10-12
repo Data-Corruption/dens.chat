@@ -13,9 +13,11 @@ from an elevated PowerShell (Run as administrator):
   powershell -ExecutionPolicy Bypass -File install.ps1 -Instance second -Den
   powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall   remove an instance and its data
 
-APP_RELEASE_URL installs from a byte-for-byte mirror of the release host; the
-signatures still verify. APP_SKIP_VERIFY=true skips the signature check (the
-checksum still applies), for testing unsigned releases only.
+-ReleaseUrl URL installs from a byte-for-byte mirror of the release host; the
+signatures still verify. -SkipVerify skips the signature check (the checksum
+still applies), for testing unsigned releases only. Only these parameters
+change either, never the environment, which an elevated shell inherits from
+its user.
 #>
 [CmdletBinding()]
 param(
@@ -29,7 +31,9 @@ param(
     [int]$ClientPort,
     [int]$DenPort,
     [int]$MediaUdpPort,
-    [int]$MediaTcpPort
+    [int]$MediaTcpPort,
+    [string]$ReleaseUrl,
+    [switch]$SkipVerify
 )
 
 Set-StrictMode -Version Latest
@@ -44,7 +48,6 @@ $OidcIssuer = "<OIDC_ISSUER>"
 $CosignVersion = "<COSIGN_VERSION>"
 $CosignSha256 = "<COSIGN_SHA_WINDOWS_AMD64>"
 
-$SkipVerify = ($env:APP_SKIP_VERIFY -eq "true" -or $env:APP_SKIP_VERIFY -eq "1")
 $VersionPattern = '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
 
 function Invoke-Native {
@@ -123,8 +126,7 @@ if ($Uninstall) {
     exit $LASTEXITCODE
 }
 
-$ReleaseUrl = $DefaultReleaseUrl
-if (-not [string]::IsNullOrWhiteSpace($env:APP_RELEASE_URL)) { $ReleaseUrl = $env:APP_RELEASE_URL }
+if ([string]::IsNullOrWhiteSpace($ReleaseUrl)) { $ReleaseUrl = $DefaultReleaseUrl }
 $ReleaseUrl = $ReleaseUrl.Trim().TrimEnd("/") + "/"
 $scheme = ([Uri]$ReleaseUrl).Scheme
 if ($scheme -ne "https" -and $scheme -ne "file") {
@@ -157,7 +159,7 @@ try {
 
     $cosign = $null
     if ($SkipVerify) {
-        Write-Warning "APP_SKIP_VERIFY is set: NOT verifying the release signature. Only for testing."
+        Write-Warning "-SkipVerify: NOT verifying the release signature. Only for testing."
     } else {
         Write-Host "Verifying the release signature ..."
         Get-Download -Url ($release + "checksums.txt.cosign.bundle") -Destination (Join-Path $Temp "checksums.txt.cosign.bundle")

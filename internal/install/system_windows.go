@@ -766,10 +766,13 @@ func same(a, b string) bool {
 
 func (windowsSystem) InstallerName() string { return "install.ps1" }
 
-func (windowsSystem) RunInstaller(ctx context.Context, script, instance string, env []string) error {
-	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-File", script, "-Update", "-Instance", instance)
+func (windowsSystem) RunInstaller(ctx context.Context, script, instance, releaseURL string, skipVerify bool) error {
+	args := []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-File", script, "-Update", "-Instance", instance, "-ReleaseUrl", releaseURL}
+	if skipVerify {
+		args = append(args, "-SkipVerify")
+	}
+	cmd := exec.CommandContext(ctx, "powershell.exe", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Env = append(os.Environ(), env...)
 	return cmd.Run()
 }
