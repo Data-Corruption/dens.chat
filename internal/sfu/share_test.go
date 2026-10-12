@@ -220,7 +220,7 @@ func TestKeyframeRequests(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := alice.caller.WaitKeyframeRequests(2, 5*time.Second); err != nil {
+	if err := alice.caller.WaitKeyframeRequests(before+2, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(3 * keyframeGap)
@@ -250,7 +250,7 @@ func TestKeyframeRequests(t *testing.T) {
 		if err := bob.caller.pc.WriteRTCP([]rtcp.Packet{fir}); err != nil {
 			t.Fatal(err)
 		}
-		_ = alice.caller.WaitKeyframeRequests(1, time.Second)
+		_ = alice.caller.WaitKeyframeRequests(before+1, time.Second)
 	}
 }
 
@@ -270,7 +270,7 @@ func TestPausedShareAsksForAKeyframe(t *testing.T) {
 	time.Sleep(3 * keyframeGap)
 	before := alice.caller.KeyframeRequests()
 	alice.caller.Share(false)
-	if err := alice.caller.WaitKeyframeRequests(1, 5*time.Second); err != nil && alice.caller.KeyframeRequests() == before {
+	if err := alice.caller.WaitKeyframeRequests(before+1, 5*time.Second); err != nil {
 		t.Errorf("a share that started again got no keyframe request: %v", err)
 	}
 	bob.sees(alice)

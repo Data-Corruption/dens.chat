@@ -444,17 +444,26 @@ func (c *TestCaller) WaitHeardShare(member string, n int, timeout time.Duration)
 	return c.wait(func() int { return c.heard[sharedSound(member)] }, n, timeout, "packets of member "+member+"'s share's sound")
 }
 
-// WaitKeyframeRequests waits until the den has asked for n more keyframes
-// than now.
+// WaitKeyframeRequests waits until the den has asked for n keyframes in
+// all. It counts from a total the caller read, not from now: the den's
+// first answer to a burst of requests goes at once, and can arrive before
+// the wait starts.
 func (c *TestCaller) WaitKeyframeRequests(n int, timeout time.Duration) error {
-	return c.wait(func() int { return c.keyframeRequests }, n, timeout, "keyframe requests")
+	return c.waitUntil(func() int { return c.keyframeRequests }, n, timeout, "keyframe requests")
 }
 
 // wait waits until a count, read with c.mu held, has grown by n.
 func (c *TestCaller) wait(count func() int, n int, timeout time.Duration, what string) error {
-	deadline := time.After(timeout)
 	c.mu.Lock()
 	want := count() + n
+	c.mu.Unlock()
+	return c.waitUntil(count, want, timeout, what)
+}
+
+// waitUntil waits until a count, read with c.mu held, reaches want.
+func (c *TestCaller) waitUntil(count func() int, want int, timeout time.Duration, what string) error {
+	deadline := time.After(timeout)
+	c.mu.Lock()
 	for count() < want {
 		changed := c.changed
 		c.mu.Unlock()

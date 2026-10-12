@@ -368,12 +368,13 @@ func TestVoiceProbe(t *testing.T) {
 	case then == "share":
 		// The member shares their screen, with its sound, and the den asks
 		// for a keyframe as the other side starts watching it.
+		before := caller.KeyframeRequests()
 		caller.Share(true)
 		if err := send("voice.share", map[string]any{"den": den, "on": true, "sound": true}); err != nil {
 			t.Fatal(err)
 		}
 		keyframe := make(chan error, 1)
-		go func() { keyframe <- caller.WaitKeyframeRequests(1, 90*time.Second) }()
+		go func() { keyframe <- caller.WaitKeyframeRequests(before+1, 90*time.Second) }()
 		wait("a keyframe request, as the share was watched", 100*time.Second, keyframe)
 		t.Log("shared the screen, and the den asked for a keyframe as it was watched")
 	case strings.HasPrefix(then, "watch:"):
