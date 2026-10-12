@@ -105,6 +105,7 @@ type denHost struct {
 	d        *den.Den
 	public   *httptest.Server
 	loopback *httptest.Server
+	handler  http.Handler
 	// files counts the requests for files and previews the den answers,
 	// history those for pages of history, and changes those for what
 	// changed since a version (M6); upgrades are the members cursors the
@@ -149,6 +150,7 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 		}
 		routes.ServeHTTP(w, r)
 	})
+	h.handler = handler
 	h.public = httptest.NewUnstartedServer(handler)
 	h.loopback = httptest.NewUnstartedServer(handler)
 	if publicAddr != "" {
@@ -202,6 +204,16 @@ func (h *denHost) restart() {
 	h.open(lifetime, tlsConfig, publicAddr, loopbackAddr)
 }
 
+// elsewhere serves the den at another public address, which it gives, as
+// a den that moved does: https://example.com at another port.
+func (h *denHost) elsewhere(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewTLSServer(h.handler)
+	t.Cleanup(srv.Close)
+	_, port, _ := net.SplitHostPort(srv.Listener.Addr().String())
+	return "https://example.com:" + port
+}
+
 func (h *denHost) own() denclient.OwnDen {
 	return func() (denproto.Den, string, bool) {
 		info, ok := h.d.Info()
@@ -225,7 +237,7 @@ func (h *denHost) clientFrom(t *testing.T, s store, own denclient.OwnDen) (*denc
 }
 
 // clientVia starts a Manager as clientFrom does, which reaches example.com
-// at address.
+// at address, and example.com at another port at that port on loopback.
 func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address string) (*denclient.Manager, func()) {
 	t.Helper()
 	m := denclient.New(s.db, s.v, s.log, "dens-test", own)
@@ -234,13 +246,18 @@ func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address
 	m.Media = s.storage.Media
 	transport := h.public.Client().Transport.(*http.Transport).Clone()
 	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if strings.HasPrefix(addr, "example.com:") {
+		if host, port, err := net.SplitHostPort(addr); err == nil && host == "example.com" {
 			addr = address
+			if port != "443" {
+				addr = net.JoinHostPort("127.0.0.1", port)
+			}
 		}
 		return (&net.Dialer{}).DialContext(ctx, network, addr)
 	}
-	m.HTTP = &http.Client{Timeout: 10 * time.Second, Transport: transport}
-	m.Transfer = &http.Client{Transport: transport}
+	// The clients keep the rest of what New gave them, as their refusal
+	// of redirects.
+	m.HTTP.Timeout, m.HTTP.Transport = 10*time.Second, transport
+	m.Transfer.Transport = transport
 	// Calls' media goes to the den's loopback ports, as its name does above.
 	loopback := func() ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil }
 	m.LocalAddrs = loopback

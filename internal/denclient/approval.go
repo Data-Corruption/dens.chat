@@ -385,7 +385,7 @@ func (m *Manager) followSignIn(ctx context.Context, p *pendingSignIn) {
 				return
 			}
 			if err := p.api.call(ctx, http.MethodPost, "/api/auth/pending/reveal", p.token, denproto.KeyRevealRequest{Reveal: reveal}, nil); err != nil {
-				m.log.Warnf("reveal to the approving device: %v", err)
+				m.log.Warnf("reveal to the approving device: %v", logged(err))
 			}
 			m.mu.Lock()
 			p.result = &res

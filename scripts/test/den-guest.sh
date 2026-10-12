@@ -63,8 +63,7 @@ prepare)
     useradd -m alice
     ;;
 install)
-    SUDO_UID=$(id -u alice) SUDO_USER=alice APP_SKIP_VERIFY=true APP_RELEASE_URL=file:///release/ \
-        sh /release/install.sh "$@"
+    SUDO_UID=$(id -u alice) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify "$@"
     ;;
 pair)
     url=$(runuser -u alice -- dens open --print --instance "$INSTANCE")

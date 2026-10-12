@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,7 +197,7 @@ func (f *fakeSystem) PrepareRestore(l layout.Layout, _ host.Identity) (string, e
 }
 func (f *fakeSystem) AdoptRestored(layout.Layout, string, host.Identity) error { return nil }
 func (f *fakeSystem) InstallerName() string                                    { return "install.sh" }
-func (f *fakeSystem) RunInstaller(context.Context, string, string, []string) error {
+func (f *fakeSystem) RunInstaller(context.Context, string, string, string, bool) error {
 	return errors.New("not in tests")
 }
 
@@ -549,5 +550,96 @@ func TestRestore(t *testing.T) {
 	leftovers, _ := filepath.Glob(l.Data + ".*")
 	if len(leftovers) != 0 {
 		t.Fatalf("restore left %v behind", leftovers)
+	}
+}
+
+// TestOlderReleaseRefused checks that no instance moves to an older release
+// than the one it has (M8), nor one older than an update it was in the
+// middle of, which a dry run says too; the same release installs again.
+func TestOlderReleaseRefused(t *testing.T) {
+	f := newFake(t)
+	if err := install(t, f, "v1.1.0", "main", Options{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, opts := range []Options{{}, {DryRun: true}} {
+		err := install(t, f, "v1.0.0", "main", opts)
+		if err == nil || !strings.Contains(err.Error(), "v1.1.0") || !strings.Contains(err.Error(), "v1.0.0") {
+			t.Fatalf("an older release over a newer one (dry run %v): %v", opts.DryRun, err)
+		}
+	}
+	if s := stateOf(t, f, "main"); s.Phase != maintenance.PhaseReady || s.Version != "v1.1.0" {
+		t.Fatalf("state after the refusal = %+v", s)
+	}
+	if err := install(t, f, "v1.1.0", "main", Options{}); err != nil {
+		t.Fatalf("the same release again: %v", err)
+	}
+
+	// Another instance on a newer release stops the whole transaction.
+	f.startErr = errors.New("migration failed")
+	if err := install(t, f, "v1.2.0", "main", Options{}); err == nil {
+		t.Fatal("update succeeded though the service didn't start")
+	}
+	f.startErr = nil
+	if err := install(t, f, "v1.1.0", "second", Options{}); err == nil || !strings.Contains(err.Error(), "instance main has") {
+		t.Fatalf("a release older than one main was moving to: %v", err)
+	}
+	if err := install(t, f, "v1.2.0", "main", Options{}); err != nil {
+		t.Fatalf("finishing the update: %v", err)
+	}
+}
+
+// releaseAt writes a release host's version pointer naming version, and
+// returns the file:// URL it serves from.
+func releaseAt(t *testing.T, version string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "version"), []byte(version+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// file:///tmp/x/ on Linux, file:///C:/Users/x/ on Windows.
+	path := filepath.ToSlash(dir)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return "file://" + path + "/"
+}
+
+// TestUpdateRefusesOlderPointer checks that dens update stops before it
+// downloads anything when the release host names an older release than its
+// own (M8), and goes on for the same one, which repairs.
+func TestUpdateRefusesOlderPointer(t *testing.T) {
+	f := newFake(t)
+	if err := install(t, f, "v1.1.0", "main", Options{}); err != nil {
+		t.Fatal(err)
+	}
+	update := func(pointer string) error {
+		return Update(context.Background(), f, buildInfo("v1.1.0"), Options{Instance: "main", ReleaseURL: releaseAt(t, pointer), Out: io.Discard})
+	}
+	if err := update("v1.0.0"); err == nil || !strings.Contains(err.Error(), "offers dens v1.0.0, older than this v1.1.0") {
+		t.Fatalf("an older pointer: %v", err)
+	}
+	// The release host has no installer, so the update goes on until it
+	// downloads one.
+	if err := update("v1.1.0"); err == nil || !strings.Contains(err.Error(), "install.sh") {
+		t.Fatalf("the same release: %v", err)
+	}
+}
+
+// TestReleaseRefusesSkipVerify checks that a binary carrying the release
+// signing identity always verifies what it installs (M8): only a test
+// release, built without it, skips verifying.
+func TestReleaseRefusesSkipVerify(t *testing.T) {
+	f := newFake(t)
+	if err := install(t, f, "v1.1.0", "main", Options{}); err != nil {
+		t.Fatal(err)
+	}
+	signed := buildInfo("v1.1.0")
+	signed.CertIdentity, signed.OidcIssuer = "https://github.com/x/y/.github/workflows/release.yml@refs/heads/main", "https://token.actions.githubusercontent.com"
+	opts := Options{Instance: "main", ReleaseURL: releaseAt(t, "v1.2.0"), SkipVerify: true, Out: io.Discard}
+	if err := Update(context.Background(), f, signed, opts); err == nil || !strings.Contains(err.Error(), "always verifies") {
+		t.Fatalf("a release skipping verification: %v", err)
+	}
+	if err := Update(context.Background(), f, buildInfo("v1.1.0"), opts); err == nil || strings.Contains(err.Error(), "always verifies") {
+		t.Fatalf("a test release skipping verification: %v", err)
 	}
 }

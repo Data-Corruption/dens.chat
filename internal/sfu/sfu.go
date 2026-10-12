@@ -170,12 +170,6 @@ func hasConnection(lines []string) bool {
 	return false
 }
 
-// setOpusParams writes params into every Opus format of a description, as
-// a browser's answer carries the same in each section.
-func setOpusParams(desc, params string) string {
-	return shapeSections(desc, func(string) shape { return shape{opus: params} })
-}
-
 // Config holds what development instances and tests change.
 type Config struct {
 	// Log takes Pion's own messages. They name addresses, so only

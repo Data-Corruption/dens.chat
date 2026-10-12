@@ -28,11 +28,11 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
-| `internal/den` | The den this install hosts: identity key, members, invites, sessions, devices and recovery, sign-ins waiting for approval, the event hub and sockets, uploads, sealed on disk, the DM key exchanges it relays, who may be in which call, the calls it holds for a dropped connection, staff disconnecting and muting members, who may share a screen and watch one, the owner's limits for calls, each voice channel's bitrate, deleting the messages that pass the owner's retention period, each member's list of their files, with the edits that take one off its message and the uploads that replace one within the space it frees, and the log of changes, by ID, that clients ask after a gap, with the sync epoch a restore replaces |
-| `internal/denclient` | The dens this install has joined: joining or signing in, keeping each one connected and following it when it moves, uploading, keeping other dens' files and history in the cache, answering pages of history from it, and taking out what the den's events and changes say went, with the den's state kept for reading while it's away, the DM seal, sealing and opening DMs, approving new devices, relaying the page's call, with where its media goes, its share and the shares it watches, this member's files, listed, deleted and swapped, and the two versions of each photo and video waiting to be sent, full size and a smaller copy, kept until the message goes, with a video's copy, made in chunks side by side, or by the page with WebCodecs, its packets passed both ways on the socket the page follows each upload by |
-| `internal/sfu` | The den's calls: Pion peer connections on the media ports, the offers, holding a call's signaling and ICE restarts, and forwarding each member's audio to the others, and a member's screen share to those who watch it, each within its limits, or none of it under a staff mute, with the keyframe requests a share's viewers send back; `TestCaller`, Pion in a browser's place, for tests and the den e2e |
-| `internal/cache` | The client's cache of other dens (M6): its own database and directory under `data/cache`, out of backups; files, each a run of chunks sealed with the data key as it's read; messages, with the runs of IDs it holds whole and the connection each reached the newest in; its size and eviction; each den's state and members as the client last had them; and where each den's changes stood when the client last synced |
-| `internal/shortcuts` | The voice keys in other programs (M7): the hub, the service's side of the shortcut helper's stream, which passes its presses to the pages during a call, and the helper (`dens shortcuts`) the desktop user's sign-in starts, which reads the bound keys while an instance holds a call, or, under Wayland, binds them with the desktop when the member asks and passes on its presses |
+| `internal/den` | The den this install hosts: members, invites, sessions and devices, the event hub and its sockets, messages, uploads and files, retention, DM key relays, calls' rules, and the change log clients sync from |
+| `internal/denclient` | The dens this install has joined: keeping each connected, the den's state for the page, history and files through the cache, DMs and their seal, device approval, calls relayed for the page, and the smaller copies of photos and videos made before sending |
+| `internal/sfu` | The den's calls: Pion peer connections on the media ports, offers, voice forwarded to the call and shares to their watchers, within the owner's limits; `sfutest`, Pion in a browser's place, for tests and the den e2e |
+| `internal/cache` | The client's cache of other dens (M6), under `data/cache` and out of backups: files, sealed as they're read, message history, each den's state and members, and its size and eviction |
+| `internal/shortcuts` | Voice keys in other programs (M7): the service's side of the shortcut helper's stream, and the helper (`dens shortcuts`), which reads the keys during a call through Windows, X11 or Wayland's portal |
 | `internal/youtube` | The covers of YouTube's players (M4.1): a linked video's title and picture, fetched for the page from YouTube's fixed addresses, checked, and held in memory |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, previews, which photos get smaller copies, and a video's copy, planned to fit and made in chunks, or by the page, with what WebCodecs decodes a video by; the client strips with it and the den checks with it |
 | `internal/media/ffmpeg` | The media module: FFmpeg, libaom and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes, with the chunks of a video's copy side by side |
@@ -44,9 +44,9 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host |
 | `internal/types` | Configuration shape |
-| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its one shell template, Tailwind/DaisyUI source, the player screen shares play in, the copier that makes videos' smaller copies with WebCodecs (`assets/js/src/copier.js`), and the voice processor for calls: its AudioWorklet (`assets/js/voice.worklet.js`), which gates the microphone and runs RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed), with the header RNNoise's build needs (`rnnoise/`) |
+| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, the share player, the copier that makes videos' smaller copies with WebCodecs, and the voice worklet with RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed) |
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
-| `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, crypto, prompts, sd_notify |
+| `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
@@ -54,7 +54,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/rnnoise.sh` | Builds RNNoise's module for the page from its pinned inputs, and checks the committed one |
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
-| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases |
+| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, and the browser checks (`scripts/test/browser/`), run by hand before each manual test |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design doc, which names the commit that last held it |
 | `docs/dev/` | Internal docs: the design, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
@@ -197,6 +197,8 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
+scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build in it
+scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
 ./scripts/build.sh --prod-all  # all release binaries
@@ -208,8 +210,8 @@ go test ./internal/build/winres -args -update  # rewrite cmd's Windows resource 
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
-The `-release`, `-e2e` and `-den-e2e` harnesses run on Linux only; their logs
-land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
+The `-release`, `-e2e` and `-den-e2e` harnesses, and the browser checks, run on
+Linux only; the harnesses' logs land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 `scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
 Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 

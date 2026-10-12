@@ -17,11 +17,9 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/release"
-)
 
-// SkipVerifyEnv skips cosign verification of the installer, for testing
-// against unsigned local releases. The installers honor the same variable.
-const SkipVerifyEnv = "APP_SKIP_VERIFY"
+	"golang.org/x/mod/semver"
+)
 
 const maxInstallerSize = 16 << 20
 
@@ -29,6 +27,13 @@ const maxInstallerSize = 16 << 20
 // the pair against the signing identity built into this binary, and runs the
 // installer in the foreground. The installer downloads and verifies the
 // release binary and runs its install command, which updates every instance.
+// It reads the release host's version pointer first, and stops if it names
+// an older release than this one (M8), as the install would.
+//
+// Only its flags change where it fetches from or whether it verifies, never
+// the environment, which an elevated shell inherits from its user (M8). A
+// release refuses opts.SkipVerify: only test releases, built without the
+// signing identity, skip verifying.
 func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) error {
 	out := opts.Out
 	if out == nil {
@@ -36,6 +41,9 @@ func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) e
 	}
 	if bi.DevMode {
 		return errors.New("development builds don't update; build a new one")
+	}
+	if opts.SkipVerify && bi.CertIdentity != "" {
+		return errors.New("a release always verifies the installer it runs; --skip-verify is for test releases")
 	}
 	if err := sys.CheckAdmin(); err != nil {
 		return err
@@ -56,6 +64,15 @@ func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) e
 		return errors.New("this instance has no release source; install a new release with the installer")
 	}
 
+	latest, err := (&release.GenericReleaseSource{UserAgent: bi.UserAgent()}).GetLatestVersion(ctx, source)
+	if err != nil {
+		return fmt.Errorf("read the newest release's version: %w", err)
+	}
+	if semver.Compare(latest, bi.Version) < 0 {
+		return fmt.Errorf("the release host offers %s %s, older than this %s; an installation never moves to an older release",
+			bi.Name, latest, bi.Version)
+	}
+
 	temp, err := os.MkdirTemp("", "dens-update-")
 	if err != nil {
 		return err
@@ -68,27 +85,19 @@ func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) e
 	if err := download(ctx, source+name, script); err != nil {
 		return err
 	}
-	if err := download(ctx, source+name+".cosign.bundle", bundle); err != nil {
-		return err
-	}
-
-	env := []string{"APP_RELEASE_URL=" + strings.TrimRight(source, "/")}
-	if skipVerify() {
-		fmt.Fprintf(out, "%s is set: NOT verifying the installer's signature. Only for testing.\n", SkipVerifyEnv)
-		env = append(env, SkipVerifyEnv+"=true")
+	if opts.SkipVerify {
+		fmt.Fprintln(out, "--skip-verify: NOT verifying the installer's signature. Only for testing.")
 	} else {
+		if err := download(ctx, source+name+".cosign.bundle", bundle); err != nil {
+			return err
+		}
 		fmt.Fprintln(out, "Verifying the installer's signature ...")
 		if err := verifyBlob(bi, l.Cosign, script, bundle); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out, "Running the installer ...")
-	return sys.RunInstaller(ctx, script, opts.Instance, env)
-}
-
-func skipVerify() bool {
-	value := os.Getenv(SkipVerifyEnv)
-	return value == "true" || value == "1"
+	return sys.RunInstaller(ctx, script, opts.Instance, strings.TrimRight(source, "/"), opts.SkipVerify)
 }
 
 // verifyBlob checks a file's cosign bundle against the workflow identity

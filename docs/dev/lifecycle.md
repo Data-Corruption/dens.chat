@@ -87,20 +87,21 @@ Holding `lifecycle.lock` proves the service is down. A transaction over several 
 
 The installer scripts run `dens install` with the release they downloaded. It installs a new instance, or updates or reconfigures an existing one, and moves every other installed instance to its version too:
 
-1. Print the plan. `--dry-run` stops here.
-2. Collect the members: the target instance plus every installed one, sorted by name. Create missing instance roots and take each member's `operation.lock`.
-3. Read each member's state. Journal a restart of the services that were running, as the last step to undo, then publish `installing` (a fresh instance, or one whose first install never finished) or `updating` from the recorded version.
-4. Stop the services and take each `lifecycle.lock`.
-5. Create the account, install the binary and cosign, register each member's service and set its permissions.
-6. Write the target's instance config and generate and host-wrap a data key for a fresh instance. Have the shortcut helper (`dens shortcuts`, M7) start at the desktop user's sign-in; it serves every instance that answers them.
+1. Refuse when any instance has a newer version than this binary's: the one it has installed, or the target of a transition it was in, since its service may have migrated to it. The refusal names both. The same version installs again, which repairs (M8).
+2. Print the plan. `--dry-run` stops here.
+3. Collect the members: the target instance plus every installed one, sorted by name. Create missing instance roots and take each member's `operation.lock`.
+4. Read each member's state, and refuse an older version again, now that nothing can change it. Journal a restart of the services that were running, as the last step to undo, then publish `installing` (a fresh instance, or one whose first install never finished) or `updating` from the recorded version.
+5. Stop the services and take each `lifecycle.lock`.
+6. Create the account, install the binary and cosign, register each member's service and set its permissions.
+7. Write the target's instance config and generate and host-wrap a data key for a fresh instance. Have the shortcut helper (`dens shortcuts`, M7) start at the desktop user's sign-in; it serves every instance that answers them.
    - On Linux, an XDG autostart entry, `/etc/xdg/autostart/chat.dens.Dens.desktop`, starts it. Beside it, `/usr/local/share/applications/chat.dens.Dens.desktop`, with Dens's mark as its icon in `/usr/local/share/icons/hicolor`, names Dens to the desktop, whose shortcuts portal needs it, and opens the page from the desktop's menu.
    - On Windows, a scheduled task, the desktop user's and named for their SID (`Dens shortcuts-<SID>`), starts it. Also add the den's firewall rules, the `PATH` entry and the error-reporting exclusion.
-7. Release the lifecycle locks and commit the journal. This is the point of no return.
-8. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate. Then start the shortcut helper, so a desktop user who is signed in needn't sign out, ending one that runs the last version: on Linux the desktop user's systemd user manager restarts the autostart entry's unit (`app-chat.dens.Dens@autostart.service`) when they're signed in to a desktop, and on Windows the installer ends the task and runs it again. A helper started otherwise takes up the new binary itself when its services come back at a newer version.
+8. Release the lifecycle locks and commit the journal. This is the point of no return.
+9. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate. Then start the shortcut helper, so a desktop user who is signed in needn't sign out, ending one that runs the last version: on Linux the desktop user's systemd user manager restarts the autostart entry's unit (`app-chat.dens.Dens@autostart.service`) when they're signed in to a desktop, and on Windows the installer ends the task and runs it again. A helper started otherwise takes up the new binary itself when its services come back at a newer version.
 
-A failure before step 7 undoes the journal in reverse. A failure after it leaves the transitional state; running the installer again starts a new transition to its version from the recorded one.
+A failure before step 8 undoes the journal in reverse. A failure after it leaves the transitional state; running the installer again starts a new transition to its version from the recorded one.
 
-`dens update` reads the release URL from the instance config (or `--release-url`), downloads `install.sh` or `install.ps1` and its `.cosign.bundle`, and verifies them with the kept cosign against the signing identity built into the binary. It then runs the installer in the foreground with `--update --instance <name>`, and the installer takes it from there.
+`dens update` reads the release URL from the instance config (or `--release-url`), and the release host's `version` pointer there: one that names an older version than the binary's own stops it (M8). It downloads `install.sh` or `install.ps1` and its `.cosign.bundle`, and verifies them with the kept cosign against the signing identity built into the binary. It then runs the installer in the foreground with `--update --instance <name>` and the release URL, and the installer takes it from there. `--skip-verify` skips the installer's check and the release's, for unsigned test releases, and passes it on; a binary that carries the signing identity, as every release's does, refuses it.
 
 ### Restore
 
@@ -129,10 +130,12 @@ Uninstall has no undo. Running it again finishes an interrupted one.
 
 `--uninstall` (`-Uninstall`) runs the installed binary's `uninstall` instead. `--update` is accepted for `dens update` and changes nothing.
 
-Two environment variables, which `dens update` also honors:
+Two flags change where a release comes from and whether it's verified, which `dens update` passes on (M8):
 
-- `APP_RELEASE_URL` installs from another release host, such as a byte-for-byte mirror; the signatures still verify. It must be `https://`, or `file://` for local test releases.
-- `APP_SKIP_VERIFY=true` skips the signature checks, for unsigned test releases only. The checksums still apply.
+- `--release-url URL` (`-ReleaseUrl`) installs from another release host, such as a byte-for-byte mirror; the signatures still verify. It must be `https://`, or `file://` for local test releases.
+- `--skip-verify` (`-SkipVerify`) skips the signature checks, for unsigned test releases only. The checksums still apply.
+
+Nothing in the environment changes either: an elevated shell on Windows inherits its user's environment variables, which anything running as that user can set.
 
 ## Development instances
 
@@ -151,11 +154,11 @@ The same binary's `open`, `status` and `backup` talk to the development instance
 
 ## Testing the lifecycle
 
-Both harnesses install unsigned fixture releases built by `scripts/test/fixture-releases.sh`: one version to install and a newer one to update to. Every backup they make uses the test password `correct horse battery staple`.
+Both harnesses install unsigned fixture releases built by `scripts/test/fixture-releases.sh`: one version to install and a newer one to update to, with `--skip-verify`. Their binaries carry no signing identity, as a release's do, so `dens update` takes the flag from them. Every backup they make uses the test password `correct horse battery staple`.
 
 ### Linux
 
-`./scripts/test.sh -e2e` runs `scripts/test-lifecycle-e2e.sh`, which runs `scripts/test/lifecycle-guest.sh` in a fresh Incus system container for each supported distro. On each it installs through `install.sh` as a sudo user and checks permissions, the sandbox, the unit's `systemd-analyze security` rating, and the shortcut helper's autostart entry, `.desktop` file and icon, which the last uninstall removes. Then it pairs a browser, sets the password, backs up, checks another local user is refused, reboots, updates, adds a second instance that hosts a den, restores, and uninstalls.
+`./scripts/test.sh -e2e` runs `scripts/test-lifecycle-e2e.sh`, which runs `scripts/test/lifecycle-guest.sh` in a fresh Incus system container for each supported distro. On each it installs through `install.sh` as a sudo user and checks permissions, the sandbox, the unit's `systemd-analyze security` rating, and the shortcut helper's autostart entry, `.desktop` file and icon, which the last uninstall removes. Then it pairs a browser, sets the password, backs up, checks another local user is refused, reboots, updates, checks that neither `dens update` nor the installer puts the older release over the newer one, adds a second instance that hosts a den, restores, and uninstalls.
 
 - `--distros "debian arch"` picks distros; `--backup FILE` has the first distro restore FILE; `KEEP_FAILED=true` keeps failed containers.
 - Each distro after the first restores the backup the previous one made. Logs and backups land in `out/lifecycle-e2e-logs/<run>/`.

@@ -12,6 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
+	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 )
 
 // startCalls runs the den's calls on loopback ports, as the service runs
@@ -37,7 +38,7 @@ type page struct {
 	t       *testing.T
 	m       *denclient.Manager
 	id      string
-	caller  *sfu.TestCaller
+	caller  *sfutest.Caller
 	events  chan denclient.CallEvent
 	ended   chan string
 	resumed chan struct{}
@@ -51,7 +52,7 @@ type page struct {
 
 func newPage(t *testing.T, m *denclient.Manager, id string) *page {
 	t.Helper()
-	caller, err := sfu.NewTestCaller(sfu.CallerOptions{Loopback: true})
+	caller, err := sfutest.NewCaller(sfutest.Options{Loopback: true})
 	if err != nil {
 		t.Fatal(err)
 	}

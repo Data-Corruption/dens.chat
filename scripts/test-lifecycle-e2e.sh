@@ -16,10 +16,11 @@
 #   KEEP_FAILED=true ./scripts/test-lifecycle-e2e.sh         # keep failed containers
 #
 # Without --release-dir the harness builds two unsigned fixture releases, one
-# to install and a newer one to update to, and installs with
-# APP_SKIP_VERIFY=true; signatures are covered by installing a real release.
-# A --release-dir snapshot (root version pointer, install.sh, releases/) has
-# no newer release, so the update step is skipped.
+# to install and a newer one to update to, and installs with --skip-verify;
+# signatures are covered by installing a real release. With both, it also
+# checks that the older one won't install over the newer. A --release-dir
+# snapshot (root version pointer, install.sh, releases/) has no newer
+# release, so those steps are skipped.
 #
 # Logs go to out/lifecycle-e2e-logs/<run>/: one file per distro, the backup
 # each distro made, and a summary. --backup takes a backup made elsewhere,

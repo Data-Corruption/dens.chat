@@ -10,7 +10,7 @@ ensure_embed_placeholders() {
   [[ -f "$CSS_DIR/output.css" ]] || : > "$CSS_DIR/output.css"
   [[ -f "$JS_DIR/output.js" ]] || : > "$JS_DIR/output.js"
   [[ -f "$ASSETS_DIR/manifest.json" ]] ||
-    printf '{"css/output.css":"test","js/output.js":"test"}' > "$ASSETS_DIR/manifest.json"
+    printf '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","wasm/rnnoise.wasm":"test"}' > "$ASSETS_DIR/manifest.json"
 }
 
 frontend_build() {

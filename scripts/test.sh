@@ -71,7 +71,7 @@ ensure_ui_placeholders() {
   [[ -f internal/ui/assets/css/output.css ]] || : > internal/ui/assets/css/output.css
   [[ -f internal/ui/assets/js/output.js ]] || : > internal/ui/assets/js/output.js
   [[ -f internal/ui/assets/manifest.json ]] ||
-    printf '{"css/output.css":"test","js/output.js":"test"}' > internal/ui/assets/manifest.json
+    printf '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","wasm/rnnoise.wasm":"test"}' > internal/ui/assets/manifest.json
 }
 
 # run_windows_tests cross-compiles every package's tests and runs them on
@@ -102,10 +102,11 @@ run_windows_tests() {
     GOOS=windows go test -c -o "$work/$rel/$name.test.exe" "$pkg"
   done
   while IFS= read -r test_exe; do
-    # The command registry's test, the notices' and the Windows resource
-    # objects' read the module's source, which the Windows side doesn't have.
+    # The command registry's test, the notices', the Windows resource
+    # objects' and the protocol's error codes' read the module's source,
+    # which the Windows side doesn't have.
     if (cd "$(dirname "$test_exe")" && timeout 600 "$test_exe" -test.count=1 \
-      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule|TestCommittedObjects' </dev/null >"$test_exe.log" 2>&1); then
+      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule|TestCommittedObjects|TestKnownCodes' </dev/null >"$test_exe.log" 2>&1); then
       printf 'ok    %s\n' "$(basename "$test_exe" .test.exe)"
     else
       printf 'FAIL  %s\n' "$(basename "$test_exe" .test.exe)"
@@ -140,6 +141,7 @@ run_shell_lint() {
     scripts/test/fixture-releases.sh
     scripts/test-den-e2e.sh
     scripts/test/den-guest.sh
+    scripts/test/browser/*.sh
     scripts/dev/seed-chat.sh
     scripts/install.sh
   )

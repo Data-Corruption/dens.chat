@@ -99,7 +99,7 @@ func (m *Manager) SignIn(ctx context.Context, req SignInRequest) (SignedIn, erro
 	if denID != nil {
 		a, _ = m.apiFor(denID, url)
 	}
-	a, nonce, id, err := a.reach(ctx, denID)
+	a, nonce, id, err := a.reach(ctx, denID, nil)
 	if err != nil {
 		return SignedIn{}, err
 	}

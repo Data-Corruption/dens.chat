@@ -20,17 +20,11 @@ var templateFS embed.FS
 //go:embed assets
 var assetsFS embed.FS
 
+// manifestData lists, by relative path, the assets the page loads, with a
+// hash of each; the build writes it, leaving out the sources.
+//
 //go:embed assets/manifest.json
-var manifestData []byte // ignore lint err here, file is generated at build time
-
-// Patterns to exclude from public serving (relative to assets/).
-// Matched using filepath.Match semantics.
-var ignorePatterns = []string{
-	"css/input.css", // Tailwind source
-	"js/src",        // JS source directory (prefix match)
-	"js/src/*",      // JS source files
-	"manifest.json", // The manifest itself
-}
+var manifestData []byte
 
 // Asset represents an embedded static asset with cache busting.
 type Asset struct {
@@ -88,11 +82,6 @@ func New() (*UI, error) {
 	routeMap := make(map[string]*Asset)
 
 	for relPath, hash := range manifest {
-		// Skip ignored patterns
-		if isIgnored(relPath) {
-			continue
-		}
-
 		// Read file data
 		data, err := assetsFS.ReadFile("assets/" + relPath)
 		if err != nil {
@@ -113,9 +102,6 @@ func New() (*UI, error) {
 
 		assets[relPath] = asset
 		routeMap[urlPath] = asset
-		// Also serve the un-busted path for assets referenced from CSS
-		// (e.g. @font-face url()s, which can't know the content hash).
-		routeMap["/assets/"+relPath] = asset
 	}
 
 	css := assets["css/output.css"]
@@ -127,33 +113,16 @@ func New() (*UI, error) {
 		return nil, fmt.Errorf("asset manifest is missing required asset %q", "js/output.js")
 	}
 
-	// assetPath helper for templates - must define before parsing
-	assetPath := func(relPath string) string {
+	// assetPath gives a template an asset's cache-busted path. Assets are
+	// served only there, so one the manifest lacks fails the page.
+	assetPath := func(relPath string) (string, error) {
 		if asset, ok := assets[relPath]; ok {
-			return asset.URLPath
+			return asset.URLPath, nil
 		}
-		return "/assets/" + relPath
+		return "", fmt.Errorf("the asset manifest has no %s", relPath)
 	}
 
-	// Parse templates with helper functions
-	t, err := template.New("").Funcs(template.FuncMap{
-		"assetPath": assetPath,
-		"list":      func(values ...string) []string { return values },
-		"dict": func(values ...any) (map[string]any, error) {
-			if len(values)%2 != 0 {
-				return nil, fmt.Errorf("dict requires an even number of arguments")
-			}
-			m := make(map[string]any, len(values)/2)
-			for i := 0; i < len(values); i += 2 {
-				key, ok := values[i].(string)
-				if !ok {
-					return nil, fmt.Errorf("dict keys must be strings")
-				}
-				m[key] = values[i+1]
-			}
-			return m, nil
-		},
-	}).ParseFS(templateFS, "templates/*.html")
+	t, err := template.New("").Funcs(template.FuncMap{"assetPath": assetPath}).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse templates: %w", err)
 	}
@@ -181,35 +150,6 @@ func (ui *UI) ServeAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
-}
-
-// isIgnored checks if a path matches any ignore pattern.
-func isIgnored(relPath string) bool {
-	for _, pattern := range ignorePatterns {
-		// Check prefix match for directory patterns (e.g. "js/src")
-		if strings.HasSuffix(pattern, "/") || !strings.Contains(pattern, "*") {
-			if strings.HasPrefix(relPath, strings.TrimSuffix(pattern, "/")) {
-				// But allow exact match of directory name as a file
-				if !strings.Contains(pattern, "*") && relPath == pattern {
-					return true
-				}
-				if strings.HasPrefix(relPath, pattern) || strings.HasPrefix(relPath, strings.TrimSuffix(pattern, "/*")+"/") {
-					return true
-				}
-			}
-		}
-		// Check glob match
-		if matched, _ := filepath.Match(pattern, relPath); matched {
-			return true
-		}
-		// Also check just the filename for patterns without path separators
-		if !strings.Contains(pattern, "/") {
-			if matched, _ := filepath.Match(pattern, filepath.Base(relPath)); matched {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // detectContentType returns the MIME type based on file extension.

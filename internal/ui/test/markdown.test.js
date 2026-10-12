@@ -1,9 +1,11 @@
 // The markdown renderer, checked without a browser: components are called
 // as functions and the Preact trees they return are inspected directly.
 
+import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Markdown, Preview, firstLine } from '../assets/js/src/markdown.jsx';
+import { h, options, render as mount } from 'preact';
+import { Markdown, firstLine, parse, preview } from '../assets/js/src/markdown.jsx';
 import { setOldReddit, shownLink, trimLink } from '../assets/js/src/links.js';
 import mentions from '../../denproto/testdata/mentions.json';
 import taskCases from '../../denproto/testdata/tasks.json';
@@ -40,7 +42,7 @@ function text(tree) {
     return out;
 }
 
-const render = (source, me = null) => Markdown({ text: source, me });
+const render = (source, me = null) => parse(source, { username: me?.username });
 const mentioned = (tree) => nodes(tree).filter((n) => n.props?.['data-mention']);
 
 test('mentions are highlighted exactly where the den counts them', () => {
@@ -94,7 +96,7 @@ test('task lines are checkboxes exactly where the den finds them, numbered in or
 test('tasks tick only for a reader who may edit the message', () => {
     assert.equal(tasksIn(render('[ ] milk'))[0].props.onTask, undefined);
     const onTask = () => Promise.resolve();
-    assert.equal(tasksIn(Markdown({ text: '[ ] milk', onTask }))[0].props.onTask, onTask);
+    assert.equal(tasksIn(parse('[ ] milk', { onTask }))[0].props.onTask, onTask);
 });
 
 test("a mention of the reader looks different from anyone else's", () => {
@@ -142,7 +144,7 @@ test('formatting, quotes and spoilers', () => {
 });
 
 test('previews are one line with nothing in them to click', () => {
-    const tree = Preview({ text: '\n\n> Visit https://example.com, ||spoiler||\nsecond line' });
+    const tree = preview('\n\n> Visit https://example.com, ||spoiler||\nsecond line');
     assert.equal(text(tree), 'Visit https://example.com, spoiler');
     for (const n of nodes(tree)) {
         assert.ok(n.type !== 'a' && n.type !== 'button' && typeof n.type !== 'function', `clickable ${String(n.type?.name || n.type)}`);
@@ -150,8 +152,8 @@ test('previews are one line with nothing in them to click', () => {
 });
 
 test('a preview with more to show ends in an ellipsis instead of its punctuation', () => {
-    assert.equal(text(Preview({ text: 'Everything goes here.\nMore below', more: true })), 'Everything goes here…');
-    assert.equal(text(Preview({ text: 'Just one line' })), 'Just one line');
+    assert.equal(text(preview('Everything goes here.\nMore below', null, true)), 'Everything goes here…');
+    assert.equal(text(preview('Just one line')), 'Just one line');
 });
 
 test('the first line skips blank lines and quote marks, and stands in for code', () => {
@@ -159,4 +161,77 @@ test('the first line skips blank lines and quote marks, and stands in for code',
     assert.equal(firstLine('```js\nlet x;\n```'), '[code]');
     assert.equal(firstLine('[x] done\n[ ] not yet'), '☑ done');
     assert.equal(firstLine(''), '');
+});
+
+// Hostile lines of 16,000 characters, four times a message's limit: openers
+// that never close, links that can't start after a name, and a link ending
+// in parentheses. Each took the old parser between 7 and 700 ms; in time
+// proportional to its length, each takes about a millisecond.
+const HOSTILE = {
+    'unclosed *': '* ',
+    'unclosed **': '** ',
+    'unclosed _': '_ ',
+    'unclosed ||': '|| ',
+    'every opener': '*_~~|| ',
+    'code and openers': '*`',
+    'links after a name': 'ahttp://',
+    'mentions too long': '@' + 'a'.repeat(40) + ' ',
+};
+
+test('hostile text parses in time proportional to its length', () => {
+    const texts = Object.entries(HOSTILE).map(([name, unit]) => [name, unit.repeat(Math.ceil(16000 / unit.length)).slice(0, 16000)]);
+    texts.push(['trailing parentheses', 'http://a' + ')'.repeat(16000)]);
+    for (const [name, line] of texts) {
+        for (const shape of [line, `> ${line}`, `[ ] ${line}`]) {
+            parse(shape, {});
+            const took = Math.min(...[0, 1, 2].map(() => {
+                const start = performance.now();
+                parse(shape, {});
+                preview(shape);
+                return performance.now() - start;
+            }));
+            assert.ok(took < 50, `${name}: ${took.toFixed(1)} ms`);
+        }
+    }
+});
+
+test("a row's parse is kept across renders that don't change its text", () => {
+    const root = document.createElement('div');
+    const text = '**hi** @alice, see https://example.com\n[ ] milk\n> quoted _too_';
+    const row = (props) => mount(h(Markdown, { text, me: { username: 'alice' }, onTask: () => Promise.resolve(), ...props }), root);
+    row();
+    const shown = root.textContent;
+    let made = 0;
+    const before = options.vnode;
+    options.vnode = (v) => {
+        made++;
+        before?.(v);
+    };
+    try {
+        // As while the member types: the row renders again, with a new
+        // handler and the same reader.
+        row({ me: { username: 'alice' } });
+        assert.ok(made <= 3, `a render made ${made} nodes`);
+        assert.equal(root.textContent, shown);
+        made = 0;
+        row({ text: `${text}!` });
+        assert.ok(made > 10, 'a new text is parsed again');
+    } finally {
+        options.vnode = before;
+    }
+});
+
+test("a tick reaches the row's current handler", () => {
+    const root = document.createElement('div');
+    const ticks = [];
+    const handler = (name) => (n, checked, text) => {
+        ticks.push([name, n, checked, text]);
+        return Promise.resolve();
+    };
+    mount(h(Markdown, { text: '[ ] milk', onTask: handler('first') }), root);
+    mount(h(Markdown, { text: '[ ] milk', onTask: handler('current') }), root);
+    root.find((n) => n.localName === 'input').dispatch('change', { currentTarget: { checked: true } });
+    assert.deepEqual(ticks, [['current', 0, true, 'milk']]);
+    mount(h(Markdown, { text: '[ ] milk' }), root);
+    assert.equal(root.find((n) => n.localName === 'input').attributes.disabled, 'true');
 });

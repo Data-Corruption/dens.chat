@@ -93,6 +93,7 @@ type System interface {
 	// InstallerName is the file name of this platform's installer script.
 	InstallerName() string
 	// RunInstaller runs a verified installer script in the foreground to
-	// update instance, with env added to the environment.
-	RunInstaller(ctx context.Context, script, instance string, env []string) error
+	// update instance from releaseURL, passing both, and whether to skip
+	// verifying the release, as its flags.
+	RunInstaller(ctx context.Context, script, instance, releaseURL string, skipVerify bool) error
 }

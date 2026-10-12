@@ -21,10 +21,7 @@
 //
 //	// Log using context
 //	ctx := xlog.IntoContext(context.Background(), logger)
-//	xlog.Info(ctx, "Hello") // no-op if ctx holds no logger
-//
-//	// Structured logging, or handing to slog-aware libraries
-//	logger.Slog().Info("job finished", "job", 42, "took", elapsed)
+//	xlog.Errorf(ctx, "Hello %s", name) // no-op if ctx holds no logger
 package xlog
 
 import (
@@ -124,12 +121,6 @@ func parseLevel(level string) (slog.Level, error) {
 	return 0, fmt.Errorf("unsupported normalized log level %q: %w", normalized, ErrInvalidLogLevel)
 }
 
-// Slog returns a *slog.Logger backed by the same handler, level, and rotating
-// writer. Use it for structured logging or to hand to slog-aware libraries.
-func (l *Logger) Slog() *slog.Logger {
-	return slog.New(l.handler)
-}
-
 // enabled reports whether a record at the given level would be written.
 // Checked in the exported wrappers so disabled levels skip formatting.
 func (l *Logger) enabled(level slog.Level) bool {
@@ -148,12 +139,6 @@ func (l *Logger) log(level slog.Level, msg string) {
 	}
 }
 
-func (l *Logger) Debug(v ...any) {
-	if l.enabled(slog.LevelDebug) {
-		l.log(slog.LevelDebug, fmt.Sprint(v...))
-	}
-}
-
 func (l *Logger) Debugf(format string, v ...any) {
 	if l.enabled(slog.LevelDebug) {
 		l.log(slog.LevelDebug, fmt.Sprintf(format, v...))
@@ -169,12 +154,6 @@ func (l *Logger) Info(v ...any) {
 func (l *Logger) Infof(format string, v ...any) {
 	if l.enabled(slog.LevelInfo) {
 		l.log(slog.LevelInfo, fmt.Sprintf(format, v...))
-	}
-}
-
-func (l *Logger) Warn(v ...any) {
-	if l.enabled(slog.LevelWarn) {
-		l.log(slog.LevelWarn, fmt.Sprint(v...))
 	}
 }
 
@@ -198,45 +177,9 @@ func (l *Logger) Errorf(format string, v ...any) {
 
 // Context variants: no-ops when ctx holds no logger.
 
-func Debug(ctx context.Context, v ...any) {
-	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelDebug) {
-		l.log(slog.LevelDebug, fmt.Sprint(v...))
-	}
-}
-
 func Debugf(ctx context.Context, format string, v ...any) {
 	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelDebug) {
 		l.log(slog.LevelDebug, fmt.Sprintf(format, v...))
-	}
-}
-
-func Info(ctx context.Context, v ...any) {
-	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelInfo) {
-		l.log(slog.LevelInfo, fmt.Sprint(v...))
-	}
-}
-
-func Infof(ctx context.Context, format string, v ...any) {
-	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelInfo) {
-		l.log(slog.LevelInfo, fmt.Sprintf(format, v...))
-	}
-}
-
-func Warn(ctx context.Context, v ...any) {
-	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelWarn) {
-		l.log(slog.LevelWarn, fmt.Sprint(v...))
-	}
-}
-
-func Warnf(ctx context.Context, format string, v ...any) {
-	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelWarn) {
-		l.log(slog.LevelWarn, fmt.Sprintf(format, v...))
-	}
-}
-
-func Error(ctx context.Context, v ...any) {
-	if l := FromContext(ctx); l != nil && l.enabled(slog.LevelError) {
-		l.log(slog.LevelError, fmt.Sprint(v...))
 	}
 }
 
@@ -257,19 +200,6 @@ func (l *Logger) SetLevel(level string) error {
 		return err
 	}
 	l.level.Set(lvl)
-	return nil
-}
-
-// Flush forces buffered records to disk.
-func (l *Logger) Flush() error {
-	l.closeMu.Lock()
-	defer l.closeMu.Unlock()
-	if l.closed.Load() {
-		return ErrClosed
-	}
-	if err := l.writer.Flush(); err != nil {
-		return fmt.Errorf("failed to flush rlog writer: %w", err)
-	}
 	return nil
 }
 

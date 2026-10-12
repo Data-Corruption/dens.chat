@@ -4,7 +4,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 // The page's renderer finds links by the same rule, and reads the same
@@ -58,6 +60,38 @@ func TestLinks(t *testing.T) {
 		}
 		if again := CleanLinks(got); again != got {
 			t.Errorf("CleanLinks(%q) = %q, not itself", got, again)
+		}
+	}
+}
+
+// TestHostileTextIsLinear checks that finding a text's links takes time in
+// proportion to its length, whatever its delimiters (M8), as the page's
+// parse does: the den does it for every message, and again for each link
+// it rewrites. These lines are 16,000 bytes, four times a message's limit
+// in runes. Each took the old parser from 50 ms to seconds; each takes
+// well under a millisecond.
+func TestHostileTextIsLinear(t *testing.T) {
+	for name, line := range map[string]string{
+		"unclosed *":         strings.Repeat("* ", 8000),
+		"unclosed **":        strings.Repeat("** ", 5334)[:16000],
+		"unclosed _":         strings.Repeat("_ ", 8000),
+		"unclosed ||":        strings.Repeat("|| ", 5334)[:16000],
+		"every opener":       strings.Repeat("*_~~|| ", 2286)[:16000],
+		"code and openers":   strings.Repeat("*`", 8000),
+		"links after a name": strings.Repeat("ahttp://", 2000),
+		"long mentions":      strings.Repeat("@"+strings.Repeat("a", 40)+" ", 381)[:16000],
+		"parentheses":        "http://a" + strings.Repeat(")", 15992),
+	} {
+		for _, shape := range []string{line, "> " + line, "[ ] " + line} {
+			took := time.Duration(1 << 62)
+			for range 3 {
+				start := time.Now()
+				findLinks(shape)
+				took = min(took, time.Since(start))
+			}
+			if took > 100*time.Millisecond {
+				t.Errorf("%s: %v", name, took)
+			}
 		}
 	}
 }

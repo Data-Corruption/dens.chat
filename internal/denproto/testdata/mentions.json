@@ -20,6 +20,8 @@
     {"text": "https://mastodon.social/@alice says @bob", "mentions": ["bob"]},
     {"text": "(https://x.com/@a_b)@carol", "mentions": []},
     {"text": "http:// @alice", "mentions": ["alice"]},
-    {"text": "https://x.com/\u00a0@alice", "mentions": ["alice"]}
+    {"text": "https://x.com/\u00a0@alice", "mentions": ["alice"]},
+    {"text": "**a``b** @alice `c`", "mentions": []},
+    {"text": "**a `b**c` d** @alice", "mentions": ["alice"]}
   ]
 }

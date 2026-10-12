@@ -1,9 +1,14 @@
-package sfu
+// Package sfutest stands in for a member's browser in a den's calls, for
+// tests and the den e2e's voice probe. Like the page, it knows the den only
+// by the protocol: what an offer holds, and the streams it names.
+package sfutest
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +17,7 @@ import (
 
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
+	"github.com/pion/logging"
 	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
@@ -24,14 +30,15 @@ const (
 	testExtension   = "leak"
 )
 
-// CallerOptions shape a TestCaller.
-type CallerOptions struct {
+// Options shape a Caller.
+type Options struct {
 	// TCP limits the caller to TCP, as on a network that blocks UDP, and
 	// UDP to UDP. Pion's caller nominates the first pair that answers,
 	// where a browser waits for the best, so a test that wants one path
 	// asks for it.
 	TCP, UDP bool
-	// Loopback lets the caller reach a den on loopback, as tests do.
+	// Loopback has the caller reach a den on loopback, as tests do, and
+	// gather nowhere else, so a test opens nothing a firewall asks about.
 	Loopback bool
 	// Rate is how many packets a second the caller sends: 50 when zero,
 	// as a browser sends 20 ms frames.
@@ -42,14 +49,13 @@ type CallerOptions struct {
 	ScreenRate, ScreenBytes int
 }
 
-// TestCaller stands in for a member's browser in tests and in the den
-// e2e's voice probe: a Pion peer with no STUN or TURN servers that
-// answers a den's offers as the page does, sends numbered packets as its
-// microphone, and counts the packets that reach it from each member. From
-// M4.2 it shares a screen, with sound, when asked, counts what reaches it
-// of the shares it watches, and asks for keyframes as a viewer's browser
-// does.
-type TestCaller struct {
+// Caller stands in for a member's browser in tests and in the den e2e's
+// voice probe: a Pion peer with no STUN or TURN servers that answers a
+// den's offers as the page does, sends numbered packets as its microphone,
+// and counts the packets that reach it from each member. From M4.2 it
+// shares a screen, with sound, when asked, counts what reaches it of the
+// shares it watches, and asks for keyframes as a viewer's browser does.
+type Caller struct {
 	pc     *webrtc.PeerConnection
 	mic    *webrtc.TrackLocalStaticRTP
 	screen *webrtc.TrackLocalStaticRTP
@@ -82,8 +88,19 @@ type TestCaller struct {
 var browserOpus = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
 	SDPFmtpLine: "minptime=10;useinbandfec=1"}
 
-// NewTestCaller makes a caller.
-func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
+// vp9 is VP9 as dens offer it for screen shares (M4.2), profile 0, with
+// the keyframe requests a viewer's browser sends.
+var vp9 = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP9, ClockRate: 90000, SDPFmtpLine: "profile-id=0",
+	RTCPFeedback: []webrtc.RTCPFeedback{{Type: "ccm", Parameter: "fir"}}}
+
+// The payload types dens offer their codecs under.
+const (
+	opusType = 111
+	vp9Type  = 98
+)
+
+// NewCaller makes a caller.
+func NewCaller(opts Options) (*Caller, error) {
 	media := &webrtc.MediaEngine{}
 	if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: browserOpus, PayloadType: opusType}, webrtc.RTPCodecTypeAudio); err != nil {
 		return nil, err
@@ -92,11 +109,12 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 		return nil, err
 	}
 	registry := &interceptor.Registry{}
-	if err := webrtc.RegisterDefaultInterceptorsWithOptions(media, registry, webrtc.WithInterceptorLoggerFactory(pionLogs{})); err != nil {
+	quiet := &logging.DefaultLoggerFactory{Writer: io.Discard, DefaultLogLevel: logging.LogLevelDisabled}
+	if err := webrtc.RegisterDefaultInterceptorsWithOptions(media, registry, webrtc.WithInterceptorLoggerFactory(quiet)); err != nil {
 		return nil, err
 	}
 	var settings webrtc.SettingEngine
-	settings.LoggerFactory = pionLogs{}
+	settings.LoggerFactory = quiet
 	switch {
 	case opts.TCP:
 		settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeTCP4, webrtc.NetworkTypeTCP6})
@@ -106,7 +124,10 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 		settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6,
 			webrtc.NetworkTypeTCP4, webrtc.NetworkTypeTCP6})
 	}
-	settings.SetIncludeLoopbackCandidate(opts.Loopback)
+	if opts.Loopback {
+		settings.SetIncludeLoopbackCandidate(true)
+		settings.SetIPFilter(func(ip net.IP) bool { return ip.IsLoopback() })
+	}
 	settings.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	// As a browser does, the caller stays open when the den closes its end,
 	// until the caller itself hangs up.
@@ -121,9 +142,9 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &TestCaller{pc: pc, rate: opts.Rate, screenRate: opts.ScreenRate, screenBytes: opts.ScreenBytes,
+	c := &Caller{pc: pc, rate: opts.Rate, screenRate: opts.ScreenRate, screenBytes: opts.ScreenBytes,
 		stop: make(chan struct{}), checking: make(chan struct{}), heard: map[string]int{}, changed: make(chan struct{})}
-	fail := func(err error) (*TestCaller, error) {
+	fail := func(err error) (*Caller, error) {
 		_ = pc.Close()
 		return nil, err
 	}
@@ -159,7 +180,7 @@ func NewTestCaller(opts CallerOptions) (*TestCaller, error) {
 // the answer without the caller's own, as the page's local service sends
 // it. The caller starts speaking with its first answer, and, while it
 // shares, sends its screen and sound once the den offers to receive them.
-func (c *TestCaller) Answer(offer string) (string, error) {
+func (c *Caller) Answer(offer string) (string, error) {
 	c.mu.Lock()
 	first := !c.started
 	c.started = true
@@ -200,14 +221,36 @@ func (c *TestCaller) Answer(offer string) (string, error) {
 	if first {
 		go c.speak()
 	}
-	return setOpusParams(denproto.StripCandidates(answer.SDP), browserOpus.SDPFmtpLine), nil
+	return withOpusParams(denproto.StripCandidates(answer.SDP), browserOpus.SDPFmtpLine), nil
+}
+
+// withOpusParams writes params into every Opus format of a description, as
+// a browser's answer carries the same in each section.
+func withOpusParams(desc, params string) string {
+	lines := strings.Split(desc, "\r\n")
+	opusTypes := map[string]bool{}
+	for _, line := range lines {
+		if rest, ok := strings.CutPrefix(line, "a=rtpmap:"); ok {
+			if pt, codec, _ := strings.Cut(rest, " "); strings.HasPrefix(strings.ToLower(codec), "opus/") {
+				opusTypes[pt] = true
+			}
+		}
+	}
+	for i, line := range lines {
+		if rest, ok := strings.CutPrefix(line, "a=fmtp:"); ok {
+			if pt, _, _ := strings.Cut(rest, " "); opusTypes[pt] {
+				lines[i] = "a=fmtp:" + pt + " " + params
+			}
+		}
+	}
+	return strings.Join(lines, "\r\n")
 }
 
 // attachShare puts the caller's screen, and its sound, on the sections the
 // den receives them on, once an offer has them, while the caller shares.
 // Pion's AddTrack takes the first section of the track's kind that the den
 // receives on and the caller doesn't send on yet, which is the den's.
-func (c *TestCaller) attachShare(offer string) error {
+func (c *Caller) attachShare(offer string) error {
 	c.mu.Lock()
 	screen := c.sharing && !c.screenSending && receivesOn(offer, "video") > 0
 	sound := c.sharing && c.withSound && !c.soundSending && receivesOn(offer, "audio") > 1
@@ -249,7 +292,7 @@ func receivesOn(offer, kind string) int {
 // Share has the caller share its screen, with its sound if sound, from the
 // next offer that has the den's sections for them, or at once if earlier
 // ones had them already.
-func (c *TestCaller) Share(sound bool) {
+func (c *Caller) Share(sound bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sharing, c.withSound = true, sound
@@ -257,13 +300,13 @@ func (c *TestCaller) Share(sound bool) {
 
 // StopSharing has the caller send nothing of its share, as a browser whose
 // member stopped it.
-func (c *TestCaller) StopSharing() {
+func (c *Caller) StopSharing() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.sharing = false
 }
 
-func (c *TestCaller) isSharing() bool {
+func (c *Caller) isSharing() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sharing
@@ -271,7 +314,7 @@ func (c *TestCaller) isSharing() bool {
 
 // speak sends numbered packets, each carrying the extension the den must
 // drop, until the caller closes.
-func (c *TestCaller) speak() {
+func (c *Caller) speak() {
 	t := time.NewTicker(time.Second / time.Duration(c.rate))
 	defer t.Stop()
 	var seq uint16
@@ -294,7 +337,7 @@ func (c *TestCaller) speak() {
 // show sends the caller's screen while it shares: frames of three packets
 // of screenBytes, the last of each marked, each packet carrying the
 // extension the den must drop.
-func (c *TestCaller) show() {
+func (c *Caller) show() {
 	t := time.NewTicker(time.Second / time.Duration(c.screenRate))
 	defer t.Stop()
 	var seq uint16
@@ -321,7 +364,7 @@ func (c *TestCaller) show() {
 }
 
 // play sends the share's sound while the caller shares, as speak does.
-func (c *TestCaller) play() {
+func (c *Caller) play() {
 	t := time.NewTicker(20 * time.Millisecond)
 	defer t.Stop()
 	var seq uint16
@@ -345,7 +388,7 @@ func (c *TestCaller) play() {
 
 // countKeyframeRequests counts the den's requests for keyframes of the
 // caller's screen.
-func (c *TestCaller) countKeyframeRequests(sender *webrtc.RTPSender) {
+func (c *Caller) countKeyframeRequests(sender *webrtc.RTPSender) {
 	buf := make([]byte, 1500)
 	for {
 		n, _, err := sender.Read(buf)
@@ -369,8 +412,8 @@ func (c *TestCaller) countKeyframeRequests(sender *webrtc.RTPSender) {
 
 // listen counts each stream's packets by kind: the den names the stream a
 // member's voice comes in for them, and the one their share comes in with
-// screenStream.
-func (c *TestCaller) listen(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+// denproto.ScreenStream.
+func (c *Caller) listen(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 	key := track.Kind().String() + " " + track.StreamID()
 	for {
 		pkt, _, err := track.ReadRTP()
@@ -388,7 +431,7 @@ func (c *TestCaller) listen(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 }
 
 // signal wakes whoever waits on a count. The caller holds c.mu.
-func (c *TestCaller) signal() {
+func (c *Caller) signal() {
 	close(c.changed)
 	c.changed = make(chan struct{})
 }
@@ -396,18 +439,18 @@ func (c *TestCaller) signal() {
 // The keys listen counts under: a member's voice, and their share's screen
 // and sound.
 func voiceKey(member string) string     { return "audio " + member }
-func sharedScreen(member string) string { return "video " + screenStream(member) }
-func sharedSound(member string) string  { return "audio " + screenStream(member) }
+func sharedScreen(member string) string { return "video " + denproto.ScreenStream(member) }
+func sharedSound(member string) string  { return "audio " + denproto.ScreenStream(member) }
 
 // Heard reports how many packets have reached the caller from a member.
-func (c *TestCaller) Heard(member string) int { return c.count(voiceKey(member)) }
+func (c *Caller) Heard(member string) int { return c.count(voiceKey(member)) }
 
 // Saw reports how many packets of a member's screen have reached the
 // caller, and HeardShare how many of its sound.
-func (c *TestCaller) Saw(member string) int        { return c.count(sharedScreen(member)) }
-func (c *TestCaller) HeardShare(member string) int { return c.count(sharedSound(member)) }
+func (c *Caller) Saw(member string) int        { return c.count(sharedScreen(member)) }
+func (c *Caller) HeardShare(member string) int { return c.count(sharedSound(member)) }
 
-func (c *TestCaller) count(key string) int {
+func (c *Caller) count(key string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.heard[key]
@@ -415,7 +458,7 @@ func (c *TestCaller) count(key string) int {
 
 // Leaked reports how many packets arrived with the header extension the
 // sending caller put on them.
-func (c *TestCaller) Leaked() int {
+func (c *Caller) Leaked() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.leaked
@@ -423,24 +466,24 @@ func (c *TestCaller) Leaked() int {
 
 // KeyframeRequests reports how many times the den has asked the caller for
 // a keyframe of its screen.
-func (c *TestCaller) KeyframeRequests() int {
+func (c *Caller) KeyframeRequests() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.keyframeRequests
 }
 
 // WaitHeard waits until n more packets than now have come from a member.
-func (c *TestCaller) WaitHeard(member string, n int, timeout time.Duration) error {
+func (c *Caller) WaitHeard(member string, n int, timeout time.Duration) error {
 	return c.wait(func() int { return c.heard[voiceKey(member)] }, n, timeout, "packets from member "+member)
 }
 
 // WaitSaw waits until n more packets than now have come of a member's
 // screen, and WaitHeardShare of its sound.
-func (c *TestCaller) WaitSaw(member string, n int, timeout time.Duration) error {
+func (c *Caller) WaitSaw(member string, n int, timeout time.Duration) error {
 	return c.wait(func() int { return c.heard[sharedScreen(member)] }, n, timeout, "packets of member "+member+"'s screen")
 }
 
-func (c *TestCaller) WaitHeardShare(member string, n int, timeout time.Duration) error {
+func (c *Caller) WaitHeardShare(member string, n int, timeout time.Duration) error {
 	return c.wait(func() int { return c.heard[sharedSound(member)] }, n, timeout, "packets of member "+member+"'s share's sound")
 }
 
@@ -448,12 +491,12 @@ func (c *TestCaller) WaitHeardShare(member string, n int, timeout time.Duration)
 // all. It counts from a total the caller read, not from now: the den's
 // first answer to a burst of requests goes at once, and can arrive before
 // the wait starts.
-func (c *TestCaller) WaitKeyframeRequests(n int, timeout time.Duration) error {
+func (c *Caller) WaitKeyframeRequests(n int, timeout time.Duration) error {
 	return c.waitUntil(func() int { return c.keyframeRequests }, n, timeout, "keyframe requests")
 }
 
 // wait waits until a count, read with c.mu held, has grown by n.
-func (c *TestCaller) wait(count func() int, n int, timeout time.Duration, what string) error {
+func (c *Caller) wait(count func() int, n int, timeout time.Duration, what string) error {
 	c.mu.Lock()
 	want := count() + n
 	c.mu.Unlock()
@@ -461,7 +504,7 @@ func (c *TestCaller) wait(count func() int, n int, timeout time.Duration, what s
 }
 
 // waitUntil waits until a count, read with c.mu held, reaches want.
-func (c *TestCaller) waitUntil(count func() int, want int, timeout time.Duration, what string) error {
+func (c *Caller) waitUntil(count func() int, want int, timeout time.Duration, what string) error {
 	deadline := time.After(timeout)
 	c.mu.Lock()
 	for count() < want {
@@ -483,22 +526,40 @@ func (c *TestCaller) waitUntil(count func() int, want int, timeout time.Duration
 	return nil
 }
 
-// RequestKeyframe asks the den for a keyframe of a member's screen, as a
-// viewer's browser does when it lost packets it can't decode without.
-func (c *TestCaller) RequestKeyframe(member string) error {
+// RequestKeyframe asks the den for a keyframe of a member's screen with a
+// PLI, as a viewer's browser does when it lost packets it can't decode
+// without, and RequestFIR with a FIR, as some browsers ask.
+func (c *Caller) RequestKeyframe(member string) error {
+	ssrc, err := c.screenSSRC(member)
+	if err != nil {
+		return err
+	}
+	return c.pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: ssrc}})
+}
+
+func (c *Caller) RequestFIR(member string) error {
+	ssrc, err := c.screenSSRC(member)
+	if err != nil {
+		return err
+	}
+	return c.pc.WriteRTCP([]rtcp.Packet{&rtcp.FullIntraRequest{MediaSSRC: ssrc, FIR: []rtcp.FIREntry{{SSRC: ssrc, SequenceNumber: 1}}}})
+}
+
+// screenSSRC is the SSRC a member's screen reaches the caller with.
+func (c *Caller) screenSSRC(member string) (uint32, error) {
 	for _, r := range c.pc.GetReceivers() {
 		for _, t := range r.Tracks() {
-			if t.Kind() == webrtc.RTPCodecTypeVideo && t.StreamID() == screenStream(member) {
-				return c.pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(t.SSRC())}})
+			if t.Kind() == webrtc.RTPCodecTypeVideo && t.StreamID() == denproto.ScreenStream(member) {
+				return uint32(t.SSRC()), nil
 			}
 		}
 	}
-	return fmt.Errorf("no screen of member %s reaches the caller", member)
+	return 0, fmt.Errorf("no screen of member %s reaches the caller", member)
 }
 
 // Path reports whether the caller's media goes over UDP or TCP, once its
 // connection is up.
-func (c *TestCaller) Path() string {
+func (c *Caller) Path() string {
 	for _, r := range c.pc.GetReceivers() {
 		if t := r.Transport(); t != nil {
 			if pair, err := t.ICETransport().GetSelectedCandidatePair(); err == nil && pair != nil {
@@ -510,14 +571,24 @@ func (c *TestCaller) Path() string {
 }
 
 // Connected reports whether the caller's connection to the den is up.
-func (c *TestCaller) Connected() bool {
+func (c *Caller) Connected() bool {
 	return c.pc.ConnectionState() == webrtc.PeerConnectionStateConnected
+}
+
+// Closed reports whether the caller has hung up.
+func (c *Caller) Closed() bool {
+	select {
+	case <-c.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 // Close hangs up. Over TCP the den may not hear it: Pion queues the
 // caller's close_notify, and closing the connection drops the queue, so
 // the den learns only from the silence.
-func (c *TestCaller) Close() error {
+func (c *Caller) Close() error {
 	c.once.Do(func() { close(c.stop) })
 	return c.pc.Close()
 }

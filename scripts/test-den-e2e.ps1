@@ -115,15 +115,12 @@ function Invoke-Native {
     return [pscustomobject]@{ Code = $code; Output = $text }
 }
 
+# Invoke-Installer installs the fixture release, which is unsigned.
 function Invoke-Installer {
     param([string[]]$Arguments)
-    $env:APP_RELEASE_URL = ([Uri]($Release.TrimEnd("\") + "\")).AbsoluteUri
-    try {
-        Invoke-Native -FilePath "powershell.exe" -Arguments (@("-NoProfile", "-NonInteractive",
-                "-ExecutionPolicy", "Bypass", "-File", (Join-Path $Release "install.ps1")) + $Arguments) | Out-Null
-    } finally {
-        Remove-Item Env:APP_RELEASE_URL -ErrorAction SilentlyContinue
-    }
+    $url = ([Uri]($Release.TrimEnd("\") + "\")).AbsoluteUri
+    Invoke-Native -FilePath "powershell.exe" -Arguments (@("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", (Join-Path $Release "install.ps1"), "-ReleaseUrl", $url, "-SkipVerify") + $Arguments) | Out-Null
 }
 
 # A paired browser for one instance: its session and origin.
@@ -575,7 +572,6 @@ try {
         "./internal/platform/http/client") | Out-Null
     $Release = Join-Path $Work "release"
     Copy-Item -LiteralPath (Resolve-Path -LiteralPath $ReleaseDir).ProviderPath -Destination $Release -Recurse
-    $env:APP_SKIP_VERIFY = "true"
     $me = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $console = (Get-CimInstance Win32_ComputerSystem).UserName
     $userArgs = @()
@@ -1166,7 +1162,6 @@ den.test:$HttpsPort {
         Write-Host ""
         Write-Host "Kept the failed setup (-KeepOnFailure). The hosts file and certificate store still hold den.test's entries."
     }
-    Remove-Item Env:APP_SKIP_VERIFY -ErrorAction SilentlyContinue
 }
 
 Write-Host ""

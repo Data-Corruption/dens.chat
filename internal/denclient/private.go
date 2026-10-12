@@ -285,7 +285,7 @@ func (c *conn) keyWork(ctx context.Context) {
 		c.mu.Unlock()
 		for channel := range due {
 			if err := c.moveKey(ctx, channel); err != nil && ctx.Err() == nil {
-				c.m.log.Warnf("move a DM key's exchange on: %v", err)
+				c.m.log.Warnf("move a DM key's exchange on: %v", logged(err))
 			}
 		}
 	}

@@ -7,30 +7,56 @@
 // Every message comes from a den, and dens are other people's servers. The
 // renderer builds Preact nodes whose text is always text: nothing here
 // turns a string into markup, and a link's address is only ever an
-// http(s) URL the parser matched.
+// http(s) URL the parser matched. Any member can send any text, so a line
+// takes time in proportion to its length, whatever its delimiters (M8).
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { shownLink, trimLink, videoOf } from './links.js';
 
-const URL_RE = /https?:\/\/[^\s<>"'`]+/y;
 const NAME_CHAR = /[A-Za-z0-9_]/;
+const SPACE = /\s/;
+// What ends a link: a space, or one of <>"'`.
+const ENDS_LINK = /[\s<>"'`]/;
 // A task line, as denproto.Tasks finds one outside code blocks.
 const TASK_RE = /^\[( |x)\] /;
 
 // Markdown renders text as blocks: code blocks, quotes, task lines and
 // paragraphs. With onTask, the reader may tick tasks: onTask(n, checked,
 // text) returns a promise that settles once the den has the tick.
-export function Markdown({ text, me, onMention, onTask }) {
-    return <div class="markdown">{blocks(text, { me, onMention, onTask })}</div>;
+//
+// It parses a text once (M8): the parse is kept while the text, the
+// reader's username and whether tasks tick stay the same, so a row that
+// renders again, as every row does while the member types, gives Preact
+// the same tree, which it skips. A tick goes through a ref, so it reaches
+// the row's current onTask.
+export function Markdown({ text, me, onTask }) {
+    const tick = useRef(onTask);
+    tick.current = onTask;
+    const ticks = !!onTask;
+    const username = me?.username;
+    return useMemo(() => parse(text, { username, onTask: ticks ? (...a) => tick.current(...a) : undefined }), [text, username, ticks]);
+}
+
+// parse is what Markdown renders: a text's blocks in their container. ctx
+// holds the reader's username, whose mentions look different, and onTask.
+export function parse(text, ctx) {
+    return <div class="markdown">{blocks(text, ctx)}</div>;
 }
 
 // Preview renders a text's first line inline, for places that are already
 // a control, like a reply's quote: nothing in it is a link or a button.
-// With more, the line ends in an ellipsis in place of its punctuation.
+// With more, the line ends in an ellipsis in place of its punctuation. It
+// keeps its parse as Markdown does.
 export function Preview({ text, me, more }) {
+    const username = me?.username;
+    return useMemo(() => preview(text, username, more), [text, username, more]);
+}
+
+// preview is what Preview renders.
+export function preview(text, username, more) {
     let line = firstLine(text);
     if (more) line = line.trimEnd().replace(/[.,;:]+$/, '');
-    return <span>{inline(line, { me, preview: true }, 'p')}{more && '…'}</span>;
+    return <span>{inline(line, marksOf(line), { username, preview: true }, 'p', 0, line.length)}{more && '…'}</span>;
 }
 
 // MAX_VIDEOS is how many YouTube covers a message gets at most (M4.1).
@@ -90,7 +116,7 @@ function blocks(text, ctx) {
             const label = line.slice(box[0].length);
             out.push(
                 <Task key={out.length} n={tasks++} checked={box[1] === 'x'} text={label} onTask={ctx.onTask}>
-                    {inline(label, ctx, `t${out.length}`)}
+                    {inline(label, marksOf(label), ctx, `t${out.length}`, 0, label.length)}
                 </Task>,
             );
             continue;
@@ -112,24 +138,76 @@ function joinLines(lines, ctx) {
     const out = [];
     lines.forEach((line, i) => {
         if (i > 0) out.push(<br key={`br${i}`} />);
-        out.push(...inline(line, ctx, `l${i}`));
+        out.push(...inline(line, marksOf(line), ctx, `l${i}`, 0, line.length));
     });
     return out;
 }
 
-const DELIMITERS = [
-    ['**', (c, k) => <strong key={k}>{c}</strong>],
-    ['~~', (c, k) => <del key={k}>{c}</del>],
-    ['||', (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-content/40 px-0.5 text-transparent select-none">{c}</span> : <Spoiler key={k}>{c}</Spoiler>)],
-    ['*', (c, k) => <em key={k}>{c}</em>],
-    ['_', (c, k) => <em key={k}>{c}</em>],
+// The delimiters, in the order inline tries them, and what each makes.
+const DELIMITERS = ['**', '~~', '||', '*', '_'];
+const MAKE = [
+    (c, k) => <strong key={k}>{c}</strong>,
+    (c, k) => <del key={k}>{c}</del>,
+    (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-content/40 px-0.5 text-transparent select-none">{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
+    (c, k) => <em key={k}>{c}</em>,
+    (c, k) => <em key={k}>{c}</em>,
 ];
 
-// inline renders one line's inline syntax. Code spans are found first and
-// kept literal; everything else can nest. prev is the character before
-// text in its line, so links and mentions start where denproto.Mentions
-// says they do, nested or not.
-function inline(text, ctx, key, prev = '') {
+// marksOf finds what a line's inline syntax needs, so the line takes time
+// in proportion to its length, whatever its delimiters (M8): code[i] is
+// the backtick that closes a code span opening at i, found in one pass,
+// and closer(marks, d, i) where delimiter d first closes at or after i, or
+// -1, from a table found in one pass the first time a d opens. A code span
+// runs from a backtick to the next one with something in between, and a
+// delimiter closes after something other than a space, outside code
+// spans. A line without backticks has no code.
+function marksOf(line) {
+    const marks = { line, code: null, inCode: null, next: [] };
+    for (let i = line.indexOf('`'); i >= 0;) {
+        const end = line.indexOf('`', i + 1);
+        if (end < 0) break;
+        if (end === i + 1) {
+            i = end;
+            continue;
+        }
+        marks.code ??= new Int32Array(line.length);
+        marks.inCode ??= new Uint8Array(line.length);
+        marks.code[i] = end;
+        marks.inCode.fill(1, i, end + 1);
+        i = line.indexOf('`', end + 1);
+    }
+    return marks;
+}
+
+function closer(marks, d, i) {
+    if (!marks.next[d]) {
+        const { line, inCode } = marks;
+        const delim = DELIMITERS[d];
+        const at = new Int32Array(line.length + 1);
+        at[line.length] = -1;
+        for (let j = line.length - 1; j >= 0; j--) {
+            at[j] = j > 0 && !inCode?.[j] && line.startsWith(delim, j) && !SPACE.test(line[j - 1]) ? j : at[j + 1];
+        }
+        marks.next[d] = at;
+    }
+    return marks.next[d][i];
+}
+
+// linkEnd is where a link that starts at i ends, before end, or -1 if none
+// does: http:// or https://, then anything up to a space or one of <>"'`.
+function linkEnd(line, i, end) {
+    let j = line.startsWith('https://', i) ? i + 8 : line.startsWith('http://', i) ? i + 7 : -1;
+    if (j < 0 || j >= end) return -1;
+    const start = j;
+    while (j < end && !ENDS_LINK.test(line[j])) j++;
+    return j > start ? j : -1;
+}
+
+// inline renders the inline syntax of line from start to end, with the
+// marks marksOf found for it. Code spans are kept literal; everything else
+// can nest. Links and mentions start where denproto.Mentions says they do,
+// nested or not: after a character that can't be in a name.
+function inline(line, marks, ctx, key, start, end) {
     const out = [];
     let plain = '';
     let n = 0;
@@ -137,23 +215,20 @@ function inline(text, ctx, key, prev = '') {
         if (plain) out.push(plain);
         plain = '';
     };
-    for (let i = 0; i < text.length;) {
-        const c = text[i];
-        const before = i === 0 ? prev : text[i - 1];
-        if (c === '`') {
-            const end = text.indexOf('`', i + 1);
-            if (end > i + 1) {
-                flush();
-                out.push(<code key={`${key}-${n++}`} class="rounded bg-base-300 px-1 text-sm">{text.slice(i + 1, end)}</code>);
-                i = end + 1;
-                continue;
-            }
+    for (let i = start; i < end;) {
+        const c = line[i];
+        const before = i === 0 ? '' : line[i - 1];
+        if (c === '`' && marks.code?.[i] > i) {
+            const close = marks.code[i];
+            flush();
+            out.push(<code key={`${key}-${n++}`} class="rounded bg-base-300 px-1 text-sm">{line.slice(i + 1, close)}</code>);
+            i = close + 1;
+            continue;
         }
-        if (c === 'h') {
-            URL_RE.lastIndex = i;
-            const m = URL_RE.exec(text);
-            if (m && !NAME_CHAR.test(before)) {
-                const url = trimLink(m[0]);
+        if (c === 'h' && !NAME_CHAR.test(before)) {
+            const stop = linkEnd(line, i, end);
+            if (stop > 0) {
+                const url = trimLink(line.slice(i, stop));
                 const shown = shownLink(url);
                 const video = ctx.videos && !ctx.spoiler && videoOf(url);
                 if (video) ctx.videos.push(video);
@@ -173,18 +248,13 @@ function inline(text, ctx, key, prev = '') {
         }
         if (c === '@' && !NAME_CHAR.test(before) && before !== '@') {
             let j = i + 1;
-            while (j < text.length && NAME_CHAR.test(text[j])) j++;
-            const name = text.slice(i + 1, j);
+            while (j < end && NAME_CHAR.test(line[j])) j++;
+            const name = line.slice(i + 1, j);
             if (name.length >= 2 && name.length <= 32) {
                 flush();
-                const self = ctx.me && name.toLowerCase() === ctx.me.username;
+                const self = ctx.username && name.toLowerCase() === ctx.username;
                 out.push(
-                    <span
-                        key={`${key}-${n++}`}
-                        data-mention={name.toLowerCase()}
-                        class={`rounded px-0.5 font-medium ${self ? 'bg-warning/30' : 'bg-primary/15 text-primary'}`}
-                        onClick={ctx.onMention && !ctx.preview ? () => ctx.onMention(name.toLowerCase()) : undefined}
-                    >
+                    <span key={`${key}-${n++}`} data-mention={name.toLowerCase()} class={`rounded px-0.5 font-medium ${self ? 'bg-warning/30' : 'bg-primary/15 text-primary'}`}>
                         @{name}
                     </span>,
                 );
@@ -192,15 +262,15 @@ function inline(text, ctx, key, prev = '') {
                 continue;
             }
         }
-        const matched = DELIMITERS.find(([d]) => text.startsWith(d, i));
-        if (matched) {
-            const [d, make] = matched;
-            const end = findClose(text, d, i + d.length);
-            if (end > i + d.length) {
+        const d = DELIMITERS.findIndex((x) => i + x.length <= end && line.startsWith(x, i));
+        if (d >= 0) {
+            const from = i + DELIMITERS[d].length;
+            const close = from < end ? closer(marks, d, from) : -1;
+            if (close > from && close + DELIMITERS[d].length <= end) {
                 flush();
-                const inner = d === '||' ? { ...ctx, spoiler: true } : ctx;
-                out.push(make(inline(text.slice(i + d.length, end), inner, `${key}-${n}`, d[d.length - 1]), `${key}-${n++}`, ctx));
-                i = end + d.length;
+                const inner = DELIMITERS[d] === '||' ? { ...ctx, spoiler: true } : ctx;
+                out.push(MAKE[d](inline(line, marks, inner, `${key}-${n}`, from, close), `${key}-${n++}`, ctx));
+                i = close + DELIMITERS[d].length;
                 continue;
             }
         }
@@ -209,22 +279,6 @@ function inline(text, ctx, key, prev = '') {
     }
     flush();
     return out;
-}
-
-// findClose finds the delimiter that closes one opened at start, skipping
-// code spans, or returns -1.
-function findClose(text, d, start) {
-    for (let i = start; i < text.length; i++) {
-        if (text[i] === '`') {
-            const end = text.indexOf('`', i + 1);
-            if (end > i) {
-                i = end;
-                continue;
-            }
-        }
-        if (text.startsWith(d, i) && !/\s/.test(text[i - 1])) return i;
-    }
-    return -1;
 }
 
 // Task is a task line's checkbox. A tick shows at once, and holds until

@@ -51,15 +51,12 @@ func TestCloseIdempotentAndLocked(t *testing.T) {
 	}
 }
 
-func TestSetLevelAndFlushAfterClose(t *testing.T) {
+func TestSetLevelAfterClose(t *testing.T) {
 	l, _ := xlog.New(t.TempDir(), "warn")
 	_ = l.Close()
 
 	if err := l.SetLevel("debug"); !errors.Is(err, xlog.ErrClosed) {
 		t.Fatalf("SetLevel after close: want ErrClosed, got %v", err)
-	}
-	if err := l.Flush(); !errors.Is(err, xlog.ErrClosed) {
-		t.Fatalf("Flush after close: want ErrClosed, got %v", err)
 	}
 }
 
@@ -72,10 +69,10 @@ func TestOutput(t *testing.T) {
 		t.Fatalf("new logger: %v", err)
 	}
 
-	l.Debug("filtered out")
+	l.Debugf("filtered %s", "out")
 	l.Infof("hello %d", 42)
 	ctx := xlog.IntoContext(context.Background(), l)
-	xlog.Warn(ctx, "from context")
+	xlog.Errorf(ctx, "from %s", "context")
 	if err := l.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -89,7 +86,7 @@ func TestOutput(t *testing.T) {
 	if strings.Contains(got, "filtered out") {
 		t.Errorf("debug record should have been filtered at info level:\n%s", got)
 	}
-	for _, want := range []string{`msg="hello 42"`, `msg="from context"`, "level=INFO", "level=WARN", "pid=", "xlog_test.go"} {
+	for _, want := range []string{`msg="hello 42"`, `msg="from context"`, "level=INFO", "level=ERROR", "pid=", "xlog_test.go"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("log output missing %q:\n%s", want, got)
 		}

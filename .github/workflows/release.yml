@@ -139,7 +139,7 @@ jobs:
         run: |
           Set-Content internal/ui/assets/css/output.css ""
           Set-Content internal/ui/assets/js/output.js ""
-          Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test"}'
+          Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","wasm/rnnoise.wasm":"test"}'
 
       - name: Test native Windows build
         shell: pwsh

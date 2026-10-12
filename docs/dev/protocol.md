@@ -29,7 +29,7 @@ This document describes version 1.
 
 ## Errors
 
-Failures use HTTP status codes with a body of `{"error": {"code": "…", "message": "…"}}`. `code` is stable and meant for programs. `message` is English for logs and never shown verbatim to members, since it comes from the den.
+Failures use HTTP status codes with a body of `{"error": {"code": "…", "message": "…"}}`. `code` is stable and meant for programs. `message` is English for logs and never shown verbatim to members, since it comes from the den. Nor is `code`, unless it's one of those below: a client shows any other only as the den refusing, with the HTTP status (M8).
 
 | Status | Codes |
 | --- | --- |
@@ -95,7 +95,9 @@ POST /api/auth/challenge
 
 - A server can pass a den's challenge answer through, but can't change the address signed into it, so a proof, verifier or token never goes to an address the den didn't sign.
 - A client that reaches the den its own install hosts over loopback skips the address check: that den signs its public address, and nothing sits between the two.
-- A connected client that gets `den.updated` with a new `url` runs the challenge there at once, and moves if the den proves itself there, so its token stops going to the old address. If the new address doesn't answer yet, the client stays where it is until its next challenge sends it on.
+- A connected client that gets `den.updated` with a new `url` runs the challenge there at once, and moves if the den proves itself there, so its token stops going to the old address. If the new address doesn't answer yet, the client stays where it is until its next challenge sends it on. Either way it keeps, and shows, a new address only once the den has proven itself there.
+- A den chooses the addresses its members' clients ask, so a hostile one could turn them into a crowd asking someone else's server, or their own computers' services (M8). A client checks a new address for a den at most once a minute, and refuses a move from an `https` address to a plain `http` one, or from an address elsewhere to one on its own computer. A move it refuses or puts off leaves the den offline at its old address, saying why.
+- The den never answers with a redirect, and a client follows none (M8).
 - A den that moved keeps answering members at its old address only while the owner keeps that address pointing at it. A member whose install was away longer enters the new address by hand, where the same checks apply.
 
 Requests that use a nonce prove the device key with:

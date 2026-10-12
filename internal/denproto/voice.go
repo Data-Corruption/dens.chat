@@ -237,19 +237,48 @@ type VoiceState struct {
 	Full  bool   `json:"full,omitempty"`
 }
 
-// StripCandidates takes every candidate out of an SDP. Neither side sends
-// any: the den answers checks from wherever they come, and the client
-// writes the den's itself.
+// ScreenStream names the stream a member's share reaches those who watch
+// it in (M4.2), as "screen-<member ID>", which the page reads.
+func ScreenStream(member string) string { return "screen-" + member }
+
+// StripCandidates takes every candidate out of an SDP, and puts the
+// unspecified address in its connection (c=), RTCP (a=rtcp:) and origin
+// (o=) lines. Neither side sends an address: the den answers checks from
+// wherever they come, and the client writes the den's candidates itself. A
+// browser's first answer has 0.0.0.0 in those lines, but each answer after
+// it has gathered names its default candidate in the c= line, often the
+// computer's address on its local network (M8).
 func StripCandidates(s string) string {
 	lines := strings.Split(s, "\r\n")
 	kept := lines[:0]
 	for _, line := range lines {
-		if strings.HasPrefix(line, "a=candidate:") || line == "a=end-of-candidates" {
+		switch {
+		case strings.HasPrefix(line, "a=candidate:") || line == "a=end-of-candidates":
 			continue
+		case strings.HasPrefix(line, "c="):
+			line = "c=" + unspecified(line[len("c="):])
+		case strings.HasPrefix(line, "a=rtcp:"):
+			if port, addr, ok := strings.Cut(line[len("a=rtcp:"):], " "); ok {
+				line = "a=rtcp:" + port + " " + unspecified(addr)
+			}
+		case strings.HasPrefix(line, "o="):
+			// The username, session ID and version, then the address.
+			if f := strings.Fields(line[len("o="):]); len(f) >= 3 {
+				line = "o=" + strings.Join(f[:3], " ") + " " + unspecified(strings.Join(f[3:], " "))
+			}
 		}
 		kept = append(kept, line)
 	}
 	return strings.Join(kept, "\r\n")
+}
+
+// unspecified gives an SDP address, as "IN IP4 192.0.2.5", as the
+// unspecified address of its type.
+func unspecified(addr string) string {
+	if f := strings.Fields(addr); len(f) >= 2 && f[1] == "IP6" {
+		return "IN IP6 ::"
+	}
+	return "IN IP4 0.0.0.0"
 }
 
 // The codecs an offer may carry: Opus for audio, and for video VP9, which

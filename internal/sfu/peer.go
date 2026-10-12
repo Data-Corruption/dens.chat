@@ -41,15 +41,12 @@ const keyframeGap = 500 * time.Millisecond
 
 // The IDs of the tracks the den sends: a member's voice, in a stream named
 // for the member, and their share's screen and sound, in a stream
-// screenStream names (M4.2).
+// denproto.ScreenStream names (M4.2).
 const (
 	voiceTrack  = "audio"
 	screenTrack = "screen"
 	soundTrack  = "sound"
 )
-
-// screenStream names the stream a member's share goes out in.
-func screenStream(member string) string { return "screen-" + member }
 
 // What a peer sends its member goes by another member's ID for their
 // voice, and by these for the screen and sound of a share they watch.
@@ -161,10 +158,10 @@ func (s *SFU) Join(room, member string, bitrate int, signal Signal) (*Peer, erro
 	if p.track, err = webrtc.NewTrackLocalStaticRTP(opus, voiceTrack, member); err != nil {
 		return fail(err)
 	}
-	if p.screenOut, err = webrtc.NewTrackLocalStaticRTP(vp9, screenTrack, screenStream(member)); err != nil {
+	if p.screenOut, err = webrtc.NewTrackLocalStaticRTP(vp9, screenTrack, denproto.ScreenStream(member)); err != nil {
 		return fail(err)
 	}
-	if p.soundOut, err = webrtc.NewTrackLocalStaticRTP(opus, soundTrack, screenStream(member)); err != nil {
+	if p.soundOut, err = webrtc.NewTrackLocalStaticRTP(opus, soundTrack, denproto.ScreenStream(member)); err != nil {
 		return fail(err)
 	}
 	pc.OnTrack(p.forward)

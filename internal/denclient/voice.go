@@ -76,7 +76,7 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mar
 	call := &activeCall{page: page, den: denID, channel: channel, deliver: deliver}
 	end := func(reason string) { deliver(CallEvent{DenID: denID, Channel: channel, Ended: reason}) }
 	if call.addrs, err = c.mediaAddrs(ctx); err != nil {
-		m.log.Warnf("Couldn't find where to send a call's media: %v", err)
+		m.log.Warnf("Couldn't find where to send a call's media: %v", logged(err))
 		end(denproto.VoiceFailed)
 		return nil
 	}

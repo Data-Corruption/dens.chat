@@ -80,15 +80,15 @@ func findLinks(text string) []span {
 		}
 		switch {
 		case strings.HasPrefix(line, taskOpen) || strings.HasPrefix(line, taskDone):
-			out = inlineLinks(out, line[len(taskOpen):], start+len(taskOpen), 0)
+			out = lineLinks(out, line[len(taskOpen):], start+len(taskOpen))
 		case strings.HasPrefix(line, ">"):
 			n := 1
 			if strings.HasPrefix(line[1:], " ") {
 				n = 2
 			}
-			out = inlineLinks(out, line[n:], start+n, 0)
+			out = lineLinks(out, line[n:], start+n)
 		default:
-			out = inlineLinks(out, line, start, 0)
+			out = lineLinks(out, line, start)
 		}
 	}
 	return out
@@ -102,39 +102,101 @@ func isFence(line string) bool {
 
 // delimiters open the spans the page's renderer nests, in the order it
 // tries them: bold, strikethrough, spoiler, and italic with * or _.
-var delimiters = []string{"**", "~~", "||", "*", "_"}
+var delimiters = [...]string{"**", "~~", "||", "*", "_"}
 
-// inlineLinks appends the links in one line of inline text, as inline() in
+// marks are what marksOf in markdown.jsx finds in a line, so the line
+// takes time in proportion to its length, whatever its delimiters (M8):
+// code[i] is the backtick that closes a code span opening at i, found in
+// one pass, and next[d][i] the first place at or after i where delimiter d
+// closes, or -1, found in one pass the first time a d opens. A code span
+// runs from a backtick to the next one with something in between, and a
+// delimiter closes after something other than a space, outside code
+// spans. A line without backticks has no code.
+type marks struct {
+	line   string
+	code   []int32
+	inCode []bool
+	next   [len(delimiters)][]int32
+}
+
+func marksOf(s string) *marks {
+	m := &marks{line: s}
+	for i := strings.IndexByte(s, '`'); i >= 0; {
+		e := strings.IndexByte(s[i+1:], '`')
+		if e < 0 {
+			break
+		}
+		end := i + 1 + e
+		if e == 0 {
+			i = end
+			continue
+		}
+		if m.code == nil {
+			m.code, m.inCode = make([]int32, len(s)), make([]bool, len(s))
+		}
+		m.code[i] = int32(end)
+		for k := i; k <= end; k++ {
+			m.inCode[k] = true
+		}
+		if i = strings.IndexByte(s[end+1:], '`'); i >= 0 {
+			i += end + 1
+		}
+	}
+	return m
+}
+
+// closer is where delimiter d first closes at or after i, or -1.
+func (m *marks) closer(d, i int) int {
+	if m.next[d] == nil {
+		s, delim := m.line, delimiters[d]
+		next := make([]int32, len(s)+1)
+		next[len(s)] = -1
+		for j := len(s) - 1; j >= 0; j-- {
+			next[j] = next[j+1]
+			if j > 0 && (m.inCode == nil || !m.inCode[j]) && strings.HasPrefix(s[j:], delim) {
+				if r, _ := utf8.DecodeLastRuneInString(s[:j]); !jsSpace(r) {
+					next[j] = int32(j)
+				}
+			}
+		}
+		m.next[d] = next
+	}
+	return int(m.next[d][i])
+}
+
+// lineLinks appends the links in one line of inline text, which starts
+// base bytes into the whole text.
+func lineLinks(out []span, s string, base int) []span {
+	return inlineLinks(out, s, marksOf(s), 0, len(s), base)
+}
+
+// inlineLinks appends the links in s from start to end, as inline() in
 // markdown.jsx finds them: code spans first, then links, mentions and
-// delimited spans, whose insides it walks the same way. base is where s
-// starts in the whole text, and prev the character before it (0 for none),
-// which decides whether a link or mention can start at its first byte.
-// Every decision is on ASCII, so walking bytes where the page walks UTF-16
-// units finds the same things.
-func inlineLinks(out []span, s string, base int, prev byte) []span {
-	for i := 0; i < len(s); {
+// delimited spans, whose insides it walks the same way. Every decision is
+// on ASCII, so walking bytes where the page walks UTF-16 units finds the
+// same things.
+func inlineLinks(out []span, s string, m *marks, start, end, base int) []span {
+	for i := start; i < end; {
 		c := s[i]
-		before := prev
+		var before byte
 		if i > 0 {
 			before = s[i-1]
 		}
-		if c == '`' {
-			if e := strings.IndexByte(s[i+1:], '`'); e > 0 {
-				i += e + 2
-				continue
-			}
+		if c == '`' && m.code != nil && int(m.code[i]) > i {
+			i = int(m.code[i]) + 1
+			continue
 		}
 		if c == 'h' && !isNameByte(before) {
-			if n := linkLength(s[i:]); n > 0 {
-				end := i + len(trimLink(s[i:i+n]))
-				out = append(out, span{base + i, base + end})
-				i = end
+			if n := linkLength(s[i:end]); n > 0 {
+				stop := i + len(trimLink(s[i:i+n]))
+				out = append(out, span{base + i, base + stop})
+				i = stop
 				continue
 			}
 		}
 		if c == '@' && !isNameByte(before) && before != '@' {
 			j := i + 1
-			for j < len(s) && isNameByte(s[j]) {
+			for j < end && isNameByte(s[j]) {
 				j++
 			}
 			if n := j - i - 1; n >= 2 && n <= 32 {
@@ -142,11 +204,14 @@ func inlineLinks(out []span, s string, base int, prev byte) []span {
 				continue
 			}
 		}
-		if d := delimiterAt(s, i); d != "" {
-			if end := findClose(s, d, i+len(d)); end > i+len(d) {
-				out = inlineLinks(out, s[i+len(d):end], base+i+len(d), d[len(d)-1])
-				i = end + len(d)
-				continue
+		if d := delimiterAt(s[:end], i); d >= 0 {
+			from := i + len(delimiters[d])
+			if from < end {
+				if close := m.closer(d, from); close > from && close+len(delimiters[d]) <= end {
+					out = inlineLinks(out, s, m, from, close, base)
+					i = close + len(delimiters[d])
+					continue
+				}
 			}
 		}
 		i++
@@ -154,32 +219,12 @@ func inlineLinks(out []span, s string, base int, prev byte) []span {
 	return out
 }
 
-// delimiterAt returns the first delimiter s has at i, or "". The page
+// delimiterAt returns the first delimiter s has at i, or -1. The page
 // tries no other once one matches, even if that one never closes.
-func delimiterAt(s string, i int) string {
-	for _, d := range delimiters {
-		if strings.HasPrefix(s[i:], d) {
+func delimiterAt(s string, i int) int {
+	for d, delim := range delimiters {
+		if strings.HasPrefix(s[i:], delim) {
 			return d
-		}
-	}
-	return ""
-}
-
-// findClose finds the delimiter d that closes a span opened before start:
-// the first one after something other than a space, skipping code spans.
-// It returns -1 if there's none.
-func findClose(s, d string, start int) int {
-	for i := start; i < len(s); i++ {
-		if s[i] == '`' {
-			if e := strings.IndexByte(s[i+1:], '`'); e >= 0 {
-				i += e + 1
-				continue
-			}
-		}
-		if strings.HasPrefix(s[i:], d) {
-			if r, _ := utf8.DecodeLastRuneInString(s[:i]); !jsSpace(r) {
-				return i
-			}
 		}
 	}
 	return -1
@@ -189,16 +234,19 @@ func findClose(s, d string, start int) int {
 // the page does: punctuation at the end, and a ")" there that closes no
 // "(" in the link, so a link in parentheses loses the closing one but
 // https://en.wikipedia.org/wiki/Go_(programming_language) keeps its own.
+// It counts the parentheses once, so a link ending in many takes no
+// longer (M8).
 func trimLink(s string) string {
+	opens, closes := strings.Count(s, "("), strings.Count(s, ")")
 	for len(s) > 0 {
 		switch last := s[len(s)-1]; {
 		case strings.IndexByte(".,;:!?]", last) >= 0:
-			s = s[:len(s)-1]
-		case last == ')' && strings.Count(s, ")") > strings.Count(s, "("):
-			s = s[:len(s)-1]
+		case last == ')' && closes > opens:
+			closes--
 		default:
 			return s
 		}
+		s = s[:len(s)-1]
 	}
 	return s
 }

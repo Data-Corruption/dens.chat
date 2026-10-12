@@ -10,11 +10,12 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
+	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 )
 
-func newShareCaller(t *testing.T) *sfu.TestCaller {
+func newShareCaller(t *testing.T) *sfutest.Caller {
 	t.Helper()
-	c, err := sfu.NewTestCaller(sfu.CallerOptions{Loopback: true, UDP: true})
+	c, err := sfutest.NewCaller(sfutest.Options{Loopback: true, UDP: true})
 	if err != nil {
 		t.Fatal(err)
 	}

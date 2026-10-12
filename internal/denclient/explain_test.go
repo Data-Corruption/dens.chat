@@ -1,6 +1,8 @@
 package denclient
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -56,5 +58,45 @@ func TestDescribeMoved(t *testing.T) {
 	got := describe(&MovedError{URL: "https://new.example.com", Err: down})
 	if !strings.HasPrefix(got, "The den moved to https://new.example.com. Something answers at the den's address") {
 		t.Fatalf("%q", got)
+	}
+}
+
+// TestUnknownCodesArentShown checks that a den's error code reaches the
+// member only when it's one of the protocol's (M8): the code is the den's
+// own text, which could say anything.
+func TestUnknownCodesArentShown(t *testing.T) {
+	for body, want := range map[string]string{
+		`{"error": {"code": "banned"}}`:                                       "The den refused the connection (banned).",
+		`{"error": {"code": "your_session_expired_sign_in_at_evil.example"}}`: "The den refused the connection (HTTP 403).",
+		`{"error": {"code": "` + strings.Repeat("x", 4096) + `"}}`:            "The den refused the connection (HTTP 403).",
+	} {
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(http.StatusForbidden)
+		rec.WriteString(body)
+		if got := describe(denproto.ReadError(rec.Result())); got != want {
+			t.Errorf("%.60s: described as %q, want %q", body, got, want)
+		}
+	}
+}
+
+// TestLoggedErrors checks that a network error goes into a log line without
+// the address Go's error names (M8), and any other error as it is.
+func TestLoggedErrors(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	_, err = (&http.Client{}).Get("http://" + addr)
+	if err == nil || !strings.Contains(err.Error(), addr) {
+		t.Fatalf("Go's error doesn't name the address: %v", err)
+	}
+	if got := fmt.Sprint(logged(fmt.Errorf("reach the den: %w", err))); strings.Contains(got, "127.0.0.1") {
+		t.Fatalf("logged %q", got)
+	}
+	other := errors.New("the den's response is malformed")
+	if got := logged(other); got != other {
+		t.Fatalf("logged %v", got)
 	}
 }

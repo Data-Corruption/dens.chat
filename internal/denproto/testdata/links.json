@@ -85,6 +85,11 @@
     {"text": "look: https://amzn.to/3xYzAbC", "links": ["https://amzn.to/3xYzAbC"]},
     {"text": "look: https://a.co/d/abc1234", "links": ["https://a.co/d/abc1234"]},
     {"text": "look: https://amazon.com.example.net/dp/B0BX4P3W2Q?tag=x", "links": ["https://amazon.com.example.net/dp/B0BX4P3W2Q?tag=x"]},
-    {"text": "look: https://www.amazon.com/dp/b0bx4p3w2q?ref_=abc&smid=A1B2C3", "links": ["https://www.amazon.com/dp/b0bx4p3w2q?ref_=abc&smid=A1B2C3"], "clean": "look: https://www.amazon.com/dp/b0bx4p3w2q?smid=A1B2C3"}
+    {"text": "look: https://www.amazon.com/dp/b0bx4p3w2q?ref_=abc&smid=A1B2C3", "links": ["https://www.amazon.com/dp/b0bx4p3w2q?ref_=abc&smid=A1B2C3"], "clean": "look: https://www.amazon.com/dp/b0bx4p3w2q?smid=A1B2C3"},
+    {"text": "**a``b** https://youtu.be/dQw4w9WgXcQ?si=abc `c`", "links": []},
+    {"text": "**a `b**c` d** https://youtu.be/dQw4w9WgXcQ?si=abc", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "**a `b**c` d** https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+    {"text": "* _ ~~ || ** https://youtu.be/dQw4w9WgXcQ?si=abc", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "* _ ~~ || ** https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+    {"text": "**a*https://youtu.be/dQw4w9WgXcQ?si=abc**", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "**a*https://www.youtube.com/watch?v=dQw4w9WgXcQ**"},
+    {"text": "https://example.com/a?utm_source=x)))))", "links": ["https://example.com/a?utm_source=x"], "clean": "https://example.com/a)))))"}
   ]
 }

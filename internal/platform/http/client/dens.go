@@ -486,6 +486,8 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 		jsonError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, denclient.ErrTooLarge):
 		jsonError(w, http.StatusRequestEntityTooLarge, "This file is larger than this den allows.")
+	case errors.As(err, &moved) && errors.Is(err, denclient.ErrMoveRefused):
+		jsonError(w, http.StatusBadGateway, "This den says it moved to "+moved.URL+", which Dens won't follow: the address is on this computer, or plain http.")
 	case errors.As(err, &moved):
 		jsonError(w, http.StatusBadGateway, "This den moved to "+moved.URL+", which can't be reached from here right now.")
 	case errors.Is(err, denproto.ErrWrongIdentity):
@@ -535,5 +537,5 @@ func denMessage(e *denproto.Error) string {
 	if msg, ok := denclient.ExplainStatus(e); ok {
 		return msg
 	}
-	return "The den refused the request (" + e.Code + ")."
+	return "The den refused the request (" + denclient.ShownCode(e) + ")."
 }

@@ -180,10 +180,14 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	// A den answers within ResponseHeaderTimeout of hearing a whole
 	// request, uploads included; a file's body then takes what it takes.
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, ResponseHeaderTimeout: requestTimeout}
+	// An answer that sends the client elsewhere is taken as it is, and
+	// fails (M8): the client asks a den only at an address it proved
+	// itself at, which the protocol's moves go through.
+	stay := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Manager{
 		db: db, v: v, log: log, own: own, agent: userAgent, label: deviceLabel(), epoch: denproto.Random(8).String(),
-		HTTP:          &http.Client{Timeout: requestTimeout, Transport: transport},
-		Transfer:      &http.Client{Transport: transport},
+		HTTP:          &http.Client{Timeout: requestTimeout, Transport: transport, CheckRedirect: stay},
+		Transfer:      &http.Client{Transport: transport, CheckRedirect: stay},
 		files:         newFileCache(),
 		MinTokenLife:  time.Minute,
 		RenewLead:     10 * time.Minute,
@@ -370,7 +374,7 @@ func (m *Manager) Preview(ctx context.Context, invite string) (denproto.Den, err
 		return denproto.Den{}, inputError(err)
 	}
 	a, _ := m.apiFor(inv.DenID, inv.URL)
-	a, _, _, err = a.reach(ctx, inv.DenID)
+	a, _, _, err = a.reach(ctx, inv.DenID, nil)
 	if err != nil {
 		return denproto.Den{}, err
 	}
@@ -480,7 +484,7 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 
 	a, _ := m.apiFor(denID, url)
 	// An invite made before the den moved leads to where it is now.
-	a, nonce, _, err := a.reach(ctx, denID)
+	a, nonce, _, err := a.reach(ctx, denID, nil)
 	if err != nil {
 		return Joined{}, err
 	}
@@ -609,7 +613,7 @@ func (m *Manager) Relocate(ctx context.Context, denID, address string) (Status, 
 		return Status{}, inputError(errors.New("enter the den's address, such as https://den.example.com"))
 	}
 	a := &api{base: url, client: m.HTTP, agent: m.agent}
-	if a, _, _, err = a.reach(ctx, c.j.denID); err != nil {
+	if a, _, _, err = a.reach(ctx, c.j.denID, nil); err != nil {
 		return Status{}, err
 	}
 	if err := c.moveTo(ctx, a); err != nil {

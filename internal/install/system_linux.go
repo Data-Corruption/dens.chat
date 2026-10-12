@@ -26,10 +26,6 @@ import (
 // minimumSystemd is the first release with LoadCredentialEncrypted=.
 const minimumSystemd = 250
 
-// incusGuide is the public guide to running Dens in an Incus container, on
-// the distributions it doesn't support (M8).
-const incusGuide = "https://dens.chat/docs/incus/"
-
 // lxcDropIn is the drop-in LXC adds to every service in an unprivileged
 // container, under the unit directories in /run and /etc.
 const lxcDropIn = "service.d/zzz-lxc-service.conf"
@@ -94,8 +90,7 @@ func checkDistribution(root string) error {
 	}
 	switch id {
 	case "nixos":
-		return fmt.Errorf("Dens doesn't install on NixOS, whose /etc/systemd/system is in the read-only Nix store. "+
-			"Run it in an Incus container instead: %s", incusGuide)
+		return errors.New("Dens doesn't install on NixOS yet: its /etc/systemd/system, where the service goes, is in the read-only Nix store")
 	case "steamos":
 		return errors.New("Dens doesn't install on SteamOS yet: an update replaces its read-only root, and what an install adds with it")
 	}
@@ -124,7 +119,7 @@ func osReleaseID(root string) (string, error) {
 // every service is in effect (M8). It turns off the unit's sandbox and its
 // encrypted credential, which carries the data key, so the service would
 // fail to start past the point of no return. A file of the same name in
-// /etc takes its place, as the guide's /dev/null link does.
+// /etc takes its place, as a link to /dev/null does.
 func checkLXCDropIn(root string) error {
 	exists := func(dir string) (bool, error) {
 		_, err := os.Lstat(filepath.Join(root, dir, lxcDropIn))
@@ -142,10 +137,10 @@ func checkLXCDropIn(root string) error {
 		return err
 	}
 	return fmt.Errorf("this container's LXC drop-in, /run/systemd/system/%[1]s, would turn off the service's sandbox "+
-		"and the credential that carries its data key. Mask it first, as the guide to Dens in an Incus container does (%[2]s):\n"+
+		"and the credential that carries its data key. Mask it first:\n"+
 		"  mkdir -p /etc/systemd/system/service.d\n"+
 		"  ln -s /dev/null /etc/systemd/system/%[1]s\n"+
-		"  systemctl daemon-reload", lxcDropIn, incusGuide)
+		"  systemctl daemon-reload", lxcDropIn)
 }
 
 func (linuxSystem) DesktopUser(override string) (host.Identity, error) {
@@ -672,9 +667,12 @@ func run(name string, args ...string) error {
 
 func (linuxSystem) InstallerName() string { return "install.sh" }
 
-func (linuxSystem) RunInstaller(ctx context.Context, script, instance string, env []string) error {
-	cmd := exec.CommandContext(ctx, "sh", script, "--update", "--instance", instance)
+func (linuxSystem) RunInstaller(ctx context.Context, script, instance, releaseURL string, skipVerify bool) error {
+	args := []string{script, "--update", "--instance", instance, "--release-url", releaseURL}
+	if skipVerify {
+		args = append(args, "--skip-verify")
+	}
+	cmd := exec.CommandContext(ctx, "sh", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Env = append(os.Environ(), env...)
 	return cmd.Run()
 }
