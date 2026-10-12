@@ -1,9 +1,13 @@
 package denproto
 
 import (
+	"encoding/json"
 	"net/netip"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/pion/sdp/v3"
 )
 
 // sdpLines joins lines as SDP does, with a line break after the last.
@@ -26,6 +30,70 @@ func TestStripCandidates(t *testing.T) {
 	want := strings.Replace(testOffer, "a=candidate:1 1 udp 2130706431 10.0.0.43 7881 typ host\r\na=end-of-candidates\r\n", "", 1)
 	if got != want {
 		t.Fatalf("stripping changed more than the candidates:\n%q\nwant\n%q", got, want)
+	}
+}
+
+// TestStripAddresses checks that a browser's answer comes out with no
+// address in it (M8). testdata/answers.json holds Chromium's and Firefox's,
+// each its second in a call, after it had gathered, taken in the browser
+// check's container, with a documentation address in place of the
+// container's. Firefox's names its host candidates, as it does once the page
+// may use the microphone, rather than mDNS names.
+func TestStripAddresses(t *testing.T) {
+	data, err := os.ReadFile("testdata/answers.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answers map[string]string
+	if err := json.Unmarshal(data, &answers); err != nil {
+		t.Fatal(err)
+	}
+	// An answer from a computer with IPv6, with its RTCP's address.
+	answers["ipv6"] = sdpLines("v=0", "o=- 5 2 IN IP6 2001:db8::7", "s=-", "c=IN IP6 2001:db8::7", "t=0 0",
+		"m=audio 50000 UDP/TLS/RTP/SAVPF 111", "c=IN IP6 2001:db8::7", "a=rtcp:50001 IN IP6 2001:db8::7", "a=mid:0",
+		"a=rtpmap:111 opus/48000/2", "a=candidate:1 1 udp 2122260223 2001:db8::7 50000 typ host")
+	for name, answer := range answers {
+		if !strings.Contains(answer, "c=IN IP4 192.0.2.10") && !strings.Contains(answer, "c=IN IP6 2001:db8::7") {
+			t.Fatalf("%s: the fixture names no address to take out", name)
+		}
+		got := StripCandidates(answer)
+		var d sdp.SessionDescription
+		if err := d.UnmarshalString(got); err != nil {
+			t.Fatalf("%s: the den can't read the answer: %v\n%s", name, err, got)
+		}
+		addrs := []string{d.Origin.UnicastAddress}
+		conns := []*sdp.ConnectionInformation{d.ConnectionInformation}
+		for _, m := range d.MediaDescriptions {
+			conns = append(conns, m.ConnectionInformation)
+			for _, a := range m.Attributes {
+				switch a.Key {
+				case "candidate", "end-of-candidates":
+					t.Errorf("%s: a candidate is left: %s", name, a)
+				case "rtcp":
+					if f := strings.Fields(a.Value); len(f) == 4 {
+						addrs = append(addrs, f[3])
+					}
+				}
+			}
+		}
+		for _, c := range conns {
+			if c != nil && c.Address != nil {
+				addrs = append(addrs, c.Address.Address)
+			}
+		}
+		for _, a := range addrs {
+			if ip, err := netip.ParseAddr(a); err != nil || !ip.IsUnspecified() {
+				t.Errorf("%s: the answer names %q", name, a)
+			}
+		}
+		for _, a := range []string{"192.0.2.10", "2001:db8::7", "127.0.0.1"} {
+			if strings.Contains(got, a) {
+				t.Errorf("%s: %s is left in the answer:\n%s", name, a, got)
+			}
+		}
+		if again := StripCandidates(got); again != got {
+			t.Errorf("%s: stripping twice changed the answer", name)
+		}
 	}
 }
 

@@ -7,7 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -420,6 +425,55 @@ func TestExcerpt(t *testing.T) {
 	} {
 		if got := Excerpt(text); got != want {
 			t.Errorf("Excerpt(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
+// TestKnownCodes checks that every error code the package declares is one
+// the client may show (M8), by reading the package's source.
+func TestKnownCodes(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	declared := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, decl := range f.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs := spec.(*ast.ValueSpec)
+				for i, id := range vs.Names {
+					if !strings.HasPrefix(id.Name, "Code") || i >= len(vs.Values) {
+						continue
+					}
+					if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+						code, _ := strconv.Unquote(lit.Value)
+						declared++
+						if !KnownCode(code) {
+							t.Errorf("%s (%q) isn't a known code", id.Name, code)
+						}
+					}
+				}
+			}
+		}
+	}
+	if declared != len(codes) {
+		t.Errorf("the package declares %d codes and knows %d", declared, len(codes))
+	}
+	for _, code := range []string{"", "http_502", "Your session expired, sign in at evil.example", strings.Repeat("x", 1000)} {
+		if KnownCode(code) {
+			t.Errorf("%q is a known code", code)
 		}
 	}
 }

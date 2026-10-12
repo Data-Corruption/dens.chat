@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -88,6 +89,12 @@ func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 				time.Since(cfg.LastUpdateCheck) >= UpdateCheckInterval
 			if due {
 				if err := a.CheckForUpdate(ctx); err != nil && ctx.Err() == nil {
+					// Go's network errors name the address they failed to
+					// reach, which logs don't keep (M8).
+					var netErr net.Error
+					if errors.As(err, &netErr) {
+						err = errors.New("the release host can't be reached")
+					}
 					a.Log.Warnf("update check failed: %v", err)
 				}
 			} else if until := time.Until(cfg.LastUpdateCheck.Add(UpdateCheckInterval)); until < delay {

@@ -78,6 +78,10 @@ type conn struct {
 	ws    *websocket.Conn
 	focus []string
 
+	// follows holds the checks of the den's new addresses to one a
+	// minute (M8).
+	follows followGate
+
 	stop context.CancelFunc // ends run, when the den is forgotten
 	done chan struct{}      // closed when run has returned
 	wake chan struct{}      // cuts a wait between reconnects short
@@ -272,10 +276,15 @@ func describe(err error) string {
 		if msg, ok := ExplainStatus(perr); ok {
 			return msg
 		}
-		return "The den refused the connection (" + perr.Code + ")."
+		return "The den refused the connection (" + ShownCode(perr) + ")."
 	}
-	if errors.Is(err, denproto.ErrWrongIdentity) {
+	switch {
+	case errors.Is(err, denproto.ErrWrongIdentity):
 		return "The server at the den's address can't prove it is this den."
+	case errors.Is(err, ErrMoveRefused):
+		return "Dens won't follow it there: the address is on this computer, or plain http."
+	case errors.Is(err, errFollowLater):
+		return "Dens checks a den's new address once a minute."
 	}
 	return Explain(err)
 }
@@ -347,7 +356,7 @@ func (c *conn) remote() *api {
 // signs and keeping that address from then on.
 func (c *conn) challenge(ctx context.Context) (*api, denproto.Bytes, error) {
 	old := c.remote()
-	a, nonce, _, err := old.reach(ctx, c.j.denID)
+	a, nonce, _, err := old.reach(ctx, c.j.denID, &c.follows)
 	if err != nil || a == old {
 		return a, nonce, err
 	}
@@ -747,8 +756,16 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 	if name, err := denproto.CleanName(d.Name, denproto.MaxNameRunes); err == nil {
 		p.Name = name
 	}
+	// The den this install hosts is reached on loopback and keeps its
+	// public address; any other's address changes once the den proves
+	// itself there, which moveTo keeps.
+	var follow string
 	if u, err := denproto.NormalizeDenURL(d.URL); err == nil {
-		p.URL = u
+		if c.own {
+			p.URL = u
+		} else if u != c.api.base && checkMove(c.api.base, u) == nil {
+			follow = u
+		}
 	}
 	if me != nil {
 		if m, ok := cleanMember(*me); ok {
@@ -756,11 +773,10 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 		}
 	}
 	changed := p != c.profile
-	follow := !c.own && p.URL != c.api.base
 	c.profile = p
 	c.mu.Unlock()
-	if follow {
-		go c.follow(ctx, p.URL)
+	if follow != "" && c.follows.take() {
+		go c.follow(ctx, follow)
 	}
 	if !changed {
 		return nil
@@ -771,11 +787,11 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 
 // follow moves to the address the den announced once it proves itself
 // there, so this session's token stops going to the old one. If it can't
-// be reached yet, the den stays where it is, and the next challenge there
-// sends it on.
+// be reached yet, the den stays where it is, and a later challenge there
+// sends it on. The caller has taken the den's follow gate.
 func (c *conn) follow(ctx context.Context, url string) {
 	a := &api{base: url, client: c.m.HTTP, agent: c.m.agent}
-	if a, _, _, err := a.reach(ctx, c.j.denID); err == nil {
+	if _, _, err := a.challenge(ctx, c.j.denID); err == nil {
 		_ = c.moveTo(ctx, a)
 	}
 }

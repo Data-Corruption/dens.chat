@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -58,4 +59,26 @@ func ExplainStatus(e *denproto.Error) (string, bool) {
 		return fmt.Sprintf("Something answers at the den's address, but the den behind it doesn't (HTTP %d). It may be down or restarting.", e.Status), true
 	}
 	return fmt.Sprintf("The server at that address doesn't answer like a den (HTTP %d). Check the address.", e.Status), true
+}
+
+// ShownCode gives a den's error code as a member may see it: the code when
+// it's one of the protocol's, and otherwise the HTTP status alone, since a
+// den's code is its own text (M8).
+func ShownCode(e *denproto.Error) string {
+	if denproto.KnownCode(e.Code) {
+		return e.Code
+	}
+	return fmt.Sprintf("HTTP %d", e.Status)
+}
+
+// logged gives an error for a log line. A network error goes as Explain
+// describes it, since Go's name the address they failed to reach, and logs
+// carry no addresses (M8); any other goes as it is.
+func logged(err error) any {
+	var netErr net.Error
+	var urlErr *url.Error
+	if errors.As(err, &netErr) || errors.As(err, &urlErr) {
+		return Explain(err)
+	}
+	return err
 }

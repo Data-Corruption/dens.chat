@@ -67,6 +67,20 @@ const (
 	CodeWrongPassword       = "wrong_password"
 )
 
+// codes are every error code the protocol has.
+var codes = map[string]bool{
+	CodeMalformed: true, CodeInvalidField: true, CodeUnauthorized: true, CodeBadSignature: true, CodeBadNonce: true,
+	CodeForbidden: true, CodeBanned: true, CodeKeyRevoked: true, CodeNotFound: true, CodeUsernameTaken: true,
+	CodeEditConflict: true, CodeInviteInvalid: true, CodeTooLarge: true, CodeProtocolUnsupported: true,
+	CodeRateLimited: true, CodeDenNotCreated: true, CodeWrongPassword: true, CodeUnsupportedType: true,
+	CodeQuotaExceeded: true, CodeDenFull: true, CodeKeyExists: true, CodeNoOtherDevice: true, CodeChangesGone: true,
+}
+
+// KnownCode reports whether code is one of the protocol's error codes. A
+// den's code is its own text, so the client shows a member only the codes
+// it knows (M8).
+func KnownCode(code string) bool { return codes[code] }
+
 // WebSocket close codes beyond the standard ones.
 const (
 	CloseSessionExpired = 4001
@@ -143,6 +157,10 @@ func ReadError(resp *http.Response) error {
 	if json.Unmarshal(body, &parsed) == nil && parsed.Error != nil && parsed.Error.Code != "" {
 		parsed.Error.Status = resp.StatusCode
 		parsed.Error.Body = body
+		// Both are the den's own text, which logs show.
+		if len(parsed.Error.Code) > 64 {
+			parsed.Error.Code = parsed.Error.Code[:64]
+		}
 		if len(parsed.Error.Message) > 200 {
 			parsed.Error.Message = parsed.Error.Message[:200]
 		}

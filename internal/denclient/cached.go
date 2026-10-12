@@ -329,7 +329,7 @@ func (c *conn) cacheWork(ctx context.Context) {
 			return
 		}
 		if wait == syncRetry {
-			c.m.log.Infof("Couldn't check the cache against a den's changes: %v", err)
+			c.m.log.Infof("Couldn't check the cache against a den's changes: %v", logged(err))
 		}
 		retry = time.After(wait)
 		wait = min(2*wait, syncRetryMax)

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -377,7 +378,7 @@ func TestOfflineMemberFollowsAMovedDen(t *testing.T) {
 	member, stop := h.clientFrom(t, s, noOwnDen)
 	joinWithCodes(t, owner, member, denID, "hugo")
 	stop()
-	moved := h.loopback.URL
+	moved := h.elsewhere(t)
 	if err := owner.UpdateDen(context.Background(), denID, denproto.DenUpdateRequest{URL: &moved}); err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +397,7 @@ func TestOfflineMemberFollowsAMovedDen(t *testing.T) {
 func TestConnectedMemberMovesWithTheDen(t *testing.T) {
 	h, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
-	moved := h.loopback.URL
+	moved := h.elsewhere(t)
 	if err := owner.UpdateDen(ctx, denID, denproto.DenUpdateRequest{URL: &moved}); err != nil {
 		t.Fatal(err)
 	}
@@ -413,6 +414,117 @@ func TestConnectedMemberMovesWithTheDen(t *testing.T) {
 			t.Fatalf("the member still calls the old address: %v", err)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// countConns listens on loopback, as a service on the member's computer
+// would, and counts the connections that reach it.
+func countConns(t *testing.T) (port string, conns *atomic.Int64) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	conns = new(atomic.Int64)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns.Add(1)
+			c.Close()
+		}
+	}()
+	_, port, _ = net.SplitHostPort(ln.Addr().String())
+	return port, conns
+}
+
+// rename changes the den's name, and its address when url isn't empty, and
+// waits for the member to hear it.
+func rename(t *testing.T, owner, member *denclient.Manager, denID, name, url string) {
+	t.Helper()
+	req := denproto.DenUpdateRequest{Name: &name}
+	if url != "" {
+		req.URL = &url
+	}
+	if err := owner.UpdateDen(context.Background(), denID, req); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, member, "the den's new name", func(s denclient.Status) bool { return s.Name == name })
+}
+
+// A den reached elsewhere can't send its members to an address on their
+// own computers (M8): neither a connected member nor one signing in again
+// asks there, and the den stays where they reached it.
+func TestMovesStayOffThisComputer(t *testing.T) {
+	h, owner, _, denID, _ := chatDen(t)
+	s := newStore(t)
+	member, stop := h.clientFrom(t, s, noOwnDen)
+	joinWithCodes(t, owner, member, denID, "jo")
+	port, conns := countConns(t)
+	rename(t, owner, member, denID, "Plain", "http://127.0.0.1:"+port)
+	rename(t, owner, member, denID, "Local", "https://localhost:"+port)
+	stop()
+	member, _ = h.clientFrom(t, s, noOwnDen)
+	st := waitFor(t, member, "jo refusing the move", func(s denclient.Status) bool {
+		return s.State == denclient.StateOffline && strings.Contains(s.Error, "won't follow")
+	})
+	if st.URL != "https://example.com" {
+		t.Fatalf("the member took %s", st.URL)
+	}
+	if n := conns.Load(); n != 0 {
+		t.Fatalf("%d connections to the member's own computer", n)
+	}
+}
+
+// A den's member checks a new address for it at most once a minute (M8),
+// so a den that keeps naming new ones can't turn its members into a crowd
+// asking someone else's server.
+func TestFollowsAreThrottled(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	first, firstConns := countConns(t)
+	second, secondConns := countConns(t)
+	rename(t, owner, member, denID, "First", "https://example.com:"+first)
+	rename(t, owner, member, denID, "Second", "https://example.com:"+second)
+	// The den is there too, but its member checked an address within the
+	// minute.
+	rename(t, owner, member, denID, "Moved", h.elsewhere(t))
+	time.Sleep(300 * time.Millisecond)
+	if n, m := firstConns.Load(), secondConns.Load(); n != 1 || m != 0 {
+		t.Fatalf("the first new address got %d connections and the second %d", n, m)
+	}
+	if st := member.Statuses()[0]; st.URL != "https://example.com" || st.State != denclient.StateConnected {
+		t.Fatalf("%+v", st)
+	}
+}
+
+// An answer from a den's address that redirects elsewhere isn't followed
+// (M8): the client asks a den only where it proved itself.
+func TestRedirectsArentFollowed(t *testing.T) {
+	h, owner, _, denID, _ := chatDen(t)
+	port, conns := countConns(t)
+	redirect := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.com:"+port+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirect.Close)
+	_, from, _ := net.SplitHostPort(redirect.Listener.Addr().String())
+	invite, _, err := owner.CreateInvite(context.Background(), denID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := denproto.DecodeInvite(invite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.client(t, noOwnDen).Preview(context.Background(), denproto.EncodeInvite(inv.DenID, inv.Code, "https://example.com:"+from))
+	var perr *denproto.Error
+	if !errors.As(err, &perr) || perr.Status != http.StatusTemporaryRedirect {
+		t.Fatalf("a redirecting den: %v", err)
+	}
+	if n := conns.Load(); n != 0 {
+		t.Fatalf("the redirect was followed: %d connections", n)
 	}
 }
 

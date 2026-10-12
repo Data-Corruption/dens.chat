@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_VIDEOS, Markdown, videosIn } from '../assets/js/src/markdown.jsx';
+import { MAX_VIDEOS, parse, videosIn } from '../assets/js/src/markdown.jsx';
 import { onYouTubePlayers, setYouTubePlayers, startSeconds, videoOf, youTubePlayers } from '../assets/js/src/links.js';
 import { embedURL, watchURL } from '../assets/js/src/youtube.jsx';
 import linkCases from '../../denproto/testdata/links.json';
@@ -21,7 +21,7 @@ function linksIn(text) {
         if (n.type === 'a') out.push(n.props.href);
         walk(n.props?.children);
     };
-    walk(Markdown({ text }));
+    walk(parse(text, {}));
     return out;
 }
 

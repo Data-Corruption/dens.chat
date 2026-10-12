@@ -106,14 +106,19 @@ export function shownLink(url, preferOld = oldReddit()) {
 // trimLink drops what most likely ends a sentence rather than a link:
 // punctuation at the end, and a ) there that closes no ( in the link, so a
 // link in parentheses loses the closing one but a Wikipedia article's
-// title keeps its own. denproto's trimLink is the same rule.
+// title keeps its own. denproto's trimLink is the same rule. It counts the
+// parentheses once, so a link ending in many takes no longer (M8).
 export function trimLink(url) {
-    for (;;) {
-        const last = url[url.length - 1];
-        if ('.,;:!?]'.includes(last)) url = url.slice(0, -1);
-        else if (last === ')' && count(url, ')') > count(url, '(')) url = url.slice(0, -1);
-        else return url;
+    const opens = count(url, '(');
+    let closes = count(url, ')');
+    let end = url.length;
+    for (; end > 0; end--) {
+        const last = url[end - 1];
+        if ('.,;:!?]'.includes(last)) continue;
+        if (last !== ')' || closes <= opens) break;
+        closes--;
     }
+    return url.slice(0, end);
 }
 
 function count(s, c) {
