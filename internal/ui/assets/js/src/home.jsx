@@ -12,6 +12,7 @@ import { PendingSignIns, SealNeeded, SealSection, SealShown, SignInRequests } fr
 import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
+import { rank } from './people.jsx';
 import { deletesNow, keptFor } from './retention.js';
 import { HEIGHTS, mbps, shareCost } from './share.js';
 
@@ -157,7 +158,7 @@ function DenItem({ den, navigate, onCodes, onSeal, onChanged, onSignIn }) {
                     {!den.seal && <SealNeeded den={den} onSeal={(seal) => onSeal(den.name, seal)} />}
                     {den.role === 'owner' && <DenSettings den={den} />}
                     {staff && <Invites denID={den.den_id} />}
-                    {staff && <Bans denID={den.den_id} />}
+                    {staff && <Bans denID={den.den_id} role={den.role} />}
                     <Files den={den} navigate={navigate} />
                     <Devices den={den} onCodes={onCodes} onSeal={onSeal} />
                     {!den.own && <Leave den={den} onChanged={onChanged} />}
@@ -167,8 +168,9 @@ function DenItem({ den, navigate, onCodes, onSeal, onChanged, onSignIn }) {
     );
 }
 
-// Bans lists who can't come back, and lifts bans.
-function Bans({ denID }) {
+// Bans lists who can't come back, and lifts the bans placed by staff of
+// the member's rank or below (M8).
+function Bans({ denID, role }) {
     const [open, setOpen] = useState(false);
     const [list, setList] = useState(null);
     const act = useAction();
@@ -194,13 +196,15 @@ function Bans({ denID }) {
                                 <span class="min-w-0 flex-1 truncate">
                                     <span class="font-medium">{b.member.display_name}</span> @{b.member.username}, since {new Date(b.banned_at).toLocaleDateString()}
                                 </span>
-                                <button type="button" class="btn btn-ghost btn-xs" disabled={act.busy}
-                                    onClick={() => act.run(async () => {
-                                        await api.del(`/api/dens/${denID}/bans/${b.member.id}`);
-                                        setList((await api.get(`/api/dens/${denID}/bans`)).bans);
-                                    })}>
-                                    Lift ban
-                                </button>
+                                {rank(role) >= rank(b.banned_by_role) && (
+                                    <button type="button" class="btn btn-ghost btn-xs" disabled={act.busy}
+                                        onClick={() => act.run(async () => {
+                                            await api.del(`/api/dens/${denID}/bans/${b.member.id}`);
+                                            setList((await api.get(`/api/dens/${denID}/bans`)).bans);
+                                        })}>
+                                        Lift ban
+                                    </button>
+                                )}
                             </li>
                         ))}
                     </ul>

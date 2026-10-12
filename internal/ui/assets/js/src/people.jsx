@@ -282,7 +282,7 @@ export function RemoveMember({ denID, member, onClose }) {
                         Ban: don't let @{member.username} back in
                     </label>
                 )}
-                <Field label="Delete their messages from" hint="Direct messages aren't touched.">
+                <Field label="Delete their messages from" hint="Their direct messages too, which go unread.">
                     <select class="select w-full" value={span} onChange={(e) => setSpan(Number(e.currentTarget.value))}>
                         {WINDOWS.map(([seconds, label]) => <option key={seconds} value={seconds}>{label}</option>)}
                     </select>

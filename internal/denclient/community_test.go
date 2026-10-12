@@ -269,8 +269,10 @@ func TestProfilesAndBans(t *testing.T) {
 	if err := owner.RemoveMember(ctx, denID, bob, denproto.RemoveRequest{Ban: true}); err != nil {
 		t.Fatal(err)
 	}
+	// Each ban says the role of whoever placed it, which says who may lift
+	// it (M8).
 	bans, err := owner.Bans(ctx, denID)
-	if err != nil || len(bans) != 1 || bans[0].Member.ID != bob {
+	if err != nil || len(bans) != 1 || bans[0].Member.ID != bob || bans[0].BannedByRole != denproto.RoleOwner {
 		t.Fatalf("bans: %+v %v", bans, err)
 	}
 	if err := owner.Unban(ctx, denID, bob); err != nil {
