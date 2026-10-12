@@ -2,6 +2,7 @@
 // rendering; nothing sets HTML from a string.
 
 import { useEffect, useState } from 'preact/hooks';
+import { InfoIcon } from './icons.jsx';
 
 export function Card({ title, children, class: extra = '' }) {
     return (
@@ -11,6 +12,22 @@ export function Card({ title, children, class: extra = '' }) {
                 {children}
             </div>
         </section>
+    );
+}
+
+// Tip is an i beside a label that says more on hover or focus: the detail
+// a one-line hint leaves out (M8.3).
+export function Tip({ id, children }) {
+    return (
+        <span class="tooltip tooltip-bottom align-middle">
+            <span id={id} role="tooltip" class="tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal">
+                {children}
+            </span>
+            <button type="button" class="inline-flex cursor-help p-0.5 text-base-content/60 hover:text-base-content" aria-label="More about this"
+                aria-describedby={id}>
+                <InfoIcon />
+            </button>
+        </span>
     );
 }
 
@@ -41,13 +58,27 @@ export function useLater(active, ms) {
     return active && later;
 }
 
-// Waiting is a spinner that says what it waits for once it has taken a
-// while, so a slow start doesn't look like a hang.
-// day shows a time as a date, in the reader's locale.
-export function day(ms) {
-    return new Date(ms).toLocaleDateString(undefined, { dateStyle: 'medium' });
+// Dates take one form everywhere (M8.3), the medium one in the reader's
+// locale, as Oct 12, 2026; locale is for the tests.
+
+// day shows a time as a date.
+export function day(ms, locale) {
+    return new Date(ms).toLocaleDateString(locale, { dateStyle: 'medium' });
 }
 
+// dayTime shows a time as a date and the time of day, where the hour
+// matters, as when an invite expires.
+export function dayTime(ms, locale) {
+    return new Date(ms).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// clock shows the time of day alone, as when a wait ends.
+export function clock(ms, locale) {
+    return new Date(ms).toLocaleTimeString(locale, { timeStyle: 'short' });
+}
+
+// Waiting is a spinner that says what it waits for once it has taken a
+// while, so a slow start doesn't look like a hang.
 export function Waiting({ label }) {
     const slow = useLater(true, 1500);
     return (

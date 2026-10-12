@@ -165,3 +165,36 @@ export function mbps(bits) {
     const n = bits / 1e6;
     return n < 10 ? `${Math.round(n * 10) / 10} Mbps` : `${Math.round(n)} Mbps`;
 }
+
+// uploadNeeded is the upload a den's calls take at full load, video and
+// voice together, which the owner's settings show as the limits change
+// (M8.3).
+export function uploadNeeded(limits, voiceBitrate) {
+    const cost = shareCost(limits, voiceBitrate);
+    return cost.video + cost.voice;
+}
+
+// CALL_PRESETS are the call limits an owner chooses from before setting
+// each one (M8.3): a new den's, for a small group, and room for a large
+// one, which takes a fast upload.
+export const CALL_PRESETS = {
+    small: { members: 15, callers: 30, shares: 1, share_viewers: 8, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 },
+    large: { members: 30, callers: 60, shares: 2, share_viewers: 15, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 },
+};
+
+// presetOf names the preset a den's call limits match, or custom.
+export function presetOf(limits) {
+    for (const [name, preset] of Object.entries(CALL_PRESETS)) {
+        if (Object.keys(preset).every((key) => limits[key] === preset[key])) return name;
+    }
+    return 'custom';
+}
+
+// shareAudio says what Share audio does in a browser on a system (M8.3):
+// a Chromium-based browser shares a tab's sound, and on Windows the whole
+// computer's, without the call's voices; Firefox shares none.
+export function shareAudio(browser, system) {
+    if (browser === 'firefox') return { supported: false, text: "Firefox can't share audio." };
+    if (system === 'windows') return { supported: true, text: "Shares a tab's audio, or this computer's without the call." };
+    return { supported: true, text: "Shares a tab's audio." };
+}

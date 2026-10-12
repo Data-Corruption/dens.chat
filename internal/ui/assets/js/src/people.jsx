@@ -185,7 +185,7 @@ export function EditProfile({ denID, me, limits, onClose }) {
 
     return (
         <Dialog title="Your profile in this den" onClose={onClose}>
-            <p class="text-sm text-base-content/70">Each den has its own profile. Everyone in this den can see it.</p>
+            <p class="text-sm text-base-content/70">Each den has its own profile.</p>
             <form class="flex flex-col gap-2" onSubmit={submit}>
                 <fieldset class="fieldset">
                     <legend class="fieldset-legend">Picture</legend>

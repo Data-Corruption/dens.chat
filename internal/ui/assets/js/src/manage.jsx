@@ -68,7 +68,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
     }
 
     return (
-        <Dialog title={editing ? (channel.kind === 'voice' ? `🔊 ${channel.name}` : `#${channel.name}`) : 'New channel'} onClose={onClose}>
+        <Dialog title={editing ? (channel.kind === 'voice' ? `Voice channel ${channel.name}` : `#${channel.name}`) : 'New channel'} onClose={onClose}>
             <form class="flex flex-col gap-2" onSubmit={submit}>
                 <Field label="Name">
                     <TextInput value={name} onInput={setName} required maxlength="32" />

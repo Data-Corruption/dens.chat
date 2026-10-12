@@ -612,20 +612,14 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
                                             ? `Messages with ${dm.display_name} are deleted after ${keptFor(retention)}.`
                                             : `This is the start of your conversation with ${dm.display_name}.`}
                                     </p>
-                                    <p class="text-xs">
-                                        It's end-to-end encrypted: only the two of you can read it, not the den's owner. The den still
-                                        sees who talks to whom, and when.
-                                    </p>
+                                    <p class="text-xs">End-to-end encrypted: only the two of you can read it.</p>
                                 </>
                             ) : (
-                                <>
-                                    <p>
-                                        {retention
-                                            ? `Messages in #${channel.name} are deleted after ${keptFor(retention)}.`
-                                            : `This is the start of #${channel.name}.`}
-                                    </p>
-                                    <p class="text-xs">The den's owner can read what's posted here.</p>
-                                </>
+                                <p>
+                                    {retention
+                                        ? `Messages in #${channel.name} are deleted after ${keptFor(retention)}.`
+                                        : `This is the start of #${channel.name}.`}
+                                </p>
                             )}
                         </div>
                     )}

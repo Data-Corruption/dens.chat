@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    MAX_WATCHING, SHARE_DEFAULTS, displayOptions, fitPixels, mbps, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareCost,
-    shareQuality, sharersIn, sharingAcross, watchersOf,
+    CALL_PRESETS, MAX_WATCHING, SHARE_DEFAULTS, displayOptions, fitPixels, mbps, presetOf, readShare, receivingSections, refusalText, screenOwner,
+    shareAudio, shareBlocked, shareCost, shareQuality, sharersIn, sharingAcross, uploadNeeded, watchersOf,
 } from '../assets/js/src/share.js';
 
 const limits = { members: 15, callers: 30, shares: 1, share_viewers: 8, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 };
@@ -114,4 +114,32 @@ test("the limits' cost at most", () => {
     assert.equal(Math.round(cost.voice), Math.round(2 * 14 * 96000 * 1.2));
     assert.equal(mbps(cost.video), '17 Mbps');
     assert.equal(mbps(3_225_600), '3.2 Mbps');
+});
+
+test('a small group is a new den\'s limits, and both presets are within what a den takes', () => {
+    assert.deepEqual(CALL_PRESETS.small, limits);
+    for (const p of Object.values(CALL_PRESETS)) {
+        assert.ok(p.members >= 2 && p.members <= 30 && p.callers >= 2 && p.callers <= 100, JSON.stringify(p));
+        assert.ok(p.shares >= 0 && p.shares <= 10 && p.share_viewers >= 1 && p.share_viewers <= 29, JSON.stringify(p));
+    }
+});
+
+test('limits match the preset they equal, and are custom otherwise', () => {
+    assert.equal(presetOf(limits), 'small');
+    assert.equal(presetOf({ ...CALL_PRESETS.large }), 'large');
+    assert.equal(presetOf({ ...limits, share_fps: 60 }), 'custom');
+    assert.equal(presetOf({ ...limits, shares: 0 }), 'custom');
+});
+
+test('the upload calls need at full load is their video and voice together', () => {
+    assert.equal(mbps(uploadNeeded(CALL_PRESETS.small, 96000)), '20 Mbps');
+    assert.equal(mbps(uploadNeeded(CALL_PRESETS.large, 96000)), '70 Mbps');
+    assert.equal(uploadNeeded({ ...limits, shares: 0 }, 96000), shareCost(limits, 96000).voice);
+});
+
+test('share audio is described for the browser and system the page is in', () => {
+    assert.deepEqual(shareAudio('firefox', 'windows'), { supported: false, text: "Firefox can't share audio." });
+    assert.deepEqual(shareAudio('firefox', 'linux'), { supported: false, text: "Firefox can't share audio." });
+    assert.deepEqual(shareAudio('chromium', 'windows'), { supported: true, text: "Shares a tab's audio, or this computer's without the call." });
+    assert.deepEqual(shareAudio('chromium', 'linux'), { supported: true, text: "Shares a tab's audio." });
 });
