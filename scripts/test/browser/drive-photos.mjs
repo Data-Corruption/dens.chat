@@ -5,7 +5,7 @@
 // Then the setting, and a photo over a lowered limit.
 //
 //   run.sh photos chromium|firefox
-import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , bobIn] = process.argv;
 const aliceIn = bobIn === 'chromium' ? 'firefox' : 'chromium';
@@ -127,13 +127,13 @@ try {
     await shot(alice, 'received');
 
     // With copies off, a photo goes full size, and still compares.
-    await bob.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
-    const toggle = `[...document.querySelectorAll('[aria-label=Settings] label')].find((l) => l.textContent.includes('Send photos and videos smaller'))?.querySelector('input')`;
+    await openSettings(bob, 'Chat & media');
+    const toggle = `${SETTINGS}.querySelector('input#compress')`;
     await waitFor(() => bob.eval(`!!${toggle}`), 'the setting');
     await shot(bob, 'setting');
     await bob.eval(`${toggle}.click(), true`);
     if (await bob.eval(`${toggle}.checked`)) throw new Error('the setting stayed on');
-    await bob.eval(`document.querySelector('[aria-label=Settings] button[aria-label=Close]').click(), true`);
+    await bob.eval(`${SETTINGS}.querySelector('button[aria-label=Close]').click(), true`);
     await bob.attach('input[type=file][multiple]', [`${HOME}/photos/iphone-5.jpg`]);
     const off = await waitFor(async () => {
         const c = await bob.eval(chips);

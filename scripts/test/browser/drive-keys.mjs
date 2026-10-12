@@ -19,10 +19,10 @@ const b = await launch(which, which === 'chromium' ? 9521 : 9522, { media: true 
 const shot = (name) => b.shot(`${HOME}/shot-keys-${which}-${name}.png`);
 const rect = (sel) => b.eval(`(() => { const el = ${sel}; if (!el) return ''; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return JSON.stringify([r.x + r.width / 2, r.y + r.height / 2]); })()`).then((r) => r && JSON.parse(r));
 const button = (text) => `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(text)} || x.getAttribute('aria-label') === ${JSON.stringify(text)})`;
-const row = (title) => `[...document.querySelectorAll('div')].find((d) => d.firstElementChild?.firstElementChild?.textContent === ${JSON.stringify(title)})`;
+const row = (title) => `[...document.querySelectorAll('div')].find((d) => d.firstElementChild?.tagName === 'SPAN' && d.firstElementChild.textContent === ${JSON.stringify(title)})`;
 const clickOn = async (sel, what) => { const at = await waitFor(() => rect(sel), what); await b.click(at[0], at[1]); };
 const keyIn = (title) => b.eval(`${row(title)}?.querySelector('kbd')?.textContent || ''`);
-const marked = (title) => b.eval(`!!${row(title)}?.querySelector('[aria-label="Works in other programs"]')`);
+const marked = (title) => b.eval(`!!${row(title)}?.querySelector('[aria-label="Works in other apps"]')`);
 const gateOpen = () => b.eval(`!!document.querySelector('div.relative.h-2 > div.bg-success')`);
 const muteLabel = () => b.eval(`document.querySelector('button[aria-label="Unmute"]') ? 'muted' : document.querySelector('button[aria-label="Mute"]') ? 'unmuted' : ''`);
 const settingsKeys = () => JSON.parse(lib('api', 'alice', 'GET', '/api/settings')).voiceKeys || {};
@@ -36,15 +36,15 @@ try {
     const home = await b.eval('location.href');
 
     step('binding V and Mouse 4 in the settings');
-    await clickOn(button('Settings'), 'the settings button');
-    await clickOn(button('Voice'), 'the voice tab');
-    await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's Set");
-    await waitFor(() => b.eval(`document.body.innerText.includes("Press a key or a mouse's side button")`), 'the capture prompt');
+    await clickOn(button('App settings'), 'the settings button');
+    await clickOn(button('Voice & video'), 'the voice tab');
+    await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
+    await waitFor(() => b.eval(`document.body.innerText.includes("Press a key, or a mouse's side button")`), 'the capture prompt');
     await b.key('v', 'down');
     await b.key('v', 'up');
     await waitFor(async () => (await keyIn('Push to talk')) === 'V', 'V bound');
-    await clickOn(`${row('Toggle mute')}?.querySelector('button')`, "toggle mute's Set");
-    await waitFor(() => b.eval(`document.body.innerText.includes("Press a key or a mouse's side button")`), 'the capture prompt again');
+    await clickOn(`${row('Toggle mute')}?.querySelector('button')`, "toggle mute's field");
+    await waitFor(() => b.eval(`document.body.innerText.includes("Press a key, or a mouse's side button")`), 'the capture prompt again');
     const at = await rect(`${row('Toggle mute')}`);
     await b.click(at[0], at[1], 'back');
     await waitFor(async () => (await keyIn('Toggle mute')) === 'Mouse 4', 'Mouse 4 bound');
@@ -54,8 +54,8 @@ try {
     const kept = settingsKeys();
     if (kept.ptt?.code !== 'KeyV' || kept.toggleMute?.code !== 'Mouse4') throw new Error(`the service kept ${JSON.stringify(kept)}`);
     ok('V and Mouse 4 bound, kept by the service, and the side button left the page where it was');
-    const unmarked = !(await marked('Push to talk')) && (await b.eval(`document.body.innerText.includes("In other programs, they need Dens's helper")`));
-    if (!unmarked) throw new Error('the keys card claims a helper that isn\'t there');
+    const unmarked = !(await marked('Push to talk')) && (await b.eval(`document.body.innerText.includes('To use them in other apps, keep the Dens helper running')`));
+    if (!unmarked) throw new Error('the shortcuts card claims a helper that isn\'t there');
     await shot('keys-no-helper');
 
     step('a stand-in helper says it reads both');
@@ -63,8 +63,8 @@ try {
     await waitFor(() => h.state(), "the service's state for the helper");
     h.send('source', { covers: ['ptt', 'toggleMute'], note: 'A test note from the helper.' });
     await waitFor(async () => (await marked('Push to talk')) && (await marked('Toggle mute')) && !(await marked('Push to mute')), 'the marks');
-    await waitFor(() => b.eval(`document.body.innerText.includes('During a call, keys work in other programs too') && document.body.innerText.includes('A test note from the helper.')`), 'the note');
-    ok('the keys card marks the keys the helper reads, with its note');
+    await waitFor(() => b.eval(`document.body.innerText.includes('Work in other apps too during a call') && document.body.innerText.includes('A test note from the helper.')`), 'the note');
+    ok('the shortcuts card marks the shortcuts the helper reads, with its note');
     await shot('keys-helper');
     await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
     await clickOn(`document.querySelector('[aria-label="Close"]') || ${button('✕')}`, 'the close button').catch(() => {});

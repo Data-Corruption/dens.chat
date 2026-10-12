@@ -5,7 +5,7 @@
 //
 //   run.sh share
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, checks, launch, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, openManage, openSettings, pair, waitFor } from './browsers.mjs';
 
 const { DEN: den } = process.env;
 const PRELOAD = `() => {
@@ -203,20 +203,17 @@ try {
     }, 'the call at 48 kbps', 15000).catch((e) => e.message);
     report(rates.startsWith('['), `both members' next offers ask for 48 kbps: ${rates}`);
 
-    // The settings' card, and the den's call limits on the home page.
-    await A.b.eval(`document.querySelector('[aria-label=Settings]').click(), true`);
-    await waitFor(() => A.b.eval(`!!document.querySelector('[role=dialog][aria-label=Settings]')`), 'settings');
-    await A.b.eval(`[...document.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Voice').click(), true`);
-    await waitFor(async () => (await text(A)).includes('Sharing your screen'), 'the share card');
-    await A.b.eval(`[...document.querySelectorAll('h2')].find((h) => h.textContent === 'Sharing your screen').scrollIntoView(), true`);
+    // The settings' card, and the den's call limits in its Manage dialog.
+    await openSettings(A.b, 'Voice & video');
+    await waitFor(async () => (await text(A)).includes('Screen share'), 'the share card');
+    await A.b.eval(`[...${SETTINGS}.querySelectorAll('h2')].find((h) => h.textContent === 'Screen share').scrollIntoView(), true`);
     await A.b.shot(`${HOME}/shot-share-settings.png`);
     await A.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
     await A.b.go(`http://localhost:${A.port}/`);
-    await waitFor(() => A.b.eval(`[...document.querySelectorAll('summary')].some((s) => s.textContent.includes('Den settings'))`), 'den settings');
-    await A.b.eval(`(() => { const d = [...document.querySelectorAll('summary')].find((s) => s.textContent.includes('Den settings')).parentElement; d.open = true; d.dispatchEvent(new Event('toggle')); return true; })()`);
-    const cost = await waitFor(async () => (await text(A)).match(/At most, shares take [^\n]*/)?.[0] || '', 'the cost line', 10000).catch((e) => e.message);
-    report(cost.includes('0.3 Mbps') || cost.includes('Mbps'), `the den's settings say: ${cost}`);
-    await A.b.eval(`[...document.querySelectorAll('h3')].find((h) => h.textContent.includes('Calls and screen shares'))?.scrollIntoView(), true`);
+    await openManage(A.b, 'Limits');
+    const cost = await waitFor(() => A.b.eval(`${MANAGE}?.innerText.match(/Upload needed at full load: [^\\n]*/)?.[0] || ''`), 'the upload line', 10000).catch((e) => e.message);
+    report(cost.includes('Mbps'), `the den's limits say: ${cost}`);
+    await A.b.eval(`[...${MANAGE}.querySelectorAll('h4')].find((h) => h.textContent === 'Calls')?.scrollIntoView(), true`);
     await A.b.shot(`${HOME}/shot-share-den-settings.png`);
 } catch (e) {
     c.fail(e);

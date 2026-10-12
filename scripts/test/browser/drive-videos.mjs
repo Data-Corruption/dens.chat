@@ -7,7 +7,7 @@
 // name.
 //
 //   run.sh videos chromium|firefox
-import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , bobIn] = process.argv;
 const aliceIn = bobIn === 'chromium' ? 'firefox' : 'chromium';
@@ -160,10 +160,10 @@ try {
     curl('alice', 'POST', `/api/dens/${den}/settings`, { limits });
 
     // The setting names videos too.
-    await bob.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
-    await waitFor(() => bob.eval(`[...document.querySelectorAll('[aria-label=Settings] label')].some((l) => l.textContent.includes('Send photos and videos smaller'))`), 'the setting');
+    await openSettings(bob, 'Chat & media');
+    await waitFor(() => bob.eval(`[...${SETTINGS}.querySelectorAll('label')].some((l) => l.textContent.includes('Compress photos and videos'))`), 'the setting');
     await shot(bob, 'setting');
-    ok('the setting reads "Send photos and videos smaller"');
+    ok('the setting reads "Compress photos and videos"');
 } catch (e) {
     c.fail(e);
 } finally {

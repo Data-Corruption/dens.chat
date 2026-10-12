@@ -3,7 +3,7 @@
 // in Firefox, moves through a message's images in the viewer.
 //
 //   run.sh files
-import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, MANAGE, checks, launch, lib, openManage, pair, waitFor } from './browsers.mjs';
 
 const { DEN: den, GENERAL: general, THREE: three, CLIP: clip } = process.env;
 const c = checks();
@@ -35,16 +35,15 @@ try {
     await pair(bob, BOB);
     await pair(alice, ALICE);
     // The list, largest first, says what uses each file.
-    const section = `[...document.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent.trim() === 'Files')`;
+    const section = MANAGE;
     const rows = `[...${section}.querySelectorAll('li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim())`;
-    await waitFor(() => bob.eval(`!!${section}`), "bob's Files section");
-    await bob.eval(`${section}.querySelector('summary').click(), true`);
+    await openManage(bob, 'Your files');
     const listed = await waitFor(async () => {
         const r = await bob.eval(rows);
         return r.length === 4 ? r : null;
     }, 'the list');
     if (!listed[0].startsWith('clip.mp4') || !listed[0].includes('In #general') || !listed[0].includes('a clip')) throw new Error(`first row: ${listed[0]}`);
-    if (!(await bob.eval(`${section}.innerText.includes('Your files take')`))) throw new Error('no space line');
+    if (!(await bob.eval(`/of [\\d.]+ [KMG]?B used/.test(${section}.innerText)`))) throw new Error('no space line');
     ok(`bob's list starts with: ${listed[0]}`);
     await bob.eval(`${section}.scrollIntoView(), true`);
     await bob.shot(`${HOME}/shot-files-files-list.png`);

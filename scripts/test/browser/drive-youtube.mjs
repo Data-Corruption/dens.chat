@@ -6,7 +6,7 @@
 //   run.sh youtube chromium|firefox chromium|firefox   (alice's, then bob's)
 import { setTimeout as sleep } from 'node:timers/promises';
 import crypto from 'node:crypto';
-import { HOME, checks, launch, token, waitFor } from './browsers.mjs';
+import { HOME, SETTINGS, checks, launch, openSettings, token, waitFor } from './browsers.mjs';
 
 const [, , aName, bName] = process.argv;
 const { DEN: den, GENERAL: general, OTHER: other, DM: dm } = process.env;
@@ -73,11 +73,11 @@ const post = (s, channel, text) => s.b.eval(`(async () => (await fetch('/api/den
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce: ${JSON.stringify(crypto.randomBytes(16).toString('base64url'))}, text: ${JSON.stringify(text)} }) })).status)()`);
 
 async function setPlayers(s, on) {
-    await s.b.eval(`document.querySelector('[aria-label=Settings]').click(), true`);
-    const LABEL = `[...document.querySelectorAll('[role=dialog][aria-label=Settings] label')].find((l) => l.textContent.includes('Play YouTube videos in Dens'))`;
-    await waitFor(() => s.b.eval(`!!${LABEL}`), `${s.browser} settings`);
-    await s.b.eval(`(() => { const box = ${LABEL}.querySelector('input'); if (box.checked !== ${on}) box.click(); return true; })()`);
-    await s.b.eval(`document.querySelector('[role=dialog][aria-label=Settings] button[aria-label=Close]').click(), true`);
+    await openSettings(s.b, 'Chat & media');
+    const BOX = `${SETTINGS}.querySelector('input#youtube')`;
+    await waitFor(() => s.b.eval(`!!${BOX}`), `${s.browser} settings`);
+    await s.b.eval(`(() => { const box = ${BOX}; if (box.checked !== ${on}) box.click(); return true; })()`);
+    await s.b.eval(`${SETTINGS}.querySelector('button[aria-label=Close]').click(), true`);
 }
 
 // playCover clicks a cover as a member would, and waits for the player.
@@ -169,7 +169,8 @@ try {
         `${B.browser}: scrolled out of view, it plays on: ${out}, ${t1.time} s then ${t2.time} s`);
 
     // Another channel stops it, and coming back finds covers.
-    const channel = (name) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '#${name}')`;
+    // A channel's # is an icon (M8.3), so its button reads its name alone.
+    const channel = (name) => `[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === '${name}')`;
     await B.b.eval(`${channel('other')}.click(), true`);
     await waitFor(() => B.b.eval(`location.pathname.endsWith('/${other}')`), `${B.browser} other channel`);
     await sleep(800);
@@ -200,7 +201,7 @@ try {
         await B.b.answer(`/api/youtube/${missing}`, 404, '{"error":"YouTube doesn\'t have this video."}');
         const label = `${tag}-notices`;
         await B.b.eval(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Den').click(), true`);
-        await B.b.eval(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '#general').click(), true`);
+        await B.b.eval(`[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === 'general').click(), true`);
         await waitFor(() => B.b.eval(`document.body.textContent.includes('${tag} filler 29')`), `${B.browser} general loaded`);
         console.log('posted notices:', await post(A, general, `${label} https://www.youtube.com/watch?v=${refused} https://www.youtube.com/watch?v=${missing}`));
         const notices = await waitFor(() => B.b.eval(`(() => { const a = ${COVER(label, refused)}, b = ${COVER(label, missing)};
@@ -237,7 +238,7 @@ try {
         await B.b.eval(`[...document.querySelectorAll('nav[aria-label="Direct messages"] button')].find((b) => b.textContent.includes('Alice')).click(), true`);
         await sleep(2000);
         await B.b.eval(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Den').click(), true`);
-        await B.b.eval(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '#general').click(), true`);
+        await B.b.eval(`[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === 'general').click(), true`);
         await sleep(wait);
         const race = `${tag}-dmrace-${wait}`;
         await post(A, general, race);
@@ -248,9 +249,9 @@ try {
     // And one posted as a channel opens from another.
     for (const [from, to] of [['other', general], ['general', other]]) {
         const target = to === general ? 'general' : 'other';
-        await B.b.eval(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '#${from}').click(), true`);
+        await B.b.eval(`[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === '${from}').click(), true`);
         await sleep(1500);
-        await B.b.eval(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '#${target}').click(), true`);
+        await B.b.eval(`[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === '${target}').click(), true`);
         const race = `${tag}-race-${target}`;
         await post(A, to, race);
         const seen = await waitFor(() => B.b.eval(`document.body.textContent.includes('${race}')`), 'race', 10000).then(() => true, () => false);
