@@ -303,7 +303,7 @@ func (rt *router) handleCreateDen(w http.ResponseWriter, r *http.Request) {
 	var code []byte
 	var err error
 	if _, created := rt.a.Den.Info(); created {
-		code, err = rt.a.Den.OwnerInvite(r.Context())
+		code, err = rt.a.Den.SetupInvite(r.Context())
 	} else {
 		if _, err := denproto.CleanName(body.Name, denproto.MaxNameRunes); err != nil {
 			jsonError(w, http.StatusBadRequest, "Den name: "+err.Error())

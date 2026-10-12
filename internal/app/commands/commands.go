@@ -17,6 +17,7 @@ var constructors = []constructor{
 	openCommand,
 	statusCommand,
 	backupCommand,
+	denCommand,
 	serviceCommand,
 	installCommand,
 	updateCommand,

@@ -62,16 +62,26 @@ const eventRefresh = "_refresh"
 // it missed. Sequence numbers restart with each process, so the epoch tells
 // a resuming client whether its number still means anything here.
 type Hub struct {
-	epoch   string
-	maxLen  int
-	maxAge  time.Duration
-	subSize int
-	now     func() time.Time
+	epoch  string
+	maxLen int
+	maxAge time.Duration
+	// maxBytes bounds what the ring's events hold (M8), so members sending
+	// large messages fast can't grow the den's memory as far as maxLen
+	// would let them.
+	maxBytes int
+	subSize  int
+	now      func() time.Time
 
 	mu    sync.Mutex
 	seq   uint64
-	first uint64 // seq of ring[0]
+	first uint64 // seq of ring[head]
+	// ring[head:] holds the recent events; trim moves head past the ones
+	// it drops and clears them, and record moves the rest down only once
+	// they take less than half the slice, so publishing never copies the
+	// whole ring.
 	ring  []ringEntry
+	head  int
+	bytes int // the size of the ring's events
 	subs  map[*Sub]struct{}
 	// Resume points before these need a fresh snapshot instead of a
 	// replay: what the member could see changed after them.
@@ -83,6 +93,7 @@ type ringEntry struct {
 	at       time.Time
 	audience Audience
 	event    denproto.Event
+	size     int
 }
 
 // Sub is one socket's subscription. Events arrive in order; the channel is
@@ -109,6 +120,7 @@ func NewHub() *Hub {
 		epoch:         hex.EncodeToString(b),
 		maxLen:        50_000,
 		maxAge:        10 * time.Minute,
+		maxBytes:      64 << 20,
 		subSize:       1024,
 		now:           time.Now,
 		first:         1,
@@ -144,7 +156,15 @@ func (h *Hub) record(event denproto.Event, audience Audience) {
 	h.seq++
 	event.Seq = h.seq
 	now := h.now()
-	h.ring = append(h.ring, ringEntry{at: now, audience: audience, event: event})
+	if h.head > 0 && h.head >= len(h.ring)-h.head {
+		n := copy(h.ring, h.ring[h.head:])
+		clear(h.ring[n:])
+		h.ring = h.ring[:n]
+		h.head = 0
+	}
+	size := eventSize(event)
+	h.ring = append(h.ring, ringEntry{at: now, audience: audience, event: event, size: size})
+	h.bytes += size
 	h.trim(now)
 }
 
@@ -247,14 +267,18 @@ func (h *Hub) send(sub *Sub, event denproto.Event) {
 	}
 }
 
+// trim drops the oldest events past the ring's length, size or age. The
+// caller holds h.mu.
 func (h *Hub) trim(now time.Time) {
-	drop := 0
-	for drop < len(h.ring) && (len(h.ring)-drop > h.maxLen || now.Sub(h.ring[drop].at) > h.maxAge) {
-		drop++
-	}
-	if drop > 0 {
-		h.ring = append(h.ring[:0:0], h.ring[drop:]...)
-		h.first += uint64(drop)
+	for h.head < len(h.ring) {
+		e := &h.ring[h.head]
+		if len(h.ring)-h.head <= h.maxLen && h.bytes <= h.maxBytes && now.Sub(e.at) <= h.maxAge {
+			break
+		}
+		h.bytes -= e.size
+		*e = ringEntry{} // so the event's memory goes now
+		h.head++
+		h.first++
 	}
 }
 
@@ -271,7 +295,7 @@ func (h *Hub) Subscribe(member int64, staff bool, epoch string, after uint64) (s
 	h.subs[sub] = struct{}{}
 	stale := (!staff && after < h.nonStaffRefresh) || after < h.memberRefresh[member]
 	if epoch == h.epoch && !stale && after <= h.seq && after+1 >= h.first {
-		for _, e := range h.ring[after+1-h.first:] {
+		for _, e := range h.ring[h.head+int(after+1-h.first):] {
 			if e.audience.includes(member, staff) {
 				missed = append(missed, e.event)
 			}

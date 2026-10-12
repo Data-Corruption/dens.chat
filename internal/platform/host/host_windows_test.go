@@ -1,6 +1,7 @@
 package host
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/svc"
 )
 
 func testControlPath(t *testing.T) string {
@@ -80,5 +82,37 @@ func TestServiceStatusOfMissingService(t *testing.T) {
 	_, err := ServiceStatus(fmt.Sprintf("dens-test-missing-%d", time.Now().UnixNano()))
 	if !errors.Is(err, ErrServiceNotInstalled) {
 		t.Fatalf("ServiceStatus = %v, want ErrServiceNotInstalled", err)
+	}
+}
+
+// TestServiceFailureEndsAsACrash checks how the service handler ends: a
+// refusal stops with ExitRefused, which the SCM doesn't retry, and any other
+// failure ends the process without reporting the stop, which the SCM takes
+// for a crash and restarts (M8).
+func TestServiceFailureEndsAsACrash(t *testing.T) {
+	defer func(record func(string, error), c func()) { recordFailure, crash = record, c }(recordFailure, crash)
+	var recorded []error
+	crashed := 0
+	recordFailure = func(_ string, err error) { recorded = append(recorded, err) }
+	crash = func() { crashed++ }
+	run := func(failure error) (bool, uint32) {
+		h := &serviceHandler{name: "dens-test", ctx: context.Background(), fn: func(_ context.Context, ready func()) error {
+			ready()
+			return failure
+		}}
+		status := make(chan svc.Status, 8)
+		return h.Execute(nil, make(chan svc.ChangeRequest), status)
+	}
+	if specific, code := run(fmt.Errorf("%w: the lifecycle state names another version", ErrRefused)); !specific || code != ExitRefused || crashed != 0 {
+		t.Fatalf("a refusal ended with %v %d, crashed %d times", specific, code, crashed)
+	}
+	if run(errors.New("the control endpoint stopped")); crashed != 1 {
+		t.Fatalf("a failure crashed %d times", crashed)
+	}
+	if specific, code := run(nil); specific || code != 0 || crashed != 1 {
+		t.Fatalf("a clean stop ended with %v %d, crashed %d times", specific, code, crashed)
+	}
+	if len(recorded) != 2 {
+		t.Fatalf("recorded %v in the event log", recorded)
 	}
 }

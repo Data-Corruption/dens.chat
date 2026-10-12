@@ -497,7 +497,7 @@ func makeBackup(t *testing.T, key []byte, password string) string {
 		t.Fatal(err)
 	}
 	manifest := backup.Manifest{App: "dens", Version: "v1.0.0", Instance: "main", CreatedAt: time.Now(), Platform: "linux/amd64"}
-	if err := backup.Write(out, manifest, snapshot, filepath.Join(dir, "no-uploads")); err != nil {
+	if _, err := backup.Write(out, manifest, snapshot, filepath.Join(dir, "no-uploads")); err != nil {
 		t.Fatal(err)
 	}
 	if err := out.Close(); err != nil {

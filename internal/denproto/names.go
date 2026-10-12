@@ -34,8 +34,10 @@ func NormalizeUsername(s string) (string, error) {
 }
 
 // CleanName strips characters that let a name disguise itself or reorder
-// the text around it (control, bidi-override and zero-width characters),
-// trims it, and checks it is 1 to max characters.
+// the text around it: control and format characters, which include the
+// bidi overrides and the zero-width ones, and the fillers that render as
+// blanks. It trims what's left, and checks it is 1 to max characters with
+// something visible among them, so a name can't pass for nobody's (M8).
 func CleanName(s string, max int) (string, error) {
 	if !utf8.ValidString(s) {
 		return "", errors.New("names must be valid UTF-8")
@@ -50,19 +52,28 @@ func CleanName(s string, max int) (string, error) {
 	if n := utf8.RuneCountInString(s); n == 0 || n > max {
 		return "", fmt.Errorf("a name is 1 to %d characters", max)
 	}
+	if strings.IndexFunc(s, visibleRune) < 0 {
+		return "", errors.New("a name needs a letter, digit, punctuation mark or symbol")
+	}
 	return s, nil
 }
 
 func hiddenRune(r rune) bool {
 	switch {
-	case unicode.IsControl(r):
-		return true
-	case r >= 0x202A && r <= 0x202E, r >= 0x2066 && r <= 0x2069, r == 0x200E, r == 0x200F, r == 0x061C:
-		return true // bidi embeddings, overrides, isolates and marks
-	case r >= 0x200B && r <= 0x200D, r == 0x2060, r == 0xFEFF, r == 0x00AD, r == 0x180E:
-		return true // zero-width and invisible formatting
+	case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+		return true // bidi embeddings, overrides, isolates and marks, and zero-width characters among them
+	case r == 0x115F, r == 0x1160, r == 0x3164, r == 0xFFA0:
+		return true // Hangul fillers, letters that render as blanks
+	case r == 0x2800:
+		return true // the blank Braille pattern
 	}
 	return false
+}
+
+// visibleRune reports whether a rune shows something: a letter, digit,
+// punctuation or symbol, where a mark only changes the rune before it.
+func visibleRune(r rune) bool {
+	return unicode.In(r, unicode.L, unicode.N, unicode.P, unicode.S)
 }
 
 // NormalizeDenURL checks a den's address and returns it without a trailing

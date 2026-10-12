@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -36,15 +38,30 @@ func freePort(t *testing.T) int {
 // directories and returns a control client for it.
 func startDevService(t *testing.T) (*app.App, control.Client) {
 	t.Helper()
+	return startDevServiceWith(t, func(*app.OpenOptions) {})
+}
+
+// devHome points a development instance's directories into the test's own.
+func devHome(t *testing.T) {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dir)
 	t.Setenv("XDG_RUNTIME_DIR", dir)
 	t.Setenv("LOCALAPPDATA", dir)
+}
 
-	bi := build.BuildInfo{Name: "dens", Version: "v1.0.0", DefaultLogLevel: "warn", DevMode: true}
-	a := app.New(bi)
-	instance := fmt.Sprintf("t%d", time.Now().UnixNano()%1_000_000)
-	if err := a.Open(app.OpenOptions{Instance: instance, DevClientPort: freePort(t)}); err != nil {
+var devBuild = build.BuildInfo{Name: "dens", Version: "v1.0.0", DefaultLogLevel: "warn", DevMode: true}
+
+func devInstance() string { return fmt.Sprintf("t%d", time.Now().UnixNano()%1_000_000) }
+
+// startDevServiceWith is startDevService with the options set changes.
+func startDevServiceWith(t *testing.T, set func(*app.OpenOptions)) (*app.App, control.Client) {
+	t.Helper()
+	devHome(t)
+	a := app.New(devBuild)
+	opts := app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}
+	set(&opts)
+	if err := a.Open(opts); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	pages, err := ui.New()
@@ -230,5 +247,37 @@ func TestClientListenerRejectsForeignHosts(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusMisdirectedRequest {
 		t.Fatalf("foreign Host got %d", resp.StatusCode)
+	}
+}
+
+// TestStartEmptiesTemp checks that the service empties the data directory's
+// tmp as it starts, so nothing a crash left there outlives it (M8).
+func TestStartEmptiesTemp(t *testing.T) {
+	devHome(t)
+	opts := app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}
+	a := app.New(devBuild)
+	if err := a.Open(opts); err != nil {
+		t.Fatal(err)
+	}
+	temp := a.Layout.Temp
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"upload-123", "dens-scratch-456", filepath.Join("backup-789", "db.sqlite")} {
+		path := filepath.Join(temp, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("left by a crash"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a = app.New(devBuild)
+	if err := a.Open(opts); err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if entries, err := os.ReadDir(temp); err != nil || len(entries) != 0 {
+		t.Fatalf("tmp after a start: %v %v", entries, err)
 	}
 }

@@ -158,3 +158,63 @@ func TestControlReadDeadlineAndListenerClose(t *testing.T) {
 		t.Fatal("Accept did not return after Close")
 	}
 }
+
+// TestControlListenerOutlivesAClientThatLeaves checks that a client that
+// opens the endpoint and closes it before the server accepts doesn't stop
+// the listener: the next client is served (M8). On Windows that leaves the
+// pipe's instance with ERROR_NO_DATA, which once failed every accept after
+// it, as the audit's probe showed.
+func TestControlListenerOutlivesAClientThatLeaves(t *testing.T) {
+	me, err := CurrentUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := testControlPath(t)
+	ln, err := ListenControl(path, me)
+	if err != nil {
+		t.Fatalf("ListenControl: %v", err)
+	}
+	defer ln.Close()
+	gone, err := DialControl(path, ControlServer{Account: me}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("DialControl: %v", err)
+	}
+	gone.Close()
+
+	served := make(chan error, 1)
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				served <- err
+				return
+			}
+			// On Linux the client that left is accepted, and reads as ended.
+			_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			line, err := bufio.NewReader(conn).ReadString('\n')
+			if err == nil {
+				_, err = conn.Write([]byte("echo " + line))
+				conn.Close()
+				served <- err
+				return
+			}
+			conn.Close()
+		}
+	}()
+	next, err := DialControl(path, ControlServer{Account: me}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("DialControl after a client left: %v", err)
+	}
+	defer next.Close()
+	_ = next.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := next.Write([]byte("hello\n")); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := bufio.NewReader(next).ReadString('\n')
+	if err != nil || reply != "echo hello\n" {
+		t.Fatalf("the next client got %q, %v", reply, err)
+	}
+	if err := <-served; err != nil {
+		t.Fatalf("serving the next client: %v", err)
+	}
+}

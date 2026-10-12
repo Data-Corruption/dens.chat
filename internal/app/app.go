@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -168,6 +169,12 @@ func (a *App) open(opts OpenOptions) error {
 		return fmt.Errorf("open logs: %w", err)
 	}
 	a.Log.Infof("Starting %s %s, instance %s (dev=%t, mode %d)", bi.Name, bi.Version, l.Instance, l.Dev, lease.Mode)
+	// tmp holds files only while the service works on them: uploads
+	// arriving, files being prepared for sending, a backup's snapshot. So
+	// whatever a crash left there goes before anything uses it (M8).
+	if err := emptyDir(l.Temp); err != nil {
+		return fmt.Errorf("empty %s: %w", l.Temp, err)
+	}
 
 	a.Instance, err = instance.Read(l.InstanceConfig)
 	if err != nil {
@@ -276,6 +283,20 @@ func (a *App) open(opts OpenOptions) error {
 	}
 	a.AddCleanup(a.Cache.Close)
 	a.Dens.Cache = a.Cache
+	return nil
+}
+
+// emptyDir removes everything in dir, leaving dir itself.
+func emptyDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

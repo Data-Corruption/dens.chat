@@ -99,6 +99,10 @@ func (h *handler) send(w http.ResponseWriter, r *http.Request) {
 	if !h.decode(w, r, &req) {
 		return
 	}
+	if err := h.d.AllowMessage(s.MemberID, len(req.Text)+len(req.Sealed)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	m, err := h.d.Send(r.Context(), s, chi.URLParam(r, "id"), req)
 	if err != nil {
 		h.fail(w, r, err)

@@ -130,10 +130,27 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 	return conn, nil
 }
 
-// connect waits for a client on h, or for Close. The connect is overlapped
-// so that Close can interrupt it; the operation is always completed before
-// connect returns, because the kernel writes into the OVERLAPPED.
+// connect waits for a client on h, or for Close. A client that opened the
+// pipe and closed it again before the service connected leaves the
+// instance unusable, and ConnectNamedPipe says so with ERROR_NO_DATA (M8).
+// Disconnecting it makes the same instance ready for the next client, as
+// go-winio retries this case, so the pipe's name stays held throughout.
 func (l *pipeListener) connect(h windows.Handle) error {
+	for {
+		err := l.connectOnce(h)
+		if !errors.Is(err, windows.ERROR_NO_DATA) {
+			return err
+		}
+		if err := windows.DisconnectNamedPipe(h); err != nil {
+			return fmt.Errorf("disconnect a control pipe client that left: %w", err)
+		}
+	}
+}
+
+// connectOnce waits for one client on h. The connect is overlapped so that
+// Close can interrupt it; the operation is always completed before
+// connectOnce returns, because the kernel writes into the OVERLAPPED.
+func (l *pipeListener) connectOnce(h windows.Handle) error {
 	event, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
 		return err
@@ -340,6 +357,11 @@ func (c *pipeConn) SetWriteDeadline(t time.Time) error {
 	c.deadlineMu.Unlock()
 	return nil
 }
+
+// PeerBeforeRequest is true where PeerIdentity works on a connection as
+// soon as it's accepted. A pipe identifies its client from the last data
+// read from it, so here the server reads the request first.
+const PeerBeforeRequest = false
 
 // PeerIdentity returns the account of the client on a server-side control
 // connection. The pipe identifies the client from the last data read, so

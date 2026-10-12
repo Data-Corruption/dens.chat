@@ -28,8 +28,8 @@ func TestWriteExtractRoundTrip(t *testing.T) {
 
 	var archive bytes.Buffer
 	want := Manifest{App: "dens", Version: "v1.0.0", SchemaVersion: 3, Instance: "main", CreatedAt: time.Now().UTC().Truncate(time.Second), Platform: "linux/amd64"}
-	if err := Write(&archive, want, dbPath, uploads); err != nil {
-		t.Fatal(err)
+	if skipped, err := Write(&archive, want, dbPath, uploads); err != nil || skipped != 0 {
+		t.Fatalf("Write: skipped %d, %v", skipped, err)
 	}
 
 	dest := t.TempDir()
@@ -56,7 +56,7 @@ func TestWriteWithoutUploads(t *testing.T) {
 		t.Fatal(err)
 	}
 	var archive bytes.Buffer
-	if err := Write(&archive, Manifest{}, dbPath, filepath.Join(src, "missing")); err != nil {
+	if _, err := Write(&archive, Manifest{}, dbPath, filepath.Join(src, "missing")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Extract(&archive, t.TempDir(), DefaultLimits); err != nil {

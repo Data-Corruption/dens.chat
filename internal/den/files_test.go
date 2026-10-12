@@ -461,11 +461,12 @@ func TestSweepAndTidy(t *testing.T) {
 		t.Fatalf("stored after the sweep: %v", files)
 	}
 
-	// What a crash leaves behind goes when the den starts.
+	// What a crash leaves behind goes when the den starts. Parts of
+	// uploads go with the rest of the temporary directory, which the
+	// service empties.
 	orphan := filepath.Join(f.storage.Dir, "00112233445566778899aabbccddeeff")
-	part := filepath.Join(f.storage.Temp, partPrefix+"123")
 	mine := filepath.Join(f.storage.Dir, "notes.txt")
-	for _, p := range []string{orphan, orphan + thumbSuffix, part, mine} {
+	for _, p := range []string{orphan, orphan + thumbSuffix, mine} {
 		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -491,5 +492,40 @@ func TestRemovalDeletesFiles(t *testing.T) {
 	}
 	if files, _ := f.stored(); len(files) != 0 {
 		t.Fatalf("stored after removing with messages: %v", files)
+	}
+}
+
+// TestHeldFiles checks that while a backup holds the den's files, deleting
+// them takes their rows but leaves them on the disk until the last hold
+// ends (M8).
+func TestHeldFiles(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	c := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	first := f.mustSendFiles(member, c.ID, f.mustUpload(member, "a.txt", []byte("a")).ID)
+	second := f.mustSendFiles(member, c.ID, f.mustUpload(member, "b.txt", []byte("b")).ID)
+
+	release := f.d.HoldFiles()
+	other := f.d.HoldFiles()
+	if err := f.d.Delete(ctx, member, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.read(member, first.Attachments[0].ID, false); !denproto.IsCode(err, denproto.CodeNotFound) {
+		t.Fatalf("a deleted message's file while held: %v", err)
+	}
+	release()
+	release() // twice changes nothing
+	if files, _ := f.stored(); len(files) != 2 {
+		t.Fatalf("stored while another hold lasts: %v", files)
+	}
+	other()
+	if files, _ := f.stored(); len(files) != 1 {
+		t.Fatalf("stored once the holds ended: %v", files)
+	}
+	if err := f.d.Delete(ctx, member, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if files, _ := f.stored(); len(files) != 0 {
+		t.Fatalf("stored after a delete with nothing held: %v", files)
 	}
 }

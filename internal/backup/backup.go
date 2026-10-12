@@ -51,19 +51,22 @@ var DefaultLimits = Limits{MaxBytes: 256 << 30, MaxFiles: 1_000_000}
 
 // Write streams an archive to w: the manifest, the database snapshot at
 // dbPath, and every regular file under uploadsDir (which may not exist).
-func Write(w io.Writer, m Manifest, dbPath, uploadsDir string) error {
+// A file that goes between the walk finding it and the archive taking it
+// is left out, and counted in skipped: the service holds back deleting
+// what the snapshot names, so such a file was never in it.
+func Write(w io.Writer, m Manifest, dbPath, uploadsDir string) (skipped int, err error) {
 	m.Format = FormatVersion
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 	manifest, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := writeEntry(tw, manifestName, int64(len(manifest)), m.CreatedAt, strings.NewReader(string(manifest))); err != nil {
-		return err
+		return 0, err
 	}
 	if err := writeFile(tw, databaseName, dbPath); err != nil {
-		return err
+		return 0, err
 	}
 	err = filepath.WalkDir(uploadsDir, func(p string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -79,15 +82,20 @@ func Write(w io.Writer, m Manifest, dbPath, uploadsDir string) error {
 		if err != nil {
 			return err
 		}
-		return writeFile(tw, uploadsPrefix+filepath.ToSlash(rel), p)
+		err = writeFile(tw, uploadsPrefix+filepath.ToSlash(rel), p)
+		if errors.Is(err, fs.ErrNotExist) {
+			skipped++
+			return nil
+		}
+		return err
 	})
 	if err != nil {
-		return fmt.Errorf("archive uploads: %w", err)
+		return skipped, fmt.Errorf("archive uploads: %w", err)
 	}
 	if err := tw.Close(); err != nil {
-		return err
+		return skipped, err
 	}
-	return gz.Close()
+	return skipped, gz.Close()
 }
 
 func writeFile(tw *tar.Writer, name, src string) error {

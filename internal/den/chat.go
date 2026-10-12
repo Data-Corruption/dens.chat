@@ -105,20 +105,10 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 		return r, err
 	}
 	r.Channels = append(r.Channels, dms...)
-	last := map[string]string{}
-	rows, err = d.db.QueryContext(ctx, `SELECT channel_id, max(id) FROM den_messages GROUP BY channel_id`)
+	last, err := d.lastMessages(ctx, member, staff)
 	if err != nil {
 		return r, err
 	}
-	for rows.Next() {
-		var ch, id int64
-		if err := rows.Scan(&ch, &id); err != nil {
-			rows.Close()
-			return r, err
-		}
-		last[denproto.FormatID(ch)] = denproto.FormatID(id)
-	}
-	rows.Close()
 	read := map[string]string{}
 	closed := map[string]bool{}
 	rows, err = d.db.QueryContext(ctx, `SELECT channel_id, message_id, closed FROM den_read_states WHERE member_id = ?`, member)
@@ -174,6 +164,33 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 	}
 	r.DeviceRequests = d.memberRequests(member)
 	return r, nil
+}
+
+// lastMessages returns the newest message in each channel and DM a member
+// sees that has any, by channel. Each is a lookup of the (channel_id, id)
+// index, where max(id) GROUP BY channel_id would read every message in the
+// den, for each of the hundreds of snapshots a den restart sends at once
+// (M8).
+func (d *Den) lastMessages(ctx context.Context, member int64, staff bool) (map[string]string, error) {
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT c.id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id) FROM den_channels c
+		WHERE (c.kind = 'text' AND (c.staff_only = 0 OR ?1)) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))`, staff, member)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	last := map[string]string{}
+	for rows.Next() {
+		var ch int64
+		var id sql.NullInt64
+		if err := rows.Scan(&ch, &id); err != nil {
+			return nil, err
+		}
+		if id.Valid {
+			last[denproto.FormatID(ch)] = denproto.FormatID(id.Int64)
+		}
+	}
+	return last, rows.Err()
 }
 
 type querier interface {
@@ -1630,7 +1647,8 @@ func Conflict(err error) (denproto.Message, bool) {
 
 // Delete removes a message for good. Its author may, and so may staff of a
 // higher rank than the author, as with removing members: moderators delete
-// members' messages, and the owner anyone's.
+// members' messages, and the owner anyone's. Staff powers stop at DMs,
+// whose text they can't see: there only the author deletes (M8).
 func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	m, mid, err := d.message(ctx, id)
 	if err != nil {
@@ -1641,6 +1659,9 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 		return errMessageNotFound
 	}
 	if m.AuthorID != denproto.FormatID(s.MemberID) {
+		if c.Kind == denproto.KindDM {
+			return forbidden("only its author deletes a DM's message")
+		}
 		var role string
 		if err := d.db.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ?`, m.AuthorID).Scan(&role); err != nil {
 			return err

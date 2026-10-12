@@ -56,6 +56,12 @@ func removeStaleSocket(path string) error {
 	return os.Remove(path)
 }
 
+// PeerBeforeRequest is true where PeerIdentity works on a connection as
+// soon as it's accepted. The kernel records the peer's credentials as a
+// Unix socket connects, so the server refuses another account before it
+// reads a byte of what it sent.
+const PeerBeforeRequest = true
+
 // PeerIdentity returns the account on the other end of a control connection.
 func PeerIdentity(conn net.Conn) (Identity, error) {
 	cred, err := peerCred(conn)
