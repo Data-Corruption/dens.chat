@@ -243,7 +243,7 @@ func farewell(err error) (State, string) {
 			return StateRevoked, "Your den password was changed on another device, which signed this one out. " +
 				"Sign in again with the new password; if you didn't change it, use a recovery code."
 		case denproto.CloseReasonStartedOver:
-			return StateRevoked, "You started over with a new DM seal on another device, which signed this one out. " +
+			return StateRevoked, "You reset your DM recovery key on another device, which signed this one out. " +
 				"Sign in again, and approve it from that device."
 		}
 	}

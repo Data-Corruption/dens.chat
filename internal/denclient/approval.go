@@ -146,7 +146,7 @@ func (m *Manager) AnswerSignIn(ctx context.Context, denID, requestID string) err
 		return inputError(errors.New("that sign-in isn't waiting any more"))
 	}
 	if !hasSeal {
-		return inputError(errors.New("this device doesn't have your DM seal, so it can't pass it on: approve on another device, or type your seal here first"))
+		return inputError(errors.New("this device doesn't have your DM recovery key, so it can't pass it on: approve on another device, or enter your key here first"))
 	}
 	xctx := denproto.DeviceExchangeContext(c.j.denID, username, r.KeyID)
 	responder, answer, err := denproto.AnswerExchange(xctx, r.Offer)
@@ -476,12 +476,12 @@ func (m *Manager) finishSignIn(ctx context.Context, p *pendingSignIn) {
 	}
 	seal, err := denproto.OpenHandover(res.Key, p.context, handover)
 	if err != nil {
-		fail("The seal the other device handed over doesn't open here.")
+		fail("The DM recovery key the other device handed over doesn't open here.")
 		return
 	}
 	defer clear(seal)
 	if check, err := denproto.SealCheck(seal, p.denID); err != nil || !denproto.Equal(check, resp.SealCheck) {
-		fail("The other device handed over a DM seal that isn't yours for this den.")
+		fail("The other device handed over a DM recovery key that isn't yours for this den.")
 		return
 	}
 	if c, err := m.find(p.denID.String()); err == nil {
@@ -496,7 +496,7 @@ func (m *Manager) finishSignIn(ctx context.Context, p *pendingSignIn) {
 	}
 	secret, err := vault.NewSecret(seal)
 	if err != nil {
-		fail("Dens couldn't keep the DM seal.")
+		fail("Dens couldn't keep the DM recovery key.")
 		return
 	}
 	// The device key now belongs to the joined den.

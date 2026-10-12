@@ -75,7 +75,7 @@ func (m *Manager) TypeSeal(ctx context.Context, denID, typed string) error {
 		return inputError(errors.New("this den isn't connected yet; try again once it is"))
 	}
 	if !denproto.Equal(check, want) {
-		return inputError(errors.New("that isn't your DM seal for this den. Check it against what you saved; if you can't find it, start over"))
+		return inputError(errors.New("that isn't your DM recovery key for this den. Check it against what you saved; if you can't find it, reset it"))
 	}
 	return c.setSeal(ctx, seal)
 }

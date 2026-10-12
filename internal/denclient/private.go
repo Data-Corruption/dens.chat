@@ -32,7 +32,7 @@ const (
 )
 
 var (
-	errNoSeal = inputError(errors.New("this device doesn't have your DM seal for this den: type it in, or start over"))
+	errNoSeal = inputError(errors.New("this device doesn't have your DM recovery key for this den: enter it, or reset it"))
 	errDigits = inputError(errors.New("those digits don't match. Check you typed what the other screen shows; " +
 		"if they really differ, someone may be in the middle, so start the check again"))
 )
