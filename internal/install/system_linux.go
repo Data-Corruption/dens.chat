@@ -26,6 +26,14 @@ import (
 // minimumSystemd is the first release with LoadCredentialEncrypted=.
 const minimumSystemd = 250
 
+// incusGuide is the public guide to running Dens in an Incus container, on
+// the distributions it doesn't support (M8).
+const incusGuide = "https://dens.chat/docs/incus/"
+
+// lxcDropIn is the drop-in LXC adds to every service in an unprivileged
+// container, under the unit directories in /run and /etc.
+const lxcDropIn = "service.d/zzz-lxc-service.conf"
+
 // serviceStopTimeout bounds waiting for a stop; the unit's TimeoutStopSec
 // makes systemd escalate to SIGKILL before it.
 const serviceStopTimeout = 30 * time.Second
@@ -47,6 +55,9 @@ func (linuxSystem) CheckAdmin() error {
 }
 
 func (linuxSystem) Preflight() error {
+	if err := checkDistribution("/"); err != nil {
+		return err
+	}
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
 		return errors.New("Dens needs systemd as the init system")
 	}
@@ -70,7 +81,71 @@ func (linuxSystem) Preflight() error {
 			return fmt.Errorf("%s is missing", tool)
 		}
 	}
+	return checkLXCDropIn("/")
+}
+
+// checkDistribution refuses the distributions an install would fail on
+// halfway, on a path it writes that they keep read-only, before anything
+// changes (M8).
+func checkDistribution(root string) error {
+	id, err := osReleaseID(root)
+	if err != nil {
+		return err
+	}
+	switch id {
+	case "nixos":
+		return fmt.Errorf("Dens doesn't install on NixOS, whose /etc/systemd/system is in the read-only Nix store. "+
+			"Run it in an Incus container instead: %s", incusGuide)
+	case "steamos":
+		return errors.New("Dens doesn't install on SteamOS yet: an update replaces its read-only root, and what an install adds with it")
+	}
 	return nil
+}
+
+// osReleaseID reads the distribution's ID from os-release under root:
+// /etc/os-release, or /usr/lib/os-release where that's missing.
+func osReleaseID(root string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "etc/os-release"))
+	if errors.Is(err, fs.ErrNotExist) {
+		data, err = os.ReadFile(filepath.Join(root, "usr/lib/os-release"))
+	}
+	if err != nil {
+		return "", fmt.Errorf("read os-release to tell the distribution: %w", err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), "ID="); ok {
+			return strings.Trim(value, `"'`), nil
+		}
+	}
+	return "", nil
+}
+
+// checkLXCDropIn refuses to go on in a container where LXC's drop-in for
+// every service is in effect (M8). It turns off the unit's sandbox and its
+// encrypted credential, which carries the data key, so the service would
+// fail to start past the point of no return. A file of the same name in
+// /etc takes its place, as the guide's /dev/null link does.
+func checkLXCDropIn(root string) error {
+	exists := func(dir string) (bool, error) {
+		_, err := os.Lstat(filepath.Join(root, dir, lxcDropIn))
+		if errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return err == nil, err
+	}
+	lxc, err := exists("run/systemd/system")
+	if err != nil || !lxc {
+		return err
+	}
+	masked, err := exists("etc/systemd/system")
+	if err != nil || masked {
+		return err
+	}
+	return fmt.Errorf("this container's LXC drop-in, /run/systemd/system/%[1]s, would turn off the service's sandbox "+
+		"and the credential that carries its data key. Mask it first, as the guide to Dens in an Incus container does (%[2]s):\n"+
+		"  mkdir -p /etc/systemd/system/service.d\n"+
+		"  ln -s /dev/null /etc/systemd/system/%[1]s\n"+
+		"  systemctl daemon-reload", lxcDropIn, incusGuide)
 }
 
 func (linuxSystem) DesktopUser(override string) (host.Identity, error) {
