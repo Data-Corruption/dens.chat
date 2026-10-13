@@ -261,65 +261,6 @@ summary:focus-visible {
   stroke-linecap: square;
 }
 
-/* ---------------------------------------------------------------- wip */
-/* Hazard tape over the top bar until the first release. The cursor blinks a
-   few times and stops, so it's not still blinking while you read. */
-.wip {
-  position: relative;
-  padding: 14px var(--pad) 9px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--bg-2);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.wip::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 5px;
-  background: repeating-linear-gradient(-45deg, var(--mag) 0 6px, #141414 6px 12px);
-}
-
-.wip p {
-  margin: 0;
-}
-
-.wip-k {
-  display: inline-block;
-  margin-right: 8px;
-  padding: 3px 6px 2px;
-  font: 900 10px / 1 var(--f-x);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  vertical-align: 1px;
-  color: #fff;
-  background: var(--mag);
-}
-
-.wip-k::after {
-  content: "";
-  display: inline-block;
-  width: 5px;
-  height: 8px;
-  margin-left: 5px;
-  vertical-align: -1px;
-  background: currentColor;
-  animation: wip-blink 1s steps(1) 4;
-}
-
-@keyframes wip-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wip-k::after {
-    animation: none;
-  }
-}
-
 /* ---------------------------------------------------------------- top bar */
 /* One row: the logo, then the links and the skin switcher at the right. */
 .top {
