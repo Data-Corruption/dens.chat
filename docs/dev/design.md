@@ -1109,7 +1109,7 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 
 dens.chat is a landing page and a few pages of docs for people using Dens, built with Hugo and Hextra in `docs/` (see `docs/README.md`), and published with v1.
 
-**The landing page** says what Dens is in one plain paragraph, then argues for it in three sections, hosting your own (01), encrypted and pseudonymous (02) and free (03), with four cards on how it's built. It links into the docs at the hosting guide (`/docs/host/`) and Privacy (`/docs/privacy/`).
+**The landing page** says what Dens is in one plain paragraph, then argues for it in three sections, hosting your own (01), encrypted and pseudonymous (02) and free (03), with four cards on how it's built. It links into the docs at the install guide (`/docs/install/`, from an Install button beside the hero's caption), the hosting guide (`/docs/host/`) and Privacy (`/docs/privacy/`).
 
 **The docs** cover what the app can't show for itself: what happens before Dens runs, outside it (a domain, a router, Caddy), and across devices and time (passwords, recovery, backups), and, once, who can read what.
 
