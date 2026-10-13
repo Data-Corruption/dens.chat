@@ -34,6 +34,56 @@
     showSkin();
   }
 
+  // ---------------------------------------------------------------- install
+  // Pressing the install button clicks like a switch: a bright tick of noise
+  // and a lower one 7 ms after, made here so the site ships no sound file.
+  // Following the link ends the page, and any sound still playing, so the
+  // click starts as the mouse button goes down. Browsers let a page make
+  // sound only after someone presses or taps in it, so the audio starts with
+  // the first press, not on load; a touch screen counts a tap only when the
+  // finger lifts, so a tap clicks then.
+  var install = document.querySelector(".install");
+  if (install && window.AudioContext) {
+    var audio = null;
+    var noise = null;
+
+    // A burst of noise around one pitch.
+    var burst = function (t, pitch, q, peak, length) {
+      var src = audio.createBufferSource();
+      var band = audio.createBiquadFilter();
+      var amp = audio.createGain();
+      src.buffer = noise;
+      band.type = "bandpass";
+      band.frequency.value = pitch;
+      band.Q.value = q;
+      amp.gain.setValueAtTime(0, t);
+      amp.gain.linearRampToValueAtTime(peak, t + 0.001);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t + length);
+      src.connect(band).connect(amp).connect(audio.destination);
+      src.start(t);
+      src.stop(t + length + 0.01);
+    };
+
+    var press = function () {
+      if (!audio) {
+        audio = new AudioContext();
+        noise = audio.createBuffer(1, Math.round(audio.sampleRate * 0.05), audio.sampleRate);
+        var samples = noise.getChannelData(0);
+        for (var i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+      }
+      audio.resume();
+      var t = audio.currentTime + 0.005;
+      burst(t, 4500, 2, 1.24, 0.01);
+      burst(t + 0.007, 2500, 2, 0.54, 0.012);
+    };
+    install.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "mouse" && e.button === 0) press();
+    });
+    install.addEventListener("pointerup", function (e) {
+      if (e.pointerType !== "mouse") press();
+    });
+  }
+
   // ---------------------------------------------------------------- EULAs
   // Each EULA is a <details>. Here it unrolls instead of popping open: the
   // cloud's all the way to the bottom of the page, yours by three lines.

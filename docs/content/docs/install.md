@@ -108,6 +108,10 @@ As yourself, not as admin. On Windows, that means a new, ordinary terminal.
 dens open
 ```
 
+This opens Dens in your default browser. Add `--print` and it prints the link
+instead, for you to open in whichever browser you like. The link works once,
+within two minutes.
+
 On Linux you can also pick Dens from your apps menu.
 
 {{% /steps %}}

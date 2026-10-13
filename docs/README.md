@@ -23,14 +23,15 @@ The landing page is its own layout, not a Hextra page: `layouts/home.html`,
 with its head, art and components in `layouts/_partials/landing/`, its styles
 in `assets/css/landing.css` and two scripts: `assets/js/theme.js`, which runs
 first and applies a stored skin, and `assets/js/landing.js` (the skin switcher,
-the EULA scrolls, the security cameras, and the barcode that grows into a forest
-as you scroll). Light or dark follows the system unless the visitor picks a
+the install button's click, the EULA scrolls, the security cameras, and the
+barcode that grows into a forest as you scroll). Light or dark follows the system unless the visitor picks a
 skin, which is kept in `localStorage` as `color-theme`, the key Hextra's own
 theme toggle uses, so the docs follow it too. Without the script the page still
 reads: the EULAs open as plain `<details>` and the forest is simply grown. `content/_index.md` holds only its
 front matter. Everything it loads comes from this site: Archivo and Silkscreen
 (SIL OFL, licenses beside them) are in `static/fonts/`, and body text uses the
-visitor's own Verdana or Tahoma.
+visitor's own Verdana or Tahoma. The click is made with the Web Audio API, so
+there's no sound file.
 
 The SVG art (`hero-art.svg`, `pc.svg`, `cloud.svg`, `barcode.svg`,
 `burst.svg`) is generated, but committed and edited like any other file.

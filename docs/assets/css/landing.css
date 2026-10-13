@@ -499,11 +499,20 @@ summary:focus-visible {
   text-decoration-color: var(--cyan);
 }
 
-.caption {
+/* The caption, and the way in beside it, or under it on a narrow screen. */
+.hero-foot {
   position: relative;
   z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px 32px;
+  margin-top: clamp(28px, 4vw, 56px);
+}
+
+.caption {
   max-width: 31em;
-  margin: clamp(28px, 4vw, 56px) 0 0;
+  margin: 0;
   padding: 14px 16px;
   font-size: 14px;
   line-height: 1.7;
@@ -514,6 +523,70 @@ summary:focus-visible {
 
 .caption strong {
   color: var(--mag);
+}
+
+/* A block like the art's cubes, seen from above and lit from the upper left:
+   its top (::before) in magenta's light facet, its right side (::after) in
+   shade. Pressed, the face sinks flush, back into the page. The link's box
+   holds the whole block and stays put, so a press near the face's edge still
+   lands on it. */
+.install {
+  --dx: 5px;
+  --dy: 7px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(16px + var(--dy)) calc(24px + var(--dx)) 15px 20px;
+  font: 900 20px / 1 var(--f-x);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: #fff;
+  background: linear-gradient(var(--mag), var(--mag)) 0 var(--dy) / calc(100% - var(--dx)) calc(100% - var(--dy)) no-repeat;
+}
+
+.install::before,
+.install::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.install::before {
+  background: var(--mag-2);
+  clip-path: polygon(0 var(--dy), var(--dx) 0, 100% 0, calc(100% - var(--dx)) var(--dy));
+}
+
+.install::after {
+  background: #a3264f;
+  clip-path: polygon(calc(100% - var(--dx)) var(--dy), 100% 0, 100% calc(100% - var(--dy)), calc(100% - var(--dx)) 100%);
+}
+
+.install:hover {
+  color: #fff;
+}
+
+.install:hover span {
+  text-decoration: underline;
+  text-decoration-color: var(--cyan);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 5px;
+}
+
+.install:active {
+  padding: 16px 24px calc(15px + var(--dy)) calc(20px + var(--dx));
+  background-position: var(--dx) 0;
+}
+
+.install:active::before,
+.install:active::after {
+  display: none;
+}
+
+.install b {
+  font: 400 12px / 1 var(--f-px);
+  color: var(--cyan-3);
 }
 
 /* ---------------------------------------------------------------- sections */
