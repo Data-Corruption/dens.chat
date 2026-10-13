@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onConnection, onUnpaired } from './events.js';
-import { Card, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
+import { Card, DocsTip, ErrorText, PasswordFields, SubmitButton, checkPasswords, useAction } from './components.jsx';
 import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
 import { ManageDialog } from './manageden.jsx';
@@ -187,7 +187,8 @@ function SetPassword({ onDone }) {
     }
 
     return (
-        <Card title="Set a local password">
+        <Card title={<>Set a local password <DocsTip id="docs-local-password" page="join/#your-passwords-and-keys">
+            How it differs from your den passwords, and what each one is for.</DocsTip></>}>
             <p>
                 The local password protects your backups and your keys. You'll need it to make a backup, restore one on another
                 machine, or view your keys.

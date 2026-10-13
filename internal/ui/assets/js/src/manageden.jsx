@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
-import { CopyButton, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useLater } from './components.jsx';
+import { CopyButton, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useLater } from './components.jsx';
 import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } from './dendraft.js';
 import { onEvent } from './events.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
@@ -280,7 +280,7 @@ function General({ den, draft, base, onEdit }) {
                     <Copyable text={den.url} />
                 </Field>
             )}
-            <Field label={<>Den ID <Tip id={`den-id-${den.den_id}`}>The start of the den's identity. Everyone in this den sees the same one.</Tip></>}>
+            <Field label={<>Den ID <Tip id={`den-id-${den.den_id}`} side="right">The start of the den's identity. Everyone in this den sees the same one.</Tip></>}>
                 <Copyable text={den.fingerprint} mono />
             </Field>
             {den.retention > 0 && <p class="text-sm text-base-content/70">Messages here are deleted after {keptFor(den.retention)}.</p>}
@@ -406,7 +406,7 @@ function Bans({ denID, role }) {
         <>
             <Heading>
                 Bans{' '}
-                <Tip id="bans-tip">
+                <Tip id="bans-tip" side="right">
                     A ban signs them out at once and keeps their username out, even with a new invite. Unbanning doesn't bring them back:
                     they can join again with an invite.
                 </Tip>
@@ -655,7 +655,11 @@ function PasswordAndRecovery({ den, onCodes, onKey }) {
     }, [den.den_id]);
     return (
         <>
-            <Heading>Password and recovery</Heading>
+            <Heading>
+                Password and recovery{' '}
+                <DocsTip id={`docs-recovery-${den.den_id}`} page="join/#your-passwords-and-keys">
+                    What your den password, recovery codes and DM recovery key are each for.</DocsTip>
+            </Heading>
             <section class="flex flex-col gap-2">
                 <h4 class="font-medium">Den password</h4>
                 <ChangePassword den={den} onDone={load} />

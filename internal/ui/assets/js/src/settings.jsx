@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
-import { Card, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
+import { Card, DOCS, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { here } from './platform.js';
@@ -599,6 +599,10 @@ function SystemSettings({ instance, version }) {
                 <p class="text-sm">
                     Dens {version}
                     {instance !== 'main' && `, instance ${instance}`}
+                </p>
+                <p class="text-sm">
+                    Guides to installing, joining and hosting:{' '}
+                    <a class="link" href={DOCS} target="_blank" rel="noopener noreferrer">dens.chat/docs</a>
                 </p>
                 <p class="text-sm text-base-content/70">
                     Dens includes software from other projects, under their own licenses.{' '}

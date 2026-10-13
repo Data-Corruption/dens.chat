@@ -15,11 +15,17 @@ export function Card({ title, children, class: extra = '' }) {
     );
 }
 
+// Where a tip opens, spelled out so Tailwind keeps every class. Below,
+// centered on the i, unless the i sits near a panel's left edge, which
+// would cut a centered tip off: then to its right, from the i's top down,
+// so one by a panel's top edge isn't cut off either.
+const SIDES = { bottom: 'tooltip-bottom', right: 'tooltip-right [--tt-inset:0_auto] [--tt-trans:0]' };
+
 // Tip is an i beside a label that says more on hover or focus: the detail
 // a one-line hint leaves out (M8.3).
-export function Tip({ id, children }) {
+export function Tip({ id, side = 'bottom', children }) {
     return (
-        <span class="tooltip tooltip-bottom align-middle">
+        <span class={`tooltip ${SIDES[side]} align-middle`}>
             <span id={id} role="tooltip" class="tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal">
                 {children}
             </span>
@@ -27,6 +33,27 @@ export function Tip({ id, children }) {
                 aria-describedby={id}>
                 <InfoIcon />
             </button>
+        </span>
+    );
+}
+
+// The public guides, which explain what few apps ask people to understand.
+export const DOCS = 'https://dens.chat/docs/';
+
+// DocsTip is a Tip whose i opens the guide to its subject, in a new tab:
+// the gist on hover, the whole story a click away. It stands where those
+// things come up (v1's onboarding).
+export function DocsTip({ id, page, children }) {
+    return (
+        <span class="tooltip tooltip-bottom align-middle font-normal">
+            <span id={id} role="tooltip" class="tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal">
+                {children}
+                <span class="mt-1 block text-xs opacity-70">Opens the guide on dens.chat.</span>
+            </span>
+            <a href={DOCS + page} target="_blank" rel="noopener noreferrer" class="inline-flex p-0.5 text-base-content/60 hover:text-base-content"
+                aria-label="Open the guide" aria-describedby={id}>
+                <InfoIcon />
+            </a>
         </span>
     );
 }
