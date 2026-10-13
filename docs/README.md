@@ -34,6 +34,10 @@ visitor's own Verdana or Tahoma.
 
 The SVG art (`hero-art.svg`, `pc.svg`, `cloud.svg`, `barcode.svg`,
 `burst.svg`) is generated, but committed and edited like any other file.
+`hero-art.svg` draws well past both sides of its 1200-wide viewBox: the hero
+sizes it to the column and lets it spill out to the page's walls on wide
+screens. `static/og.png`, the image a shared link shows, is a render of the
+header and hero at 1200 × 630, so render it again when they change.
 
 Documentation is under `content/docs/`; directory structure and front-matter
 weights define the Hextra sidebar. Site configuration and top navigation is in

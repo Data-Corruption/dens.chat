@@ -47,7 +47,7 @@
   --purple: #5b2462;
 
   /* surfaces and words, by skin */
-  --page: light-dark(#ffffff, #0b0810);
+  --page: light-dark(#ffffff, #130e1a);
   --bg: light-dark(#ffffff, #130e1a);
   --bg-2: light-dark(#f9fdfe, #1a1323);
   --ink: light-dark(#262626, #f3edf7);
@@ -76,6 +76,11 @@
   --rail: 40px;
   --frame: 1200px;
   --pad: clamp(16px, 2.4vw, 28px);
+  /* the column's margin out to the walls, and that plus its border: what the
+     hero's art fills on wide screens */
+  --gutter: 0px;
+  --bleed: 0px;
+  --keyline: light-dark(rgb(255 255 255 / 0.85), #2d2539);
 }
 
 :root.light {
@@ -193,8 +198,13 @@ summary:focus-visible {
 }
 
 @media (min-width: 901px) {
+  :root {
+    --gutter: max(var(--rail), calc((100vw - var(--frame)) / 2));
+    --bleed: calc(var(--gutter) + 1px);
+  }
+
   .frame {
-    margin: 0 max(var(--rail), calc((100vw - var(--frame)) / 2));
+    margin: 0 var(--gutter);
   }
 }
 
@@ -311,18 +321,18 @@ summary:focus-visible {
 }
 
 /* ---------------------------------------------------------------- top bar */
+/* One row: the logo, then the links and the skin switcher at the right. */
 .top {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  column-gap: 24px;
-  row-gap: 6px;
-  padding: 16px var(--pad) 10px;
+  gap: 10px 26px;
+  padding: 16px var(--pad) 14px;
   border-bottom: 4px double var(--cyan);
 }
 
 .logo {
-  justify-self: start;
+  margin-right: auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -363,7 +373,6 @@ summary:focus-visible {
 }
 
 .topnav {
-  justify-self: end;
   display: flex;
   flex-wrap: wrap;
   gap: 6px 22px;
@@ -388,14 +397,8 @@ summary:focus-visible {
   vertical-align: 3px;
 }
 
-.top-micro {
-  grid-column: 1;
-}
-
 /* The skin switcher, as sites had them: three small choices in the corner. */
 .skin {
-  grid-column: 2;
-  justify-self: end;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -433,14 +436,16 @@ summary:focus-visible {
 }
 
 /* ---------------------------------------------------------------- intro */
+/* The one plain answer to "what is this", so it reads before the hero. */
 .intro {
-  padding: 18px var(--pad) 20px;
-  max-width: 560px;
+  padding: 20px var(--pad) 22px;
+  max-width: 700px;
 }
 
 .intro-text {
   margin: 0;
-  font-size: 14px;
+  font-size: clamp(16px, 1.2vw, 18px);
+  line-height: 1.6;
   color: var(--ink);
 }
 
@@ -449,20 +454,41 @@ summary:focus-visible {
   position: relative;
   min-height: clamp(560px, 62vw, 820px);
   padding: 40px var(--pad) 48px;
-  background: linear-gradient(180deg, var(--hero-1) 0%, var(--hero-2) 52%, var(--hero-3) 100%);
   border-top: 1px solid var(--rule);
-  overflow: hidden;
+}
+
+/* The hero's ground and art run out past the column to the walls, while its
+   words keep to the column. Its top rule runs with them, and the column's
+   edges carry on down the ground as keylines, under the art, so what hangs
+   from an edge covers it. (On a narrow screen the bleed is 0, and they fall
+   outside.) */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -1px calc(-1 * var(--bleed)) 0;
+  border-top: 1px solid var(--rule);
+  background:
+    linear-gradient(var(--keyline), var(--keyline)) left calc(var(--bleed) - 1px) top 0 / 1px 100% no-repeat,
+    linear-gradient(var(--keyline), var(--keyline)) right calc(var(--bleed) - 1px) top 0 / 1px 100% no-repeat,
+    linear-gradient(180deg, var(--hero-1) 0%, var(--hero-2) 52%, var(--hero-3) 100%);
 }
 
 .hero-art {
   position: absolute;
-  inset: 0;
+  inset: 0 calc(-1 * var(--bleed));
+  overflow: hidden;
 }
 
+/* The drawing is sized to the column, so it sits where it always has at
+   every width, and what it draws past the column's edges spills into the
+   rest of the art layer. */
 .hero-art svg {
-  display: block;
-  width: 100%;
+  position: absolute;
+  top: 0;
+  left: var(--bleed);
+  width: calc(100% - 2 * var(--bleed));
   height: 100%;
+  overflow: visible;
 }
 
 /* At night the glass columns glow less. */
@@ -1097,9 +1123,10 @@ td[data-col="dens"].v-n .v-mark {
   margin-top: clamp(40px, 5vw, 64px);
 }
 
+/* Two across, so four cards make a square. */
 .hood-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
   gap: 18px 28px;
 }
 
@@ -1381,17 +1408,13 @@ td[data-col="dens"].v-n .v-mark {
     border: 0;
   }
 
-  .top {
-    grid-template-columns: 1fr;
-  }
-
-  .skin {
-    grid-column: 1;
-    justify-self: start;
+  /* the logo takes a row, and the links and the switcher the next */
+  .logo {
+    flex-basis: 100%;
   }
 
   .topnav {
-    justify-self: start;
+    margin-right: auto;
   }
 
   .host-body {

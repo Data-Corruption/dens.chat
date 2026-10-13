@@ -21,13 +21,9 @@
       {{ partial "landing/logo.html" . }}
     </a>
     <nav class="topnav" aria-label="Site">
-      <a href="#host"><b>01</b>Host</a>
-      <a href="#encrypt"><b>02</b>Encrypt</a>
-      <a href="#free"><b>03</b>Free</a>
       <a href="{{ "docs/" | relURL }}"><b>&gt;&gt;</b>Docs</a>
       <a href="https://github.com/Data-Corruption/dens.chat"><b>&gt;&gt;</b>Source</a>
     </nav>
-    <p class="micro top-micro" aria-hidden="true">Self-hosted chat for small communities // runs on Linux + Windows 11 // any browser // 2026.10</p>
     <div class="skin" role="group" aria-label="Skin" hidden>
       <span class="skin-k" aria-hidden="true">skin</span>
       <button type="button" value="auto">auto</button>
@@ -37,8 +33,7 @@
   </header>
 
   <section class="intro" aria-label="About">
-    <p class="label">readme<span class="sq" aria-hidden="true"></span><span class="sq" aria-hidden="true"></span><span class="sq sq--hollow" aria-hidden="true"></span></p>
-    <p class="intro-text">Dens is a self-hosted chat app with text, voice and screen share, built so small communities can talk without platforms mining or owning their conversations.</p>
+    <p class="intro-text">Dens is chat for your friends or community, like Discord: text channels, DMs, voice and screen share. It runs on your own computer, or a friend’s, instead of a company’s servers.</p>
   </section>
 
   <section class="hero" aria-labelledby="hero-h">
@@ -54,13 +49,13 @@
   <section class="sec sec--host" id="host" aria-labelledby="host-h">
     <header class="sec-head">
       <span class="sec-num" aria-hidden="true">{{ partial "landing/burst.svg" (dict "seed" 1) }}01</span>
-      <h2 id="host-h">Host your own shit, you lazy bastards</h2>
-      <p class="micro" aria-hidden="true">serving 01 // fuck their terms of service // their server, their rules // your server, your rules</p>
+      <h2 id="host-h">Host your own shit</h2>
+      <p class="micro" aria-hidden="true">serving 01 // fuck their tos // fuck their server // they can de-platform this dick</p>
     </header>
     <div class="host-body">
       <div class="copy">
-        <p>Large platforms are unstable, they change rules frequently, often for the worse. Banning “naughty” content and opinions that advertisers or payment processors have been bullied into censoring, often by fascist christian nationalists. Which can obviously be upsetting for users who built a home / community there.</p>
-        <p>A remedy for this is to stop being lazy and host your own shit. Dens makes this about as easy as possible. A single toggle can turn an install from just a client into a server as well. All you need to do then is forward a few ports and point a domain at your IP. Here is the <a href="{{ "docs/" | relURL }}">step by step guide</a> for non-technical individuals.</p>
+        <p>Big platforms change their rules whenever it suits them, and rarely in your favor. One update and the “naughty” art, jokes, and unpopular opinions are banished, along with whoever posted them. If you built a community there, surprise! you own nothing and have no say in it.</p>
+        <p>The fix is to host it yourself. A few simple steps turn your Dens install from just a client into a server as well. These steps include forwarding a few ports on your router and pointing a domain at your IP. That’s the fucky part, so there’s a <a href="{{ "docs/host/" | relURL }}">step by step guide</a> written for people who’ve never done either.</p>
       </div>
       <div class="machines">
         {{ partial "landing/machines.html" . }}
@@ -72,7 +67,7 @@
     <header class="sec-head">
       <span class="sec-num" aria-hidden="true">{{ partial "landing/burst.svg" (dict "seed" 2) }}02</span>
       <h2 id="encrypt-h">Encrypted and pseudonymous by default</h2>
-      <p class="micro" aria-hidden="true">serving 02 // fuck mass surveillance // smile, you're on camera // not here though</p>
+      <p class="micro" aria-hidden="true">serving 02 // fuck mass surveillance // smile, you're on camera, not here though</p>
     </header>
     <div class="copy copy--wide">
       <p>Dens seals your direct messages end to end, so only the two of you can read them. It knows you only as a username and a key that never leaves your computer: no email, no phone number, no account that follows you from den to den. And it strips the location and camera details out of your photos before they’re sent, and never writes your IP address to disk.</p>
@@ -87,10 +82,9 @@
       <p class="label">under the hood<span class="sq" aria-hidden="true"></span><span class="sq sq--hollow" aria-hidden="true"></span></p>
       <div class="hood-grid">
         <div class="hood-item"><h3>Open source{{ partial "landing/arrow.html" . }}</h3><p>Every line is on GitHub under the MIT license. Read it, fork it, run it, rip it apart. If anything on this page is a lie, you can check.</p></div>
-        <div class="hood-item"><h3>One binary{{ partial "landing/arrow.html" . }}</h3><p>Dens is a single Go program with its database (SQLite) and media tools (FFmpeg) compiled in. No Docker stack, no database server to babysit, and every third-party tool in the build is pinned by checksum.</p></div>
-        <div class="hood-item"><h3>Why it asks for admin{{ partial "landing/arrow.html" . }}</h3><p>Installing or updating asks for admin, never running it. That’s how Dens gets its own locked-down system account: it runs while you’re logged out, and your keys sit in a separate process that your browser, your games and that sketchy mod you downloaded can’t read without admin rights.</p></div>
-        <div class="hood-item"><h3>Your side does the work{{ partial "landing/arrow.html" . }}</h3><p>Your own install strips your photos, seals your DMs and keeps an encrypted cache of what you’ve already seen, so a den only has to send you what’s new.</p></div>
-        <div class="hood-item"><h3>Built for home internet{{ partial "landing/arrow.html" . }}</h3><p>Dens is meant to run on a normal PC on a residential connection, where upload speed is precious. Members pick up where they left off instead of reloading everything, presence is batched, and pictures load as previews until you open them. A den is sized for about a thousand members.</p></div>
+        <div class="hood-item"><h3>Built for home internet{{ partial "landing/arrow.html" . }}</h3><p>Dens is meant to run on a normal PC on a residential connection, where upload speed is precious. A den is sized for about a thousand members.</p></div>
+        <div class="hood-item"><h3>Why it asks for admin{{ partial "landing/arrow.html" . }}</h3><p>Installing and updating ask for admin, but Dens itself never runs as admin. That’s how Dens gets its own locked-down system account: it runs while you’re logged out, and your keys sit in a separate process that your browser, your games and that Skyrim tiddy mod you downloaded can’t read without admin rights.</p></div>
+        <div class="hood-item"><h3>What seals your DMs{{ partial "landing/arrow.html" . }}</h3><p>Standard parts, not homemade ones: X25519 and post-quantum ML-KEM-768 set up each DM’s key, and XChaCha20-Poly1305 seals what you send, all from Go’s own crypto libraries. How they fit together is Dens’s own design, public but not yet independently audited. Your key is made on your computer and the den never sees it, so it carries your DMs without being able to read them. See <a href="{{ "docs/privacy/" | relURL }}">Privacy</a> for what Dens protects you from and what it doesn’t.</p></div>
       </div>
     </div>
     {{ partial "landing/cams.html" . }}
@@ -117,7 +111,7 @@
       {{ partial "landing/badges.html" . }}
     </div>
     <p class="foot-copy">© {{ now.Year }} <a href="https://github.com/Data-Corruption">Matthew Pombo</a>. MIT licensed. No analytics, no cookies, no newsletter.</p>
-    <p class="micro" aria-hidden="true">dens // host 01 // encrypt 02 // free 03 // best viewed in any browser at any resolution</p>
+    <p class="micro" aria-hidden="true">dens // host 01 // encrypt 02 // free 03 // $10 a month for dark blue? Discord can eat my entire ass</p>
   </footer>
 </div>
 {{- $js := resources.Get "js/landing.js" }}
