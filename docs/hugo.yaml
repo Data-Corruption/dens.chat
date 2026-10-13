@@ -60,3 +60,10 @@ params:
     enable: false
   page:
     displayPagination: true
+    # Picking Linux or Windows in one set of tabs picks it in every set.
+    tabs:
+      sync: true
+  # Until the first release, as the landing page's strip says.
+  banner:
+    key: wip-before-v1
+    message: "Dens isn't released yet, so there's nothing to install: these pages describe the first release as it's built."
