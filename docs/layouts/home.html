@@ -5,17 +5,13 @@
 </head>
 <body class="landing">
 <div class="rail rail--l" aria-hidden="true">
-  <span class="rail-text">DENS.CHAT // SELF-HOSTED CHAT // TEXT · VOICE · SCREEN SHARE // NO RELEASES YET //</span>
+  <span class="rail-text">DENS.CHAT // SELF-HOSTED CHAT // TEXT · VOICE · SCREEN SHARE //</span>
 </div>
 <div class="rail rail--r" aria-hidden="true">
   <span class="rail-text">HOST YOUR OWN // ENCRYPT YOUR OWN // OWN YOUR OWN //</span>
 </div>
 
 <div class="frame">
-  {{- /* Until the first release. */}}
-  <div class="wip">
-    <p><strong class="wip-k">Work in progress</strong> Dens isn’t released yet, so there’s nothing to install, and some of what this page describes is still being built. <a href="https://github.com/Data-Corruption/dens.chat">Follow along on GitHub</a></p>
-  </div>
   <header class="top">
     <a class="logo" href="{{ "/" | relURL }}" aria-label="Dens, home">
       {{ partial "landing/logo.html" . }}
@@ -50,7 +46,7 @@
     <header class="sec-head">
       <span class="sec-num" aria-hidden="true">{{ partial "landing/burst.svg" (dict "seed" 1) }}01</span>
       <h2 id="host-h">Host your own shit</h2>
-      <p class="micro" aria-hidden="true">serving 01 // fuck their tos // fuck their server // they can de-platform this dick</p>
+      <p class="micro" aria-hidden="true">serving 01 // fuck their tos // fuck their server</p>
     </header>
     <div class="host-body">
       <div class="copy">
@@ -102,7 +98,7 @@
       </div>
     </div>
     <div class="free-more">
-      <p>Dens has nobody to pay back. There’s no company and no central server: each den runs on a computer belonging to one of its members, so the only running costs are the domain, GitHub Actions and Cloudflare R2, which build and host the downloads. It didn’t need investors to get built either, because I built it with heavy help from AI. I don’t know where that technology is going, but while it’s here, I’d rather point it at something like this. The code’s all public, so you can check the work. Dens is free, open source software, nobody makes money off your den (not even me), and it’ll stay that way.</p>
+      <p>Dens has nobody to pay back. There’s no company and no central server: each den runs on a computer belonging to one of its members, so the only running cost is the domain: GitHub Actions and Cloudflare R2, which build and host the downloads, are free at this size. It didn’t need investors to get built either, because I built it with heavy help from AI. I don’t know where that technology is going, but while it’s here, I’d rather point it at something like this. The code’s all public, so you can check the work. Dens is free, open source software, nobody makes money off your den (not even me), and it’ll stay that way.</p>
     </div>
   </section>
 

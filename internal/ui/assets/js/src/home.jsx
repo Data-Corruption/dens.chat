@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction } from './components.jsx';
+import { DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
@@ -371,7 +371,10 @@ function HostDen({ hosting, onJoined }) {
     return (
         <section class="card bg-base-200">
             <div class="card-body gap-3">
-                <h2 class="card-title">{hosting.created ? `Finish setting up ${hosting.name}` : 'Create your den'}</h2>
+                <h2 class="card-title">
+                    {hosting.created ? `Finish setting up ${hosting.name}` : 'Create your den'}
+                    <DocsTip id="docs-host" page="host/">The whole setup, step by step: a domain, Caddy and your router.</DocsTip>
+                </h2>
                 <p class="text-sm text-base-content/70">
                     {hosting.created
                         ? "Your den exists, but its owner account doesn't yet. Create it to manage the den."

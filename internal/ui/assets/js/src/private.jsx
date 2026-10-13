@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { CopyButton, ErrorText, Field, SubmitButton, TextInput, clock, day, useAction } from './components.jsx';
+import { CopyButton, DocsTip, ErrorText, Field, SubmitButton, TextInput, clock, day, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { sameDigits } from './private.js';
 
@@ -155,7 +155,10 @@ export function CheckPanel({ denID, channel, dm, keyID }) {
     } else {
         body = (
             <form class="flex flex-col gap-2" onSubmit={check}>
-                <p class="font-medium">Compare check codes with {name} before you talk here.</p>
+                <p class="font-medium">
+                    Compare check codes with {name} before you talk here.{' '}
+                    <DocsTip id={`docs-check-${channel.id}`} page="join/#direct-messages">Why you compare digits, and where it's safe to.</DocsTip>
+                </p>
                 <p class="text-sm text-base-content/70">Read these digits out to {name}. They stay here until {name} has typed them.</p>
                 <Digits value={st.half} />
                 <DigitsInput value={digits} onInput={setDigits} label={`Type the digits ${name} reads out to you`} />
@@ -218,7 +221,9 @@ export function SignInRequests({ den }) {
                 <div key={r.id} role="status" class="alert alert-info alert-soft flex flex-col items-stretch gap-2 text-left">
                     <p>
                         A new device asks to sign in to {den.name} as you: <span class="font-medium">{r.label}</span>. If it isn't yours,
-                        refuse it and change your den password.
+                        refuse it and change your den password.{' '}
+                        <DocsTip id={`docs-approve-${r.id}`} page="join/#signing-in-from-another-computer">
+                            Why your devices approve each other, and what to do about one that isn't yours.</DocsTip>
                     </p>
                     {r.elsewhere ? (
                         <p class="text-sm">Another of your devices is approving it.</p>
@@ -293,7 +298,11 @@ export function SignInSteps({ p, onRecover, onDone }) {
     else if (p.stage === 'done') title = 'Signed in';
     return (
         <div class="flex flex-col gap-3">
-            <h3 class="text-lg font-semibold">{title}</h3>
+            <h3 class="text-lg font-semibold">
+                {title}
+                {going && <> <DocsTip id={`docs-signin-${p.id}`} page="join/#signing-in-from-another-computer">
+                    Why a new device needs one of your others to let it in.</DocsTip></>}
+            </h3>
             {p.stage === 'waiting' && (
                 <>
                     <p>
@@ -387,7 +396,10 @@ export function RecoveryCodes({ denName, codes, seal, sealNew, onDone }) {
     const what = codes.length && seal ? 'recovery codes and DM recovery key' : codes.length ? 'recovery codes' : 'DM recovery key';
     return (
         <div class="flex flex-col gap-3">
-            <h3 class="text-lg font-semibold">Save your {what} for {denName}</h3>
+            <h3 class="text-lg font-semibold">
+                Save your {what} for {denName}{' '}
+                <DocsTip id="docs-keys" page="join/#your-passwords-and-keys">What each of these is for, and how to keep them.</DocsTip>
+            </h3>
             {codes.length > 0 && (
                 <>
                     <p>
