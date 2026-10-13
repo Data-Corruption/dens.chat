@@ -1,9 +1,9 @@
 # Dens
 
-Chat for your friends or community, like Discord: text channels, DMs, voice
-and screen share. It runs on your own computer, or a friend's, instead of a
-company's servers. Each community is a den, and everyone in it runs Dens on
-their own computer and opens it in their browser.
+Chat for your friends or community: text channels, DMs, voice and screen
+share. It runs on your own computer, or a friend's, instead of a company's
+servers. Each community is a den, and everyone in it runs Dens on their own
+computer and opens it in their browser.
 
 Dens has no releases yet.
 
