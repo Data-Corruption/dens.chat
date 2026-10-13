@@ -1,15 +1,17 @@
 # Dens
 
-Self-hosted chat for small communities: text channels, DMs, voice and screen
-share, running on a machine that you or a friend control. No central service,
-no account with a company. Each den is its own server, and your identity lives
-on your own computer.
+Chat for your friends or community: text channels, DMs, voice and screen
+share. It runs on your own computer, or a friend's, instead of a company's
+servers. Each community is a den, and everyone in it runs Dens on their own
+computer and opens it in their browser.
 
-Dens is in early development and has no releases yet.
+Dens has no releases yet.
 
-- **Privacy model:** a closed door, not a bunker. Conversations stay away from
-  platforms and data brokers. The den owner can read its channels; direct
-  messages are end-to-end encrypted.
+- **Get started:** [install Dens](https://dens.chat/docs/install/), then
+  [join a den](https://dens.chat/docs/join/) or
+  [host one](https://dens.chat/docs/host/).
+- **Privacy:** a closed door, not a bunker. DMs are end-to-end encrypted, and
+  the den can read its channels: [who can read what](https://dens.chat/docs/privacy/).
 - **Platforms:** Linux and Windows 11, for both joining and hosting dens.
 - **Site:** [dens.chat](https://dens.chat/)
 

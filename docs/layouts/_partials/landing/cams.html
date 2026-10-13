@@ -1,0 +1,30 @@
+{{- /* Security cameras mounted on the side rails while section 02 is on
+   screen. They follow the pointer (landing.js), each with its own temper, and
+   power down while you look at Dens in the table. Decoration only. */ -}}
+<div class="cams" aria-hidden="true">
+  {{- range slice "l1" "l2" "l3" "r1" "r2" }}
+  <div class="cam cam--{{ substr . 0 1 }} cam--{{ . }}">
+    <svg viewBox="0 0 100 64" focusable="false">
+      <path class="cam-cable" d="M5 44Q19 53 33 41"/>
+      <rect class="cam-plate" x="0" y="16" width="8" height="32" rx="1.5"/>
+      <circle class="cam-screw" cx="4" cy="21" r="1.2"/>
+      <circle class="cam-screw" cx="4" cy="43" r="1.2"/>
+      <path class="cam-arm" d="M8 32H24"/>
+      <g class="cam-head">
+        <rect class="cam-body" x="30" y="22" width="46" height="20" rx="3"/>
+        <path class="cam-shade" d="M31 38.5H75"/>
+        <path class="cam-hood" d="M28 21L80 17.5L82 22.5L30 24.5Z"/>
+        <g class="cam-lens">
+          <rect class="cam-barrel" x="75" y="25" width="9" height="14" rx="2"/>
+          <circle class="cam-glass" cx="86" cy="32" r="6"/>
+          <circle class="cam-glint" cx="84" cy="30" r="1.8"/>
+          <circle class="cam-shutter" cx="86" cy="32" r="6"/>
+        </g>
+        <circle class="cam-led" cx="36.5" cy="28" r="2.4"/>
+        <text class="cam-off" x="44" y="34">OFF</text>
+      </g>
+      <circle class="cam-knuckle" cx="26" cy="32" r="5"/>
+    </svg>
+  </div>
+  {{- end }}
+</div>

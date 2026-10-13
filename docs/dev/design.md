@@ -17,7 +17,7 @@ Dens is a self-hosted chat app for Linux and Windows with text, voice and screen
 
 **Non-goals**
 
-- End-to-end encryption for channels. The den owner can read channel messages and files, and the docs say so. DMs are the exception: from M1.7 they're end-to-end encrypted (see End-to-end encrypted DMs).
+- End-to-end encryption for channels. The den, and so its owner, can read channel messages and files, and the docs say so. DMs are the exception: from M1.7 they're end-to-end encrypted (see End-to-end encrypted DMs).
 - Protection from targeted investigations or state actors.
 - macOS support, multi-tenancy, federation between dens.
 - Custom permission systems, forums, threads, bots or other feature rabbit holes in v1.
@@ -92,7 +92,7 @@ Root or Administrator is used only for install, update, uninstall and restore; t
 - The installer scripts (`install.sh`, `install.ps1`) only download a release, verify its cosign signature and checksums, and run the release binary's `install` command. Every privileged change is made by the binary's maintenance commands (`install`, `update`, `restore`, `uninstall`), so both platforms share one transaction engine (`internal/install`) and the scripts stay short enough to read before running them.
 - Privileged steps: create the service account, install the binary, register the service, create the state directory with private permissions, record the desktop user allowed to pair, and generate and host-wrap the data key. On Windows they also add the binary to the system `PATH`, exclude it from Windows Error Reporting, and add firewall rules when the den role is enabled.
 - Every maintenance command prints its plan before changing anything, and `--dry-run` (`-DryRun` on Windows) prints the plan and stops. Output goes to the terminal and to the instance's `control/maintenance.log`.
-- Docs tell users to download and verify the cosign-signed installer (`install.sh` or `install.ps1`) before running it, never `curl | sudo bash` or `irm | iex`.
+- The install guide has people download the installer (`install.sh` or `install.ps1`) and run it, never `curl | sudo bash` or `irm | iex`, with checking its cosign signature first as an optional step, folded away, commands included. The installer checks everything it downloads; only a check before running it covers the script itself.
 - Updates are manual: `sudo dens update` on Linux, or `dens update` from an elevated terminal on Windows (`sudo dens update` also works where Windows' built-in sudo is enabled). It downloads the latest installer and its cosign bundle, verifies them against the signing identity baked into the binary, and runs the installer in the foreground. There is no unattended auto-update.
 - An installation never moves to an older release than the one installed (M8). A signature proves who built a release, not that it's the newest, so a release host or mirror that served an older signed release could otherwise roll installs back to holes since fixed. Installing the installed version again is allowed; it repairs.
 - Only flags on the command line, never the environment, change where the installers and `dens update` fetch a release or whether they verify it (M8): `--release-url` and `--skip-verify` (`-ReleaseUrl` and `-SkipVerify` on Windows). An elevated Windows shell inherits the user's own environment variables, which anything running as them can set. A binary the release pipeline built refuses `--skip-verify`; the test harnesses install unsigned fixture releases with binaries built without the release identity.
@@ -616,7 +616,7 @@ The page says where to compare, best first: in person; a voice or video call; an
 **In the app**
 
 - The channel list has two tabs: Den and Direct messages.
-- DMs say they're end-to-end encrypted, with a lock. Onboarding and the docs say the den's owner can read channels; the page doesn't repeat it in each one (M8.3).
+- DMs say they're end-to-end encrypted, with a lock. Onboarding and the docs say the den can read channels; the page doesn't repeat it in each one (M8.3).
 - A DM waiting for its check shows who started it, the digits to read out, a box for the other's digits, and the advice on where to compare.
 
 ## Voice and screen share
@@ -636,7 +636,7 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Speaking indicators (M3): each page measures the audio it plays for each member, and its own microphone's as sent, and rings the avatar of whoever is speaking. Only members in the call see them, since only their pages play its audio, and the den sends nothing for them.
 - A voice channel's call holds 15 members, and a den's calls 30 in all, unless the owner sets other caps (M4.2; see Limits for calls). Each member's audio goes out once to every other member of their call, so the den's upload grows with the square of a call's size: a full call of 15 sends about 3 Mbps while two people talk, and up to 24 if everyone does (see the bandwidth table).
 - Each voice channel has a bitrate, which staff set in its settings like the rest of the channel (M4.2): from 16 to 128 kbps in steps of 8, and 96 for a new channel. The den writes it into every offer for the channel's call, so a change reaches the call in progress with each member's next offer. A lower bitrate costs the den less upload: each member talking sends it to every other member of the call.
-- Calls aren't end-to-end encrypted. Media is encrypted between each browser and the den (DTLS-SRTP), and the den decrypts it to forward it, so the den's owner could listen in. Onboarding and the docs say so, as they say the den's owner can read channels. End-to-end encrypted calls would need SFrame (insertable streams), after v1.
+- Calls aren't end-to-end encrypted. Media is encrypted between each browser and the den (DTLS-SRTP), and the den decrypts it to forward it, so the den's owner could listen in. Onboarding and the docs say so, as they say the den can read channels. End-to-end encrypted calls would need SFrame (insertable streams), after v1.
 - DMs have no calls until then: a DM's call would pass through the den's SFU like any other, so its owner could listen in, unlike the DM's messages.
 - The den's offer, which carries the fingerprint its DTLS must match, comes over the den socket, so a call reaches the den the member signed in to, as their messages do.
 - Members in a call never see each other's addresses: everything passes through the den, which sees the address each member's media comes from, as it sees the address of each of their connections already.
@@ -1103,6 +1103,50 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] No release older than the installed one installs, and only command-line flags, never the environment, change where releases come from or skip their verification, which a binary the release pipeline built refuses (M8).
 - [x] Nothing a crash leaves in the data directory's `tmp` outlives the next start, and a backup holds every file its snapshot names (M8).
 - [x] The binary carries the license notices of everything it includes, and CI fails when they're stale (M3).
+
+## Public site
+
+dens.chat is a landing page and a few pages of docs for people using Dens, built with Hugo and Hextra in `docs/` (see `docs/README.md`), and published with v1.
+
+**The landing page** says what Dens is in one plain paragraph, then argues for it in three sections, hosting your own (01), encrypted and pseudonymous (02) and free (03), with four cards on how it's built. It links into the docs at the hosting guide (`/docs/host/`) and Privacy (`/docs/privacy/`). Until v1 is published, a strip on the landing page and a banner on the docs (`params.banner` in `hugo.yaml`) say there's nothing to install yet; both go with the release.
+
+**The docs** cover what the app can't show for itself: what happens before Dens runs, outside it (a domain, a router, Caddy), and across devices and time (passwords, recovery, backups), and, once, who can read what.
+
+- They say what things are for rather than which buttons to press, so the page can change without them going stale, and they hold no screenshots, for the same reason.
+- They don't repeat the page's settings, which explain themselves a line each (M8.3), or the commands, which `--help` lists.
+- Each fact lives on one page, and the others link to it.
+
+| Page | Covers |
+| --- | --- |
+| Docs home (`/docs/`) | Two ways in: you got an invite, or you want to host a den |
+| Install (`/docs/install/`) | What Dens runs on; downloading the installer and running it, with checking its signature first as an optional step; `dens open` and the local password; updating and uninstalling |
+| Join a den (`/docs/join/`) | Pasting an invite; a username is for good; the den password and the local password; recovery codes; the DM recovery key; approving a new device; comparing a DM's check code |
+| Host a den (`/docs/host/`) | What a den needs: a computer that stays on, upload speed and a domain; the installer's den option; creating the den; Caddy and the four ports; a call from outside the network as the test; a small VPS where ports can't be forwarded; invites, roles, call limits and auto-delete; what a den costs in upload |
+| Backups and moving (`/docs/backups/`) | `dens backup` and `dens restore`; moving to another computer, between Linux and Windows too; handing the den on with `dens den owner-invite`; what's gone when both the password and the computer are |
+| Privacy (`/docs/privacy/`) | Who can read what, in one table; what Dens doesn't protect against; what leaves your computer; Linux and Windows compared; the short philosophy, with pointers to Signal and Qubes OS |
+
+What the rest of this document commits the docs to, by page:
+
+- Install:
+  - Downloading the installer and running it, with its signature check as an optional step (see Privileged steps and updates).
+  - Linux is recommended, since its service sandbox is stronger (Goals).
+  - What Windows shows before running an installer that isn't Authenticode-signed, and how to check the download (Weaker than Linux). What it shows needs checking on a clean machine first: SmartScreen marks files a browser downloads, and the installer runs through PowerShell with `-ExecutionPolicy Bypass`.
+- Join a den: what's unusual about Dens, in plain words: the local password and den passwords, recovery codes and the DM recovery key, den IDs, approving new devices and checking a DM's code. Onboarding says the same things, shorter, in the same words (see Before the first release).
+- Host a den:
+  - Which ports to forward but not how, since routers vary too much, and a small VPS as the easy alternative (Networking and deployment).
+  - A minimal Caddyfile, and Caddy as a service on both platforms, which covers ports 80 and 443 (Caddy).
+  - Calls need the den's name to point at its machine, or the router in front of it: a tunnel or CDN carries a den's HTTPS but not its calls. The owner's own calls work before any port is forwarded, so the test is a call from outside the network (Media addresses).
+  - How to raise the call limits on a faster connection (Limits for calls).
+  - A backup keeps what the den held when it was made, past the auto-delete period, until the backup is deleted (Retention).
+  - Dens is one program, its database and media tools built in, so a den needs only Caddy beside it.
+  - What a den costs in upload: members pick up where they left off rather than reloading, presence goes out in batches, and pictures go as previews until opened (Sync and bandwidth).
+  - A second den is a second instance, with ports of its own (Install and service account). An install that hosts updates as one binary with its client, and a den that can't wait on its owner's updates moves to an install of its own (Versioning and compatibility).
+- Privacy:
+  - The den can read channels and the files in them, could listen to calls and watch screen shares, and sees who DMs whom and when; DMs and the photos in them are end-to-end encrypted (Privacy model, End-to-end encrypted DMs, Calls). The docs say the den rather than its owner: whoever or whatever gets hold of the den's computer, someone else who uses it or malware on it, can do the same.
+  - Files that aren't photos, videos or audio, such as documents and archives, go as they are, with whatever they carry inside (Metadata stripping).
+  - An update check asks the release host for the latest version number, which shows it the install's IP address (Privileged steps and updates), and a member who turns on YouTube's players shows YouTube their IP address (YouTube players).
+  - Windows is weaker than Linux, as Weaker than Linux lists.
+  - The short philosophy section and its recommendations: Linux over Windows, LibreWolf, no identifying details for low-stakes use, and Signal, Qubes OS and similar tools for higher stakes, none of them bulletproof (Privacy model).
 
 ## Milestones
 

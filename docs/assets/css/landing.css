@@ -1,0 +1,1452 @@
+/* dens.chat: the landing page. Metalheart, by way of the 2000s design
+   portals: cyan and hot magenta, vector shards, keylines, barcodes and pixel
+   microtext. Light or dark follows the system unless the visitor picks a
+   skin; the choice is the docs' own (theme.js). */
+
+@font-face {
+  font-family: "Archivo Expanded";
+  font-weight: 900;
+  font-display: swap;
+  src: url("/fonts/archivo-expanded-900.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Archivo Expanded";
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/archivo-expanded-700.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Silkscreen";
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/silkscreen-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Silkscreen";
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/silkscreen-700.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light dark;
+  --dark: 0;
+
+  /* the brand, the same in both skins */
+  --cyan: #2bd2ee;
+  --cyan-2: #8fe6f6;
+  --cyan-3: #dcf6fc;
+  --mag: #e5338a;
+  --mag-2: #ff5aa5;
+  --pink: #f7b3d1;
+  --pink-2: #fde6f0;
+  --lav: #b8a6ec;
+  --purple: #5b2462;
+
+  /* surfaces and words, by skin */
+  --page: light-dark(#ffffff, #130e1a);
+  --bg: light-dark(#ffffff, #130e1a);
+  --bg-2: light-dark(#f9fdfe, #1a1323);
+  --ink: light-dark(#262626, #f3edf7);
+  --text: light-dark(#3d3d3d, #d8d0df);
+  --gray: light-dark(#8a8a8a, #948ba6);
+  --rule: light-dark(#d9d9d9, #2d2539);
+  --line: light-dark(#5b2462, #c9a2dc);
+  --link: light-dark(#e5338a, #ff5aa5);
+  --link-hover: light-dark(#b81e68, #ff8fc0);
+  --hero-1: light-dark(#ffffff, #130e1a);
+  --hero-2: light-dark(#fde6f0, #261029);
+  --hero-3: light-dark(#f7b3d1, #521440);
+  --caption-bg: light-dark(rgb(255 255 255 / 0.84), rgb(19 14 26 / 0.84));
+  --dens-col: light-dark(#fde6f0, #2e0f27);
+  --no-mark: light-dark(#b9b9b9, #5f5670);
+  --bar: light-dark(#141414, #efe9f3);
+  --trunk: light-dark(#5b2462, #b98ad0);
+  --grass: light-dark(#1fb2cf, #2bd2ee);
+  --sky: light-dark(#dcf6fc, #0a2a35);
+  --sun: light-dark(#fde6f0, #ece4fa);
+
+  --f-x: "Archivo Expanded", "Arial Black", "Helvetica Neue", Arial, sans-serif;
+  --f-px: "Silkscreen", "Courier New", monospace;
+  --f-b: Verdana, Tahoma, "DejaVu Sans", "Bitstream Vera Sans", sans-serif;
+
+  --rail: 40px;
+  --frame: 1200px;
+  --pad: clamp(16px, 2.4vw, 28px);
+  /* the column's margin out to the walls, and that plus its border: what the
+     hero's art fills on wide screens */
+  --gutter: 0px;
+  --bleed: 0px;
+  --keyline: light-dark(rgb(255 255 255 / 0.85), #2d2539);
+}
+
+:root.light {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --dark: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --dark: 1;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text);
+  font: 13.5px / 1.7 var(--f-b);
+}
+
+a {
+  color: var(--link);
+}
+
+a:hover {
+  color: var(--link-hover);
+}
+
+/* The drawings were made with fixed inks; their purple hairlines follow the
+   skin so they don't vanish in the dark. */
+.landing svg [stroke="#5b2462"] {
+  stroke: var(--line);
+}
+
+.landing svg [fill="#5b2462"] {
+  fill: var(--line);
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- chrome */
+.rail {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: var(--rail);
+  z-index: 20;
+  overflow: hidden;
+}
+
+.rail--l {
+  left: 0;
+  background: linear-gradient(180deg, var(--cyan) 0%, var(--cyan) 58%, #a38be0 84%, var(--mag-2) 100%);
+}
+
+.rail--r {
+  right: 0;
+  background: linear-gradient(180deg, var(--mag) 0%, var(--mag) 70%, var(--mag-2) 100%);
+}
+
+.rail-text {
+  position: absolute;
+  left: 50%;
+  top: 24px;
+  writing-mode: vertical-rl;
+  transform: translateX(-50%);
+  font: 400 8px / 1 var(--f-px);
+  letter-spacing: 0.2em;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.frame {
+  max-width: calc(var(--frame) + 2px);
+  margin: 0 auto;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+@media (min-width: 901px) {
+  :root {
+    --gutter: max(var(--rail), calc((100vw - var(--frame)) / 2));
+    --bleed: calc(var(--gutter) + 1px);
+  }
+
+  .frame {
+    margin: 0 var(--gutter);
+  }
+}
+
+.micro {
+  margin: 0;
+  font: 400 8px / 1.5 var(--f-px);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  font: 900 12px / 1 var(--f-x);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.label .sq:first-of-type {
+  margin-left: 6px;
+}
+
+.sq {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--cyan-2);
+}
+
+.sq--hollow {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--cyan-2);
+}
+
+.ar {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  vertical-align: baseline;
+}
+
+.ar rect {
+  fill: var(--cyan);
+}
+
+.ar path {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 1.6;
+  stroke-linecap: square;
+}
+
+/* ---------------------------------------------------------------- wip */
+/* Hazard tape over the top bar until the first release. The cursor blinks a
+   few times and stops, so it's not still blinking while you read. */
+.wip {
+  position: relative;
+  padding: 14px var(--pad) 9px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wip::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: repeating-linear-gradient(-45deg, var(--mag) 0 6px, #141414 6px 12px);
+}
+
+.wip p {
+  margin: 0;
+}
+
+.wip-k {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 3px 6px 2px;
+  font: 900 10px / 1 var(--f-x);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+  color: #fff;
+  background: var(--mag);
+}
+
+.wip-k::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 8px;
+  margin-left: 5px;
+  vertical-align: -1px;
+  background: currentColor;
+  animation: wip-blink 1s steps(1) 4;
+}
+
+@keyframes wip-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wip-k::after {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- top bar */
+/* One row: the logo, then the links and the skin switcher at the right. */
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 26px;
+  padding: 16px var(--pad) 14px;
+  border-bottom: 4px double var(--cyan);
+}
+
+.logo {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.logo-bars {
+  display: grid;
+  gap: 3px;
+}
+
+.logo-bars i {
+  display: block;
+  width: 30px;
+  height: 5px;
+  background: var(--mag);
+}
+
+.logo-bars i:nth-child(2) {
+  width: 22px;
+  background: var(--cyan);
+}
+
+.logo-word {
+  display: flex;
+  align-items: baseline;
+  font: 900 24px / 1 var(--f-x);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+
+.logo-dens {
+  color: var(--mag);
+}
+
+.logo-chat {
+  color: var(--cyan);
+}
+
+.topnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+}
+
+.topnav a {
+  font: 700 12px / 1 var(--f-x);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--mag);
+}
+
+.topnav a:hover {
+  color: var(--cyan);
+}
+
+.topnav b {
+  margin-right: 5px;
+  font: 400 8px / 1 var(--f-px);
+  color: var(--cyan);
+  vertical-align: 3px;
+}
+
+/* The skin switcher, as sites had them: three small choices in the corner. */
+.skin {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font: 400 8px / 1 var(--f-px);
+  text-transform: uppercase;
+}
+
+.skin[hidden] {
+  display: none;
+}
+
+.skin-k {
+  margin-right: 4px;
+  color: var(--gray);
+}
+
+.skin button {
+  padding: 3px 5px 2px;
+  border: 1px solid var(--rule);
+  background: none;
+  font: inherit;
+  text-transform: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.skin button:hover {
+  border-color: var(--cyan);
+}
+
+.skin button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--mag);
+  border-color: var(--mag);
+}
+
+/* ---------------------------------------------------------------- intro */
+/* The one plain answer to "what is this", so it reads before the hero. */
+.intro {
+  padding: 20px var(--pad) 22px;
+  max-width: 700px;
+}
+
+.intro-text {
+  margin: 0;
+  font-size: clamp(16px, 1.2vw, 18px);
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- hero */
+.hero {
+  position: relative;
+  min-height: clamp(560px, 62vw, 820px);
+  padding: 40px var(--pad) 48px;
+  border-top: 1px solid var(--rule);
+}
+
+/* The hero's ground and art run out past the column to the walls, while its
+   words keep to the column. Its top rule runs with them, and the column's
+   edges carry on down the ground as keylines, under the art, so what hangs
+   from an edge covers it. (On a narrow screen the bleed is 0, and they fall
+   outside.) */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -1px calc(-1 * var(--bleed)) 0;
+  border-top: 1px solid var(--rule);
+  background:
+    linear-gradient(var(--keyline), var(--keyline)) left calc(var(--bleed) - 1px) top 0 / 1px 100% no-repeat,
+    linear-gradient(var(--keyline), var(--keyline)) right calc(var(--bleed) - 1px) top 0 / 1px 100% no-repeat,
+    linear-gradient(180deg, var(--hero-1) 0%, var(--hero-2) 52%, var(--hero-3) 100%);
+}
+
+.hero-art {
+  position: absolute;
+  inset: 0 calc(-1 * var(--bleed));
+  overflow: hidden;
+}
+
+/* The drawing is sized to the column, so it sits where it always has at
+   every width, and what it draws past the column's edges spills into the
+   rest of the art layer. */
+.hero-art svg {
+  position: absolute;
+  top: 0;
+  left: var(--bleed);
+  width: calc(100% - 2 * var(--bleed));
+  height: 100%;
+  overflow: visible;
+}
+
+/* At night the glass columns glow less. */
+.hero-art [fill="url(#ha-col)"] {
+  opacity: calc(1 - var(--dark) * 0.6);
+}
+
+.fucks {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  justify-items: start;
+  gap: clamp(10px, 1.2vw, 18px);
+  max-width: min(930px, 80%);
+  margin: 0;
+  padding-left: 26px;
+}
+
+.fucks a {
+  position: relative;
+  display: block;
+  text-decoration: none;
+  color: var(--mag);
+}
+
+.fucks a:nth-child(2) {
+  color: var(--cyan);
+}
+
+.fuck {
+  font: 900 clamp(28px, 4.2vw, 58px) / 1.04 var(--f-x);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+/* The third line as highlighter bars, one per line of text. */
+.fucks a:nth-child(3) .fuck {
+  color: #fff;
+  background: var(--mag);
+  padding: 0 0.14em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.idx {
+  position: absolute;
+  left: -26px;
+  top: 0.55em;
+  font: 400 8px / 1 var(--f-px);
+  color: var(--gray);
+}
+
+.fucks .ar {
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+  vertical-align: super;
+}
+
+.fucks a:hover .fuck {
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 6px;
+}
+
+.fucks a:nth-child(3):hover .fuck {
+  text-decoration-color: var(--cyan);
+}
+
+.caption {
+  position: relative;
+  z-index: 2;
+  max-width: 31em;
+  margin: clamp(28px, 4vw, 56px) 0 0;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--caption-bg);
+  border-left: 4px solid var(--cyan);
+}
+
+.caption strong {
+  color: var(--mag);
+}
+
+/* ---------------------------------------------------------------- sections */
+.sec {
+  position: relative;
+  padding: clamp(48px, 7vw, 88px) var(--pad);
+  border-top: 1px solid var(--rule);
+}
+
+.sec-head {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 14px;
+  align-items: end;
+  margin-bottom: clamp(24px, 3vw, 36px);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--cyan);
+}
+
+.sec-num {
+  position: relative;
+  grid-row: span 2;
+  font: 900 clamp(44px, 6vw, 72px) / 0.78 var(--f-x);
+  color: var(--cyan);
+  letter-spacing: -0.04em;
+  /* a halo of page, so the numeral reads over its burst */
+  text-shadow: 0 0 2px var(--bg), 0 0 5px var(--bg), 0 0 10px var(--bg), 0 0 16px var(--bg);
+}
+
+.sec-burst {
+  position: absolute;
+  left: -34px;
+  bottom: -26px;
+  width: 170px;
+  height: auto;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.sec-head h2 {
+  margin: 0;
+  font: 900 clamp(20px, 2.6vw, 36px) / 1.02 var(--f-x);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  color: var(--mag);
+  text-wrap: balance;
+}
+
+.sec-head .micro {
+  margin-top: 6px;
+}
+
+.copy p {
+  max-width: 38em;
+  margin: 0 0 1em;
+}
+
+.copy--wide p {
+  max-width: 52em;
+}
+
+.host-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: clamp(24px, 4vw, 56px);
+  align-items: start;
+}
+
+/* ---------------------------------------------------------------- machines and EULAs */
+.machines {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(16px, 2.5vw, 36px);
+  align-items: end;
+}
+
+.machine {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  margin: 0;
+}
+
+.machine-art {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.machine-art--pc {
+  max-width: 260px;
+}
+
+.machine-label {
+  margin-top: 6px;
+  font: 900 13px / 1.2 var(--f-x);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--mag);
+}
+
+.machine-label .micro {
+  display: block;
+  margin-top: 3px;
+}
+
+.eula {
+  position: relative;
+  z-index: 30;
+  width: min(86%, 300px);
+  margin-top: 12px;
+}
+
+.rod {
+  position: relative;
+  display: block;
+  height: 18px;
+  list-style: none;
+  cursor: pointer;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #fff 0%, #efe8dc 50%, #d6cbb9 100%);
+}
+
+.rod::-webkit-details-marker {
+  display: none;
+}
+
+/* Rolled up: a second roll right under the rod. */
+.eula:not([open]) .rod::after {
+  content: "";
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 100%;
+  height: 16px;
+  border: 1.5px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(180deg, #d6cbb9 0%, #fffdf8 40%, #e3d9c8 100%);
+}
+
+.rod-tag {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 6px 1px;
+  font: 400 8px / 1 var(--f-px);
+  color: #fff;
+  background: var(--mag);
+  white-space: nowrap;
+}
+
+.rod:hover .rod-tag {
+  background: var(--cyan);
+}
+
+.unroll {
+  position: absolute;
+  top: 100%;
+  left: 4%;
+  right: 4%;
+}
+
+.paper {
+  position: relative;
+  overflow: hidden;
+  border-left: 1.5px solid var(--line);
+  border-right: 1.5px solid var(--line);
+  /* Past the readable part, the fine print never ends. */
+  background: #fffdf8 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='60'%3E%3Crect x='0' y='4' width='230' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='10' width='212' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='16' width='236' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='22' width='168' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='28' width='224' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='34' width='240' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='40' width='190' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='46' width='232' height='2' fill='%23c9c4c8'/%3E%3Crect x='0' y='52' width='120' height='2' fill='%23c9c4c8'/%3E%3C/svg%3E") repeat-y 12px 0;
+  cursor: pointer;
+}
+
+.paper-in {
+  padding: 12px 12px 18px;
+  background: #fffdf8;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #333;
+}
+
+.paper-title {
+  margin: 0;
+  font: 900 11px / 1.2 var(--f-x);
+  text-transform: uppercase;
+  color: var(--mag);
+}
+
+.paper-rev {
+  margin: 4px 0 0;
+  font-style: italic;
+  color: #8a8a8a;
+}
+
+.paper-terms {
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.paper-terms li + li {
+  margin-top: 6px;
+}
+
+.paper-terms b {
+  text-transform: uppercase;
+  font-size: 9.5px;
+}
+
+.paper-fine {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  font-size: 8.5px;
+  line-height: 1.45;
+  color: #555;
+}
+
+.paper-fine span {
+  color: var(--mag);
+}
+
+/* The paper is light in both skins, so its links keep a fixed ink. */
+.paper a {
+  color: #c2185b;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.paper-finer p {
+  margin: 8px 0 0;
+  font: 400 6px / 1.3 var(--f-b);
+  color: #8b8b8b;
+  text-align: justify;
+}
+
+.paper-finer p:nth-child(n + 7) {
+  font-size: 5px;
+}
+
+.paper-finer p:nth-child(n + 13) {
+  font-size: 4px;
+}
+
+.paper-sign {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  margin: 0;
+  padding-top: 6px;
+  font: 400 8px / 1.4 var(--f-px);
+  text-transform: uppercase;
+  color: #262626;
+  background: #fffdf8;
+}
+
+.paper-sign span {
+  color: var(--mag);
+}
+
+.paper-roll {
+  display: block;
+  height: 16px;
+  margin: 0 -4%;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff 0%, #efe8dc 50%, #d6cbb9 100%);
+  background-size: 100% 100%;
+}
+
+/* While it moves, the roll turns: its stripes run. */
+.eula.moving .paper-roll {
+  background-image: repeating-linear-gradient(180deg, transparent 0 3px, rgb(91 36 98 / 0.12) 3px 4px),
+    linear-gradient(180deg, #fff 0%, #efe8dc 50%, #d6cbb9 100%);
+  animation: roll 0.3s linear infinite;
+}
+
+@keyframes roll {
+  to {
+    background-position: 0 8px, 0 0;
+  }
+}
+
+.ph {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  border: 1px dashed var(--rule);
+  font: 400 8px var(--f-px);
+  text-transform: uppercase;
+  color: var(--gray);
+}
+
+/* A definition, set aside like a sidebar note in a spec sheet. */
+.note {
+  max-width: 46em;
+  margin: 4px 0 1.2em;
+  padding: 10px 14px 12px;
+  border-left: 4px solid var(--cyan);
+  background: var(--bg-2);
+}
+
+.note p {
+  margin: 0;
+  max-width: none;
+}
+
+.note .note-k {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font: 900 11px / 1.2 var(--f-x);
+  text-transform: uppercase;
+  color: var(--mag);
+}
+
+/* ---------------------------------------------------------------- the comparison */
+.compare {
+  margin-top: clamp(24px, 3vw, 36px);
+  overflow-x: auto;
+}
+
+.compare:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+}
+
+.compare table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.compare caption {
+  caption-side: top;
+  padding-bottom: 8px;
+  text-align: left;
+  font: 400 8px / 1.5 var(--f-px);
+  text-transform: uppercase;
+  color: var(--gray);
+}
+
+.compare thead th {
+  padding: 8px 10px;
+  font: 900 13px / 1 var(--f-x);
+  text-transform: uppercase;
+  text-align: left;
+  color: #fff;
+  background: var(--cyan);
+  border-left: 1px solid var(--bg);
+}
+
+.compare thead th[data-col="dens"] {
+  background: var(--mag);
+}
+
+.compare tbody th {
+  width: 20%;
+  padding: 9px 12px 9px 0;
+  font: 700 11px / 1.3 var(--f-x);
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink);
+}
+
+.compare td {
+  padding: 9px 10px;
+  border-left: 1px solid var(--rule);
+  color: var(--text);
+  vertical-align: top;
+}
+
+.compare tbody tr {
+  border-bottom: 1px solid var(--rule);
+}
+
+.compare tbody tr:nth-child(odd) td {
+  background: var(--bg-2);
+}
+
+.compare td[data-col="dens"] {
+  background: var(--dens-col) !important;
+  border-left: 2px solid var(--mag);
+  border-right: 2px solid var(--mag);
+  color: var(--ink);
+}
+
+.compare tbody tr:last-child td[data-col="dens"] {
+  border-bottom: 2px solid var(--mag);
+}
+
+/* Square marks: filled for yes, half for partly, hollow for no. */
+.v-mark {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  vertical-align: 0;
+}
+
+.v-y .v-mark {
+  background: var(--cyan);
+}
+
+.v-p .v-mark {
+  background: linear-gradient(135deg, var(--cyan) 50%, transparent 50%);
+  box-shadow: inset 0 0 0 1px var(--cyan);
+}
+
+.v-n .v-mark {
+  box-shadow: inset 0 0 0 1px var(--no-mark);
+}
+
+td[data-col="dens"].v-y .v-mark {
+  background: var(--mag);
+}
+
+td[data-col="dens"].v-n .v-mark {
+  box-shadow: inset 0 0 0 1px var(--mag);
+}
+
+.compare-notes {
+  margin-top: 10px;
+  max-width: 120em;
+}
+
+/* ---------------------------------------------------------------- cameras */
+.cams {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
+.cam {
+  position: absolute;
+  width: 100px;
+  transition: transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 520ms;
+  opacity: 0;
+}
+
+.cam--l {
+  left: calc(var(--rail) - 4px);
+  transform: translateX(-110%);
+}
+
+.cam--r {
+  right: calc(var(--rail) - 4px);
+  transform: translateX(110%) scaleX(-1);
+}
+
+.cam--l1 { top: 14%; }
+.cam--l2 { top: 47%; }
+.cam--l3 { top: 80%; }
+.cam--r1 { top: 24%; }
+.cam--r2 { top: 66%; }
+
+.cams-on .cam {
+  opacity: 1;
+}
+
+.cams-on .cam--l {
+  transform: none;
+}
+
+.cams-on .cam--r {
+  transform: scaleX(-1);
+}
+
+.cam svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.cam-head {
+  transform-box: view-box;
+  transform-origin: 26px 32px;
+  transform: rotate(var(--a, 0deg));
+}
+
+.cam-lens {
+  transform-box: view-box;
+  transform-origin: 75px 32px;
+  transform: scaleX(var(--z, 1));
+}
+
+.cam-plate { fill: #ececf2; stroke: var(--line); stroke-width: 1.4; }
+.cam-screw { fill: var(--line); }
+.cam-arm { stroke: var(--line); stroke-width: 5; stroke-linecap: round; }
+.cam-cable { fill: none; stroke: var(--line); stroke-width: 1.2; }
+.cam-knuckle { fill: #dcdce4; stroke: var(--line); stroke-width: 1.4; }
+.cam-body { fill: #fff; stroke: var(--line); stroke-width: 1.4; }
+.cam-shade { stroke: #dcdce6; stroke-width: 5; }
+.cam-hood { fill: var(--mag); stroke: var(--line); stroke-width: 1.2; stroke-linejoin: round; }
+.cam-barrel { fill: #3b3646; stroke: var(--line); stroke-width: 1.2; }
+.cam-glass { fill: var(--cyan); stroke: var(--line); stroke-width: 1.4; }
+.cam-glint { fill: #fff; }
+.cam-shutter { fill: #3b3646; opacity: 0; transition: opacity 300ms; }
+.cam-off { font: 400 7px var(--f-px); fill: var(--gray); opacity: 0; transition: opacity 300ms 200ms; }
+
+.cam-led {
+  fill: #ff2a6d;
+  animation: rec 1.2s steps(1) infinite;
+}
+
+@keyframes rec {
+  50% { fill: #ffd2e1; }
+}
+
+/* Powered down: the light goes out and the shutter closes; landing.js lets
+   the head droop. */
+.cams-off .cam-led {
+  animation: none;
+  fill: #b5b5b5;
+}
+
+.cams-off .cam-shutter,
+.cams-off .cam-off {
+  opacity: 1;
+}
+
+.cams-boot .cam-led {
+  animation: rec 0.12s steps(1) 5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cam {
+    transition: none;
+  }
+
+  .cam-led,
+  .cams-boot .cam-led {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- under the hood */
+.hood {
+  margin-top: clamp(40px, 5vw, 64px);
+}
+
+/* Two across, so four cards make a square. */
+.hood-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+  gap: 18px 28px;
+}
+
+.hood-item {
+  border-top: 2px solid var(--mag);
+  padding-top: 10px;
+}
+
+.hood-item h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font: 900 12px / 1.2 var(--f-x);
+  text-transform: uppercase;
+  color: var(--mag);
+}
+
+.hood-item p {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- free */
+.sec--free {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.free-tag {
+  padding: 0 var(--pad);
+}
+
+.free-tag b {
+  color: var(--cyan);
+  font-weight: 400;
+  margin-right: 6px;
+}
+
+/* The barcode stands in an empty room; scrolling grows it into a forest.
+   Without the script there's no scroll to drive it, so the forest is simply
+   grown and the room is no taller than it. */
+.forest-scroll {
+  position: relative;
+}
+
+.js .forest-scroll {
+  height: 260vh;
+}
+
+.forest-stage {
+  --p: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(14px, 2.4vh, 28px);
+  padding: 40px var(--pad);
+}
+
+.js .forest-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 0 var(--pad);
+}
+
+.forest {
+  display: block;
+  width: min(640px, 92%);
+  height: auto;
+  max-height: 58vh;
+  overflow: visible;
+}
+
+.fo-sky {
+  opacity: clamp(0, (var(--p) - 0.3) / 0.3, 1);
+}
+
+/* Every stop in the glow's own color, so it fades out without passing
+   through gray on its way to transparent. */
+#fo-sky stop {
+  stop-color: var(--sky);
+}
+
+.fo-sun {
+  fill: var(--sun);
+  opacity: clamp(0, (var(--p) - 0.5) / 0.3, 1);
+}
+
+.fo-ground {
+  fill: none;
+  stroke-width: 2;
+  stroke: color-mix(in srgb, var(--grass) calc(clamp(0, (var(--p) - 0.2) / 0.2, 1) * 100%), var(--bar));
+}
+
+.fo-bar {
+  --m: clamp(0, (var(--p) - var(--d)) / 0.26, 1);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(calc(1 + (var(--sx) - 1) * var(--m)), calc(1 + (var(--sy) - 1) * var(--m)));
+  fill: color-mix(in srgb, var(--trunk) calc(var(--m) * 100%), var(--bar));
+}
+
+.fo-grow {
+  --g: clamp(0, (var(--p) - var(--d)) / 0.14, 1);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: scale(var(--g));
+  opacity: min(1, calc(var(--g) * 3));
+}
+
+.fo-grass {
+  fill: none;
+  stroke: var(--grass);
+  stroke-width: 1.3;
+}
+
+.fo-bird {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.4;
+}
+
+/* The words under the forest come one at a time as the trees grow. */
+.money {
+  max-width: 31em;
+  margin: 0;
+  font-size: clamp(15px, 1.5vw, 18px);
+  line-height: 1.7;
+  text-align: center;
+  color: var(--ink);
+}
+
+.money span {
+  --t: clamp(0, (var(--p) - 0.4 - var(--i) / var(--n) * 0.42) / 0.06, 1);
+  display: inline-block;
+  opacity: var(--t);
+  transform: translateY(calc((1 - var(--t)) * 7px));
+}
+
+/* The answer, once the forest has grown. */
+.free-more {
+  display: grid;
+  justify-items: center;
+  padding: 0 var(--pad) clamp(56px, 8vw, 104px);
+}
+
+.free-more p {
+  max-width: 34em;
+  margin: 0;
+  font-size: clamp(15px, 1.4vw, 17px);
+  line-height: 1.75;
+  text-align: center;
+  color: var(--ink);
+}
+
+.js .free-more p {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 700ms ease-out, transform 700ms ease-out;
+}
+
+.js .free-more.in p {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------------------------------------------------------------- footer */
+.foot {
+  padding: 28px var(--pad) 36px;
+  background: var(--mag);
+  color: #fff;
+}
+
+.foot a {
+  color: #fff;
+}
+
+.foot .micro {
+  color: rgb(255 255 255 / 0.8);
+}
+
+.badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The classic 88 x 31: a word in a box, a label beside it, a bevel. */
+.badge {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  width: 88px;
+  height: 31px;
+  padding: 2px;
+  border: 1px solid #fff;
+  background: #fff;
+  box-shadow: inset -1px -1px 0 rgb(0 0 0 / 0.25), inset 1px 1px 0 #fff;
+  font: 400 8px / 1 var(--f-px);
+  text-transform: uppercase;
+  overflow: hidden;
+}
+
+.badge b {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-width: 22px;
+  padding: 0 4px;
+  font: 700 8px / 1 var(--f-px);
+  color: #fff;
+  background: var(--mag);
+}
+
+.badge span {
+  padding-left: 4px;
+  color: #262626;
+  line-height: 1.1;
+}
+
+.badge--b b,
+.badge--e b {
+  background: var(--cyan);
+}
+
+.badge--c b {
+  background: var(--purple);
+}
+
+.badge--d {
+  background: linear-gradient(180deg, #fff, var(--cyan-3));
+}
+
+.badge--f b {
+  background: #3b3646;
+}
+
+.badge--g b {
+  background: #141414;
+}
+
+.foot-copy {
+  margin: 16px 0 6px;
+  font: 700 11px / 1.5 var(--f-x);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------- small screens */
+@media (max-width: 600px) {
+  /* On a phone the cameras only peek in from the edges. */
+  .cams .cam {
+    width: 44px;
+  }
+
+  .cams .cam--l {
+    left: -18px;
+  }
+
+  .cams .cam--r {
+    right: -18px;
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --rail: 0px;
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .frame {
+    border: 0;
+  }
+
+  /* the logo takes a row, and the links and the switcher the next */
+  .logo {
+    flex-basis: 100%;
+  }
+
+  .topnav {
+    margin-right: auto;
+  }
+
+  .host-body {
+    grid-template-columns: 1fr;
+  }
+
+  .machines {
+    grid-template-columns: 1fr 1.3fr;
+  }
+
+  .cam {
+    width: 52px;
+  }
+
+  .cam--l {
+    left: -12px;
+  }
+
+  .cam--r {
+    right: -12px;
+  }
+
+  /* On a narrow screen the bloom grows behind the caption, not the words. */
+  .hero-art {
+    top: 42%;
+  }
+
+  .fucks {
+    max-width: none;
+  }
+
+  .fucks a:not(:nth-child(3)) .fuck {
+    text-shadow: 0 0 2px var(--bg), 0 0 6px var(--bg), 0 0 14px var(--bg);
+  }
+}

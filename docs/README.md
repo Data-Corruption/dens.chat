@@ -19,10 +19,29 @@ go mod download
 hugo server --buildDrafts --disableFastRender
 ```
 
-The landing page is `content/_index.md`. Documentation is under
-`content/docs/`; directory structure and front-matter weights define the
-Hextra sidebar. Site configuration and top navigation is in `hugo.yaml`, and
-small theme overrides belong in `assets/css/custom.css`.
+The landing page is its own layout, not a Hextra page: `layouts/home.html`,
+with its head, art and components in `layouts/_partials/landing/`, its styles
+in `assets/css/landing.css` and two scripts: `assets/js/theme.js`, which runs
+first and applies a stored skin, and `assets/js/landing.js` (the skin switcher,
+the EULA scrolls, the security cameras, and the barcode that grows into a forest
+as you scroll). Light or dark follows the system unless the visitor picks a
+skin, which is kept in `localStorage` as `color-theme`, the key Hextra's own
+theme toggle uses, so the docs follow it too. Without the script the page still
+reads: the EULAs open as plain `<details>` and the forest is simply grown. `content/_index.md` holds only its
+front matter. Everything it loads comes from this site: Archivo and Silkscreen
+(SIL OFL, licenses beside them) are in `static/fonts/`, and body text uses the
+visitor's own Verdana or Tahoma.
+
+The SVG art (`hero-art.svg`, `pc.svg`, `cloud.svg`, `barcode.svg`,
+`burst.svg`) is generated, but committed and edited like any other file.
+`hero-art.svg` draws well past both sides of its 1200-wide viewBox: the hero
+sizes it to the column and lets it spill out to the page's walls on wide
+screens. `static/og.png`, the image a shared link shows, is a render of the
+header and hero at 1200 × 630, so render it again when they change.
+
+Documentation is under `content/docs/`; directory structure and front-matter
+weights define the Hextra sidebar. Site configuration and top navigation is in
+`hugo.yaml`, and small theme overrides belong in `assets/css/custom.css`.
 
 Run the production build before publishing:
 
