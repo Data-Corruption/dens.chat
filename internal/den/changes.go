@@ -251,16 +251,21 @@ func (d *Den) NewSyncEpoch(ctx context.Context) error {
 	return err
 }
 
-// pruner forgets changes older than changeLogAge, hourly.
+// pruner forgets changes older than changeLogAge, hourly, while running.
 type pruner struct {
 	mu      sync.Mutex
 	timer   *time.Timer
-	stopped bool
+	running bool
 }
 
 // StartPruning forgets changes older than the den keeps them, now and
-// hourly. Without it, as in tests, pruning runs only when called.
+// hourly, until StopPruning. Without it, as in tests, pruning runs only
+// when called. It starts again after StopPruning, as hosting does (M9.1).
 func (d *Den) StartPruning() {
+	p := &d.pruner
+	p.mu.Lock()
+	p.running = true
+	p.mu.Unlock()
 	d.prune()
 }
 
@@ -271,18 +276,26 @@ func (d *Den) prune() {
 	p := &d.pruner
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.stopped {
+	// A pass from before a stop and a start plans the hour in place of
+	// the new one's, so one timer runs at a time.
+	if p.timer != nil {
+		p.timer.Stop()
+		p.timer = nil
+	}
+	if p.running {
 		p.timer = time.AfterFunc(pruneEvery, d.prune)
 	}
 }
 
-func (d *Den) stopPruning() {
+// StopPruning stops forgetting changes hourly.
+func (d *Den) StopPruning() {
 	p := &d.pruner
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.stopped = true
+	p.running = false
 	if p.timer != nil {
 		p.timer.Stop()
+		p.timer = nil
 	}
 }
 

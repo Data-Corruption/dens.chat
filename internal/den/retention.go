@@ -42,10 +42,11 @@ func retentionPeriod(days int) time.Duration { return time.Duration(days) * 24 *
 
 // StartRetention starts deleting the messages that pass the den's
 // retention period, beginning with those that passed it while the den was
-// stopped. Without it, as in tests, passes run only when called.
+// stopped. Without it, as in tests, passes run only when called. It starts
+// again after StopRetention, as hosting does (M9.1).
 func (d *Den) StartRetention() {
 	d.expiry.mu.Lock()
-	d.expiry.started = true
+	d.expiry.started, d.expiry.closed = true, false
 	d.expiry.mu.Unlock()
 	d.planExpiry(true)
 }
@@ -97,9 +98,9 @@ func (d *Den) nextExpiry(days int, last time.Time) (time.Time, error) {
 	return at, nil
 }
 
-// stopExpiry stops planning passes, and waits for one under way, which
+// StopRetention stops planning passes, and waits for one under way, which
 // ends after its batch.
-func (d *Den) stopExpiry() {
+func (d *Den) StopRetention() {
 	e := &d.expiry
 	e.mu.Lock()
 	e.closed = true

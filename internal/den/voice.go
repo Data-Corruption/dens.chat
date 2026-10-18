@@ -94,7 +94,8 @@ func (d *Den) StartCalls(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) err
 }
 
 // StopCalls ends every call and closes the media ports. The den is
-// stopping, so nobody is told.
+// stopping, so nobody is told, and staff mutes go as they do when it
+// restarts.
 func (d *Den) StopCalls() error {
 	r := &d.calls
 	r.mu.Lock()
@@ -107,6 +108,8 @@ func (d *Den) StopCalls() error {
 	}
 	clear(r.byMember)
 	clear(r.rooms)
+	clear(r.staffMuted)
+	clear(r.ended)
 	r.mu.Unlock()
 	if s == nil {
 		return nil

@@ -63,6 +63,9 @@ func statusCommand(bi build.BuildInfo) *cli.Command {
 			fmt.Printf("client:    %s\n", status.ClientURL)
 			fmt.Printf("password:  %s\n", setOrNot(status.PasswordSet))
 			fmt.Printf("den:       %s\n", enabledOrNot(status.DenEnabled))
+			if status.DenProblem != "" {
+				fmt.Printf("           %s\n", status.DenProblem)
+			}
 			if status.UpdateAvailable != "" {
 				fmt.Printf("update:    %s is available\n", status.UpdateAvailable)
 			}

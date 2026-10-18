@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,8 +56,11 @@ type App struct {
 	UI       *ui.UI
 	Pairing  *pairing.Store
 	Lease    *maintenance.Lease
-	// Den is the den this instance hosts; nil when the den role is off.
+	// Den is the den this instance holds, created or not, which it serves
+	// while hosting is on.
 	Den *den.Den
+	// Hosting is the switch that serves it (M9.1), which the service runs.
+	Hosting Hosting
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
 	// Shortcuts carries the voice keys from the desktop user's helper to
@@ -84,6 +88,42 @@ type App struct {
 	passwordLimiter *rate.Limiter
 }
 
+// Hosting turns serving the den on and off from the settings (M9.1).
+type Hosting interface {
+	// State says whether hosting is on, and whether the den serves.
+	State() HostingState
+	// Set turns hosting on or off. Turning it on binds the den's ports,
+	// and fails, changing nothing, while another program holds one.
+	Set(ctx context.Context, on bool) error
+}
+
+// HostingState is hosting as the page shows it. Serving is whether the
+// den listens now; while hosting is on and it doesn't, Problem says why.
+type HostingState struct {
+	On      bool
+	Serving bool
+	Problem string
+}
+
+// PortError is hosting that can't bind one of the den's ports, as one
+// another program holds, or one the system keeps for itself. It names the
+// port and the installer flag that moves it.
+type PortError struct {
+	Port    int
+	Network string // tcp or udp
+	// Flag and Parameter set the port in dens install and install.ps1.
+	Flag, Parameter string
+	Err             error
+}
+
+func (e *PortError) Error() string {
+	return fmt.Sprintf("Hosting can't listen on port %d (%s): another program holds it, or the system keeps it. "+
+		"Free it, or move the den to another port by running the installer again with %s, or %s on Windows.",
+		e.Port, strings.ToUpper(e.Network), e.Flag, e.Parameter)
+}
+
+func (e *PortError) Unwrap() error { return e.Err }
+
 // ErrNoPassword reports that no local password has been set yet.
 var ErrNoPassword = errors.New("no local password is set yet")
 
@@ -110,8 +150,9 @@ type OpenOptions struct {
 	LogLevel string
 	// DevClientPort is the client port of a new development instance.
 	DevClientPort int
-	// DevDenPort, when set, makes a development instance host a den on
-	// that port. Installed instances get the den role from the installer.
+	// DevDenPort, when set, gives a development instance's den that port
+	// and turns its hosting on. Installed instances get their ports from
+	// the installer, and hosting from the settings.
 	DevDenPort int
 	// DevMediaPorts, where set, are the UDP and TCP ports of a development
 	// instance's calls, so two can host dens on one machine.
@@ -227,25 +268,25 @@ func (a *App) open(opts OpenOptions) error {
 	a.Media = ffmpeg.NewRunner([]string{exe, ffmpeg.WorkerCommand}, host.StartLowPriority,
 		func(s string) { a.Log.Debugf("Media module: %s", s) })
 
-	if a.Instance.Den.Enabled {
-		storage := den.Storage{Dir: l.Uploads, Temp: l.Temp, Media: a.Media}
-		if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, storage); err != nil {
-			return err
-		}
-		a.AddCleanup(func() error { a.Den.Close(); return nil })
-		if lease.State.Phase == maintenance.PhaseRestoring {
-			// A backup can give a new message an ID that a member's client
-			// holds for another, so their caches of this den go (M6).
-			if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
-				return fmt.Errorf("start the restored den's sync epoch: %w", err)
-			}
-		}
-		if a.DevMode() {
-			a.Den.RelaxLimits()
+	// Any instance may host, so each opens its den, which before it's
+	// created is one row's read; the service serves it while hosting is on.
+	storage := den.Storage{Dir: l.Uploads, Temp: l.Temp, Media: a.Media}
+	if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, storage); err != nil {
+		return err
+	}
+	a.AddCleanup(func() error { a.Den.Close(); return nil })
+	if lease.State.Phase == maintenance.PhaseRestoring {
+		// A backup can give a new message an ID that a member's client
+		// holds for another, so their caches of this den go (M6).
+		if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
+			return fmt.Errorf("start the restored den's sync epoch: %w", err)
 		}
 	}
+	if a.DevMode() {
+		a.Den.RelaxLimits()
+	}
 
-	cfg, err := config.View(a.DB)
+	cfg, err := a.prepareHosting(lease.State.Phase, opts.DevDenPort != 0)
 	if err != nil {
 		return err
 	}
@@ -281,6 +322,45 @@ func (a *App) open(opts OpenOptions) error {
 	a.AddCleanup(a.Cache.Close)
 	a.Dens.Cache = a.Cache
 	return nil
+}
+
+// prepareHosting settles the hosting switch as the service starts, and
+// returns the configuration with it (M9.1). The first start of a version
+// that has the switch takes it from the den role v1.0's installer gave the
+// instance, so one that hosted keeps hosting and every other starts off;
+// from then on the switch alone decides. A restored backup starts off, as
+// its browsers start unpaired: hosting is the machine's choice, not the
+// data's. A development instance given a den port turns it on, as that
+// gave it the den role before.
+func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Configuration, error) {
+	cfg, err := config.View(a.DB)
+	if err != nil {
+		return nil, err
+	}
+	var on bool
+	var why string
+	switch {
+	case phase == maintenance.PhaseRestoring:
+		on, why = false, "after the restore"
+	case devDen && a.Layout.Dev:
+		on, why = true, "for the den port this run gave"
+	case cfg.Hosting == nil:
+		on, why = a.Instance.Den.Enabled, "from the den role in the instance config"
+	default:
+		return cfg, nil
+	}
+	if cfg.Hosting != nil && *cfg.Hosting == on {
+		return cfg, nil
+	}
+	if on {
+		a.Log.Infof("Hosting is on, %s", why)
+	} else {
+		a.Log.Infof("Hosting is off, %s", why)
+	}
+	return config.Update(a.DB, func(c *types.Configuration) error {
+		c.Hosting = &on
+		return nil
+	})
 }
 
 // emptyDir removes everything in dir, leaving dir itself.
@@ -362,8 +442,8 @@ func (a *App) prepareDev(opts OpenOptions) error {
 	} else if err != nil {
 		return err
 	}
-	if opts.DevDenPort != 0 && (!cfg.Den.Enabled || cfg.Den.Port != opts.DevDenPort) {
-		cfg.Den.Enabled, cfg.Den.Port = true, opts.DevDenPort
+	if opts.DevDenPort != 0 && cfg.Den.Port != opts.DevDenPort {
+		cfg.Den.Port = opts.DevDenPort
 		changed = true
 	}
 	for i, port := range []*int{&cfg.Den.MediaUDPPort, &cfg.Den.MediaTCPPort} {

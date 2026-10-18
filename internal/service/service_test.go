@@ -40,10 +40,17 @@ func freePort(t *testing.T) int {
 // the service binds it, so a start that fails goes again on another port.
 func startDevService(t *testing.T) (*app.App, control.Client) {
 	t.Helper()
-	a, err := runDevService(t)
+	return startDevServiceWith(t, nil)
+}
+
+// startDevServiceWith is startDevService with set changing the options of
+// each start.
+func startDevServiceWith(t *testing.T, set func(*app.OpenOptions)) (*app.App, control.Client) {
+	t.Helper()
+	a, err := runDevService(t, set)
 	if err != nil {
 		t.Logf("starting again on another port: %v", err)
-		if a, err = runDevService(t); err != nil {
+		if a, err = runDevService(t, set); err != nil {
 			t.Fatalf("service stopped before ready: %v", err)
 		}
 	}
@@ -71,11 +78,15 @@ func devInstance() string { return fmt.Sprintf("t%d", time.Now().UnixNano()%1_00
 // runDevService opens a development instance in temporary directories and
 // runs it until the test ends. It returns why the service stopped, if it
 // stopped before it was ready, having closed what it opened.
-func runDevService(t *testing.T) (*app.App, error) {
+func runDevService(t *testing.T, set func(*app.OpenOptions)) (*app.App, error) {
 	t.Helper()
 	devHome(t)
 	a := app.New(devBuild)
-	if err := a.Open(app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}); err != nil {
+	opts := app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}
+	if set != nil {
+		set(&opts)
+	}
+	if err := a.Open(opts); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	pages, err := ui.New()

@@ -63,11 +63,13 @@ type Response struct {
 
 // Status is the result of OpStatus.
 type Status struct {
-	Version         string `json:"version"`
-	Instance        string `json:"instance"`
-	ClientURL       string `json:"clientURL"`
-	PasswordSet     bool   `json:"passwordSet"`
-	DenEnabled      bool   `json:"denEnabled"`
+	Version     string `json:"version"`
+	Instance    string `json:"instance"`
+	ClientURL   string `json:"clientURL"`
+	PasswordSet bool   `json:"passwordSet"`
+	DenEnabled  bool   `json:"denEnabled"`
+	// DenProblem says why the den doesn't serve while hosting is on (M9.1).
+	DenProblem      string `json:"denProblem,omitempty"`
 	UpdateAvailable string `json:"updateAvailable,omitempty"`
 }
 
