@@ -5,8 +5,8 @@
 // directory holds what only elevated maintenance commands may change
 // (lifecycle state, locks, instance config, the host-wrapped data key); the
 // service can read it but not write it. The data directory belongs to the
-// service account. A development instance keeps the same shape under the
-// developer's own data directory, owned by the developer.
+// service account. A session form's instance, as a development one, keeps
+// the same shape under its user's own data directory, owned by its user.
 package layout
 
 import (
@@ -37,7 +37,7 @@ const (
 type Layout struct {
 	App      string
 	Instance string
-	Dev      bool
+	Form     Form
 
 	// Root is the installation root.
 	Root string
@@ -64,7 +64,7 @@ type Layout struct {
 	Runtime         string
 	ControlEndpoint string
 
-	// System integration. Empty for development instances.
+	// System integration. Empty for session forms.
 	Binary      string
 	BinaryDir   string
 	Cosign      string
@@ -82,28 +82,29 @@ type Layout struct {
 	IconFile      string
 }
 
-// New returns the layout of instance for application app. Development
-// layouts live under the developer's data directory and have no system
-// integration.
-func New(app, instance string, dev bool) (Layout, error) {
+// New returns the layout of instance for application app, deployed as
+// form. A session form's layout lives under its user's data directory and
+// has no system integration.
+func New(app, instance string, form Form) (Layout, error) {
 	if err := ValidateApp(app); err != nil {
 		return Layout{}, err
 	}
 	if err := ValidateInstance(instance); err != nil {
 		return Layout{}, err
 	}
-	l := Layout{App: app, Instance: instance, Dev: dev}
+	l := Layout{App: app, Instance: instance, Form: form}
 	if err := l.resolve(); err != nil {
 		return Layout{}, err
 	}
 	return l, nil
 }
 
-// Instances lists the instances of app on this computer by the names of
-// their roots, which every account may list, whether or not it may read
-// them. The shortcut helper tries each one's control endpoint (M7).
-func Instances(app string, dev bool) ([]string, error) {
-	l, err := New(app, DefaultInstance, dev)
+// Instances lists the instances of app in form on this computer by the
+// names of their roots, which every account may list, whether or not it
+// may read them. The shortcut helper tries each one's control endpoint
+// (M7).
+func Instances(app string, form Form) ([]string, error) {
+	l, err := New(app, DefaultInstance, form)
 	if err != nil {
 		return nil, err
 	}

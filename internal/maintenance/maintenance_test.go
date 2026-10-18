@@ -87,11 +87,11 @@ func TestReadStateIsStrict(t *testing.T) {
 func devLayout(t *testing.T) layout.Layout {
 	t.Helper()
 	setDevHome(t)
-	l, err := layout.New("dens", "main", true)
+	l, err := layout.New("dens", "main", layout.Development)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := l.EnsureDev(); err != nil {
+	if err := l.EnsureSession(); err != nil {
 		t.Fatal(err)
 	}
 	return l
@@ -103,7 +103,7 @@ func TestServiceLeaseIsExclusiveAndFollowsState(t *testing.T) {
 		t.Fatalf("lease without state = %v, want ErrRefused", err)
 	}
 
-	if err := EnsureDevReady(l, "v1.0.0"); err != nil {
+	if err := EnsureSessionReady(l, "v1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 	lease, err := AcquireServiceLease(l, "v1.0.0")
@@ -116,7 +116,7 @@ func TestServiceLeaseIsExclusiveAndFollowsState(t *testing.T) {
 	if _, err := AcquireServiceLease(l, "v1.0.0"); !errors.Is(err, host.ErrRefused) {
 		t.Fatalf("second lease = %v, want ErrRefused", err)
 	}
-	if err := MarkDevReady(l, "v1.0.0"); err != nil {
+	if err := MarkSessionReady(l, "v1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 	if err := lease.Close(); err != nil {

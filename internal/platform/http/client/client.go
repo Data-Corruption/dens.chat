@@ -190,7 +190,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"logLevels":              strings.Split(xlog.ValidLevels, "|"),
 		"updateNotifications":    cfg.UpdateNotifications,
 		"backgroundUpdateChecks": cfg.BackgroundUpdateChecks,
-		"updatesManaged":         rt.a.Instance.ReleaseURL != "" && !rt.a.DevMode(),
+		"updatesManaged":         rt.a.ChecksForUpdates(),
 		"cacheLimit":             usage.Limit,
 		"cacheUsed":              usage.Used,
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
@@ -421,7 +421,7 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if body.LogLevel != nil && !rt.a.DevMode() {
+	if body.LogLevel != nil && rt.a.Layout.Form != layout.Development {
 		if err := rt.a.Log.SetLevel(cfg.LogLevel); err != nil {
 			xhttp.Error(r.Context(), w, err)
 			return

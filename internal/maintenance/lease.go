@@ -76,9 +76,11 @@ func AcquireServiceLease(l layout.Layout, version string) (*Lease, error) {
 		}
 		return refuse(err)
 	}
+	// The installed service may only read its control directory; a session
+	// form's is its own.
 	lock, err := xsyscall.AcquireLock(context.Background(), l.LifecycleLock, xsyscall.LockOptions{
 		Mode:     xsyscall.ModeExclusive,
-		ReadOnly: !l.Dev,
+		ReadOnly: !l.Form.Session(),
 	})
 	if errors.Is(err, xsyscall.ErrLocked) {
 		return refuse(errors.New("another service instance or a maintenance command holds the lifecycle lock"))
@@ -127,11 +129,12 @@ func AcquireLifecycleLock(ctx context.Context, l layout.Layout) (*xsyscall.Lock,
 	return lock, nil
 }
 
-// EnsureDevReady marks a development instance ready for version, the way an
-// installer would after a successful install or update.
-func EnsureDevReady(l layout.Layout, version string) error {
-	if !l.Dev {
-		return errors.New("EnsureDevReady called on an installed layout")
+// EnsureSessionReady lets version start a session form's instance, as an
+// installer does after an install or update: it publishes the transition
+// the service migrates to, unless the instance is ready for version.
+func EnsureSessionReady(l layout.Layout, version string) error {
+	if !l.Form.Session() {
+		return fmt.Errorf("EnsureSessionReady called on the %s layout", l.Form)
 	}
 	state, err := ReadState(l.State)
 	if err == nil && state.Phase == PhaseReady && state.Version == version {
@@ -156,10 +159,11 @@ func EnsureDevReady(l layout.Layout, version string) error {
 	return lockFile.Close()
 }
 
-// MarkDevReady publishes ready after a development service finished starting.
-func MarkDevReady(l layout.Layout, version string) error {
-	if !l.Dev {
-		return errors.New("MarkDevReady called on an installed layout")
+// MarkSessionReady publishes ready once a session form's service has
+// started, as an installer does once the service it started is up.
+func MarkSessionReady(l layout.Layout, version string) error {
+	if !l.Form.Session() {
+		return fmt.Errorf("MarkSessionReady called on the %s layout", l.Form)
 	}
 	return WriteState(l.State, NewState(PhaseReady, version, ""), nil)
 }

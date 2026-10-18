@@ -24,7 +24,7 @@ const writeRights = windows.FILE_WRITE_DATA | windows.FILE_APPEND_DATA | windows
 // before the service trusts them: owned by SYSTEM or Administrators, and
 // writable by nobody else. Anything else is refused, never repaired.
 func (l Layout) CheckControl(files ...string) error {
-	if l.Dev {
+	if l.Form.Session() {
 		return checkOwnedByCurrentUser(l.Control)
 	}
 	for _, path := range append([]string{l.Control}, files...) {
@@ -39,7 +39,7 @@ func (l Layout) CheckControl(files ...string) error {
 // inheritance and grants access only to SYSTEM, Administrators and this
 // process's account.
 func (l Layout) CheckData() error {
-	if l.Dev {
+	if l.Form.Session() {
 		return checkOwnedByCurrentUser(l.Data)
 	}
 	self, err := currentSID()
@@ -82,10 +82,10 @@ func (l Layout) EnsureData() error {
 	return nil
 }
 
-// EnsureDev creates a development instance's directories.
-func (l Layout) EnsureDev() error {
-	if !l.Dev {
-		return errors.New("EnsureDev called on an installed layout")
+// EnsureSession creates a session form's directories.
+func (l Layout) EnsureSession() error {
+	if !l.Form.Session() {
+		return fmt.Errorf("EnsureSession called on the %s layout", l.Form)
 	}
 	for _, dir := range append([]string{l.Root, l.Control}, l.DataDirs()...) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {

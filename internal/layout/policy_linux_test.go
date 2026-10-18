@@ -9,11 +9,11 @@ import (
 
 func TestCheckControlRefusesLoosenedOrSwappedFiles(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	l, err := New("dens", "main", true)
+	l, err := New("dens", "main", Development)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := l.EnsureDev(); err != nil {
+	if err := l.EnsureSession(); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(l.State, []byte("{}"), 0o600); err != nil {

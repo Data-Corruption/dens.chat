@@ -70,7 +70,7 @@ type windowsSystem struct{ app string }
 func NewSystem(app string) System { return windowsSystem{app: app} }
 
 func (s windowsSystem) Layout(name string) (layout.Layout, error) {
-	return layout.New(s.app, name, false)
+	return layout.New(s.app, name, layout.Installed)
 }
 
 func (windowsSystem) CheckAdmin() error {

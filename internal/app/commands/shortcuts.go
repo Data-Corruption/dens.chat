@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -26,7 +27,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			h := &shortcuts.Helper{
 				Version:   bi.Version,
-				Instances: func() ([]string, error) { return layout.Instances(bi.Name, bi.DevMode) },
+				Instances: func() ([]string, error) { return layout.Instances(bi.Name, app.FormOf(bi)) },
 				Dial: func(name string) (control.Client, error) {
 					client, _, err := controlClient(bi, name)
 					return client, err
@@ -55,7 +56,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 				defer keys.Close()
 				h.Keys, h.Note = keys, keys.Note()
 			}
-			if l, err := layout.New(bi.Name, layout.DefaultInstance, bi.DevMode); err == nil && l.Binary != "" {
+			if l, err := layout.New(bi.Name, layout.DefaultInstance, app.FormOf(bi)); err == nil && l.Binary != "" {
 				h.Restart = func() error { return host.ReplaceProcess(l.Binary, shortcuts.Command) }
 			}
 			err := h.Run(ctx)
