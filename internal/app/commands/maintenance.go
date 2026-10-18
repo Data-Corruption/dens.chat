@@ -21,9 +21,11 @@ func installCommand(bi build.BuildInfo) *cli.Command {
 			"download and verify a release, then run this.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "user", Usage: "the desktop account allowed to pair (default: the account that elevated)"},
-			&cli.BoolFlag{Name: "den", Usage: "host a den with this instance (--den=false to stop hosting)"},
+			// v1.0's den role, refused rather than dropped, so nobody
+			// takes it for one that did something (M9.1).
+			&cli.BoolFlag{Name: "den", Hidden: true},
 			&cli.IntFlag{Name: "client-port", Usage: "loopback port of the chat page"},
-			&cli.IntFlag{Name: "den-port", Usage: "loopback port Caddy forwards the den to"},
+			&cli.IntFlag{Name: "den-port", Usage: "loopback port Caddy forwards the den to, while hosting is on"},
 			&cli.IntFlag{Name: "media-udp-port", Usage: "UDP port for voice and screen share"},
 			&cli.IntFlag{Name: "media-tcp-port", Usage: "TCP fallback port for voice and screen share"},
 			&cli.StringFlag{Name: "release-url", Usage: "where updates come from (the installer passes its own)"},
@@ -31,6 +33,9 @@ func installCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "print what would change, and change nothing"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.IsSet("den") {
+				return errors.New("--den is gone: every install can host a den, and hosting is turned on and off in Dens's settings, in the System tab")
+			}
 			opts := install.Options{
 				Instance:     cmd.String("instance"),
 				User:         cmd.String("user"),
@@ -41,10 +46,6 @@ func installCommand(bi build.BuildInfo) *cli.Command {
 				ReleaseURL:   cmd.String("release-url"),
 				Cosign:       cmd.String("cosign"),
 				DryRun:       cmd.Bool("dry-run"),
-			}
-			if cmd.IsSet("den") {
-				den := cmd.Bool("den")
-				opts.Den = &den
 			}
 			return install.Install(ctx, install.NewSystem(bi.Name), bi, opts)
 		},
