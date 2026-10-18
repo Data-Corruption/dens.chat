@@ -25,7 +25,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `internal/service` | The service process: listeners, hosting (the switch that serves the den), control handlers, readiness |
 | `internal/install` | Install, update, restore and uninstall transactions with a rollback journal; `system_linux.go` and `system_windows.go` hold every install-time OS step |
 | `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
-| `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
+| `internal/layout` | The deployment forms, and every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, desktop user, release URL, and v1.0's den role, which hosting starts from |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
 | `internal/den` | The den this install hosts: members, invites, sessions and devices, the event hub and its sockets, messages, uploads and files, retention, DM key relays, calls' rules, and the change log clients sync from |
@@ -142,7 +142,11 @@ unknown message types. Only breaking changes bump it (see the design doc).
 install-time steps go behind the `System` interface in `internal/install`.
 Nothing else gets build tags. A platform difference must never reach the
 protocol, database or HTTP layers; if a feature seems to need one, raise it as
-a design problem.
+a design problem. What differs by how Dens is deployed, its form (installed,
+or a development build's instance), is chosen at runtime from `layout.Form`,
+as a `switch` on the form where it differs, never by build tags. Like a
+platform difference, a form never reaches the protocol or the database, and
+reaches the page only as what it can do.
 
 **Windows code compiles only under `GOOS=windows`.** After touching a
 `_windows.go` file, run `GOOS=windows go vet ./...` and

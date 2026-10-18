@@ -59,9 +59,9 @@ M9.1:
 
 M9.2:
 
-- *The form.* `layout.Form` is Installed or Development, and gains Flatpak in M9.3 and Android in M10. `layout.New(app, instance, form)` takes it in place of the development flag, `Layout.Form` replaces `Layout.Dev`, and `Session()` says whether the form runs as its user with no service manager. `app.FormOf` chooses it at runtime from the build and, from M9.3, the sandbox.
-- *The seams take it* where they took the flag: paths and the permission policy (`layout`); the data key (`App.loadKey`); lifecycle, where `maintenance.EnsureSessionReady` and `MarkSessionReady` replace the development ones, and `App.prepareSession` writes a session form's own instance config; the update notice and its command; the den's relaxed limits and Pion's log in development; the CLI's check of the service's identity; and whether the instance may host. Each is a `switch` on the form rather than a type per form: there are few forms, and each differs from the others in a few lines.
-- *AGENTS.md*'s rule on OS-specific code gains the form: what differs by form is chosen at runtime from `layout.Form`, never by build tags, and reaches the page only as what it can do.
+- *The form.* `layout.Form` is Installed or Development, and gains Flatpak in M9.3 and Android in M10. `layout.New(app, instance, form)` takes it in place of the development flag, and gives a form it doesn't know no layout; `Layout.Form` replaces `Layout.Dev`, and `Form.Session()` says whether the form runs as its user with no service manager, as only Development does so far. `app.FormOf` chooses it at runtime from the build and, from M9.3, the sandbox.
+- *The seams take it* where they took the flag: paths and the permission policy (`layout`, whose `EnsureSession` replaces `EnsureDev`); the data key (`App.loadKey`); lifecycle, where `maintenance.EnsureSessionReady` and `MarkSessionReady` replace the development ones, a session form's service takes its lifecycle lock writable, and `App.prepareSession` writes a session form's own instance config; update checks and their notice, which `App.ChecksForUpdates` keeps to an installed instance with a release host, and which the settings' update options follow; the den's relaxed limits, the debug log level and Pion's log in development; the CLI's check of the service's identity, and its advice when the service isn't running; and a development instance's den port turning its hosting on. Each is a `switch` on the form rather than a type per form: there are few forms, and each differs from the others in a few lines. `dens install` and `dens update` still refuse a development build by the build's own flag, which is about the build, not where it runs.
+- *AGENTS.md*'s rule on OS-specific code gains the form: what differs by form is chosen at runtime from `layout.Form`, never by build tags, and like a platform difference never reaches the protocol or the database, and reaches the page only as what it can do.
 
 M9.3:
 
@@ -92,7 +92,7 @@ M9.4:
     - A port in use fails the switch, which names it and its flag, and changes nothing; one held as the service starts leaves the rest serving and the page saying why.
     - The switch takes the local password, a restored backup starts with it off, and `dens den owner-invite` refuses while it's off.
   - Install: `--den` is refused with its message, before anything runs; every install adds the media ports' firewall rules, and a failed fresh install takes them back; and an update over a v1.0 config whose den port is its client port names the flags, and goes once one moves.
-  - Forms (M9.2): the form a build and an environment choose.
+  - Forms (M9.2): the form each build chooses; only a form `layout` knows has a layout, and only Development runs as a session; and only an installed instance with a release host checks for updates and shows their notice.
   - The Flatpak (M9.3):
     - Its paths, and a lifecycle state newer than the binary refusing to start.
     - The service starts locked, and the local password unlocks it; the password is never written anywhere.
