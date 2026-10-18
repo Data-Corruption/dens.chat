@@ -836,6 +836,12 @@ cleanup_old_releases() {
 
   for ((i=2; i<${#records[@]}; i++)); do
     read -r promoted_ns version <<< "${records[$i]}"
+    # Installed copies hold what the first release wrote, and the lifecycle
+    # harnesses update from it, so it stays (M9.1).
+    if [[ "$version" == "$DENS_FIRST_RELEASE" ]]; then
+      printf "🟢 Retaining %s, the first release, which the lifecycle e2e updates from\n" "$version"
+      continue
+    fi
     if remote_file_exists "releases/$version/version"; then
       :
     else

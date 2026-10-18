@@ -354,6 +354,10 @@ if (installer_needs_update install.sh >/dev/null 2>&1); then
   fail "invalid unstaged installer pair was accepted"
 fi
 
+# These releases are made up, so none of them is Dens's first, which the
+# last case keeps.
+DENS_FIRST_RELEASE=v0.9.0
+
 test_retention() {
   local first_age_hours=$1
   rm -rf "$PUBLISH_REMOTE"
@@ -402,6 +406,14 @@ printf 'v1.0.0\n' > "$PUBLISH_REMOTE/releases/v1.0.0/version"
 } > "$PUBLISH_REMOTE/.state/promotions/v1.0.0"
 cleanup_old_releases
 [[ -e "$PUBLISH_REMOTE/releases/v1.0.0" ]] || fail "sole first release was deleted"
+
+# Dens's first release stays past retention, as installed copies and the
+# lifecycle harnesses need it.
+DENS_FIRST_RELEASE=v1.0.0
+test_retention 25
+[[ -e "$PUBLISH_REMOTE/releases/v1.0.0" && -e "$PUBLISH_REMOTE/.state/promotions/v1.0.0" ]] ||
+  fail "Dens's first release was deleted"
+DENS_FIRST_RELEASE=v0.9.0
 
 # Tagging is last and idempotent: a rerun after promotion can retry only this
 # operation without rebuilding artifacts.

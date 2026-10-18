@@ -68,6 +68,11 @@ DEFAULT_RNNOISE_MODEL_VERSION="0b50c45"
 DEFAULT_AOM_VERSION="3.15.2"
 DEFAULT_CMAKE_VERSION="4.4.4"
 
+# Dens's first release, which the lifecycle harnesses install and update
+# from (M9.1): installed copies hold what it wrote, so every later release
+# must update it. The release host keeps it past the retention rule.
+DENS_FIRST_RELEASE="v1.0.0"
+
 # Phone photos and videos the browser checks send (scripts/test/browser):
 # public test fixtures, each at a fixed commit of its repository, with
 # their GPS and camera metadata, as a phone's are. Name, SHA-256, address.
@@ -182,6 +187,9 @@ RNNOISE_MODEL_SHA="${RNNOISE_MODEL_SHA:-4ac81c5c0884ec4bd5907026aaae16209b7b76cd
 # The release tarball, whose signature by the AOMedia release signing key
 # (B002F08B74A148DAA01F7123A48E86DB0B830498) checked out.
 AOM_SHA="${AOM_SHA:-67bb54b245f33ed98600e08269e6139986e48114e14042474ddd8885801dfddc}"
+# The first release's checksums file, whose cosign signature verified
+# against the release identity; it pins the release's binaries in turn.
+DENS_FIRST_RELEASE_CHECKSUMS_SHA="aa27de401ec31f891ae0c660c6fc0a5f767a0df4b9d186c5f36ed63134cead69"
 # Release archives, as listed in the release's SHA-256 file.
 CMAKE_SHA_LINUX_AMD64="${CMAKE_SHA_LINUX_AMD64:-e5bb807f7728cb60cd8b27ebc97a2edb469b68655f21e844a600c3575b76f5bb}"
 CMAKE_SHA_LINUX_ARM64="${CMAKE_SHA_LINUX_ARM64:-a1b6cc63636a0e55c63257cf3315a8a5f129e42fade25db1afea4ff8ab06f25e}"
@@ -215,6 +223,7 @@ VENDOR_EXIFTOOL=""
 VENDOR_RNNOISE_SRC=""
 VENDOR_RNNOISE_MODEL=""
 VENDOR_BROWSER_MEDIA=""
+VENDOR_FIRST_RELEASE=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -305,6 +314,7 @@ validate_pins() {
   validate_sha256 "$AOM_SHA" "AOM_SHA"
   validate_sha256 "$CMAKE_SHA_LINUX_AMD64" "CMAKE_SHA_LINUX_AMD64"
   validate_sha256 "$CMAKE_SHA_LINUX_ARM64" "CMAKE_SHA_LINUX_ARM64"
+  validate_sha256 "$DENS_FIRST_RELEASE_CHECKSUMS_SHA" "DENS_FIRST_RELEASE_CHECKSUMS_SHA"
   local entry
   for entry in "${BROWSER_MEDIA[@]}"; do
     read -r _ sha _ <<<"$entry"
@@ -441,6 +451,36 @@ vendor_caddy() {
     mv -f "$TOOLS_DIR/caddy" "$VENDOR_CADDY"
     chmod +x "$VENDOR_CADDY"
   fi
+}
+
+# vendor_first_release TARGET fetches the first release's binary for TARGET
+# (linux-amd64, linux-arm64 or windows-amd64) and its version file, each
+# checked against the pinned checksums file, for the lifecycle harnesses to
+# update from. VENDOR_FIRST_RELEASE is then a directory laid out as the
+# release's own on the release host.
+vendor_first_release() {
+  local target=$1 asset
+  case "$target" in
+    linux-amd64|linux-arm64) asset="$target.gz" ;;
+    windows-amd64) asset="$target.exe.gz" ;;
+    *)
+      printf "error: no first release binary for %s\n" "$target" >&2
+      return 1
+      ;;
+  esac
+  local dir="$TOOLS_DIR/dens-$DENS_FIRST_RELEASE"
+  local url="https://releases.dens.chat/releases/$DENS_FIRST_RELEASE"
+  mkdir -p "$dir"
+  download_verified "$dir/checksums.txt" "$url/checksums.txt" "$DENS_FIRST_RELEASE_CHECKSUMS_SHA" \
+    "Dens $DENS_FIRST_RELEASE checksums"
+  local file sha
+  for file in "$asset" version; do
+    sha=$(awk -v name="$file" '$2 == name { print $1 }' "$dir/checksums.txt")
+    validate_sha256 "$sha" "Dens $DENS_FIRST_RELEASE $file"
+    download_verified "$dir/$file" "$url/$file" "$sha" "Dens $DENS_FIRST_RELEASE $file"
+  done
+  # shellcheck disable=SC2034 # scripts/test/first-release.sh reads it
+  VENDOR_FIRST_RELEASE="$dir"
 }
 
 # The Windows Caddy release zip, for the Windows den e2e to unpack.
