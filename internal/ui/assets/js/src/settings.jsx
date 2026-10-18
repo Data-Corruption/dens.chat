@@ -4,16 +4,18 @@
 // happens to links, and whether YouTube videos play in Dens (M4.1); Voice &
 // video the microphone and speaker, noise suppression, how the member
 // sends their voice, their shortcuts (M7) and how they share their screen
-// (M4.2); System the cache of other dens' files (M6), update checks, the
-// local password, logging, signing this browser out, and the version.
+// (M4.2); System hosting a den (M9.1), the cache of other dens' files (M6),
+// update checks, the local password, logging, signing this browser out,
+// and the version.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
-import { Card, DOCS, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
+import { Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
 import { formatSize } from './files.jsx';
+import { hostingAsk, hostingNote } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
-import { here } from './platform.js';
+import { NO_CALLS, NO_SHARING, canCall, canShare, here } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
@@ -299,6 +301,7 @@ function VoiceSettings() {
     else if (v.keys.ptt) talk = `Hold ${keyLabel(v.keys.ptt)} to talk.`;
     return (
         <>
+            {!canCall() && <p role="status" class="text-sm text-warning">{NO_CALLS}</p>}
             <Card title="Microphone and speaker">
                 {!list ? (
                     <span class="loading loading-dots loading-sm"></span>
@@ -505,6 +508,7 @@ function ShareSettings() {
     const resolution = (h) => (h === 2160 ? '4K (2160p)' : `${h}p`);
     return (
         <Card title="Screen share">
+            {canCall() && !canShare() && <p class="text-sm text-warning">{NO_SHARING}</p>}
             <div class="grid gap-x-3 sm:grid-cols-2">
                 <Field label="Resolution">
                     <select class="select w-full" value={s.height} onChange={(e) => change({ height: Number(e.currentTarget.value) })}>
@@ -539,8 +543,8 @@ function ShareSettings() {
     );
 }
 
-// SystemSettings holds the cache, update checks, the local password,
-// logging, signing this browser out, and the version.
+// SystemSettings holds hosting, the cache, update checks, the local
+// password, logging, signing this browser out, and the version.
 function SystemSettings({ instance, version }) {
     const [settings, setSettings] = useState(null);
     const load = useAction();
@@ -563,6 +567,7 @@ function SystemSettings({ instance, version }) {
     const command = instance === 'main' ? 'dens open' : `dens open --instance ${instance}`;
     return (
         <>
+            <Hosting />
             <Cache settings={settings} onChange={setSettings} />
             {settings.updatesManaged && (
                 <Card title="Updates">
@@ -610,6 +615,92 @@ function SystemSettings({ instance, version }) {
                 </p>
             </Card>
         </>
+    );
+}
+
+// Hosting turns hosting a den on this computer on and off (M9.1). Turning
+// it on opens ports to the internet, so it takes the local password;
+// turning it off asks first, since members can't reach the den until it's
+// back on. While it's on, it says where Caddy and the router send the den.
+function Hosting() {
+    const [hosting, setHosting] = useState(null);
+    // asking is the change waiting on the member: 'on' for the password,
+    // 'off' for the confirmation.
+    const [asking, setAsking] = useState('');
+    const [password, setPassword] = useState('');
+    const act = useAction();
+    useEffect(() => {
+        act.run(async () => setHosting(await api.get('/api/hosting')));
+    }, []);
+
+    function ask(on) {
+        act.setError('');
+        setPassword('');
+        setAsking(hostingAsk(hosting.enabled, on));
+    }
+    function turnOn(e) {
+        e.preventDefault();
+        act.run(async () => {
+            setHosting(await api.post('/api/hosting', { on: true, password }));
+            setPassword('');
+            setAsking('');
+        });
+    }
+    function turnOff() {
+        act.run(async () => {
+            setHosting(await api.post('/api/hosting', { on: false }));
+            setAsking('');
+        });
+    }
+
+    const title = (
+        <>
+            Hosting
+            <DocsTip id="docs-hosting" page="host/">Everything a den needs, step by step: a domain, Caddy and your router.</DocsTip>
+        </>
+    );
+    if (!hosting) {
+        return <Card title={title}>{act.error ? <ErrorText message={act.error} /> : <span class="loading loading-dots loading-sm"></span>}</Card>;
+    }
+    const on = asking ? asking === 'on' : hosting.enabled;
+    const note = asking ? null : hostingNote(hosting);
+    return (
+        <Card title={title}>
+            <Toggle id="hosting" label="Host a den on this computer" checked={on} disabled={act.busy} onChange={ask}
+                hint="A den needs this computer to stay on, a domain, and Caddy in front of it." />
+            {asking === 'on' && (
+                <form class="flex flex-col gap-2" onSubmit={turnOn}>
+                    <p class="text-sm text-base-content/70">Hosting opens ports to the internet, so it takes your local password.</p>
+                    <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+                        <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
+                    </Field>
+                    <div class="flex gap-2">
+                        <SubmitButton busy={act.busy}>Turn hosting on</SubmitButton>
+                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</button>
+                    </div>
+                </form>
+            )}
+            {asking === 'off' && (
+                <div class="flex flex-col gap-2">
+                    <p class="text-sm">Members can't reach your den until hosting is back on. Everything in it stays.</p>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-error" disabled={act.busy} onClick={turnOff}>
+                            {act.busy && <span class="loading loading-spinner loading-sm"></span>}
+                            Turn hosting off
+                        </button>
+                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</button>
+                    </div>
+                </div>
+            )}
+            {note?.problem && <p role="status" class="text-sm text-warning">{note.problem}</p>}
+            {note?.address && (
+                <p class="text-sm text-base-content/70">
+                    Caddy forwards your den's address to <code class="rounded bg-base-300 px-1">{note.address}</code>, and your router
+                    forwards port {note.udp} (UDP) and port {note.tcp} (TCP) to this computer, for calls.
+                </p>
+            )}
+            <ErrorText message={act.error} />
+        </Card>
     );
 }
 

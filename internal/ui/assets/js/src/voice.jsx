@@ -10,6 +10,7 @@ import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
 import { ICON, SpeakerIcon } from './icons.jsx';
 import { rank } from './people.jsx';
+import { NO_SHARING, canShare } from './platform.js';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import {
@@ -145,9 +146,10 @@ function ShareRow({ call, share, den }) {
 }
 
 // shareWhy says why the member can't start a share now, or '' when they
-// can: the den allows none, as many share as it allows, or staff muted
-// them. The den checks again all the same.
+// can: the browser can't (M9.1), the den allows none, as many share as it
+// allows, or staff muted them. The den checks again all the same.
 function shareWhy(call, den) {
+    if (!canShare()) return NO_SHARING;
     if (!den) return 'Waiting for the den';
     const mine = den.calls.find((c) => c.channel_id === call.channel);
     if (mine?.members.some((m) => m.id === den.me && m.staff_muted)) return "Staff muted you, so you can't share your screen.";

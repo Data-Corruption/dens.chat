@@ -13,6 +13,7 @@ import { MessagePane } from './messages.jsx';
 import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, RemoveMember, isStaff } from './people.jsx';
+import { NO_CALLS, canCall } from './platform.js';
 import { needsCheck } from './private.js';
 import { SignInRequests } from './private.jsx';
 import { openSettings } from './settings.jsx';
@@ -508,7 +509,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
                         class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${managed ? 'pr-8' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
                         onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
-                        title={voice ? 'Join the call' : undefined}
+                        title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
                     >
                         <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}</span>
                         <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
