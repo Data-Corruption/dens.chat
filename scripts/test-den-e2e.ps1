@@ -577,11 +577,14 @@ try {
     $userArgs = @()
     if (-not $console -or $console -ne $me) { $userArgs = @("-User", $me) }
 
-    Step "install instance main, hosting a den"
-    $mainArgs = @("-Den") + $userArgs
+    Step "install instance main, and turn hosting on"
+    $mainArgs = $userArgs
     if ($ClientPort -ne 8484) { $mainArgs += @("-ClientPort", $ClientPort) }
     Invoke-Installer $mainArgs
     $owner = New-Browser "main" $ClientPort
+    # The owner turns hosting on from the page, with the local password (M9.1).
+    $hosting = Invoke-Api $owner POST "/api/hosting" @{ on = $true; password = "local password" }
+    if (-not $hosting.serving) { Fail "hosting didn't turn on" }
 
     Step "run Caddy as a Windows service"
     $caddyDir = Join-Path $Work "caddy"

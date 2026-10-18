@@ -2,11 +2,12 @@
 
 # Linux lifecycle e2e. Installs Dens through the rendered install.sh in fresh
 # Incus system containers and runs the M0 flows on each distro (the steps are
-# in scripts/test/lifecycle-guest.sh): install as a sudo user, pair a browser,
-# set the password, back up, refuse another local user, reboot, update, add a
-# second instance, restore, and uninstall. Each distro after the first
-# restores the backup the previous one made, which covers restoring on
-# another machine.
+# in scripts/test/lifecycle-guest.sh): host a den with Dens's first release
+# and update it to this one, which still hosts it (M9.1); then install as a
+# sudo user, pair a browser, set the password, turn hosting on and off, back
+# up, refuse another local user, reboot, update, add a second instance that
+# hosts, restore, and uninstall. Each distro after the first restores the
+# backup the previous one made, which covers restoring on another machine.
 #
 # Usage:
 #   ./scripts/test-lifecycle-e2e.sh                          # every distro
@@ -20,7 +21,8 @@
 # signatures are covered by installing a real release. With both, it also
 # checks that the older one won't install over the newer. A --release-dir
 # snapshot (root version pointer, install.sh, releases/) has no newer
-# release, so those steps are skipped.
+# release, so those steps are skipped. Either way the first release comes
+# from scripts/vendor.sh's pin (scripts/test/first-release.sh).
 #
 # Logs go to out/lifecycle-e2e-logs/<run>/: one file per distro, the backup
 # each distro made, and a summary. --backup takes a backup made elsewhere,
@@ -116,6 +118,11 @@ trap 'exit 143' TERM
 # Fixture releases ------------------------------------------------------------
 
 RELEASE="$HARNESS_DIR/release"
+case "$(uname -m)" in
+  x86_64|amd64) target=linux-amd64 ;;
+  aarch64|arm64) target=linux-arm64 ;;
+  *) echo "error: unsupported host architecture $(uname -m)" >&2; exit 1 ;;
+esac
 if [[ -n "$SNAPSHOT" ]]; then
   [[ -f "$SNAPSHOT/version" && -f "$SNAPSHOT/install.sh" ]] ||
     { echo "error: $SNAPSHOT isn't a release snapshot" >&2; exit 1; }
@@ -123,12 +130,8 @@ if [[ -n "$SNAPSHOT" ]]; then
   cp -a "$SNAPSHOT/." "$RELEASE/"
   V1=$(tr -d '\r\n' < "$RELEASE/version")
   V2=""
+  scripts/test/first-release.sh "$RELEASE" "$target"
 else
-  case "$(uname -m)" in
-    x86_64|amd64) target=linux-amd64 ;;
-    aarch64|arm64) target=linux-arm64 ;;
-    *) echo "error: unsupported host architecture $(uname -m)" >&2; exit 1 ;;
-  esac
   echo ">> Building fixture releases ..."
   scripts/test/fixture-releases.sh "$RELEASE" "$target"
   V1=$(tr -d '\r\n' < "$RELEASE/version")
