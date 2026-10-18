@@ -11,6 +11,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media"
 )
 
 // cachedMember joins a den as carol from an install whose client keeps a
@@ -67,10 +68,18 @@ func look(t *testing.T, m *denclient.Manager, denID, channelID string, up dencli
 	return full, thumb
 }
 
+// randomBytes is n bytes of noise that Dens takes for no kind of media.
+// The client sends a photo, video or audio file through the media module,
+// which can't read noise, and noise looks like one now and then: an MPEG
+// audio frame's two-byte sync alone, in one of a few thousand.
 func randomBytes(n int) []byte {
 	b := make([]byte, n)
-	rand.Read(b)
-	return b
+	for {
+		rand.Read(b)
+		if media.Sniff(b[:min(n, media.SniffLen)]) == media.Other {
+			return b
+		}
+	}
 }
 
 // eventually polls until cond holds.
