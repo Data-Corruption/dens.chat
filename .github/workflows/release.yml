@@ -309,8 +309,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # A count of runs, about six minutes' worth, rather than a time,
+      # which Go 1.26's fuzzer can fail on as it stops (see the script).
       - name: Fuzz the driver
-        run: ./scripts/ffmpeg.sh --fuzz 6m
+        run: ./scripts/ffmpeg.sh --fuzz 12000x
 
       - name: Upload failing inputs
         if: ${{ failure() }}
