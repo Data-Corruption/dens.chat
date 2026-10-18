@@ -23,7 +23,7 @@ const (
 func (l Layout) CheckControl(files ...string) error {
 	dirUID, fileUID, gid := 0, 0, os.Getgid()
 	dirMode, fileMode := ControlDirMode, ControlFileMode
-	if l.Dev {
+	if l.Form.Session() {
 		dirUID, fileUID, gid = os.Getuid(), os.Getuid(), -1
 		dirMode, fileMode = 0o700, 0o600
 	}
@@ -58,15 +58,15 @@ func (l Layout) EnsureData() error {
 	return nil
 }
 
-// EnsureDev creates a development instance's directories, private to the
-// developer.
-func (l Layout) EnsureDev() error {
-	if !l.Dev {
-		return errors.New("EnsureDev called on an installed layout")
+// EnsureSession creates a session form's directories, private to its
+// user.
+func (l Layout) EnsureSession() error {
+	if !l.Form.Session() {
+		return fmt.Errorf("EnsureSession called on the %s layout", l.Form)
 	}
 	for _, base := range []string{filepath.Dir(l.Root), filepath.Dir(l.Runtime)} {
 		if err := os.MkdirAll(base, 0o700); err != nil {
-			return fmt.Errorf("create development base directory: %w", err)
+			return fmt.Errorf("create the %s instances' directory: %w", l.Form, err)
 		}
 	}
 	for _, dir := range append([]string{l.Root, l.Control, l.Runtime}, l.DataDirs()...) {
@@ -118,11 +118,11 @@ func checkOwned(path string, dir bool, uid, gid int, perm fs.FileMode) error {
 }
 
 // ServiceControlFiles are the control files the service reads and checks.
-// On Linux the encrypted data key is root-only; systemd decrypts it for the
-// service.
+// On Linux the installed data key is root-only, and systemd decrypts it for
+// the service; a development instance reads its own.
 func (l Layout) ServiceControlFiles() []string {
 	files := []string{l.State, l.LifecycleLock, l.InstanceConfig}
-	if l.Dev {
+	if l.Form == Development {
 		files = append(files, l.HostKey)
 	}
 	return files

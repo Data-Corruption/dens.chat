@@ -7,7 +7,24 @@ import (
 )
 
 func (l *Layout) resolve() error {
-	if l.Dev {
+	switch l.Form {
+	case Installed:
+		l.Root = filepath.Join("/var/lib", l.App, l.Instance)
+		l.derive()
+		l.HostKey = filepath.Join(l.Control, "datakey.cred")
+		l.Runtime = filepath.Join("/run", l.App, l.Instance)
+		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
+		l.BinaryDir = "/usr/local/bin"
+		l.Binary = filepath.Join(l.BinaryDir, l.App)
+		l.Cosign = filepath.Join("/usr/local/lib", l.App, "cosign")
+		l.ServiceName = fmt.Sprintf("%s@%s.service", l.App, l.Instance)
+		l.Account = l.App + "-" + l.Instance
+		l.UnitFile = filepath.Join("/etc/systemd/system", l.App+"@.service")
+		l.SysusersFile = filepath.Join("/etc/sysusers.d", l.Account+".conf")
+		l.AutostartFile = filepath.Join("/etc/xdg/autostart", DesktopID+".desktop")
+		l.DesktopFile = filepath.Join("/usr/local/share/applications", DesktopID+".desktop")
+		l.IconFile = filepath.Join("/usr/local/share/icons/hicolor/scalable/apps", DesktopID+".svg")
+	case Development:
 		base, err := devBase(l.App)
 		if err != nil {
 			return err
@@ -22,23 +39,9 @@ func (l *Layout) resolve() error {
 			l.Runtime = filepath.Join(runtimeDir, l.App+"-dev", l.Instance)
 		}
 		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
-		return nil
+	default:
+		return fmt.Errorf("no layout for the %s", l.Form)
 	}
-	l.Root = filepath.Join("/var/lib", l.App, l.Instance)
-	l.derive()
-	l.HostKey = filepath.Join(l.Control, "datakey.cred")
-	l.Runtime = filepath.Join("/run", l.App, l.Instance)
-	l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
-	l.BinaryDir = "/usr/local/bin"
-	l.Binary = filepath.Join(l.BinaryDir, l.App)
-	l.Cosign = filepath.Join("/usr/local/lib", l.App, "cosign")
-	l.ServiceName = fmt.Sprintf("%s@%s.service", l.App, l.Instance)
-	l.Account = l.App + "-" + l.Instance
-	l.UnitFile = filepath.Join("/etc/systemd/system", l.App+"@.service")
-	l.SysusersFile = filepath.Join("/etc/sysusers.d", l.Account+".conf")
-	l.AutostartFile = filepath.Join("/etc/xdg/autostart", DesktopID+".desktop")
-	l.DesktopFile = filepath.Join("/usr/local/share/applications", DesktopID+".desktop")
-	l.IconFile = filepath.Join("/usr/local/share/icons/hicolor/scalable/apps", DesktopID+".svg")
 	return nil
 }
 

@@ -84,9 +84,9 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	start("update checker", func(ctx context.Context) error { return a.RunUpdateChecker(ctx, func() {}) })
 	start("den connections", a.Dens.Run)
 
-	// A development instance has no installer to publish ready for it.
-	if l.Dev && a.Lease.Mode == maintenance.StartMigrate {
-		if err := maintenance.MarkDevReady(l, a.BuildInfo().Version); err != nil {
+	// A session form has no installer to publish ready for it.
+	if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {
+		if err := maintenance.MarkSessionReady(l, a.BuildInfo().Version); err != nil {
 			cancel()
 			hosting.close()
 			wg.Wait()

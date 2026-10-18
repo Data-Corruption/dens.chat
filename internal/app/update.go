@@ -19,10 +19,21 @@ import (
 // the latest version.
 const UpdateCheckInterval = 24 * time.Hour
 
+// ChecksForUpdates reports whether this instance asks the release host for
+// updates, and tells the member of them: an installed one does, given a
+// release host. A development build has nothing to update to.
+func (a *App) ChecksForUpdates() bool {
+	switch a.Layout.Form {
+	case layout.Installed:
+		return a.Instance.ReleaseURL != ""
+	}
+	return false
+}
+
 // LatestUpdate returns the newer version the last check found, if any. A
 // result from a different release source never counts.
 func (a *App) LatestUpdate(cfg *types.Configuration) (string, bool) {
-	if a.DevMode() || a.Instance.ReleaseURL == "" || cfg.UpdateCheckSource != a.Instance.ReleaseURL {
+	if !a.ChecksForUpdates() || cfg.UpdateCheckSource != a.Instance.ReleaseURL {
 		return "", false
 	}
 	latest := cfg.LatestUpdateVersion
@@ -48,7 +59,7 @@ func (a *App) CheckForUpdate(ctx context.Context) error {
 	a.updateCheckMu.Lock()
 	defer a.updateCheckMu.Unlock()
 	source := a.Instance.ReleaseURL
-	if source == "" || a.DevMode() {
+	if !a.ChecksForUpdates() {
 		return errors.New("update checks are disabled for this instance")
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
@@ -75,7 +86,7 @@ func (a *App) CheckForUpdate(ctx context.Context) error {
 // without a restart. It never installs anything.
 func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 	ready()
-	if a.DevMode() || a.Instance.ReleaseURL == "" {
+	if !a.ChecksForUpdates() {
 		<-ctx.Done()
 		return nil
 	}

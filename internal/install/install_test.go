@@ -68,7 +68,7 @@ func (f *fakeSystem) fail(step string) error {
 }
 
 func (f *fakeSystem) Layout(name string) (layout.Layout, error) {
-	l, err := layout.New("dens", name, false)
+	l, err := layout.New("dens", name, layout.Installed)
 	if err != nil {
 		return l, err
 	}

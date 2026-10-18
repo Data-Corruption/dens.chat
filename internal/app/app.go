@@ -140,10 +140,16 @@ func New(buildInfo build.BuildInfo) *App {
 
 func (a *App) BuildInfo() build.BuildInfo { return a.buildInfo }
 
-// DevMode reports whether this is a development build.
-func (a *App) DevMode() bool { return a.buildInfo.DevMode }
+// FormOf is the form a process of this build runs in (M9): a development
+// build's is Development, and every other's Installed.
+func FormOf(bi build.BuildInfo) layout.Form {
+	if bi.DevMode {
+		return layout.Development
+	}
+	return layout.Installed
+}
 
-// OpenOptions select the instance and development defaults.
+// OpenOptions select the instance and a development instance's defaults.
 type OpenOptions struct {
 	Instance string
 	// LogLevel overrides the configured level for this run.
@@ -176,14 +182,14 @@ func (a *App) open(opts OpenOptions) error {
 	if bi.Version == "" {
 		return errors.New("this build has no version")
 	}
-	l, err := layout.New(bi.Name, opts.Instance, bi.DevMode)
+	l, err := layout.New(bi.Name, opts.Instance, FormOf(bi))
 	if err != nil {
 		return err
 	}
 	a.Layout = l
-	if l.Dev {
-		if err := a.prepareDev(opts); err != nil {
-			return fmt.Errorf("prepare development instance: %w", err)
+	if l.Form.Session() {
+		if err := a.prepareSession(opts); err != nil {
+			return fmt.Errorf("prepare the %s instance: %w", l.Form, err)
 		}
 	}
 
@@ -207,7 +213,7 @@ func (a *App) open(opts OpenOptions) error {
 	if err != nil {
 		return fmt.Errorf("open logs: %w", err)
 	}
-	a.Log.Infof("Starting %s %s, instance %s (dev=%t, mode %d)", bi.Name, bi.Version, l.Instance, l.Dev, lease.Mode)
+	a.Log.Infof("Starting %s %s, instance %s (%s, mode %d)", bi.Name, bi.Version, l.Instance, l.Form, lease.Mode)
 	// tmp holds files only while the service works on them: uploads
 	// arriving, files being prepared for sending, a backup's snapshot. So
 	// whatever a crash left there goes before anything uses it (M8).
@@ -282,7 +288,7 @@ func (a *App) open(opts OpenOptions) error {
 			return fmt.Errorf("start the restored den's sync epoch: %w", err)
 		}
 	}
-	if a.DevMode() {
+	if l.Form == layout.Development {
 		a.Den.RelaxLimits()
 	}
 
@@ -294,7 +300,7 @@ func (a *App) open(opts OpenOptions) error {
 	if opts.LogLevel != "" {
 		level = opts.LogLevel
 	}
-	if l.Dev {
+	if l.Form == layout.Development {
 		level = "debug"
 	}
 	if err := a.Log.SetLevel(level); err != nil {
@@ -342,7 +348,7 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 	switch {
 	case phase == maintenance.PhaseRestoring:
 		on, why = false, "after the restore"
-	case devDen && a.Layout.Dev:
+	case devDen && a.Layout.Form == layout.Development:
 		on, why = true, "for the den port this run gave"
 	case cfg.Hosting == nil:
 		on, why = a.Instance.Den.Enabled, "from the den role in the instance config"
@@ -389,10 +395,13 @@ func (a *App) OwnDen() (denproto.Den, string, bool) {
 }
 
 func (a *App) loadKey() ([]byte, error) {
-	if a.Layout.Dev {
+	switch a.Layout.Form {
+	case layout.Installed:
+		return host.LoadHostKey(a.Layout.HostKey)
+	case layout.Development:
 		return host.LoadOrCreateDevKey(a.Layout.HostKey)
 	}
-	return host.LoadHostKey(a.Layout.HostKey)
+	return nil, fmt.Errorf("the %s has no data key", a.Layout.Form)
 }
 
 // checkVault ties the host-bound data key to this database. A first start
@@ -418,12 +427,12 @@ func (a *App) checkVault(mode maintenance.StartMode) error {
 	return nil
 }
 
-// prepareDev creates a development instance the way an installer would:
-// directories, an instance config naming the developer, and a
-// lifecycle state that lets this binary start.
-func (a *App) prepareDev(opts OpenOptions) error {
+// prepareSession creates a session form's instance the way an installer
+// creates an installed one: directories, an instance config naming its
+// user, and a lifecycle state that lets this binary start.
+func (a *App) prepareSession(opts OpenOptions) error {
 	l := a.Layout
-	if err := l.EnsureDev(); err != nil {
+	if err := l.EnsureSession(); err != nil {
 		return err
 	}
 	cfg, err := instance.Read(l.InstanceConfig)
@@ -461,13 +470,16 @@ func (a *App) prepareDev(opts OpenOptions) error {
 			return err
 		}
 	}
-	// Create the key now so the control directory checks find it.
-	key, err := host.LoadOrCreateDevKey(l.HostKey)
-	if err != nil {
-		return err
+	// A development instance's key is a file of its own, made now so the
+	// control directory's checks find it.
+	if l.Form == layout.Development {
+		key, err := host.LoadOrCreateDevKey(l.HostKey)
+		if err != nil {
+			return err
+		}
+		clear(key)
 	}
-	clear(key)
-	return maintenance.EnsureDevReady(l, a.buildInfo.Version)
+	return maintenance.EnsureSessionReady(l, a.buildInfo.Version)
 }
 
 // PasswordSet reports whether a local password has been set.

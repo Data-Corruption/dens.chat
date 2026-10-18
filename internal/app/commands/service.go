@@ -26,12 +26,12 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 			Name:  name,
 			Usage: usage,
 			Action: func(ctx context.Context, cmd *cli.Command) error {
-				l, err := layout.New(bi.Name, cmd.String("instance"), bi.DevMode)
+				l, err := layout.New(bi.Name, cmd.String("instance"), app.FormOf(bi))
 				if err != nil {
 					return err
 				}
-				if l.Dev {
-					return fmt.Errorf("development instances have no service manager; run %s service run in a terminal", bi.Name)
+				if l.Form.Session() {
+					return fmt.Errorf("%s instances have no service manager; run %s service run in a terminal", l.Form, bi.Name)
 				}
 				return run(l)
 			},
@@ -104,7 +104,7 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 // so that even a refused start is reported to it properly, then opens the
 // installation and runs.
 func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) error {
-	l, err := layout.New(bi.Name, cmd.String("instance"), bi.DevMode)
+	l, err := layout.New(bi.Name, cmd.String("instance"), app.FormOf(bi))
 	if err != nil {
 		return fmt.Errorf("%w: %w", host.ErrRefused, err)
 	}
@@ -140,7 +140,7 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 		return fmt.Errorf("%w: load pages: %w", host.ErrRefused, err)
 	}
 	a.UI = pages
-	if l.Dev {
+	if l.Form == layout.Development {
 		fmt.Printf("Development instance %s: %s (pair with: %s open)\n", l.Instance, guard.PageOrigin(a.Instance.ClientPort), bi.Name)
 	}
 	return service.Run(ctx, a, ready)

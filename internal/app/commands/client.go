@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -17,12 +18,14 @@ import (
 // controlClient returns a client for instance's control endpoint, and the
 // identity the service must have before the client trusts it.
 func controlClient(bi build.BuildInfo, instanceName string) (control.Client, layout.Layout, error) {
-	l, err := layout.New(bi.Name, instanceName, bi.DevMode)
+	l, err := layout.New(bi.Name, instanceName, app.FormOf(bi))
 	if err != nil {
 		return control.Client{}, layout.Layout{}, err
 	}
+	// A session form's service runs as its user, and the installed one as
+	// its own account.
 	server := host.ControlServer{ServiceName: l.ServiceName}
-	if l.Dev {
+	if l.Form.Session() {
 		server.Account, err = host.CurrentUser()
 	} else {
 		server.Account, err = host.LookupUser(l.Account)
@@ -50,7 +53,7 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 		if l.Instance != layout.DefaultInstance {
 			flag = " --instance " + l.Instance
 		}
-		if l.Dev {
+		if l.Form == layout.Development {
 			return fmt.Errorf("the development service for instance %s isn't running; start it with: %s service run%s: %w", l.Instance, bi.Name, flag, err)
 		}
 		start := bi.Name + " service start" + flag

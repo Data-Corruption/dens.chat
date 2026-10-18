@@ -40,7 +40,7 @@ type linuxSystem struct{ app string }
 func NewSystem(app string) System { return linuxSystem{app: app} }
 
 func (s linuxSystem) Layout(name string) (layout.Layout, error) {
-	return layout.New(s.app, name, false)
+	return layout.New(s.app, name, layout.Installed)
 }
 
 func (linuxSystem) CheckAdmin() error {

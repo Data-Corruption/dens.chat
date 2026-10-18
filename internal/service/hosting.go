@@ -13,6 +13,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/den"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
@@ -155,7 +156,7 @@ func (h *hosting) startDenLocked(keep bool) error {
 		return err
 	}
 	var cfg sfu.Config
-	if h.a.DevMode() {
+	if h.a.Layout.Form == layout.Development {
 		// Pion's own messages name addresses, so they reach the log only
 		// in development instances.
 		cfg.Log = func(s string) { h.a.Log.Debugf("%s", s) }

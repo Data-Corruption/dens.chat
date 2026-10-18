@@ -140,7 +140,7 @@ Nothing in the environment changes either: an elevated shell on Windows inherits
 
 ## Development instances
 
-`./scripts/build.sh` builds a development binary into `out/`. Its `service run` runs a development instance in the foreground, as you:
+`./scripts/build.sh` builds a development binary into `out/`. Its `service run` runs a development instance in the foreground, as you. That's the development form (`layout.Development`), a session form, which sets itself up as the maintenance commands set up an installed instance (see the design doc's Deployment forms):
 
 - Storage is under `$XDG_DATA_HOME/dens-dev/<name>` (`~/.local/share/dens-dev` by default), or `%LOCALAPPDATA%\Dens-dev\<name>`. The control endpoint is `$XDG_RUNTIME_DIR/dens-dev/<name>/control.sock`, or `\\.\pipe\dens-dev-<name>-control`.
 - The data key is a plaintext file, `control/datakey.dev`. Development data isn't protected; don't put real data in it.
