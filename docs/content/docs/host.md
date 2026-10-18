@@ -23,17 +23,25 @@ Dens, a den needs only Caddy, a small web server that the steps below set up.
 
 {{% steps %}}
 
-### Install Dens with the den option
+### Turn hosting on
 
-When you run the installer ([Install](../install/)), add `--den` on Linux or
-`-Den` on Windows. Already installed? Run the installer again with the option:
-it keeps your data.
+[Install](../install/) Dens if you haven't, and open it (`dens open`). In
+**Settings**, under **System**, turn on **Host a den on this computer**. It
+asks for your local password, since it opens Dens to the internet: the den's
+own port, which Caddy passes connections on to, and the ports calls use.
+
+If another program already uses one of those ports, the setting says which,
+and how to give the den another: run the installer again with the matching
+option, such as `--den-port` (`-DenPort` on Windows).
+
+You can turn hosting off there too. Members can't reach the den until you turn
+it back on, and nothing in it is lost.
 
 ### Create the den
 
-Open Dens (`dens open`). The home page shows **Create your den**: give it a
-name, its public address (`https://` and your domain), and your owner account,
-with a username, a display name and a den password.
+The home page now shows **Create your den**: give it a name, its public
+address (`https://` and your domain), and your owner account, with a username,
+a display name and a den password.
 
 This works before the steps below, since Dens reaches its own den directly.
 
@@ -100,7 +108,7 @@ New-NetFirewallRule -DisplayName Caddy -Direction Inbound -Program C:\Caddy\cadd
 ```
 
 The Dens installer already let the den's call ports through the Windows
-firewall.
+firewall. Nothing answers on them until you turn hosting on.
 {{< /tab >}}
 {{< /tabs >}}
 
@@ -170,7 +178,7 @@ Your den updates along with the Dens that hosts it: `dens update` updates both.
 If you'd rather keep them apart, host the den from an install of its own.
 
 One install hosts one den. A second den on the same computer is a second
-**instance**: run the installer again with `--instance` and a name, `--den`,
-and ports of its own (`--client-port`, `--den-port`, `--media-udp-port` and
-`--media-tcp-port`; on Windows, `-Instance`, `-Den`, `-ClientPort` and so on),
-and give Caddy a second site.
+**instance**: run the installer again with `--instance` and a name, and ports
+of its own (`--client-port`, `--den-port`, `--media-udp-port` and
+`--media-tcp-port`; on Windows, `-Instance`, `-ClientPort` and so on), turn
+hosting on in its settings, and give Caddy a second site.

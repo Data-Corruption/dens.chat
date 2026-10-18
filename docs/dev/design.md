@@ -2,6 +2,8 @@
 
 Sep 25, 2026 · @Matthew Pombo
 
+Tags such as (M3) name the milestone that built something, or will. [milestones.md](milestones.md) lists them, with the plan for the one under way.
+
 ## Overview
 
 Dens is a self-hosted chat app for Linux and Windows with text, voice and screen share, built so small communities can talk without a platform mining or owning their conversations. One install hosts at most one den (community). Every install is also a client: a local Go service that serves the chat UI to the user's own browser on localhost.
@@ -46,7 +48,7 @@ Design rules that follow from this:
 
 ## Architecture
 
-Dens is one static Go binary, forked from Sprout, that always runs the client and optionally runs a den. It runs as a hardened system-level service under a dedicated account, never as the person's desktop user: a systemd unit on Linux and an SCM (Service Control Manager) service on Windows.
+Dens is one static Go binary, forked from Sprout, that always runs the client and optionally runs a den. It runs as a hardened system-level service under a dedicated account, never as the person's desktop user: a systemd unit on Linux and an SCM (Service Control Manager) service on Windows. The Flatpak (M9) and the Android app (M10) are the exceptions: they join dens and host none, and run as the person, in their session or under the app (see Other distributions and Android).
 
 **Traffic paths**
 
@@ -66,6 +68,22 @@ The owner's client reaches its own den over loopback, not through the public dom
 
 **Client UI.** The page is a Preact app (about 10 KB) built by the pinned esbuild into one hashed bundle. Preact injects no scripts or styles at runtime, so the CSP stays `script-src 'self'` with no inline code. The stylesheet carries every DaisyUI theme, which a member picks in the settings and the browser keeps; until they pick one, the page follows the device's light or dark preference, with Light and Dark (M3.3). The page has no header (M3.3): a den's channel list holds the way home, at the left of the den's name, which shows the den's status only while it isn't connected, and the cog for the settings sits in the member's panel at its foot; home has a cog of its own, fixed at the bottom left, and a development instance's tab names it. The page keeps one WebSocket to the local service, and one that hasn't opened within a few seconds counts as down, so the page says it's out of touch rather than looking fine while it hears nothing. Views reload once it's back, and a reload applies again what changed while it was out, since the snapshot it fetched may be older. WebSockets, both den and local, use `github.com/coder/websocket`: small, context-first and without dependencies, since the standard library has none.
 
+**The page's parts (M8.3).**
+
+- The settings are a dialog over whatever the page shows, so a den and a call stay in view, in four tabs: Appearance, the theme; Chat & media, compressing photos and videos, links and YouTube's players; Voice & video, the microphone and speaker, noise suppression, how the member sends their voice, their shortcuts and how they share their screen; and System, hosting (M9), the cache, update checks, the local password, logging, signing this browser out, and the version.
+- Home is a launcher. Each den is a row: a dot for its state, named in words when it isn't connected, who the member is there and their role, a large Open and a small Manage. Sign-ins and approvals waiting on this device show above the list, and Add a den takes one pasted thing, an invite or a den's address, and goes on a screen at a time. Creating the den this install hosts is a card above the list until its owner account exists, once hosting is on (M9).
+- Manage is a dialog for each den, in two parts. This den holds General, with the den's address and Den ID for every member and the owner's edits; Invites and Bans, for staff; and Limits, the owner's. Their edits gather under one Save changes bar, and closing with changes unsaved asks first. You in this den holds Devices, Password and recovery, and Your files. A den that isn't connected shows General alone.
+- On a den's page the member list starts open on screens wide enough to show it beside the channel, and channels' kinds, the call bar's speaker and the lock on staff-only channels and DMs are drawn icons of one size, not emoji.
+- Dates take one form, the medium one in the reader's locale, as Oct 12, 2026, with the time where it matters, as when an invite expires.
+
+**The page's words (M8.3).** The page explains itself where it can, so the docs needn't (see Public site):
+
+- Helper text is one line. The label does the work, and details, such as 2,560 pixels or 30 ms of delay, go in a tooltip.
+- It uses the words people know, such as compress, cache, resolution and shortcuts, and no implementation names: noise suppression, not RNNoise; the DM recovery key, the name other encrypted apps taught people, for the DM seal.
+- It describes only what applies: the page knows its browser and system, and shows a figure, such as how much the cache holds, rather than a sentence about it.
+- A warning comes with the action it's about, in its confirmation, rather than ahead of it in a paragraph.
+- Nothing says the den or its owner can see something, which members take as given in a place someone else hosts; the page marks what's end-to-end encrypted, and the docs say who can read what, once.
+
 **Install and service account**
 
 | | Linux | Windows |
@@ -81,8 +99,11 @@ The owner's client reaches its own den over loopback, not through the public dom
 
 - A system-level service, not `systemd --user` or a per-user Scheduled Task, keeps Dens running without a login, gives it its own account to sandbox, and gives both platforms a real graceful stop. On Linux it also enables `LoadCredentialEncrypted=` (see Local identity).
 - Several installs per machine are separate instances (`dens@<name>` or `dens-<name>`), each with its own account, ports and storage. This is the advanced path for a second den.
-- Each instance's ports are fixed at install and recorded in its config. `main` uses the defaults (client 8484, den listener 8485, media 7881/UDP and 7882/TCP); other instances pass theirs to the installer, which refuses ports already in use.
-- The den role is an install option (`--den`). Turning it on later means rerunning the installer with `--den`, which records the den ports and, on Windows, adds the firewall rules. Creating the den itself (its identity key and owner account) then happens in the app.
+- Each instance's ports are fixed at install and recorded in its config. `main` uses the defaults (client 8484, den listener 8485, media 7881/UDP and 7882/TCP); other instances pass theirs to the installer, which refuses a client port already in use, and two of an instance's ports that are the same.
+- Every installed instance can host a den (M9). Hosting is a switch in the page's settings, off until the desktop user turns it on with the local password, and turned off after a confirmation that members can't reach the den until it's back on. Creating the den itself (its identity key and owner account) then happens in the app.
+  - The switch is the service's own preference, `types.Configuration.Hosting`. The first start of a version that has it takes it from the den role v1.0's installer recorded in the instance config (`den.enabled`), so an instance that hosted keeps hosting, and from then on the switch alone decides; nothing else reads the role.
+  - Every instance opens its den as it starts, which before the den exists is one row's read. While the switch is on, the service binds the den listener and the media ports, starts the den's calls, its deleting of messages past retention and its forgetting of old changes, and serves it, under a context of its own. Turning it off cancels that and stops the den as a service stop does: its listener first, then its sockets, then its calls, keeping everything it holds, so turning it on again serves the den as it was.
+  - A port another program holds, or one the system keeps for itself, fails turning hosting on, changing nothing, and the page names the port and the installer flag that moves it. With hosting on as the service starts, a port it can't bind leaves the rest of the service up, so the page can say why, and the den tries again every 30 seconds.
 - Sprout's signed releases, SQLite layer and `state.json` lifecycle phases carry over (see Service lifecycle).
 
 **Privileged steps and updates**
@@ -90,7 +111,7 @@ The owner's client reaches its own den over loopback, not through the public dom
 Root or Administrator is used only for install, update, uninstall and restore; the service itself always runs unprivileged and sandboxed.
 
 - The installer scripts (`install.sh`, `install.ps1`) only download a release, verify its cosign signature and checksums, and run the release binary's `install` command. Every privileged change is made by the binary's maintenance commands (`install`, `update`, `restore`, `uninstall`), so both platforms share one transaction engine (`internal/install`) and the scripts stay short enough to read before running them.
-- Privileged steps: create the service account, install the binary, register the service, create the state directory with private permissions, record the desktop user allowed to pair, and generate and host-wrap the data key. On Windows they also add the binary to the system `PATH`, exclude it from Windows Error Reporting, and add firewall rules when the den role is enabled.
+- Privileged steps: create the service account, install the binary, register the service, create the state directory with private permissions, record the desktop user allowed to pair, and generate and host-wrap the data key. On Windows they also add the binary to the system `PATH`, exclude it from Windows Error Reporting, and add the media ports' firewall rules, which let nothing in while hosting is off (M9).
 - Every maintenance command prints its plan before changing anything, and `--dry-run` (`-DryRun` on Windows) prints the plan and stops. Output goes to the terminal and to the instance's `control/maintenance.log`.
 - The install guide has people download the installer (`install.sh` or `install.ps1`) and run it, never `curl | sudo bash` or `irm | iex`, with checking its cosign signature first as an optional step, folded away, commands included. The installer checks everything it downloads; only a check before running it covers the script itself.
 - Updates are manual: `sudo dens update` on Linux, or `dens update` from an elevated terminal on Windows (`sudo dens update` also works where Windows' built-in sudo is enabled). It downloads the latest installer and its cosign bundle, verifies them against the signing identity baked into the binary, and runs the installer in the foreground. There is no unattended auto-update.
@@ -165,6 +186,8 @@ Sensitive fields in SQLite are encrypted one by one with the same data key (XCha
 2. A host-bound copy lets the service start without a password:
    - Linux: an encrypted credential loaded with `LoadCredentialEncrypted=` in the unit. systemd decrypts it at start, bound to the host key or TPM, and hands it to the service in `$CREDENTIALS_DIRECTORY`.
    - Windows: a machine-scope DPAPI blob in the state directory, whose DACL allows only the service account, SYSTEM and Administrators. The service decrypts it at start.
+   - The Flatpak (M9): none, so it starts locked until the member types the local password, unless they ask it to remember. Then the app's secret from the Secret portal, kept in their keyring, wraps a copy, or a key in a file does where the portal can't be trusted (see Other distributions).
+   - Android (M10): a Keystore key, which the app's shell uses to unwrap the data key at start (see Android).
 3. A second copy is wrapped with a key derived from the local password (Argon2id) and kept in the storage root.
 
 The privileged CLI does the host wrapping (at install and restore); the service only unwraps. Password wrapping and all field encryption are shared code.
@@ -176,9 +199,11 @@ Because this is a root-managed system unit on Linux, it avoids the unprivileged 
 **Backup, restore, move**
 
 - `dens backup` writes a consistent SQLite snapshot (`VACUUM INTO`), the uploads directory, and the password-wrapped data key. Never a raw copy of a live WAL database. It leaves out the client's cache, which holds only copies of what dens hold (M6). While a backup is written, the den holds back taking deleted files off the disk, so the archive has every file its snapshot names (M8).
+- The page exports the same archive as a download, after the local password (M9), which the Flatpak needs: its CLI's working directory is inside the sandbox, not the member's.
 - The data directory's `tmp`, which holds files only while the service works on them (uploads arriving, scratch files, a backup's snapshot), is emptied as the service starts, so nothing a crash left there outlives it (M8).
 - `dens restore <file>`, run as root or Administrator, asks for the password, unwraps the data key, and re-wraps it for the new host (`systemd-creds` or DPAPI). Data is never re-encrypted. Restore follows the same lifecycle steps as an update, and a backup from an older version migrates when the service starts; one from a newer version is refused.
 - Pairing doesn't carry over: the service clears the restored data's browser sessions on its first start, so browsers pair again with `dens open`.
+- Nor does hosting (M9.1): a restored backup starts with hosting off, whatever it held, so a copy of a den never goes online by itself, as when a backup is restored to read it. Its owner turns hosting on with the backup's local password.
 - A restored den starts a new sync epoch on that first start, so its members' clients drop what they cached from it (M6; see What changed while away).
 - Backups have the same format on both platforms, so a client or den can move between Linux and Windows.
 - Changing the password re-wraps the data key only.
@@ -186,7 +211,7 @@ Because this is a root-managed system unit on Linux, it avoids the unprivileged 
 
 **Re-authentication for sensitive actions**
 
-There is no idle lock in v1; the OS screen lock covers someone at an unlocked desktop. Instead, a paired browser must re-enter the local password for sensitive actions: exporting a backup, viewing or exporting keys, viewing the DM seal (M1.7), changing the local password, and restoring. Someone at an unlocked machine could read chats, but not take the identity with them. An optional idle lock can come later.
+There is no idle lock in v1; the OS screen lock covers someone at an unlocked desktop. Instead, a paired browser must re-enter the local password for sensitive actions: exporting a backup, viewing or exporting keys, viewing the DM seal (M1.7), changing the local password, restoring, and turning hosting on, which opens ports to the internet (M9). Someone at an unlocked machine could read chats, but not take the identity with them. An optional idle lock can come later.
 
 **Service hygiene**
 
@@ -217,7 +242,7 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 **Normal login (invisible to the user)**
 
-1. Client sends its own random nonce and requests a challenge. The den returns a 32-byte nonce for the client (60 seconds, single use) and signs both nonces and its own public address with the den identity key. The client aborts if the signature doesn't match the pinned fingerprint, and sends nothing more to an address the den didn't sign (see Den identity and moving domains).
+1. Client sends its own random nonce and requests a challenge. The den returns a 32-byte nonce for the client (60 seconds, single use; with 100,000 outstanding, the oldest goes, rather than the challenge being refused, M8) and signs both nonces and its own public address with the den identity key. The client aborts if the signature doesn't match the pinned fingerprint, and sends nothing more to an address the den didn't sign (see Den identity and moving domains).
 2. Client signs `"dens-auth-v1" ‖ den_id ‖ key_id ‖ nonce`. The context string and den ID stop a signature being replayed elsewhere.
 3. The den verifies the signature and issues an opaque 256-bit session token (stored as SHA-256), valid for 1 hour.
 4. The WebSocket upgrade carries the token. Before expiry the client re-signs and sends an `auth.renew` frame on the open socket.
@@ -314,12 +339,12 @@ Channels can be marked staff-only (moderators and owner). There is no other visi
 **Names**
 
 - Usernames are unique, 2 to 32 characters of `a-z`, `0-9` and `_`, lowercased on entry and fixed at join.
-- Display names are free-form Unicode up to 32 characters. Control, bidi-override and zero-width characters are stripped, so a name can't disguise itself or reorder the text around it.
+- Display names are free-form Unicode up to 32 characters. Control characters and Unicode's format characters (`Cf`, the bidi overrides and zero-width ones among them) are stripped, so a name can't disguise itself or reorder the text around it, and so are the fillers that render blank (U+115F, U+1160, U+3164, U+FFA0 and U+2800); a name must keep something visible (M8).
 
 **Messages**
 
 - Plain text with a small markdown subset, attachments, edits, deletes and replies. No raw HTML, ever.
-- The subset: bold, italic, strikethrough, inline code, code blocks, quotes, spoilers, @mentions and bare URLs. There are no `[label](url)` links, so a link always shows where it goes. The page parses it into Preact nodes whose text is always text, never markup, and a test fails on any script that uses `innerHTML` or another way to turn a string into markup. Every message is someone else's input, so the parser takes time in proportion to a text's length, whatever its delimiters, and the page parses each text once rather than on every render (M8).
+- The subset: bold, italic, strikethrough, inline code, code blocks, quotes, spoilers, @mentions and bare URLs. There are no `[label](url)` links, so a link always shows where it goes. The page parses it into Preact nodes whose text is always text, never markup, and a test fails on any script that uses `innerHTML` or another way to turn a string into markup. Every message is someone else's input, so the parser takes time in proportion to a text's length, whatever its delimiters, and the page parses each text once rather than on every render (M8). Each line's code spans are found first, in one pass, and each delimiter's closers in one pass the first time it opens; a code span takes precedence over a delimiter around it, as CommonMark's do, in the den's copy of the parser too (`CleanLinks`). At 4,000 characters the den's worst case, unclosed openers among links it rewrites, takes 4 ms where the parser before took 74; at 16,000, four times a message's limit, the page parses a hostile line in about a millisecond where it took up to 700.
 - A reply quotes its original, with the author and first line, and a click jumps there. The den sends that preview with the reply, so the quote reads without the original loaded, however far back it is. Once the original is deleted, the reply says so.
 - A message's text that runs taller than about 16 lines, such as a pasted log or a wall of blank lines, shows its top under a fade, with Show more; Show less folds it back. It's held at that height from its first paint, so folding never moves the list, and the list's bounds and pages count it at that height. Nothing limits lines beyond the 4,000 characters: the den can't read a DM, and a hostile den or sender wouldn't keep a limit, so the page folds whatever arrives.
 - Each member's read position per channel lives on the den, so it follows them across devices. Channels show unread state and mention counts. Browser notifications come later, and are opt-in.
@@ -416,6 +441,7 @@ A member can play a linked YouTube video where it's posted, in the message list,
 Dens usually run on home connections, where upload bandwidth is scarce and every message goes out once per online member. The protocol keeps that fan-out small:
 
 - **Resume, don't refetch.** Every change a member can see is an event with a sequence number. A client that reconnects sends the last one it saw and gets only what it missed, from an in-memory ring of recent events: the last 50,000 within 10 minutes, and from M8 within 64 MiB, so a member sending large messages fast can't grow the den's memory without bound. After a den restart, or a gap longer than the ring, the den sends a fresh snapshot instead (a resync), and the client refetches only what's on screen.
+- **Snapshots without a scan.** `ready`'s newest message in each channel comes from a query per channel the member sees, which the `(channel_id, id)` index answers at once. A scan of every message took 38 ms at a million, for each of the up to 500 snapshots a den restart or a channel turning staff-only sends at once (M8).
 - **Orderly restarts.** A stopping den closes its listener first, then tells every client it is restarting (WebSocket close 1012). Otherwise a quick client reconnects to the dying process, as the M1 spike showed. Clients wait a random delay of up to a few seconds, so 500 of them don't reconnect at once.
 - **Scoped ephemeral traffic.** Presence is coalesced into batches every 1 to 2 seconds, and typing goes only to members viewing that channel.
 - **Thumbnails, not originals.** Uploads get a small preview when they arrive. The message list shows previews, and originals load only when opened. The local service keeps both, encrypted on disk (M6; see The client's cache), and serves them to the browser with `Cache-Control: no-store`, so they never sit unencrypted in the browser's cache.
@@ -439,7 +465,7 @@ A member's Dens keeps what it fetches from other dens: the files and previews th
 - A run that reaches its channel's newest message says so for one connection, the one it reached it in: while that lasts, every new message arrives as an event and joins it, so the newest page comes from the cache. A snapshot starts a new connection, and the runs that still reach their channel's newest message, as its read states say it, carry on in it. A channel that had new messages while the client was away asks the den for those after the newest it holds, a page or two, rather than its whole newest page; past two pages, it takes the newest page, and leaves a gap the member fills by scrolling.
 - The cache follows the page's rules for a page fetched while events arrive: the higher revision wins, a message deleted meanwhile never comes back, and nothing retention reached goes in. A reply's quote follows its original as it changes or goes.
 - The client keeps the den's state with it: its members, channels and groups, read states and DM keys. It names the version its list of members is current as of on the socket's upgrade, and `ready` then sends only the members changed since, which with 1,000 members is most of its size (M6.2).
-- Offline reading (M6.2): a den the client can't reach shows as it last was, and what the cache holds of each channel reads as usual. A note over the messages says the den is offline and these are the messages this computer kept; it shows once the den has failed to connect, not while it connects, as at every start. A page the cache doesn't hold says the den is offline at once, rather than waiting out the den. Sending, calls and anything else that needs the den wait for it to come back.
+- Offline reading (M6.2): a den the client can't reach shows as it last was, and what the cache holds of each channel reads as usual. A note over the messages says the den is offline and these are cached messages; it shows once the den has failed to connect, not while it connects, as at every start. A page the cache doesn't hold says the den is offline at once, rather than waiting out the den. Sending, calls and anything else that needs the den wait for it to come back.
 - After a snapshot, the changes since reach the page too, as edits and deletes would: it may have loaded a channel from the cache before they came.
 
 **What changed while away (M6)**
@@ -459,6 +485,8 @@ A client away from a den longer than its ring of events, or across the den's res
 Members attach files to messages and put pictures on their profiles. Images lose their metadata before they leave the member's machine. Photos and videos go as smaller copies unless the member sends them full size, and everything fits within owner-set limits that members see and manage (M5). Files in DMs are the exception from M1.7: the sender's service strips and encrypts them before upload, and the den stores only opaque blobs (see End-to-end encrypted DMs).
 
 **Limits (owner settings)**
+
+There's no warning ahead of a full disk, which would take the den reporting its free space to its members: an upload it refuses for space says so ("This den is out of space for uploads") (M8.3).
 
 - Max size per file, per member total, and den total. A new den starts at 25 MiB per file, 2 GiB per member and 20 GiB for the den. The page checks a file's size before uploading it, and says why when the den refuses one.
 - Uploads also stop while the den's disk has less than 1 GiB free, so they never fill the disk the database lives on.
@@ -647,6 +675,7 @@ The browser does all client-side media with standard APIs, and the den runs a Pi
 - Opus at up to the voice channel's bitrate, 96 kbps unless staff set another (M3, M4.2), where a browser left to itself sends 32: every offer from the den asks for it (`maxaveragebitrate`), and a browser takes a new offer's parameters for its encoder. Pion builds each offer after the first from the parameters the browser answered with, which don't ask for it, so the den writes its own into every offer.
 - Screen: `getDisplayMedia`, which goes through xdg-desktop-portal and PipeWire on Wayland (M4.2; see Screen share).
 - The peer connection names no STUN or TURN servers, so a call contacts nothing but the den.
+- The page offers calls only where `RTCPeerConnection` exists, and screen share only where `getDisplayMedia` does too, and says so where the browser can't, from what the browser has rather than what its user agent says (M9.1): GNOME Web has had no WebRTC since WebKitGTK 2.54, and Android's WebView, which says it's Linux, has no `getDisplayMedia`.
 - The page's `Permissions-Policy` grants the microphone and screen capture to the page itself (`microphone=(self)`, and `display-capture=(self)` from M4.2). The camera stays off.
 - Noise suppression (M3): browsers' own suppressor takes out steady noise such as fans and hum, but not keyboards, a TV or other voices. So RNNoise runs instead unless a member turns it off: Xiph's small noise-suppression network (BSD), compiled to WebAssembly and run in an AudioWorklet between the microphone and the call, at 48 kHz in 10 ms frames. The browser still cancels echo first, since that needs the raw microphone and what the browser plays. Only one suppressor runs at a time, so the browser's is off (`noiseSuppression: false`) while RNNoise is on, and the encoder gets the cleaned audio. Others' audio keeps playing through media elements, which the echo canceller hears. The browser keeps the choice, as it keeps the microphone and speaker, and a change applies mid-call by replacing the track the call sends, without a new offer. Where RNNoise can't start, as in a browser that won't run its audio, the call goes on with the browser's own suppressor, and the call's settings say so; the member's choice stands, for the next call or another browser.
 - `scripts/rnnoise.sh` builds RNNoise with the wasi-sdk and binaryen the media module pins, and writes the module into the page's assets. Its code is RNNoise 0.2's release, which matches the v0.2 tag's file for file; its model is the one that tag names, since the release carries another, without the float copies the model keeps for debugging. RNNoise's generic vector code, which WebAssembly builds take, includes Opus's `os_support.h`, which RNNoise doesn't carry, so `internal/ui/rnnoise` supplies the one macro it needs. The module is committed, as the media module is: CI builds it again and fails if it differs.
@@ -859,7 +888,7 @@ The docs list which ports to forward but not how, since routers vary too much. T
 
 Members' calls reach the den at the addresses its name resolves to (see Media addresses), so the name must point at the den's machine or the router forwarding to it. The owner's own calls go to the machine's own addresses and work before any port is forwarded, so the guide has owners test a call from outside their network.
 
-On Windows, the installer adds inbound Windows Firewall rules for the media ports, scoped to `dens.exe`, when the den role is enabled, and removes them on uninstall. The Caddy guide covers ports 80 and 443 on both platforms.
+On Windows, the installer adds inbound Windows Firewall rules for the media ports at every install, scoped to `dens.exe` and those ports, and removes them on uninstall. Nothing listens there until the owner turns hosting on, so until then they let nothing in (M9). The Caddy guide covers ports 80 and 443 on both platforms.
 
 **Caddy**
 
@@ -876,7 +905,7 @@ On Windows, the installer adds inbound Windows Firewall rules for the media port
 
 ## Platform support
 
-Dens supports Linux and Windows for both the client and the den. Linux is recommended.
+Dens supports Linux and Windows for both the client and the den. Linux is recommended. A Flatpak (M9) brings the client to other Linux distributions, and an Android app (M10) to phones; neither hosts a den.
 
 ### Linux
 
@@ -890,7 +919,7 @@ Dens supports five systemd desktop distro families. Non-systemd, server and deve
 | Ubuntu, Mint, Pop!\_OS | 24.04 base | 22.04 ships systemd 249, below the floor |
 | Arch, CachyOS | Rolling | Manjaro and other derivatives considered, not tested |
 
-Cut: Alpine, Void, Artix, Devuan, Gentoo, NixOS, openSUSE and MicroOS, Rocky, AlmaLinux and RHEL, SteamOS, and WSL2. After v1, a Flatpak lets their users join dens (see Other distributions). The installer refuses NixOS and SteamOS before it changes anything, saying why (M8). Both keep paths it writes read-only (NixOS's `/etc/systemd/system`, SteamOS's root), so it would otherwise fail halfway.
+Cut: Alpine, Void, Artix, Devuan, Gentoo, NixOS, openSUSE and MicroOS, Rocky, AlmaLinux and RHEL, SteamOS, and WSL2. From M9, a Flatpak lets their users join dens (see Other distributions). The installer refuses NixOS and SteamOS before it changes anything, saying why (M8). Both keep paths it writes read-only (NixOS's `/etc/systemd/system`, SteamOS's root), so it would otherwise fail halfway.
 
 **TPM**
 
@@ -910,16 +939,29 @@ These keep immutable and atomic-update distros cheap to support, and are good pr
 
 Dens installs in an unprivileged LXC system container, as Incus and LXD make them, with `security.nesting=true` and systemd 256 or newer, such as Debian 13's, Fedora's or Arch's: an older systemd can't create its credential secret there. LXC adds a drop-in to every service in such a container (`zzz-lxc-service.conf`), which turns off the service's sandbox and the encrypted credential that carries its data key. The installer refuses to go on while it's in effect, and prints the commands that mask it (M8); otherwise the service would fail to start past the point of no return. The harnesses mask it the same way. In a container, the data key is bound to the container's credential secret, which root on the host can read, and voice keys work only while the page has focus: the shortcut helper in the host's desktop session can't reach the service, whose stream checks each end's account. A virtual machine needs none of this.
 
-**Other distributions: a Flatpak (after v1)**
+**Other distributions: a Flatpak (M9)**
 
-After v1, a Flatpak brings the client to the distributions the installer doesn't support, NixOS and SteamOS among them, and to any other that runs Flatpak. It joins dens and hosts none: a den has to keep running when nobody is signed in, which an app in a desktop session can't, and needs Caddy beside it, so hosting stays with the installed service on a supported distribution.
+A Flatpak brings the client to the distributions the installer refuses, NixOS and SteamOS among them, and to any other that runs Flatpak. It joins dens and hosts none: a den has to keep running when nobody is signed in, which an app in a desktop session can't, and needs Caddy beside it, so hosting stays with the installed service.
 
-- It's published on Flathub, which GNOME Software and KDE's Discover, SteamOS's included, show by default. Flathub builds and signs it, so the Flatpak rests on Flathub's builds rather than the release identity. Flathub builds from source, offline. Go's modules vendor; the page's build tools, Tailwind's standalone binary and esbuild, are prebuilt, so how they fit is open: perhaps the source archive carries the page's built assets.
-- Dens runs in the member's session, as them, started at sign-in through the Background portal, with its data in the app's directory in their home. Development instances already run this way: as their user, with no service manager.
-- Who can read what changes, and the public docs say so. The installed service runs as its own account, so a program running as the member can't read Dens's data or keys without root; the Flatpak runs as the member. Its data key is wrapped with a secret from the Secret portal, kept in their keyring, or else with the local password at each start. Flatpak's sandbox keeps other Flatpak apps out, but not programs the member runs outside it.
-- Flatpak installs and updates it, so no installer transaction runs, and `dens update` points at Flatpak instead. The app migrates its data as it starts, and refuses data a newer version wrote, since Flatpak can roll an app back.
-- Voice keys need no separate helper, since Dens already runs in the session: it binds them through the global shortcuts portal, which knows a sandboxed app by its Flatpak ID, or under X11 reads them over the X11 socket the Flatpak is allowed.
-- An installed service and the Flatpak on one machine both want the client port; which gives way is settled when it's built.
+- *What it is.* The release binary, unchanged, on the freedesktop runtime (26.08), which a static binary uses nothing from but every Flatpak names. It has no window: the page opens in the member's browser through the OpenURI portal, which `xdg-open` reaches from inside the sandbox, so `host.OpenURL` works as it is. A window would need WebKitGTK, whose 2.54 release turned WebRTC off, so it couldn't call; Go daemons on Flathub send their UI to the browser the same way.
+- *In the session.* Dens runs as the member, from the app's own directories: its data in `$XDG_DATA_HOME/dens/<name>` (`~/.var/app/chat.dens.Dens/data/dens/main`), the client's cache in `$XDG_CACHE_HOME`, which backup tools skip, and the control socket in `$XDG_RUNTIME_DIR/app/chat.dens.Dens`, which every instance of the app shares, so `flatpak run --command=dens chat.dens.Dens open` reaches the running service. Its files are the member's alone, as a development instance's are.
+  - The desktop file runs `dens launch`. If the control socket answers, it pairs and opens the page, then exits; otherwise it becomes the service for the rest of the session, and opens the page once ready. A sandbox ends with its first process, so a daemon forked from a short-lived launcher wouldn't outlive it. A launch while another is still starting the service waits for it. The desktop file sets `StartupNotify=false`, since no window comes.
+  - Once its key is remembered (see below), it starts at sign-in through the Background portal: `RequestBackground` with `autostart` and `dens service run`, which writes the autostart entry itself and grants an app's first request without a dialog. A Dens that starts locked can't reach the dens, so until then it starts when the member opens it. A setting turns starting at sign-in off. GNOME, KDE and the xapp desktops (Cinnamon, MATE, Xfce) implement the portal; elsewhere, as on Sway, Hyprland and COSMIC, the setting gives the line to add by hand.
+  - GNOME lists a running Flatpak with no window under Background Apps, whose close button sends the app's `quit` action, then `flatpak kill`. Dens owns `chat.dens.Dens` on the session bus and takes the action, which stops it cleanly and keeps a second service out; SQLite's WAL survives the kill anyway.
+  - Signing out sends `SIGTERM`, which the service already stops on.
+- *The data key* has no copy that opens without the member. The service starts locked, and the page asks for the local password, whose copy of the key (Argon2id, as on every install) opens it; until then the member's dens stay disconnected, and they catch up once it's unlocked. Remember on this computer, beside the password field, off by default, keeps a copy that opens without it, so Dens starts unlocked from then on. It never keeps the password itself, which also opens the member's backups and may open more.
+  - The remembered copy is wrapped with the app's secret from the Secret portal (`RetrieveSecret`), which the desktop keeps in the member's keyring and hands over through a pipe. That keeps it from someone who has the disk but not the member's sign-in, not from programs the member runs, which can ask the keyring too.
+  - The portal can't be taken on trust. KWallet before KDE Frameworks 6.30 answers a failed or cancelled unlock with a new random secret, as if it had succeeded, and SteamOS 3.8 ships Frameworks 6.16; gnome-keyring fails while the login keyring is locked, as after an automatic sign-in; and oo7, GNOME 51's backend, waits on an unlock prompt. So Dens takes the portal's secret only once it has answered the same twice. The wrap is authenticated, so a wrong secret fails to open it rather than yielding a wrong key. A remembered copy that stops opening, as when a keyring is reset, is never replaced on its own: Dens asks for the password again, and remembers anew once the portal answers the same twice.
+  - Where the desktop has no Secret backend, or one that answers differently, the remembered copy is wrapped with a key in a file beside the data, which keeps it from other Flatpaks and nothing else, and the option says so.
+  - Turning Remember off, in the settings, deletes the remembered copy.
+  - Until the member sets the local password, at their first pairing, the key waits in a file wrap, as a development instance's does; setting the password removes it, unless they ask Dens to remember.
+- *Who can read what* changes, and the public docs say so. The installed service runs as its own account, so a program running as the member can't read Dens's data or keys without root. The Flatpak runs as the member, so their programs can reach its files, and a remembered copy of its key; without one, the files open only with the local password. Flatpak's sandbox keeps other Flatpak apps out.
+- *Lifecycle.* No installer runs: `install`, `update` and `uninstall` refuse this form, and `restore` runs as the member while the service is stopped, given the backup through `flatpak run --file-forwarding`. The app writes its own instance config at first start, naming the member and a client port of its own, 8494, so it and an installed Dens never take each other's port or cookie. It publishes its own lifecycle state as a development instance does, and migrates as it starts, but refuses data a newer version wrote, since Flatpak can roll an app back. Hosting is refused, and the settings say it needs Dens installed on Linux or Windows.
+- *Updates.* Flatpak installs and updates it: GNOME Software along with every other app, Discover and SteamOS when the member updates there. The notice comes from Flatpak's own update monitor (`CreateUpdateMonitor`), not the release host's `version` file, which moves before the Flatpak repository does. It says an update is available, and installs it through the monitor where it asks for no new permissions, or that one is installed, and restarts Dens into it (`Spawn` with the latest version).
+- *Voice keys* need no separate helper, since Dens already runs in the session: the helper runs inside the service, over a pipe to the hub. It binds keys through the global shortcuts portal, which knows a sandboxed app by its Flatpak ID, wherever the portal's interface exists rather than only where `WAYLAND_DISPLAY` is set, and skips the host registry call, which a sandboxed app can't make. Under X11 it reads them over the X11 socket, as the installed helper does.
+- *Permissions:* `--share=network` and `--socket=fallback-x11`, and no files, which go through the browser. X11 lets an app read every key typed in the session, which software centers warn about as it installs; push to talk under X11 needs it.
+- *Dens's own repository.* The Flatpak comes from a repository on the release host, not Flathub, signed with a GPG key: Flatpak checks no other kind of signature (support for Ed25519 has waited unmerged since 2021), and its system helper refuses an unsigned remote. Members install it from one link, `flatpak+https://releases.dens.chat/flatpak/chat.dens.Dens.flatpakref`, which GNOME Software 48 and Discover 6.4 open directly; the plain link and `flatpak install` are the fallbacks. The file carries the public key, and adds Flathub where a system lacks it, for the runtime. Flathub would build Dens from source, offline, which the page's prebuilt Tailwind fights; takes no app without a window; and signs with its own key rather than the release identity. It stays an option should Dens grow a window.
+- *Beside an installed Dens* it's unsupported: the two would share a desktop file ID and the shortcuts portal's app ID. Their ports and cookies don't collide.
 
 ### Windows
 
@@ -945,6 +987,21 @@ Windows 11, current supported releases (24H2 and later), Home and Pro. Windows 1
 
 - The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID, and the den e2e's call runs Pion there (M2).
 
+### Android (M10 to M12)
+
+An Android app joins dens from a phone. It hosts none, shares no screen, picks no speaker and has no push to talk. M10 to M12 build it, after a spike on a Galaxy S24 Ultra and a Pixel 9 Pro.
+
+- *Shape.* The release's Go binary, built for Android, rides in the APK as `lib/arm64-v8a/libdens.so` and runs as a child process from the app's native library directory, where Android lets apps execute files; Syncthing-Fork does the same, targeting Android 17. The page runs in a WebView. A thin Kotlin shell does what only Kotlin can on Android: the foreground service and its notification, the Keystore, permissions, the file picker, downloads, notifications and audio routing. It talks to the service over the control socket, as `dens open` does, holding one stream as the shortcut helper does.
+- *The WebView stays the page's.* The page gets no JavaScript bridge, so nothing in it reaches the shell, and the shell keeps the WebView on the page: every other address, a message's links and YouTube's own included, opens in the phone's browser.
+- *The build* uses cgo and the NDK, for Android alone, so name lookups go through Android's resolver and honour its Private DNS; a pure-Go binary finds no resolver there. Pion's interface listing needs `-checklinkname=0` on Android. Android's seams join `internal/platform/host` as `_android.go` files, with `!android` on their Linux counterparts, since Go builds Linux files for Android too.
+- *What Android changes.* Apps may lock only 64 KiB of memory since Android 14, so locked memory falls back to ordinary memory there, which Android swaps only to compressed RAM. Android kills child processes past 32 across the device, so media jobs run at most two at a time, under the foreground service. Apps that target Android 17 ask for `ACCESS_LOCAL_NETWORK` to reach a LAN address; loopback and the control socket don't need it, so the app asks only for a den that resolves to one.
+- *What the page loses.* Android's WebView has no `getDisplayMedia`, so the page hides sharing, while watching others' shares works; no usable `setSinkId`, so the shell routes audio; and no notifications, so the service decides what to notify and the shell posts it.
+- *Keys.* The data key is wrapped with a Keystore key, hardware-backed where the phone has the hardware, whose material never enters the app. The shell unwraps the data key at start and hands it to the child over a pipe. Android's Auto Backup leaves Dens's data out, since the Keystore key can't go with it: moving phones is a Dens backup and restore, as between computers.
+- *Staying connected.* A foreground service holds the den connections while the app isn't on screen, with the notification that comes with it, as Google-free messengers do; a call starts a second service, of the microphone's type. Later, a den could wake its members' phones through UnifiedPush, an additive protocol change that needs nothing from Google.
+- *Distribution.* The APK on the release host, with an updater in the app that installs updates without a prompt, as Android 12 and later allow an app updating itself, and steps aside when F-Droid installed it; and Dens's own F-Droid repository, from which F-Droid 2.0 updates apps automatically. Not Google Play for now: its rules for new developers, its declarations for foreground services and its ban on apps updating themselves cost more than its reach is worth to Dens yet. Samsung's Auto Blocker, on by default on Galaxy phones that shipped with One UI 6.1.1 or later, blocks both until the member turns it off, so the install guide says how.
+- *Signing.* Every update must carry the APK's signature, so its key can't be replaced if lost: it lives in CI, encrypted, and offline in two places. Android 17's hybrid signature (scheme v3.2, a classical key with ML-DSA) counts as a rotation from it, so it can be added later.
+- *Google's developer verification.* From 2027, an app whose developer Google hasn't verified installs only through an "advanced flow", and its updates fail once the member's permission for that lapses. Whether Dens registers is decided before M10.
+
 ### Platform layer
 
 All OS-specific runtime code lives in one package (`internal/platform/host`). Each seam is a small function pair in `_linux.go` and `_windows.go`. Everything above it (listeners, `Host` and `Origin` checks, rendering, auth, crypto, rate limits, the SFU and the database) is shared code with no build tags.
@@ -960,6 +1017,8 @@ All OS-specific runtime code lives in one package (`internal/platform/host`). Ea
 | Open a URL | `xdg-open` | `ShellExecute` |
 | Keys for the helper (M7) | The global shortcuts portal under Wayland, `XQueryKeymap` under X11 | `GetAsyncKeyState` |
 
+The control endpoint stays up whatever its clients do (M8). On Windows, a pipe instance whose client connected and closed before the service's `ConnectNamedPipe` reports `ERROR_NO_DATA`; the listener disconnects that instance and waits on it again, so it keeps holding the pipe's name, as go-winio does. The control server waits a moment and accepts again after any error but its listener closing, as `net/http` does, and serves at most 64 connections at once. On Linux it refuses another account's connection before reading its request, and since that can close the socket before the request is written, the client reads the service's answer even when sending fails.
+
 Everything else that differs is install-time: the two installers, the unit file and SCM registration, account creation, ACLs and firewall rules, and how the helper starts at login: a scheduled task, or an autostart entry and a `.desktop` file (M7).
 
 Rules that keep the two implementations from drifting:
@@ -967,6 +1026,8 @@ Rules that keep the two implementations from drifting:
 - A platform difference never reaches the protocol, database or HTTP layers. A feature that seems to need one is a design problem.
 - Each seam has a contract test that runs on both CI runners.
 - Windows code compiles only under `GOOS=windows`; vet and build-test it on every change that touches it.
+
+**Deployment forms (M9).** Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M10, Android (under the app's shell). `layout.Form` names the form, chosen at runtime: a development build is Development, a sandbox with `/.flatpak-info` the Flatpak, `GOOS=android` Android, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it: where the paths are, how the data key unwraps, what the update notice says, whether the helper runs inside the service, and whether the instance may host. Forms other than Installed are session forms: they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
 
 **Testing the Linux service in containers.** The lifecycle harness runs in Incus containers, which change how units behave:
 
@@ -985,11 +1046,21 @@ Clients and dens negotiate an integer protocol version, separate from the releas
 - Protocol bumps only for breaking changes; additive fields and message types don't bump it, and unknown message types are ignored.
 - Aim to keep `protocol_min` one version behind current, so a den can lag one breaking release without locking members out.
 
+**Data across versions.** Installed copies hold data that every later version reads, so from v1.0.0 formats move forward rather than change in place:
+
+- Database migrations go at the end, and a released step never changes.
+- `instance.json` and `state.json` decode strictly, so every field a release wrote stays readable, and a change of meaning gets a new field rather than an old one's name. An older binary never meets a newer file, since downgrades are refused.
+- A backup from any release restores, and migrates as the service starts.
+- A change to one of these comes with a test that reads its released form.
+- The lifecycle harnesses install the first release, v1.0.0, host a den with it and update to the build under test, which must serve the den as it was; the release host keeps v1.0.0 for good (M9.1).
+
 An install that is both client and den still updates as one binary. If that blocks someone, the documented answer is to move the den to its own install.
 
 ## Security hardening
 
 The localhost page is the most valuable target: an XSS there reaches every joined den, the vault and the local API. Any den member can send you content, so all of it is hostile input.
+
+Before the first release an audit checked every item here against the code (2026-10-11), with a probe where a claim needed one, such as the Windows control pipe closed early, run natively, and the addresses in Chrome's answers, from headless Chrome on Windows; it also measured the markdown parser on hostile text and the snapshot's scan at a million messages. What it found was fixed for v1.0.0 (M8). An item a later milestone adds is checked as it's built.
 
 **Client page and listener**
 
@@ -1096,6 +1167,14 @@ The localhost page is the most valuable target: an XSS there reaches every joine
 - [x] The page acts on the helper's keys only in a call it holds, and never while the member types a key that types something.
 - [x] Each desktop user's helper task runs as them, with their limited token; nothing of the helper runs elevated.
 
+**Hosting and the Flatpak (M9)**
+
+- [x] Nothing of the den listens until the owner turns hosting on, with the local password, and turning it off closes the den listener and the media ports at once.
+- [ ] The Windows firewall rules admit only `dens.exe`, on the media ports alone.
+- [ ] The Flatpak keeps no copy of its key that opens without the local password unless the member asks it to remember, and never keeps the password itself. It takes the Secret portal's secret only once it has answered the same twice, and never replaces a remembered copy that doesn't open.
+- [ ] The Flatpak refuses data a newer version wrote.
+- [ ] The Flatpak's repository is GPG-signed and built only from release binaries whose cosign signatures CI has checked, and its key reaches only the job that publishes it, from `main`.
+
 **Logs and data**
 
 - [x] No message content, tokens, keys or IPs in logs; log IDs and event types only. From M8 that holds for the addresses Go's network errors name too, of dens and of the release host. Pion's own messages, which name addresses, reach the log only in development instances.
@@ -1120,9 +1199,9 @@ dens.chat is a landing page and a few pages of docs for people using Dens, built
 | Page | Covers |
 | --- | --- |
 | Docs home (`/docs/`) | Two ways in: you got an invite, or you want to host a den |
-| Install (`/docs/install/`) | What Dens runs on; downloading the installer and running it, with checking its signature first as an optional step; `dens open` and the local password; updating and uninstalling |
+| Install (`/docs/install/`) | What Dens runs on; downloading the installer and running it, with checking its signature first as an optional step; `dens open` and the local password; updating and uninstalling; the Flatpak for other distributions (M9) |
 | Join a den (`/docs/join/`) | Pasting an invite; a username is for good; the den password and the local password; recovery codes; the DM recovery key; approving a new device; comparing a DM's check code |
-| Host a den (`/docs/host/`) | What a den needs: a computer that stays on, upload speed and a domain; the installer's den option; creating the den; Caddy and the four ports; a call from outside the network as the test; a small VPS where ports can't be forwarded; invites, roles, call limits and auto-delete; what a den costs in upload |
+| Host a den (`/docs/host/`) | What a den needs: a computer that stays on, upload speed and a domain; turning hosting on (M9); creating the den; Caddy and the four ports; a call from outside the network as the test; a small VPS where ports can't be forwarded; invites, roles, call limits and auto-delete; what a den costs in upload |
 | Backups and moving (`/docs/backups/`) | `dens backup` and `dens restore`; moving to another computer, between Linux and Windows too; handing the den on with `dens den owner-invite`; what's gone when both the password and the computer are |
 | Privacy (`/docs/privacy/`) | Who can read what, in one table; what Dens doesn't protect against; what leaves your computer; Linux and Windows compared; the short philosophy, with pointers to Signal and Qubes OS |
 
@@ -1134,8 +1213,10 @@ What the rest of this document commits the docs to, by page:
   - Downloading the installer and running it, with its signature check as an optional step (see Privileged steps and updates).
   - Linux is recommended, since its service sandbox is stronger (Goals).
   - What Windows shows before running an installer that isn't Authenticode-signed, and how to check the download (Weaker than Linux). What it shows needs checking on a clean machine first: SmartScreen marks files a browser downloads, and the installer runs through PowerShell with `-ExecutionPolicy Bypass`.
-- Join a den: what's unusual about Dens, in plain words: the local password and den passwords, recovery codes and the DM recovery key, den IDs, approving new devices and checking a DM's code. Onboarding says the same things, shorter, in the same words (see Before the first release).
+  - The Flatpak: its link, `flatpak install` as the fallback, an alias for its commands, and that it hosts no den (Other distributions).
+- Join a den: what's unusual about Dens, in plain words: the local password and den passwords, recovery codes and the DM recovery key, den IDs, approving new devices and checking a DM's code. Onboarding says the same things, shorter, in the same words.
 - Host a den:
+  - Hosting starts from the settings, with nothing to choose at install (Install and service account).
   - Which ports to forward but not how, since routers vary too much, and a small VPS as the easy alternative (Networking and deployment).
   - A minimal Caddyfile, and Caddy as a service on both platforms, which covers ports 80 and 443 (Caddy).
   - Calls need the den's name to point at its machine, or the router in front of it: a tunnel or CDN carries a den's HTTPS but not its calls. The owner's own calls work before any port is forwarded, so the test is a call from outside the network (Media addresses).
@@ -1149,190 +1230,8 @@ What the rest of this document commits the docs to, by page:
   - Files that aren't photos, videos or audio, such as documents and archives, go as they are, with whatever they carry inside (Metadata stripping).
   - An update check asks the release host for the latest version number, which shows it the install's IP address (Privileged steps and updates), and a member who turns on YouTube's players shows YouTube their IP address (YouTube players).
   - Windows is weaker than Linux, as Weaker than Linux lists.
+  - The installed service keeps its data under its own account, out of reach of the member's programs; the Flatpak runs as the member, so their programs can read it (Other distributions).
   - The short philosophy section and its recommendations: Linux over Windows, LibreWolf, no identifying details for low-stakes use, and Signal, Qubes OS and similar tools for higher stakes, none of them bulletproof (Privacy model).
-
-## Milestones
-
-Each milestone ends usable on its own and is tested on Linux and Windows with all four target browsers. All platform-specific code lands in M0, while the seams are still cheap to change; later milestones are shared code, but for M7's keys and the helper's start at login.
-
-| # | Milestone | Done when |
-| --- | --- | --- |
-| M0 | Foundation: Sprout fork trimmed to the single-process lifecycle, elevated installers for Linux and Windows, `dens@`/`dens-<name>` service, platform layer, two listeners, vault with envelope encryption, `dens open` pairing | On both platforms: browser pairs, vault survives reboot, backup restores on a second machine, including Linux to Windows and back |
-| M1 | Text den: invites, key auth and fallbacks, roles, channels, groups, DMs, presence, uploads with limits and metadata stripping, end-to-end encrypted DMs | Two machines chat through a Caddy-fronted den |
-| M2 | Voice: calls in voice channels through the Pion SFU, on a UDP mux with ICE-TCP fallback; the signaling relay, with offers from the den as members join and leave; mute; the call bar | A clear two-person call across two home networks in the four target browsers, over UDP and with UDP blocked, and from the den owner's own browser |
-| M3 | Group voice: Opus at 96 kbps, speaking indicators, each member's own volume for everyone else, staff disconnecting and muting members in calls, calls that ride out a dropped connection, and RNNoise noise suppression unless a member turns it off. Compact links: Reddit, YouTube, X and Amazon product links in one short form, and tracking parameters off every link. Third-party notices in the binary | A call of everyone the manual test brings together stays stable for an hour, and a YouTube share link arrives without its tracking but with its timestamp, in a channel and in a DM |
-| M4 | YouTube players, for members who turn them on. Screen share: PLI forwarding, owner limits, viewer caps; a voice channel's bitrate as an owner setting | A YouTube link plays where it's posted for a member who turned players on, and 2 shares with 20 viewers within owner limits |
-| M5 | Message retention. Managing files: each member's uploads by size against their limit, deleting and swapping them. Smaller copies of photos and videos by default, compared with full size before sending. ← and → through a message's images in the viewer | A member at their limit frees space by deleting and swapping old attachments; a phone photo goes as a smaller copy unless its sender sends it full size, and a phone video too large for the den as a copy that fits; and a den with retention on removes messages and their files once they pass it |
-| M6 | Sync efficiency: the client's encrypted cache of files and history, the changes since it last synced, cached member lists, offline reading, compressed large frames | A client restarted after a day offline downloads only what changed |
-| M7 | Global shortcuts: push to talk and the other voice keys while another program has focus, through a helper in the desktop session (see Global shortcuts) | A member pushes to talk from a full-screen game, on Windows and on GNOME and KDE under Wayland |
-| M8 | Hardening, from the audit before the first release: one budget for each member's messages, and the den's ring of events held to a size; a control endpoint and a service that stay up on Windows; no member's local address in a call's answers; text that can't freeze a page; no downgrades, and signature checks only a flag turns off; backups that hold every file; owner invites from the den's machine; a pass over the page's wording, placement and small details | One member flooding every channel and DM stays within their budget and the den within its memory; Dens on Windows keeps answering a client that closes the control pipe at once; the den finds no local address in answers from Chrome or Firefox; a channel of hostile messages leaves pages responsive; an older release won't install over a newer one |
-
-**M8 steps.** M8 lands as three pull requests, each checked in the four target browsers. The first two are built and committed in layers (the den and the service, the client and the page, the installers and harnesses, then the docs); the third changes the page alone:
-
-| Step | Scope | Done when |
-| --- | --- | --- |
-| M8.1 Den and service | Each member's message budget across channels and DMs, and the event ring held to 64 MiB; bans deleting recent DM messages, deletes in DMs left to their authors, and bans lifted by their placer's rank; owner invites from the den's machine; the Windows control pipe answering after an early close, the control server accepting again after an error, and the SCM restarting a service that fails after starting; `tmp` emptied at start, and backups holding back deletes; snapshots without a scan of every message; a deadline for request bodies; nonces, names and the den's update lock; NixOS and SteamOS refused, and LXC's service drop-in; the keyframe test that raced | A member flooding every channel and DM is held to their budget, and the den's ring to 64 MiB; Dens on Windows answers after a client closes the pipe at once, and comes back after a failure; an owner locked out of their account takes the den back with `dens den owner-invite`; a backup taken while files are deleted restores every file its database names |
-| M8.2 Client, page and install | Answers without addresses; markdown in linear time, parsed once per text; no downgrades; flags, not the environment, for release sources and skipping verification; error codes, address changes and redirects from a hostile den; the browser drivers in the repository; the docs; Sprout's leftovers | The den finds no address in any answer from Chrome or Firefox; a channel of 200 hostile messages scrolls and takes typing notices without stalling; an older release won't install over a newer one, and nothing in the environment changes where an install fetches from or whether it verifies |
-| M8.3 Polish | A pass over the page before the first release, from notes taken in its browser tests: its wording, the settings in four tabs, home as a launcher with a Manage dialog for each den, one way to add a den, and smaller details; nothing outside the page changes | Every note is done, or set aside by agreement, and the page does everything it did in the four target browsers |
-
-**M8.** The audit before the first release ran on 2026-10-11, at commit 1172baf. It verified the security checklist's open items against the code, and found what the first two steps fix. Two of its findings it confirmed with probes: the Windows control pipe's early close, run natively, and the address in Chrome's answers, with headless Chrome on Windows. It measured two more: the markdown parser on hostile text, in the pinned Node, and the snapshot's scan, in SQLite at a million messages.
-
-M8.1:
-
-- *A member's message budget.* A member's messages, in every channel and DM together, go at most 10 at once and then one every half second. Their text and sealed DMs go at most 256 KiB at once and then 16 KiB a second. Each channel's own limit stays. These are starting values, as protocol.md's other limits are. The router takes a message from the budget once its body is read, after the channel's own limit. The ring of recent events (`Hub`) counts the bytes its events hold and drops the oldest past 64 MiB, as it drops them past 50,000 or 10 minutes. A client whose resume point goes with them gets a snapshot, as now. The ring drops its oldest in place, moving the rest down only once they take less than half its slice, so publishing never copies the whole ring.
-- *Bans and DMs.* A removal's `delete_messages` takes the member's recent DM messages too, with their files, and each DM's other member gets `message.deleted` as for any delete. In a DM only the author deletes a message, and the page offers staff no delete there. `DELETE /api/bans/{id}` takes staff of the rank of `banned_by`'s role now, or higher. The client's list of bans gives each the placer's role as it last heard, so the page offers to lift only those it may.
-- *Owner invites.* `dens den owner-invite`, run by the desktop user, asks the service over the control endpoint for a one-time invite with the owner role, which lasts an hour. It's a new operation, re-authenticated with the local password as `backup` is. `OwnerInvite` makes the invite as it does for a den with no owner, now for any den. The page's setup keeps its own, `SetupInvite`, for a first join that failed: it asks for no password, so it still makes one only while the den has no owner. Redeeming an owner invite makes the joiner the owner and the owner before them a moderator, in one transaction: the joiner reaches everyone as any joiner does, with `member.joined`, and the owner before them with `member.updated`. Both are staff, so neither's sockets start over. The command prints the invite string for the page's Join box. On the den's own machine, joining replaces a sign-in to the den that no longer works, as joining any den again does.
-- *The Windows control pipe.* A pipe instance whose client connected and closed before the service's `ConnectNamedPipe` reports `ERROR_NO_DATA`. The listener disconnects that instance and waits on it again, so it keeps holding the pipe's name; go-winio retries the same case. `control.Server` waits a moment and accepts again after any error but the listener closing, as `net/http` does, rather than stopping the service. It serves at most 64 connections at once, and on Linux it refuses another account's connection before reading its request (`host.PeerBeforeRequest`). Since that refusal can close the socket before the client's request is written, the client reads the service's answer even when sending fails.
-- *Restarts on Windows.* `host.RunService` reports a refusal (`ErrRefused`) as a stop with `ExitRefused`, which nothing retries, as now. On Linux any other error exits 1 for systemd to restart. On Windows `RunService` records it in the event log and exits the process without reporting the stop, which the SCM takes for a crash and restarts.
-- *`tmp` and backups.* The service empties the data directory's `tmp` as it starts, before the den or the client use it, and the den's own sweep of its upload parts goes. While a backup is written, the den's `fileStore` holds back taking files off the disk, and takes them off once the backup is done. A file the walk no longer finds is skipped and logged, rather than failing the backup.
-- *Snapshots.* `ready`'s newest message in each channel comes from a subquery per channel the member sees, which the `(channel_id, id)` index answers at once. The `max(id) … GROUP BY channel_id` it replaces reads every message: 38 ms natively at a million messages, for each of the up to 500 snapshots a den restart or a channel turning staff-only sends at once.
-- *Slow bodies.* `decode` gives a request's body a minute, through `http.ResponseController`, as `idleReader` gives an upload's reads.
-- *Smaller things.*
-  - With 100,000 nonces outstanding, the oldest goes, rather than the challenge being refused.
-  - `CleanName` drops Unicode's format characters (`Cf`) and the fillers that render blank (U+115F, U+1160, U+3164, U+FFA0 and U+2800), and a name must keep something visible.
-  - `Den.Update` writes the database before it takes the lock every request reads the den's description under, with a lock of its own keeping two updates in order.
-- *Distributions it can't install on.* `Preflight` reads `/etc/os-release`, or `/usr/lib/os-release` without it, and refuses NixOS and SteamOS by their `ID` before anything changes, saying why. In a container it also refuses while LXC's service drop-in is in effect: while `/run/systemd/system/service.d/zzz-lxc-service.conf` exists and no file of its name in `/etc/systemd/system/service.d` takes its place. The refusal gives the commands that mask it.
-- *The keyframe test.* `TestKeyframeRequests` waits for two keyframe requests more than before the burst of PLIs, not two more than when it starts waiting. On a fast machine the first request had arrived already, so the test waited for a third that never comes, and failed main's CI after #27 merged.
-
-M8.2:
-
-- *Answers.* `denproto.StripCandidates` also writes `0.0.0.0`, or `::` for IPv6, into every `c=`, `a=rtcp:` and `o=` line, as a browser's first answer has them, for answers and offers alike. Pion reads none of them. Chromium and Firefox name the address only in `c=`; the other two are there for whatever browser comes next. The test's fixtures are each browser's second answer in a call, taken in the browser checks' container, with a documentation address in place of the container's. Firefox's names its host candidates there only as it does once a page may use the microphone, rather than its mDNS names, so its fixture was taken with that set.
-- *Markdown.* Each line's code spans are found first, in one pass, and each delimiter's closers in one pass the first time it opens, so a line takes time in proportion to its length, whatever its delimiters. A code span now takes precedence over a delimiter around it, as CommonMark's do: a backtick paired inside a delimiter's span is paired as it is outside. The page had paired them differently, and so highlighted a mention the den didn't count. The den's copy of the parser, which finds links to clean (`CleanLinks`), takes the same rule, and `links.json` and `mentions.json` gain cases that pin it. `trimLink` counts parentheses once. At 4,000 characters, the den's worst case went from 74 ms a message, unclosed openers among links it rewrites, to 4 ms; at 16,000, the page's from 160 to 700 ms a line to about one.
-- *Parsing once.* `Markdown` keeps its parse in `useMemo`, keyed by the text, the reader's username and whether tasks tick, and `Preview` keeps its own. A kept tree is the same vnode, which Preact skips without diffing, so a row that renders again, as every row does while someone types, costs nothing for its text. A tick goes through a ref, so it reaches the row's current handler. The page's tests render components into a small DOM of their own (`test/dom.js`), which they hadn't before.
-- *Downgrades.* `install.Install` refuses when an instance has a newer version than its own: the one installed, or the target of a transition it was in, whose service may have migrated. It says both, and checks before the plan, so a dry run says so too, and again under the lock. The same version installs again, to repair. `dens update` reads the release pointer first and stops if it names an older version than its own.
-- *Flags, not the environment.* The installer scripts take `--release-url` and `--skip-verify` (`-ReleaseUrl` and `-SkipVerify`) and read no `APP_*` variable. `dens update` takes `--skip-verify`, which a binary carrying the release identity refuses, and passes both to the installer as flags; skipping, it doesn't fetch the bundle. The fixture releases are built without the release identity, and the harnesses pass the flags.
-- *A hostile den.*
-  - The page shows a den's error code only when it's one of the protocol's (`denproto.KnownCode`, which a test checks against the package's source). Otherwise it says the den refused, with the HTTP status. A den's code goes into logs cut to 64 bytes, as its message is to 200.
-  - A den's member checks a new address for it at most once a minute (`followGate`); a check ends within the request timeout, so they also go one at a time. A den reached elsewhere can't send its members to plain `http`, or to an address on their own computer (`checkMove`), whether it moves them by signing another address or by announcing one. A member takes an announced address only once the den proves itself there, so a hostile den can't leave its members' installs asking someone else's server after it's gone.
-  - The den clients' `http.Client`s follow no redirects, as the YouTube lookups don't.
-  - Log lines that carry Go's network errors say what went wrong, as `Explain` does, and not the address: the client's, and the update check's.
-- *The browser checks.* The drivers M2 to M7's container checks ran are in `scripts/test/browser/`, each a check named for what it covers, with its prep script, on one launcher, `browsers.mjs`, and the prep scripts' helpers, `lib.sh`. `setup.sh` makes the container (Debian 13 with Chromium, Firefox ESR, Xvfb and PulseAudio) and puts this tree's development binary, the voice probe and the pinned Node.js in it, with the media the checks send: four phone fixtures pinned in `scripts/vendor.sh`, the media module's own fixtures, speech from espeak-ng, and a photo Chromium draws. `run.sh CHECK` runs one. CI doesn't run them; they're the check before each manual test. Moving them found four checks that later milestones had left behind, which now check what's there instead.
-- *Docs.*
-  - The public site's `127.0.0.1` becomes `localhost`.
-  - AGENTS.md's longest rows become short ones.
-  - What this document's finished milestone plans still teach, such as spike findings and measurements, moves into the sections it's about, and the rest of those plans goes; the milestone table stays.
-  - lifecycle.md and release.md change with the flags.
-- *Other distributions.* The installer's refusals give their reasons, and in a container the commands that mask LXC's drop-in, and name no guide. The distributions it refuses get a Flatpak after v1 (see Other distributions), which takes in SteamOS.
-- *Sprout's leftovers.* `ui.isIgnored`, the template functions nothing uses and the un-hashed `/assets/` route go; `assetPath` fails on an asset the manifest lacks, rather than naming a path nothing serves. `pkg/x` and `pkg/crypto` go, and what else `pkg/` held that nothing called. `sfu.TestCaller` is `sfutest.Caller`, in `internal/sfu/sfutest`, which knows the den only by the protocol, as the page does: the stream a share comes in is `denproto.ScreenStream`. Told to reach a den on loopback, it gathers nowhere else, so the test binaries open nothing a firewall asks about.
-
-M8.3:
-
-- *Scope.* The page alone, from the notes taken in M8.2's browser tests: its words, where things sit, and how its forms and flows go. The den, the protocol and the local API stay as they are, since the page already gets everything the notes need; only the local service's messages that name the DM seal change, to the page's word for it. It's the one pass over the page's words before the first release, so wording held back for it comes due here. The page's tests change where they check wording, and gain cases for what the page now works out itself; the browser checks follow its new structure.
-- *Its rules.*
-  - Helper text is one line. The label does the work, and details, such as 2,560 pixels or 30 ms of delay, go in a tooltip.
-  - The words people know: compress, cache, resolution, fps and shortcuts, not "goes smaller", "sealed with its key", "size", "a second" and "keys".
-  - No implementation names: noise suppression, not RNNoise.
-  - Only what applies. The page knows its browser and system, so it describes theirs alone, and it shows a figure, such as how much the cache holds, rather than a sentence about it.
-  - A warning comes with the action it's about, in its confirmation, rather than ahead of it in a paragraph.
-  - Nothing says the den or its owner can see something, which members take as given in a place someone else hosts (see Choices).
-- *Settings,* in four tabs:
-  - **Appearance**: the theme, with System, Light and Dark as three large choices, and the other themes in a menu of swatches under More themes. No footnote.
-  - **Chat & media**:
-    - Compress photos and videos: "Sends faster and saves space. You can still choose the original before sending." The sizes go in a tooltip.
-    - Links: "Dens removes tracking parameters and shortens links," with a tooltip of examples, and Open Reddit links on old.reddit.com.
-    - Play YouTube videos in Dens: "YouTube will see your IP address when previews load."
-  - **Voice & video**:
-    - Microphone and speaker.
-    - Noise suppression: "Removes keyboard, fan and background noise."
-    - Sending your voice: Voice activity or Push to talk. Under voice activity, Automatic sensitivity ("Detects when you're speaking") sits with the sensitivity slider it stands in for, which hides while it's on. The meter keeps no paragraph, and Test microphone sits beside it.
-    - Keyboard shortcuts: each a field that reads Not set or its key, and records a key when clicked, with Clear beside a set one, and no description under its name. One line says where they work: "Work while Dens is focused. To use them in other apps, keep the Dens helper running," or, where the desktop holds them (M7.2), how to set them up with it, change them or stop. Nothing about a held key let go on switching away.
-    - Screen share: Resolution, and Frame rate as 30 fps; Optimize for Clarity or Smoothness, with no paragraph; and Share audio, with one line for this browser and system: a tab's audio, or on Windows the system's too, or off where Firefox shares none. A den's lower limits show only in a call whose den sets them.
-  - **System**:
-    - Cache: "Reduces network use, and lets you view what's cached offline. Using 0 MB of 2 GB," with Keep up to and Clear cache.
-    - Updates, as now.
-    - Local password: "Protects Dens on this computer. It's separate from your den passwords." Change password shows the fields.
-    - Logging.
-    - This browser: Sign out, with `dens open` set as code.
-    - About: the version, with the instance when it isn't main, which the home page's footer showed, and the licenses.
-- *Home, a launcher.* Five sections in each den's card don't scale past two or three dens.
-  - Each den is one row: its name, a dot for its state, named in words when it isn't connected, "Signed in as john · Owner", a large Open and a small Manage. A den that signed this device out, or no longer has its member, keeps Sign in again and Remove from this computer in its row.
-  - Sign-ins waiting for this device's approval show above the list, as sign-ins in progress on this device do, and each says to refuse one that isn't yours and change your den password. So does a den whose DM recovery key this device lacks.
-  - Add a den is one button, which asks for one thing: "Paste an invite or den address". An invite shows its den, then asks whether to join as someone new or sign in to the account you have; an address goes to signing in. Signing in goes a screen at a time: the username and den password, with "Forgot your password? Use a recovery code"; then "Approve this on another device", with "No other device? Use a recovery code"; then the digits to compare; then done. The service holds a sign-in under way, so a reload comes back to its screen.
-  - The cog reads App settings, as the den page's does.
-  - Creating the den this install hosts stays a card above the list until its owner account exists.
-  - How long a den keeps messages, which its card said, shows in Manage's General.
-- *Manage,* a dialog for each den, in two parts:
-  - **This den**:
-    - General: the den's address and Den ID, with copy buttons, which every member sees, since members compare Den IDs. The owner edits the name and the public address here ("The address members use to connect", with Test beside it), and the note to keep the old address working for a while shows once the address is edited.
-    - Invites, for staff: Expires after, Max uses as a number, and Create invite; the new invite to copy; and Active invites (n), listed with Revoke.
-    - Bans, for staff: "bob (@bob) · Banned Oct 12, 2026", with Unban and a tooltip on what a ban does.
-    - Limits, the owner's: Uploads (Max file size, Storage per member and Total storage, with their units in the fields); Auto-delete messages after [90] days ("Applies to channels and DMs. Members can see this," with the count of what a new period deletes at once); and Calls ("Calls and screen shares pass through this computer's network. Lower these if calls stutter."). Calls offers Small group, a new den's limits, which need about 20 Mbps of upload at full load; Large group, 30 in a call, 60 in calls across the den and 2 shares of 15 viewers, about 70 Mbps; and Custom, the only one that shows the fields: Max people per call, Max people in calls (whole den), Allow screen sharing, Max shares at once, Max viewers per share, and a share's max bitrate, resolution and frame rate. "Upload needed at full load: about 20 Mbps" follows them as they change.
-    - The edits in General and Limits gather under one Save changes bar, shown while something has changed, which sends them as one update. Closing with changes unsaved asks first.
-  - **You in this den**:
-    - Devices: the list, and Sign out, whose confirmation says it ends that device's access at once, and that signing in again takes the den password and another device's approval.
-    - Password and recovery: Change password shows the fields, with "Signs out your other devices"; "10 codes left. Use one to sign in if you forget your password," with Generate new codes, whose confirmation says new codes replace all the old ones; and the DM recovery key, "You'll need this to read your DMs if you lose all your devices. Keep it secret," with Show key and Reset key, whose confirmation says what starting over does.
-    - Your files: "0 B of 2 GB used", and the den's total for its owner only.
-  - A den that isn't connected shows General alone, with Den moved? for one that can't be reached. Leave den sits at the foot of the sections.
-- *The den page.*
-  - The member list starts open, in every channel, until the member closes it, on screens wide enough to show it beside the channel.
-  - A text channel's #, a voice channel's speaker, the one the call bar shows, and the lock on staff-only channels and DMs are drawn icons of one size and weight, in place of emoji.
-  - The Direct messages tab shows its dot when a DM waits for this member: unread, or with check codes to compare, as when someone starts one.
-  - The notes that the den or its owner can see something go: at the start of a channel, on a voice channel and the share button, and in the profile editor. A DM keeps its lock and Encrypted.
-  - The alerts that point at the home page's sections, for a new device signed in or a sign-in refused, open Manage instead.
-- *Dates* take one form, the medium one, as Oct 12, 2026, with the time where it matters, as when an invite expires.
-- *The browser checks* open the settings at a tab and a den's Manage dialog at a section through two helpers in `browsers.mjs`, and find a channel by its name, since its # is an icon.
-- *Choices.*
-  - Who can read what. "Say plainly who can read what, in the UI as well as the docs" (see Identity and encryption) becomes: the page marks what's end-to-end encrypted, DMs, and onboarding, the milestone after this one, and the public docs say what a den's owner can read and hear, once, rather than a note in every place.
-  - The DM seal is the DM recovery key on the page, the name other encrypted apps have taught people; recovery codes keep theirs. This document keeps "DM seal" for the thing itself.
-  - No warning ahead of a full disk, which would take the den reporting its free space: the upload it refuses says so then ("This den is out of space for uploads").
-  - Moderators keep Invites and Bans; General's edits and the limits are the owner's.
-
-**M8 testing.**
-
-- Go tests:
-  - The den:
-    - A member's messages over their budget, spread across channels and DMs, are refused with `rate_limited`, while each channel's own limit still holds.
-    - The ring drops by bytes, and a resume from before the drop gets a snapshot.
-    - A removal deletes the member's recent DM messages and their files, with an event to each DM's other member.
-    - A staff delete in a DM is refused, and the author's goes through.
-    - Only the owner lifts a ban the owner placed.
-    - An owner invite moves the owner role, and the previous owner becomes a moderator.
-    - The snapshot's read states match the old query's, on a den with DMs and staff-only channels.
-    - A body sent slower than its deadline is cut off.
-    - With the nonce map full, the oldest nonce goes.
-    - A name of fillers alone is refused.
-  - Install: `Preflight` refuses NixOS's and SteamOS's `os-release`, and a container where LXC's service drop-in is in effect, and goes on once it's masked.
-  - The service: `tmp` is empty after a start that found files in it.
-  - The backup: one taken while the den deletes files holds every file its snapshot names.
-  - The control endpoint:
-    - On Windows, a client opens the pipe and closes it before the next accept, and the next client is served, as the audit's probe ran.
-    - The server accepts again after a failed accept.
-    - On Linux, another account's connection is refused before its request is read.
-  - `RunService` stops with `ExitRefused` on a refusal and exits as a crash on another error, through a seam for the exit.
-  - Install:
-    - An older binary is refused over a newer installation, and the same version installs again.
-    - `dens update` refuses an older pointer.
-    - A binary with the release identity refuses `--skip-verify`.
-  - The protocol: answers from Chromium and Firefox come out with no address, and parse. They're fixtures taken in the container, with documentation addresses in place of real ones. Every error code the package declares is one the client may show, and hostile lines of 16,000 bytes yield their links within 100 ms, where the old parser took 160.
-  - The client:
-    - An unknown or overlong error code isn't shown.
-    - A den's member checks one new address a minute; a den reached elsewhere can't move its members to an address on their computer, live or as they sign in again; and a redirect isn't followed.
-    - A network error goes into a log line without its address.
-  - `TestKeyframeRequests` passes many runs in a row with `GOMAXPROCS` at 1, 2 and the machine's.
-- Page tests:
-  - Hostile texts of 16,000 characters, four times a message's limit, parse within 50 ms, where the old parser took up to 700 and the new one about one.
-  - A row's parse is kept across renders that don't change its text: a render with a new handler makes no new nodes for it.
-  - A tick reaches the row's current handler.
-  - The shared cases pin the code-span rule both parsers take.
-- The harnesses:
-  - The lifecycle e2e installs with the flags on both platforms, and the Linux one checks that an older fixture release won't install over a newer one.
-  - The den e2e runs `dens den owner-invite`, and the member who redeems it becomes the owner.
-- In the container, both browsers:
-  - A call's answers reach the den without an address (`answers`). The den sits behind `den-proxy.mjs`, which decodes the frames clients send it and logs every answer, while the page records what the browser made: each browser names its address in its answers after the first, and no answer that reaches the den does. Against main's binary, the check finds the container's address.
-  - A channel of 200 hostile messages scrolls and takes typing notices without stalling (`hostile`): no frame waits 400 ms. Against main's binary, frames waited up to 800 ms; this step's wait at most 34.
-  - Every check M2 to M7 ran, on the shared launcher.
-- The manual test:
-  - The four target browsers on Windows.
-  - A call through members joining and leaving, and a screen share.
-  - A den restart.
-  - An owner invite redeemed on another machine.
-  - On Windows, the SCM's recovery actions on the service (`sc.exe qfailure dens-main`). Nothing outside the service makes it fail on purpose, so `TestServiceFailureEndsAsACrash`, run natively, checks that a failure ends the process as a crash, which those actions answer.
-  - Optionally, M7.2's X11 path on a real X11 desktop, such as Linux Mint with Cinnamon.
-- M8.3: the page's tests, with cases for what the page now works out itself: whether a pasted text is an invite or an address, which preset a den's call limits match and the upload a set of them needs, the share-audio line for each browser and system, and the one form of dates. The browser checks, following the page's new structure, in both browsers. The four target browsers on every screen a note touches.
-
-**Before the first release:** a deep audit of the whole project, done on 2026-10-11: its security first, against the checklist in Security hardening, whose unticked items it verified, then its code, tests and docs. What it found is M8's first two steps. Then the public site, whose docs explain what's unusual about Dens in plain words: the local password and den passwords, recovery codes and the DM seal, den IDs, approving new devices and checking a DM's code, and who can read what. The page links to them where each comes up (see Public site), which is v1's onboarding. Then v1.0.0.
-
-**After v1 loose ideas:** onboarding in the page's own first steps, with simple, careful explanations tried on people who haven't seen Dens, bookmarks (per member and per den, so a den's bookmarks always resolve against that den), polls from the composer's + menu, a Flatpak for joining dens from the distributions the installer doesn't support, SteamOS and NixOS among them (see Other distributions), TPM binding for the Windows data key, optional TOTP on the password fallback, simulcast, TURN, end-to-end encrypted calls with SFrame and calls in DMs with them, an optional idle lock, a static dictionary for compressing the den socket's small frames, should measurements show live events matter (built from the protocol's shapes, never members' messages, and named in the upgrade so client and den agree on its version), AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos, and dedup of each member's own channel uploads: their Dens hashes a file once it's stripped, the den keeps the hashes keyed with its data key so its database doesn't show which files it holds, and a file on several messages goes with the last of them.
 
 ## Open questions
 

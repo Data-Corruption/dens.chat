@@ -32,8 +32,7 @@ Backups work between Linux and Windows, either way.
 
 ### Install Dens
 
-[Install](../install/) it on the computer you're moving to, with the den option
-if the backup has a den.
+[Install](../install/) it on the computer you're moving to.
 
 ### Restore the backup
 
@@ -61,9 +60,10 @@ Run `dens open`. Browsers sign in again after a restore.
 
 {{% /steps %}}
 
-If the backup has a den, set up Caddy and the router for the new computer, and
-point the domain at it ([Host a den](../host/)). Members' Dens find the den
-again by themselves.
+If the backup has a den, it comes back with hosting off, so no copy of a den
+goes online by itself. Set up Caddy and the router for the new computer, point
+the domain at it, and turn hosting on in **Settings**, under **System**
+([Host a den](../host/)). Members' Dens find the den again by themselves.
 
 ## Losing your password or your computer
 
@@ -76,7 +76,7 @@ again by themselves.
 
 ## Handing a den to someone else
 
-On the den's computer, run:
+On the den's computer, with hosting on, run:
 
 ```sh
 dens den owner-invite

@@ -150,7 +150,10 @@ conflicting records instead of overwriting them, and it refuses to move an
 existing tag or make an older version current again.
 
 **Retention.** The publisher keeps the two newest promoted releases, and any
-older release until at least 24 hours after its promotion.
+older release until at least 24 hours after its promotion. It also keeps the
+first release, v1.0.0 (`DENS_FIRST_RELEASE` in `scripts/vendor.sh`), for good:
+installed copies hold what it wrote, so the lifecycle harnesses install it and
+update from it to every new release.
 
 **Release source.** An install records its effective release URL, including a
 `--release-url` the installer was given, in the instance config, and `dens
