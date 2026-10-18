@@ -23,6 +23,8 @@ import (
 func (rt *router) mountDens(r chi.Router) {
 	r.Get("/api/dens", rt.handleDens)
 	r.Get("/api/events", rt.handleEvents)
+	r.Get("/api/hosting", rt.handleHosting)
+	r.Post("/api/hosting", rt.handleSetHosting)
 	r.Post("/api/den", rt.handleCreateDen)
 	r.Post("/api/dens/preview", rt.handlePreview)
 	r.Post("/api/dens/join", rt.handleJoin)
@@ -39,9 +41,13 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountDevices(r)
 }
 
-// hosting describes the den this install hosts, if the den role is on.
+// hosting describes the den this install holds: whether hosting is on
+// (M9.1), whether the den serves, and why not when it's on and doesn't,
+// and how far its setup went.
 type hosting struct {
 	Enabled bool   `json:"enabled"`
+	Serving bool   `json:"serving"`
+	Problem string `json:"problem,omitempty"`
 	Created bool   `json:"created"`
 	Joined  bool   `json:"joined"` // the owner's account exists
 	Name    string `json:"name,omitempty"`
@@ -60,7 +66,8 @@ type densView struct {
 }
 
 func (rt *router) densView() densView {
-	v := densView{Hosting: hosting{Enabled: rt.a.Den != nil}}
+	state := rt.a.Hosting.State()
+	v := densView{Hosting: hosting{Enabled: state.On, Serving: state.Serving, Problem: state.Problem}}
 	// The version comes first, so the statuses are at least that new.
 	v.Epoch, v.Version = rt.a.Dens.Version()
 	v.Dens = rt.a.Dens.Statuses()
@@ -283,8 +290,12 @@ func (rt *router) handleCreateDen(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &body) {
 		return
 	}
-	if rt.a.Den == nil {
-		jsonError(w, http.StatusConflict, "This install doesn't host a den. Run the installer again with --den to host one.")
+	if state := rt.a.Hosting.State(); !state.Serving {
+		message := "Hosting is off. Turn it on in the settings first."
+		if state.Problem != "" {
+			message = state.Problem
+		}
+		jsonError(w, http.StatusConflict, message)
 		return
 	}
 	// Check everything the member typed before creating anything.

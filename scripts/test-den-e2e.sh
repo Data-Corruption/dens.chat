@@ -180,8 +180,9 @@ run() {
 
   echo ">> Hosting a den behind Caddy on $DEN_DISTRO"
   "${INCUS[@]}" file push -q --mode 0755 "$caddy" "$DEN/usr/local/bin/caddy"
-  guest "$DEN" install --den
+  guest "$DEN" install
   guest "$DEN" pair
+  guest "$DEN" hosting-on
   guest "$DEN" caddy 8485
   local den_ip
   den_ip=$("${INCUS[@]}" list "$DEN" --format csv -c 4 | awk '{print $1}')

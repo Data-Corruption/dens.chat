@@ -344,6 +344,20 @@ func (m *Manager) notify() {
 	}
 }
 
+// HostingChanged tells the pages that hosting turned on or off (M9.1),
+// and has this install's own den, once it has joined it, connect again at
+// once rather than after its backoff.
+func (m *Manager) HostingChanged() {
+	m.mu.Lock()
+	for _, c := range m.conns {
+		if c.own {
+			c.poke()
+		}
+	}
+	m.mu.Unlock()
+	m.notify()
+}
+
 // Statuses lists the joined dens in the order they were joined.
 func (m *Manager) Statuses() []Status {
 	m.mu.Lock()

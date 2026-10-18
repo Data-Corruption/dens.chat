@@ -1,8 +1,7 @@
 // Package instance is the per-instance configuration an elevated
-// maintenance command writes and the service reads: ports, whether the
-// instance hosts a den, the desktop user allowed to pair, and the release
-// source. The service can't change it; the control directory is read-only to
-// the service account.
+// maintenance command writes and the service reads: ports, the desktop user
+// allowed to pair, and the release source. The service can't change it; the
+// control directory is read-only to the service account.
 package instance
 
 import (
@@ -30,8 +29,12 @@ const (
 
 const maxConfigSize = 16 * 1024
 
-// Den is the den role. Its listener sits on loopback behind Caddy; the
-// media ports face the internet.
+// Den holds the den's ports, which it listens on while hosting is on. Its
+// listener sits on loopback behind Caddy; the media ports face the
+// internet. Enabled is the den role v1.0's installer gave an instance, which
+// the first start of a later version takes as the hosting switch's first
+// setting (M9.1). Nothing else reads it; it stays because the config decodes
+// strictly.
 type Den struct {
 	Enabled      bool `json:"enabled"`
 	Port         int  `json:"port"`
@@ -63,32 +66,54 @@ func Default(name string) Config {
 	}
 }
 
-// Validate checks the configuration is complete and self-consistent.
-func (c Config) Validate() error {
+// port is one of an instance's ports, with the installer flag that sets it.
+type port struct {
+	name, flag string
+	value      int
+	tcp        bool
+}
+
+func (c Config) ports() []port {
+	return []port{
+		{"client port", "--client-port", c.ClientPort, true},
+		{"den port", "--den-port", c.Den.Port, true},
+		{"media UDP port", "--media-udp-port", c.Den.MediaUDPPort, false},
+		{"media TCP port", "--media-tcp-port", c.Den.MediaTCPPort, true},
+	}
+}
+
+// Validate checks the configuration is complete and self-consistent: every
+// port in range, and no two TCP ports the same. Any instance may host, so
+// the den's ports count whether it hosts now or not.
+func (c Config) Validate() error { return c.validate(true) }
+
+// validate checks c, with the den's ports or without them. A config read
+// from disk is checked as v1.0 checked it, the den's ports only while it
+// had the den role, so an update can read one whose ports clash and say
+// which flag fixes them.
+func (c Config) validate(denPorts bool) error {
 	if err := layout.ValidateInstance(c.Name); err != nil {
 		return err
 	}
 	if c.DesktopUser.ID == "" {
 		return errors.New("desktop user is not set")
 	}
-	ports := map[string]int{"client port": c.ClientPort}
-	if c.Den.Enabled {
-		ports["den port"] = c.Den.Port
-		ports["media UDP port"] = c.Den.MediaUDPPort
-		ports["media TCP port"] = c.Den.MediaTCPPort
+	ports := c.ports()
+	if !denPorts {
+		ports = ports[:1]
 	}
-	seenTCP := map[int]string{}
-	for name, port := range ports {
-		if port < 1 || port > 65535 {
-			return fmt.Errorf("%s %d is out of range", name, port)
+	seenTCP := map[int]port{}
+	for _, p := range ports {
+		if p.value < 1 || p.value > 65535 {
+			return fmt.Errorf("the %s, %d, is out of range; choose another with %s", p.name, p.value, p.flag)
 		}
-		if name == "media UDP port" {
+		if !p.tcp {
 			continue
 		}
-		if other, ok := seenTCP[port]; ok {
-			return fmt.Errorf("%s and %s are both %d", name, other, port)
+		if other, ok := seenTCP[p.value]; ok {
+			return fmt.Errorf("the %s and the %s are both %d; move one with %s or %s", other.name, p.name, p.value, other.flag, p.flag)
 		}
-		seenTCP[port] = name
+		seenTCP[p.value] = p
 	}
 	if c.ReleaseURL != "" {
 		u, err := url.Parse(c.ReleaseURL)
@@ -140,7 +165,7 @@ func Decode(data []byte) (Config, error) {
 	if decoder.More() {
 		return Config{}, errors.New("instance config has trailing data")
 	}
-	if err := c.Validate(); err != nil {
+	if err := c.validate(c.Den.Enabled); err != nil {
 		return Config{}, fmt.Errorf("instance config: %w", err)
 	}
 	return c, nil

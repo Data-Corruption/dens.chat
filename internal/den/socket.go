@@ -144,6 +144,15 @@ func (d *Den) CloseMemberSockets(member int64, code websocket.StatusCode, reason
 	d.sockets.closeWhere(func(sock *socket) bool { return sock.member == member }, code, reason)
 }
 
+// openSockets has the den take sockets again after CloseSockets, as
+// hosting starts again (M9.1).
+func (d *Den) openSockets() {
+	s := d.sockets
+	s.mu.Lock()
+	s.closing = false
+	s.mu.Unlock()
+}
+
 // CloseSockets tells every client the den is restarting (close 1012) and
 // waits up to timeout for the sockets to close. The caller must have closed
 // the den listener first, so no client reconnects to this process.

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
 # Builds the unsigned fixture releases the lifecycle harnesses install:
-#   DEST/        v0.0.1-e2e: version pointer, installer, releases/<version>/
-#   DEST/next/   v0.0.2-e2e, the release the harnesses update to
-# TARGET is linux-amd64, linux-arm64 or windows-amd64, and picks the
-# installer (install.sh or install.ps1). Install with --skip-verify and
+#   DEST/        v99.0.1-e2e: version pointer, installer, releases/<version>/
+#   DEST/next/   v99.0.2-e2e, the release the harnesses update to
+#   DEST/first/  Dens's first release, which the harnesses install to host
+#                a den and update from (M9.1); see first-release.sh
+# The fixtures' versions sort after every real release, so they install over
+# the first. TARGET is linux-amd64, linux-arm64 or windows-amd64, and picks
+# the installer (install.sh or install.ps1). Install with --skip-verify and
 # --release-url pointing at DEST (or DEST/next) (-SkipVerify and -ReleaseUrl
 # for install.ps1). The binaries carry no signing identity, as a release's
 # do, so dens update takes --skip-verify from them.
@@ -49,6 +52,7 @@ build_fixture() {
   render_installer "scripts/$INSTALLER" "$root/$INSTALLER"
 }
 
-build_fixture "$DEST" v0.0.1-e2e
-build_fixture "$DEST/next" v0.0.2-e2e
+build_fixture "$DEST" v99.0.1-e2e
+build_fixture "$DEST/next" v99.0.2-e2e
+scripts/test/first-release.sh "$DEST" "$TARGET"
 printf 'Fixture releases for %s in %s\n' "$TARGET" "$DEST"

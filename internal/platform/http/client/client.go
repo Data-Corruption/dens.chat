@@ -305,7 +305,7 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"version":     rt.a.BuildInfo().Version,
 		"instance":    rt.a.Layout.Instance,
 		"passwordSet": passwordSet,
-		"denEnabled":  rt.a.Instance.Den.Enabled,
+		"denEnabled":  rt.a.Hosting.State().On,
 	}
 	if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
 		status["updateVersion"] = latest

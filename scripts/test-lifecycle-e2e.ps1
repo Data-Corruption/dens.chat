@@ -1,9 +1,11 @@
 #Requires -Version 5.1
 <#
 Windows lifecycle e2e. Installs Dens as a service through install.ps1 from
-fixture releases and runs the flows the Linux harness runs: pair a browser,
-set the password, back up, refuse another account, restart the service,
-update, add a second instance that hosts a den, restore, and uninstall.
+fixture releases and runs the flows the Linux harness runs: host a den with
+Dens's first release and update it to this one, which still hosts it (M9.1);
+then pair a browser, set the password, turn hosting on and off, back up,
+refuse another account, restart the service, update, add a second instance
+that hosts a den, restore, and uninstall.
 
 It installs the real service and paths, so it refuses to run where Dens is
 installed. From an elevated PowerShell:
@@ -226,6 +228,37 @@ function Get-MediaRules {
             Where-Object { $_.DisplayName -like "Dens (*) media *" })
 }
 
+# Test-DenAnswers says whether a den listener answers on the den port.
+function Test-DenAnswers {
+    try {
+        return (Invoke-WebRequest -Uri $DenHealth -UseBasicParsing -TimeoutSec 10).StatusCode -eq 200
+    } catch {
+        return $false
+    }
+}
+
+# Wait-OwnConnected waits for the page to show the den this instance hosts
+# as connected.
+function Wait-OwnConnected {
+    $deadline = (Get-Date).AddSeconds(60)
+    while ($true) {
+        $dens = @(((Invoke-Api GET "/api/dens").Content | ConvertFrom-Json).dens)
+        $own = @($dens | Where-Object { $_.own -and $_.state -eq "connected" })
+        if ($own.Count -gt 0) { return }
+        if ((Get-Date) -gt $deadline) { Fail "the den this instance hosts isn't connected" }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+# Connect-Browser pairs the main instance's browser session and sets the
+# local password.
+function Connect-Browser {
+    $url = (Invoke-Dens @("open", "--print")).Output.Trim()
+    $script:Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    Invoke-Api POST "/api/pair" @{ token = ($url -split "#token=")[-1] } | Out-Null
+    Invoke-Api POST "/api/password" @{ password = $Password } | Out-Null
+}
+
 # Invoke-AsLocalService runs dens status as LOCAL SERVICE through a scheduled
 # task: a real second account without creating one.
 function Invoke-AsLocalService {
@@ -300,9 +333,50 @@ try {
 
     $installerRules = @(Get-InstallerRules).Count
 
-    Step "install $V1"
+    # Dens's first release hosts a den, as its installer's den option did,
+    # and this one, installed over it, still hosts it: the switch takes the
+    # den role it had (M9.1). Then it goes, for the fresh install after it.
+    $First = Join-Path $Release "first"
+    $FirstVersion = ([IO.File]::ReadAllText((Join-Path $First "version"))).Trim()
+    Step "host a den with $FirstVersion"
+    $firstArgs = @("install", "--den", "--release-url", (ConvertTo-FileUrl $Release))
+    if ($userArgs.Count -gt 0) { $firstArgs += @("--user", $me) }
+    if ($ClientPort -ne 8484) { $firstArgs += @("--client-port", $ClientPort) }
+    Invoke-Native -FilePath (Join-Path $First "windows-amd64.exe") -Arguments $firstArgs | Out-Null
+    Assert-Running "dens-main"
+    Assert-State "main" $FirstVersion
+    Connect-Browser
+    Invoke-Api POST "/api/den" @{
+        name = "First Den"; url = "https://den.test"; username = "alice"; display_name = "Alice"; password = "den password"
+    } | Out-Null
+    Wait-OwnConnected
+    if (-not (Test-DenAnswers)) { Fail "$FirstVersion's den listener doesn't answer" }
+
+    Step "update the den $FirstVersion hosts to $V1"
     $mainArgs = $userArgs
     if ($ClientPort -ne 8484) { $mainArgs += @("-ClientPort", $ClientPort) }
+    Invoke-Installer $Release $mainArgs
+    Assert-State "main" $V1
+    Wait-Status "main"
+    Assert-Status "main" ("version:\s+" + [regex]::Escape($V1))
+    Assert-Status "main" "den:\s+hosting a den"
+    if (-not (Test-DenAnswers)) { Fail "the den listener doesn't answer after the update" }
+    if ((Invoke-Api GET "/api/hosting").Content -notmatch '"enabled":true,"serving":true') { Fail "hosting isn't on after the update" }
+    if ((Invoke-Api GET "/api/dens").Content -notmatch '"name":"First Den"') { Fail "the den is gone after the update" }
+    Wait-OwnConnected
+    Invoke-Dens @("uninstall", "--yes") | Out-Null
+    if (Test-Installed) { Fail "uninstalling the updated instance left it installed" }
+    if (@(Get-MediaRules).Count -ne 0) { Fail "the media ports' firewall rules survived uninstall" }
+    $script:Session = $null
+
+    Step "the installer refuses v1.0's den option"
+    $refused = Invoke-Native -FilePath "powershell.exe" -AllowFailure -Arguments @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", (Join-Path $Release "install.ps1"), "-ReleaseUrl", (ConvertTo-FileUrl $Release), "-SkipVerify", "-Den")
+    if ($refused.Code -eq 0) { Fail "the installer took -Den" }
+    if ($refused.Output -notmatch "hosting is turned on and off in Dens's settings") { Fail "unexpected refusal of -Den" }
+    if (Test-Installed) { Fail "the refused install changed the system" }
+
+    Step "install $V1"
     Invoke-Installer $Release $mainArgs
     Assert-Running "dens-main"
     Assert-State "main" $V1
@@ -373,6 +447,28 @@ try {
     $line = Get-StatusLine "attacker.example"
     if ($line -notmatch " 421 ") { Fail "a foreign Host got '$line'" }
 
+    Step "an install hosts nothing until hosting is on"
+    Assert-Status "main" "den:\s+not hosting a den"
+    if (Test-DenAnswers) { Fail "the den listener answers with hosting off" }
+    # Every install lets the media ports in, for whenever hosting is on,
+    # for dens.exe alone and on those ports alone.
+    $rules = @(Get-MediaRules)
+    if ($rules.Count -ne 2) { Fail "want the media ports' two firewall rules after the install" }
+    foreach ($rule in $rules) {
+        $program = ($rule | Get-NetFirewallApplicationFilter).Program
+        $filter = $rule | Get-NetFirewallPortFilter
+        $port = if ("$($filter.Protocol)" -eq "UDP") { "7881" } else { "7882" }
+        if ($program -ne $Dens -or "$($filter.LocalPort)" -ne $port -or "$($rule.Direction)" -ne "Inbound" -or "$($rule.Action)" -ne "Allow") {
+            Fail "the rule $($rule.DisplayName) lets in $program on $($filter.Protocol) $($filter.LocalPort)"
+        }
+    }
+    if (Invoke-Api POST "/api/hosting" @{ on = $true; password = "wrong wrong wrong" } -AllowFailure) { Fail "hosting turned on with the wrong password" }
+    if ((Invoke-Api POST "/api/hosting" @{ on = $true; password = $Password }).Content -notmatch '"serving":true') { Fail "hosting didn't turn on" }
+    if (-not (Test-DenAnswers)) { Fail "the den listener doesn't answer with hosting on" }
+    Assert-Status "main" "den:\s+hosting a den"
+    if ((Invoke-Api POST "/api/hosting" @{ on = $false }).Content -notmatch '"enabled":false,"serving":false') { Fail "hosting didn't turn off" }
+    if (Test-DenAnswers) { Fail "the den listener answers after hosting turned off" }
+
     Step "another account is refused"
     $other = Invoke-AsLocalService
     Write-Host $other.Output
@@ -398,24 +494,25 @@ try {
     Assert-Status "main" "password:\s+set"
 
     Step "a second instance that hosts a den"
-    Invoke-Installer $Next (@("-Instance", "second", "-ClientPort", $SecondClientPort, "-Den") + $userArgs)
+    Invoke-Installer $Next (@("-Instance", "second", "-ClientPort", $SecondClientPort) + $userArgs)
     Assert-Running "dens-second"
     Assert-State "second" $V2
     Assert-State "main" $V2
+    $secondUrl = "http://127.0.0.1:$SecondClientPort"
+    $secondSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    $secondPost = @{ Method = "POST"; WebSession = $secondSession; UseBasicParsing = $true; Headers = @{ Origin = $secondUrl };
+        ContentType = "application/json"; TimeoutSec = 30 }
+    $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
+    Invoke-WebRequest @secondPost -Uri "$secondUrl/api/pair" -Body (@{ token = ($pairing -split "#token=")[-1] } | ConvertTo-Json -Compress) | Out-Null
+    Invoke-WebRequest @secondPost -Uri "$secondUrl/api/password" -Body (@{ password = $Password } | ConvertTo-Json -Compress) | Out-Null
+    Invoke-WebRequest @secondPost -Uri "$secondUrl/api/hosting" -Body (@{ on = $true; password = $Password } | ConvertTo-Json -Compress) | Out-Null
     Assert-Status "second" "den:\s+hosting a den"
-    $health = Invoke-WebRequest -Uri $DenHealth -UseBasicParsing -TimeoutSec 30
-    if ($health.StatusCode -ne 200) { Fail "the den listener answered $($health.StatusCode)" }
-    if (@(Get-MediaRules).Count -ne 2) { Fail "want two media firewall rules for the den" }
+    if (-not (Test-DenAnswers)) { Fail "the den listener doesn't answer" }
+    if (@(Get-MediaRules).Count -ne 4) { Fail "want each instance's two media firewall rules" }
     if (@(Get-InstallerRules).Count -ne $installerRules) { Fail "Windows Firewall asked about the temporary installer" }
 
     Step "restore a backup into the second instance"
     # A browser paired before the restore must pair again after it.
-    $secondUrl = "http://127.0.0.1:$SecondClientPort"
-    $secondSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
-    Invoke-WebRequest -Uri "$secondUrl/api/pair" -Method POST -WebSession $secondSession -UseBasicParsing `
-        -Headers @{ Origin = $secondUrl } -ContentType "application/json" `
-        -Body (@{ token = ($pairing -split "#token=")[-1] } | ConvertTo-Json -Compress) | Out-Null
     Invoke-WebRequest -Uri "$secondUrl/api/status" -WebSession $secondSession -UseBasicParsing | Out-Null
     $wrong = Invoke-Dens @("restore", $ownBackup, "--instance", "second", "--password-stdin", "--yes") -Stdin "wrong wrong wrong" -AllowFailure
     if ($wrong.Code -eq 0) { Fail "restore accepted the wrong password" }
@@ -430,6 +527,9 @@ try {
         $stillPaired = $false
     }
     if ($stillPaired) { Fail "a browser paired before the restore is still paired" }
+    # Hosting is the machine's choice, not the backup's (M9.1).
+    Assert-Status "second" "den:\s+not hosting a den"
+    if (Test-DenAnswers) { Fail "the den listener answers after the restore" }
     if ($Backup) {
         Step "restore the backup made elsewhere"
         $foreign = (Resolve-Path -LiteralPath $Backup).ProviderPath
@@ -442,8 +542,9 @@ try {
     Invoke-Dens @("uninstall", "--instance", "second", "--yes") | Out-Null
     if (-not (Test-Path -LiteralPath $Dens)) { Fail "uninstalling one instance removed the shared binary" }
     if ($null -eq (Get-HelperTask)) { Fail "uninstalling one instance removed the shortcut helper's task" }
-    if (@(Get-MediaRules).Count -ne 0) { Fail "the den's firewall rules survived its uninstall" }
+    if (@(Get-MediaRules).Count -ne 2) { Fail "want the main instance's two media firewall rules alone after uninstalling second" }
     Invoke-Dens @("uninstall", "--yes") | Out-Null
+    if (@(Get-MediaRules).Count -ne 0) { Fail "the media ports' firewall rules survived uninstall" }
     if (Get-Service -Name "dens-*" -ErrorAction SilentlyContinue) { Fail "a service survived uninstall" }
     if (Test-Path -LiteralPath $DataRoot) { Fail "$DataRoot survived uninstall" }
     if (Test-Path -LiteralPath $Dens) { Fail "$Dens survived uninstall" }

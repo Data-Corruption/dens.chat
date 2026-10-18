@@ -341,7 +341,7 @@ func (linuxSystem) WrapHostKey(l layout.Layout, key []byte) error {
 
 // ConfigureFirewall leaves Linux firewalls alone: which of them a distro
 // runs, and its policy, is the owner's to manage. The docs list the ports.
-func (linuxSystem) ConfigureFirewall(layout.Layout, instance.Config) error { return nil }
+func (linuxSystem) ConfigureFirewall(layout.Layout, *instance.Config) error { return nil }
 
 // RegisterExtras has nothing to do: /usr/local/bin is already on PATH.
 func (linuxSystem) RegisterExtras(layout.Layout) error { return nil }

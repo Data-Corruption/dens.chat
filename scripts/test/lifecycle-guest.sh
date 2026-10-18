@@ -2,16 +2,20 @@
 
 # Runs inside an e2e container as root. test-lifecycle-e2e.sh calls it
 # twice, with a reboot in between:
-#   lifecycle-guest.sh install        prepare, install, pair, back up
+#   lifecycle-guest.sh install        prepare, host a den with the first
+#                                     release and update it, then install,
+#                                     pair, turn hosting on and off, back up
 #   lifecycle-guest.sh after-reboot   check, update, second instance,
 #                                     restore, uninstall
 # Environment: V1 and V2 are the fixture versions; V2 is empty when the
-# release has no newer version to update to.
+# release has no newer version to update to. /release/first holds Dens's
+# first release.
 
 set -eu
 
 PASSWORD="correct horse battery staple"
 CLIENT=http://127.0.0.1:8484
+SECOND=http://127.0.0.1:18484
 JAR=/root/cookies
 
 step() { printf '\n== %s\n' "$*"; }
@@ -26,15 +30,24 @@ fail() {
 as_alice() { runuser -u alice -- "$@"; }
 alice_uid() { id -u alice; }
 
-# api METHOD PATH [JSON] prints the response body and fails on an error status.
-api() {
+# api_at BASE JAR METHOD PATH [JSON] calls an instance's page at BASE with
+# the browser session in JAR, prints the response body, and fails on an
+# error status.
+api_at() {
+    base=$1 jar=$2
+    shift 2
     if [ $# -ge 3 ]; then
-        curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X "$1" -H "Origin: $CLIENT" \
-            -H "Content-Type: application/json" -d "$3" "$CLIENT$2"
+        curl -sS --fail-with-body -b "$jar" -c "$jar" -X "$1" -H "Origin: $base" \
+            -H "Content-Type: application/json" -d "$3" "$base$2"
     else
-        curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X "$1" -H "Origin: $CLIENT" "$CLIENT$2"
+        curl -sS --fail-with-body -b "$jar" -c "$jar" -X "$1" -H "Origin: $base" "$base$2"
     fi
 }
+
+# api METHOD PATH [JSON] calls the main instance's page; second_api, the
+# second instance's.
+api() { api_at "$CLIENT" "$JAR" "$@"; }
+second_api() { api_at "$SECOND" /root/cookies-second "$@"; }
 
 expect_state() {
     state=$(cat "/var/lib/dens/$1/control/state.json")
@@ -45,6 +58,74 @@ expect_state() {
 expect_mode() {
     actual=$(stat -c '%U:%G %a' "$1")
     [ "$actual" = "$2" ] || fail "$1 is $actual, want $2"
+}
+
+# den_answers PORT succeeds while a den listener answers on PORT.
+den_answers() {
+    curl -sS --fail -o /dev/null "http://127.0.0.1:$1/healthz" 2>/dev/null
+}
+
+# pair_alice pairs the browser session in $JAR and sets the local password.
+pair_alice() {
+    url=$(as_alice dens open --print)
+    api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
+    api POST /api/password "{\"password\":\"$PASSWORD\"}" >/dev/null
+}
+
+# wait_own_connected waits for the page's view to show the den this
+# instance hosts as connected.
+wait_own_connected() {
+    for _ in $(seq 1 60); do
+        api GET /api/dens | grep -q '"own":true,"state":"connected"' && return 0
+        sleep 1
+    done
+    fail "the den this instance hosts isn't connected: $(api GET /api/dens)"
+}
+
+expect_uninstalled() {
+    for path in /var/lib/dens /usr/local/bin/dens /etc/systemd/system/dens@.service /etc/sysusers.d/dens-main.conf \
+        /etc/xdg/autostart/chat.dens.Dens.desktop /usr/local/share/applications/chat.dens.Dens.desktop \
+        /usr/local/share/icons/hicolor/scalable/apps/chat.dens.Dens.svg; do
+        [ ! -e "$path" ] || fail "$path survived uninstall"
+    done
+    if id dens-main >/dev/null 2>&1; then
+        fail "the dens-main account survived uninstall"
+    fi
+}
+
+# first_release hosts a den with Dens's first release, as its installer's
+# den option did, and updates to this one, which still hosts it: the switch
+# takes the den role it had (M9.1). Then it uninstalls, for the fresh
+# install after it.
+first_release() {
+    first=$(cat /release/first/version)
+    case $(uname -m) in
+        x86_64) first_bin=/release/first/linux-amd64 ;;
+        aarch64) first_bin=/release/first/linux-arm64 ;;
+        *) fail "no first release binary for $(uname -m)" ;;
+    esac
+    step "host a den with $first"
+    # As root, as its installer ran it once it had verified the release.
+    "$first_bin" install --den --user alice --release-url file:///release/
+    systemctl is-active --quiet dens@main || fail "$first's dens@main is not running"
+    expect_state main "$first"
+    pair_alice
+    api POST /api/den '{"name":"First Den","url":"https://den.test","username":"alice","display_name":"Alice","password":"den password"}' >/dev/null
+    wait_own_connected
+    den_answers 8485 || fail "$first's den listener doesn't answer"
+
+    step "update the den $first hosts to $V1"
+    SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify
+    expect_state main "$V1"
+    as_alice dens status | grep -q "version:   $V1" || fail "the service didn't come back as $V1"
+    as_alice dens status | grep -q "den:       hosting a den" || fail "the den $first hosted isn't hosted after the update"
+    den_answers 8485 || fail "the den listener doesn't answer after the update"
+    api GET /api/hosting | grep -q '"enabled":true,"serving":true' || fail "hosting after the update: $(api GET /api/hosting)"
+    api GET /api/dens | grep -q '"name":"First Den"' || fail "the den is gone after the update: $(api GET /api/dens)"
+    wait_own_connected
+    dens uninstall --yes
+    expect_uninstalled
+    rm -f "$JAR"
 }
 
 phase_install() {
@@ -83,6 +164,17 @@ phase_install() {
     fi
     useradd -m alice
     useradd -m mallory
+
+    [ ! -d /release/first ] || first_release
+
+    step "the installer refuses v1.0's den option"
+    if SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify --den \
+        >/tmp/den-option.out 2>&1; then
+        fail "the installer took --den"
+    fi
+    grep -q "hosting is turned on and off in Dens's settings" /tmp/den-option.out ||
+        fail "unexpected refusal of --den: $(cat /tmp/den-option.out)"
+    [ ! -e /var/lib/dens/main ] || fail "the refused install changed the system"
 
     step "install as alice through sudo"
     SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify
@@ -123,6 +215,19 @@ phase_install() {
     if curl -sS --fail -H "Host: attacker.example" "$CLIENT/" >/dev/null 2>&1; then
         fail "the client listener answered a foreign Host"
     fi
+
+    step "an install hosts nothing until hosting is on"
+    as_alice dens status | grep -q "den:       not hosting a den" || fail "a fresh install hosts a den"
+    ! den_answers 8485 || fail "the den listener answers with hosting off"
+    if api POST /api/hosting '{"on":true,"password":"wrong wrong wrong"}' >/dev/null 2>&1; then
+        fail "hosting turned on with the wrong password"
+    fi
+    api POST /api/hosting "{\"on\":true,\"password\":\"$PASSWORD\"}" | grep -q '"serving":true' ||
+        fail "hosting didn't turn on"
+    den_answers 8485 || fail "the den listener doesn't answer with hosting on"
+    as_alice dens status | grep -q "den:       hosting a den" || fail "dens status doesn't say the instance hosts"
+    api POST /api/hosting '{"on":false}' | grep -q '"enabled":false,"serving":false' || fail "hosting didn't turn off"
+    ! den_answers 8485 || fail "the den listener answers after hosting turned off"
 
     step "another local user is refused"
     if runuser -u mallory -- dens status >/tmp/mallory.out 2>&1; then
@@ -174,20 +279,20 @@ phase_after_reboot() {
 
     step "a second instance that hosts a den"
     SUDO_UID=$(alice_uid) SUDO_USER=alice sh "$source_dir/install.sh" --release-url "file://$source_dir/" --skip-verify \
-        --instance second --client-port 18484 --den
+        --instance second --client-port 18484
     systemctl is-active --quiet dens@second || fail "dens@second is not running"
     expect_state second "$version"
     expect_state main "$version"
+    url=$(as_alice dens open --print --instance second)
+    second_api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
+    second_api POST /api/password "{\"password\":\"$PASSWORD\"}" >/dev/null
+    second_api POST /api/hosting "{\"on\":true,\"password\":\"$PASSWORD\"}" >/dev/null
     as_alice dens status --instance second | grep -q "den:       hosting a den" || fail "the second instance doesn't host a den"
-    curl -sS --fail http://127.0.0.1:8485/healthz >/dev/null || fail "the den listener doesn't answer"
+    den_answers 8485 || fail "the den listener doesn't answer"
 
     step "restore a backup into the second instance"
     # A browser paired before the restore must pair again after it.
-    second=http://127.0.0.1:18484
-    url=$(as_alice dens open --print --instance second)
-    curl -sS --fail-with-body -c /root/cookies-second -H "Origin: $second" -H "Content-Type: application/json" \
-        -d "{\"token\":\"${url#*#token=}\"}" "$second/api/pair" >/dev/null
-    curl -sS --fail -b /root/cookies-second "$second/api/status" >/dev/null || fail "pairing the second instance failed"
+    second_api GET /api/status >/dev/null || fail "pairing the second instance failed"
     backup=/root/alice.backup
     if [ -f /root/previous.backup ]; then
         # The previous distro's backup: a restore on another machine.
@@ -199,23 +304,19 @@ phase_after_reboot() {
     printf '%s\n' "$PASSWORD" | dens restore "$backup" --instance second --password-stdin --yes
     expect_state second "$version"
     as_alice dens status --instance second | grep -q "password:  set" || fail "the restored instance has no password"
-    if curl -sS --fail -b /root/cookies-second "$second/api/status" >/dev/null 2>&1; then
+    if curl -sS --fail -b /root/cookies-second "$SECOND/api/status" >/dev/null 2>&1; then
         fail "a browser paired before the restore is still paired"
     fi
+    # Hosting is the machine's choice, not the backup's (M9.1).
+    as_alice dens status --instance second | grep -q "den:       not hosting a den" || fail "the restored instance hosts a den"
+    ! den_answers 8485 || fail "the den listener answers after the restore"
 
     step "uninstall both instances"
     dens uninstall --instance second --yes
     [ -x /usr/local/bin/dens ] || fail "uninstalling one instance removed the shared binary"
     [ -e /etc/xdg/autostart/chat.dens.Dens.desktop ] || fail "uninstalling one instance removed the shortcut helper's autostart entry"
     dens uninstall --yes
-    for path in /var/lib/dens /usr/local/bin/dens /etc/systemd/system/dens@.service /etc/sysusers.d/dens-main.conf \
-        /etc/xdg/autostart/chat.dens.Dens.desktop /usr/local/share/applications/chat.dens.Dens.desktop \
-        /usr/local/share/icons/hicolor/scalable/apps/chat.dens.Dens.svg; do
-        [ ! -e "$path" ] || fail "$path survived uninstall"
-    done
-    if id dens-main >/dev/null 2>&1; then
-        fail "the dens-main account survived uninstall"
-    fi
+    expect_uninstalled
     printf 'E2E AFTER-REBOOT PHASE PASSED\n'
 }
 

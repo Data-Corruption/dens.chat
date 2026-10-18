@@ -1,7 +1,7 @@
 // The home page, a launcher (M8.3): the dens this install has joined, each
 // a row that opens it or its Manage dialog; sign-ins and approvals waiting
 // on this device above them; adding a den, from an invite or an address;
-// and setting up the den this install hosts.
+// and setting up the den this install hosts, once hosting is on (M9.1).
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -11,6 +11,7 @@ import { openManage } from './dialogs.js';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
 import { KeyNeeded, PendingSignIns, RecoveryCodes, SignInRequests, SignInSteps } from './private.jsx';
+import { openSettings } from './settings.jsx';
 
 const PASSWORD_HINT = "You'll need it to sign in on a new device. The den never sees it, so reusing one across dens is safe.";
 
@@ -79,12 +80,12 @@ export function Home({ status, navigate }) {
                     {connected.map((d) => <SignInRequests key={d.den_id} den={d} />)}
                     {connected.filter((d) => !d.seal).map((d) => <KeyNeeded key={d.den_id} den={d} onSeal={(seal) => showKey(d.name, seal)} />)}
                     {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} navigate={navigate} onChanged={refresh} onAdd={() => setAdding({})}
+                    <DenList dens={view.dens} hosting={view.hosting.enabled} navigate={navigate} onChanged={refresh} onAdd={() => setAdding({})}
                         onSignIn={(den) => setAdding({ den: den.url, username: den.username })} />
                 </>
             )}
             {adding && view && (
-                <AddDen start={adding} signIns={view.sign_ins || []} onJoined={joined} onClose={() => setAdding(null)}
+                <AddDen start={adding} signIns={view.sign_ins || []} hosting={view.hosting.enabled} onJoined={joined} onClose={() => setAdding(null)}
                     onPending={(id) => setAdding((a) => ({ ...a, pending: id }))} />
             )}
         </>
@@ -102,7 +103,7 @@ const STATES = {
 
 const ROLES = { owner: 'Owner', moderator: 'Moderator', member: 'Member' };
 
-function DenList({ dens, navigate, onChanged, onSignIn, onAdd }) {
+function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
     return (
         <section class="card bg-base-200">
             <div class="card-body gap-3">
@@ -114,7 +115,10 @@ function DenList({ dens, navigate, onChanged, onSignIn, onAdd }) {
                     <p>You haven't joined any dens yet. Add one with an invite.</p>
                 ) : (
                     <ul class="flex flex-col gap-2">
-                        {dens.map((den) => <DenRow key={den.den_id} den={den} navigate={navigate} onChanged={onChanged} onSignIn={onSignIn} />)}
+                        {dens.map((den) => (
+                            <DenRow key={den.den_id} den={den} hostingOff={den.own && !hosting} navigate={navigate} onChanged={onChanged}
+                                onSignIn={onSignIn} />
+                        ))}
                     </ul>
                 )}
             </div>
@@ -125,9 +129,10 @@ function DenList({ dens, navigate, onChanged, onSignIn, onAdd }) {
 // DenRow is one den in the launcher: a dot for its state, named in words
 // when it isn't connected, who the member is there, and Open and Manage,
 // or, for a den that let this device or its member go, signing in again or
-// forgetting it.
-function DenRow({ den, navigate, onChanged, onSignIn }) {
-    const [dot, label] = STATES[den.state] || ['bg-base-content/40', den.state];
+// forgetting it. The den this computer hosts, with hosting off, says so,
+// and leads to the switch (M9.1).
+function DenRow({ den, hostingOff, navigate, onChanged, onSignIn }) {
+    const [dot, label] = hostingOff ? ['bg-base-content/40', 'Hosting is off'] : STATES[den.state] || ['bg-base-content/40', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
     const forget = useAction();
     const who = gone ? `@${den.username}` : `Signed in as ${den.display_name} · ${ROLES[den.role] || den.role}`;
@@ -143,7 +148,12 @@ function DenRow({ den, navigate, onChanged, onSignIn }) {
                     {who}
                     {den.own && ' · Hosted here'}
                 </p>
-                {den.error && <p class="text-sm text-warning">{den.error}</p>}
+                {hostingOff ? (
+                    <p class="text-sm text-base-content/70">
+                        Members can't reach it until hosting is back on.{' '}
+                        <button type="button" class="link" onClick={() => openSettings('system')}>Turn hosting on</button>
+                    </p>
+                ) : den.error && <p class="text-sm text-warning">{den.error}</p>}
                 <ErrorText message={forget.error} />
             </div>
             {gone ? (
@@ -192,7 +202,7 @@ function AccountFields({ form, set }) {
 // there, or a den's address, which signs in. A sign-in that waits for
 // another device's approval goes on a step at a time, from the service's
 // record of it.
-function AddDen({ start, signIns, onJoined, onClose, onPending }) {
+function AddDen({ start, signIns, hosting, onJoined, onClose, onPending }) {
     const again = !!start.den;
     const [step, setStep] = useState(again ? 'signin' : 'paste');
     const [text, setText] = useState('');
@@ -274,6 +284,17 @@ function AddDen({ start, signIns, onJoined, onClose, onPending }) {
                 </Field>
                 <ErrorText message={act.error} />
                 <div><SubmitButton busy={act.busy}>Continue</SubmitButton></div>
+                {!hosting && (
+                    <p class="mt-2 text-sm text-base-content/70">
+                        Want a den of your own?{' '}
+                        <button type="button" class="link" onClick={() => {
+                            onClose();
+                            openSettings('system');
+                        }}>
+                            Host one on this computer
+                        </button>
+                    </p>
+                )}
             </form>
         );
     } else if (step === 'choose') {
@@ -378,8 +399,9 @@ function HostDen({ hosting, onJoined }) {
                 <p class="text-sm text-base-content/70">
                     {hosting.created
                         ? "Your den exists, but its owner account doesn't yet. Create it to manage the den."
-                        : 'This install hosts a den. Name it, give the address Caddy serves it at, and create your owner account.'}
+                        : 'Hosting is on. Name your den, give the address Caddy serves it at, and create your owner account.'}
                 </p>
+                {!hosting.serving && hosting.problem && <p role="status" class="text-sm text-warning">{hosting.problem}</p>}
                 <form class="flex flex-col gap-2" onSubmit={submit}>
                     {!hosting.created && (
                         <>

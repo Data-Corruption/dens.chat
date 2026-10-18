@@ -70,6 +70,11 @@ pair)
     api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
     api POST /api/password '{"password":"local password"}' >/dev/null
     ;;
+hosting-on)
+    # Turn hosting on from the page, as the owner does (M9.1).
+    api POST /api/hosting '{"on":true,"password":"local password"}' | json 'd["serving"]' | grep -qx True ||
+        fail "hosting didn't turn on"
+    ;;
 caddy)
     # caddy DEN_PORT: serve den.test with Caddy's internal CA, as root.
     mkdir -p /etc/caddy

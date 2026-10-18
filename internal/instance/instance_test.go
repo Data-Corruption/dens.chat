@@ -1,6 +1,8 @@
 package instance
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,11 +37,11 @@ func TestValidateRejectsBadConfigs(t *testing.T) {
 		"no desktop user":     func(c *Config) { c.DesktopUser = host.Identity{} },
 		"bad name":            func(c *Config) { c.Name = "Main" },
 		"port out of range":   func(c *Config) { c.ClientPort = 70000 },
-		"den port collides":   func(c *Config) { c.Den.Enabled = true; c.Den.Port = c.ClientPort },
+		"den port collides":   func(c *Config) { c.Den.Port = c.ClientPort },
 		"plain http release":  func(c *Config) { c.ReleaseURL = "http://releases.dens.chat/" },
 		"release without /":   func(c *Config) { c.ReleaseURL = "https://releases.dens.chat" },
-		"media tcp collides":  func(c *Config) { c.Den.Enabled = true; c.Den.MediaTCPPort = c.Den.Port },
-		"negative media port": func(c *Config) { c.Den.Enabled = true; c.Den.MediaUDPPort = -1 },
+		"media tcp collides":  func(c *Config) { c.Den.MediaTCPPort = c.Den.Port },
+		"negative media port": func(c *Config) { c.Den.MediaUDPPort = -1 },
 	}
 	for name, mutate := range cases {
 		c := validConfig()
@@ -48,11 +50,56 @@ func TestValidateRejectsBadConfigs(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	// Den ports don't matter while the role is off.
+	// The UDP port may share its number with a TCP one.
 	c := validConfig()
-	c.Den.Port = c.ClientPort
+	c.Den.MediaUDPPort = c.Den.MediaTCPPort
 	if err := c.Validate(); err != nil {
-		t.Errorf("disabled den with colliding port refused: %v", err)
+		t.Errorf("a UDP port numbered as a TCP one refused: %v", err)
+	}
+}
+
+// v1.0.0's installer wrote these, from its own code. Every later version
+// reads them.
+func readFixture(t *testing.T, name string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("testdata", "v1.0.0", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestDecodesWhatV1Wrote(t *testing.T) {
+	c, err := Decode(readFixture(t, "hosting.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := validConfig()
+	want.Den.Enabled = true
+	if c != want {
+		t.Fatalf("decoded %+v, want %+v", c, want)
+	}
+}
+
+// v1.0 checked a den's ports only for an instance with the den role, so it
+// could write a config whose client port is its den's. That reads, and the
+// check the installer makes before writing it again names the flags.
+func TestReadsV1sClashAndNamesTheFlags(t *testing.T) {
+	c, err := Decode(readFixture(t, "clashing.json"))
+	if err != nil {
+		t.Fatalf("v1.0's config refused: %v", err)
+	}
+	err = c.Validate()
+	if err == nil {
+		t.Fatal("clashing ports accepted")
+	}
+	for _, want := range []string{"8485", "--client-port", "--den-port"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q doesn't say %s", err, want)
+		}
+	}
+	if _, err := Encode(c); err == nil {
+		t.Fatal("clashing ports written")
 	}
 }
 

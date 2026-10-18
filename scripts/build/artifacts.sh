@@ -85,6 +85,9 @@ frontend_hash_assets() {
 
 # make_ldflags <devMode>
 # Prints the -ldflags string for a build with the given devMode value.
+# Release builds drop the symbol table and DWARF (-s -w), about a third of
+# the binary; a panic still names its functions and lines, from Go's own line
+# table. Development builds keep both, for debuggers.
 make_ldflags() {
   local pkg
   pkg="$(go list -m)/internal/build"
@@ -96,6 +99,7 @@ make_ldflags() {
   ldflags+=" -X '${pkg}.certIdentity=$CERT_IDENTITY'"
   ldflags+=" -X '${pkg}.oidcIssuer=$OIDC_ISSUER'"
   ldflags+=" -X '${pkg}.devMode=$1'"
+  [[ "$1" == "true" ]] || ldflags+=" -s -w"
   printf '%s' "$ldflags"
 }
 

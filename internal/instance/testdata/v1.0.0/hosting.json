@@ -1,0 +1,15 @@
+{
+  "name": "main",
+  "clientPort": 8484,
+  "den": {
+    "enabled": true,
+    "port": 8485,
+    "mediaUDPPort": 7881,
+    "mediaTCPPort": 7882
+  },
+  "desktopUser": {
+    "id": "1000",
+    "name": "alice"
+  },
+  "releaseURL": "https://releases.dens.chat/"
+}

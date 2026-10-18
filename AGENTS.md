@@ -22,11 +22,11 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `cmd/main.go` | Process entry, global flags, signal handling, final error print; beside it, the Windows resource objects that carry `dens.exe`'s manifest (generated and committed) |
 | `internal/app` | `App` composition root, cleanup stack, update checks |
 | `internal/app/commands` | CLI commands: desktop-user commands talk to the service; maintenance commands run transactions |
-| `internal/service` | The service process: listeners, control handlers, readiness |
+| `internal/service` | The service process: listeners, hosting (the switch that serves the den), control handlers, readiness |
 | `internal/install` | Install, update, restore and uninstall transactions with a rollback journal; `system_linux.go` and `system_windows.go` hold every install-time OS step |
 | `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
 | `internal/layout` | Every filesystem path and its permission policy; nothing else resolves paths |
-| `internal/instance` | Per-instance config written at install: ports, den role, desktop user, release URL |
+| `internal/instance` | Per-instance config written at install: ports, desktop user, release URL, and v1.0's den role, which hosting starts from |
 | `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
 | `internal/den` | The den this install hosts: members, invites, sessions and devices, the event hub and its sockets, messages, uploads and files, retention, DM key relays, calls' rules, and the change log clients sync from |
 | `internal/denclient` | The dens this install has joined: keeping each connected, the den's state for the page, history and files through the cache, DMs and their seal, device approval, calls relayed for the page, and the smaller copies of photos and videos made before sending |
@@ -56,14 +56,15 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, and the browser checks (`scripts/test/browser/`), run by hand before each manual test |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design doc, which names the commit that last held it |
-| `docs/dev/` | Internal docs: the design, the lifecycle, the den protocol and the release process |
+| `docs/dev/` | Internal docs: the design, the milestones, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
 
 ## Documents of record
 
 - [docs/dev/design.md](docs/dev/design.md): processes, platform layer, identity
-  and encryption, authentication, den features, media, security checklist,
-  milestones.
+  and encryption, authentication, den features, media, security checklist.
+- [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
+  the plan for the one under way, and ideas after it.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): paths, lifecycle state,
   locks, maintenance transactions, development instances, and the lifecycle
   e2e harnesses.
@@ -120,9 +121,12 @@ Do not add code that pretends a downgrade happened.
 `user_version` bump commit together. Non-database side effects in a step must
 be idempotent because an interrupted step can run again.
 
-**No compatibility shims before the first release.** Change the initial
-migration, layouts and protocols in place. There are no deprecation paths for
-pre-release formats.
+**Released formats move forward.** v1.0.0 shipped, so installed copies hold
+data every later version reads. Add migrations at the end and never change a
+released step. `instance.json` and `state.json` decode strictly: keep every
+field a release wrote readable, and give a new meaning a new field rather than
+an old one's name. A backup from any release restores. A change to one of these
+comes with a test that reads its released form.
 
 **The release identity is frozen at the first release.** The cosign signing
 identity includes the path `.github/workflows/release.yml`; never rename or
@@ -265,4 +269,6 @@ are not a changelog. Describe current behavior directly; put change history
 and implementation rationale in commits or PR descriptions. Include rationale
 in user docs only when it helps the reader make a decision or understand a
 constraint. The design doc may explain why a decision was made, but it still
-describes the design, not how it evolved.
+describes the design, not how it evolved. A milestone's plan lives in
+`docs/dev/milestones.md` while it's under way; once the milestone is done, what
+the plan still teaches moves into the design doc's sections and the rest goes.

@@ -9,9 +9,15 @@ import (
 
 // Configuration is the service's own preferences, stored in the database and
 // changed from the settings page. What an administrator decides at install
-// (ports, den role, desktop user) lives in the instance config instead.
+// (ports, desktop user) lives in the instance config instead.
 type Configuration struct {
 	LogLevel string `json:"logLevel"`
+
+	// Hosting is whether this instance serves its den (M9.1), which the
+	// desktop user turns on and off in the settings. It's nil until the
+	// first start of a version that has it, which takes it from the den
+	// role v1.0's installer gave the instance.
+	Hosting *bool `json:"hosting,omitempty"`
 
 	UpdateNotifications    bool      `json:"updateNotifications"`
 	BackgroundUpdateChecks bool      `json:"backgroundUpdateChecks"`

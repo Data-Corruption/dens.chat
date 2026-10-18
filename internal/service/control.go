@@ -72,12 +72,14 @@ func statusReply(ctx context.Context, a *app.App) (control.Reply, error) {
 	if err != nil {
 		return control.Reply{}, err
 	}
+	hosting := a.Hosting.State()
 	status := control.Status{
 		Version:     a.BuildInfo().Version,
 		Instance:    a.Layout.Instance,
 		ClientURL:   guard.PageOrigin(a.Instance.ClientPort) + "/",
 		PasswordSet: passwordSet,
-		DenEnabled:  a.Instance.Den.Enabled,
+		DenEnabled:  hosting.On,
+		DenProblem:  hosting.Problem,
 	}
 	if latest, ok := a.LatestUpdate(cfg); ok {
 		status.UpdateAvailable = latest
@@ -100,10 +102,7 @@ func backupReply(ctx context.Context, a *app.App, password string) (control.Repl
 	// The den takes no file off the disk from before the snapshot until
 	// the archive holds the uploads, so the archive has every file the
 	// snapshot names (M8).
-	release := func() {}
-	if a.Den != nil {
-		release = a.Den.HoldFiles()
-	}
+	release := a.Den.HoldFiles()
 	temp, err := os.MkdirTemp(a.Layout.Temp, "backup-")
 	if err != nil {
 		release()
@@ -151,11 +150,11 @@ func backupReply(ctx context.Context, a *app.App, password string) (control.Repl
 // password is all it takes: that's also the way back for an owner locked
 // out of their account.
 func ownerInviteReply(ctx context.Context, a *app.App, password string) (control.Reply, error) {
+	if !a.Hosting.State().On {
+		return control.Reply{}, control.Errorf("hosting is off; turn it on in Dens's settings, then make the invite")
+	}
 	if err := checkPassword(ctx, a, password, "making an owner invite"); err != nil {
 		return control.Reply{}, err
-	}
-	if a.Den == nil {
-		return control.Reply{}, control.Errorf("this instance doesn't host a den")
 	}
 	info, ok := a.Den.Info()
 	if !ok {

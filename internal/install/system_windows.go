@@ -340,11 +340,15 @@ func (windowsSystem) WrapHostKey(l layout.Layout, key []byte) error {
 	return host.WrapHostKey(l.HostKey, key)
 }
 
-func (windowsSystem) ConfigureFirewall(l layout.Layout, cfg instance.Config) error {
+// ConfigureFirewall adds the media ports' inbound rules at every install
+// (M9), scoped to the installed binary and those ports, so turning hosting
+// on in the page needs nothing elevated; nothing listens there while it's
+// off, so they let nothing in.
+func (windowsSystem) ConfigureFirewall(l layout.Layout, cfg *instance.Config) error {
 	for _, proto := range []string{"UDP", "TCP"} {
 		name := firewallRuleName(l, proto)
 		_ = exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+name).Run()
-		if !cfg.Den.Enabled {
+		if cfg == nil {
 			continue
 		}
 		port := cfg.Den.MediaUDPPort

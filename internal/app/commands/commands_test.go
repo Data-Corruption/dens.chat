@@ -1,16 +1,35 @@
 package commands
 
 import (
+	"context"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/Data-Corruption/dens.chat/internal/build"
+
+	"github.com/urfave/cli/v3"
 )
+
+// v1.0's den option is refused before anything runs, however it's given:
+// hosting is the settings' (M9.1).
+func TestInstallRefusesTheDenOption(t *testing.T) {
+	for _, flag := range []string{"--den", "--den=true", "--den=false"} {
+		root := &cli.Command{Name: "dens", Flags: []cli.Flag{InstanceFlag}, Writer: io.Discard, ErrWriter: io.Discard,
+			Commands: []*cli.Command{installCommand(build.BuildInfo{Name: "dens", Version: "v1.1.0"})}}
+		err := root.Run(context.Background(), []string{"dens", "install", flag, "--dry-run"})
+		if err == nil || !strings.Contains(err.Error(), "Dens's settings") {
+			t.Errorf("install %s: %v, want the refusal", flag, err)
+		}
+	}
+}
 
 func TestAllCommandConstructorsAreListed(t *testing.T) {
 	_, testFile, _, ok := runtime.Caller(0)

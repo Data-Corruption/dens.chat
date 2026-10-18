@@ -1,0 +1,15 @@
+{
+  "name": "second",
+  "clientPort": 8485,
+  "den": {
+    "enabled": false,
+    "port": 8485,
+    "mediaUDPPort": 7881,
+    "mediaTCPPort": 7882
+  },
+  "desktopUser": {
+    "id": "S-1-5-21-1004336348-1177238915-682003330-1001",
+    "name": "DESKTOP-E2E\\alice"
+  },
+  "releaseURL": "https://releases.dens.chat/"
+}

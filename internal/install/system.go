@@ -63,8 +63,9 @@ type System interface {
 	WriteControlFile(l layout.Layout, path string, data []byte, account host.Identity) error
 	// WrapHostKey stores the data key bound to this host.
 	WrapHostKey(l layout.Layout, key []byte) error
-	// ConfigureFirewall opens or closes the den's media ports as cfg says.
-	ConfigureFirewall(l layout.Layout, cfg instance.Config) error
+	// ConfigureFirewall lets the internet reach cfg's media ports, for
+	// whenever hosting is on, or with cfg nil closes them again.
+	ConfigureFirewall(l layout.Layout, cfg *instance.Config) error
 	// RegisterExtras applies machine-wide integration: PATH, crash reporting.
 	RegisterExtras(l layout.Layout) error
 	// RegisterHelper has the shortcut helper start at user's login (M7),

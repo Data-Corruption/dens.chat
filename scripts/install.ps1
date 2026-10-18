@@ -10,7 +10,7 @@ Download this script and install.ps1.cosign.bundle, verify them, then run
 from an elevated PowerShell (Run as administrator):
   powershell -ExecutionPolicy Bypass -File install.ps1              install, or update
   powershell -ExecutionPolicy Bypass -File install.ps1 -DryRun      show what would change
-  powershell -ExecutionPolicy Bypass -File install.ps1 -Instance second -Den
+  powershell -ExecutionPolicy Bypass -File install.ps1 -Instance second
   powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall   remove an instance and its data
 
 -ReleaseUrl URL installs from a byte-for-byte mirror of the release host; the
@@ -26,6 +26,8 @@ param(
     [switch]$DryRun,
     [string]$Instance = "main",
     [string]$User,
+    # v1.0's den options, passed on for dens install to refuse: hosting is
+    # turned on and off in Dens's settings.
     [switch]$Den,
     [switch]$NoDen,
     [int]$ClientPort,

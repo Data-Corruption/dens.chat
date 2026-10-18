@@ -2,7 +2,8 @@
 
 Thanks for looking. This file is short on purpose: [AGENTS.md](AGENTS.md) is
 the real orientation for anyone changing code, human or otherwise, and
-[docs/dev/design.md](docs/dev/design.md) is the design. Read those first.
+[docs/dev/design.md](docs/dev/design.md) is the design. Read those first;
+[docs/dev/milestones.md](docs/dev/milestones.md) says what's being built now.
 
 ## Before you start
 

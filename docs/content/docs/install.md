@@ -85,18 +85,16 @@ It prints `Verified OK`. Anything else means don't run it.
 sudo sh install.sh
 ```
 
-To host a den on this computer, add `--den`. You can also rerun this anytime
-and add it then: running the installer again keeps your data, and it's another
-way to update, too.
+Running the installer again later keeps your data, and it's another way to
+update, too.
 {{< /tab >}}
 {{< tab name="Windows" >}}
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-To host a den on this computer, add `-Den`. You can also rerun this anytime
-and add it then: running the installer again keeps your data, and it's another
-way to update, too.
+Running the installer again later keeps your data, and it's another way to
+update, too.
 {{< /tab >}}
 {{< /tabs >}}
 
@@ -112,6 +110,10 @@ This opens Dens in your default browser. Add `--print` and it prints the link
 instead, for you to open in whichever browser you like. The link works once,
 within two minutes.
 
+Waterfox on Windows can show a blank page for a link another program opens.
+If it does, click the address bar and press Enter: the link is still there,
+and still works.
+
 On Linux you can also pick Dens from your apps menu.
 
 {{% /steps %}}
@@ -124,7 +126,9 @@ Dens lives at `http://localhost:8484`, and your browser stays signed in to it
 for 30 days after you last used it. After that, or in another browser, run
 `dens open` again.
 
-Next: [join a den](../join/) with your invite, or [host one](../host/).
+Next: [join a den](../join/) with your invite, or [host one](../host/). Any
+install can host a den: you turn hosting on in Dens's settings when you want
+to.
 
 ## Updating
 

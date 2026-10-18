@@ -1,7 +1,7 @@
 // While Dens can't reach a den (M6.2), the page reads what this computer
 // kept of it, and says so over the messages.
 
-export const OFFLINE_NOTE = "The den is offline. You're reading the messages this computer kept.";
+export const OFFLINE_NOTE = "The den is offline. You're reading cached messages.";
 
 // showsOffline says whether a den's messages show the note: the stream
 // from Dens on this computer is up, as live says, and the den failed to

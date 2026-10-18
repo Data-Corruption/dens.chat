@@ -28,8 +28,10 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 	m := migrator.New()
 
 	// Add steps at the end. The first step takes a fresh database to schema
-	// version 1 (PRAGMA user_version), the next to 2, and so on. Until the
-	// first release the initial step changes in place.
+	// version 1 (PRAGMA user_version), the next to 2, and so on. v1.0.0
+	// shipped the initial step, so installed copies hold databases every
+	// later version reads: a released step never changes (see Data across
+	// versions in the design doc).
 
 	m.Add("Initial Schema", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `

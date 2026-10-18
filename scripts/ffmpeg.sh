@@ -15,7 +15,7 @@
 #   ./scripts/ffmpeg.sh --check          # regenerate elsewhere, and fail if it differs
 #   ./scripts/ffmpeg.sh --source OUT     # write FFmpeg's source, as the binaries include it, to OUT (.tar.xz)
 #   ./scripts/ffmpeg.sh --asan           # build the driver natively under AddressSanitizer; prints its path
-#   ./scripts/ffmpeg.sh --fuzz DURATION  # fuzz the driver, in the module and under AddressSanitizer
+#   ./scripts/ffmpeg.sh --fuzz BUDGET    # fuzz the driver for a time (10m) or a count of runs (12000x)
 
 set -euo pipefail
 exec </dev/null
@@ -287,7 +287,11 @@ case "${1:-}" in
     asan=$(build_asan)
     # No minimizing: Go's fuzzer would shrink each input that reaches new Go
     # code, which says little about the C under test, and it reports one it
-    # was shrinking when the time ran out as a failure.
+    # was shrinking when the time ran out as a failure. CI gives a count of
+    # runs rather than a time for the same reason: Go 1.26's fuzzer races
+    # its own deadline as it stops, and can fail a run that found nothing
+    # with "context deadline exceeded" (go.dev/issue/75804, fixed in Go
+    # 1.27). A count leaves it no deadline.
     DENS_FFMPEG_ASAN="$asan" go test ./internal/media/ffmpeg -run '^$' -fuzz '^FuzzDriver$' \
       -fuzztime "$2" -fuzzminimizetime 0
     ;;

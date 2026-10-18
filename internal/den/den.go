@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
+	"github.com/Data-Corruption/dens.chat/internal/sfu"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
@@ -192,14 +194,42 @@ func (d *Den) holdKey(seed, pub []byte) error {
 	return nil
 }
 
+// Start runs the den as hosting starts (M9.1): calls on its media ports,
+// the sockets the den listener takes, deleting messages past the
+// retention period and forgetting old changes. The caller serves the den
+// listener once it returns.
+func (d *Den) Start(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) error {
+	if err := d.StartCalls(udp, tcp, cfg); err != nil {
+		return err
+	}
+	d.openSockets()
+	d.StartRetention()
+	d.StartPruning()
+	return nil
+}
+
+// Stop ends what Start started, as hosting stops: it tells every client
+// the den is restarting and waits up to timeout for their sockets to
+// close, which ends their calls, then closes the media ports. The caller
+// closes the den listener first, so no client reconnects meanwhile.
+// Everything the den holds stays, and it can start again.
+func (d *Den) Stop(timeout time.Duration) {
+	d.CloseSockets(timeout)
+	if err := d.StopCalls(); err != nil {
+		d.log.Warnf("stop calls: %v", err)
+	}
+	d.StopRetention()
+	d.StopPruning()
+}
+
 // Close ends calls, stops sweeping uploads and deleting old messages, and
 // releases the identity key.
 func (d *Den) Close() {
 	if err := d.StopCalls(); err != nil {
 		d.log.Warnf("stop calls: %v", err)
 	}
-	d.stopExpiry()
-	d.stopPruning()
+	d.StopRetention()
+	d.StopPruning()
 	d.files.stop()
 	d.mu.Lock()
 	defer d.mu.Unlock()

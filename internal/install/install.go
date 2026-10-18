@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/instance"
@@ -37,9 +35,7 @@ type Options struct {
 	// skips verifying the release too; only test releases take it.
 	SkipVerify bool
 	// User overrides the desktop user allowed to pair.
-	User string
-	// Den turns the den role on or off; nil keeps the current setting.
-	Den          *bool
+	User         string
 	ClientPort   int
 	DenPort      int
 	MediaUDPPort int
@@ -105,7 +101,7 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 		return err
 	}
 	running, _ := sys.ServiceRunning(target)
-	if err := checkPorts(cfg, previous, running); err != nil {
+	if err := checkClientPort(cfg, previous, running); err != nil {
 		return err
 	}
 	// Checked again under the lock; here it stops a dry run too.
@@ -262,16 +258,12 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 		}
 		j.add(func() error { return os.Remove(target.HostKey) })
 	}
-	if err := sys.ConfigureFirewall(target, cfg); err != nil {
+	if err := sys.ConfigureFirewall(target, &cfg); err != nil {
 		return err
 	}
-	j.add(func() error {
-		restore := instance.Config{Den: instance.Den{Enabled: false}}
-		if previous != nil {
-			restore = *previous
-		}
-		return sys.ConfigureFirewall(target, restore)
-	})
+	// An update over a v1.0 instance that didn't host puts its rules back
+	// for ports nothing listens on, which let nothing in.
+	j.add(func() error { return sys.ConfigureFirewall(target, previous) })
 	undo, err = sys.RegisterHelper(target, cfg.DesktopUser)
 	if err != nil {
 		return fmt.Errorf("have the shortcut helper start at login: %w", err)
@@ -464,9 +456,6 @@ func desiredConfig(sys System, l layout.Layout, bi build.BuildInfo, opts Options
 		}
 		cfg.DesktopUser = user
 	}
-	if opts.Den != nil {
-		cfg.Den.Enabled = *opts.Den
-	}
 	for _, set := range []struct {
 		value int
 		field *int
@@ -501,59 +490,20 @@ func writeConfig(sys System, l layout.Layout, account host.Identity, cfg instanc
 	return nil
 }
 
-// checkPorts refuses ports another program holds. Ports the instance
-// already uses are skipped while its service is running, since the service
-// holds them itself.
-func checkPorts(cfg instance.Config, previous *instance.Config, running bool) error {
-	type port struct {
-		network, addr string
-		value, old    int
+// checkClientPort refuses a client port another program holds; while the
+// instance's service runs, the port it already uses is its own. The den's
+// ports matter only once hosting is on, which checks them as it starts.
+func checkClientPort(cfg instance.Config, previous *instance.Config, running bool) error {
+	if running && previous != nil && previous.ClientPort == cfg.ClientPort {
+		return nil
 	}
-	var ports []port
-	old := instance.Config{}
-	if previous != nil {
-		old = *previous
+	// The client listener binds both loopbacks; check the same way.
+	lns, err := server.ListenLoopback(cfg.ClientPort)
+	if err != nil {
+		return fmt.Errorf("port %d is in use by another program; choose another with --client-port: %w", cfg.ClientPort, err)
 	}
-	ports = append(ports, port{"loopback", "", cfg.ClientPort, old.ClientPort})
-	if cfg.Den.Enabled {
-		oldDen := old.Den
-		if !oldDen.Enabled {
-			oldDen = instance.Den{}
-		}
-		ports = append(ports,
-			port{"tcp4", "127.0.0.1", cfg.Den.Port, oldDen.Port},
-			port{"tcp", "", cfg.Den.MediaTCPPort, oldDen.MediaTCPPort},
-			port{"udp", "", cfg.Den.MediaUDPPort, oldDen.MediaUDPPort},
-		)
-	}
-	for _, p := range ports {
-		if running && p.value == p.old {
-			continue
-		}
-		address := net.JoinHostPort(p.addr, strconv.Itoa(p.value))
-		var err error
-		switch p.network {
-		case "loopback":
-			// The client listener binds both loopbacks; check the same way.
-			var lns []net.Listener
-			if lns, err = server.ListenLoopback(p.value); err == nil {
-				for _, ln := range lns {
-					_ = ln.Close()
-				}
-			}
-		case "tcp", "udp":
-			// Media ports listen on every interface; checking them by
-			// binding would make Windows Firewall ask about the installer.
-			err = host.PortFree(p.network, p.value)
-		default:
-			var ln net.Listener
-			if ln, err = net.Listen(p.network, address); err == nil {
-				_ = ln.Close()
-			}
-		}
-		if err != nil {
-			return fmt.Errorf("port %d is in use by another program; choose another with the matching port flag: %w", p.value, err)
-		}
+	for _, ln := range lns {
+		_ = ln.Close()
 	}
 	return nil
 }
@@ -567,12 +517,8 @@ func printPlan(p *progress, sys System, bi build.BuildInfo, members []*member, t
 	p.printf("  instance      %s", target.Instance)
 	p.printf("  desktop user  %s", cfg.DesktopUser)
 	p.printf("  client        %s/ (loopback only)", guard.PageOrigin(cfg.ClientPort))
-	if cfg.Den.Enabled {
-		p.printf("  den           127.0.0.1:%d behind Caddy; media %d/udp and %d/tcp from the internet",
-			cfg.Den.Port, cfg.Den.MediaUDPPort, cfg.Den.MediaTCPPort)
-	} else {
-		p.printf("  den           not hosted")
-	}
+	p.printf("  den           127.0.0.1:%d behind Caddy, media %d/udp and %d/tcp from the internet, once hosting is on",
+		cfg.Den.Port, cfg.Den.MediaUDPPort, cfg.Den.MediaTCPPort)
 	if cfg.ReleaseURL != "" {
 		p.printf("  updates from  %s", cfg.ReleaseURL)
 	}

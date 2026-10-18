@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,7 +37,9 @@ type fakeSystem struct {
 	accounts   map[string]bool
 	registered map[string]bool
 	running    map[string]bool
-	firewall   map[string]bool
+	// firewall holds each instance's media ports its rules let in, UDP
+	// then TCP.
+	firewall   map[string][2]int
 	sharedGone bool
 	failOn     string
 	startErr   error
@@ -52,7 +55,7 @@ func newFake(t *testing.T) *fakeSystem {
 		accounts:   map[string]bool{},
 		registered: map[string]bool{},
 		running:    map[string]bool{},
-		firewall:   map[string]bool{},
+		firewall:   map[string][2]int{},
 		helpers:    map[string]bool{},
 	}
 }
@@ -132,8 +135,12 @@ func (f *fakeSystem) WriteControlFile(_ layout.Layout, path string, data []byte,
 func (f *fakeSystem) WrapHostKey(l layout.Layout, key []byte) error {
 	return os.WriteFile(l.HostKey, key, 0o600)
 }
-func (f *fakeSystem) ConfigureFirewall(l layout.Layout, cfg instance.Config) error {
-	f.firewall[l.Instance] = cfg.Den.Enabled
+func (f *fakeSystem) ConfigureFirewall(l layout.Layout, cfg *instance.Config) error {
+	if cfg == nil {
+		delete(f.firewall, l.Instance)
+		return nil
+	}
+	f.firewall[l.Instance] = [2]int{cfg.Den.MediaUDPPort, cfg.Den.MediaTCPPort}
 	return nil
 }
 func (f *fakeSystem) RegisterExtras(layout.Layout) error { return f.fail("RegisterExtras") }
@@ -396,21 +403,70 @@ func TestInstallRefusesPortInUse(t *testing.T) {
 	}
 }
 
-func TestDenRoleOpensFirewall(t *testing.T) {
+// Every install opens the media ports for the installed binary, so turning
+// hosting on needs nothing elevated (M9.1).
+func TestEveryInstallOpensTheMediaPorts(t *testing.T) {
 	f := newFake(t)
-	on := true
-	if err := install(t, f, "v1.0.0", "main", Options{Den: &on, DenPort: freePort(t), MediaUDPPort: freePort(t), MediaTCPPort: freePort(t)}); err != nil {
+	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
 		t.Fatal(err)
 	}
-	if !f.firewall["main"] {
-		t.Fatal("den role didn't open the media ports")
+	if got, want := f.firewall["main"], [2]int{instance.DefaultMediaUDPPort, instance.DefaultMediaTCPPort}; got != want {
+		t.Fatalf("firewall lets in %v, want %v", got, want)
 	}
-	off := false
-	if err := install(t, f, "v1.0.0", "main", Options{Den: &off}); err != nil {
+	udp, tcp := freePort(t), freePort(t)
+	if err := install(t, f, "v1.0.0", "main", Options{MediaUDPPort: udp, MediaTCPPort: tcp}); err != nil {
 		t.Fatal(err)
 	}
-	if f.firewall["main"] {
-		t.Fatal("turning the den role off left the media ports open")
+	if got := f.firewall["main"]; got != [2]int{udp, tcp} {
+		t.Fatalf("after moving the ports, firewall lets in %v, want %v", got, [2]int{udp, tcp})
+	}
+
+	// A fresh install that fails takes its rules with it.
+	f.failOn = "RegisterExtras"
+	if err := install(t, f, "v1.0.0", "second", Options{}); err == nil {
+		t.Fatal("injected failure didn't fail the install")
+	}
+	if _, ok := f.firewall["second"]; ok {
+		t.Fatal("a rolled back install left its firewall rules")
+	}
+}
+
+// v1.0's den option is refused: hosting is the settings' (M9.1). An update
+// over an instance v1.0 wrote, whose den port is its client port, says
+// which flags fix it, and goes once one does.
+func TestUpdateOverV1ClashNamesTheFlags(t *testing.T) {
+	f := newFake(t)
+	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := f.Layout("main")
+	data, err := os.ReadFile(l.InstanceConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := instance.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As v1.0 wrote it for an instance without the den role, which it
+	// didn't check against the client port.
+	cfg.Den.Port = cfg.ClientPort
+	written, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(l.InstanceConfig, append(written, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = install(t, f, "v1.1.0", "main", Options{})
+	if err == nil || !strings.Contains(err.Error(), "--den-port") {
+		t.Fatalf("update over clashing ports: %v, want a refusal naming --den-port", err)
+	}
+	if got := stateOf(t, f, "main"); got.Version != "v1.0.0" {
+		t.Fatalf("the refused update changed the state to %+v", got)
+	}
+	if err := install(t, f, "v1.1.0", "main", Options{DenPort: freePort(t)}); err != nil {
+		t.Fatalf("update with the den moved: %v", err)
 	}
 }
 

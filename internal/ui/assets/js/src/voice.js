@@ -21,6 +21,7 @@
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
+import { NO_CALLS, NO_SHARING, canCall, canShare } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
 
 const MIC = 'DENS_MIC';
@@ -187,6 +188,11 @@ export function onCall(fn) {
 // the den's and the channel's names, to show while the call lasts.
 export async function joinCall(den, channel, label) {
     start();
+    if (!canCall()) {
+        notice = { text: NO_CALLS };
+        notify();
+        return;
+    }
     if (call && call.den === den && call.channel === channel && call.status !== 'reconnecting') return;
     clearTimeout(rejoinTimer);
     rejoinTimer = null;
@@ -1317,6 +1323,11 @@ export function setShareSettings(changes) {
 export async function startShare() {
     const c = call;
     if (!c || share) return;
+    if (!canShare()) {
+        shareNotice = { text: NO_SHARING };
+        notify();
+        return;
+    }
     if (!denView) await loadDen(c);
     if (call !== c || share || !denView) return;
     shareNotice = null;

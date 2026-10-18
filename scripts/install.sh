@@ -9,7 +9,7 @@
 # Download this script and install.sh.cosign.bundle, verify them, then run:
 #   sudo sh install.sh                        install, or update an installation
 #   sudo sh install.sh --dry-run              show what would change
-#   sudo sh install.sh --instance NAME --den  another instance, hosting a den
+#   sudo sh install.sh --instance NAME        another instance
 #   sudo sh install.sh --uninstall            remove an instance and its data
 # Other options go to "dens install"; see "dens install --help".
 #

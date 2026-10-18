@@ -1,7 +1,6 @@
 // Package service runs the parts of the service process: the control
 // endpoint for the desktop user's CLI, the client listener for their
-// browser, the den listener when this instance hosts a den, and the update
-// checker.
+// browser, the den listener while hosting is on, and the update checker.
 package service
 
 import (
@@ -9,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -19,15 +16,14 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/client"
-	"github.com/Data-Corruption/dens.chat/internal/platform/http/den"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/server"
-	"github.com/Data-Corruption/dens.chat/internal/sfu"
 )
 
 // Run binds every listener, reports ready, and serves until ctx is
 // cancelled or a part fails. Binding comes first so that readiness means
-// the whole service is reachable.
+// the whole service is reachable: with hosting on, the den too, unless it
+// can't start, which leaves the rest serving so the page can say why.
 func Run(ctx context.Context, a *app.App, ready func()) error {
 	l := a.Layout
 	controlLn, err := host.ListenControl(l.ControlEndpoint, a.Instance.DesktopUser)
@@ -39,33 +35,18 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		_ = controlLn.Close()
 		return fmt.Errorf("client listener: %w", err)
 	}
-	var denLn net.Listener
-	if a.Instance.Den.Enabled {
-		closeAll := func() {
-			_ = controlLn.Close()
-			for _, ln := range clientLns {
-				_ = ln.Close()
-			}
-		}
-		denLn, err = net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(a.Instance.Den.Port)))
-		if err != nil {
-			closeAll()
-			return fmt.Errorf("den listener: %w", err)
-		}
-		if err := startCalls(a); err != nil {
-			closeAll()
-			_ = denLn.Close()
-			return err
-		}
-		a.Den.StartRetention()
-		a.Den.StartPruning()
-	}
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	errorLog := log.New(logWriter{a}, "", 0)
 	var wg sync.WaitGroup
-	failures := make(chan error, 4)
+	failures := make(chan error, 8)
+	fail := func(err error) {
+		select {
+		case failures <- err:
+		default:
+		}
+		cancel()
+	}
 	start := func(name string, run func(context.Context) error) {
 		wg.Add(1)
 		go func() {
@@ -75,11 +56,20 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 				if err == nil {
 					err = errors.New("stopped unexpectedly")
 				}
-				failures <- fmt.Errorf("%s: %w", name, err)
-				cancel()
+				fail(fmt.Errorf("%s: %w", name, err))
 			}
 		}()
 	}
+
+	hosting := newHosting(ctx, a, errorLog, fail)
+	if err := hosting.start(); err != nil {
+		_ = controlLn.Close()
+		for _, ln := range clientLns {
+			_ = ln.Close()
+		}
+		return fmt.Errorf("hosting: %w", err)
+	}
+	a.Hosting = hosting
 
 	controlServer := &control.Server{
 		Allowed:      a.Instance.DesktopUser,
@@ -91,19 +81,6 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	start("client listener", func(ctx context.Context) error {
 		return server.Serve(ctx, client.New(a), errorLog, clientLns...)
 	})
-	if denLn != nil {
-		start("den listener", func(ctx context.Context) error {
-			err := server.Serve(ctx, den.New(a), errorLog, denLn)
-			// The listener is closed now, so clients told to reconnect
-			// can't reach this process again. Closing the sockets ends
-			// their calls, and then the media ports close.
-			a.Den.CloseSockets(3 * time.Second)
-			if stopErr := a.Den.StopCalls(); stopErr != nil {
-				a.Log.Warnf("stop calls: %v", stopErr)
-			}
-			return err
-		})
-	}
 	start("update checker", func(ctx context.Context) error { return a.RunUpdateChecker(ctx, func() {}) })
 	start("den connections", a.Dens.Run)
 
@@ -111,6 +88,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	if l.Dev && a.Lease.Mode == maintenance.StartMigrate {
 		if err := maintenance.MarkDevReady(l, a.BuildInfo().Version); err != nil {
 			cancel()
+			hosting.close()
 			wg.Wait()
 			return err
 		}
@@ -119,6 +97,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	ready()
 
 	<-ctx.Done()
+	hosting.close()
 	wg.Wait()
 	close(failures)
 	var joined error
@@ -137,29 +116,4 @@ type logWriter struct{ a *app.App }
 func (w logWriter) Write(p []byte) (int, error) {
 	w.a.Log.Warnf("http: %s", p)
 	return len(p), nil
-}
-
-// startCalls binds the den's media ports on every interface, IPv4 and
-// IPv6, and runs calls on them. Pion's own messages name addresses, so
-// they reach the log only in development instances.
-func startCalls(a *app.App) error {
-	udp, err := net.ListenUDP("udp", &net.UDPAddr{Port: a.Instance.Den.MediaUDPPort})
-	if err != nil {
-		return fmt.Errorf("media UDP port: %w", err)
-	}
-	tcp, err := net.Listen("tcp", ":"+strconv.Itoa(a.Instance.Den.MediaTCPPort))
-	if err != nil {
-		_ = udp.Close()
-		return fmt.Errorf("media TCP port: %w", err)
-	}
-	var cfg sfu.Config
-	if a.DevMode() {
-		cfg.Log = func(s string) { a.Log.Debugf("%s", s) }
-	}
-	if err := a.Den.StartCalls(udp, tcp, cfg); err != nil {
-		_ = udp.Close()
-		_ = tcp.Close()
-		return fmt.Errorf("start calls: %w", err)
-	}
-	return nil
 }
