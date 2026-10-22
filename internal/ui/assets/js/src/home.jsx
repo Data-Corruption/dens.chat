@@ -8,6 +8,7 @@ import { api } from './api.js';
 import { onEvent } from './events.js';
 import { DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
+import { restartDens, updateNotice } from './flatpak.js';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
 import { KeyNeeded, PendingSignIns, RecoveryCodes, SignInRequests, SignInSteps } from './private.jsx';
@@ -65,13 +66,7 @@ export function Home({ status, navigate }) {
 
     return (
         <>
-            {status.updateVersion && (
-                <div role="status" class="alert alert-info">
-                    <span>
-                        Dens {status.updateVersion} is available. To update, run: <code>{status.updateCommand}</code>
-                    </span>
-                </div>
-            )}
+            <UpdateNotice status={status} />
             {!view ? (
                 <Waiting label="Waiting for Dens on this computer…" />
             ) : (
@@ -89,6 +84,31 @@ export function Home({ status, navigate }) {
                     onPending={(id) => setAdding((a) => ({ ...a, pending: id }))} />
             )}
         </>
+    );
+}
+
+// UpdateNotice says an update is there, and what installs it: a command for
+// an installed Dens, and for the Flatpak, a button where Dens may install
+// it or restart into it, or the software center (M9.3).
+function UpdateNotice({ status }) {
+    const notice = updateNotice(status);
+    const act = useAction();
+    if (!notice) return null;
+    const go = () => act.run(() => restartDens(notice.action === 'update' ? '/api/update' : '/api/restart'));
+    return (
+        <div role="status" class="alert alert-info flex flex-wrap">
+            <span>
+                {notice.text}
+                {notice.command && <> <code>{notice.command}</code></>}
+            </span>
+            {notice.action && (
+                <button type="button" class="btn btn-sm" disabled={act.busy} onClick={go}>
+                    {act.busy && <span class="loading loading-spinner loading-sm"></span>}
+                    {act.busy ? 'Restarting…' : notice.label}
+                </button>
+            )}
+            <ErrorText message={act.error} />
+        </div>
     );
 }
 

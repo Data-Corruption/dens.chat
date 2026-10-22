@@ -2,6 +2,7 @@
 // app renders once the document has loaded.
 
 import { render } from 'preact';
+import { setPageVersion } from './api.js';
 import { initTheme } from './theme.js';
 import { App } from './app.jsx';
 
@@ -9,5 +10,7 @@ initTheme();
 
 document.addEventListener('DOMContentLoaded', () => {
     const root = document.getElementById('app');
-    render(<App instance={root.dataset.instance || 'main'} version={root.dataset.version || ''} />, root);
+    setPageVersion(root.dataset.version || '');
+    render(<App instance={root.dataset.instance || 'main'} version={root.dataset.version || ''} pair={root.dataset.pair || ''}
+        pairLink={root.dataset.pairLink || ''} />, root);
 });

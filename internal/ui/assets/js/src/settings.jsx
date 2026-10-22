@@ -13,6 +13,7 @@ import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
 import { Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
 import { formatSize } from './files.jsx';
+import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { NO_CALLS, NO_SHARING, canCall, canShare, here } from './platform.js';
@@ -47,7 +48,7 @@ const SECTIONS = [
 
 // SettingsDialog shows a tab of the settings. It closes with its ✕,
 // Escape or a click outside it.
-export function SettingsDialog({ section, onSection, onClose, instance, version }) {
+export function SettingsDialog({ section, onSection, onClose, instance, version, pair }) {
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && onClose();
         document.addEventListener('keydown', escape);
@@ -56,7 +57,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version 
     let panel;
     if (section === 'chat') panel = <ChatSettings />;
     else if (section === 'voice') panel = <VoiceSettings />;
-    else if (section === 'system') panel = <SystemSettings instance={instance} version={version} />;
+    else if (section === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <ThemePicker />;
     return (
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -545,7 +546,7 @@ function ShareSettings() {
 
 // SystemSettings holds hosting, the cache, update checks, the local
 // password, logging, signing this browser out, and the version.
-function SystemSettings({ instance, version }) {
+function SystemSettings({ instance, version, pair }) {
     const [settings, setSettings] = useState(null);
     const load = useAction();
     const save = useAction();
@@ -564,9 +565,9 @@ function SystemSettings({ instance, version }) {
     if (!settings) {
         return load.error ? <ErrorText message={load.error} /> : <span class="loading loading-spinner"></span>;
     }
-    const command = instance === 'main' ? 'dens open' : `dens open --instance ${instance}`;
     return (
         <>
+            {settings.remember && <OnThisComputer settings={settings} onChange={setSettings} />}
             <Hosting />
             <Cache settings={settings} onChange={setSettings} />
             {settings.updatesManaged && (
@@ -578,6 +579,14 @@ function SystemSettings({ instance, version }) {
                     <p class="text-sm text-base-content/70">A check asks the release host for the newest version, which sees this computer's IP address.</p>
                 </Card>
             )}
+            {settings.updatesThroughFlatpak && (
+                <Card title="Updates">
+                    <Toggle id="update-notices" label="Show a notice when an update is available" checked={settings.updateNotifications}
+                        onChange={(on) => change('updateNotifications', on)} />
+                    <p class="text-sm text-base-content/70">Flatpak checks for updates, and installs them with your other apps.</p>
+                </Card>
+            )}
+            <BackUp />
             <LocalPassword />
             <Card title="Logging">
                 <Field label="Log level">
@@ -589,7 +598,9 @@ function SystemSettings({ instance, version }) {
             <ErrorText message={save.error} />
             <Card title="This browser">
                 <p class="text-sm text-base-content/70">
-                    Signing out unpairs this browser. To pair it again, run <code class="rounded bg-base-300 px-1">{command}</code>.
+                    {pair
+                        ? <>Signing out unpairs this browser. To pair it again, run <code class="rounded bg-base-300 px-1">{pair}</code>.</>
+                        : 'Signing out unpairs this browser. To pair it again, open Dens from your apps menu.'}
                 </p>
                 <div>
                     <button type="button" class="btn btn-outline btn-sm" onClick={() => save.run(async () => {
@@ -615,6 +626,151 @@ function SystemSettings({ instance, version }) {
                 </p>
             </Card>
         </>
+    );
+}
+
+// OnThisComputer is what only the Flatpak has (M9.3): remembering its key,
+// so it starts unlocked, which turning on takes the local password for,
+// and which the keyring may take a while to answer; starting at sign-in
+// once it remembers; and quitting, which no service manager does for it.
+function OnThisComputer({ settings, onChange }) {
+    const [asking, setAsking] = useState(false);
+    const [password, setPassword] = useState('');
+    const [quit, setQuit] = useState(false);
+    const act = useAction();
+    const remember = settings.remember;
+    const reload = async () => onChange(await api.get('/api/settings'));
+    useEffect(() => {
+        if (!remember.asking) return undefined;
+        const timer = setInterval(() => reload().catch(() => {}), 1500);
+        return () => clearInterval(timer);
+    }, [remember.asking]);
+
+    function change(on) {
+        act.setError('');
+        setPassword('');
+        if (on) return setAsking(true);
+        act.run(async () => {
+            await api.post('/api/remember', { on: false });
+            await reload();
+        });
+    }
+    function turnOn(e) {
+        e.preventDefault();
+        act.run(async () => {
+            await api.post('/api/remember', { on: true, password });
+            setAsking(false);
+            await reload();
+        });
+    }
+
+    if (quit) {
+        return (
+            <Card title="Dens has quit">
+                <p class="text-sm">Open it again from your apps menu.</p>
+            </Card>
+        );
+    }
+    const note = rememberNote(remember);
+    return (
+        <Card title="On this computer">
+            <Toggle id="remember" label="Remember on this computer" checked={asking || remember.on || remember.asking}
+                disabled={act.busy || remember.asking} onChange={change}
+                hint="Dens opens without your local password, and when you sign in. Programs you run could open it too." />
+            {asking ? (
+                <form class="flex flex-col gap-2" onSubmit={turnOn}>
+                    <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+                        <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
+                    </Field>
+                    <div class="flex gap-2">
+                        <SubmitButton busy={act.busy}>Remember</SubmitButton>
+                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</button>
+                    </div>
+                </form>
+            ) : (
+                <>
+                    <p class="text-sm text-base-content/70" role={remember.asking ? 'status' : undefined}>{note.text}</p>
+                    {note.problem && <p class="text-sm text-warning">{note.problem}</p>}
+                </>
+            )}
+            {remember.on && !asking && (
+                <>
+                    <Toggle id="start-at-sign-in" label="Start Dens when you sign in" checked={settings.startAtSignIn.on} disabled={act.busy}
+                        onChange={(on) => act.run(async () => {
+                            const startAtSignIn = await api.post('/api/start-at-sign-in', { on });
+                            onChange({ ...settings, startAtSignIn });
+                        })} />
+                    {settings.startAtSignIn.manual && (
+                        <p class="text-sm text-base-content/70">
+                            Your desktop can't start Dens itself. Have it run this when you sign in:{' '}
+                            <code class="rounded bg-base-300 px-1">{settings.startAtSignIn.manual}</code>
+                        </p>
+                    )}
+                </>
+            )}
+            <div>
+                <button type="button" class="btn btn-outline btn-sm" disabled={act.busy} onClick={() => act.run(async () => {
+                    await api.post('/api/quit');
+                    setQuit(true);
+                })}>
+                    Quit Dens
+                </button>
+            </div>
+            <ErrorText message={act.error} />
+        </Card>
+    );
+}
+
+// BackUp downloads a backup, as dens backup writes it, after the local
+// password, which protects it (M9.3).
+function BackUp() {
+    const [asking, setAsking] = useState(false);
+    const [password, setPassword] = useState('');
+    const [done, setDone] = useState(false);
+    const act = useAction();
+
+    function submit(e) {
+        e.preventDefault();
+        act.run(async () => {
+            const { url } = await api.post('/api/backup', { password });
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '';
+            document.body.append(link);
+            link.click();
+            link.remove();
+            setPassword('');
+            setAsking(false);
+            setDone(true);
+        });
+    }
+
+    return (
+        <Card title={<>Backup <DocsTip id="docs-backups" page="backups/">What a backup holds, and restoring one here or on another computer.</DocsTip></>}>
+            <p class="text-sm text-base-content/70">Your dens, keys and settings, and a den you host, protected by your local password. Not the cache.</p>
+            {asking ? (
+                <form class="flex flex-col gap-2" onSubmit={submit}>
+                    <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+                        <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
+                    </Field>
+                    <div class="flex gap-2">
+                        <SubmitButton busy={act.busy}>Download the backup</SubmitButton>
+                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</button>
+                    </div>
+                </form>
+            ) : (
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="button" class="btn btn-sm" onClick={() => {
+                        setDone(false);
+                        setAsking(true);
+                    }}>
+                        Back up
+                    </button>
+                    {done && <span class="text-sm text-success" role="status">Your browser is downloading the backup.</span>}
+                </div>
+            )}
+            <ErrorText message={act.error} />
+        </Card>
     );
 }
 
@@ -661,6 +817,13 @@ function Hosting() {
     );
     if (!hosting) {
         return <Card title={title}>{act.error ? <ErrorText message={act.error} /> : <span class="loading loading-dots loading-sm"></span>}</Card>;
+    }
+    if (hostingNote(hosting)?.cantHost) {
+        return (
+            <Card title={title}>
+                <p class="text-sm text-base-content/70">{hostingNote(hosting).cantHost}</p>
+            </Card>
+        );
     }
     const on = asking ? asking === 'on' : hosting.enabled;
     const note = asking ? null : hostingNote(hosting);

@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,6 +80,7 @@ func New(a *app.App) http.Handler {
 	r.Get("/den/*", rt.handlePage)
 	r.Post("/api/pair", rt.handlePair)
 	r.Group(func(r chi.Router) {
+		r.Use(rt.requireThisVersion)
 		r.Use(rt.requireSession)
 		r.Get("/api/status", rt.handleStatus)
 		r.Post("/api/unlock", rt.handleUnlock)
@@ -99,6 +101,31 @@ func New(a *app.App) http.Handler {
 		})
 	})
 	return r
+}
+
+// Headers between the page and the service: the version of Dens that
+// served the page, which it names in every request, and the service's
+// answer to a page another version served.
+const (
+	pageVersionHeader = "Dens-Page-Version"
+	reloadHeader      = "Dens-Reload"
+)
+
+// requireThisVersion refuses a request from a page another version of
+// Dens served, as one open across an update that restarted the service
+// (M9.3): it answers 409, which has the page load again, from this version,
+// rather than ask in a shape this version may not know. A request that
+// names no version, as a script's, passes.
+func (rt *router) requireThisVersion(next http.Handler) http.Handler {
+	version := rt.a.BuildInfo().Version
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if page := r.Header.Get(pageVersionHeader); page != "" && page != version {
+			w.Header().Set(reloadHeader, version)
+			jsonError(w, http.StatusConflict, "Dens was updated; this page loads again.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireUnlocked refuses what needs the data key while the Flatpak waits
@@ -177,7 +204,23 @@ func hashToken(token string) string {
 func (rt *router) pageData(title string) map[string]any {
 	data := rt.a.UI.PageData(title, rt.a.BuildInfo().Version)
 	data["Instance"] = rt.a.Layout.Instance
+	data["Pair"], data["PairLink"] = rt.pairCommands()
 	return data
+}
+
+// pairCommands are what pair a browser with this instance: open, which
+// opens the page in the default browser, dens open, or none in the
+// Flatpak, which pairs as it's opened from the apps menu (M9.3); and link,
+// which prints the link to open in any other.
+func (rt *router) pairCommands() (open, link string) {
+	name, args := rt.a.BuildInfo().Name, "open"
+	if instance := rt.a.Layout.Instance; instance != layout.DefaultInstance {
+		args += " --instance " + instance
+	}
+	if rt.a.Layout.Form == layout.Flatpak {
+		return "", fmt.Sprintf("flatpak run --command=%s %s %s --print", name, layout.DesktopID, args)
+	}
+	return name + " " + args, name + " " + args + " --print"
 }
 
 func (rt *router) handlePage(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +264,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if f := rt.a.Flatpak; f != nil {
 		settings["remember"] = rt.a.Remembering()
 		settings["startAtSignIn"] = f.StartAtSignIn()
+		settings["updatesThroughFlatpak"] = true
 	}
 	writeJSON(w, settings)
 }

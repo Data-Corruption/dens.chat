@@ -12,8 +12,12 @@ export function hostingAsk(enabled, on) {
 // hostingNote is the line under the switch, or null while hosting is off:
 // why the den doesn't serve while hosting is on, as when another program
 // holds one of its ports, or, while it serves, where Caddy and the router
-// send it.
+// send it. A form that hosts no den, as the Flatpak (M9.3), has no switch,
+// only the line on what hosting needs.
 export function hostingNote(h) {
+    if (h.can_host === false) {
+        return { cantHost: 'Hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in.' };
+    }
     if (h.enabled && !h.serving) return { problem: h.problem || "The den hasn't started yet." };
     if (h.serving) return { address: `127.0.0.1:${h.den_port}`, udp: h.media_udp_port, tcp: h.media_tcp_port };
     return null;
