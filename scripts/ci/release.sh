@@ -560,6 +560,12 @@ make_installer_test_snapshot() {
   printf '%s\n' "$version" > "$destination/version"
 }
 
+# test_changed_installers tests the installers about to be published
+# against the release they'll install now, and the one they'll install once
+# the root version moves. The lifecycle flows check this tree's behavior, so
+# they run only against a release this run built; any other, such as the
+# release currently offered, or one a push without a new version reuses, is
+# installed through the installer alone (--installer-only).
 test_changed_installers() {
   [[ "${#RELEASE_INSTALLERS_TO_PUBLISH[@]}" -gt 0 ]] || return 0
 
@@ -567,13 +573,14 @@ test_changed_installers() {
     local current_snapshot="$OUT_DIR/lifecycle-e2e-current"
     make_installer_test_snapshot "$RELEASE_CURRENT_VERSION" "$OUT_DIR/remote-current" "$current_snapshot"
     run_step "Installer works with current release $RELEASE_CURRENT_VERSION" "Installer failed against current release $RELEASE_CURRENT_VERSION" \
-      bash scripts/test-lifecycle-e2e.sh --release-dir "$current_snapshot" --distros debian
+      bash scripts/test-lifecycle-e2e.sh --release-dir "$current_snapshot" --distros debian --installer-only
   fi
 
-  local staged_snapshot="$OUT_DIR/lifecycle-e2e-staged"
+  local staged_snapshot="$OUT_DIR/lifecycle-e2e-staged" scope=()
+  $RELEASE_BUILD_REQUIRED || scope=(--installer-only)
   make_installer_test_snapshot "$VERSION" "$VERSION_DIR" "$staged_snapshot"
   run_step "Installer works with staged release $VERSION" "Installer failed against staged release $VERSION" \
-    bash scripts/test-lifecycle-e2e.sh --release-dir "$staged_snapshot" --distros debian
+    bash scripts/test-lifecycle-e2e.sh --release-dir "$staged_snapshot" --distros debian "${scope[@]}"
 }
 
 publish_installer() {

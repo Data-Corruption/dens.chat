@@ -133,7 +133,11 @@ Pull requests always run validation and never contact the release host.
    their signatures and checksums.
 3. Generate the installer scripts from the project settings. Test changed
    installers against both the new version and the version currently offered,
-   then sign and upload them.
+   then sign and upload them. The lifecycle harness's flows check this tree's
+   behavior, so they run only against a release this run built; any other,
+   such as the version currently offered, or the one a push without a new
+   version reuses, is installed through the installer alone, verifying its
+   signature, and uninstalled (`--installer-only`).
 4. Update the root `version` file to make the new release available.
 5. Record the release commit and publication time, push the Git tag, and remove
    old releases under the retention rule.

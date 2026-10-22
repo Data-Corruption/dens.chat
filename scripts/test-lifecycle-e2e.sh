@@ -13,6 +13,7 @@
 #   ./scripts/test-lifecycle-e2e.sh                          # every distro
 #   ./scripts/test-lifecycle-e2e.sh --distros "debian arch"
 #   ./scripts/test-lifecycle-e2e.sh --release-dir DIR        # a staged release
+#   ./scripts/test-lifecycle-e2e.sh --release-dir DIR --installer-only
 #   ./scripts/test-lifecycle-e2e.sh --backup FILE            # first distro restores FILE
 #   KEEP_FAILED=true ./scripts/test-lifecycle-e2e.sh         # keep failed containers
 #
@@ -23,6 +24,13 @@
 # snapshot (root version pointer, install.sh, releases/) has no newer
 # release, so those steps are skipped. Either way the first release comes
 # from scripts/vendor.sh's pin (scripts/test/first-release.sh).
+#
+# The flows check this tree's behavior, so they fit only a release built
+# from it. --installer-only, for a snapshot of a release built from another
+# commit, as the release pipeline tests changed installers against the
+# release currently offered, installs through install.sh, verifying the
+# release's signatures, checks that the service answers as that release,
+# and uninstalls.
 #
 # Logs go to out/lifecycle-e2e-logs/<run>/: one file per distro, the backup
 # each distro made, and a summary. --backup takes a backup made elsewhere,
@@ -45,15 +53,21 @@ ALL_DISTROS="debian-12 debian-13 ubuntu-24.04 ubuntu-26.04 fedora-43 fedora-44 a
 DISTROS=$ALL_DISTROS
 SNAPSHOT=""
 BACKUP=""
+INSTALLER_ONLY=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --distros) DISTROS=$2; shift 2 ;;
     --release-dir) SNAPSHOT=$2; shift 2 ;;
     --backup) BACKUP=$2; shift 2 ;;
+    --installer-only) INSTALLER_ONLY=true; shift ;;
     *) printf "error: unknown argument '%s'\n" "$1" >&2; exit 1 ;;
   esac
 done
+if $INSTALLER_ONLY && [[ -z "$SNAPSHOT" ]]; then
+  echo "error: --installer-only needs --release-dir: fixture releases are unsigned" >&2
+  exit 1
+fi
 
 case "${KEEP_FAILED:-false}" in
   true) KEEP_FAILED=true ;;
@@ -130,7 +144,7 @@ if [[ -n "$SNAPSHOT" ]]; then
   cp -a "$SNAPSHOT/." "$RELEASE/"
   V1=$(tr -d '\r\n' < "$RELEASE/version")
   V2=""
-  scripts/test/first-release.sh "$RELEASE" "$target"
+  $INSTALLER_ONLY || scripts/test/first-release.sh "$RELEASE" "$target"
 else
   echo ">> Building fixture releases ..."
   scripts/test/fixture-releases.sh "$RELEASE" "$target"
@@ -157,6 +171,10 @@ guest() {
 run_distro() {
   local distro=$1 name=$2 previous=$3
   launch "$distro" "$name" || return
+  if $INSTALLER_ONLY; then
+    guest "$name" installer
+    return
+  fi
   if [[ -n "$previous" ]]; then
     "${INCUS[@]}" file push -q "$previous" "$name/root/previous.backup" || return
   fi
