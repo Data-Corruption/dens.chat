@@ -47,6 +47,7 @@ type router struct {
 	// pageOrigin is where browsers load the page (M4.1).
 	pageOrigin string
 	youTube    *youtube.Lookup
+	backups    backups
 }
 
 // New returns the client listener's handler.
@@ -56,6 +57,7 @@ func New(a *app.App) http.Handler {
 		cookieName: "dens_session_" + strconv.Itoa(a.Instance.ClientPort),
 		pageOrigin: guard.PageOrigin(a.Instance.ClientPort),
 		youTube:    youtube.New(),
+		backups:    backups{links: map[string]time.Time{}},
 	}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
@@ -90,6 +92,8 @@ func New(a *app.App) http.Handler {
 			r.Post("/api/settings", rt.handleSettingsUpdate)
 			r.Post("/api/cache/clear", rt.handleClearCache)
 			r.Post("/api/shortcuts/desktop", rt.handleShortcutsDesktop)
+			rt.mountBackups(r)
+			rt.mountFlatpak(r)
 			rt.mountDens(r)
 			rt.mountYouTube(r)
 		})
@@ -202,7 +206,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	usage := rt.a.Dens.CacheUsage()
-	writeJSON(w, map[string]any{
+	settings := map[string]any{
 		"logLevel":               cfg.LogLevel,
 		"logLevels":              strings.Split(xlog.ValidLevels, "|"),
 		"updateNotifications":    cfg.UpdateNotifications,
@@ -211,7 +215,14 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"cacheLimit":             usage.Limit,
 		"cacheUsed":              usage.Used,
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
-	})
+	}
+	// What only the Flatpak has (M9.3): its remembered key, starting at
+	// sign-in, and updates through Flatpak.
+	if f := rt.a.Flatpak; f != nil {
+		settings["remember"] = rt.a.Remembering()
+		settings["startAtSignIn"] = f.StartAtSignIn()
+	}
+	writeJSON(w, settings)
 }
 
 // handleShortcutsDesktop passes what the member asks of a desktop that owns
@@ -332,6 +343,12 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
 		status["updateVersion"] = latest
 		status["updateCommand"] = rt.a.UpdateCommand()
+	}
+	// The Flatpak's notice is Flatpak's update monitor's (M9.3).
+	if f := rt.a.Flatpak; f != nil && cfg.UpdateNotifications {
+		if u := f.Update(); u.Available || u.Installed {
+			status["flatpakUpdate"] = u
+		}
 	}
 	writeJSON(w, status)
 }

@@ -428,6 +428,13 @@ type Stream struct {
 	once sync.Once
 }
 
+// NewStream is a stream on conn with no request before it, as the
+// Flatpak's shortcut helper keeps with its hub over a pipe, inside the
+// service (M9.3).
+func NewStream(conn net.Conn) *Stream {
+	return &Stream{conn: conn, r: bufio.NewReader(conn)}
+}
+
 // Send writes a message of type t carrying d, which may be nil.
 func (s *Stream) Send(t string, d any) error {
 	msg := Message{T: t}

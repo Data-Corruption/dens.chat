@@ -16,6 +16,44 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 )
 
+// Flatpak is what the Flatpak's service does in the member's session
+// (M9.3), which the page asks of it.
+type Flatpak interface {
+	// Update is what Flatpak's update monitor found.
+	Update() FlatpakUpdate
+	// InstallUpdate has the monitor install the update. Nothing to update
+	// means something else installed it first: either way the newest build
+	// is installed, for StartNewest.
+	InstallUpdate(ctx context.Context) error
+	// StartNewest starts the newest build installed as a sandbox of its
+	// own, which waits for this one to stop; Quit stops this one.
+	StartNewest() error
+	Quit(why string)
+	// StartAtSignIn is whether Dens starts at the member's sign-in, which
+	// SetStartAtSignIn turns on or off.
+	StartAtSignIn() StartAtSignIn
+	SetStartAtSignIn(ctx context.Context, on bool) error
+}
+
+// FlatpakUpdate is the Flatpak's update notice (M9.3): an update on its
+// remote, Available, or one installed and not yet running, Installed; and
+// whether Dens may install it itself, or the software center does, and
+// why.
+type FlatpakUpdate struct {
+	Available  bool   `json:"available"`
+	Installed  bool   `json:"installed"`
+	CanInstall bool   `json:"can_install"`
+	Refused    string `json:"refused,omitempty"`
+}
+
+// StartAtSignIn is starting at sign-in as the settings show it: whether
+// Dens does, and where the desktop can't start it, the command to have it
+// start by hand.
+type StartAtSignIn struct {
+	On     bool   `json:"on"`
+	Manual string `json:"manual,omitempty"`
+}
+
 // flatpakInfo is the file Flatpak puts at the root of each sandbox it runs,
 // naming the app; tests point it elsewhere.
 var flatpakInfo = "/.flatpak-info"

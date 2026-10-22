@@ -61,6 +61,12 @@ type App struct {
 	Den *den.Den
 	// Hosting is the switch that serves it (M9.1), which the service runs.
 	Hosting Hosting
+	// Flatpak is what the Flatpak's service does in the member's session
+	// (M9.3); nil in the other forms.
+	Flatpak Flatpak
+	// RememberingChanged, if set, is told when the Flatpak's remembered
+	// copy of its key comes or goes (M9.3).
+	RememberingChanged func()
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
 	// Shortcuts carries the voice keys from the desktop user's helper to

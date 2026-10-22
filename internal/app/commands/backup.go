@@ -12,6 +12,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/pkg/xterm/prompt"
 
 	"github.com/urfave/cli/v3"
@@ -44,6 +45,11 @@ func backupCommand(bi build.BuildInfo) *cli.Command {
 
 			output := cmd.String("output")
 			dir := "."
+			if l.Form == layout.Flatpak {
+				// The sandbox writes only in the app's own folder, which
+				// the member finds at the same path.
+				dir = filepath.Dir(os.Getenv("XDG_DATA_HOME"))
+			}
 			if output != "" {
 				dir = filepath.Dir(output)
 				if _, err := os.Lstat(output); err == nil {

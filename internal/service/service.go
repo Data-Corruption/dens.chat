@@ -13,6 +13,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/control"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/client"
@@ -61,6 +62,12 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		}()
 	}
 
+	// A session form's service stops when asked, having no service manager
+	// to stop it.
+	quit := func(why string) {
+		a.Log.Infof("Stopping: %s", why)
+		cancel()
+	}
 	hosting := newHosting(ctx, a, errorLog, fail)
 	if err := hosting.start(); err != nil {
 		_ = controlLn.Close()
@@ -70,13 +77,16 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		return fmt.Errorf("hosting: %w", err)
 	}
 	a.Hosting = hosting
-
-	// A session form's service stops when asked, having no service manager
-	// to stop it.
-	quit := func(why string) {
-		a.Log.Infof("Stopping: %s", why)
-		cancel()
+	if l.Form == layout.Flatpak {
+		f := newFlatpak(ctx, a, quit)
+		a.Flatpak, a.RememberingChanged = f, f.resync
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f.run()
+		}()
 	}
+
 	controlServer := &control.Server{
 		Allowed:      a.Instance.DesktopUser,
 		Handlers:     controlHandlers(a, quit),

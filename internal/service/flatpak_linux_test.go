@@ -21,13 +21,16 @@ import (
 )
 
 // flatpakHome gives the Flatpak's layout the directories Flatpak gives its
-// sandbox, below the test's own.
+// sandbox, below the test's own, and a session bus that isn't there, so
+// the service reaches no desktop's portals: none takes Dens's name on the
+// developer's own bus, or has their desktop start it at sign-in.
 func flatpakHome(t *testing.T) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "app")
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
 	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(dir, "run"))
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+filepath.Join(dir, "no-bus"))
 }
 
 func flatpakBuild(version string) build.BuildInfo {
@@ -139,5 +142,26 @@ func TestFlatpakServiceStartsLockedAfterAnUpdate(t *testing.T) {
 	snapshots, err := os.ReadDir(l.Snapshot)
 	if err != nil || len(snapshots) != 1 || !strings.Contains(snapshots[0].Name(), "v1.0.0") {
 		t.Fatalf("the update's snapshot: %v, %v", snapshots, err)
+	}
+
+	// The shortcut helper runs inside the service once it's unlocked, over
+	// a pipe to the hub; with no desktop to read the keys from, it says
+	// why, once it has told the hub what it covers.
+	events, stopWatching := a.Shortcuts.Watch()
+	defer stopWatching()
+	timeout := time.After(10 * time.Second)
+	var last any
+	for {
+		select {
+		case e := <-events:
+			if e.Status != nil {
+				last = e.Status
+				if e.Status.Helper && e.Status.Problem != "" {
+					return
+				}
+			}
+		case <-timeout:
+			t.Fatalf("the helper didn't tell the hub why it reads no keys; the hub's status: %+v", last)
+		}
 	}
 }

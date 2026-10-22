@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -381,5 +382,35 @@ func TestDesktopKeysFromASandbox(t *testing.T) {
 	defer p.mu.Unlock()
 	if p.registered != "" {
 		t.Fatalf("a sandboxed app registered as %q", p.registered)
+	}
+}
+
+// A descriptor is taken for a launch's pipe only if it's a pipe: one that
+// nothing passed may be the process's own (M9.3).
+func TestInheritedPipeIsOnlyAPipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	fd, err := syscall.Dup(int(w.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipe := InheritedPipe(fd)
+	if pipe == nil {
+		t.Fatal("a pipe wasn't taken")
+	}
+	pipe.Close()
+	file, err := os.CreateTemp(t.TempDir(), "file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	for _, fd := range []int{int(file.Fd()), 2, 9999} {
+		if InheritedPipe(fd) != nil {
+			t.Errorf("descriptor %d was taken for a pipe", fd)
+		}
 	}
 }

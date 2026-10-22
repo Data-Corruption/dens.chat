@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
 )
 
 // The portals the Flatpak leans on (M9.3), from inside its sandbox: the
@@ -310,6 +311,18 @@ func SpawnLatest(argv []string, files ...*os.File) error {
 	var pid uint32
 	return p.conn.Object(flatpakPortalName, flatpakPortalPath).Call(flatpakPortal+".Spawn", 0,
 		cstring("/"), args, fds, map[string]string{}, uint32(spawnLatestVersion), map[string]dbus.Variant{}).Store(&pid)
+}
+
+// InheritedPipe is the pipe a process was given as descriptor fd, as dens
+// launch gives the service it starts one to say it's ready on (M9.3), or
+// nil where fd is anything else: a descriptor nothing passed may be the
+// process's own, which must not be closed under it.
+func InheritedPipe(fd int) *os.File {
+	var st unix.Stat_t
+	if fd <= 2 || unix.Fstat(fd, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFIFO {
+		return nil
+	}
+	return os.NewFile(uintptr(fd), "pipe")
 }
 
 // FlatpakUpdate is what Flatpak's update monitor found (M9.3): the commits

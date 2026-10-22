@@ -343,3 +343,31 @@ func TestSessionServiceQuitsWhenAsked(t *testing.T) {
 		t.Fatal("the service didn't stop when asked")
 	}
 }
+
+// The page downloads a backup as dens backup writes it, after the local
+// password, from a link that works once and soon goes (M9.3).
+func TestPageDownloadsABackup(t *testing.T) {
+	a, client := startDevService(t)
+	b := pair(t, a, client)
+	b.expect(http.StatusForbidden, "a backup with a wrong password", "POST", "/api/backup", map[string]string{"password": "wrong wrong wrong"})
+	var link struct {
+		URL string `json:"url"`
+	}
+	b.expect(http.StatusOK, "a backup", "POST", "/api/backup", map[string]string{"password": localPassword}, &link)
+	req, _ := http.NewRequest("GET", b.base+link.URL, nil)
+	resp, err := b.http.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
+		t.Fatalf("the download: %d %v, %v", resp.StatusCode, resp.Header, err)
+	}
+	dir := t.TempDir()
+	manifest, err := backup.Extract(bytes.NewReader(archive), dir, backup.DefaultLimits)
+	if err != nil || manifest.Instance != a.Layout.Instance {
+		t.Fatalf("the archive: %+v, %v", manifest, err)
+	}
+	b.expect(http.StatusGone, "the link again", "GET", link.URL, nil)
+}

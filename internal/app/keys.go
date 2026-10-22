@@ -307,6 +307,13 @@ func (a *App) rememberInKeyring(secret []byte) {
 		a.Log.Errorf("Couldn't remove the copy of the key in a file: %v", err)
 	}
 	a.Log.Info("Remembered the key in the keyring")
+	a.rememberingChanged()
+}
+
+func (a *App) rememberingChanged() {
+	if a.RememberingChanged != nil {
+		a.RememberingChanged()
+	}
 }
 
 // Remembering says whether the Flatpak keeps a copy of its key that opens
@@ -386,6 +393,7 @@ func (a *App) startRemembering() {
 		a.keys.mu.Lock()
 		a.keys.problem = problem
 		a.keys.mu.Unlock()
+		a.rememberingChanged()
 	})
 }
 
@@ -448,6 +456,7 @@ func (a *App) forget() error {
 	}
 	if forgot {
 		a.Log.Info("Forgot the remembered key")
+		a.rememberingChanged()
 	}
 	return nil
 }

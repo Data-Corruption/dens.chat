@@ -3,18 +3,10 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"runtime"
-	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
-	"github.com/Data-Corruption/dens.chat/internal/backup"
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
-	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
@@ -107,56 +99,18 @@ type BackupResult struct {
 	Name string `json:"name"`
 }
 
-// backupReply streams an archive of a consistent database snapshot and the
-// uploads. The password check is the re-authentication a backup needs: the
-// archive carries the data key sealed under that password.
+// backupReply streams the archive of a backup. The password check is the
+// re-authentication a backup needs: the archive carries the data key
+// sealed under that password.
 func backupReply(ctx context.Context, a *app.App, password string) (control.Reply, error) {
 	if err := checkPassword(ctx, a, password, "making a backup"); err != nil {
 		return control.Reply{}, err
 	}
-	// The den takes no file off the disk from before the snapshot until
-	// the archive holds the uploads, so the archive has every file the
-	// snapshot names (M8).
-	release := a.Den.HoldFiles()
-	temp, err := os.MkdirTemp(a.Layout.Temp, "backup-")
+	name, archive, err := a.Backup(ctx)
 	if err != nil {
-		release()
 		return control.Reply{}, err
 	}
-	snapshot := filepath.Join(temp, "db.sqlite")
-	if err := database.Snapshot(ctx, a.DB, snapshot); err != nil {
-		release()
-		_ = os.RemoveAll(temp)
-		return control.Reply{}, err
-	}
-	now := time.Now().UTC()
-	manifest := backup.Manifest{
-		App:           a.BuildInfo().Name,
-		Version:       a.BuildInfo().Version,
-		SchemaVersion: database.SchemaVersion(a.BuildInfo()),
-		Instance:      a.Layout.Instance,
-		CreatedAt:     now,
-		Platform:      runtime.GOOS + "/" + runtime.GOARCH,
-	}
-	reader, writer := io.Pipe()
-	go func() {
-		skipped, err := backup.Write(writer, manifest, snapshot, a.Layout.Uploads)
-		release()
-		_ = writer.CloseWithError(err)
-		_ = os.RemoveAll(temp)
-		if skipped > 0 {
-			// Only a file whose upload failed as it was stored goes now,
-			// and no row names it.
-			a.Log.Infof("Backup left out %d files that went while it was written", skipped)
-		}
-		if err != nil {
-			a.Log.Warnf("backup did not finish: %v", err)
-		} else {
-			a.Log.Info("Backup written")
-		}
-	}()
-	name := fmt.Sprintf("%s-%s-%s.backup", a.BuildInfo().Name, a.Layout.Instance, now.Format("20060102-150405"))
-	return control.Reply{Result: BackupResult{Name: name}, Body: reader}, nil
+	return control.Reply{Result: BackupResult{Name: name}, Body: archive}, nil
 }
 
 // ownerInviteReply makes an invite that hands the den this instance hosts
