@@ -168,7 +168,7 @@ Each harness starts from Dens's first release, v1.0.0, as `scripts/vendor.sh` pi
 - A local image alias `dens-e2e/<distro>` takes precedence over the `images:` remote.
 - Debian 12 and Ubuntu 24.04 run privileged, since their systemd can't create its credential host secret in an unprivileged container. Privileged containers mount `binfmt_misc` read-only so systemd's shutdown can't clear the host's table, which on WSL holds Windows interop.
 
-`--release-dir DIR` tests a staged release snapshot instead, without the update step, though still updating from the first release to it; the release pipeline uses it to test changed installers.
+`--release-dir DIR` tests a staged release snapshot instead, without the update step, though still updating from the first release to it; the release pipeline uses it to test changed installers. The flows check this tree's behavior, which a release built from another commit may not have, as v1.0.0 has no hosting switch, so for such a release `--installer-only` installs it through `install.sh`, verifying its signature with cosign, checks that the service answers as that release, and uninstalls. The release pipeline passes it for every release it didn't build in that run.
 
 ### Windows
 

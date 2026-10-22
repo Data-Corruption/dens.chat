@@ -450,4 +450,22 @@ git init -q "$tmp/git-work"
 rm -rf "$PUBLISH_REMOTE"
 diff -r "$tmp/untouched" "$tmp/remote" || fail "publication touched objects outside its URL prefix"
 
+# Changed installers get the lifecycle flows, which check this tree's
+# behavior, only against a release this run built; against the release
+# currently offered, or one a push reuses, the installer alone.
+installer_tests() (
+  RELEASE_CURRENT_VERSION=$1 VERSION=$2 RELEASE_BUILD_REQUIRED=$3
+  RELEASE_INSTALLERS_TO_PUBLISH=(install.sh)
+  make_installer_test_snapshot() { :; }
+  run_step() { shift 2; printf '%s\n' "$*"; }
+  test_changed_installers
+)
+runs=$(installer_tests v1.0.0 v1.1.0 true)
+[[ "$runs" == *"lifecycle-e2e-current --distros debian --installer-only"* &&
+  "$runs" == *"lifecycle-e2e-staged --distros debian" && $(grep -c . <<<"$runs") -eq 2 ]] ||
+  fail "a new release's installers weren't tested as expected: $runs"
+runs=$(installer_tests v1.0.0 v1.0.0 false)
+[[ "$runs" == *"lifecycle-e2e-staged --distros debian --installer-only" && $(grep -c . <<<"$runs") -eq 1 ]] ||
+  fail "installers changed without a release weren't tested on their own: $runs"
+
 printf 'All release publication tests passed.\n'

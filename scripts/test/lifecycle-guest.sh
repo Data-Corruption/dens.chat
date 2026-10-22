@@ -7,6 +7,11 @@
 #                                     pair, turn hosting on and off, back up
 #   lifecycle-guest.sh after-reboot   check, update, second instance,
 #                                     restore, uninstall
+# or once, for a release built from another commit, whose behavior the
+# phases above don't describe:
+#   lifecycle-guest.sh installer      prepare, install through the
+#                                     installer, verifying the release,
+#                                     check it answers, uninstall
 # Environment: V1 and V2 are the fixture versions; V2 is empty when the
 # release has no newer version to update to. /release/first holds Dens's
 # first release.
@@ -128,7 +133,9 @@ first_release() {
     rm -f "$JAR"
 }
 
-phase_install() {
+# prepare readies the container: the unit's real sandbox, the tools the
+# installer and the harness need, and the users.
+prepare() {
     step "prepare the container"
     # LXC's drop-in turns off NoNewPrivileges, credentials and more for every
     # service; mask it so the unit runs as it would on a real machine.
@@ -164,7 +171,10 @@ phase_install() {
     fi
     useradd -m alice
     useradd -m mallory
+}
 
+phase_install() {
+    prepare
     [ ! -d /release/first ] || first_release
 
     step "the installer refuses v1.0's den option"
@@ -320,8 +330,29 @@ phase_after_reboot() {
     printf 'E2E AFTER-REBOOT PHASE PASSED\n'
 }
 
+# phase_installer installs a release built from another commit through
+# this tree's installer, as the release currently offered is while new
+# installers are published: the installer verifies the release's signature
+# with cosign, the service starts and answers as that release, and
+# uninstalling takes it all away.
+phase_installer() {
+    prepare
+    step "install $V1 through the installer, verifying it"
+    SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/
+    systemctl is-active --quiet dens@main || fail "dens@main is not running"
+    expect_state main "$V1"
+    as_alice dens status | grep -q "version:   $V1" || fail "the service doesn't answer as $V1"
+    [ -x /usr/local/lib/dens/cosign ] || fail "the installer didn't keep the cosign it verified with"
+
+    step "uninstall"
+    dens uninstall --yes
+    expect_uninstalled
+    printf 'E2E INSTALLER PHASE PASSED\n'
+}
+
 case ${1:-} in
     install) phase_install ;;
     after-reboot) phase_after_reboot ;;
-    *) printf 'usage: %s install|after-reboot\n' "$0" >&2; exit 2 ;;
+    installer) phase_installer ;;
+    *) printf 'usage: %s install|after-reboot|installer\n' "$0" >&2; exit 2 ;;
 esac
