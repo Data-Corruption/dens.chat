@@ -4,14 +4,17 @@
 # test-flatpak-e2e.sh for the flow. The member is alice, whose systemd user
 # manager runs her session bus and Flatpak's portal, and every call to the
 # Flatpak's local API goes through her paired browser session (a cookie
-# jar).
+# jar). The release host is a directory, served over HTTP, which the
+# release pipeline's publisher writes the Flatpak to (M9.4).
 
 set -eu
 
 APP=chat.dens.Dens
 JAR=/root/cookies
 BASE=http://127.0.0.1:8494
-REPO=/srv/dens/repo
+HOST=/srv/host
+HOST_URL=http://127.0.0.1:8080/
+REPO=$HOST/flatpak/repo
 PASSWORD='local password'
 export GNUPGHOME=/root/gnupg
 
@@ -116,25 +119,29 @@ prepare)
         sleep 0.2
     done
     as_alice systemctl --user daemon-reload
-    # A signing key, as the release's repository has.
+    # A signing key, as the release's repository has, and the release
+    # host the publisher writes to, served as the real one is.
     mkdir -p "$GNUPGHOME"
     chmod 0700 "$GNUPGHOME"
     gpg --batch --passphrase '' --quick-gen-key 'Dens e2e <e2e@dens.chat>' ed25519 sign never 2>/dev/null
-    mkdir -p /srv/dens
-    gpg --batch --export --armor > /srv/dens/key.asc
-    chmod -R a+rX /srv/dens
+    gpg --batch --export --armor > /root/key.asc
+    gpg --batch --export-secret-keys --armor > /root/key.secret.asc
+    gpgconf --kill gpg-agent
+    printf 'Dens for aarch64, which this container never runs\n' > /root/dens-aarch64
+    mkdir -p "$HOST"
+    systemd-run --unit=dens-host python3 -m http.server 8080 --bind 127.0.0.1 --directory "$HOST" >/dev/null
     ;;
-commit)
-    # commit VERSION: add the build of VERSION to the repository.
-    GPG_KEY=$(gpg --list-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }') \
-        bash /root/scripts/flatpak.sh commit "/root/dens-$1" "$1" "$REPO"
-    chmod -R a+rX /srv/dens
-    gpgconf --kill gpg-agent 2>/dev/null || :
+publish)
+    # publish VERSION: release VERSION, and publish its Flatpak as the
+    # release pipeline does.
+    bash /root/scripts/test/flatpak-release.sh release "$HOST" "$1" "/root/dens-$1" /root/dens-aarch64
+    bash /root/scripts/test/flatpak-release.sh publish "$HOST" "$HOST_URL" /root/key.secret.asc /root/key.asc >/root/publish.out 2>&1 ||
+        fail "publishing $1 failed: $(cat /root/publish.out)"
     ;;
 install)
-    as_alice flatpak --user remote-add --if-not-exists --gpg-import=/srv/dens/key.asc dens "file://$REPO"
-    # A static binary needs none of the runtime's extensions.
-    as_alice flatpak --user install -y --noninteractive --no-related dens "$APP"
+    # From the link the site gives, as a member does. A static binary
+    # needs none of the runtime's extensions.
+    as_alice flatpak --user install -y --noninteractive --no-related "${HOST_URL}flatpak/$APP.flatpakref"
     # The app may install its own updates, as KDE asks the member once.
     as_alice flatpak permission-set flatpak updates "$APP" yes
     ;;

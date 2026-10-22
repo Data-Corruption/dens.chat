@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 
-# Flatpak e2e (M9.3): Dens's Flatpak, made from this tree's binary into a
-# repository signed as the release's is, installed from it for a member and
-# run in a Debian 13 container with no desktop: the member's session bus is
-# her systemd user manager's, and Flatpak's portal checks for updates every
-# few seconds, which the app may install by itself. Two launches at once
+# Flatpak e2e (M9.3, M9.4): first the release pipeline's publisher of the
+# Flatpak, tested in a container of its own (test/flatpak-publish.sh). Then
+# Dens's Flatpak, made from this tree's binary and published by it to a
+# release host in a directory, served over HTTP, installed from its link
+# for a member and run in a Debian 13 container with no desktop: the
+# member's session bus is her systemd user manager's, and Flatpak's portal
+# checks for updates every few seconds, which the app may install by
+# itself. Two launches at once
 # start one service; the page's API pairs and sets the local password, and
 # a restarted service starts locked, until the password opens it; Remember,
 # with no keyring there to take it, keeps the key in a file, and the next
 # start is unlocked. The Flatpak joins a den behind Caddy in a second
 # container, as the den e2e's is hosted, trusting its certificate
-# authority. Flatpak's update monitor then finds the fixture's next version
-# in the repository, which the page installs, restarting into it, which
+# authority. Flatpak's update monitor then finds the fixture's next version,
+# once it's published, which the page installs, restarting into it, which
 # migrates after a snapshot of the data; the den reconnects. Rolled back to
 # the build before, Dens refuses the newer data and names the snapshot,
 # whose restore the rolled-back build takes, starting locked.
@@ -50,6 +53,7 @@ mkdir -p "$RUN_LOG_DIR"
 HARNESS_DIR=$(mktemp -d)
 DEN="dens-flatpak-e2e-den-$$"
 FLATPAK="dens-flatpak-e2e-$$"
+PUBLISHER="dens-flatpak-e2e-publish-$$"
 passed=false
 
 finish() {
@@ -58,9 +62,13 @@ finish() {
   "${INCUS[@]}" exec "$FLATPAK" -- sh -c 'cat /home/alice/.var/app/chat.dens.Dens/data/dens/main/data/logs/*.log' \
     >"$RUN_LOG_DIR/flatpak-service.log" 2>/dev/null || :
   if ! $passed && $KEEP_FAILED; then
-    echo ">> Kept $DEN and $FLATPAK for inspection: incus exec <name> -- bash"
+    echo ">> Kept $PUBLISHER, $DEN and $FLATPAK for inspection: incus exec <name> -- bash"
   else
-    "${INCUS[@]}" delete --force "$DEN" "$FLATPAK" >/dev/null 2>&1 || :
+    # One at a time: one already gone, as the publisher's once it passed,
+    # fails a delete of several, which then deletes none.
+    for name in "$PUBLISHER" "$DEN" "$FLATPAK"; do
+      "${INCUS[@]}" delete --force "$name" >/dev/null 2>&1 || :
+    done
   fi
   rm -rf "$HARNESS_DIR"
   if $passed; then
@@ -84,13 +92,12 @@ esac
 den() { timeout 600 "${INCUS[@]}" exec "$DEN" -- sh /root/den-guest.sh "$@"; }
 flatpak() { timeout 900 "${INCUS[@]}" exec "$FLATPAK" -- sh /root/flatpak-guest.sh "$@"; }
 
-# push_scripts NAME copies what the Flatpak's container runs: its steps,
-# and the script and files that make the commits.
+# push_scripts NAME copies what the Flatpak's containers run: their steps,
+# the scripts that make and publish the commits, and rclone.
 push_scripts() {
-  "${INCUS[@]}" exec "$1" -- mkdir -p /root/scripts
   "${INCUS[@]}" file push -q scripts/test/flatpak-guest.sh "$1/root/flatpak-guest.sh"
-  "${INCUS[@]}" file push -q scripts/flatpak.sh "$1/root/scripts/flatpak.sh"
-  "${INCUS[@]}" file push -q -r scripts/flatpak "$1/root/scripts/"
+  "${INCUS[@]}" file push -q -r scripts "$1/root/"
+  "${INCUS[@]}" file push -q --mode 0755 "$RCLONE" "$1/usr/local/bin/rclone"
 }
 
 # image makes the Flatpak's container image, once: Debian 13 with Flatpak,
@@ -110,17 +117,35 @@ image() {
   "${INCUS[@]}" delete --force "$maker"
 }
 
+# publisher tests the release pipeline's publisher of the Flatpak, in a
+# container of its own.
+publisher() {
+  echo ">> The Flatpak's publisher, in $PUBLISHER"
+  "${INCUS[@]}" init "$IMAGE" "$PUBLISHER" -c security.nesting=true >/dev/null
+  "${INCUS[@]}" start "$PUBLISHER"
+  wait_for_boot "$PUBLISHER"
+  push_scripts "$PUBLISHER"
+  if ! timeout 900 "${INCUS[@]}" exec "$PUBLISHER" -- bash /root/scripts/test/flatpak-publish.sh >"$RUN_LOG_DIR/publisher.log" 2>&1; then
+    tail -n 40 "$RUN_LOG_DIR/publisher.log" >&2
+    return 1
+  fi
+  tail -n 1 "$RUN_LOG_DIR/publisher.log"
+  "${INCUS[@]}" delete --force "$PUBLISHER" >/dev/null
+}
+
 run() {
   echo ">> Building the fixture releases and fetching Caddy ..."
   scripts/test/fixture-releases.sh "$HARNESS_DIR/release" "$target"
   local caddy first next
   caddy=$(./scripts/vendor.sh caddy | sed -n 's/^caddy=//p')
+  RCLONE=$(./scripts/vendor.sh rclone | sed -n 's/^rclone=//p')
   first=v99.0.1-e2e
   next=v99.0.2-e2e
   gzip -dc "$HARNESS_DIR/release/releases/$first/$target.gz" >"$HARNESS_DIR/dens-$first"
   gzip -dc "$HARNESS_DIR/release/next/releases/$next/$target.gz" >"$HARNESS_DIR/dens-$next"
 
   image
+  publisher
   echo ">> Hosting a den behind Caddy, as the den e2e does"
   launch_container debian-13 "$DEN"
   push_release "$DEN" "$HARNESS_DIR/release"
@@ -140,7 +165,7 @@ run() {
   [[ -n "$den_ip" ]] || { echo "error: the den container has no IPv4 address" >&2; return 1; }
   "${INCUS[@]}" file pull -q "$DEN/root/.local/share/caddy/pki/authorities/local/root.crt" - >"$HARNESS_DIR/den-ca.crt"
 
-  echo ">> Installing the Flatpak of $first from its repository"
+  echo ">> Installing the Flatpak of $first from the link its publication wrote"
   echo ">> Launching $FLATPAK from $IMAGE"
   "${INCUS[@]}" init "$IMAGE" "$FLATPAK" -c security.nesting=true >/dev/null
   "${INCUS[@]}" start "$FLATPAK"
@@ -152,7 +177,7 @@ run() {
   done
   "${INCUS[@]}" file push -q "$HARNESS_DIR/den-ca.crt" "$FLATPAK/root/den-ca.crt"
   flatpak prepare
-  flatpak commit "$first"
+  flatpak publish "$first"
   flatpak install
 
   echo ">> Two launches at once open the page, from one service"
@@ -181,8 +206,8 @@ run() {
   [[ "$(flatpak join "$invite")" == member ]] || { echo "error: the Flatpak didn't join as a member" >&2; return 1; }
   flatpak wait-connected
 
-  echo ">> Flatpak's update monitor finds $next, which the page installs, restarting into it"
-  flatpak commit "$next"
+  echo ">> Flatpak's update monitor finds $next once it's published, which the page installs, restarting into it"
+  flatpak publish "$next"
   flatpak wait-update
   flatpak update "$next"
   flatpak wait-connected
