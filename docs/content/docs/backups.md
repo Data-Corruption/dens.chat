@@ -9,15 +9,17 @@ you move to another computer.
 
 ## Making a backup
 
-Run this as yourself, not as admin:
+In Dens's settings, under System, choose **Back up**. It asks for your local
+password, and your browser downloads the backup: one file, named like
+`dens-main-20261012-153000.backup`. The file is locked with your local password,
+so keep the two apart.
+
+Or run this as yourself, not as admin, which writes the file into the folder you
+ran it from (`--output` picks another place):
 
 ```sh
 dens backup
 ```
-
-It asks for your local password, and writes one file into the folder you ran it
-from, named like `dens-main-20261012-153000.backup` (`--output` picks another
-place). The file is locked with your local password, so keep the two apart.
 
 A backup holds everything except the cache of other dens' messages and files,
 which fills up again by itself.

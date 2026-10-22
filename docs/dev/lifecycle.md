@@ -1,6 +1,6 @@
 # Lifecycle
 
-What every form shares of the lifecycle: when the service agrees to start, and the locks that keep each instance to one process; then development instances, and the harnesses that test it all. The design doc explains the reasons; [installed.md](installed.md) has the installed service's paths, permissions and transactions. Read them before changing `internal/layout`, `internal/maintenance`, `internal/install` or the installer scripts.
+What every form shares of the lifecycle: when the service agrees to start, and the locks that keep each instance to one process; then development instances, and the harnesses that test it all. The design doc explains the reasons; [installed.md](installed.md) has the installed service's paths, permissions and transactions, and [flatpak.md](flatpak.md) the Flatpak's. Read them before changing `internal/layout`, `internal/maintenance`, `internal/install` or the installer scripts.
 
 Terms used below:
 
@@ -20,6 +20,8 @@ When the service starts, `maintenance.AuthorizeStart` compares the state with th
 | Transitional, target `V` | Applies pending migrations, then starts. In `restoring` it also clears the restored browser sessions. |
 | Anything else | Records why and exits with status 78 (a service-specific exit code on Windows), which neither service manager retries |
 
+A session form's service, a development instance's or the Flatpak's, has no installer to publish its transitions: it takes its lifecycle lock first, and only then reads `state.json` and decides, publishing what an installer would (`maintenance.SessionStart`; see Development instances, and [flatpak.md](flatpak.md)). It publishes `ready` itself once it has started.
+
 A service that refuses to start, or stops on an error, writes the reason to its log once the log is open. It also goes to the journal on Linux (`journalctl -u dens@<name>`, from the service's error output) and to the Application event log on Windows, under the source `dens-<name>` that install registers. Those two cover failures from before the log opens.
 
 A service that stops on any other error is started again: by the unit's `Restart=on-failure` on Linux, and on Windows by the SCM's recovery actions, after 5 seconds, 5 more, then 30, counted over a day. The SCM answers only a crash with them, so on such an error the service ends its process without reporting the stop (M8).
@@ -31,6 +33,8 @@ A service that stops on any other error is started again: by the unit's `Restart
 | `operation.lock` | Maintenance commands | Exclusive; waits up to 5 minutes for another command |
 | `lifecycle.lock` | The service, for its whole run | Exclusive without waiting; a second copy refuses to start. In production the service opens the file read-only, since it can't write the control directory. |
 | `lifecycle.lock` | Maintenance commands, after stopping the service | Exclusive; waits up to 30 seconds |
+| `lifecycle.lock` | A session form's service, before it reads the lifecycle state | Exclusive. A development instance's second copy refuses at once; the Flatpak's waits up to 30 seconds, for an older build handing over to it (M9.3) |
+| `launch.lock`, in the Flatpak's runtime directory | `dens launch`, while it starts the service | Exclusive; waits for another launch, so two at once start one service (M9.3) |
 
 Holding `lifecycle.lock` proves the service is down. A transaction over several instances takes each lock in instance-name order, so two commands can't deadlock.
 
@@ -40,14 +44,14 @@ Holding `lifecycle.lock` proves the service is down. A transaction over several 
 
 - Storage is under `$XDG_DATA_HOME/dens-dev/<name>` (`~/.local/share/dens-dev` by default), or `%LOCALAPPDATA%\Dens-dev\<name>`. The control endpoint is `$XDG_RUNTIME_DIR/dens-dev/<name>/control.sock`, or `\\.\pipe\dens-dev-<name>-control`.
 - The data key is a plaintext file, `control/datakey.dev`. Development data isn't protected; don't put real data in it.
-- There are no transactions. The instance marks itself ready for the running version, and migrates whenever the version changes.
+- There are no transactions. Under its lifecycle lock, the instance publishes a transition to the running version, and migrates whichever way the version moved, since its data is disposable; a restore's stays one. It marks itself ready once started.
 - `--port` sets the client port when the instance is first created; it's recorded in `instance.json` after that.
 - `--den-port` gives the instance's den that port and turns its hosting on, as the settings would. Its owner can give it a loopback address such as `http://127.0.0.1:18485`, so a second development instance can join it without Caddy.
 - `--media-udp-port` and `--media-tcp-port` move the den's calls off 7881 and 7882, so two development instances can host dens on one machine. A browser on Windows can't call a den running in WSL: under mirrored networking the two share an address, and WSL keeps what it sends to that address. Try calls with the browser and the instances on one system.
 - The den's rate limits are lifted, so `scripts/dev/seed-chat.sh <instance> [count]` can fill a channel with thousands of messages, ending with a reply to the first, for testing the message list by hand.
 - It refuses to run as root, and maintenance commands refuse development builds.
 
-The same binary's `open`, `status` and `backup` talk to the development instance.
+The same binary's `open`, `status` and `backup` talk to the development instance, and its `restore` replaces the instance's data as you, stopping its service first (see Restoring in [flatpak.md](flatpak.md)).
 
 ## Testing the lifecycle
 
