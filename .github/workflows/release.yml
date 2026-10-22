@@ -281,6 +281,12 @@ jobs:
       - name: Set up Incus
         uses: ./.github/actions/setup-incus
 
+      # Ubuntu 24.04 lets a program make user namespaces only where an
+      # AppArmor profile names it, and none does in a container, where the
+      # Flatpak's sandbox makes them as the member.
+      - name: Let containers make user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Run Flatpak E2E
         run: ./scripts/test.sh -flatpak-e2e
 

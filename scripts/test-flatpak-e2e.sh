@@ -44,6 +44,14 @@ case "${KEEP_FAILED:-false}" in
   *) echo "error: KEEP_FAILED must be true or false" >&2; exit 1 ;;
 esac
 [[ $# -eq 0 ]] || { echo "usage: $0" >&2; exit 2; }
+# The Flatpak's sandbox makes user namespaces in its container, as the
+# member, which an AppArmor that restricts them, as Ubuntu 24.04's does,
+# refuses.
+if [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" == 1 ]]; then
+  echo "error: AppArmor restricts user namespaces, which the Flatpak's sandbox makes in its container;" >&2
+  echo "  'sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0' lifts that until the next boot" >&2
+  exit 1
+fi
 
 # shellcheck source=test/incus.sh
 source scripts/test/incus.sh
