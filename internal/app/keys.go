@@ -66,6 +66,9 @@ type keyState struct {
 	cancelAsk context.CancelFunc
 	answered  chan struct{}
 	problem   string
+	// forgotten counts the times the member turned Remember off, so a
+	// request that began before writes no copy after.
+	forgotten int
 }
 
 // backgroundLocked runs f under a context of the keys' own, which Close
@@ -195,14 +198,19 @@ func (a *App) UnlockWithPassword(ctx context.Context, password string, remember 
 		return err
 	}
 	defer clear(key)
+	// The member's choice applies before anything waiting on the unlock
+	// wakes, as a request to the keyring that would remember anew.
+	on := a.Remembering().On
+	if !remember && on {
+		if err := a.forget(); err != nil {
+			return err
+		}
+	}
 	if err := a.unlockWith(key, "the local password"); err != nil {
 		return err
 	}
-	switch on := a.Remembering().On; {
-	case remember && !on:
+	if remember && !on {
 		a.startRemembering()
-	case !remember && on:
-		return a.forget()
 	}
 	return nil
 }
@@ -247,6 +255,7 @@ func (a *App) TryKeyring() {
 	}
 	a.keys.mu.Lock()
 	defer a.keys.mu.Unlock()
+	forgotten := a.keys.forgotten
 	a.keys.backgroundLocked(func(ctx context.Context) {
 		var stale []byte
 		for range 2 {
@@ -268,7 +277,7 @@ func (a *App) TryKeyring() {
 			}
 			sum := sha256.Sum256(secret)
 			if stale != nil && bytes.Equal(stale, sum[:]) && !a.Locked() {
-				a.rememberInKeyring(secret)
+				a.rememberAnew(secret, forgotten)
 				clear(secret)
 				return
 			}
@@ -286,6 +295,18 @@ func (a *App) TryKeyring() {
 			}
 		}
 	})
+}
+
+// rememberAnew keeps a copy of the key sealed with the keyring's secret in
+// place of one that stopped opening, unless the member has turned Remember
+// off since the request began, forgotten times before.
+func (a *App) rememberAnew(secret []byte, forgotten int) {
+	a.keys.mu.Lock()
+	defer a.keys.mu.Unlock()
+	if a.keys.forgotten != forgotten {
+		return
+	}
+	a.rememberInKeyring(secret)
 }
 
 // rememberInKeyring keeps a copy of the key sealed with the keyring's
@@ -445,20 +466,33 @@ func (a *App) forget() error {
 		cancel()
 		<-done
 	}
-	forgot := false
-	for _, path := range []string{a.Layout.KeyringKey, a.Layout.HostKey} {
-		switch err := os.Remove(path); {
-		case err == nil:
-			forgot = true
-		case !errors.Is(err, fs.ErrNotExist):
-			return fmt.Errorf("forget the remembered key: %w", err)
-		}
+	forgot, err := a.removeCopies()
+	if err != nil {
+		return err
 	}
 	if forgot {
 		a.Log.Info("Forgot the remembered key")
 		a.rememberingChanged()
 	}
 	return nil
+}
+
+// removeCopies deletes the remembered copies, counting the forgetting for
+// the requests under way, which then remember nothing anew.
+func (a *App) removeCopies() (bool, error) {
+	a.keys.mu.Lock()
+	defer a.keys.mu.Unlock()
+	a.keys.forgotten++
+	removed := false
+	for _, path := range []string{a.Layout.KeyringKey, a.Layout.HostKey} {
+		switch err := os.Remove(path); {
+		case err == nil:
+			removed = true
+		case !errors.Is(err, fs.ErrNotExist):
+			return removed, fmt.Errorf("forget the remembered key: %w", err)
+		}
+	}
+	return removed, nil
 }
 
 // PasswordChosen does what the Flatpak does as the local password is first
