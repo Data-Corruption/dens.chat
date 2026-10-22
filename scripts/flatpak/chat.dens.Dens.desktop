@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Dens
+GenericName=Chat
+Comment=Self-hosted chat for small communities
+Exec=dens launch
+Icon=chat.dens.Dens
+Terminal=false
+StartupNotify=false
+Categories=Network;Chat;InstantMessaging;

@@ -9,6 +9,7 @@
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
+#   ./scripts/test.sh -flatpak-e2e                 # the Flatpak, made from this tree, in a container
 #   ./scripts/test.sh -windows                     # Go tests on the Windows host (WSL only)
 #   ./scripts/test.sh -all                         # every available suite
 #
@@ -32,6 +33,7 @@ EOF
   -release  Test the release publication state machine
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
   -den-e2e  Test joining a den through Caddy; remaining arguments go to test-den-e2e.sh
+  -flatpak-e2e  Test the Flatpak, made from this tree's binary, in a container
   -windows  From WSL, run the Go tests natively on the Windows host
   -all      Run every available suite
 EOF
@@ -103,10 +105,10 @@ run_windows_tests() {
   done
   while IFS= read -r test_exe; do
     # The command registry's test, the notices', the Windows resource
-    # objects' and the protocol's error codes' read the module's source,
-    # which the Windows side doesn't have.
+    # objects', the protocol's error codes' and the mark's copies' read the
+    # module's source, which the Windows side doesn't have.
     if (cd "$(dirname "$test_exe")" && timeout 600 "$test_exe" -test.count=1 \
-      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule|TestCommittedObjects|TestKnownCodes' </dev/null >"$test_exe.log" 2>&1); then
+      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule|TestCommittedObjects|TestKnownCodes|TestMarkCopiesAreTheMark' </dev/null >"$test_exe.log" 2>&1); then
       printf 'ok    %s\n' "$(basename "$test_exe" .test.exe)"
     else
       printf 'FAIL  %s\n' "$(basename "$test_exe" .test.exe)"
@@ -141,8 +143,12 @@ run_shell_lint() {
     scripts/test/fixture-releases.sh
     scripts/test-den-e2e.sh
     scripts/test/den-guest.sh
+    scripts/test-flatpak-e2e.sh
+    scripts/test/flatpak-guest.sh
+    scripts/flatpak.sh
     scripts/test/browser/*.sh
     scripts/dev/seed-chat.sh
+    scripts/dev/flatpak-vm.sh
     scripts/install.sh
   )
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
@@ -204,6 +210,10 @@ case "$mode" in
   -den-e2e)
     bash scripts/test-den-e2e.sh "$@"
     ;;
+  -flatpak-e2e)
+    require_no_args "-flatpak-e2e" "$@"
+    bash scripts/test-flatpak-e2e.sh
+    ;;
   -windows)
     require_no_args "-windows" "$@"
     run_windows_tests
@@ -216,6 +226,7 @@ case "$mode" in
     run_release_tests
     run_lifecycle_e2e
     bash scripts/test-den-e2e.sh
+    bash scripts/test-flatpak-e2e.sh
     ;;
   -h|--help)
     require_no_args "$mode" "$@"

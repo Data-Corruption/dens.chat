@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Dens's AppStream data, which software centers list it by (M9.3).
+     scripts/flatpak.sh fills in the release. -->
+<component type="desktop-application">
+  <id>chat.dens.Dens</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Dens</name>
+  <summary>Self-hosted chat for small communities</summary>
+  <description>
+    <p>Dens is chat for small communities, hosted by their own members: text, direct messages, voice and screen share. Its page opens in your browser.</p>
+    <p>This Flatpak joins dens. Hosting one needs Dens installed on Linux or Windows.</p>
+  </description>
+  <launchable type="desktop-id">chat.dens.Dens.desktop</launchable>
+  <url type="homepage">https://dens.chat</url>
+  <developer id="chat.dens">
+    <name>Dens</name>
+  </developer>
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+  <!-- An empty rating has GNOME Software say the app has no chat. -->
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-audio">intense</content_attribute>
+  </content_rating>
+</component>
