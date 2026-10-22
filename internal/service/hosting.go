@@ -89,6 +89,9 @@ func (h *hosting) Set(_ context.Context, on bool) error {
 	if h.closed {
 		return errors.New("the service is stopping")
 	}
+	if on && !h.a.CanHost() {
+		return app.ErrCantHost
+	}
 	if on {
 		if h.stop == nil {
 			if err := h.startDenLocked(true); err != nil {

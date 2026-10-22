@@ -30,8 +30,11 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 				if err != nil {
 					return err
 				}
-				if l.Form.Session() {
-					return fmt.Errorf("%s instances have no service manager; run %s service run in a terminal", l.Form, bi.Name)
+				switch l.Form {
+				case layout.Development:
+					return fmt.Errorf("development instances have no service manager; run %s service run in a terminal", bi.Name)
+				case layout.Flatpak:
+					return errors.New("the Flatpak has no service manager: open Dens from your apps menu to start it, and quit it from its settings")
 				}
 				return run(l)
 			},

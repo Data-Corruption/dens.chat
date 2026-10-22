@@ -150,6 +150,9 @@ func backupReply(ctx context.Context, a *app.App, password string) (control.Repl
 // password is all it takes: that's also the way back for an owner locked
 // out of their account.
 func ownerInviteReply(ctx context.Context, a *app.App, password string) (control.Reply, error) {
+	if !a.CanHost() {
+		return control.Reply{}, control.Errorf("the %s hosts no den", a.Layout.Form)
+	}
 	if !a.Hosting.State().On {
 		return control.Reply{}, control.Errorf("hosting is off; turn it on in Dens's settings, then make the invite")
 	}

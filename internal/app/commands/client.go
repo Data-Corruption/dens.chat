@@ -53,8 +53,11 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 		if l.Instance != layout.DefaultInstance {
 			flag = " --instance " + l.Instance
 		}
-		if l.Form == layout.Development {
+		switch l.Form {
+		case layout.Development:
 			return fmt.Errorf("the development service for instance %s isn't running; start it with: %s service run%s: %w", l.Instance, bi.Name, flag, err)
+		case layout.Flatpak:
+			return fmt.Errorf("Dens isn't running; open it from your apps menu, or start it with: flatpak run %s: %w", layout.DesktopID, err)
 		}
 		start := bi.Name + " service start" + flag
 		return fmt.Errorf("the Dens service for instance %s isn't running; start it with: %s: %w", l.Instance, host.AdminCommand(start), err)

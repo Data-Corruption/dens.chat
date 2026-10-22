@@ -124,6 +124,9 @@ func (e *PortError) Error() string {
 
 func (e *PortError) Unwrap() error { return e.Err }
 
+// ErrCantHost is turning hosting on in a form that hosts no den.
+var ErrCantHost = errors.New("hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in")
+
 // ErrNoPassword reports that no local password has been set yet.
 var ErrNoPassword = errors.New("no local password is set yet")
 
@@ -141,12 +144,46 @@ func New(buildInfo build.BuildInfo) *App {
 func (a *App) BuildInfo() build.BuildInfo { return a.buildInfo }
 
 // FormOf is the form a process of this build runs in (M9): a development
-// build's is Development, and every other's Installed.
+// build's is Development; the release binary in Dens's Flatpak sandbox the
+// Flatpak, so it runs as it is; and every other Installed.
 func FormOf(bi build.BuildInfo) layout.Form {
-	if bi.DevMode {
+	switch {
+	case bi.DevMode:
 		return layout.Development
+	case inFlatpak():
+		return layout.Flatpak
 	}
 	return layout.Installed
+}
+
+// flatpakInfo is the file Flatpak puts at the root of each sandbox it runs,
+// naming the app; tests point it elsewhere.
+var flatpakInfo = "/.flatpak-info"
+
+// inFlatpak reports whether this process runs in Dens's Flatpak sandbox:
+// one whose /.flatpak-info and FLATPAK_ID both name Dens's app ID. Another
+// app's sandbox is no Flatpak of Dens, whose socket and portals go by
+// Dens's ID.
+func inFlatpak() bool {
+	if os.Getenv("FLATPAK_ID") != layout.DesktopID {
+		return false
+	}
+	data, err := os.ReadFile(flatpakInfo)
+	if err != nil {
+		return false
+	}
+	section := ""
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = line[1 : len(line)-1]
+			continue
+		}
+		if name, ok := strings.CutPrefix(line, "name="); ok && section == "Application" {
+			return name == layout.DesktopID
+		}
+	}
+	return false
 }
 
 // OpenOptions select the instance and a development instance's defaults.
@@ -346,6 +383,8 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 	var on bool
 	var why string
 	switch {
+	case !a.CanHost():
+		on, why = false, "since the "+a.Layout.Form.String()+" hosts no den"
 	case phase == maintenance.PhaseRestoring:
 		on, why = false, "after the restore"
 	case devDen && a.Layout.Form == layout.Development:
@@ -367,6 +406,17 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 		c.Hosting = &on
 		return nil
 	})
+}
+
+// CanHost reports whether the instance may host its den. The Flatpak may
+// not: it runs in the member's session, which a den has to outlive, and
+// has no Caddy beside it (M9.3).
+func (a *App) CanHost() bool {
+	switch a.Layout.Form {
+	case layout.Flatpak:
+		return false
+	}
+	return true
 }
 
 // emptyDir removes everything in dir, leaving dir itself.
@@ -444,6 +494,9 @@ func (a *App) prepareSession(opts OpenOptions) error {
 		}
 		cfg = instance.Default(l.Instance)
 		cfg.DesktopUser = me
+		if l.Form == layout.Flatpak {
+			cfg.ClientPort = instance.FlatpakClientPort
+		}
 		if opts.DevClientPort != 0 {
 			cfg.ClientPort = opts.DevClientPort
 		}
@@ -451,14 +504,17 @@ func (a *App) prepareSession(opts OpenOptions) error {
 	} else if err != nil {
 		return err
 	}
-	if opts.DevDenPort != 0 && cfg.Den.Port != opts.DevDenPort {
-		cfg.Den.Port = opts.DevDenPort
-		changed = true
-	}
-	for i, port := range []*int{&cfg.Den.MediaUDPPort, &cfg.Den.MediaTCPPort} {
-		if p := opts.DevMediaPorts[i]; p != 0 && *port != p {
-			*port = p
+	// The den's ports matter only where the instance may host.
+	if l.Form == layout.Development {
+		if opts.DevDenPort != 0 && cfg.Den.Port != opts.DevDenPort {
+			cfg.Den.Port = opts.DevDenPort
 			changed = true
+		}
+		for i, port := range []*int{&cfg.Den.MediaUDPPort, &cfg.Den.MediaTCPPort} {
+			if p := opts.DevMediaPorts[i]; p != 0 && *port != p {
+				*port = p
+				changed = true
+			}
 		}
 	}
 	if changed {

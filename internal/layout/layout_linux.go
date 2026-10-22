@@ -39,6 +39,26 @@ func (l *Layout) resolve() error {
 			l.Runtime = filepath.Join(runtimeDir, l.App+"-dev", l.Instance)
 		}
 		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
+	case Flatpak:
+		// Flatpak points the XDG directories at the app's own, under
+		// ~/.var/app/<app ID>, and shares $XDG_RUNTIME_DIR/app/<app ID>
+		// between every sandbox of the app, so a launch reaches the
+		// service another sandbox runs.
+		dirs := map[string]string{}
+		for _, name := range []string{"XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
+			dir := os.Getenv(name)
+			if !filepath.IsAbs(dir) {
+				return fmt.Errorf("the Flatpak's %s is %q, not an absolute path", name, dir)
+			}
+			dirs[name] = dir
+		}
+		l.Root = filepath.Join(dirs["XDG_DATA_HOME"], l.App, l.Instance)
+		l.derive()
+		l.Cache = filepath.Join(dirs["XDG_CACHE_HOME"], l.App, l.Instance)
+		l.HostKey = filepath.Join(l.Control, "datakey.file")
+		l.KeyringKey = filepath.Join(l.Control, "datakey.keyring")
+		l.Runtime = filepath.Join(dirs["XDG_RUNTIME_DIR"], "app", DesktopID, l.Instance)
+		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
 	default:
 		return fmt.Errorf("no layout for the %s", l.Form)
 	}

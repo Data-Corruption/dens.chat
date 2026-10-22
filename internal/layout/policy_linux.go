@@ -64,7 +64,11 @@ func (l Layout) EnsureSession() error {
 	if !l.Form.Session() {
 		return fmt.Errorf("EnsureSession called on the %s layout", l.Form)
 	}
-	for _, base := range []string{filepath.Dir(l.Root), filepath.Dir(l.Runtime)} {
+	bases := []string{filepath.Dir(l.Root), filepath.Dir(l.Runtime)}
+	if filepath.Dir(l.Cache) != l.Data {
+		bases = append(bases, filepath.Dir(l.Cache))
+	}
+	for _, base := range bases {
 		if err := os.MkdirAll(base, 0o700); err != nil {
 			return fmt.Errorf("create the %s instances' directory: %w", l.Form, err)
 		}
@@ -119,7 +123,8 @@ func checkOwned(path string, dir bool, uid, gid int, perm fs.FileMode) error {
 
 // ServiceControlFiles are the control files the service reads and checks.
 // On Linux the installed data key is root-only, and systemd decrypts it for
-// the service; a development instance reads its own.
+// the service; a development instance reads its own. The Flatpak's copies
+// of its key are there only while it keeps them, and are checked as read.
 func (l Layout) ServiceControlFiles() []string {
 	files := []string{l.State, l.LifecycleLock, l.InstanceConfig}
 	if l.Form == Development {

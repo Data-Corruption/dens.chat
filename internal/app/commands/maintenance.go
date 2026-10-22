@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/install"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/pkg/xterm/prompt"
 
 	"github.com/urfave/cli/v3"
@@ -33,6 +35,9 @@ func installCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "print what would change, and change nothing"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak, which Flatpak installs and updates; dens install installs Dens where its installer runs"); err != nil {
+				return err
+			}
 			if cmd.IsSet("den") {
 				return errors.New("--den is gone: every install can host a den, and hosting is turned on and off in Dens's settings, in the System tab")
 			}
@@ -61,6 +66,9 @@ func updateCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "skip-verify", Usage: "don't verify the installer or the release, for unsigned test releases (a release refuses it)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak: update it in your software center, or with: flatpak update "+layout.DesktopID); err != nil {
+				return err
+			}
 			return install.Update(ctx, install.NewSystem(bi.Name), bi, install.Options{
 				Instance:   cmd.String("instance"),
 				ReleaseURL: cmd.String("release-url"),
@@ -79,6 +87,9 @@ func uninstallCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "print what would be removed, and remove nothing"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak: remove it in your software center, or with: flatpak uninstall "+layout.DesktopID+", which keeps its data unless you add --delete-data"); err != nil {
+				return err
+			}
 			name := cmd.String("instance")
 			if !cmd.Bool("yes") && !cmd.Bool("dry-run") {
 				fmt.Printf("This deletes instance %s and all of its data, including its keys.\n", name)
@@ -122,6 +133,15 @@ func restoreCommand(bi build.BuildInfo) *cli.Command {
 			return install.Restore(ctx, install.NewSystem(bi.Name), bi, install.Options{Instance: name}, cmd.Args().First(), password)
 		},
 	}
+}
+
+// refuseFlatpak refuses a maintenance command in the Flatpak, which
+// Flatpak installs, updates and removes (M9.3), saying why.
+func refuseFlatpak(bi build.BuildInfo, why string) error {
+	if app.FormOf(bi) == layout.Flatpak {
+		return errors.New(why)
+	}
+	return nil
 }
 
 func confirm(question string) error {

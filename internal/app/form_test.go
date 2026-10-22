@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
@@ -11,19 +13,49 @@ import (
 )
 
 // A development build runs as a development instance, and every other
-// build, a test release's too, as an installed one (M9.2).
+// build, a test release's too, as an installed one (M9.2), but in Dens's
+// Flatpak sandbox, where it's the Flatpak (M9.3).
 func TestFormOfBuild(t *testing.T) {
+	release := build.BuildInfo{Name: "dens", Version: "v1.1.0"}
 	for _, c := range []struct {
 		bi   build.BuildInfo
 		want layout.Form
 	}{
 		{build.BuildInfo{Name: "dens", Version: "v0.0.0-dev", DevMode: true}, layout.Development},
-		{build.BuildInfo{Name: "dens", Version: "v1.1.0"}, layout.Installed},
+		{release, layout.Installed},
 		{build.BuildInfo{Name: "dens", Version: "v99.0.1-e2e"}, layout.Installed},
 	} {
 		if got := FormOf(c.bi); got != c.want {
 			t.Errorf("FormOf(%s, dev %v) = %s, want %s", c.bi.Version, c.bi.DevMode, got, c.want)
 		}
+	}
+
+	info := filepath.Join(t.TempDir(), ".flatpak-info")
+	saved := flatpakInfo
+	flatpakInfo = info
+	t.Cleanup(func() { flatpakInfo = saved })
+	for _, c := range []struct {
+		why, id, info string
+		want          layout.Form
+	}{
+		{"Dens's sandbox", layout.DesktopID, "[Application]\nname=chat.dens.Dens\nruntime=runtime/org.freedesktop.Platform/x86_64/26.08\n\n[Instance]\nname=other\n", layout.Flatpak},
+		{"another app's sandbox", "org.example.Other", "[Application]\nname=org.example.Other\n", layout.Installed},
+		{"an ID the sandbox doesn't have", layout.DesktopID, "[Application]\nname=org.example.Other\n", layout.Installed},
+		{"no sandbox", layout.DesktopID, "", layout.Installed},
+	} {
+		_ = os.Remove(info)
+		if c.info != "" {
+			if err := os.WriteFile(info, []byte(c.info), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Setenv("FLATPAK_ID", c.id)
+		if got := FormOf(release); got != c.want {
+			t.Errorf("%s: FormOf = %s, want %s", c.why, got, c.want)
+		}
+	}
+	if got := FormOf(build.BuildInfo{Name: "dens", Version: "v0.0.0-dev", DevMode: true}); got != layout.Development {
+		t.Errorf("a development build in the sandbox runs as %s", got)
 	}
 }
 
