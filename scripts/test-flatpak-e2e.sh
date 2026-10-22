@@ -17,7 +17,9 @@
 # once it's published, which the page installs, restarting into it, which
 # migrates after a snapshot of the data; the den reconnects. Rolled back to
 # the build before, Dens refuses the newer data and names the snapshot,
-# whose restore the rolled-back build takes, starting locked.
+# whose restore the rolled-back build takes, starting locked. Updated
+# again outside Dens, as the software center does, the page's next look
+# finds the update, which Dens restarts into.
 #
 # The Flatpak's container starts from a local image, dens-e2e/flatpak, with
 # Flatpak, the member and the freedesktop runtime installed, which the
@@ -221,6 +223,13 @@ run() {
   flatpak unlock
   [[ "$(flatpak status | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" == "$first" ]] ||
     { echo "error: the restored instance runs $(flatpak status)" >&2; return 1; }
+  flatpak wait-connected
+
+  echo ">> Updated outside Dens, as the software center does, the page's next look finds it, and restarts into it"
+  flatpak update-outside
+  flatpak wait-installed "$next"
+  flatpak restart "$next"
+  flatpak unlock
   flatpak wait-connected
   passed=true
 }

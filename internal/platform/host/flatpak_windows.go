@@ -29,6 +29,8 @@ func Notify(string, string, string) error { return errors.ErrUnsupported }
 
 func SpawnLatest([]string, ...*os.File) error { return errors.ErrUnsupported }
 
+func SpawnLatestOutput(context.Context, []string) ([]byte, error) { return nil, errors.ErrUnsupported }
+
 func InheritedPipe(int) *os.File { return nil }
 
 type FlatpakUpdate struct {

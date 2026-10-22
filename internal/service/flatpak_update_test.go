@@ -116,3 +116,61 @@ func TestFlatpakUpdateNotice(t *testing.T) {
 		t.Fatalf("restarted with %v", spawned)
 	}
 }
+
+// An update something else installed, as the software center does, shows
+// as the page next asks (M9.4): the newest build installed, asked its
+// version from a sandbox of its own, at most every 30 seconds, is newer
+// than the running one. One the same or older is no update, and one that
+// answers nothing leaves the notice as it was.
+func TestFlatpakCheckInstalled(t *testing.T) {
+	a := app.New(build.BuildInfo{Name: "dens", Version: "v1.2.0"})
+	var err error
+	if a.Log, err = xlog.New(t.TempDir(), "error"); err != nil {
+		t.Fatal(err)
+	}
+	defer a.Log.Close()
+	ctx := context.Background()
+	f := newFlatpak(ctx, a, func(string) {})
+	var asked [][]string
+	answer, failure := `{"name":"dens","version":"v1.2.0"}`, error(nil)
+	f.output = func(_ context.Context, argv []string) ([]byte, error) {
+		asked = append(asked, argv)
+		return []byte(answer), failure
+	}
+	// check asks once the last ask is 30 seconds old.
+	check := func() app.FlatpakUpdate {
+		f.mu.Lock()
+		f.checked = time.Now().Add(-checkEvery)
+		f.mu.Unlock()
+		f.CheckInstalled(ctx)
+		return f.Update()
+	}
+
+	if u := check(); u.Installed {
+		t.Fatalf("with the running build the newest: %+v", u)
+	}
+	if strings.Join(asked[0], " ") != "dens --build-vars" {
+		t.Fatalf("asked %v", asked[0])
+	}
+	answer = `{"name":"dens","version":"v1.2.1"}`
+	if u := check(); !u.Installed || u.Version != "v1.2.1" {
+		t.Fatalf("with v1.2.1 installed: %+v", u)
+	}
+	f.CheckInstalled(ctx)
+	if len(asked) != 2 {
+		t.Fatalf("asked %d times, within 30 seconds of the last", len(asked))
+	}
+	for _, bad := range []struct {
+		answer  string
+		failure error
+	}{{"no JSON", nil}, {`{"version":"1.3"}`, nil}, {"", errors.New("the portal is gone")}} {
+		answer, failure = bad.answer, bad.failure
+		if u := check(); !u.Installed || u.Version != "v1.2.1" {
+			t.Fatalf("after %q, %v: %+v", bad.answer, bad.failure, u)
+		}
+	}
+	answer, failure = `{"name":"dens","version":"v1.1.0"}`, nil
+	if u := check(); u.Installed {
+		t.Fatalf("with an older build installed: %+v", u)
+	}
+}

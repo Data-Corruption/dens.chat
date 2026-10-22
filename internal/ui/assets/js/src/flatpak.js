@@ -15,7 +15,10 @@ export function updateNotice(status) {
     }
     const u = status.flatpakUpdate;
     if (!u) return null;
-    if (u.installed) return { text: 'An update to Dens is installed.', action: 'restart', label: 'Restart Dens' };
+    if (u.installed) {
+        const text = u.version ? `Dens ${u.version} is installed.` : 'An update to Dens is installed.';
+        return { text, action: 'restart', label: 'Restart Dens' };
+    }
     if (u.can_install) return { text: 'An update to Dens is available.', action: 'update', label: 'Update' };
     const why = /permission/i.test(u.refused || '') ? ', since it asks for a new permission' : '';
     return { text: `An update to Dens is available. Update it in your software center${why}.` };

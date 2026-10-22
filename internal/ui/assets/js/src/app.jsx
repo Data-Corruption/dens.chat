@@ -114,7 +114,8 @@ export function App({ instance, version, pair, pairLink }) {
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
     // An update installed meanwhile, as in the software center, shows once
     // the member is back on the page, and within a minute while they stay
-    // (M9.3).
+    // (M9.3): the service asks the newest build installed as the page asks
+    // for its status (M9.4).
     useEffect(() => {
         if (!open) return undefined;
         let last = Date.now();
