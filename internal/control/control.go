@@ -70,7 +70,9 @@ type Status struct {
 	Instance    string `json:"instance"`
 	ClientURL   string `json:"clientURL"`
 	PasswordSet bool   `json:"passwordSet"`
-	DenEnabled  bool   `json:"denEnabled"`
+	// Locked is the Flatpak waiting for the local password (M9.3).
+	Locked     bool `json:"locked,omitempty"`
+	DenEnabled bool `json:"denEnabled"`
 	// DenProblem says why the den doesn't serve while hosting is on (M9.1).
 	DenProblem      string `json:"denProblem,omitempty"`
 	UpdateAvailable string `json:"updateAvailable,omitempty"`

@@ -79,17 +79,34 @@ func New(a *app.App) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(rt.requireSession)
 		r.Get("/api/status", rt.handleStatus)
-		r.Post("/api/password", rt.handleSetPassword)
-		r.Post("/api/password/change", rt.handleChangePassword)
-		r.Get("/api/settings", rt.handleSettings)
-		r.Post("/api/settings", rt.handleSettingsUpdate)
-		r.Post("/api/cache/clear", rt.handleClearCache)
-		r.Post("/api/shortcuts/desktop", rt.handleShortcutsDesktop)
+		r.Post("/api/unlock", rt.handleUnlock)
 		r.Post("/api/logout", rt.handleLogout)
-		rt.mountDens(r)
-		rt.mountYouTube(r)
+		r.Group(func(r chi.Router) {
+			r.Use(rt.requireUnlocked)
+			r.Post("/api/password", rt.handleSetPassword)
+			r.Post("/api/password/change", rt.handleChangePassword)
+			r.Post("/api/remember", rt.handleRemember)
+			r.Get("/api/settings", rt.handleSettings)
+			r.Post("/api/settings", rt.handleSettingsUpdate)
+			r.Post("/api/cache/clear", rt.handleClearCache)
+			r.Post("/api/shortcuts/desktop", rt.handleShortcutsDesktop)
+			rt.mountDens(r)
+			rt.mountYouTube(r)
+		})
 	})
 	return r
+}
+
+// requireUnlocked refuses what needs the data key while the Flatpak waits
+// for it (M9.3): the page shows its unlock screen and asks nothing else.
+func (rt *router) requireUnlocked(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rt.a.Locked() {
+			jsonError(w, http.StatusLocked, "Dens is locked; unlock it with the local password.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -306,6 +323,11 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"instance":    rt.a.Layout.Instance,
 		"passwordSet": passwordSet,
 		"denEnabled":  rt.a.Hosting.State().On,
+		"locked":      rt.a.Locked(),
+	}
+	// Only the Flatpak remembers its key, and can start locked (M9.3).
+	if rt.a.Layout.Form == layout.Flatpak {
+		status["remember"] = rt.a.Remembering()
 	}
 	if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
 		status["updateVersion"] = latest
@@ -315,10 +337,12 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSetPassword sets the first local password. Changing it later needs
-// the current one.
+// the current one. The Flatpak keeps a copy of its key that opens it
+// without the password where the member asks it to remember (M9.3).
 func (rt *router) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`
+		Remember bool   `json:"remember"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -341,7 +365,50 @@ func (rt *router) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.a.Log.Info("Local password set")
+	if err := rt.a.PasswordChosen(body.Remember); err != nil {
+		xhttp.Error(r.Context(), w, err)
+		return
+	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleUnlock opens a locked Flatpak with the local password, and keeps or
+// forgets the copy of its key that opens it without, as the member chose
+// (M9.3).
+func (rt *router) handleUnlock(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Password string `json:"password"`
+		Remember bool   `json:"remember"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if err := rt.a.UnlockWithPassword(r.Context(), body.Password, body.Remember); err != nil {
+		passwordError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleRemember turns remembering the Flatpak's key on, after the local
+// password, or off, deleting the copy (M9.3).
+func (rt *router) handleRemember(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		On       bool   `json:"on"`
+		Password string `json:"password"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if rt.a.Layout.Form != layout.Flatpak {
+		http.Error(w, "only the Flatpak remembers its key", http.StatusBadRequest)
+		return
+	}
+	if err := rt.a.SetRemember(r.Context(), body.Password, body.On); err != nil {
+		passwordError(w, r, err)
+		return
+	}
+	writeJSON(w, rt.a.Remembering())
 }
 
 func (rt *router) handleChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -376,6 +443,8 @@ func passwordError(w http.ResponseWriter, r *http.Request, err error) {
 		http.Error(w, err.Error(), http.StatusTooManyRequests)
 	case errors.Is(err, app.ErrNoPassword):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, app.ErrLocked):
+		http.Error(w, err.Error(), http.StatusLocked)
 	default:
 		xhttp.Error(r.Context(), w, err)
 	}

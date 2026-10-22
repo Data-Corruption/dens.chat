@@ -36,9 +36,15 @@ func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handl
 			return control.Reply{Result: control.Pair{URL: url}}, nil
 		},
 		control.OpBackup: func(ctx context.Context, req control.Request) (control.Reply, error) {
+			if a.Locked() {
+				return control.Reply{}, control.Errorf("Dens is locked; unlock it in the browser, then make the backup")
+			}
 			return backupReply(ctx, a, req.Password)
 		},
 		control.OpShortcuts: func(context.Context, control.Request) (control.Reply, error) {
+			if a.Locked() {
+				return control.Reply{}, control.Errorf("Dens is locked")
+			}
 			return control.Reply{Stream: a.Shortcuts.Serve}, nil
 		},
 		control.OpOwnerInvite: func(ctx context.Context, req control.Request) (control.Reply, error) {
@@ -65,7 +71,7 @@ func checkPassword(ctx context.Context, a *app.App, password, doing string) erro
 		return control.Errorf("wrong password")
 	case errors.Is(err, app.ErrNoPassword):
 		return control.Errorf("set a local password in the browser before %s", doing)
-	case errors.Is(err, app.ErrTooManyAttempts):
+	case errors.Is(err, app.ErrTooManyAttempts), errors.Is(err, app.ErrLocked):
 		return control.Errorf("%v", err)
 	}
 	return err
@@ -86,6 +92,7 @@ func statusReply(ctx context.Context, a *app.App) (control.Reply, error) {
 		Instance:    a.Layout.Instance,
 		ClientURL:   guard.PageOrigin(a.Instance.ClientPort) + "/",
 		PasswordSet: passwordSet,
+		Locked:      a.Locked(),
 		DenEnabled:  hosting.On,
 		DenProblem:  hosting.Problem,
 	}

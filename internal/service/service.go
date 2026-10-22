@@ -88,16 +88,29 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		return server.Serve(ctx, client.New(a), errorLog, clientLns...)
 	})
 	start("update checker", func(ctx context.Context) error { return a.RunUpdateChecker(ctx, func() {}) })
-	start("den connections", a.Dens.Run)
 
-	// A session form has no installer to publish ready for it.
-	if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {
-		if err := a.MarkSessionReady(); err != nil {
-			cancel()
-			hosting.close()
-			wg.Wait()
-			return err
+	// What needs the data key starts once the instance has it: at once, but
+	// for the Flatpak starting locked (M9.3), which its keyring may open
+	// while the page offers the local password.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-a.Unlocked():
+		case <-ctx.Done():
+			return
 		}
+		start("den connections", a.Dens.Run)
+		// A session form has no installer to publish ready for it, and
+		// its start isn't done before it has its key.
+		if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {
+			if err := a.MarkSessionReady(); err != nil {
+				fail(err)
+			}
+		}
+	}()
+	if a.Locked() {
+		a.TryKeyring()
 	}
 	a.Log.Infof("Ready: client listener on loopback port %d, the page at %s", a.Instance.ClientPort, guard.PageOrigin(a.Instance.ClientPort))
 	ready()

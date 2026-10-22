@@ -62,6 +62,9 @@ func statusCommand(bi build.BuildInfo) *cli.Command {
 			fmt.Printf("version:   %s\n", status.Version)
 			fmt.Printf("client:    %s\n", status.ClientURL)
 			fmt.Printf("password:  %s\n", setOrNot(status.PasswordSet))
+			if status.Locked {
+				fmt.Printf("locked:    unlock it in the browser, with the local password\n")
+			}
 			fmt.Printf("den:       %s\n", enabledOrNot(status.DenEnabled))
 			if status.DenProblem != "" {
 				fmt.Printf("           %s\n", status.DenProblem)
