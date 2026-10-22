@@ -50,13 +50,13 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
-| `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery |
+| `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery, and the Flatpak's publication after each release |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
 | `scripts/rnnoise.sh` | Builds RNNoise's module for the page from its pinned inputs, and checks the committed one |
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
-| `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, and commits it to a repository |
+| `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, commits it to a repository, and writes the repository's deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, and the browser checks (`scripts/test/browser/`), run by hand before each manual test |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
 | `docs/dev/` | Internal docs: the design and each deployment form's, the milestones, the lifecycle, the den protocol and the release process |
@@ -72,7 +72,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
   and permissions, maintenance transactions and the installer scripts.
 - [docs/dev/flatpak.md](docs/dev/flatpak.md): the Flatpak (M9), run by the
   member in their session: its sandbox, locked start and remembered
-  key, lifecycle with no installer, updates, and its harness.
+  key, lifecycle with no installer, updates, its publishing, and its harness.
 - [docs/dev/android.md](docs/dev/android.md): the Android app (M10 to M12).
 - [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
   the plan for the one under way, and ideas after it.
@@ -82,7 +82,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 - [docs/dev/protocol.md](docs/dev/protocol.md): the client-to-den protocol:
   authentication, the WebSocket, events, history and limits.
 - [docs/dev/release.md](docs/dev/release.md): publication order, resume,
-  retention, signing identity.
+  retention, signing identity, and the Flatpak's key and job.
 - `docs/content/`: public docs for people using Dens.
 
 When a reference document and the code disagree, the code is right and the
@@ -217,7 +217,7 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
-./scripts/test.sh -flatpak-e2e # the Flatpak, made from this tree: launched, unlocked, updated and rolled back, in Incus containers
+./scripts/test.sh -flatpak-e2e # the Flatpak's publisher, then the Flatpak, made from this tree and published: launched, unlocked, updated and rolled back, in Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build in it
 scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test

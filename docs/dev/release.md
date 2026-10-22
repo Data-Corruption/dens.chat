@@ -1,8 +1,8 @@
 # Releases
 
-How Dens releases are built, signed, published and recovered. A new version
-heading in `CHANGELOG.md`, pushed to `main`, triggers a release through GitHub
-Actions.
+How Dens releases are built, signed, published and recovered, and the Flatpak
+published from each. A new version heading in `CHANGELOG.md`, pushed to
+`main`, triggers a release through GitHub Actions.
 
 ## What gets published
 
@@ -31,9 +31,22 @@ releases/
     ffmpeg-source.tar.xz
     checksums.txt
     checksums.txt.cosign.bundle
+flatpak/
+  chat.dens.Dens.flatpakref
+  dens.flatpakrepo
+  repo/
+.state/
+  promotions/
+  flatpak
 ```
 
 `ffmpeg-source.tar.xz` holds FFmpeg's source, as the binaries include it, with zlib's and libaom's, the driver and the script that builds the module (M1.8, M5.4), as the LGPL asks of a binary that includes FFmpeg.
+
+`flatpak/` holds Dens's Flatpak (M9.4): `repo/`, its OSTree repository, with
+the builds of the promoted release's Linux binaries for x86_64 and aarch64,
+and the two links members install from, which carry its key. `.state/` holds
+the publisher's records: when each release was promoted, and what the last
+Flatpak publication left.
 
 This layout and the signing identity below are fixed once the first release
 ships: installed copies depend on both.
@@ -45,8 +58,15 @@ includes the repository and `.github/workflows/release.yml@refs/heads/main`.
 Never rename or move that workflow file; its contents can change. Changing the
 identity breaks verification for every existing installation.
 
-GitHub Actions are pinned to commit SHAs. Only the release job requests
-`contents: write` (for tags) and `id-token: write` (for signing).
+GitHub Actions are pinned to commit SHAs, and the Flatpak job's container
+image to its digest. Only the release job requests `contents: write` (for
+tags) and `id-token: write` (for signing).
+
+The Flatpak is signed with a GPG key instead, since Flatpak checks no other
+kind of signature: one Ed25519 key, which every client checks, that never
+expires, since a key that expired would fail every Flatpak's check, the
+summary's that would bring them a new key included. Its secret half only the
+`flatpak` job reads (see The Flatpak's key).
 
 ## One-time setup
 
@@ -58,7 +78,8 @@ Use a domain in the same Cloudflare account as the bucket.
 2. Open the bucket's **Settings → Custom Domains → Add** and attach the release
    hostname.
 3. In the domain's **Rules**, create a cache rule matching that hostname and set
-   **Bypass cache**. The root `version` file must stay current.
+   **Bypass cache**. The root `version` file and the Flatpak's summaries must
+   stay current.
 4. From the R2 overview, open **Manage API tokens** and create a token with
    **Object Read & Write** access to this bucket. Save the access key ID and
    secret access key, and note the account ID and bucket name.
@@ -76,6 +97,39 @@ S3-compatible hosts need changes to the publication code under `scripts/ci/`.
    `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` and `R2_BUCKET`.
 3. **Variables**: add `CI_ENABLED` with the value `true`. Until it is set, only
    the small `ci-gate` job runs.
+
+### The Flatpak's key
+
+Make it on your own machine, in a GnuPG home of its own, so it never mixes
+with your other keys, and without a passphrase: the job couldn't type one, and
+the environment is what guards it:
+
+```sh
+export GNUPGHOME=$(mktemp -d)
+gpg --batch --passphrase '' --quick-gen-key 'Dens Flatpak' ed25519 sign never
+gpg --armor --export > dens.asc
+gpg --armor --export-secret-keys > dens-flatpak.secret.asc
+cp "$GNUPGHOME"/openpgp-revocs.d/*.rev dens-flatpak.rev
+```
+
+1. **Keep the secret key and its revocation certificate offline, in two
+   places**, such as a password manager and a USB drive kept elsewhere. A key
+   that's lost can't be replaced without every member installing Dens again
+   (see Replacing the Flatpak's key).
+2. **Commit `dens.asc`**, the public half, as `scripts/flatpak/dens.asc`. The
+   links carry it, and the publisher refuses to sign with any other key.
+3. **Settings → Environments → New environment**, named `flatpak`, before any
+   workflow names it, since GitHub makes one with no rules for a workflow that
+   names one that doesn't exist. Under **Deployment branches and tags**, choose
+   **Selected branches and tags** and add the branch `main`. A job reads an
+   environment's secrets only by naming it, and only on a branch it allows, so
+   no workflow changed on another branch, or in a pull request, can read the
+   key, as it could a repository secret. It asks for no reviewer's approval,
+   since a release already takes a merge to `main`.
+4. In the environment, **Add environment secret** `FLATPAK_GPG_KEY`, with the
+   whole of `dens-flatpak.secret.asc`.
+5. Delete the copies left on the machine: `gpgconf --kill gpg-agent`, then
+   `rm -r "$GNUPGHOME"`, and the two files once they're in their two places.
 
 ## Publish
 
@@ -98,13 +152,14 @@ with `dens update` and check that the new version starts.
 
 ## How publication works
 
-`scripts/ci.sh` has two commands. The workflow runs `--plan`, waits for the
-tests it requests, then runs `--execute`. Upload and recovery code lives under
-`scripts/ci/`.
+`scripts/ci.sh` has three commands. The workflow runs `--plan`, waits for the
+tests it requests, then runs `--execute`, then `--flatpak`. Upload and
+recovery code lives under `scripts/ci/`.
 
 ```sh
 ./scripts/ci.sh --plan     # decide which tests to run, and whether to release
 ./scripts/ci.sh --execute  # publish a release or finish an interrupted attempt
+./scripts/ci.sh --flatpak  # publish the promoted release's Flatpak, or finish an interrupted attempt
 ```
 
 **Planning.** The plan reads the newest version heading in `CHANGELOG.md`,
@@ -117,7 +172,8 @@ request gets and no release job, and needs no R2 credentials. Merges to `main`
 are tested and nothing is published. Once a version tag exists, a missing
 heading fails the plan.
 
-- If the version has no Git tag yet, the Linux and Windows E2E jobs run. Files
+- If the version has no Git tag yet, the E2E jobs run: Linux's, Windows' and
+  the Flatpak's. Files
   left by an interrupted upload do not count as a completed release.
 - If the version is already tagged, those jobs are skipped. The publisher
   checks for installer changes and tests changed installers before replacing
@@ -128,7 +184,11 @@ Pull requests always run validation and never contact the release host.
 **Publication order.**
 
 1. Build, package and sign the application, unless verified files for this
-   version are already on the release host.
+   version are already on the release host. Release builds link with `-s -w`,
+   which drops the symbol table and DWARF, about a third of the binary (89.4 MB
+   to 56.1 MB for linux-amd64), while a panic still names its functions and
+   lines, from Go's own line table; development builds keep both, for
+   debuggers (M9.1).
 2. Upload the files to `releases/<version>/`, download them again and check
    their signatures and checksums.
 3. Generate the installer scripts from the project settings. Test changed
@@ -146,6 +206,37 @@ An installer's signature bundle is uploaded before its script. While the pair is
 being replaced, a download can briefly see a mismatched pair; verification
 rejects it. The publisher keeps verified temporary copies so a retry can finish
 the replacement. Unchanged installers keep their existing signatures.
+
+**The Flatpak.** Once the release job has succeeded, the `flatpak` job
+publishes the promoted release's Flatpak (`scripts/ci/flatpak.sh`), in a Debian
+13 container, the system the Flatpak e2e and the VMs' builds make it on:
+
+1. Import `FLATPAK_GPG_KEY` into a GnuPG home of the run's own, and refuse
+   anything but the secret halves of the keys `scripts/flatpak/dens.asc` holds
+   that aren't revoked.
+2. Read the root `version`. A release before v1.2.0, the first whose binary
+   runs as the Flatpak, has nothing to publish.
+3. Copy `flatpak/repo/` down and pull its builds into a fresh local
+   repository, which checks every commit against the committed keys and every
+   object against its checksum. A repository that fails is refused, never
+   repaired. A host with no summary, which no client could have installed
+   from, gets a new repository.
+4. Done, where the repository holds the version for both architectures and
+   `.state/flatpak` says the last publication left the summaries the host
+   serves; refused, where it holds a newer version than the promoted one, which
+   a Flatpak would update to and then refuse the data a newer one wrote.
+5. Download the release's checksums, their signature and its Linux binaries,
+   and check them as an install does.
+6. Commit each architecture missing that version, with the delta from the
+   build before by bsdiff past OSTree's limit, and write the summary and the
+   other deltas, signed, keeping each architecture's last four builds, which
+   a member can roll back to.
+7. Upload objects and deltas, then the summaries' parts, then the refs, then
+   each summary index before its summary, and delete what the new summaries
+   no longer name, last. Clients read the old repository or the new one
+   throughout, but for the moment between a summary and its signature, which
+   they retry past. Read the summaries back, check them, upload the links
+   that changed, and record the publication in `.state/flatpak`, last.
 
 Installers read the root `version` file once and use that version throughout an
 install. A retry can run on a fresh runner: it downloads and verifies the
@@ -177,10 +268,15 @@ artifacts also verify when served from a mirror.
 | `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, asks for validation and no release |
 | `linux-e2e` | Linux Go tests, shell lint, release tests, and installer tests across distros |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
+| `flatpak-e2e` | The Flatpak's publisher, then the Flatpak itself, published by it and run for a member, in Incus containers; releases wait for it |
 | `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass |
+| `flatpak` | Runs `ci.sh --flatpak` in the `flatpak` environment once `release` succeeds |
 
 A failed plan, failed test or cancellation blocks publication. Tests skipped at
-the plan's request let publication continue.
+the plan's request let publication continue. A failed `flatpak` job leaves the
+release alone. Runs on `main`, and their publications, serialize through the
+workflow's concurrency group; a pull request's newer commit replaces its older
+run.
 
 ## Retry an interrupted release
 
@@ -192,6 +288,10 @@ to restart publication.
 
 If the code or tests need a fix, commit it with a new version heading. Never
 replace published bytes or move an existing tag.
+
+A failed `flatpak` job is retried the same way, and every later push to `main`
+finishes it too, since each run publishes what the repository is missing. A fix
+to the publisher needs no new version.
 
 Example: v1.0.0 became available but its workflow failed to push the tag, and
 v1.1.0 has since been published. Retrying the v1.0.0 workflow skips E2E, pushes
@@ -218,10 +318,52 @@ remote objects and logs while you investigate.
 - **An invalid promotion marker.** Restore or reconstruct it only from trusted
   release records: its commit decides the tag target and its timestamp decides
   retention.
+- **A Flatpak repository that doesn't check out against its keys.** Find out
+  why first: an object changed on the host means someone could write to the
+  bucket, so replace the R2 credentials. Then delete `flatpak/repo/` and
+  `.state/flatpak` and rerun the job, which publishes the promoted release
+  afresh. Members' Flatpaks update to it as to any build; the older builds
+  they could roll back to are gone.
+- **A Flatpak repository newer than the promoted release.** The root `version`
+  never moves back, so something else wrote it. Investigate before deleting
+  anything.
+
+## Replacing the Flatpak's key
+
+Every Flatpak takes the keys a signed summary names (`xa.gpg-keys`) at its
+next update, so a key can be replaced with no member installing Dens again, as
+long as the old one still signs while the new one spreads. The publisher's
+tests run these steps.
+
+1. **Add the new key.** Make it as above. Commit `scripts/flatpak/dens.asc`
+   holding both public keys, and set `FLATPAK_GPG_KEY` to both secret keys,
+   one file after the other. Each publication now signs with both, adds the
+   new key's signature to every build the repository keeps, and names both in
+   its summary, and the links carry both.
+2. **Wait** while members' Flatpaks update, over a few releases.
+3. **Retire the old key.** Import its revocation certificate (delete the `:`
+   that starts its `BEGIN` line first) into a GnuPG home holding the old public
+   key, export that key, revoked, and commit it in `dens.asc` beside the new
+   one. `FLATPAK_GPG_KEY` holds the new key alone. The summary carries the
+   revocation, and a Flatpak that takes it refuses what the old key alone
+   signs.
+
+A Flatpak that didn't update between the first step and the third can't check
+the new summaries, and its member installs Dens again from the site's link.
+
+If the key leaks, take the same steps without waiting long: the key alone
+can't publish, which also takes writing to the bucket or posing as the release
+host, but whoever holds it could publish once they can. If every copy of the
+key is lost, nothing can sign a summary members' Flatpaks trust: publish under
+a new key, and every member installs Dens again. That's why the key is kept in
+two places.
 
 ## Testing release changes
 
 After touching `scripts/ci/`, `scripts/ci.sh` or the installers, run
 `./scripts/test.sh -release`. It uses an rclone local backend and a cosign
 stand-in to exercise interruption, resume, promotion, installer pair recovery,
-immutable tags and retention without a real bucket.
+immutable tags and retention without a real bucket. After touching the Flatpak's
+publisher (`scripts/ci/flatpak.sh`, `scripts/flatpak.sh`), run
+`./scripts/test.sh -flatpak-e2e`, whose first stage tests it the same way (see
+[flatpak.md](flatpak.md)).
