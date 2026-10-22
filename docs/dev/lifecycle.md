@@ -1,59 +1,12 @@
 # Lifecycle
 
-How an installation is laid out, when the service agrees to start, and exactly what install, update, restore and uninstall do. The design doc explains the reasons; this is the reference for changing `internal/layout`, `internal/maintenance`, `internal/install` or the installer scripts. Read it before touching them.
+What every form shares of the lifecycle: when the service agrees to start, and the locks that keep each instance to one process; then development instances, and the harnesses that test it all. The design doc explains the reasons; [installed.md](installed.md) has the installed service's paths, permissions and transactions. Read them before changing `internal/layout`, `internal/maintenance`, `internal/install` or the installer scripts.
 
 Terms used below:
 
 - **Instance:** one installed copy of the service, with its own name (`main` unless another is given), account, ports and storage. Every instance on a machine runs the one installed binary.
 - **Maintenance command:** `dens install`, `dens update`, `dens restore` or `dens uninstall`, run as root or Administrator.
 - **Transaction:** one run of a maintenance command. It takes the locks, publishes a transitional phase, changes the installation, and keeps a journal that can undo the changes until the services start again.
-
-## Paths
-
-Only `internal/layout` computes these.
-
-| | Linux | Windows |
-| --- | --- | --- |
-| Instance root | `/var/lib/dens/<name>` | `%ProgramData%\Dens\<name>` |
-| Control directory | `<root>/control` | `<root>\control` |
-| Data directory | `<root>/data` (`db/`, `logs/`, `uploads/`, `tmp/`, `cache/`) | `<root>\data` (same) |
-| Host-wrapped data key | `control/datakey.cred` (systemd-creds) | `control\datakey.dpapi` (machine-scope DPAPI) |
-| Control endpoint | `/run/dens/<name>/control.sock` | `\\.\pipe\dens-<name>-control` |
-| Binary | `/usr/local/bin/dens` | `%ProgramFiles%\Dens\dens.exe`, on the system `PATH` |
-| cosign, kept for `dens update` | `/usr/local/lib/dens/cosign` | `%ProgramFiles%\Dens\cosign.exe` |
-| Service | `dens@<name>.service`, from the template `/etc/systemd/system/dens@.service` | `dens-<name>` |
-| Account | `dens-<name>`, from `/etc/sysusers.d/dens-<name>.conf` | `NT SERVICE\dens-<name>` |
-
-`tmp/` holds files only while the service works on them, such as uploads arriving and a backup's snapshot, and the service empties it each time it starts (M8).
-
-The control directory holds everything only maintenance commands may change:
-
-| File | Contents |
-| --- | --- |
-| `state.json` | Lifecycle state (see below) |
-| `operation.lock`, `lifecycle.lock` | Lock files (see below) |
-| `instance.json` | Instance config: name, ports, desktop user, release URL, and v1.0's den role, which the hosting switch starts from (M9.1) |
-| `maintenance.log` | Every maintenance command's output for this instance |
-| `datakey.cred` or `datakey.dpapi` | The data key, wrapped for this host |
-
-## Ownership and permissions
-
-`layout.CheckControl` and `layout.CheckData` refuse anything looser than this, and a symlink anywhere a file or directory should be.
-
-On Linux:
-
-- `/var/lib/dens` and the instance root are `root:root 0755`.
-- The control directory is `root:dens-<name> 0750` and its files `root:dens-<name> 0640`, so the service reads them and can't change them. The data key is `root:root 0600`: systemd reads it as root before starting the service, and hands the decrypted key over in `$CREDENTIALS_DIRECTORY`.
-- The data directory is `dens-<name>:dens-<name> 0700`. The unit's `StateDirectory=dens/%i/data` creates it and keeps it owned by the service account.
-- `RuntimeDirectory=dens/%i` (0755) holds the socket, which is 0666. Any local user can connect; the service authorizes each connection by its `SO_PEERCRED` UID, before reading anything from it (M8).
-
-On Windows:
-
-- `%ProgramData%\Dens` has a protected DACL: SYSTEM and Administrators get full control, and Users may list it (`0x1200a9`, not inherited), as with `/var/lib/dens` on Linux. The service needs that: Windows path normalization (Go's `filepath.EvalSymlinks`, which the SQLite driver uses) lists every parent directory of the database.
-- The instance root has a protected DACL: SYSTEM and Administrators get full control, and the service SID gets read (`0x1200a9`). The control directory and its files inherit it.
-- The data directory has a protected DACL: SYSTEM and Administrators get full control, and the service SID gets modify (`0x1301bf`).
-- The control pipe's DACL grants SYSTEM and the service SID full access, and the desktop user `0x12019b` (read and write data, never `GENERIC_WRITE`). Other accounts can't open it.
-- `%ProgramFiles%\Dens` inherits Program Files' permissions: everyone can run the binary, and only administrators can change it.
 
 ## Lifecycle state
 
@@ -80,63 +33,6 @@ A service that stops on any other error is started again: by the unit's `Restart
 | `lifecycle.lock` | Maintenance commands, after stopping the service | Exclusive; waits up to 30 seconds |
 
 Holding `lifecycle.lock` proves the service is down. A transaction over several instances takes each lock in instance-name order, so two commands can't deadlock.
-
-## Transactions
-
-### Install and update
-
-The installer scripts run `dens install` with the release they downloaded. It installs a new instance, or updates or reconfigures an existing one, and moves every other installed instance to its version too:
-
-1. Refuse when any instance has a newer version than this binary's: the one it has installed, or the target of a transition it was in, since its service may have migrated to it. The refusal names both. The same version installs again, which repairs (M8).
-2. Refuse v1.0's den option (`--den`, `-Den` in `install.ps1`): hosting is the settings' (M9.1). Check every port of the instance against its others, which v1.0 did for the den's only while it had the den role, so an update over a config whose ports clash names the flags that move them, and the client port against other programs. The den's ports matter only once hosting is on, which binds them as it starts.
-3. Print the plan. `--dry-run` stops here.
-4. Collect the members: the target instance plus every installed one, sorted by name. Create missing instance roots and take each member's `operation.lock`.
-5. Read each member's state, and refuse an older version again, now that nothing can change it. Journal a restart of the services that were running, as the last step to undo, then publish `installing` (a fresh instance, or one whose first install never finished) or `updating` from the recorded version.
-6. Stop the services and take each `lifecycle.lock`.
-7. Create the account, install the binary and cosign, register each member's service and set its permissions.
-8. Write the target's instance config and generate and host-wrap a data key for a fresh instance. Have the shortcut helper (`dens shortcuts`, M7) start at the desktop user's sign-in; it serves every instance that answers them.
-   - On Linux, an XDG autostart entry, `/etc/xdg/autostart/chat.dens.Dens.desktop`, starts it. Beside it, `/usr/local/share/applications/chat.dens.Dens.desktop`, with Dens's mark as its icon in `/usr/local/share/icons/hicolor`, names Dens to the desktop, whose shortcuts portal needs it, and opens the page from the desktop's menu.
-   - On Windows, a scheduled task, the desktop user's and named for their SID (`Dens shortcuts-<SID>`), starts it. Also add the media ports' firewall rules, scoped to `dens.exe` and those ports, at every install, so turning hosting on needs nothing elevated (M9.1); and the `PATH` entry and the error-reporting exclusion.
-9. Release the lifecycle locks and commit the journal. This is the point of no return.
-10. Start each service; it migrates as it starts (see Lifecycle state). Once it is running, publish `ready`. Stop again any existing instance that wasn't running before; it only ran to migrate. Then start the shortcut helper, so a desktop user who is signed in needn't sign out, ending one that runs the last version: on Linux the desktop user's systemd user manager restarts the autostart entry's unit (`app-chat.dens.Dens@autostart.service`) when they're signed in to a desktop, and on Windows the installer ends the task and runs it again. A helper started otherwise takes up the new binary itself when its services come back at a newer version.
-
-A failure before step 9 undoes the journal in reverse. A failure after it leaves the transitional state; running the installer again starts a new transition to its version from the recorded one.
-
-`dens update` reads the release URL from the instance config (or `--release-url`), and the release host's `version` pointer there: one that names an older version than the binary's own stops it (M8). It downloads `install.sh` or `install.ps1` and its `.cosign.bundle`, and verifies them with the kept cosign against the signing identity built into the binary. It then runs the installer in the foreground with `--update --instance <name>` and the release URL, and the installer takes it from there. `--skip-verify` skips the installer's check and the release's, for unsigned test releases, and passes it on; a binary that carries the signing identity, as every release's does, refuses it.
-
-### Restore
-
-`dens restore BACKUP` replaces one instance's data:
-
-1. Refuse unless the instance is `ready` (or mid-`restoring`) at this binary's version.
-2. Extract the backup into a staging directory beside the data directory. Refuse a backup of another application, one from a newer schema, a wrong password, and a data key that doesn't match the backup's key check value.
-3. Take `operation.lock`, publish `restoring`, stop the service and take `lifecycle.lock`.
-4. Move the data directory aside (`data.replaced-<time>`) and the staging directory into its place. Move the host-wrapped key aside, and wrap the backup's data key for this host.
-5. Commit the journal, move this machine's logs into the new data directory, start the service and publish `ready`. The service migrates an older backup, clears its browser sessions, turns hosting off (M9.1) and starts its den on a new sync epoch as it starts, so members' clients drop what they cached from it. Then delete the replaced data and key, the client's cache with them: a backup leaves the cache out, and the restored install fills a new one as it reads.
-
-### Uninstall
-
-`dens uninstall` prints its plan (`--dry-run` stops there), takes `operation.lock`, publishes `uninstalling`, stops the service and takes `lifecycle.lock`. It then unregisters the service, its event log source on Windows and its firewall rules, and deletes the instance root and the account. The last instance also removes the binary, cosign, the unit template and the shortcut helper's autostart entry, `.desktop` file and icon on Linux, or the shortcut helpers' scheduled tasks, ending the helpers they run, the `PATH` entry and the error-reporting exclusion on Windows. A helper whose instances are all gone stops by itself. Windows can't delete a running executable, so when `dens.exe` uninstalls itself it's renamed to `dens.exe.old-<time>` and deleted at the next reboot.
-
-Uninstall has no undo. Running it again finishes an interrupted one.
-
-## Installer scripts
-
-`install.sh` and `install.ps1` refuse to run without root or Administrator. Then they:
-
-1. Read the release host's root `version` pointer once, and fetch that version's binary, `version` file and `checksums.txt`.
-2. Verify `checksums.txt` against its cosign bundle with a pinned cosign release, whose own SHA-256 is baked into the script.
-3. Check the binary and `version` against `checksums.txt`, and check the signed version is the one the pointer named.
-4. Run the binary's `install` with `--release-url` set to where it came from, `--cosign` set to the verified cosign, and the remaining arguments.
-
-`--uninstall` (`-Uninstall`) runs the installed binary's `uninstall` instead. `--update` is accepted for `dens update` and changes nothing.
-
-Two flags change where a release comes from and whether it's verified, which `dens update` passes on (M8):
-
-- `--release-url URL` (`-ReleaseUrl`) installs from another release host, such as a byte-for-byte mirror; the signatures still verify. It must be `https://`, or `file://` for local test releases.
-- `--skip-verify` (`-SkipVerify`) skips the signature checks, for unsigned test releases only. The checksums still apply.
-
-Nothing in the environment changes either: an elevated shell on Windows inherits its user's environment variables, which anything running as that user can set.
 
 ## Development instances
 

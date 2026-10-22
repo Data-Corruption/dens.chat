@@ -48,7 +48,7 @@ Design rules that follow from this:
 
 ## Architecture
 
-Dens is one static Go binary, forked from Sprout, that always runs the client and optionally runs a den. It runs as a hardened system-level service under a dedicated account, never as the person's desktop user: a systemd unit on Linux and an SCM (Service Control Manager) service on Windows. The Flatpak (M9) and the Android app (M10) are the exceptions: they join dens and host none, and run as the person, in their session or under the app (see Other distributions and Android).
+Dens is one static Go binary, forked from Sprout, that always runs the client and optionally runs a den. It runs as a hardened system-level service under a dedicated account, never as the person's desktop user: a systemd unit on Linux and an SCM (Service Control Manager) service on Windows (see [installed.md](installed.md)). The Flatpak (M9) and the Android app (M10) are the exceptions: they join dens and host none, and run as the person, in their session or under the app (see [flatpak.md](flatpak.md) and [android.md](android.md)).
 
 **Traffic paths**
 
@@ -83,57 +83,6 @@ The owner's client reaches its own den over loopback, not through the public dom
 - It describes only what applies: the page knows its browser and system, and shows a figure, such as how much the cache holds, rather than a sentence about it.
 - A warning comes with the action it's about, in its confirmation, rather than ahead of it in a paragraph.
 - Nothing says the den or its owner can see something, which members take as given in a place someone else hosts; the page marks what's end-to-end encrypted, and the docs say who can read what, once.
-
-**Install and service account**
-
-| | Linux | Windows |
-| --- | --- | --- |
-| Service | Templated system unit `dens@<name>.service` | SCM service `dens-<name>`, own process |
-| Account | System user `dens-<name>` via sysusers.d, UID allocated by sysusers | Virtual account `NT SERVICE\dens-<name>` (no password, managed by the SCM) |
-| Binary | `/usr/local/bin/dens`, root-owned | `C:\Program Files\Dens\dens.exe`, on the system `PATH` |
-| State | `/var/lib/dens/<name>/` | `C:\ProgramData\Dens\<name>\` |
-| Control endpoint | `/run/dens/<name>/control.sock` | `\\.\pipe\dens-<name>-control` |
-| Stop | `SIGTERM` from systemd | SCM stop control |
-| Readiness | `Type=notify`, `READY=1` | `SERVICE_RUNNING` status |
-| Restart on failure | `Restart=on-failure` | SCM recovery actions, which apply to a crash, so a service that fails after starting exits as one (M8) |
-
-- A system-level service, not `systemd --user` or a per-user Scheduled Task, keeps Dens running without a login, gives it its own account to sandbox, and gives both platforms a real graceful stop. On Linux it also enables `LoadCredentialEncrypted=` (see Local identity).
-- Several installs per machine are separate instances (`dens@<name>` or `dens-<name>`), each with its own account, ports and storage. This is the advanced path for a second den.
-- Each instance's ports are fixed at install and recorded in its config. `main` uses the defaults (client 8484, den listener 8485, media 7881/UDP and 7882/TCP); other instances pass theirs to the installer, which refuses a client port already in use, and two of an instance's ports that are the same.
-- Every installed instance can host a den (M9). Hosting is a switch in the page's settings, off until the desktop user turns it on with the local password, and turned off after a confirmation that members can't reach the den until it's back on. Creating the den itself (its identity key and owner account) then happens in the app.
-  - The switch is the service's own preference, `types.Configuration.Hosting`. The first start of a version that has it takes it from the den role v1.0's installer recorded in the instance config (`den.enabled`), so an instance that hosted keeps hosting, and from then on the switch alone decides; nothing else reads the role.
-  - Every instance opens its den as it starts, which before the den exists is one row's read. While the switch is on, the service binds the den listener and the media ports, starts the den's calls, its deleting of messages past retention and its forgetting of old changes, and serves it, under a context of its own. Turning it off cancels that and stops the den as a service stop does: its listener first, then its sockets, then its calls, keeping everything it holds, so turning it on again serves the den as it was.
-  - A port another program holds, or one the system keeps for itself, fails turning hosting on, changing nothing, and the page names the port and the installer flag that moves it. With hosting on as the service starts, a port it can't bind leaves the rest of the service up, so the page can say why, and the den tries again every 30 seconds.
-- Sprout's signed releases, SQLite layer and `state.json` lifecycle phases carry over (see Service lifecycle).
-
-**Privileged steps and updates**
-
-Root or Administrator is used only for install, update, uninstall and restore; the service itself always runs unprivileged and sandboxed.
-
-- The installer scripts (`install.sh`, `install.ps1`) only download a release, verify its cosign signature and checksums, and run the release binary's `install` command. Every privileged change is made by the binary's maintenance commands (`install`, `update`, `restore`, `uninstall`), so both platforms share one transaction engine (`internal/install`) and the scripts stay short enough to read before running them.
-- Privileged steps: create the service account, install the binary, register the service, create the state directory with private permissions, record the desktop user allowed to pair, and generate and host-wrap the data key. On Windows they also add the binary to the system `PATH`, exclude it from Windows Error Reporting, and add the media ports' firewall rules, which let nothing in while hosting is off (M9).
-- Every maintenance command prints its plan before changing anything, and `--dry-run` (`-DryRun` on Windows) prints the plan and stops. Output goes to the terminal and to the instance's `control/maintenance.log`.
-- The install guide has people download the installer (`install.sh` or `install.ps1`) and run it, never `curl | sudo bash` or `irm | iex`, with checking its cosign signature first as an optional step, folded away, commands included. The installer checks everything it downloads; only a check before running it covers the script itself.
-- Updates are manual: `sudo dens update` on Linux, or `dens update` from an elevated terminal on Windows (`sudo dens update` also works where Windows' built-in sudo is enabled). It downloads the latest installer and its cosign bundle, verifies them against the signing identity baked into the binary, and runs the installer in the foreground. There is no unattended auto-update.
-- An installation never moves to an older release than the one installed (M8). A signature proves who built a release, not that it's the newest, so a release host or mirror that served an older signed release could otherwise roll installs back to holes since fixed. Installing the installed version again is allowed; it repairs.
-- Only flags on the command line, never the environment, change where the installers and `dens update` fetch a release or whether they verify it (M8): `--release-url` and `--skip-verify` (`-ReleaseUrl` and `-SkipVerify` on Windows). An elevated Windows shell inherits the user's own environment variables, which anything running as them can set. A binary the release pipeline built refuses `--skip-verify`; the test harnesses install unsigned fixture releases with binaries built without the release identity.
-- The service checks for new releases and shows an in-app notice with the update command; it never installs anything itself. Update checks can be turned off in settings, and the privacy docs state that a check only asks the release host for the latest version number, which reveals the install's IP to that host.
-
-**Service lifecycle**
-
-Only the service process opens the storage root. The root is private to the service account, so every command a desktop user runs (`dens open`, `dens backup`, admin commands) goes through the control endpoint, and every root or Administrator command is a maintenance transaction. With one process per instance and a service manager that stops it gracefully on both platforms, install, update, restore and uninstall follow the same steps on Linux and Windows:
-
-1. The command takes `operation.lock` for each instance it touches, in name order, and publishes a transitional phase (`installing`, `updating`, `restoring` or `uninstalling`) and the target version in `state.json`. Every instance on a machine runs the one installed binary, so install and update move all of them through the transition.
-2. It stops each service through the service manager and waits. systemd escalates to `SIGKILL` after `TimeoutStopSec`; on Windows the command runs `taskkill /F` on the process ID the SCM reports after the same timeout. (An elevated administrator can't open a virtual-account service's process for termination without the debug privilege; `taskkill /F` and `Stop-Process -Force` enable it themselves.)
-3. It takes `lifecycle.lock` exclusively. The service holds that lock exclusively for its whole run, so acquiring it proves the service is down, and the same lock stops a second copy of the service from starting.
-4. It changes the installation, journaling how to undo each step. A failure up to here undoes the journal and restores the previous state, including restarting services that were running.
-5. It starts each service. A service whose state is transitional and names its version migrates its data before reporting ready; the command then publishes `ready`. An instance that was stopped before the transaction runs only long enough to migrate.
-
-A service starts only when the phase is `ready` with its version, or a transition that targets its version. Otherwise it logs why and exits with status 78, which the unit's `RestartPreventExitStatus=` keeps systemd from retrying. On Windows it stops with a service-specific exit code, which the SCM treats as a stop rather than a crash, so recovery actions don't restart it.
-
-Starting the services is the point of no return: a migrated database can't be opened by the previous binary, so a failure from here keeps the transitional state. The operator fixes the cause and runs the installer again, and the service finishes the migration when it starts.
-
-Uninstall removes the instance's state directory, service registration, account and firewall rules. The binary, cosign and the unit template on Linux, or the `PATH` entry and error-reporting exclusion on Windows, go with the last instance. Windows can't delete a running executable, so an uninstall run from the installed `dens.exe` renames it and schedules the file for deletion at the next reboot.
 
 **Two listeners, not one**
 
@@ -186,8 +135,8 @@ Sensitive fields in SQLite are encrypted one by one with the same data key (XCha
 2. A host-bound copy lets the service start without a password:
    - Linux: an encrypted credential loaded with `LoadCredentialEncrypted=` in the unit. systemd decrypts it at start, bound to the host key or TPM, and hands it to the service in `$CREDENTIALS_DIRECTORY`.
    - Windows: a machine-scope DPAPI blob in the state directory, whose DACL allows only the service account, SYSTEM and Administrators. The service decrypts it at start.
-   - The Flatpak (M9): none, so it starts locked until the member types the local password, unless they ask it to remember. Then the app's secret from the Secret portal, kept in their keyring, wraps a copy, or a key in a file does where the portal can't be trusted (see Other distributions).
-   - Android (M10): a Keystore key, which the app's shell uses to unwrap the data key at start (see Android).
+   - The Flatpak (M9): none, so it starts locked until the member types the local password, unless they ask it to remember. Then the app's secret from the Secret portal, kept in their keyring, wraps a copy, or a key in a file does where the portal can't be trusted (see [flatpak.md](flatpak.md)).
+   - Android (M10): a Keystore key, which the app's shell uses to unwrap the data key at start (see [android.md](android.md)).
 3. A second copy is wrapped with a key derived from the local password (Argon2id) and kept in the storage root.
 
 The privileged CLI does the host wrapping (at install and restore); the service only unwraps. Password wrapping and all field encryption are shared code.
@@ -907,100 +856,16 @@ On Windows, the installer adds inbound Windows Firewall rules for the media port
 
 Dens supports Linux and Windows for both the client and the den. Linux is recommended. A Flatpak (M9) brings the client to other Linux distributions, and an Android app (M10) to phones; neither hosts a den.
 
-### Linux
+### Deployment forms (M9)
 
-Dens supports five systemd desktop distro families. Non-systemd, server and developer-focused distros are cut. The hard floor is systemd 250 for `LoadCredentialEncrypted=`.
+Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M10, Android (under the app's shell). `layout.Form` names the form, and `app.FormOf` chooses it at runtime: a development build is Development, a sandbox with `/.flatpak-info` the Flatpak, `GOOS=android` Android, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it, as a `switch` on the form rather than a type per form, since there are few forms and each differs from the others in a few lines: where the paths are, how the data key unwraps, what the update notice says, whether the helper runs inside the service, and whether the instance may host. A form `layout` doesn't know has no paths, so no process runs as one. Forms other than Installed are session forms (`Form.Session`): they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
 
-| Distro | Minimum | Notes |
-| --- | --- | --- |
-| Fedora Workstation and spins | Current releases | SELinux enforcing: test file labels for `/var/lib/dens` and the binary |
-| Bazzite (Fedora Atomic) | Current releases | Read-only `/usr`: binary in `/usr/local/bin`, user via `/etc/sysusers.d`, units in `/etc/systemd/system`; Silverblue, Kinoite, Bluefin and Aurora considered on the same base |
-| Debian | 12 | Ships systemd 252 |
-| Ubuntu, Mint, Pop!\_OS | 24.04 base | 22.04 ships systemd 249, below the floor |
-| Arch, CachyOS | Rolling | Manjaro and other derivatives considered, not tested |
-
-Cut: Alpine, Void, Artix, Devuan, Gentoo, NixOS, openSUSE and MicroOS, Rocky, AlmaLinux and RHEL, SteamOS, and WSL2. From M9, a Flatpak lets their users join dens (see Other distributions). The installer refuses NixOS and SteamOS before it changes anything, saying why (M8). Both keep paths it writes read-only (NixOS's `/etc/systemd/system`, SteamOS's root), so it would otherwise fail halfway.
-
-**TPM**
-
-`systemd-creds` binds to the TPM plus the host key when a TPM exists, and to the host key alone otherwise, so no separate fallback is needed. Host-key-only mode still protects copies of the data directory, but not a full disk image or root.
-
-**Install layout rules (all distros)**
-
-These keep immutable and atomic-update distros cheap to support, and are good practice everywhere:
-
-- Install paths come from one layout module, never hardcoded, so a distro can override where the binary lives.
-- Keep the `/etc` footprint minimal: the unit file, a `sysusers.d` file, nothing else.
-- Define the service user in `/etc/sysusers.d` (creating the directory where the distro only ships `/usr/lib/sysusers.d`, as Debian 13 does) so it's recreated at boot. Don't fix its UID: sysusers silently picks another one when the requested UID is taken. `StateDirectory=` re-owns the state directory to the service account on start, so ownership follows the account.
-- Keep the encrypted credential and all state under `/var/lib/dens/<name>/`; reference the credential by absolute path in `LoadCredentialEncrypted=`.
-- Use `StateDirectory=` and `RuntimeDirectory=` instead of creating and chowning directories by hand or shipping tmpfiles.d files. The instance root and its `control/` directory (lifecycle state, locks, instance config and the encrypted credential) stay root-owned and readable by the service's group; `StateDirectory=dens/<name>/data` has systemd create the data directory and own it for the service account.
-
-**In a container**
-
-Dens installs in an unprivileged LXC system container, as Incus and LXD make them, with `security.nesting=true` and systemd 256 or newer, such as Debian 13's, Fedora's or Arch's: an older systemd can't create its credential secret there. LXC adds a drop-in to every service in such a container (`zzz-lxc-service.conf`), which turns off the service's sandbox and the encrypted credential that carries its data key. The installer refuses to go on while it's in effect, and prints the commands that mask it (M8); otherwise the service would fail to start past the point of no return. The harnesses mask it the same way. In a container, the data key is bound to the container's credential secret, which root on the host can read, and voice keys work only while the page has focus: the shortcut helper in the host's desktop session can't reach the service, whose stream checks each end's account. A virtual machine needs none of this.
-
-**Other distributions: a Flatpak (M9)**
-
-A Flatpak brings the client to the distributions the installer refuses, NixOS and SteamOS among them, and to any other that runs Flatpak. It joins dens and hosts none: a den has to keep running when nobody is signed in, which an app in a desktop session can't, and needs Caddy beside it, so hosting stays with the installed service.
-
-- *What it is.* The release binary, unchanged, on the freedesktop runtime (26.08), which a static binary uses nothing from but every Flatpak names. It has no window: the page opens in the member's browser through the OpenURI portal, which `xdg-open` reaches from inside the sandbox, so `host.OpenURL` works as it is. A window would need WebKitGTK, whose 2.54 release turned WebRTC off, so it couldn't call; Go daemons on Flathub send their UI to the browser the same way.
-- *In the session.* Dens runs as the member, from the app's own directories: its data in `$XDG_DATA_HOME/dens/<name>` (`~/.var/app/chat.dens.Dens/data/dens/main`), the client's cache in `$XDG_CACHE_HOME`, which backup tools skip, and the control socket in `$XDG_RUNTIME_DIR/app/chat.dens.Dens`, which every instance of the app shares, so `flatpak run --command=dens chat.dens.Dens open` reaches the running service. Its files are the member's alone, as a development instance's are.
-  - The desktop file runs `dens launch`. If the control socket answers, it pairs and opens the page, then exits; otherwise it becomes the service for the rest of the session, and opens the page once ready. A sandbox ends with its first process, so a daemon forked from a short-lived launcher wouldn't outlive it. A launch while another is still starting the service waits for it. The desktop file sets `StartupNotify=false`, since no window comes.
-  - Once its key is remembered (see below), it starts at sign-in through the Background portal: `RequestBackground` with `autostart` and `dens service run`, which writes the autostart entry itself and grants an app's first request without a dialog. A Dens that starts locked can't reach the dens, so until then it starts when the member opens it. A setting turns starting at sign-in off. GNOME, KDE and the xapp desktops (Cinnamon, MATE, Xfce) implement the portal; elsewhere, as on Sway, Hyprland and COSMIC, the setting gives the line to add by hand.
-  - GNOME lists a running Flatpak with no window under Background Apps, whose close button sends the app's `quit` action, then `flatpak kill`. Dens owns `chat.dens.Dens` on the session bus and takes the action, which stops it cleanly and keeps a second service out; SQLite's WAL survives the kill anyway.
-  - Signing out sends `SIGTERM`, which the service already stops on.
-- *The data key* has no copy that opens without the member. The service starts locked, and the page asks for the local password, whose copy of the key (Argon2id, as on every install) opens it; until then the member's dens stay disconnected, and they catch up once it's unlocked. Remember on this computer, beside the password field, off by default, keeps a copy that opens without it, so Dens starts unlocked from then on. It never keeps the password itself, which also opens the member's backups and may open more.
-  - The remembered copy is wrapped with the app's secret from the Secret portal (`RetrieveSecret`), which the desktop keeps in the member's keyring and hands over through a pipe. That keeps it from someone who has the disk but not the member's sign-in, not from programs the member runs, which can ask the keyring too.
-  - The portal can't be taken on trust. KWallet before KDE Frameworks 6.30 answers a failed or cancelled unlock with a new random secret, as if it had succeeded, and SteamOS 3.8 ships Frameworks 6.16; gnome-keyring fails while the login keyring is locked, as after an automatic sign-in; and oo7, GNOME 51's backend, waits on an unlock prompt. So Dens takes the portal's secret only once it has answered the same twice. The wrap is authenticated, so a wrong secret fails to open it rather than yielding a wrong key. A remembered copy that stops opening, as when a keyring is reset, is never replaced on its own: Dens asks for the password again, and remembers anew once the portal answers the same twice.
-  - Where the desktop has no Secret backend, or one that answers differently, the remembered copy is wrapped with a key in a file beside the data, which keeps it from other Flatpaks and nothing else, and the option says so.
-  - Turning Remember off, in the settings, deletes the remembered copy.
-  - Until the member sets the local password, at their first pairing, the key waits in a file wrap, as a development instance's does; setting the password removes it, unless they ask Dens to remember.
-- *Who can read what* changes, and the public docs say so. The installed service runs as its own account, so a program running as the member can't read Dens's data or keys without root. The Flatpak runs as the member, so their programs can reach its files, and a remembered copy of its key; without one, the files open only with the local password. Flatpak's sandbox keeps other Flatpak apps out.
-- *Lifecycle.* No installer runs: `install`, `update` and `uninstall` refuse this form, and `restore` runs as the member while the service is stopped, given the backup through `flatpak run --file-forwarding`. The app writes its own instance config at first start, naming the member and a client port of its own, 8494, so it and an installed Dens never take each other's port or cookie. It publishes its own lifecycle state as a development instance does, and migrates as it starts, but refuses data a newer version wrote, since Flatpak can roll an app back. Hosting is refused, and the settings say it needs Dens installed on Linux or Windows.
-- *Updates.* Flatpak installs and updates it: GNOME Software along with every other app, Discover and SteamOS when the member updates there. The notice comes from Flatpak's own update monitor (`CreateUpdateMonitor`), not the release host's `version` file, which moves before the Flatpak repository does. It says an update is available, and installs it through the monitor where it asks for no new permissions, or that one is installed, and restarts Dens into it (`Spawn` with the latest version).
-- *Voice keys* need no separate helper, since Dens already runs in the session: the helper runs inside the service, over a pipe to the hub. It binds keys through the global shortcuts portal, which knows a sandboxed app by its Flatpak ID, wherever the portal's interface exists rather than only where `WAYLAND_DISPLAY` is set, and skips the host registry call, which a sandboxed app can't make. Under X11 it reads them over the X11 socket, as the installed helper does.
-- *Permissions:* `--share=network` and `--socket=fallback-x11`, and no files, which go through the browser. X11 lets an app read every key typed in the session, which software centers warn about as it installs; push to talk under X11 needs it.
-- *Dens's own repository.* The Flatpak comes from a repository on the release host, not Flathub, signed with a GPG key: Flatpak checks no other kind of signature (support for Ed25519 has waited unmerged since 2021), and its system helper refuses an unsigned remote. Members install it from one link, `flatpak+https://releases.dens.chat/flatpak/chat.dens.Dens.flatpakref`, which GNOME Software 48 and Discover 6.4 open directly; the plain link and `flatpak install` are the fallbacks. The file carries the public key, and adds Flathub where a system lacks it, for the runtime. Flathub would build Dens from source, offline, which the page's prebuilt Tailwind fights; takes no app without a window; and signs with its own key rather than the release identity. It stays an option should Dens grow a window.
-- *Beside an installed Dens* it's unsupported: the two would share a desktop file ID and the shortcuts portal's app ID. Their ports and cookies don't collide.
-
-### Windows
-
-Windows 11, current supported releases (24H2 and later), Home and Pro. Windows 10 and Windows Server are cut.
-
-**Service setup**
-
-- The SCM service runs as its virtual account with `SERVICE_SID_TYPE_RESTRICTED`. The token is write-restricted, so the service can write only where its service SID is explicitly granted: the state directory.
-- Required privileges are trimmed to `SeChangeNotifyPrivilege`.
-- The state directory gets a protected DACL (inheritance off, since `ProgramData` lets the Users group create files by default) granting SYSTEM and Administrators full control and the service SID modify.
-- `%ProgramData%\Dens`, which holds the instance roots, lets Users list it, as `/var/lib/dens` is 0755 on Linux. Windows path normalization, which the SQLite driver uses, lists every parent of the database, so the service fails to open it otherwise.
-- The host-bound data key is a machine-scope DPAPI blob under that DACL.
-- `dens.exe` is excluded from Windows Error Reporting so crashes don't write memory dumps.
-- A service has no console, so each instance registers an Application event log source under its service name, and the service records there why it stopped.
-
-**Weaker than Linux, stated in the docs**
-
-- There is no syscall filter, capability bounding set or read-only view of the filesystem. Writes are restricted; reads follow ordinary file ACLs, so the service can read anything the Users group can. User profiles are private by default.
-- The host-bound key copy is protected only by its file ACL: any process that can read the blob can decrypt it with machine-scope DPAPI. On Linux, decryption also needs the root-only host key or the TPM. There is no TPM binding in v1, but every Windows 11 machine has TPM 2.0, so binding through the Platform Crypto Provider is a good post-v1 item.
-- The binary and installer are not Authenticode-signed, so SmartScreen warns on first run. Integrity comes from the cosign signatures on every platform, and the install docs show the warning and explain how to verify the download before running it.
-
-**Known risks**
-
-- The platform spike showed sockets, interface enumeration, named pipes and child processes working under the restricted service SID, and the den e2e's call runs Pion there (M2).
-
-### Android (M10 to M12)
-
-An Android app joins dens from a phone. It hosts none, shares no screen, picks no speaker and has no push to talk. M10 to M12 build it, after a spike on a Galaxy S24 Ultra and a Pixel 9 Pro.
-
-- *Shape.* The release's Go binary, built for Android, rides in the APK as `lib/arm64-v8a/libdens.so` and runs as a child process from the app's native library directory, where Android lets apps execute files; Syncthing-Fork does the same, targeting Android 17. The page runs in a WebView. A thin Kotlin shell does what only Kotlin can on Android: the foreground service and its notification, the Keystore, permissions, the file picker, downloads, notifications and audio routing. It talks to the service over the control socket, as `dens open` does, holding one stream as the shortcut helper does.
-- *The WebView stays the page's.* The page gets no JavaScript bridge, so nothing in it reaches the shell, and the shell keeps the WebView on the page: every other address, a message's links and YouTube's own included, opens in the phone's browser.
-- *The build* uses cgo and the NDK, for Android alone, so name lookups go through Android's resolver and honour its Private DNS; a pure-Go binary finds no resolver there. Pion's interface listing needs `-checklinkname=0` on Android. Android's seams join `internal/platform/host` as `_android.go` files, with `!android` on their Linux counterparts, since Go builds Linux files for Android too.
-- *What Android changes.* Apps may lock only 64 KiB of memory since Android 14, so locked memory falls back to ordinary memory there, which Android swaps only to compressed RAM. Android kills child processes past 32 across the device, so media jobs run at most two at a time, under the foreground service. Apps that target Android 17 ask for `ACCESS_LOCAL_NETWORK` to reach a LAN address; loopback and the control socket don't need it, so the app asks only for a den that resolves to one.
-- *What the page loses.* Android's WebView has no `getDisplayMedia`, so the page hides sharing, while watching others' shares works; no usable `setSinkId`, so the shell routes audio; and no notifications, so the service decides what to notify and the shell posts it.
-- *Keys.* The data key is wrapped with a Keystore key, hardware-backed where the phone has the hardware, whose material never enters the app. The shell unwraps the data key at start and hands it to the child over a pipe. Android's Auto Backup leaves Dens's data out, since the Keystore key can't go with it: moving phones is a Dens backup and restore, as between computers.
-- *Staying connected.* A foreground service holds the den connections while the app isn't on screen, with the notification that comes with it, as Google-free messengers do; a call starts a second service, of the microphone's type. Later, a den could wake its members' phones through UnifiedPush, an additive protocol change that needs nothing from Google.
-- *Distribution.* The APK on the release host, with an updater in the app that installs updates without a prompt, as Android 12 and later allow an app updating itself, and steps aside when F-Droid installed it; and Dens's own F-Droid repository, from which F-Droid 2.0 updates apps automatically. Not Google Play for now: its rules for new developers, its declarations for foreground services and its ban on apps updating themselves cost more than its reach is worth to Dens yet. Samsung's Auto Blocker, on by default on Galaxy phones that shipped with One UI 6.1.1 or later, blocks both until the member turns it off, so the install guide says how.
-- *Signing.* Every update must carry the APK's signature, so its key can't be replaced if lost: it lives in CI, encrypted, and offline in two places. Android 17's hybrid signature (scheme v3.2, a classical key with ML-DSA) counts as a rotation from it, so it can be added later.
-- *Google's developer verification.* From 2027, an app whose developer Google hasn't verified installs only through an "advanced flow", and its updates fail once the member's permission for that lapses. Whether Dens registers is decided before M10.
+| Form | Runs as | Its data key | Installed and updated by | Hosts a den | Its doc |
+| --- | --- | --- | --- | --- | --- |
+| Installed | A service under its own account: a systemd unit on Linux, an SCM service on Windows | Bound to the host: `systemd-creds` or DPAPI | Its maintenance commands, which the installer scripts run | Yes | [installed.md](installed.md) |
+| Development | The developer, from a terminal | A plaintext file | The developer's own builds | Yes | [lifecycle.md](lifecycle.md)'s Development instances |
+| The Flatpak (M9) | The member, in their session | None that opens without them, unless they ask it to remember | Flatpak | No | [flatpak.md](flatpak.md) |
+| Android (M10) | The app's shell, as its child process | A Keystore key | The app's updater, or F-Droid | No | [android.md](android.md) |
 
 ### Platform layer
 
@@ -1026,15 +891,6 @@ Rules that keep the two implementations from drifting:
 - A platform difference never reaches the protocol, database or HTTP layers. A feature that seems to need one is a design problem.
 - Each seam has a contract test that runs on both CI runners.
 - Windows code compiles only under `GOOS=windows`; vet and build-test it on every change that touches it.
-
-**Deployment forms (M9).** Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M10, Android (under the app's shell). `layout.Form` names the form, and `app.FormOf` chooses it at runtime: a development build is Development, a sandbox with `/.flatpak-info` the Flatpak, `GOOS=android` Android, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it, as a `switch` on the form rather than a type per form, since there are few forms and each differs from the others in a few lines: where the paths are, how the data key unwraps, what the update notice says, whether the helper runs inside the service, and whether the instance may host. A form `layout` doesn't know has no paths, so no process runs as one. Forms other than Installed are session forms (`Form.Session`): they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
-
-**Testing the Linux service in containers.** The lifecycle harness runs in Incus containers, which change how units behave:
-
-- In unprivileged containers LXC adds `/run/systemd/system/service.d/zzz-lxc-service.conf` to every service. It turns off `NoNewPrivileges`, credentials (including encrypted ones), `ProtectProc`, `ProcSubset`, `ProtectControlGroups` and `ProtectKernelTunables`, so a unit starts and passes while running unhardened and without its data key. The harness masks it (a `/dev/null` symlink at `/etc/systemd/system/service.d/zzz-lxc-service.conf`) and starts containers with `security.nesting=true`.
-- systemd before 256 (Debian 12, Ubuntu 24.04) can't create its credential host secret in an unprivileged container, so those distros run in privileged containers.
-- Privileged containers get the host kernel's `binfmt_misc` table, which systemd empties when the container shuts down. On WSL that stops Windows programs from running until WSL restarts, so the harness mounts it read-only in privileged containers.
-- Containers share the host kernel and have no TPM or SELinux; those need a VM or a real install.
 
 ## Versioning and compatibility
 
@@ -1210,13 +1066,13 @@ dens.chat is a landing page and a few pages of docs for people using Dens, built
 What the rest of this document commits the docs to, by page:
 
 - Install:
-  - Downloading the installer and running it, with its signature check as an optional step (see Privileged steps and updates).
+  - Downloading the installer and running it, with its signature check as an optional step (see Privileged steps and updates, in [installed.md](installed.md)).
   - Linux is recommended, since its service sandbox is stronger (Goals).
   - What Windows shows before running an installer that isn't Authenticode-signed, and how to check the download (Weaker than Linux). What it shows needs checking on a clean machine first: SmartScreen marks files a browser downloads, and the installer runs through PowerShell with `-ExecutionPolicy Bypass`.
-  - The Flatpak: its link, `flatpak install` as the fallback, an alias for its commands, and that it hosts no den (Other distributions).
+  - The Flatpak: its link, `flatpak install` as the fallback, an alias for its commands, and that it hosts no den ([flatpak.md](flatpak.md)).
 - Join a den: what's unusual about Dens, in plain words: the local password and den passwords, recovery codes and the DM recovery key, den IDs, approving new devices and checking a DM's code. Onboarding says the same things, shorter, in the same words.
 - Host a den:
-  - Hosting starts from the settings, with nothing to choose at install (Install and service account).
+  - Hosting starts from the settings, with nothing to choose at install (Install and service account, in [installed.md](installed.md)).
   - Which ports to forward but not how, since routers vary too much, and a small VPS as the easy alternative (Networking and deployment).
   - A minimal Caddyfile, and Caddy as a service on both platforms, which covers ports 80 and 443 (Caddy).
   - Calls need the den's name to point at its machine, or the router in front of it: a tunnel or CDN carries a den's HTTPS but not its calls. The owner's own calls work before any port is forwarded, so the test is a call from outside the network (Media addresses).
@@ -1224,13 +1080,13 @@ What the rest of this document commits the docs to, by page:
   - A backup keeps what the den held when it was made, past the auto-delete period, until the backup is deleted (Retention).
   - Dens is one program, its database and media tools built in, so a den needs only Caddy beside it.
   - What a den costs in upload: members pick up where they left off rather than reloading, presence goes out in batches, and pictures go as previews until opened (Sync and bandwidth).
-  - A second den is a second instance, with ports of its own (Install and service account). An install that hosts updates as one binary with its client, and a den that can't wait on its owner's updates moves to an install of its own (Versioning and compatibility).
+  - A second den is a second instance, with ports of its own (Install and service account, in [installed.md](installed.md)). An install that hosts updates as one binary with its client, and a den that can't wait on its owner's updates moves to an install of its own (Versioning and compatibility).
 - Privacy:
   - The den can read channels and the files in them, could listen to calls and watch screen shares, and sees who DMs whom and when; DMs and the photos in them are end-to-end encrypted (Privacy model, End-to-end encrypted DMs, Calls). The docs say the den rather than its owner: whoever or whatever gets hold of the den's computer, someone else who uses it or malware on it, can do the same.
   - Files that aren't photos, videos or audio, such as documents and archives, go as they are, with whatever they carry inside (Metadata stripping).
-  - An update check asks the release host for the latest version number, which shows it the install's IP address (Privileged steps and updates), and a member who turns on YouTube's players shows YouTube their IP address (YouTube players).
+  - An update check asks the release host for the latest version number, which shows it the install's IP address (Privileged steps and updates, in [installed.md](installed.md)), and a member who turns on YouTube's players shows YouTube their IP address (YouTube players).
   - Windows is weaker than Linux, as Weaker than Linux lists.
-  - The installed service keeps its data under its own account, out of reach of the member's programs; the Flatpak runs as the member, so their programs can read it (Other distributions).
+  - The installed service keeps its data under its own account, out of reach of the member's programs; the Flatpak runs as the member, so their programs can read it ([flatpak.md](flatpak.md)).
   - The short philosophy section and its recommendations: Linux over Windows, LibreWolf, no identifying details for low-stakes use, and Signal, Qubes OS and similar tools for higher stakes, none of them bulletproof (Privacy model).
 
 ## Open questions
