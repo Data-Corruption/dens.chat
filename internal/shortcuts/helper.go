@@ -53,10 +53,11 @@ type DesktopKeys interface {
 // pages act on them.
 type Helper struct {
 	Version string
-	// Instances lists the instances to try, and Dial gives each one's
-	// control client.
+	// Instances lists the instances to try, and Open opens the stream to
+	// each one's hub: over its control endpoint, or a pipe inside the
+	// Flatpak's service (M9.3).
 	Instances func() ([]string, error)
-	Dial      func(instance string) (control.Client, error)
+	Open      func(instance string) (*control.Stream, error)
 	// Keys reads the keys; where the system offers no way to, it's nil and
 	// Problem says why, which the services log. Note says what the system
 	// keeps from the reader, for the settings.
@@ -90,6 +91,39 @@ type Helper struct {
 	deskDeclined bool
 	deskHeld     map[string]bool
 	deskWake     chan struct{}
+}
+
+// UseSystem has the helper read the keys as the system lets it: through
+// the desktop's global shortcuts portal where there's one, as under Wayland
+// and from the Flatpak's sandbox, where the portal knows Dens by its app ID
+// whatever the session (M9.3), and otherwise from the X11 session's
+// keyboard. Where neither works, Problem says why. It returns what closes
+// the reader.
+func (h *Helper) UseSystem(sandboxed bool) (close func()) {
+	desk, deskErr := host.OpenDesktopKeys(AppID, sandboxed)
+	if deskErr == nil {
+		first := desk
+		h.OpenDesktop = func() (DesktopKeys, error) {
+			if first != nil {
+				d := first
+				first = nil
+				return d, nil
+			}
+			d, err := host.OpenDesktopKeys(AppID, sandboxed)
+			if err != nil {
+				return nil, err
+			}
+			return d, nil
+		}
+		return func() {}
+	}
+	keys, err := host.OpenKeyState()
+	if err != nil {
+		h.Problem = errors.Join(deskErr, err).Error()
+		return func() {}
+	}
+	h.Keys, h.Note = keys, keys.Note()
+	return func() { _ = keys.Close() }
 }
 
 // remote is one instance's stream and what it asks the helper to watch.
@@ -191,13 +225,10 @@ func (h *Helper) Run(ctx context.Context) error {
 func (h *Helper) keep(ctx context.Context, cancel context.CancelCauseFunc, name string, refused chan<- string) {
 	wait := time.Second
 	for ctx.Err() == nil {
-		client, err := h.Dial(name)
+		s, err := h.Open(name)
 		if err == nil {
-			var s *control.Stream
-			if s, err = client.Open(control.Request{Op: control.OpShortcuts}); err == nil {
-				wait = time.Second
-				err = h.serve(ctx, cancel, name, s)
-			}
+			wait = time.Second
+			err = h.serve(ctx, cancel, name, s)
 		}
 		var userErr *control.UserError
 		if errors.As(err, &userErr) || errors.Is(err, fs.ErrPermission) {

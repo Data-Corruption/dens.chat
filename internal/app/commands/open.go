@@ -6,6 +6,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 
 	"github.com/urfave/cli/v3"
@@ -26,23 +27,29 @@ func openCommand(bi build.BuildInfo) *cli.Command {
 			if err != nil {
 				return err
 			}
-			var pair control.Pair
-			if err := client.Call(control.Request{Op: control.OpPair}, &pair); err != nil {
-				return explainCallError(bi, l, err)
-			}
-			if cmd.Bool("print") {
-				fmt.Println(pair.URL)
-				return nil
-			}
-			if err := host.OpenURL(pair.URL); err != nil {
-				fmt.Println("Couldn't open a browser. Open this link within two minutes; it works once:")
-				fmt.Println(pair.URL)
-				return nil
-			}
-			fmt.Println("Opened Dens in your browser.")
-			return nil
+			return openPage(bi, client, l, cmd.Bool("print"))
 		},
 	}
+}
+
+// openPage opens the page in the browser with a pairing link, or prints the
+// link.
+func openPage(bi build.BuildInfo, client control.Client, l layout.Layout, print bool) error {
+	var pair control.Pair
+	if err := client.Call(control.Request{Op: control.OpPair}, &pair); err != nil {
+		return explainCallError(bi, l, err)
+	}
+	if print {
+		fmt.Println(pair.URL)
+		return nil
+	}
+	if err := host.OpenURL(pair.URL); err != nil {
+		fmt.Println("Couldn't open a browser. Open this link within two minutes; it works once:")
+		fmt.Println(pair.URL)
+		return nil
+	}
+	fmt.Println("Opened Dens in your browser.")
+	return nil
 }
 
 func statusCommand(bi build.BuildInfo) *cli.Command {
@@ -62,6 +69,9 @@ func statusCommand(bi build.BuildInfo) *cli.Command {
 			fmt.Printf("version:   %s\n", status.Version)
 			fmt.Printf("client:    %s\n", status.ClientURL)
 			fmt.Printf("password:  %s\n", setOrNot(status.PasswordSet))
+			if status.Locked {
+				fmt.Printf("locked:    unlock it in the browser, with the local password\n")
+			}
 			fmt.Printf("den:       %s\n", enabledOrNot(status.DenEnabled))
 			if status.DenProblem != "" {
 				fmt.Printf("           %s\n", status.DenProblem)

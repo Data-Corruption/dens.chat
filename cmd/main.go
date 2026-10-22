@@ -58,11 +58,7 @@ func runMain() int {
 			}
 			return ctx, nil
 		},
-		Action: func(ctx context.Context, cmd *cli.Command) error {
-			fmt.Printf("%s version %s\n", bi.Name, bi.Version)
-			fmt.Printf("Use '%s open' to open Dens, or '%s help' for all commands.\n", bi.Name, bi.Name)
-			return nil
-		},
+		Action:   commands.Root(bi),
 		Commands: commands.All(bi),
 	}
 

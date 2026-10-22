@@ -103,9 +103,11 @@ func helperFor(t *testing.T, version string, client control.Client, keys KeyRead
 	return &Helper{
 		Version:   version,
 		Instances: func() ([]string, error) { return []string{"main"}, nil },
-		Dial:      func(string) (control.Client, error) { return client, nil },
-		Keys:      keys,
-		Logf:      t.Logf,
+		Open: func(string) (*control.Stream, error) {
+			return client.Open(control.Request{Op: control.OpShortcuts})
+		},
+		Keys: keys,
+		Logf: t.Logf,
 	}
 }
 

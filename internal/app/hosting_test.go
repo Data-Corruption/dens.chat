@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
@@ -123,6 +124,35 @@ func TestRestoredBackupStartsNotHosting(t *testing.T) {
 	}
 	if cfg.Hosting == nil || *cfg.Hosting {
 		t.Fatalf("the switch after a restore is %v", cfg.Hosting)
+	}
+}
+
+// The Flatpak hosts no den, whatever its data held, as a backup of an
+// instance that hosted does (M9.3).
+func TestFlatpakNeverHosts(t *testing.T) {
+	devHome(t)
+	a := openDev(t, fmt.Sprintf("t%d", time.Now().UnixNano()%1_000_000))
+	defer a.Close()
+	on := true
+	if _, err := config.Update(a.DB, func(c *types.Configuration) error {
+		c.Hosting = &on
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !a.CanHost() {
+		t.Fatal("a development instance can't host")
+	}
+	a.Layout.Form = layout.Flatpak
+	if a.CanHost() {
+		t.Fatal("the Flatpak can host")
+	}
+	cfg, err := a.prepareHosting(maintenance.PhaseReady, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Hosting == nil || *cfg.Hosting {
+		t.Fatalf("the Flatpak's switch is %v", cfg.Hosting)
 	}
 }
 

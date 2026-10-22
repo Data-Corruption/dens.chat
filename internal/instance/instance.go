@@ -27,6 +27,10 @@ const (
 	DefaultMediaTCPPort = 7882
 )
 
+// FlatpakClientPort is the Flatpak's client port (M9.3), apart from an
+// installed Dens's, so neither takes the other's port or cookie.
+const FlatpakClientPort = 8494
+
 const maxConfigSize = 16 * 1024
 
 // Den holds the den's ports, which it listens on while hosting is on. Its

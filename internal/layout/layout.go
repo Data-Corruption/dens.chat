@@ -47,8 +47,16 @@ type Layout struct {
 	OperationLock  string
 	LifecycleLock  string
 	InstanceConfig string
-	HostKey        string
 	MaintenanceLog string
+	// HostKey is the data key kept for this host: wrapped by systemd-creds
+	// or DPAPI for an installed instance, and in a file for a development
+	// one, and for the Flatpak until its local password exists, or where
+	// it remembers the key without a keyring it can trust (M9.3).
+	HostKey string
+	// KeyringKey is the Flatpak's data key wrapped with the secret the
+	// member's keyring keeps for the app, through the Secret portal, once
+	// the member asks it to remember (M9.3). Empty for the other forms.
+	KeyringKey string
 
 	Data    string
 	DB      string
@@ -56,8 +64,13 @@ type Layout struct {
 	Uploads string
 	Temp    string
 	// Cache holds the client's cache of other dens' files (M6), which
-	// backups leave out.
+	// backups leave out: in the data directory, but for the Flatpak, whose
+	// cache goes where backup tools skip it.
 	Cache string
+	// Snapshot holds the Flatpak's snapshot of the data an older version
+	// left, kept as it updates them: a backup archive, the last one only
+	// (M9.3). Empty for the other forms.
+	Snapshot string
 
 	// Runtime is the directory holding the control socket on Linux. It is
 	// empty on Windows, where the control endpoint is a named pipe.

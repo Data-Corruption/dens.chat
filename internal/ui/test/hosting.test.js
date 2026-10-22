@@ -20,3 +20,8 @@ test("the switch says nothing while off, where the den is sent while on, and why
     assert.deepEqual(hostingNote({ enabled: true, serving: false, problem: held, ...ports }), { problem: held });
     assert.match(hostingNote({ enabled: true, serving: false, ...ports }).problem, /hasn't started/);
 });
+
+test('a form that hosts no den, as the Flatpak, says what hosting needs, whatever else it says', () => {
+    assert.match(hostingNote({ can_host: false, enabled: false, serving: false, ...ports }).cantHost, /installed on Linux or Windows/);
+    assert.equal(hostingNote({ can_host: true, enabled: false, serving: false, ...ports }), null);
+});

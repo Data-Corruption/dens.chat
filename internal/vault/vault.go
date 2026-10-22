@@ -120,6 +120,11 @@ func checkValue(key []byte) []byte {
 	return mac.Sum(nil)[:16]
 }
 
+// CopyKey returns a copy of the data key, for the Flatpak to keep where it
+// opens without the member, in a file, when they ask it to remember the key
+// and no keyring can be trusted with it (M9.3). The caller clears it.
+func (v *Vault) CopyKey() []byte { return append([]byte(nil), v.key...) }
+
 // Matches reports whether key is this vault's key, in constant time.
 func (v *Vault) Matches(key []byte) bool {
 	return subtle.ConstantTimeCompare(v.key, key) == 1

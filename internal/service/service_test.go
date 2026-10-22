@@ -303,3 +303,71 @@ func TestStartEmptiesTemp(t *testing.T) {
 		t.Fatalf("tmp after a start: %v %v", entries, err)
 	}
 }
+
+// A session form's service stops when asked over the control endpoint,
+// having no service manager to stop it, after answering (M9.3).
+func TestSessionServiceQuitsWhenAsked(t *testing.T) {
+	devHome(t)
+	a := app.New(devBuild)
+	if err := a.Open(app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}); err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	pages, err := ui.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.UI = pages
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- service.Run(context.Background(), a, func() { close(ready) }) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("service stopped before ready: %v", err)
+	}
+	me, err := host.CurrentUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := control.Client{Endpoint: a.Layout.ControlEndpoint, Server: host.ControlServer{Account: me}, Timeout: 10 * time.Second}
+	if err := client.Call(control.Request{Op: control.OpQuit}, nil); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the service stopped with %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the service didn't stop when asked")
+	}
+}
+
+// The page downloads a backup as dens backup writes it, after the local
+// password, from a link that works once and soon goes (M9.3).
+func TestPageDownloadsABackup(t *testing.T) {
+	a, client := startDevService(t)
+	b := pair(t, a, client)
+	b.expect(http.StatusForbidden, "a backup with a wrong password", "POST", "/api/backup", map[string]string{"password": "wrong wrong wrong"})
+	var link struct {
+		URL string `json:"url"`
+	}
+	b.expect(http.StatusOK, "a backup", "POST", "/api/backup", map[string]string{"password": localPassword}, &link)
+	req, _ := http.NewRequest("GET", b.base+link.URL, nil)
+	resp, err := b.http.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil || resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
+		t.Fatalf("the download: %d %v, %v", resp.StatusCode, resp.Header, err)
+	}
+	dir := t.TempDir()
+	manifest, err := backup.Extract(bytes.NewReader(archive), dir, backup.DefaultLimits)
+	if err != nil || manifest.Instance != a.Layout.Instance {
+		t.Fatalf("the archive: %+v, %v", manifest, err)
+	}
+	b.expect(http.StatusGone, "the link again", "GET", link.URL, nil)
+}

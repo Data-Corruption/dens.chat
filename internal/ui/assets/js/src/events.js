@@ -14,6 +14,8 @@
 // the page says it's out of touch rather than looking fine while it hears
 // nothing, and its views reload once it opens.
 
+import { pageHeaders, reloadIfStale } from './api.js';
+
 const MIN_DELAY = 250;
 const MAX_DELAY = 3000;
 const OPEN_WAIT = 3000;
@@ -59,10 +61,13 @@ function retryNow() {
 async function reconnect() {
     let res = null;
     try {
-        res = await fetch('/api/status', { cache: 'no-store' });
+        res = await fetch('/api/status', { cache: 'no-store', headers: pageHeaders() });
     } catch {
         // Not back yet.
     }
+    // A service another version, as an update restarted it into, serves
+    // the page again.
+    if (res && reloadIfStale(res)) return;
     if (res?.status === 401) unpairedListeners.forEach((fn) => fn());
     else if (res?.ok) connect();
     else schedule();

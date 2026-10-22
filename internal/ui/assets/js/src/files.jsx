@@ -7,7 +7,7 @@
 // shown as text, never used as anything else.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { APIError } from './api.js';
+import { APIError, pageHeaders, reloadIfStale } from './api.js';
 import { canCopy, followUpload } from './copier.js';
 
 // Previews fit these boxes in the message list; one image gets more room
@@ -581,11 +581,11 @@ export async function addPreview(denID, file) {
     try {
         const res = await fetch(`/api/dens/${denID}/uploads/${file.id}/thumb`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
+            headers: pageHeaders({ 'Content-Type': 'application/octet-stream' }),
             body: blob,
             credentials: 'same-origin',
         });
-        if (!res.ok) return file;
+        if (reloadIfStale(res) || !res.ok) return file;
         const up = await res.json();
         return up?.thumb ? { ...file, thumb: up.thumb } : file;
     } catch {

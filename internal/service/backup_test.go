@@ -84,7 +84,7 @@ func TestBackupHoldsDeletedFiles(t *testing.T) {
 
 	// The snapshot is taken before the reply, and the archive waits on its
 	// reader from its first byte, so it hasn't walked the uploads yet.
-	reply, err := controlHandlers(a)[control.OpBackup](ctx, control.Request{Op: control.OpBackup, Password: "correct horse battery"})
+	reply, err := controlHandlers(a, func(string) {})[control.OpBackup](ctx, control.Request{Op: control.OpBackup, Password: "correct horse battery"})
 	if err != nil {
 		t.Fatalf("backup: %v", err)
 	}

@@ -233,3 +233,128 @@ func openBackup(bi build.BuildInfo, archive, dir, password string) ([]byte, back
 	}
 	return key, manifest, nil
 }
+
+// RestoreSession replaces a session form's data with a backup (M9.3): the
+// installed restore's steps without the elevation, as the user whose
+// instance it is. stop asks a running service to stop, and the restore
+// waits for its lifecycle lock. The restored data's first start migrates
+// them and clears what a restore's clears, then removes the data they
+// replaced. Their data key is the backup's: a development instance keeps
+// it in its file, and the Flatpak, whose remembered copies held another
+// key, starts locked, to open with the backup's local password. The state
+// the data were in doesn't matter, since they go: as after Flatpak rolled
+// Dens back past them, when restoring the snapshot from before the update
+// is the way back.
+func RestoreSession(ctx context.Context, bi build.BuildInfo, l layout.Layout, archive, password string, stop func() error, opts Options) (err error) {
+	out := opts.Out
+	if out == nil {
+		out = os.Stdout
+	}
+	p := newProgress(out)
+	defer p.close()
+	if !l.Form.Session() {
+		return fmt.Errorf("RestoreSession called on the %s layout", l.Form)
+	}
+	prior, err := maintenance.ReadState(l.State)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("instance %s has no data yet; start Dens once, then restore into it", l.Instance)
+	}
+	if err != nil {
+		return err
+	}
+	if err := l.EnsureSession(); err != nil {
+		return err
+	}
+
+	p.printf("Reading %s ...", archive)
+	staging, err := os.MkdirTemp(l.Root, "data.restore-")
+	if err != nil {
+		return err
+	}
+	stagingKept := false
+	defer func() {
+		if !stagingKept {
+			_ = os.RemoveAll(staging)
+		}
+	}()
+	key, manifest, err := openBackup(bi, archive, staging, password)
+	if err != nil {
+		return err
+	}
+	defer clear(key)
+	p.printf("Backup of instance %s from %s, made by %s %s on %s.",
+		manifest.Instance, manifest.CreatedAt.Format(time.RFC1123), manifest.App, manifest.Version, manifest.Platform)
+
+	opLock, err := maintenance.AcquireOperationLock(ctx, l)
+	if err != nil {
+		return err
+	}
+	defer opLock.Close()
+	p.openLog(l.MaintenanceLog)
+	if err := stop(); err != nil {
+		return err
+	}
+	lifeLock, err := maintenance.AcquireLifecycleLock(ctx, l)
+	if err != nil {
+		return err
+	}
+	defer lifeLock.Close()
+	j := &journal{}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, j.rollback(out))
+		}
+	}()
+	if err := maintenance.WriteState(l.State, maintenance.NewState(maintenance.PhaseRestoring, bi.Version, bi.Version), nil); err != nil {
+		return err
+	}
+	j.add(func() error { return maintenance.WriteState(l.State, prior, nil) })
+
+	p.printf("Replacing the data of instance %s ...", l.Instance)
+	old := fmt.Sprintf("%s.replaced-%s", l.Data, time.Now().UTC().Format("20060102-150405"))
+	if err := os.Rename(l.Data, old); err != nil {
+		return fmt.Errorf("set the current data aside: %w", err)
+	}
+	j.add(func() error { return os.Rename(old, l.Data) })
+	if err := os.Rename(staging, l.Data); err != nil {
+		return fmt.Errorf("move the restored data in: %w", err)
+	}
+	stagingKept = true
+	j.add(func() error { return os.Rename(l.Data, staging) })
+	switch l.Form {
+	case layout.Development:
+		if err := maintenance.WriteFileAtomic(l.HostKey, key, nil); err != nil {
+			return fmt.Errorf("keep the backup's data key: %w", err)
+		}
+	case layout.Flatpak:
+		for _, path := range []string{l.HostKey, l.KeyringKey} {
+			if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return fmt.Errorf("forget the data key the instance remembered: %w", err)
+			}
+		}
+	}
+	j.commit()
+
+	// Logs describe this machine, not the backup; keep them. A cache
+	// outside the data holds the replaced data's dens.
+	_ = os.Rename(filepath.Join(old, "logs"), l.Logs)
+	if filepath.Dir(l.Cache) != l.Data {
+		entries, _ := os.ReadDir(l.Cache)
+		for _, e := range entries {
+			if err := os.RemoveAll(filepath.Join(l.Cache, e.Name())); err != nil {
+				p.printf("Couldn't empty the cache in %s: %v", l.Cache, err)
+			}
+		}
+	}
+	switch l.Form {
+	case layout.Flatpak:
+		p.printf("Restored instance %s. Open Dens from your apps menu: it starts locked, and opens with the backup's local password.", l.Instance)
+	default:
+		flag := ""
+		if l.Instance != layout.DefaultInstance {
+			flag = " --instance " + l.Instance
+		}
+		p.printf("Restored instance %s. Start it with: %s service run%s", l.Instance, bi.Name, flag)
+	}
+	return nil
+}

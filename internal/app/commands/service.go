@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
@@ -30,8 +31,11 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 				if err != nil {
 					return err
 				}
-				if l.Form.Session() {
-					return fmt.Errorf("%s instances have no service manager; run %s service run in a terminal", l.Form, bi.Name)
+				switch l.Form {
+				case layout.Development:
+					return fmt.Errorf("development instances have no service manager; run %s service run in a terminal", bi.Name)
+				case layout.Flatpak:
+					return errors.New("the Flatpak has no service manager: open Dens from your apps menu to start it, and quit it from its settings")
 				}
 				return run(l)
 			},
@@ -51,6 +55,7 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 					&cli.IntFlag{Name: "den-port", Usage: "host a den on this port (development instances only)"},
 					&cli.IntFlag{Name: "media-udp-port", Usage: "UDP port for the den's calls (development instances only)"},
 					&cli.IntFlag{Name: "media-tcp-port", Usage: "TCP fallback port for the den's calls (development instances only)"},
+					&cli.IntFlag{Name: "ready-fd", Hidden: true, Usage: "a pipe to say on that the service is ready, or why it stopped (dens launch gives it)"},
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					return runService(ctx, bi, cmd)
@@ -100,10 +105,21 @@ func serviceCommand(bi build.BuildInfo) *cli.Command {
 	}
 }
 
+// readyWord is what the service says on dens launch's pipe once it's ready;
+// anything else is why it stopped.
+const readyWord = "ready"
+
 // runService hosts the service under the platform's service manager first,
 // so that even a refused start is reported to it properly, then opens the
-// installation and runs.
-func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) error {
+// installation and runs. A launch that started it hears, on the pipe it
+// gave, once it's ready, or why it stopped (M9.3).
+func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) (err error) {
+	tell := readyPipe(cmd.Int("ready-fd"))
+	defer func() {
+		if err != nil {
+			tell(err.Error())
+		}
+	}()
 	l, err := layout.New(bi.Name, cmd.String("instance"), app.FormOf(bi))
 	if err != nil {
 		return fmt.Errorf("%w: %w", host.ErrRefused, err)
@@ -111,7 +127,10 @@ func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) error
 	return host.RunService(ctx, l.ServiceName, func(ctx context.Context, ready func()) error {
 		a := app.New(bi)
 		defer a.Close()
-		err := serve(ctx, a, bi, l, cmd, ready)
+		err := serve(ctx, a, bi, l, cmd, func() {
+			ready()
+			tell(readyWord)
+		})
 		// A Windows service has no stderr, so its own log is where an
 		// operator finds out why it stopped.
 		if err != nil && a.Log != nil {
@@ -144,4 +163,17 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 		fmt.Printf("Development instance %s: %s (pair with: %s open)\n", l.Instance, guard.PageOrigin(a.Instance.ClientPort), bi.Name)
 	}
 	return service.Run(ctx, a, ready)
+}
+
+// readyPipe is what says on the pipe a launch gave as fd, once.
+func readyPipe(fd int) func(string) {
+	var once sync.Once
+	return func(said string) {
+		once.Do(func() {
+			if pipe := host.InheritedPipe(fd); pipe != nil {
+				_, _ = pipe.WriteString(said + "\n")
+				_ = pipe.Close()
+			}
+		})
+	}
 }

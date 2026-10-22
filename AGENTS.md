@@ -1,7 +1,7 @@
 # Working on Dens
 
 Orientation for coding agents and contributors. Read this before changing
-anything, and read the design doc before changing anything it covers.
+anything, and read the design docs before changing anything they cover.
 
 ## What this is
 
@@ -12,8 +12,10 @@ loopback, at `http://localhost:<port>`, and holding their keys, and it can
 also host one den (a community). Linux (systemd) and Windows 11 (SCM) are supported for both roles.
 The binary's elevated maintenance commands own install, update, restore and
 uninstall; the installer scripts only download, verify and hand off to them.
+On the distributions the installer refuses, a Flatpak runs the same binary as
+the member, in their session, and hosts no den.
 
-The target design is [docs/dev/design.md](docs/dev/design.md).
+The target design is [docs/dev/design.md](docs/dev/design.md), with each deployment form's own beside it: [installed.md](docs/dev/installed.md), [flatpak.md](docs/dev/flatpak.md) and [android.md](docs/dev/android.md).
 
 ## Where things live
 
@@ -54,20 +56,29 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 | `scripts/rnnoise.sh` | Builds RNNoise's module for the page from its pinned inputs, and checks the committed one |
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
+| `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, and commits it to a repository |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, and the browser checks (`scripts/test/browser/`), run by hand before each manual test |
-| `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design doc, which names the commit that last held it |
-| `docs/dev/` | Internal docs: the design, the milestones, the lifecycle, the den protocol and the release process |
+| `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
+| `docs/dev/` | Internal docs: the design and each deployment form's, the milestones, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
 
 ## Documents of record
 
-- [docs/dev/design.md](docs/dev/design.md): processes, platform layer, identity
-  and encryption, authentication, den features, media, security checklist.
+- [docs/dev/design.md](docs/dev/design.md): processes, deployment forms and the
+  platform layer, identity and encryption, authentication, den features, media,
+  security checklist.
+- [docs/dev/installed.md](docs/dev/installed.md): the service under its own
+  account on Linux and Windows: install, accounts and sandboxes, updates, paths
+  and permissions, maintenance transactions and the installer scripts.
+- [docs/dev/flatpak.md](docs/dev/flatpak.md): the Flatpak (M9), run by the
+  member in their session: its sandbox, locked start and remembered
+  key, lifecycle with no installer, updates, and its harness.
+- [docs/dev/android.md](docs/dev/android.md): the Android app (M10 to M12).
 - [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
   the plan for the one under way, and ideas after it.
-- [docs/dev/lifecycle.md](docs/dev/lifecycle.md): paths, lifecycle state,
-  locks, maintenance transactions, development instances, and the lifecycle
-  e2e harnesses.
+- [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
+  locks every form shares, development instances, and the lifecycle e2e
+  harnesses.
 - [docs/dev/protocol.md](docs/dev/protocol.md): the client-to-den protocol:
   authentication, the WebSocket, events, history and limits.
 - [docs/dev/release.md](docs/dev/release.md): publication order, resume,
@@ -75,8 +86,8 @@ The target design is [docs/dev/design.md](docs/dev/design.md).
 - `docs/content/`: public docs for people using Dens.
 
 When a reference document and the code disagree, the code is right and the
-document is stale; fix the document in the same change. The design doc also
-covers what isn't built yet; if your change shows the design is wrong, fix it
+document is stale; fix the document in the same change. The design docs also
+cover what isn't built yet; if your change shows the design is wrong, fix it
 in the same change.
 
 ## Rules that are not obvious from the code
@@ -109,7 +120,9 @@ SQLite `secure_delete` stays on.
 `install`, and `dens update` only fetches, verifies and runs the installer.
 The service never replaces its binary, edits its unit or SCM registration, or
 writes lifecycle state; it migrates its data only when `state.json` names its
-version as the target of a transition.
+version as the target of a transition. A session form's service, a development
+instance's or the Flatpak's, has no installer, and publishes its own lifecycle
+state, deciding under its lifecycle lock (see `docs/dev/lifecycle.md`).
 
 **Starting the services is the point of no return.** Until then a
 transaction's journal undoes every step. Once a service may have migrated,
@@ -143,10 +156,10 @@ install-time steps go behind the `System` interface in `internal/install`.
 Nothing else gets build tags. A platform difference must never reach the
 protocol, database or HTTP layers; if a feature seems to need one, raise it as
 a design problem. What differs by how Dens is deployed, its form (installed,
-or a development build's instance), is chosen at runtime from `layout.Form`,
-as a `switch` on the form where it differs, never by build tags. Like a
-platform difference, a form never reaches the protocol or the database, and
-reaches the page only as what it can do.
+a development build's instance, or the Flatpak), is chosen at runtime from
+`layout.Form`, as a `switch` on the form where it differs, never by build
+tags. Like a platform difference, a form never reaches the protocol or the
+database, and reaches the page only as what it can do.
 
 **Windows code compiles only under `GOOS=windows`.** After touching a
 `_windows.go` file, run `GOOS=windows go vet ./...` and
@@ -204,6 +217,7 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
+./scripts/test.sh -flatpak-e2e # the Flatpak, made from this tree: launched, unlocked, updated and rolled back, in Incus containers
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build in it
 scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test
@@ -218,8 +232,8 @@ go test ./internal/build/winres -args -update  # rewrite cmd's Windows resource 
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
-The `-release`, `-e2e` and `-den-e2e` harnesses, and the browser checks, run on
-Linux only; the harnesses' logs land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
+The `-release`, `-e2e`, `-den-e2e` and `-flatpak-e2e` harnesses, and the browser
+checks, run on Linux only; the harnesses' logs land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 `scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
 Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
@@ -275,4 +289,4 @@ in user docs only when it helps the reader make a decision or understand a
 constraint. The design doc may explain why a decision was made, but it still
 describes the design, not how it evolved. A milestone's plan lives in
 `docs/dev/milestones.md` while it's under way; once the milestone is done, what
-the plan still teaches moves into the design doc's sections and the rest goes.
+the plan still teaches moves into the design docs' sections and the rest goes.

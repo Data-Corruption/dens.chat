@@ -41,6 +41,9 @@ type Configuration struct {
 	// keys, where it owns them (M7.2), so the helper binds them with it as
 	// it starts.
 	DesktopKeys bool `json:"desktopKeys,omitempty"`
+	// StartAtSignIn is whether the Flatpak starts at the member's sign-in
+	// once its key is remembered (M9.3): nil until they choose, which is on.
+	StartAtSignIn *bool `json:"startAtSignIn,omitempty"`
 }
 
 // VoiceActions are what keys are bound to: push to talk, toggle mute and

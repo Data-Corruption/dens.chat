@@ -61,6 +61,12 @@ type App struct {
 	Den *den.Den
 	// Hosting is the switch that serves it (M9.1), which the service runs.
 	Hosting Hosting
+	// Flatpak is what the Flatpak's service does in the member's session
+	// (M9.3); nil in the other forms.
+	Flatpak Flatpak
+	// RememberingChanged, if set, is told when the Flatpak's remembered
+	// copy of its key comes or goes (M9.3).
+	RememberingChanged func()
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
 	// Shortcuts carries the voice keys from the desktop user's helper to
@@ -77,9 +83,21 @@ type App struct {
 
 	buildInfo build.BuildInfo
 
+	// cleanupMu guards cleanup, to which an unlock adds as the service
+	// runs.
+	cleanupMu   sync.Mutex
 	cleanup     []CleanupFunc
 	cleanupOnce sync.Once
 	closeErr    error
+
+	// snapshotKept is the snapshot this start kept of an older version's
+	// data, for the log (M9.3).
+	snapshotKept string
+	// keys is the Flatpak's locked start and its remembered key (M9.3).
+	keys keyState
+	// RetrieveSecret asks the member's keyring for the app's secret, as
+	// host.RetrieveSecret does; tests answer for it.
+	RetrieveSecret func(ctx context.Context, wait time.Duration) ([]byte, error)
 
 	updateCheckMu sync.Mutex
 	// Argon2id makes each password check expensive; the limiter keeps a
@@ -124,6 +142,9 @@ func (e *PortError) Error() string {
 
 func (e *PortError) Unwrap() error { return e.Err }
 
+// ErrCantHost is turning hosting on in a form that hosts no den.
+var ErrCantHost = errors.New("hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in")
+
 // ErrNoPassword reports that no local password has been set yet.
 var ErrNoPassword = errors.New("no local password is set yet")
 
@@ -135,16 +156,21 @@ func New(buildInfo build.BuildInfo) *App {
 		buildInfo:       buildInfo,
 		Pairing:         pairing.New(),
 		passwordLimiter: rate.NewLimiter(rate.Every(2*time.Second), 3),
+		RetrieveSecret:  host.RetrieveSecret,
 	}
 }
 
 func (a *App) BuildInfo() build.BuildInfo { return a.buildInfo }
 
 // FormOf is the form a process of this build runs in (M9): a development
-// build's is Development, and every other's Installed.
+// build's is Development; the release binary in Dens's Flatpak sandbox the
+// Flatpak, so it runs as it is; and every other Installed.
 func FormOf(bi build.BuildInfo) layout.Form {
-	if bi.DevMode {
+	switch {
+	case bi.DevMode:
 		return layout.Development
+	case inFlatpak():
+		return layout.Flatpak
 	}
 	return layout.Installed
 }
@@ -163,6 +189,9 @@ type OpenOptions struct {
 	// DevMediaPorts, where set, are the UDP and TCP ports of a development
 	// instance's calls, so two can host dens on one machine.
 	DevMediaPorts [2]int
+	// Form, where set, is the form to open as in place of the one FormOf
+	// finds: tests run the Flatpak's service outside its sandbox.
+	Form *layout.Form
 }
 
 // Open prepares the service. Every failure wraps host.ErrRefused: a service
@@ -182,18 +211,25 @@ func (a *App) open(opts OpenOptions) error {
 	if bi.Version == "" {
 		return errors.New("this build has no version")
 	}
-	l, err := layout.New(bi.Name, opts.Instance, FormOf(bi))
+	form := FormOf(bi)
+	if opts.Form != nil {
+		form = *opts.Form
+	}
+	l, err := layout.New(bi.Name, opts.Instance, form)
 	if err != nil {
 		return err
 	}
 	a.Layout = l
+	var lease *maintenance.Lease
 	if l.Form.Session() {
 		if err := a.prepareSession(opts); err != nil {
 			return fmt.Errorf("prepare the %s instance: %w", l.Form, err)
 		}
+		lease, err = maintenance.AcquireSessionLease(l, bi.Version, a.sessionOptions())
+		err = a.explainRollback(err)
+	} else {
+		lease, err = maintenance.AcquireServiceLease(l, bi.Version)
 	}
-
-	lease, err := maintenance.AcquireServiceLease(l, bi.Version)
 	if err != nil {
 		return err
 	}
@@ -214,6 +250,9 @@ func (a *App) open(opts OpenOptions) error {
 		return fmt.Errorf("open logs: %w", err)
 	}
 	a.Log.Infof("Starting %s %s, instance %s (%s, mode %d)", bi.Name, bi.Version, l.Instance, l.Form, lease.Mode)
+	if a.snapshotKept != "" {
+		a.Log.Infof("Kept a snapshot of the data from %s, before updating it, in %s", lease.State.Version, a.snapshotKept)
+	}
 	// tmp holds files only while the service works on them: uploads
 	// arriving, files being prepared for sending, a backup's snapshot. So
 	// whatever a crash left there goes before anything uses it (M8).
@@ -229,16 +268,15 @@ func (a *App) open(opts OpenOptions) error {
 		return fmt.Errorf("instance config names %q, not %q", a.Instance.Name, l.Instance)
 	}
 
-	key, err := a.loadKey()
-	if err != nil {
-		return err
+	// The Flatpak finds its key in what the database holds, so it opens
+	// that first; the others' come from the host.
+	var key []byte
+	if l.Form != layout.Flatpak {
+		if key, err = a.loadKey(); err != nil {
+			return err
+		}
+		defer clear(key)
 	}
-	a.Vault, err = vault.New(key)
-	clear(key)
-	if err != nil {
-		return fmt.Errorf("hold data key: %w", err)
-	}
-	a.AddCleanup(func() error { a.Vault.Close(); return nil })
 
 	policy := database.RequireCurrentSchema
 	if lease.Mode == maintenance.StartMigrate {
@@ -255,8 +293,11 @@ func (a *App) open(opts OpenOptions) error {
 		})
 		return errors.Join(stateErr, a.DB.Close())
 	})
-	if err := a.checkVault(lease.Mode); err != nil {
-		return err
+	if l.Form == layout.Flatpak {
+		if key, err = a.flatpakStartKey(); err != nil {
+			return err
+		}
+		defer clear(key)
 	}
 	if lease.State.Phase == maintenance.PhaseRestoring {
 		// Pairing belongs to a machine's browsers, not to the data: a
@@ -274,24 +315,6 @@ func (a *App) open(opts OpenOptions) error {
 	a.Media = ffmpeg.NewRunner([]string{exe, ffmpeg.WorkerCommand}, host.StartLowPriority,
 		func(s string) { a.Log.Debugf("Media module: %s", s) })
 
-	// Any instance may host, so each opens its den, which before it's
-	// created is one row's read; the service serves it while hosting is on.
-	storage := den.Storage{Dir: l.Uploads, Temp: l.Temp, Media: a.Media}
-	if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, storage); err != nil {
-		return err
-	}
-	a.AddCleanup(func() error { a.Den.Close(); return nil })
-	if lease.State.Phase == maintenance.PhaseRestoring {
-		// A backup can give a new message an ID that a member's client
-		// holds for another, so their caches of this den go (M6).
-		if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
-			return fmt.Errorf("start the restored den's sync epoch: %w", err)
-		}
-	}
-	if l.Form == layout.Development {
-		a.Den.RelaxLimits()
-	}
-
 	cfg, err := a.prepareHosting(lease.State.Phase, opts.DevDenPort != 0)
 	if err != nil {
 		return err
@@ -306,11 +329,63 @@ func (a *App) open(opts OpenOptions) error {
 	if err := a.Log.SetLevel(level); err != nil {
 		return err
 	}
-
 	a.UserAgent = bi.UserAgent()
 	a.ReleaseSource = &release.GenericReleaseSource{UserAgent: a.UserAgent}
+
+	a.keys.unlocked = make(chan struct{})
+	if key == nil {
+		a.keys.locked = true
+		a.Log.Info("Starting locked: the local password opens Dens")
+		return nil
+	}
+	if err := a.unlock(key); err != nil {
+		return err
+	}
+	close(a.keys.unlocked)
+	return nil
+}
+
+// unlock finishes opening the app with its data key: the vault, and what
+// needs it, the den, the dens this instance joined, the voice keys' hub and
+// the cache. The Flatpak, which starts locked, does it once the member's
+// local password or its remembered copy opens the key (M9.3).
+func (a *App) unlock(key []byte) error {
+	l, mode, phase := a.Layout, a.Lease.Mode, a.Lease.State.Phase
+	v, err := vault.New(key)
+	if err != nil {
+		return fmt.Errorf("hold data key: %w", err)
+	}
+	if err := a.checkVault(v, mode); err != nil {
+		v.Close()
+		return err
+	}
+	a.Vault = v
+	a.AddCleanup(func() error { a.Vault.Close(); return nil })
+
+	// Any instance may host, so each opens its den, which before it's
+	// created is one row's read; the service serves it while hosting is on.
+	storage := den.Storage{Dir: l.Uploads, Temp: l.Temp, Media: a.Media}
+	if a.Den, err = den.Open(context.Background(), a.DB, a.Vault, a.Log, storage); err != nil {
+		return err
+	}
+	a.AddCleanup(func() error { a.Den.Close(); return nil })
+	if phase == maintenance.PhaseRestoring {
+		// A backup can give a new message an ID that a member's client
+		// holds for another, so their caches of this den go (M6).
+		if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
+			return fmt.Errorf("start the restored den's sync epoch: %w", err)
+		}
+	}
+	if l.Form == layout.Development {
+		a.Den.RelaxLimits()
+	}
+
+	cfg, err := config.View(a.DB)
+	if err != nil {
+		return err
+	}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
-	a.Shortcuts = shortcuts.NewHub(bi.Version, cfg.VoiceKeys, a.Log)
+	a.Shortcuts = shortcuts.NewHub(a.buildInfo.Version, cfg.VoiceKeys, a.Log)
 	a.Shortcuts.UseDesktop(cfg.DesktopKeys, func(on bool) {
 		if _, err := config.Update(a.DB, func(c *types.Configuration) error {
 			c.DesktopKeys = on
@@ -346,6 +421,8 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 	var on bool
 	var why string
 	switch {
+	case !a.CanHost():
+		on, why = false, "since the "+a.Layout.Form.String()+" hosts no den"
 	case phase == maintenance.PhaseRestoring:
 		on, why = false, "after the restore"
 	case devDen && a.Layout.Form == layout.Development:
@@ -367,6 +444,17 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 		c.Hosting = &on
 		return nil
 	})
+}
+
+// CanHost reports whether the instance may host its den. The Flatpak may
+// not: it runs in the member's session, which a den has to outlive, and
+// has no Caddy beside it (M9.3).
+func (a *App) CanHost() bool {
+	switch a.Layout.Form {
+	case layout.Flatpak:
+		return false
+	}
+	return true
 }
 
 // emptyDir removes everything in dir, leaving dir itself.
@@ -404,11 +492,11 @@ func (a *App) loadKey() ([]byte, error) {
 	return nil, fmt.Errorf("the %s has no data key", a.Layout.Form)
 }
 
-// checkVault ties the host-bound data key to this database. A first start
+// checkVault ties the data key in v to this database. A first start
 // records the key's check value; every later start requires a match, so a
 // data directory paired with the wrong key is refused rather than read as
 // garbage.
-func (a *App) checkVault(mode maintenance.StartMode) error {
+func (a *App) checkVault(v *vault.Vault, mode maintenance.StartMode) error {
 	ctx := context.Background()
 	row, err := vaultstore.Get(ctx, a.DB)
 	if err != nil {
@@ -419,9 +507,9 @@ func (a *App) checkVault(mode maintenance.StartMode) error {
 			return errors.New("the database has no vault; run the installer")
 		}
 		a.Log.Info("Initializing vault")
-		return vaultstore.Init(ctx, a.DB, a.Vault.CheckValue())
+		return vaultstore.Init(ctx, a.DB, v.CheckValue())
 	}
-	if err := a.Vault.VerifyCheckValue(row.CheckValue); err != nil {
+	if err := v.VerifyCheckValue(row.CheckValue); err != nil {
 		return fmt.Errorf("%w: the host-bound key belongs to another installation", err)
 	}
 	return nil
@@ -444,6 +532,9 @@ func (a *App) prepareSession(opts OpenOptions) error {
 		}
 		cfg = instance.Default(l.Instance)
 		cfg.DesktopUser = me
+		if l.Form == layout.Flatpak {
+			cfg.ClientPort = instance.FlatpakClientPort
+		}
 		if opts.DevClientPort != 0 {
 			cfg.ClientPort = opts.DevClientPort
 		}
@@ -451,14 +542,17 @@ func (a *App) prepareSession(opts OpenOptions) error {
 	} else if err != nil {
 		return err
 	}
-	if opts.DevDenPort != 0 && cfg.Den.Port != opts.DevDenPort {
-		cfg.Den.Port = opts.DevDenPort
-		changed = true
-	}
-	for i, port := range []*int{&cfg.Den.MediaUDPPort, &cfg.Den.MediaTCPPort} {
-		if p := opts.DevMediaPorts[i]; p != 0 && *port != p {
-			*port = p
+	// The den's ports matter only where the instance may host.
+	if l.Form == layout.Development {
+		if opts.DevDenPort != 0 && cfg.Den.Port != opts.DevDenPort {
+			cfg.Den.Port = opts.DevDenPort
 			changed = true
+		}
+		for i, port := range []*int{&cfg.Den.MediaUDPPort, &cfg.Den.MediaTCPPort} {
+			if p := opts.DevMediaPorts[i]; p != 0 && *port != p {
+				*port = p
+				changed = true
+			}
 		}
 	}
 	if changed {
@@ -479,7 +573,32 @@ func (a *App) prepareSession(opts OpenOptions) error {
 		}
 		clear(key)
 	}
-	return maintenance.EnsureSessionReady(l, a.buildInfo.Version)
+	return nil
+}
+
+// MarkSessionReady publishes ready once a session form's start has done
+// what its transition needed, as an installer does once the service it
+// started is up. A restore's data replaced the instance's, which goes now.
+func (a *App) MarkSessionReady() error {
+	l := a.Layout
+	if err := maintenance.MarkSessionReady(l, a.buildInfo.Version); err != nil {
+		return err
+	}
+	if a.Lease.State.Phase != maintenance.PhaseRestoring {
+		return nil
+	}
+	replaced, err := filepath.Glob(l.Data + ".replaced-*")
+	if err != nil {
+		return err
+	}
+	for _, dir := range replaced {
+		if err := os.RemoveAll(dir); err != nil {
+			a.Log.Warnf("Couldn't remove the data the restore replaced, in %s: %v", dir, err)
+			continue
+		}
+		a.Log.Infof("Removed the data the restore replaced, from %s", dir)
+	}
+	return nil
 }
 
 // PasswordSet reports whether a local password has been set.
@@ -505,6 +624,9 @@ func (a *App) VerifyPassword(ctx context.Context, password string) error {
 	if row == nil || row.PasswordWrap == "" {
 		return ErrNoPassword
 	}
+	if a.Locked() {
+		return ErrLocked
+	}
 	wrap, err := vault.UnmarshalWrap(row.PasswordWrap)
 	if err != nil {
 		return err
@@ -528,9 +650,13 @@ func (a *App) SetPassword(ctx context.Context, password string) error {
 }
 
 // Close runs cleanup functions in reverse order, logs their joined failure
-// while the logger is still alive, and closes the logger last.
+// while the logger is still alive, and closes the logger last. What asks
+// the keyring stops first, before what it would use.
 func (a *App) Close() error {
 	a.cleanupOnce.Do(func() {
+		a.keys.stop()
+		a.cleanupMu.Lock()
+		defer a.cleanupMu.Unlock()
 		var joined error
 		for _, f := range slices.Backward(a.cleanup) {
 			if err := f(); err != nil {
@@ -550,6 +676,8 @@ func (a *App) Close() error {
 
 func (a *App) AddCleanup(f CleanupFunc) {
 	if f != nil {
+		a.cleanupMu.Lock()
 		a.cleanup = append(a.cleanup, f)
+		a.cleanupMu.Unlock()
 	}
 }

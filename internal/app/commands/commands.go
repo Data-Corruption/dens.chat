@@ -6,7 +6,12 @@
 package commands
 
 import (
+	"context"
+	"fmt"
+
+	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 
 	"github.com/urfave/cli/v3"
 )
@@ -15,6 +20,7 @@ type constructor func(bi build.BuildInfo) *cli.Command
 
 var constructors = []constructor{
 	openCommand,
+	launchCommand,
 	statusCommand,
 	backupCommand,
 	denCommand,
@@ -37,6 +43,20 @@ func All(bi build.BuildInfo) []*cli.Command {
 		}
 	}
 	return commands
+}
+
+// Root is what dens does with no command. In the Flatpak, which flatpak run
+// chat.dens.Dens runs so, it opens Dens, as the desktop file's launch does
+// (M9.3); elsewhere it says how to.
+func Root(bi build.BuildInfo) cli.ActionFunc {
+	return func(ctx context.Context, cmd *cli.Command) error {
+		if app.FormOf(bi) == layout.Flatpak {
+			return launch(ctx, bi, cmd.String("instance"))
+		}
+		fmt.Printf("%s version %s\n", bi.Name, bi.Version)
+		fmt.Printf("Use '%s open' to open Dens, or '%s help' for all commands.\n", bi.Name, bi.Name)
+		return nil
+	}
 }
 
 // InstanceFlag selects the instance every command acts on.

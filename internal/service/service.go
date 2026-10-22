@@ -13,6 +13,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/control"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/client"
@@ -61,6 +62,12 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		}()
 	}
 
+	// A session form's service stops when asked, having no service manager
+	// to stop it.
+	quit := func(why string) {
+		a.Log.Infof("Stopping: %s", why)
+		cancel()
+	}
 	hosting := newHosting(ctx, a, errorLog, fail)
 	if err := hosting.start(); err != nil {
 		_ = controlLn.Close()
@@ -70,10 +77,19 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		return fmt.Errorf("hosting: %w", err)
 	}
 	a.Hosting = hosting
+	if l.Form == layout.Flatpak {
+		f := newFlatpak(ctx, a, quit)
+		a.Flatpak, a.RememberingChanged = f, f.resync
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f.run()
+		}()
+	}
 
 	controlServer := &control.Server{
 		Allowed:      a.Instance.DesktopUser,
-		Handlers:     controlHandlers(a),
+		Handlers:     controlHandlers(a, quit),
 		Log:          a.Log,
 		WriteTimeout: 30 * time.Minute,
 	}
@@ -82,16 +98,29 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		return server.Serve(ctx, client.New(a), errorLog, clientLns...)
 	})
 	start("update checker", func(ctx context.Context) error { return a.RunUpdateChecker(ctx, func() {}) })
-	start("den connections", a.Dens.Run)
 
-	// A session form has no installer to publish ready for it.
-	if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {
-		if err := maintenance.MarkSessionReady(l, a.BuildInfo().Version); err != nil {
-			cancel()
-			hosting.close()
-			wg.Wait()
-			return err
+	// What needs the data key starts once the instance has it: at once, but
+	// for the Flatpak starting locked (M9.3), which its keyring may open
+	// while the page offers the local password.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-a.Unlocked():
+		case <-ctx.Done():
+			return
 		}
+		start("den connections", a.Dens.Run)
+		// A session form has no installer to publish ready for it, and
+		// its start isn't done before it has its key.
+		if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {
+			if err := a.MarkSessionReady(); err != nil {
+				fail(err)
+			}
+		}
+	}()
+	if a.Locked() {
+		a.TryKeyring()
 	}
 	a.Log.Infof("Ready: client listener on loopback port %d, the page at %s", a.Instance.ClientPort, guard.PageOrigin(a.Instance.ClientPort))
 	ready()

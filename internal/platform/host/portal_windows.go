@@ -12,7 +12,7 @@ import (
 type DesktopKeys struct{}
 
 // OpenDesktopKeys fails with errors.ErrUnsupported on Windows.
-func OpenDesktopKeys(string) (*DesktopKeys, error) {
+func OpenDesktopKeys(string, bool) (*DesktopKeys, error) {
 	return nil, fmt.Errorf("Windows has no desktop shortcuts portal: %w", errors.ErrUnsupported)
 }
 
