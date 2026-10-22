@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,23 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+// busConfig is a session bus that starts nothing on demand, so a test's
+// bus has only the portals the test runs, never the machine's own. The
+// daemon's --address replaces its listen address.
+const busConfig = `<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=/tmp</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+`
+
 // sessionBus runs a private session bus for the test, and points the
 // portal client at it.
 func sessionBus(t *testing.T) *dbus.Conn {
@@ -23,7 +41,12 @@ func sessionBus(t *testing.T) *dbus.Conn {
 	if err != nil {
 		t.Skip("no dbus-daemon to run a session bus on")
 	}
-	cmd := exec.Command(daemon, "--session", "--nofork", "--print-address", "--address=unix:path="+filepath.Join(t.TempDir(), "bus"))
+	dir := t.TempDir()
+	config := filepath.Join(dir, "bus.conf")
+	if err := os.WriteFile(config, []byte(busConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(daemon, "--config-file="+config, "--nofork", "--print-address", "--address=unix:path="+filepath.Join(dir, "bus"))
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +181,7 @@ func TestDesktopKeysBindAndReportPresses(t *testing.T) {
 	conn := sessionBus(t)
 	t.Setenv("XDG_CURRENT_DESKTOP", "KDE")
 	p := startPortal(t, conn, 2)
-	d, err := OpenDesktopKeys("chat.dens.Dens")
+	d, err := OpenDesktopKeys("chat.dens.Dens", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +261,7 @@ func TestDesktopKeysOnGNOMEAndATurnedDownDialog(t *testing.T) {
 	p.mu.Lock()
 	p.bindAnswer = 1
 	p.mu.Unlock()
-	d, err := OpenDesktopKeys("chat.dens.Dens")
+	d, err := OpenDesktopKeys("chat.dens.Dens", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,11 +279,11 @@ func TestDesktopKeysOnGNOMEAndATurnedDownDialog(t *testing.T) {
 
 func TestDesktopKeysNeedWaylandAndThePortal(t *testing.T) {
 	sessionBus(t)
-	if _, err := OpenDesktopKeys("chat.dens.Dens"); !errors.Is(err, errors.ErrUnsupported) {
+	if _, err := OpenDesktopKeys("chat.dens.Dens", false); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("with no portal on the bus = %v", err)
 	}
 	t.Setenv("WAYLAND_DISPLAY", "")
-	if _, err := OpenDesktopKeys("chat.dens.Dens"); !errors.Is(err, errors.ErrUnsupported) {
+	if _, err := OpenDesktopKeys("chat.dens.Dens", false); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("outside Wayland = %v", err)
 	}
 }

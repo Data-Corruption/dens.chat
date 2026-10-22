@@ -36,7 +36,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 			}
 			// Under Wayland the desktop owns the keys, through its portal;
 			// elsewhere the helper reads them itself.
-			if desk, deskErr := host.OpenDesktopKeys(shortcuts.AppID); deskErr == nil {
+			if desk, deskErr := host.OpenDesktopKeys(shortcuts.AppID, false); deskErr == nil {
 				first := desk
 				h.OpenDesktop = func() (shortcuts.DesktopKeys, error) {
 					if first != nil {
@@ -44,7 +44,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 						first = nil
 						return d, nil
 					}
-					d, err := host.OpenDesktopKeys(shortcuts.AppID)
+					d, err := host.OpenDesktopKeys(shortcuts.AppID, false)
 					if err != nil {
 						return nil, err
 					}

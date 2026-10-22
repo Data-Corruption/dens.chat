@@ -46,8 +46,11 @@ type DesktopKeys struct {
 // OpenDesktopKeys connects to the desktop's global shortcuts portal under
 // Wayland, as appID, and opens a session. It fails with
 // errors.ErrUnsupported where there's none: X11, or a desktop without it.
-func OpenDesktopKeys(appID string) (*DesktopKeys, error) {
-	if os.Getenv("WAYLAND_DISPLAY") == "" {
+// From a sandbox, as the Flatpak's (M9.3), it tries the portal under X11
+// too, which Plasma's has, since the portal knows a sandboxed app by its
+// Flatpak ID.
+func OpenDesktopKeys(appID string, sandboxed bool) (*DesktopKeys, error) {
+	if os.Getenv("WAYLAND_DISPLAY") == "" && !sandboxed {
 		return nil, fmt.Errorf("not a Wayland session: %w", errors.ErrUnsupported)
 	}
 	conn, err := dbus.SessionBusPrivate()
@@ -74,8 +77,11 @@ func OpenDesktopKeys(appID string) (*DesktopKeys, error) {
 	}
 	// The portal refuses an unsandboxed app it can't name: a portal with a
 	// registry takes the ID from it, which must come before any other call,
-	// and an older one from the systemd unit the helper runs in.
-	_ = d.portal.Call(portalRegistry+".Register", 0, appID, map[string]dbus.Variant{}).Err
+	// and an older one from the systemd unit the helper runs in. A
+	// sandboxed app can't register, and needn't.
+	if !sandboxed {
+		_ = d.portal.Call(portalRegistry+".Register", 0, appID, map[string]dbus.Variant{}).Err
+	}
 	version, err := d.portal.GetProperty(portalShortcuts + ".version")
 	if err != nil {
 		conn.Close()
