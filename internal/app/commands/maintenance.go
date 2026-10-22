@@ -109,7 +109,7 @@ func uninstallCommand(bi build.BuildInfo) *cli.Command {
 func restoreCommand(bi build.BuildInfo) *cli.Command {
 	return &cli.Command{
 		Name:      "restore",
-		Usage:     "replace an instance's data with a backup (as root or Administrator)",
+		Usage:     "replace an instance's data with a backup (installed: as root or Administrator)",
 		ArgsUsage: "BACKUP",
 		Flags: []cli.Flag{
 			&cli.BoolFlag{Name: "password-stdin", Usage: "read the backup's local password from the first line of standard input"},
@@ -130,7 +130,15 @@ func restoreCommand(bi build.BuildInfo) *cli.Command {
 			if err != nil {
 				return err
 			}
-			return install.Restore(ctx, install.NewSystem(bi.Name), bi, install.Options{Instance: name}, cmd.Args().First(), password)
+			opts := install.Options{Instance: name}
+			if form := app.FormOf(bi); form.Session() {
+				l, err := layout.New(bi.Name, name, form)
+				if err != nil {
+					return err
+				}
+				return install.RestoreSession(ctx, bi, l, cmd.Args().First(), password, func() error { return quitService(bi, name) }, opts)
+			}
+			return install.Restore(ctx, install.NewSystem(bi.Name), bi, opts, cmd.Args().First(), password)
 		},
 	}
 }

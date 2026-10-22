@@ -303,3 +303,43 @@ func TestStartEmptiesTemp(t *testing.T) {
 		t.Fatalf("tmp after a start: %v %v", entries, err)
 	}
 }
+
+// A session form's service stops when asked over the control endpoint,
+// having no service manager to stop it, after answering (M9.3).
+func TestSessionServiceQuitsWhenAsked(t *testing.T) {
+	devHome(t)
+	a := app.New(devBuild)
+	if err := a.Open(app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}); err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	pages, err := ui.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.UI = pages
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() { done <- service.Run(context.Background(), a, func() { close(ready) }) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("service stopped before ready: %v", err)
+	}
+	me, err := host.CurrentUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := control.Client{Endpoint: a.Layout.ControlEndpoint, Server: host.ControlServer{Account: me}, Timeout: 10 * time.Second}
+	if err := client.Call(control.Request{Op: control.OpQuit}, nil); err != nil {
+		t.Fatalf("quit: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("the service stopped with %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the service didn't stop when asked")
+	}
+}

@@ -47,8 +47,7 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 	if errors.Is(err, fs.ErrPermission) {
 		return fmt.Errorf("instance %s only answers the desktop user it was installed for: %w", l.Instance, err)
 	}
-	var opErr *net.OpError
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.As(err, &opErr) {
+	if notRunning(err) {
 		flag := ""
 		if l.Instance != layout.DefaultInstance {
 			flag = " --instance " + l.Instance
@@ -63,4 +62,30 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 		return fmt.Errorf("the Dens service for instance %s isn't running; start it with: %s: %w", l.Instance, host.AdminCommand(start), err)
 	}
 	return err
+}
+
+// notRunning reports whether err is the service's endpoint not answering:
+// not there, or nobody listening.
+func notRunning(err error) bool {
+	var opErr *net.OpError
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.As(err, &opErr)
+}
+
+// quitService stops a session form's running service over its control
+// endpoint (M9.3), as a restore needs; one that isn't running is already
+// stopped.
+func quitService(bi build.BuildInfo, instanceName string) error {
+	client, l, err := controlClient(bi, instanceName)
+	if err != nil {
+		return err
+	}
+	switch err := client.Call(control.Request{Op: control.OpQuit}, nil); {
+	case err == nil:
+		fmt.Println("Stopped Dens, which was running.")
+		return nil
+	case notRunning(err):
+		return nil
+	default:
+		return explainCallError(bi, l, err)
+	}
 }

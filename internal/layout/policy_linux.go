@@ -73,7 +73,11 @@ func (l Layout) EnsureSession() error {
 			return fmt.Errorf("create the %s instances' directory: %w", l.Form, err)
 		}
 	}
-	for _, dir := range append([]string{l.Root, l.Control, l.Runtime}, l.DataDirs()...) {
+	dirs := append([]string{l.Root, l.Control, l.Runtime}, l.DataDirs()...)
+	if l.Snapshot != "" {
+		dirs = append(dirs, l.Snapshot)
+	}
+	for _, dir := range dirs {
 		if err := ensurePrivateDir(dir); err != nil {
 			return err
 		}

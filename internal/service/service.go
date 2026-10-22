@@ -71,9 +71,15 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	}
 	a.Hosting = hosting
 
+	// A session form's service stops when asked, having no service manager
+	// to stop it.
+	quit := func(why string) {
+		a.Log.Infof("Stopping: %s", why)
+		cancel()
+	}
 	controlServer := &control.Server{
 		Allowed:      a.Instance.DesktopUser,
-		Handlers:     controlHandlers(a),
+		Handlers:     controlHandlers(a, quit),
 		Log:          a.Log,
 		WriteTimeout: 30 * time.Minute,
 	}
@@ -86,7 +92,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 
 	// A session form has no installer to publish ready for it.
 	if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {
-		if err := maintenance.MarkSessionReady(l, a.BuildInfo().Version); err != nil {
+		if err := a.MarkSessionReady(); err != nil {
 			cancel()
 			hosting.close()
 			wg.Wait()

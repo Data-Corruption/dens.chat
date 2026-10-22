@@ -77,6 +77,7 @@ func TestFlatpakLayoutUsesTheAppsDirectories(t *testing.T) {
 		l.ControlEndpoint: filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "app", DesktopID, "main", "control.sock"),
 		l.HostKey:         filepath.Join(l.Control, "datakey.file"),
 		l.KeyringKey:      filepath.Join(l.Control, "datakey.keyring"),
+		l.Snapshot:        filepath.Join(app, "data", "dens", "main", "snapshot"),
 	} {
 		if path != want {
 			t.Errorf("path %s, want %s", path, want)

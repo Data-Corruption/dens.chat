@@ -36,6 +36,9 @@ const (
 	// OpOwnerInvite makes an invite that hands the den this instance hosts
 	// to whoever redeems it (M8).
 	OpOwnerInvite = "owner-invite"
+	// OpQuit stops a session form's service, which has no service manager
+	// to stop it (M9.3).
+	OpQuit = "quit"
 )
 
 const maxLine = 64 * 1024
@@ -87,11 +90,13 @@ type OwnerInvite struct {
 
 // Reply is what a handler returns. Body, if set, is streamed after the
 // response line and closed afterwards. Stream, if set, takes the connection
-// after the response line, until it returns.
+// after the response line, until it returns. After, if set, runs once the
+// reply has gone, as a stop the reply announces.
 type Reply struct {
 	Result any
 	Body   io.ReadCloser
 	Stream func(ctx context.Context, s *Stream) error
+	After  func()
 }
 
 // Handler serves one operation.
@@ -211,7 +216,11 @@ func (s *Server) serve(ctx context.Context, conn net.Conn) {
 			resp = Response{Error: "internal error; see the service log"}
 		}
 	}
-	if !s.reply(conn, resp, reply.Body) || !resp.OK || reply.Stream == nil {
+	sent := s.reply(conn, resp, reply.Body)
+	if reply.After != nil {
+		defer reply.After()
+	}
+	if !sent || !resp.OK || reply.Stream == nil {
 		return
 	}
 	// The stream keeps its own deadlines, line by line.

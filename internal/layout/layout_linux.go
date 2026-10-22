@@ -57,6 +57,7 @@ func (l *Layout) resolve() error {
 		l.Cache = filepath.Join(dirs["XDG_CACHE_HOME"], l.App, l.Instance)
 		l.HostKey = filepath.Join(l.Control, "datakey.file")
 		l.KeyringKey = filepath.Join(l.Control, "datakey.keyring")
+		l.Snapshot = filepath.Join(l.Root, "snapshot")
 		l.Runtime = filepath.Join(dirs["XDG_RUNTIME_DIR"], "app", DesktopID, l.Instance)
 		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
 	default:

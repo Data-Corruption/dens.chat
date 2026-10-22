@@ -81,6 +81,10 @@ type App struct {
 	cleanupOnce sync.Once
 	closeErr    error
 
+	// snapshotKept is the snapshot this start kept of an older version's
+	// data, for the log (M9.3).
+	snapshotKept string
+
 	updateCheckMu sync.Mutex
 	// Argon2id makes each password check expensive; the limiter keeps a
 	// local caller from turning that into a denial of service.
@@ -156,36 +160,6 @@ func FormOf(bi build.BuildInfo) layout.Form {
 	return layout.Installed
 }
 
-// flatpakInfo is the file Flatpak puts at the root of each sandbox it runs,
-// naming the app; tests point it elsewhere.
-var flatpakInfo = "/.flatpak-info"
-
-// inFlatpak reports whether this process runs in Dens's Flatpak sandbox:
-// one whose /.flatpak-info and FLATPAK_ID both name Dens's app ID. Another
-// app's sandbox is no Flatpak of Dens, whose socket and portals go by
-// Dens's ID.
-func inFlatpak() bool {
-	if os.Getenv("FLATPAK_ID") != layout.DesktopID {
-		return false
-	}
-	data, err := os.ReadFile(flatpakInfo)
-	if err != nil {
-		return false
-	}
-	section := ""
-	for line := range strings.Lines(string(data)) {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = line[1 : len(line)-1]
-			continue
-		}
-		if name, ok := strings.CutPrefix(line, "name="); ok && section == "Application" {
-			return name == layout.DesktopID
-		}
-	}
-	return false
-}
-
 // OpenOptions select the instance and a development instance's defaults.
 type OpenOptions struct {
 	Instance string
@@ -224,13 +198,16 @@ func (a *App) open(opts OpenOptions) error {
 		return err
 	}
 	a.Layout = l
+	var lease *maintenance.Lease
 	if l.Form.Session() {
 		if err := a.prepareSession(opts); err != nil {
 			return fmt.Errorf("prepare the %s instance: %w", l.Form, err)
 		}
+		lease, err = maintenance.AcquireSessionLease(l, bi.Version, a.sessionOptions())
+		err = a.explainRollback(err)
+	} else {
+		lease, err = maintenance.AcquireServiceLease(l, bi.Version)
 	}
-
-	lease, err := maintenance.AcquireServiceLease(l, bi.Version)
 	if err != nil {
 		return err
 	}
@@ -251,6 +228,9 @@ func (a *App) open(opts OpenOptions) error {
 		return fmt.Errorf("open logs: %w", err)
 	}
 	a.Log.Infof("Starting %s %s, instance %s (%s, mode %d)", bi.Name, bi.Version, l.Instance, l.Form, lease.Mode)
+	if a.snapshotKept != "" {
+		a.Log.Infof("Kept a snapshot of the data from %s, before updating it, in %s", lease.State.Version, a.snapshotKept)
+	}
 	// tmp holds files only while the service works on them: uploads
 	// arriving, files being prepared for sending, a backup's snapshot. So
 	// whatever a crash left there goes before anything uses it (M8).
@@ -535,7 +515,32 @@ func (a *App) prepareSession(opts OpenOptions) error {
 		}
 		clear(key)
 	}
-	return maintenance.EnsureSessionReady(l, a.buildInfo.Version)
+	return nil
+}
+
+// MarkSessionReady publishes ready once a session form's start has done
+// what its transition needed, as an installer does once the service it
+// started is up. A restore's data replaced the instance's, which goes now.
+func (a *App) MarkSessionReady() error {
+	l := a.Layout
+	if err := maintenance.MarkSessionReady(l, a.buildInfo.Version); err != nil {
+		return err
+	}
+	if a.Lease.State.Phase != maintenance.PhaseRestoring {
+		return nil
+	}
+	replaced, err := filepath.Glob(l.Data + ".replaced-*")
+	if err != nil {
+		return err
+	}
+	for _, dir := range replaced {
+		if err := os.RemoveAll(dir); err != nil {
+			a.Log.Warnf("Couldn't remove the data the restore replaced, in %s: %v", dir, err)
+			continue
+		}
+		a.Log.Infof("Removed the data the restore replaced, from %s", dir)
+	}
+	return nil
 }
 
 // PasswordSet reports whether a local password has been set.

@@ -67,6 +67,10 @@ type Layout struct {
 	// backups leave out: in the data directory, but for the Flatpak, whose
 	// cache goes where backup tools skip it.
 	Cache string
+	// Snapshot holds the Flatpak's snapshot of the data an older version
+	// left, kept as it updates them: a backup archive, the last one only
+	// (M9.3). Empty for the other forms.
+	Snapshot string
 
 	// Runtime is the directory holding the control socket on Linux. It is
 	// empty on Windows, where the control endpoint is a named pipe.

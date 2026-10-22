@@ -16,11 +16,12 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-func controlHandlers(a *app.App) map[string]control.Handler {
+func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handler {
 	return map[string]control.Handler{
 		control.OpStatus: func(ctx context.Context, _ control.Request) (control.Reply, error) {
 			return statusReply(ctx, a)
@@ -42,6 +43,13 @@ func controlHandlers(a *app.App) map[string]control.Handler {
 		},
 		control.OpOwnerInvite: func(ctx context.Context, req control.Request) (control.Reply, error) {
 			return ownerInviteReply(ctx, a, req.Password)
+		},
+		control.OpQuit: func(context.Context, control.Request) (control.Reply, error) {
+			if !a.Layout.Form.Session() {
+				return control.Reply{}, control.Errorf("the service manager runs this instance; stop it with: %s",
+					host.AdminCommand(a.BuildInfo().Name+" service stop"))
+			}
+			return control.Reply{After: func() { quit("asked to over the control endpoint") }}, nil
 		},
 	}
 }
