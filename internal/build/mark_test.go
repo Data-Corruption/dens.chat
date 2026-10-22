@@ -15,7 +15,8 @@ func TestMarkCopiesAreTheMark(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.TrimSuffix(string(data), "\n") != Mark {
+		// A checkout may end the file's line as its system does.
+		if strings.TrimRight(string(data), "\r\n") != Mark {
 			t.Errorf("%s isn't the mark", path)
 		}
 	}
