@@ -192,17 +192,21 @@ func TestPairSetPasswordAndBackUp(t *testing.T) {
 		}
 	}
 
-	if err := client.CallBody(control.Request{Op: control.OpBackup, Password: "nope nope nope"}, nil, io.Discard); err == nil {
+	discard := func() (io.Writer, error) { return io.Discard, nil }
+	if err := client.CallBody(control.Request{Op: control.OpBackup, Password: "nope nope nope"}, nil, discard); err == nil {
 		t.Fatal("backup with the wrong password succeeded")
 	}
 	// Wait out the password limiter from the wrong attempts above.
 	time.Sleep(4 * time.Second)
 	var archive bytes.Buffer
-	var result service.BackupResult
-	if err := client.CallBody(control.Request{Op: control.OpBackup, Password: "correct horse battery"}, &result, &archive); err != nil {
+	var result control.Backup
+	if err := client.CallBody(control.Request{Op: control.OpBackup, Password: "correct horse battery"}, &result, func() (io.Writer, error) { return &archive, nil }); err != nil {
 		t.Fatalf("backup: %v", err)
 	}
-	manifest, err := backup.Extract(&archive, t.TempDir(), backup.DefaultLimits)
+	if result.Size < int64(archive.Len()) {
+		t.Fatalf("the backup said it takes %d bytes, and took %d", result.Size, archive.Len())
+	}
+	manifest, err := backup.Extract(&archive, t.TempDir(), backup.ExtractOptions{})
 	if err != nil {
 		t.Fatalf("extract backup: %v", err)
 	}
@@ -350,6 +354,10 @@ func TestPageDownloadsABackup(t *testing.T) {
 	a, client := startDevService(t)
 	b := pair(t, a, client)
 	b.expect(http.StatusForbidden, "a backup with a wrong password", "POST", "/api/backup", map[string]string{"password": "wrong wrong wrong"})
+	var size struct {
+		Size int64 `json:"size"`
+	}
+	b.expect(http.StatusOK, "a backup's size", "GET", "/api/backup", nil, &size)
 	var link struct {
 		URL string `json:"url"`
 	}
@@ -364,8 +372,11 @@ func TestPageDownloadsABackup(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusOK || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
 		t.Fatalf("the download: %d %v, %v", resp.StatusCode, resp.Header, err)
 	}
+	if size.Size < int64(len(archive)) {
+		t.Fatalf("the page said the backup takes %d bytes, and it took %d", size.Size, len(archive))
+	}
 	dir := t.TempDir()
-	manifest, err := backup.Extract(bytes.NewReader(archive), dir, backup.DefaultLimits)
+	manifest, err := backup.Extract(bytes.NewReader(archive), dir, backup.ExtractOptions{})
 	if err != nil || manifest.Instance != a.Layout.Instance {
 		t.Fatalf("the archive: %+v, %v", manifest, err)
 	}

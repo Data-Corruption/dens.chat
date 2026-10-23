@@ -55,7 +55,7 @@ func TestSnapshotKeepsTheLastOneAsABackup(t *testing.T) {
 	}
 	defer file.Close()
 	dir := t.TempDir()
-	manifest, err := backup.Extract(file, dir, backup.DefaultLimits)
+	manifest, err := backup.Extract(file, dir, backup.ExtractOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

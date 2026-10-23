@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -161,28 +162,84 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 	return nil
 }
 
+// restoreFloor is the room a restore leaves free on the disk it fills, as
+// the den's uploads leave: the database and the system need it too.
+const restoreFloor = 1 << 30
+
+// freeSpace is host.FreeSpace; tests replace it.
+var freeSpace = host.FreeSpace
+
 // openBackup extracts archive into dir, arranges it as a data directory, and
-// returns the data key sealed in it under password. It refuses a backup from
-// a newer schema than this build knows and one whose key doesn't match its
-// own database.
+// returns the data key sealed in it under password. It refuses a backup the
+// disk hasn't room for before it starts, and stops one that runs out of
+// room before the disk fills. One from another app or a newer schema, under
+// another password or whose key doesn't match its own database, it refuses
+// as soon as its database is out, before any upload (M10).
 func openBackup(bi build.BuildInfo, archive, dir, password string) ([]byte, backup.Manifest, error) {
 	file, err := os.Open(archive)
 	if err != nil {
 		return nil, backup.Manifest{}, err
 	}
 	defer file.Close()
-	manifest, err := backup.Extract(file, dir, backup.DefaultLimits)
+	info, err := file.Stat()
 	if err != nil {
+		return nil, backup.Manifest{}, err
+	}
+	// The uploads are sealed, so they don't compress, and the archive is
+	// about as large as what it holds.
+	free, err := freeSpace(dir)
+	if err != nil {
+		return nil, backup.Manifest{}, fmt.Errorf("check the room for the backup: %w", err)
+	}
+	if size := uint64(info.Size()); free < size+restoreFloor {
+		return nil, backup.Manifest{}, fmt.Errorf("the backup is %s, and the disk holding %s has %s free: restoring it takes that much, and %s to spare",
+			backup.SizeText(info.Size()), filepath.Dir(dir), backup.SizeText(int64(free)), backup.SizeText(restoreFloor))
+	}
+	read := &countingReader{r: file}
+	var key []byte
+	manifest, err := backup.Extract(read, dir, backup.ExtractOptions{
+		Check: func(m backup.Manifest, database string) error {
+			k, err := checkBackup(bi, m, database, password)
+			key = k
+			return err
+		},
+		FreeSpace: freeSpace,
+		Floor:     restoreFloor,
+	})
+	var noRoom *backup.NoRoomError
+	if errors.As(err, &noRoom) {
+		// What's left of the archive is about what's left to write.
+		need := max(noRoom.Need, uint64(max(info.Size()-read.n, 0))+restoreFloor)
+		err = fmt.Errorf("the disk holding %s ran out of room partway: the rest of the backup needs about %s more",
+			filepath.Dir(dir), backup.SizeText(int64(need-min(need, noRoom.Free))))
+	}
+	if err != nil {
+		clear(key)
 		return nil, manifest, err
 	}
-	if manifest.App != bi.Name {
-		return nil, manifest, fmt.Errorf("this is a backup of %q, not %s", manifest.App, bi.Name)
-	}
 
-	snapshot := backup.DatabasePath(dir)
+	dbDir := filepath.Join(dir, "db")
+	if err := os.Mkdir(dbDir, 0o700); err != nil {
+		clear(key)
+		return nil, manifest, err
+	}
+	if err := os.Rename(backup.DatabasePath(dir), filepath.Join(dbDir, database.FileName)); err != nil {
+		clear(key)
+		return nil, manifest, err
+	}
+	return key, manifest, nil
+}
+
+// checkBackup returns the data key a backup's database seals under
+// password, once it has checked the backup is this app's, from a schema
+// this build knows, and that the key matches the database.
+func checkBackup(bi build.BuildInfo, manifest backup.Manifest, snapshot, password string) ([]byte, error) {
+	if manifest.App != bi.Name {
+		return nil, fmt.Errorf("this is a backup of %q, not %s", manifest.App, bi.Name)
+	}
 	db, err := database.OpenReadOnly(snapshot)
 	if err != nil {
-		return nil, manifest, fmt.Errorf("open the backed-up database: %w", err)
+		return nil, fmt.Errorf("open the backed-up database: %w", err)
 	}
 	ctx := context.Background()
 	version, err := database.FileSchemaVersion(ctx, db)
@@ -195,43 +252,45 @@ func openBackup(bi build.BuildInfo, archive, dir, password string) ([]byte, back
 	}
 	closeErr := db.Close()
 	if err != nil {
-		return nil, manifest, err
+		return nil, err
 	}
 	if closeErr != nil {
-		return nil, manifest, closeErr
+		return nil, closeErr
 	}
 	if row == nil || row.PasswordWrap == "" {
-		return nil, manifest, errors.New("the backup has no password-protected data key")
+		return nil, errors.New("the backup has no password-protected data key")
 	}
 	wrap, err := vault.UnmarshalWrap(row.PasswordWrap)
 	if err != nil {
-		return nil, manifest, err
+		return nil, err
 	}
 	key, err := vault.UnwrapWithPassword(wrap, password)
 	if err != nil {
-		return nil, manifest, err
+		return nil, err
 	}
 	check, err := vault.New(key)
 	if err != nil {
 		clear(key)
-		return nil, manifest, err
+		return nil, err
 	}
 	defer check.Close()
 	if err := check.VerifyCheckValue(row.CheckValue); err != nil {
 		clear(key)
-		return nil, manifest, err
+		return nil, err
 	}
+	return key, nil
+}
 
-	dbDir := filepath.Join(dir, "db")
-	if err := os.Mkdir(dbDir, 0o700); err != nil {
-		clear(key)
-		return nil, manifest, err
-	}
-	if err := os.Rename(snapshot, filepath.Join(dbDir, database.FileName)); err != nil {
-		clear(key)
-		return nil, manifest, err
-	}
-	return key, manifest, nil
+// countingReader counts what's read through it.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // RestoreSession replaces a session form's data with a backup (M9.3): the

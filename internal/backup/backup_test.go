@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -33,9 +32,13 @@ func TestWriteExtractRoundTrip(t *testing.T) {
 	}
 
 	dest := t.TempDir()
-	got, err := Extract(bytes.NewReader(archive.Bytes()), dest, DefaultLimits)
+	got, err := Extract(bytes.NewReader(archive.Bytes()), dest, ExtractOptions{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// gzip's header says which level wrote it: 4 is the fastest.
+	if xfl := archive.Bytes()[8]; xfl != 4 {
+		t.Errorf("the archive's gzip header gives XFL %d, not the fastest level's 4", xfl)
 	}
 	want.Format = FormatVersion
 	if got != want {
@@ -59,7 +62,7 @@ func TestWriteWithoutUploads(t *testing.T) {
 	if _, err := Write(&archive, Manifest{}, dbPath, filepath.Join(src, "missing")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Extract(&archive, t.TempDir(), DefaultLimits); err != nil {
+	if _, err := Extract(&archive, t.TempDir(), ExtractOptions{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -119,15 +122,12 @@ func TestExtractRejectsUnsafeArchives(t *testing.T) {
 		"unknown entry":    buildArchive(t, manifestEntry(t), db, entry{name: "surprise", body: "x"}),
 		"second database":  buildArchive(t, manifestEntry(t), db, db),
 		"missing database": buildArchive(t, manifestEntry(t)),
+		"upload first":     buildArchive(t, manifestEntry(t), entry{name: "uploads/ab", body: "x"}, db),
 		"not gzip":         []byte("plain text"),
 	}
 	for name, archive := range cases {
-		if _, err := Extract(bytes.NewReader(archive), t.TempDir(), DefaultLimits); err == nil {
+		if _, err := Extract(bytes.NewReader(archive), t.TempDir(), ExtractOptions{}); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
-	}
-	big := buildArchive(t, manifestEntry(t), entry{name: databaseName, body: strings.Repeat("x", 100)})
-	if _, err := Extract(bytes.NewReader(big), t.TempDir(), Limits{MaxBytes: 10, MaxFiles: 10}); err == nil {
-		t.Error("oversized archive accepted")
 	}
 }

@@ -722,12 +722,21 @@ function OnThisComputer({ settings, onChange }) {
 }
 
 // BackUp downloads a backup, as dens backup writes it, after the local
-// password, which protects it (M9.3).
+// password, which protects it (M9.3), saying first about how large it will
+// be (M10).
 function BackUp() {
     const [asking, setAsking] = useState(false);
     const [password, setPassword] = useState('');
     const [done, setDone] = useState(false);
+    const [size, setSize] = useState(null);
     const act = useAction();
+
+    function ask() {
+        setDone(false);
+        setSize(null);
+        setAsking(true);
+        api.get('/api/backup').then((r) => setSize(r.size), () => {});
+    }
 
     function submit(e) {
         e.preventDefault();
@@ -753,17 +762,15 @@ function BackUp() {
                     <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
                     </Field>
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
                         <SubmitButton busy={act.busy}>Download the backup</SubmitButton>
                         <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</button>
+                        {size != null && <span class="text-sm text-base-content/70">About {formatSize(size)}</span>}
                     </div>
                 </form>
             ) : (
                 <div class="flex flex-wrap items-center gap-3">
-                    <button type="button" class="btn btn-sm" onClick={() => {
-                        setDone(false);
-                        setAsking(true);
-                    }}>
+                    <button type="button" class="btn btn-sm" onClick={ask}>
                         Back up
                     </button>
                     {done && <span class="text-sm text-success" role="status">Your browser is downloading the backup.</span>}

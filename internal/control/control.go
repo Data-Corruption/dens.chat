@@ -1,8 +1,9 @@
 // Package control is the protocol between the dens CLI, run by the desktop
 // user, and the service. Each connection carries one request: a JSON line
-// from the client, then a JSON line back, optionally followed by a raw body
-// that runs until the service closes the connection, or by a stream of JSON
-// lines both ways, as the shortcut helper keeps (M7).
+// from the client, then a JSON line back, optionally followed by a body or
+// by a stream of JSON lines both ways, as the shortcut helper keeps (M7).
+// A body comes in frames and ends with an empty one, so a client tells a
+// body cut short, by a failure or a stall, from a whole one (M10).
 //
 // The endpoint is a Unix socket or named pipe from internal/platform/host.
 // The service answers only the one desktop user recorded at install, by the
@@ -13,6 +14,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,8 +62,11 @@ type Response struct {
 	OK     bool            `json:"ok"`
 	Error  string          `json:"error,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
-	// Body is true when a raw body follows the line until end of stream.
-	Body bool `json:"body,omitempty"`
+	// Body is true when a body follows the line, and Frames when it comes
+	// in frames. A service before M10 ran a body raw to the end of the
+	// stream, where one cut short looks whole, so a client refuses that.
+	Body   bool `json:"body,omitempty"`
+	Frames bool `json:"frames,omitempty"`
 }
 
 // Status is the result of OpStatus.
@@ -81,6 +86,13 @@ type Status struct {
 // Pair is the result of OpPair: a URL carrying a one-time pairing token.
 type Pair struct {
 	URL string `json:"url"`
+}
+
+// Backup is the result of OpBackup: the archive's name, and at least its
+// size, which a client checks it has room for before the body comes.
+type Backup struct {
+	Name string `json:"name"`
+	Size int64  `json:"size"`
 }
 
 // OwnerInvite is the result of OpOwnerInvite: an invite string for the
@@ -123,7 +135,8 @@ type Server struct {
 	Log      *xlog.Logger
 	// ReadTimeout bounds how long a client may take to send its request.
 	ReadTimeout time.Duration
-	// WriteTimeout bounds sending a reply, including any body.
+	// WriteTimeout bounds each write of a reply, so a client that stops
+	// reading is let go, while a body streams for as long as it takes.
 	WriteTimeout time.Duration
 }
 
@@ -210,7 +223,7 @@ func (s *Server) serve(ctx context.Context, conn net.Conn) {
 		s.reply(conn, Response{Error: "internal error; see the service log"}, nil)
 		return
 	}
-	resp := Response{OK: true, Body: reply.Body != nil}
+	resp := Response{OK: true, Body: reply.Body != nil, Frames: reply.Body != nil}
 	if reply.Result != nil {
 		resp.Result, err = json.Marshal(reply.Result)
 		if err != nil {
@@ -270,11 +283,94 @@ func (s *Server) reply(conn net.Conn, resp Response, body io.ReadCloser) bool {
 		return false
 	}
 	if body != nil && resp.OK {
-		if _, err := io.Copy(conn, body); err != nil {
+		w := bufio.NewWriterSize(&deadlineWriter{conn: conn, timeout: writeTimeout}, frameBuffer)
+		err := writeFrames(w, body)
+		if err == nil {
+			err = w.Flush()
+		}
+		if err != nil {
+			// The connection closes without the end frame, which tells the
+			// client the body isn't whole.
 			s.Log.Warnf("control: stream reply body: %v", err)
 		}
 	}
 	return true
+}
+
+// deadlineWriter gives each write to conn a deadline of its own.
+type deadlineWriter struct {
+	conn    net.Conn
+	timeout time.Duration
+}
+
+func (d *deadlineWriter) Write(p []byte) (int, error) {
+	_ = d.conn.SetWriteDeadline(time.Now().Add(d.timeout))
+	return d.conn.Write(p)
+}
+
+// maxFrame is the most a body's frame carries, and frameBuffer how much
+// the service gathers before each write.
+const (
+	maxFrame    = 64 << 10
+	frameBuffer = 256 << 10
+)
+
+// writeFrames sends body in frames, each a 4-byte big-endian length and
+// that many bytes, then an empty frame, which marks the end.
+func writeFrames(w io.Writer, body io.Reader) error {
+	buf := make([]byte, 4+maxFrame)
+	for {
+		n, err := body.Read(buf[4:])
+		if n > 0 {
+			binary.BigEndian.PutUint32(buf, uint32(n))
+			if _, err := w.Write(buf[:4+n]); err != nil {
+				return err
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			_, err = w.Write(make([]byte, 4))
+			return err
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+// ErrBodyCut is a body that stopped before its end frame: the service
+// failed or stalled partway, or the connection broke. What reached the
+// writer is only part of it.
+var ErrBodyCut = errors.New("the service stopped sending before the end")
+
+// readFrames copies a body's frames to w, up to its end frame.
+func readFrames(w io.Writer, r io.Reader) error {
+	var header [4]byte
+	buf := make([]byte, maxFrame)
+	for {
+		if _, err := io.ReadFull(r, header[:]); err != nil {
+			return cut(err)
+		}
+		n := binary.BigEndian.Uint32(header[:])
+		if n == 0 {
+			return nil
+		}
+		if n > maxFrame {
+			return fmt.Errorf("the service sent a frame of %d bytes, more than one holds", n)
+		}
+		if _, err := io.ReadFull(r, buf[:n]); err != nil {
+			return cut(err)
+		}
+		if _, err := w.Write(buf[:n]); err != nil {
+			return err
+		}
+	}
+}
+
+func cut(err error) error {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return ErrBodyCut
+	}
+	return fmt.Errorf("%w: %w", ErrBodyCut, err)
 }
 
 func readLine(r *bufio.Reader) ([]byte, error) {
@@ -302,14 +398,22 @@ type Client struct {
 	Timeout time.Duration
 }
 
+// BodyReplyWait is how long a call that streams a body waits for its
+// reply line, which comes once the service has what it streams: a large
+// den's database takes a while to snapshot for a backup.
+var BodyReplyWait = time.Hour
+
 // Call sends req and decodes the result into result, which may be nil.
 func (c Client) Call(req Request, result any) error {
 	return c.CallBody(req, result, nil)
 }
 
-// CallBody is Call for operations that stream a body, which is copied to
-// body until the service closes the connection.
-func (c Client) CallBody(req Request, result any, body io.Writer) error {
+// CallBody is Call for operations that stream a body. Once the reply is in
+// and its result decoded, open gives the writer the body goes to, or an
+// error that stops the call before the body is read, as when there's no
+// room for it. A body that stops before its end fails the call with
+// ErrBodyCut, and what reached the writer is then only part of it.
+func (c Client) CallBody(req Request, result any, open func() (io.Writer, error)) error {
 	timeout := c.Timeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
@@ -319,7 +423,11 @@ func (c Client) CallBody(req Request, result any, body io.Writer) error {
 		return err
 	}
 	defer conn.Close()
-	resp, reader, err := exchange(conn, req, timeout)
+	wait := timeout
+	if open != nil {
+		wait = BodyReplyWait
+	}
+	resp, reader, err := exchange(conn, req, timeout, wait)
 	if err != nil {
 		return err
 	}
@@ -331,17 +439,22 @@ func (c Client) CallBody(req Request, result any, body io.Writer) error {
 			return fmt.Errorf("decode result: %w", err)
 		}
 	}
-	if resp.Body {
-		if body == nil {
-			return errors.New("service sent a body this call can't take")
-		}
-		// A body can be large; only an idle connection times out.
-		_ = conn.SetDeadline(time.Time{})
-		if _, err := io.Copy(body, &idleTimeoutReader{conn: conn, r: reader, idle: timeout}); err != nil {
-			return fmt.Errorf("receive body: %w", err)
-		}
+	if !resp.Body {
+		return nil
 	}
-	return nil
+	if open == nil {
+		return errors.New("service sent a body this call can't take")
+	}
+	if !resp.Frames {
+		return errors.New("the running Dens service is older than this command; restart it, then try again")
+	}
+	w, err := open()
+	if err != nil {
+		return err
+	}
+	// A body can be large; only an idle connection times out.
+	_ = conn.SetDeadline(time.Time{})
+	return readFrames(w, &idleTimeoutReader{conn: conn, r: reader, idle: timeout})
 }
 
 // Open sends req and, once the service accepts it, returns the stream the
@@ -355,7 +468,7 @@ func (c Client) Open(req Request) (*Stream, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, reader, err := exchange(conn, req, timeout)
+	resp, reader, err := exchange(conn, req, timeout, timeout)
 	if err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -368,9 +481,9 @@ func (c Client) Open(req Request) (*Stream, error) {
 	return &Stream{conn: conn, r: reader}, nil
 }
 
-// exchange sends req and reads the service's reply line, with timeout for
-// both.
-func exchange(conn net.Conn, req Request, timeout time.Duration) (Response, *bufio.Reader, error) {
+// exchange sends req within timeout, and reads the service's reply line
+// within wait.
+func exchange(conn net.Conn, req Request, timeout, wait time.Duration) (Response, *bufio.Reader, error) {
 	data, err := json.Marshal(req)
 	if err != nil {
 		return Response{}, nil, err
@@ -386,6 +499,7 @@ func exchange(conn net.Conn, req Request, timeout time.Duration) (Response, *buf
 		}
 		return Response{}, nil, fmt.Errorf("send request: %w", err)
 	}
+	_ = conn.SetReadDeadline(time.Now().Add(wait))
 	resp, err := readResponse(reader)
 	return resp, reader, err
 }

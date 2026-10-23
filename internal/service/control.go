@@ -94,11 +94,6 @@ func statusReply(ctx context.Context, a *app.App) (control.Reply, error) {
 	return control.Reply{Result: status}, nil
 }
 
-// BackupResult names the archive a backup streams.
-type BackupResult struct {
-	Name string `json:"name"`
-}
-
 // backupReply streams the archive of a backup. The password check is the
 // re-authentication a backup needs: the archive carries the data key
 // sealed under that password.
@@ -106,11 +101,11 @@ func backupReply(ctx context.Context, a *app.App, password string) (control.Repl
 	if err := checkPassword(ctx, a, password, "making a backup"); err != nil {
 		return control.Reply{}, err
 	}
-	name, archive, err := a.Backup(ctx)
+	archive, err := a.Backup(ctx)
 	if err != nil {
 		return control.Reply{}, err
 	}
-	return control.Reply{Result: BackupResult{Name: name}, Body: archive}, nil
+	return control.Reply{Result: control.Backup{Name: archive.Name, Size: archive.Size}, Body: archive}, nil
 }
 
 // ownerInviteReply makes an invite that hands the den this instance hosts

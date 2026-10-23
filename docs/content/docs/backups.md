@@ -10,9 +10,9 @@ you move to another computer.
 ## Making a backup
 
 In Dens's settings, under System, choose **Back up**. It asks for your local
-password, and your browser downloads the backup: one file, named like
-`dens-main-20261012-153000.backup`. The file is locked with your local password,
-so keep the two apart.
+password, says about how large the backup will be, and your browser downloads
+it: one file, named like `dens-main-20261012-153000.backup`. The file is locked
+with your local password, so keep the two apart.
 
 Or run this as yourself, not as admin, which writes the file into the folder you
 ran it from (`--output` picks another place):
@@ -20,6 +20,12 @@ ran it from (`--output` picks another place):
 ```sh
 dens backup
 ```
+
+It says how large the backup will be, and stops before it starts if the folder
+hasn't room for it.
+
+A backup that stops partway is never kept as finished: `dens backup` says it
+stopped, and your browser marks the download failed. Make it again.
 
 In the Flatpak, `dens backup` writes into Dens's own folder,
 `~/.var/app/chat.dens.Dens`, so the settings' **Back up** is the easier way.
@@ -43,6 +49,10 @@ Backups work between Linux and Windows, either way.
 
 Copy the file over, then restore it as admin. It asks for the backup's local
 password, and replaces Dens's data on this computer with the backup's.
+
+Restoring needs free space on the disk Dens is on: about the backup's size, and
+a gigabyte to spare. It checks before it starts, and if the disk still runs
+short, it stops and says how much more it needs.
 
 {{< tabs >}}
 {{< tab name="Linux" >}}

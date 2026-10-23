@@ -100,7 +100,7 @@ func TestBackupHoldsDeletedFiles(t *testing.T) {
 		t.Fatalf("read the archive: %v", err)
 	}
 	out := t.TempDir()
-	if _, err := backup.Extract(bytes.NewReader(archive), out, backup.DefaultLimits); err != nil {
+	if _, err := backup.Extract(bytes.NewReader(archive), out, backup.ExtractOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := os.ReadFile(filepath.Join(backup.UploadsPath(out), entries[0].Name())); err != nil || len(got) == 0 {
