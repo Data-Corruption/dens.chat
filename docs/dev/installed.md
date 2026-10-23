@@ -193,7 +193,7 @@ A failure before step 9 undoes the journal in reverse. A failure after it leaves
 `dens restore BACKUP` replaces one instance's data:
 
 1. Refuse unless the instance is `ready` (or mid-`restoring`) at this binary's version.
-2. Extract the backup into a staging directory beside the data directory. Refuse a backup of another application, one from a newer schema, a wrong password, and a data key that doesn't match the backup's key check value.
+2. Refuse a backup larger than the free space, with a gigabyte to spare (M10). Extract it into a staging directory beside the data directory, refusing a backup of another application, one from a newer schema, a wrong password, or a data key that doesn't match the backup's key check value as soon as its database is out, before any upload, and stopping before the disk would fill.
 3. Take `operation.lock`, publish `restoring`, stop the service and take `lifecycle.lock`.
 4. Move the data directory aside (`data.replaced-<time>`) and the staging directory into its place. Move the host-wrapped key aside, and wrap the backup's data key for this host.
 5. Commit the journal, move this machine's logs into the new data directory, start the service and publish `ready`. The service migrates an older backup, clears its browser sessions, turns hosting off (M9.1) and starts its den on a new sync epoch as it starts, so members' clients drop what they cached from it. Then delete the replaced data and key, the client's cache with them: a backup leaves the cache out, and the restored install fills a new one as it reads.
