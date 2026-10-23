@@ -48,7 +48,7 @@ Design rules that follow from this:
 
 ## Architecture
 
-Dens is one static Go binary, forked from Sprout, that always runs the client and optionally runs a den. It runs as a hardened system-level service under a dedicated account, never as the person's desktop user: a systemd unit on Linux and an SCM (Service Control Manager) service on Windows (see [installed.md](installed.md)). The Flatpak (M9) and the Android app (M10) are the exceptions: they join dens and host none, and run as the person, in their session or under the app (see [flatpak.md](flatpak.md) and [android.md](android.md)).
+Dens is one static Go binary, forked from Sprout, that always runs the client and optionally runs a den. It runs as a hardened system-level service under a dedicated account, never as the person's desktop user: a systemd unit on Linux and an SCM (Service Control Manager) service on Windows (see [installed.md](installed.md)). The Flatpak (M9) and the Android app (M11) are the exceptions: they join dens and host none, and run as the person, in their session or under the app (see [flatpak.md](flatpak.md) and [android.md](android.md)).
 
 **Traffic paths**
 
@@ -136,7 +136,7 @@ Sensitive fields in SQLite are encrypted one by one with the same data key (XCha
    - Linux: an encrypted credential loaded with `LoadCredentialEncrypted=` in the unit. systemd decrypts it at start, bound to the host key or TPM, and hands it to the service in `$CREDENTIALS_DIRECTORY`.
    - Windows: a machine-scope DPAPI blob in the state directory, whose DACL allows only the service account, SYSTEM and Administrators. The service decrypts it at start.
    - The Flatpak (M9): none, so it starts locked until the member types the local password, unless they ask it to remember. Then the app's secret from the Secret portal, kept in their keyring, wraps a copy, or the key is kept in a file where the portal can't be trusted (see [flatpak.md](flatpak.md)).
-   - Android (M10): a Keystore key, which the app's shell uses to unwrap the data key at start (see [android.md](android.md)).
+   - Android (M11): a Keystore key, which the app's shell uses to unwrap the data key at start (see [android.md](android.md)).
 3. A second copy is wrapped with a key derived from the local password (Argon2id) and kept in the storage root.
 
 The privileged CLI does the host wrapping (at install and restore); the service only unwraps. Password wrapping and all field encryption are shared code.
@@ -854,18 +854,18 @@ On Windows, the installer adds inbound Windows Firewall rules for the media port
 
 ## Platform support
 
-Dens supports Linux and Windows for both the client and the den. Linux is recommended. A Flatpak (M9) brings the client to other Linux distributions, and an Android app (M10) to phones; neither hosts a den.
+Dens supports Linux and Windows for both the client and the den. Linux is recommended. A Flatpak (M9) brings the client to other Linux distributions, and an Android app (M11) to phones; neither hosts a den.
 
 ### Deployment forms (M9)
 
-Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M10, Android (under the app's shell). `layout.Form` names the form, and `app.FormOf` chooses it at runtime: a development build is Development, a sandbox whose `/.flatpak-info` and `FLATPAK_ID` name `chat.dens.Dens` the Flatpak, `GOOS=android` Android, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it, as a `switch` on the form rather than a type per form, since there are few forms and each differs from the others in a few lines: where the paths are, how the data key unwraps, whether the instance checks the release host for updates, which only an installed one with a release host does (`App.ChecksForUpdates`), the settings' update options with it, what the update notice says, how the CLI checks the service it talks to and what it advises when none is running, whether the helper runs inside the service, and whether the instance may host. A form `layout` doesn't know has no paths, so no process runs as one. Forms other than Installed are session forms (`Form.Session`): they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
+Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M11, Android (under the app's shell). `layout.Form` names the form, and `app.FormOf` chooses it at runtime: a development build is Development, a sandbox whose `/.flatpak-info` and `FLATPAK_ID` name `chat.dens.Dens` the Flatpak, `GOOS=android` Android, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it, as a `switch` on the form rather than a type per form, since there are few forms and each differs from the others in a few lines: where the paths are, how the data key unwraps, whether the instance checks the release host for updates, which only an installed one with a release host does (`App.ChecksForUpdates`), the settings' update options with it, what the update notice says, how the CLI checks the service it talks to and what it advises when none is running, whether the helper runs inside the service, and whether the instance may host. A form `layout` doesn't know has no paths, so no process runs as one. Forms other than Installed are session forms (`Form.Session`): they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
 
 | Form | Runs as | Its data key | Installed and updated by | Hosts a den | Its doc |
 | --- | --- | --- | --- | --- | --- |
 | Installed | A service under its own account: a systemd unit on Linux, an SCM service on Windows | Bound to the host: `systemd-creds` or DPAPI | Its maintenance commands, which the installer scripts run | Yes | [installed.md](installed.md) |
 | Development | The developer, from a terminal | A plaintext file | The developer's own builds | Yes | [lifecycle.md](lifecycle.md)'s Development instances |
 | The Flatpak (M9) | The member, in their session | None that opens without them, unless they ask it to remember | Flatpak | No | [flatpak.md](flatpak.md) |
-| Android (M10) | The app's shell, as its child process | A Keystore key | The app's updater, or F-Droid | No | [android.md](android.md) |
+| Android (M11) | The app's shell, as its child process | A Keystore key | The app's updater, or F-Droid | No | [android.md](android.md) |
 
 ### Platform layer
 

@@ -73,7 +73,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 - [docs/dev/flatpak.md](docs/dev/flatpak.md): the Flatpak (M9), run by the
   member in their session: its sandbox, locked start and remembered
   key, lifecycle with no installer, updates, its publishing, and its harness.
-- [docs/dev/android.md](docs/dev/android.md): the Android app (M10 to M12).
+- [docs/dev/android.md](docs/dev/android.md): the Android app (M11 to M13).
 - [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
   the plan for the one under way, and ideas after it.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
