@@ -97,7 +97,7 @@ dep_check() {
   # The build itself is pure Go; gcc is only needed by the host-toolchain
   # test.sh run before production builds.
   local required_bins=(go sed awk sha256sum gzip)
-  if [[ "$BUILD_KIND" != "dev" ]]; then
+  if [[ "$BUILD_KIND" != "dev" ]] && $RUN_TESTS; then
     required_bins+=(gcc)
   fi
 
