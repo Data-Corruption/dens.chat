@@ -290,6 +290,10 @@ jobs:
       - name: Run Flatpak E2E
         run: ./scripts/test.sh -flatpak-e2e
 
+      - name: Show AppArmor's denials
+        if: ${{ failure() }}
+        run: sudo dmesg | grep 'apparmor="DENIED"' | tail -n 40 || true
+
       - name: Upload Flatpak E2E logs
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

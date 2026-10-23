@@ -58,6 +58,14 @@ source scripts/test/incus.sh
 incus_setup
 
 IMAGE=dens-e2e/flatpak
+# The containers that run the Flatpak. Where AppArmor mediates user
+# namespaces, as Ubuntu's does from 23.10, a container makes them only
+# where its profile says so, which Incus 6.0's doesn't; the Flatpak's
+# sandbox makes them, as the member.
+FLATPAK_CONTAINER=(-c security.nesting=true)
+if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+  FLATPAK_CONTAINER+=(-c 'raw.apparmor=userns,')
+fi
 RUN_LOG_DIR="$PWD/out/flatpak-e2e-logs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "$RUN_LOG_DIR"
 HARNESS_DIR=$(mktemp -d)
@@ -131,7 +139,7 @@ image() {
 # container of its own.
 publisher() {
   echo ">> The Flatpak's publisher, in $PUBLISHER"
-  "${INCUS[@]}" init "$IMAGE" "$PUBLISHER" -c security.nesting=true >/dev/null
+  "${INCUS[@]}" init "$IMAGE" "$PUBLISHER" "${FLATPAK_CONTAINER[@]}" >/dev/null
   "${INCUS[@]}" start "$PUBLISHER"
   wait_for_boot "$PUBLISHER"
   push_scripts "$PUBLISHER"
@@ -177,7 +185,7 @@ run() {
 
   echo ">> Installing the Flatpak of $first from the link its publication wrote"
   echo ">> Launching $FLATPAK from $IMAGE"
-  "${INCUS[@]}" init "$IMAGE" "$FLATPAK" -c security.nesting=true >/dev/null
+  "${INCUS[@]}" init "$IMAGE" "$FLATPAK" "${FLATPAK_CONTAINER[@]}" >/dev/null
   "${INCUS[@]}" start "$FLATPAK"
   wait_for_boot "$FLATPAK"
   push_scripts "$FLATPAK"
