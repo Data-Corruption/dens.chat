@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.2.0] - 2026-10-23
+
+### Added
+
+- A Flatpak, for the Linux distributions the installer doesn't support, such as NixOS and SteamOS. Install it from the link in the install guide, and it updates through your software center. It joins dens but can't host one, since it only runs while you're signed in.
+- The Flatpak asks for your local password each time it starts, unless you tick Remember on this computer: then your keyring keeps a key that opens it, and it starts by itself when you sign in.
+- Back up in the settings, under System, downloads a backup in your browser, after your local password.
+
+### Changed
+
+- An open Dens tab reloads itself once Dens updates or restarts, instead of staying on the old page.
+- A browser that isn't paired yet shows `dens open --print` too, which prints a link to open Dens in whichever browser you like.
+- The installer's refusal on NixOS and SteamOS points to the Flatpak.
+
 ## [v1.1.0] - 2026-10-21
 
 ### Added

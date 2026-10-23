@@ -3,8 +3,8 @@ title: Host a den
 weight: 3
 ---
 
-Any Dens install can also host one den. The den lives on your computer, and
-members connect to it over the internet. This guide covers the router and
+Dens, installed on Linux or Windows, can also host one den; the Flatpak can't.
+The den lives on your computer, and members connect to it over the internet. This guide covers the router and
 domain parts too, assuming you've never done either.
 
 ## What you need

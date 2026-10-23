@@ -12,7 +12,8 @@ your computer, and it keeps running while you're logged out.
 - **Windows 11**, version 24H2 or later, Home or Pro.
 - **Linux**: Fedora (Workstation and its spins), Bazzite, Debian 12 or later,
   Ubuntu 24.04 or later and the distributions built on it, such as Linux Mint
-  and Pop!\_OS, Arch, and CachyOS. Others aren't supported yet.
+  and Pop!\_OS, Arch, and CachyOS. On the others, such as NixOS and SteamOS,
+  use [the Flatpak](#the-flatpak), which joins dens but can't host one.
 - **An up-to-date browser**: Firefox, Chrome, Edge, or one built on them.
 
 Linux keeps Dens more tightly locked down than Windows can; [Privacy](../privacy/#linux-and-windows)
@@ -172,3 +173,66 @@ dens uninstall
 ```
 {{< /tab >}}
 {{< /tabs >}}
+
+## The Flatpak
+
+On the Linux distributions the installer doesn't support, Dens comes as a
+Flatpak. It joins dens like any install, but it runs as you, in your session,
+instead of as a service with an account of its own. So it's only up while
+you're signed in, and it can't host a den, which has to keep running while
+nobody is.
+
+{{% steps %}}
+
+### Install it
+
+[Install Dens](flatpak+https://releases.dens.chat/flatpak/chat.dens.Dens.flatpakref).
+Your software center opens and offers to install it. If nothing opens,
+[download the file](https://releases.dens.chat/flatpak/chat.dens.Dens.flatpakref)
+and open it, or run:
+
+```sh
+flatpak install https://releases.dens.chat/flatpak/chat.dens.Dens.flatpakref
+```
+
+It also adds Flathub, where the runtime Dens runs on comes from, if your
+computer doesn't have it yet. A software center that installs for everyone on
+the computer, as Fedora's does, asks for your admin password. GNOME Software calls Dens potentially
+unsafe because it can use X11, the older way of drawing windows: Dens draws
+none, but push to talk needs X11 when you're signed in to an X11 session.
+
+### Open Dens
+
+Pick Dens from your apps menu. The first time, it asks you to set a local
+password, as any install does.
+
+{{% /steps %}}
+
+The Flatpak asks for your local password each time it starts, unless you tick
+**Remember on this computer**. Then your desktop's keyring keeps a key that
+opens it, and Dens starts by itself when you sign in. On KDE without a wallet,
+KDE asks you to make one the first time: pick **Classic**, with the password
+you sign in with. The default, GPG, needs a GPG key of your own.
+
+Who can read what Dens keeps differs from the installed Dens; [Privacy](../privacy/#linux-and-windows)
+has the details.
+
+Dens's commands are inside the Flatpak. To run them as `dens`, add this to
+your shell's config:
+
+```sh
+alias dens='flatpak run --command=dens chat.dens.Dens'
+```
+
+### Updating and removing it
+
+Your software center updates Dens along with your other apps, so you don't
+need the link again; KDE's Discover can't open it once Dens is installed
+anyway. Once an update is in, Dens offers to restart into it.
+
+To remove it, with everything it keeps, make a [backup](../backups/) first if
+you might want it back, then run:
+
+```sh
+flatpak uninstall --delete-data chat.dens.Dens
+```
