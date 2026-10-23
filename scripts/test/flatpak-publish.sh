@@ -9,7 +9,8 @@
 # it stands.
 #
 # A wrapper on PATH counts the publisher's writes to the host, and fails
-# the one FAIL_AT names, for a run cut short at each of them.
+# the one FAIL_AT names, for a run cut short at each of them. No sandbox
+# can start, as in the release job's container.
 
 set -euo pipefail
 
@@ -94,6 +95,12 @@ installed() {
 }
 
 mkdir -p "$WORK/wrap" "$HOST" "$KEYS"
+# The release job's container, as Docker's are, can't make the namespaces
+# Flatpak's sandbox needs, so nothing the publisher runs may need one:
+# here, as there, bwrap fails.
+mv /usr/bin/bwrap /usr/bin/bwrap.real
+printf '#!/bin/sh\necho "bwrap: Creating new namespace failed: Operation not permitted" >&2\nexit 1\n' > /usr/bin/bwrap
+chmod 0755 /usr/bin/bwrap
 cat > "$WORK/wrap/rclone" <<'EOF'
 #!/bin/sh
 # rclone, counting the publisher's writes to the host and failing the one
