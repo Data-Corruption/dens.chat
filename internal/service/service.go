@@ -87,11 +87,13 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 		}()
 	}
 
+	// A backup's archive streams for as long as it takes; a client that
+	// stops reading for a minute is let go.
 	controlServer := &control.Server{
 		Allowed:      a.Instance.DesktopUser,
 		Handlers:     controlHandlers(a, quit),
 		Log:          a.Log,
-		WriteTimeout: 30 * time.Minute,
+		WriteTimeout: time.Minute,
 	}
 	start("control endpoint", func(ctx context.Context) error { return controlServer.Serve(ctx, controlLn) })
 	start("client listener", func(ctx context.Context) error {

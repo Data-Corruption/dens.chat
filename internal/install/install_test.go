@@ -515,7 +515,21 @@ func TestUninstallKeepsSharedFilesForOtherInstances(t *testing.T) {
 // sealed under password.
 func makeBackup(t *testing.T, key []byte, password string) string {
 	t.Helper()
+	return makeBackupWith(t, key, password, nil)
+}
+
+// makeBackupWith is makeBackup with uploads, by name.
+func makeBackupWith(t *testing.T, key []byte, password string, uploads map[string]string) string {
+	t.Helper()
 	dir := t.TempDir()
+	for name, data := range uploads {
+		if err := os.MkdirAll(filepath.Join(dir, "uploads"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "uploads", name), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	logger, err := xlog.New(filepath.Join(dir, "logs"), "error")
 	if err != nil {
 		t.Fatal(err)
@@ -554,7 +568,7 @@ func makeBackup(t *testing.T, key []byte, password string) string {
 		t.Fatal(err)
 	}
 	manifest := backup.Manifest{App: "dens", Version: "v1.0.0", Instance: "main", CreatedAt: time.Now(), Platform: "linux/amd64"}
-	if _, err := backup.Write(out, manifest, snapshot, filepath.Join(dir, "no-uploads")); err != nil {
+	if _, err := backup.Write(out, manifest, snapshot, filepath.Join(dir, "uploads")); err != nil {
 		t.Fatal(err)
 	}
 	if err := out.Close(); err != nil {

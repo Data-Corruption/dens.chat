@@ -5,14 +5,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Data-Corruption/dens.chat/internal/backup"
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/pkg/xterm/prompt"
 
 	"github.com/urfave/cli/v3"
@@ -56,38 +59,77 @@ func backupCommand(bi build.BuildInfo) *cli.Command {
 					return fmt.Errorf("%s already exists", output)
 				}
 			}
-			temp, err := os.CreateTemp(dir, ".dens-backup-*.tmp")
+			fmt.Println("Making the backup ...")
+			path, err := writeBackup(client, control.Request{Op: control.OpBackup, Password: password}, dir, output)
+			if errors.Is(err, control.ErrBodyCut) {
+				log := "the log in " + l.Logs
+				if l.Form == layout.Installed {
+					log = host.ServiceLogHint(l.ServiceName, l.Logs)
+				}
+				return fmt.Errorf("the backup stopped partway, so nothing was kept; for why, see %s: %w", log, err)
+			}
 			if err != nil {
-				return err
+				return explainCallError(bi, l, err)
 			}
-			tempPath := temp.Name()
-			defer os.Remove(tempPath)
-
-			var result struct {
-				Name string `json:"name"`
-			}
-			callErr := client.CallBody(control.Request{Op: control.OpBackup, Password: password}, &result, temp)
-			closeErr := temp.Close()
-			if callErr != nil {
-				return explainCallError(bi, l, callErr)
-			}
-			if closeErr != nil {
-				return closeErr
-			}
-			if output == "" {
-				output = filepath.Join(dir, filepath.Base(result.Name))
-			}
-			if _, err := os.Lstat(output); !errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("%s already exists", output)
-			}
-			if err := os.Rename(tempPath, output); err != nil {
-				return err
-			}
-			fmt.Printf("Backup written to %s\n", output)
+			fmt.Printf("Backup written to %s\n", path)
 			fmt.Println("It is encrypted with your local password; keep both safe.")
 			return nil
 		},
 	}
+}
+
+// backupRoom is what a backup leaves free on the disk it's written to,
+// beyond its own size, so the disk isn't left full.
+const backupRoom = 64 << 20
+
+// freeSpace is host.FreeSpace; tests replace it.
+var freeSpace = host.FreeSpace
+
+// writeBackup has the service write an archive into dir, as output or under
+// the name the service gives it, and keeps it only once it has come whole.
+// It refuses before the archive comes when dir hasn't room for it.
+func writeBackup(client control.Client, req control.Request, dir, output string) (string, error) {
+	temp, err := os.CreateTemp(dir, ".dens-backup-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+
+	var result control.Backup
+	callErr := client.CallBody(req, &result, func() (io.Writer, error) {
+		free, err := freeSpace(dir)
+		if err != nil {
+			return nil, fmt.Errorf("check the room in %s: %w", dir, err)
+		}
+		if free < uint64(result.Size)+backupRoom {
+			return nil, fmt.Errorf("the backup takes about %s, and %s has %s free; make room there, or write it elsewhere with --output",
+				backup.SizeText(result.Size), dir, backup.SizeText(int64(free)))
+		}
+		fmt.Printf("Writing about %s ...\n", backup.SizeText(result.Size))
+		return temp, nil
+	})
+	if callErr == nil {
+		// The name says it's whole, so the file is on the disk first.
+		callErr = temp.Sync()
+	}
+	closeErr := temp.Close()
+	if callErr != nil {
+		return "", callErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if output == "" {
+		output = filepath.Join(dir, filepath.Base(result.Name))
+	}
+	if _, err := os.Lstat(output); !errors.Is(err, fs.ErrNotExist) {
+		return "", fmt.Errorf("%s already exists", output)
+	}
+	if err := os.Rename(tempPath, output); err != nil {
+		return "", err
+	}
+	return output, nil
 }
 
 // readPassword prompts on the terminal, or reads one line from standard

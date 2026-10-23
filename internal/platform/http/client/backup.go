@@ -53,8 +53,20 @@ func (b *backups) redeem(token string) bool {
 }
 
 func (rt *router) mountBackups(r chi.Router) {
+	r.Get("/api/backup", rt.handleBackupSize)
 	r.Post("/api/backup", rt.handleBackup)
 	r.Get("/api/backup/{token}", rt.handleDownloadBackup)
+}
+
+// handleBackupSize says at least how large a backup made now would be,
+// which the page shows before the member makes one (M10).
+func (rt *router) handleBackupSize(w http.ResponseWriter, r *http.Request) {
+	size, err := rt.a.BackupSize()
+	if err != nil {
+		xhttp.Error(r.Context(), w, err)
+		return
+	}
+	writeJSON(w, map[string]int64{"size": size})
 }
 
 // handleBackup takes the local password, the re-authentication a backup
@@ -86,16 +98,20 @@ func (rt *router) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "This backup's link has expired; make the backup again.", http.StatusGone)
 		return
 	}
-	name, archive, err := rt.a.Backup(r.Context())
+	archive, err := rt.a.Backup(r.Context())
 	if err != nil {
 		xhttp.Error(r.Context(), w, err)
 		return
 	}
 	defer archive.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": archive.Name}))
 	w.Header().Set("Cache-Control", "no-store")
 	if _, err := io.Copy(w, archive); err != nil {
 		rt.a.Log.Warnf("The backup's download didn't finish: %v", err)
+		// Ending the response would leave what went looking whole in the
+		// browser's downloads; dropping the connection marks it failed
+		// (M10).
+		panic(http.ErrAbortHandler)
 	}
 }

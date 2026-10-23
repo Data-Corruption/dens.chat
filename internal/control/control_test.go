@@ -34,6 +34,13 @@ func startServer(t *testing.T, allowed host.Identity, handlers map[string]Handle
 // wrap isn't nil.
 func startServerOn(t *testing.T, allowed host.Identity, handlers map[string]Handler, wrap func(net.Listener) net.Listener) (Client, func()) {
 	t.Helper()
+	return startTestServer(t, &Server{Allowed: allowed, Handlers: handlers}, wrap)
+}
+
+// startTestServer serves server, given a logger of its own, on a new
+// endpoint, its listener wrapped when wrap isn't nil.
+func startTestServer(t *testing.T, server *Server, wrap func(net.Listener) net.Listener) (Client, func()) {
+	t.Helper()
 	me, err := host.CurrentUser()
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +58,7 @@ func startServerOn(t *testing.T, allowed host.Identity, handlers map[string]Hand
 		ln = wrap(ln)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	server := &Server{Allowed: allowed, Handlers: handlers, Log: logger}
+	server.Log = logger
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(ctx, ln) }()
 	stop := func() {
@@ -92,7 +99,7 @@ func TestCallRoundTrip(t *testing.T) {
 
 	var body bytes.Buffer
 	var result map[string]string
-	if err := client.CallBody(Request{Op: OpBackup, Password: "hunter22"}, &result, &body); err != nil {
+	if err := client.CallBody(Request{Op: OpBackup, Password: "hunter22"}, &result, func() (io.Writer, error) { return &body, nil }); err != nil {
 		t.Fatal(err)
 	}
 	if body.String() != "archive bytes" || result["name"] != "backup.tar.gz" {
