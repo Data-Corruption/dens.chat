@@ -80,9 +80,12 @@ commit() {
   # With Wayland granted, fallback-x11 gives the app X11 only in an X11
   # session, where push to talk needs it.
   flatpak build-finish "$build" --command=dens --share=network --socket=wayland --socket=fallback-x11 >/dev/null
-  # The subject names the version, which the publisher reads back.
-  flatpak build-export --arch="$arch" "${sign[@]}" --no-update-summary --subject="Dens $version" \
-    "$repo" "$build" "$BRANCH" >/dev/null
+  # The subject names the version, which the publisher reads back. The
+  # icon's validator runs unsandboxed: the icon is this repository's, and
+  # the release job's container, as Docker's are, can't make the
+  # namespaces a sandbox needs.
+  flatpak build-export --arch="$arch" "${sign[@]}" --no-update-summary --disable-sandbox \
+    --subject="Dens $version" "$repo" "$build" "$BRANCH" >/dev/null
   rm -rf "$build"
   printf 'Committed Dens %s for %s: %s\n' "$version" "$arch" \
     "$(ostree rev-parse --repo="$repo" "app/$APP/$arch/$BRANCH" | cut -c1-12)"
