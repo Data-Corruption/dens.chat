@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"net/http"
+	"slices"
 	"testing"
 	"time"
 
@@ -50,12 +51,20 @@ func postFile(t *testing.T, m *denclient.Manager, denID, channelID, name string,
 }
 
 // look has a member's page load a channel, as it does before it shows a
-// message's files, and fetch a file and its preview, if it has one.
+// message's files, and fetch a file and its preview, if it has one. The
+// page shows a file once the member has its message, from the channel's
+// history or its socket, which says what the cache keeps the file for.
 func look(t *testing.T, m *denclient.Manager, denID, channelID string, up denclient.Uploaded) (full, thumb []byte) {
 	t.Helper()
-	if _, err := m.History(context.Background(), denID, channelID, denclient.HistoryQuery{}); err != nil {
-		t.Fatal(err)
-	}
+	eventually(t, "the file's message", func() bool {
+		page, err := m.History(context.Background(), denID, channelID, denclient.HistoryQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(page.Messages, func(pm denclient.PageMessage) bool {
+			return slices.ContainsFunc(pm.Attachments, func(f denproto.File) bool { return f.ID == up.ID })
+		})
+	})
 	full, _, err := fetch(t, m, denID, up.ID, false)
 	if err != nil {
 		t.Fatal(err)
