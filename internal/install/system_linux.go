@@ -80,9 +80,13 @@ func (linuxSystem) Preflight() error {
 	return checkLXCDropIn("/")
 }
 
+// flatpakGuide is the install guide's section on the Flatpak, which runs
+// on the distributions the installer refuses (M9.4).
+const flatpakGuide = "https://dens.chat/docs/install/#the-flatpak"
+
 // checkDistribution refuses the distributions an install would fail on
 // halfway, on a path it writes that they keep read-only, before anything
-// changes (M8).
+// changes (M8), and names the Flatpak, which runs there.
 func checkDistribution(root string) error {
 	id, err := osReleaseID(root)
 	if err != nil {
@@ -90,9 +94,9 @@ func checkDistribution(root string) error {
 	}
 	switch id {
 	case "nixos":
-		return errors.New("Dens doesn't install on NixOS yet: its /etc/systemd/system, where the service goes, is in the read-only Nix store")
+		return fmt.Errorf("Dens doesn't install on NixOS: its /etc/systemd/system, where the service goes, is in the read-only Nix store. Dens's Flatpak runs there instead: %s", flatpakGuide)
 	case "steamos":
-		return errors.New("Dens doesn't install on SteamOS yet: an update replaces its read-only root, and what an install adds with it")
+		return fmt.Errorf("Dens doesn't install on SteamOS: an update replaces its read-only root, and what an install adds with it. Dens's Flatpak runs there instead: %s", flatpakGuide)
 	}
 	return nil
 }

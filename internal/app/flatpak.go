@@ -19,8 +19,13 @@ import (
 // Flatpak is what the Flatpak's service does in the member's session
 // (M9.3), which the page asks of it.
 type Flatpak interface {
-	// Update is what Flatpak's update monitor found.
+	// Update is what Flatpak's update monitor found, and CheckInstalled.
 	Update() FlatpakUpdate
+	// CheckInstalled asks the newest build installed which version it is,
+	// which the monitor learns of only at its next check, every 30
+	// minutes, where something else, as the software center, installed it
+	// (M9.4).
+	CheckInstalled(ctx context.Context)
 	// InstallUpdate has the monitor install the update. Nothing to update
 	// means something else installed it first: either way the newest build
 	// is installed, for StartNewest.
@@ -36,12 +41,13 @@ type Flatpak interface {
 }
 
 // FlatpakUpdate is the Flatpak's update notice (M9.3): an update on its
-// remote, Available, or one installed and not yet running, Installed; and
-// whether Dens may install it itself, or the software center does, and
-// why.
+// remote, Available, or one installed and not yet running, Installed, with
+// its Version where CheckInstalled has it; and whether Dens may install it
+// itself, or the software center does, and why.
 type FlatpakUpdate struct {
 	Available  bool   `json:"available"`
 	Installed  bool   `json:"installed"`
+	Version    string `json:"version,omitempty"`
 	CanInstall bool   `json:"can_install"`
 	Refused    string `json:"refused,omitempty"`
 }

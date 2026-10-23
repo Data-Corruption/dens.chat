@@ -20,7 +20,8 @@ func writeUnder(t *testing.T, root, path, data string) {
 }
 
 // TestPreflightRefusesDistributions checks that NixOS and SteamOS are
-// refused before anything changes, saying why (M8).
+// refused before anything changes, saying why (M8), and naming the
+// Flatpak's guide (M9.4).
 func TestPreflightRefusesDistributions(t *testing.T) {
 	for _, tc := range []struct {
 		name, file, osRelease, want string
@@ -40,6 +41,8 @@ func TestPreflightRefusesDistributions(t *testing.T) {
 				t.Fatalf("refused: %v", err)
 			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
 				t.Fatalf("got %v, want a refusal naming %q", err, tc.want)
+			case tc.want != "" && !strings.Contains(err.Error(), flatpakGuide):
+				t.Fatalf("the refusal names no Flatpak: %v", err)
 			}
 		})
 	}

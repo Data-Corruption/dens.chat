@@ -65,7 +65,7 @@ Dens supports five systemd desktop distro families. Non-systemd, server and deve
 | Ubuntu, Mint, Pop!\_OS | 24.04 base | 22.04 ships systemd 249, below the floor |
 | Arch, CachyOS | Rolling | Manjaro and other derivatives considered, not tested |
 
-Cut: Alpine, Void, Artix, Devuan, Gentoo, NixOS, openSUSE and MicroOS, Rocky, AlmaLinux and RHEL, SteamOS, and WSL2. From M9, a Flatpak lets their users join dens (see [flatpak.md](flatpak.md)). The installer refuses NixOS and SteamOS before it changes anything, saying why (M8). Both keep paths it writes read-only (NixOS's `/etc/systemd/system`, SteamOS's root), so it would otherwise fail halfway.
+Cut: Alpine, Void, Artix, Devuan, Gentoo, NixOS, openSUSE and MicroOS, Rocky, AlmaLinux and RHEL, SteamOS, and WSL2. From M9, a Flatpak lets their users join dens (see [flatpak.md](flatpak.md)). The installer refuses NixOS and SteamOS before it changes anything, saying why (M8) and linking the install guide's section on the Flatpak (M9.4). Both keep paths it writes read-only (NixOS's `/etc/systemd/system`, SteamOS's root), so it would otherwise fail halfway.
 
 ### TPM
 
@@ -172,7 +172,7 @@ On Windows:
 The installer scripts run `dens install` with the release they downloaded. It installs a new instance, or updates or reconfigures an existing one, and moves every other installed instance to its version too:
 
 1. Refuse when any instance has a newer version than this binary's: the one it has installed, or the target of a transition it was in, since its service may have migrated to it. The refusal names both. The same version installs again, which repairs (M8).
-2. Refuse v1.0's den option (`--den`, `-Den` in `install.ps1`): hosting is the settings' (M9.1). Check every port of the instance against its others, which v1.0 did for the den's only while it had the den role, so an update over a config whose ports clash names the flags that move them, and the client port against other programs. The den's ports matter only once hosting is on, which binds them as it starts.
+2. Refuse v1.0's den option (`--den` and `--den=false`, `-Den` and `-NoDen` in `install.ps1`), rather than ignore it, so nobody thinks it did something: hosting is the settings' (M9.1). Check every port of the instance against its others, which v1.0 did for the den's only while it had the den role, so an update over a config whose ports clash names the flags that move them, and the client port against other programs. The den's ports matter only once hosting is on, which binds them as it starts, and the plan lists them as hosting would bind them.
 3. Print the plan. `--dry-run` stops here.
 4. Collect the members: the target instance plus every installed one, sorted by name. Create missing instance roots and take each member's `operation.lock`.
 5. Read each member's state, and refuse an older version again, now that nothing can change it. Journal a restart of the services that were running, as the last step to undo, then publish `installing` (a fresh instance, or one whose first install never finished) or `updating` from the recorded version.

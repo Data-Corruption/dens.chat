@@ -9,7 +9,7 @@
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
-#   ./scripts/test.sh -flatpak-e2e                 # the Flatpak, made from this tree, in a container
+#   ./scripts/test.sh -flatpak-e2e                 # the Flatpak's publisher, then the Flatpak, made from this tree, in containers
 #   ./scripts/test.sh -windows                     # Go tests on the Windows host (WSL only)
 #   ./scripts/test.sh -all                         # every available suite
 #
@@ -33,7 +33,7 @@ EOF
   -release  Test the release publication state machine
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
   -den-e2e  Test joining a den through Caddy; remaining arguments go to test-den-e2e.sh
-  -flatpak-e2e  Test the Flatpak, made from this tree's binary, in a container
+  -flatpak-e2e  Test the Flatpak's publisher, then the Flatpak, made from this tree's binary and published by it, in containers
   -windows  From WSL, run the Go tests natively on the Windows host
   -all      Run every available suite
 EOF
@@ -145,6 +145,8 @@ run_shell_lint() {
     scripts/test/den-guest.sh
     scripts/test-flatpak-e2e.sh
     scripts/test/flatpak-guest.sh
+    scripts/test/flatpak-release.sh
+    scripts/test/flatpak-publish.sh
     scripts/flatpak.sh
     scripts/test/browser/*.sh
     scripts/dev/seed-chat.sh

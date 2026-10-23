@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
+	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -18,6 +20,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
+
+	"golang.org/x/mod/semver"
 )
 
 // flatpak is what the Flatpak's service does in the member's session
@@ -36,9 +40,10 @@ type flatpak struct {
 	// gnome is a GNOME session, which won't ask the member to let an app
 	// with no window update itself.
 	gnome bool
-	// openMonitor and spawn are Flatpak's portal's, or a test's.
+	// openMonitor, spawn and output are Flatpak's portal's, or a test's.
 	openMonitor func() (updateMonitor, error)
 	spawn       func(argv []string, files ...*os.File) error
+	output      func(ctx context.Context, argv []string) ([]byte, error)
 
 	// wg is what run waits for as it ends; once closed, nothing more
 	// starts.
@@ -53,6 +58,10 @@ type flatpak struct {
 	// manual is a desktop with no Background portal, where the member has
 	// Dens start at sign-in by hand.
 	manual bool
+	// checked is when CheckInstalled last asked, and newest what the
+	// newest build installed answered.
+	checked time.Time
+	newest  string
 }
 
 // updateMonitor is Flatpak's update monitor, host.UpdateMonitor, or a
@@ -69,6 +78,7 @@ func newFlatpak(ctx context.Context, a *app.App, quit func(why string)) *flatpak
 		gnome:       strings.Contains(strings.ToUpper(os.Getenv("XDG_CURRENT_DESKTOP")), "GNOME"),
 		openMonitor: func() (updateMonitor, error) { return host.OpenUpdateMonitor() },
 		spawn:       host.SpawnLatest,
+		output:      host.SpawnLatestOutput,
 	}
 }
 
@@ -217,11 +227,48 @@ func (f *flatpak) Update() app.FlatpakUpdate {
 	var v app.FlatpakUpdate
 	v.Available = u.Remote != "" && u.Remote != u.Local
 	v.Installed = u.Local != "" && u.Local != u.Running
+	if semver.Compare(f.newest, f.a.BuildInfo().Version) > 0 {
+		v.Installed, v.Version = true, f.newest
+	}
 	if v.Available && f.refusedFor == u.Remote {
 		v.Refused = f.refused
 	}
 	v.CanInstall = v.Available && !f.gnome && v.Refused == "" && f.monitor != nil
 	return v
+}
+
+// checkEvery is how often CheckInstalled asks at most, which the page has
+// it do as the member comes back to it, and each minute while they stay.
+const checkEvery = 30 * time.Second
+
+// CheckInstalled asks the newest build installed its version, which it
+// prints, from a sandbox of its own that ends at once. Flatpak's update
+// monitor learns of a build something else installed, as the software
+// center does, only at its next check, every 30 minutes; GNOME Software
+// installs updates by itself.
+func (f *flatpak) CheckInstalled(ctx context.Context) {
+	f.mu.Lock()
+	if time.Since(f.checked) < checkEvery {
+		f.mu.Unlock()
+		return
+	}
+	f.checked = time.Now()
+	f.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	out, err := f.output(ctx, []string{f.a.BuildInfo().Name, "--build-vars"})
+	if err != nil {
+		f.a.Log.Infof("Asking the newest build of Dens installed its version: %v", err)
+		return
+	}
+	var bi build.BuildInfo
+	if err := json.Unmarshal(out, &bi); err != nil || !semver.IsValid(bi.Version) {
+		f.a.Log.Infof("The newest build of Dens installed answered no version: %q", out)
+		return
+	}
+	f.mu.Lock()
+	f.newest = bi.Version
+	f.mu.Unlock()
 }
 
 func (f *flatpak) InstallUpdate(ctx context.Context) error {

@@ -4,14 +4,17 @@
 # test-flatpak-e2e.sh for the flow. The member is alice, whose systemd user
 # manager runs her session bus and Flatpak's portal, and every call to the
 # Flatpak's local API goes through her paired browser session (a cookie
-# jar).
+# jar). The release host is a directory, served over HTTP, which the
+# release pipeline's publisher writes the Flatpak to (M9.4).
 
 set -eu
 
 APP=chat.dens.Dens
 JAR=/root/cookies
 BASE=http://127.0.0.1:8494
-REPO=/srv/dens/repo
+HOST=/srv/host
+HOST_URL=http://127.0.0.1:8080/
+REPO=$HOST/flatpak/repo
 PASSWORD='local password'
 export GNUPGHOME=/root/gnupg
 
@@ -59,14 +62,20 @@ json() {
     python3 -c "import json, sys; d = json.load(sys.stdin); print($1)"
 }
 
-# sandboxes counts the sandboxes of Dens running.
-sandboxes() {
-    as_alice flatpak ps --columns=application | grep -cx "$APP" || :
+# services counts Dens's services running: its sandboxes whose command is
+# dens service run, and not the short ones, as the service's own that asks
+# the newest build installed its version (M9.4).
+services() {
+    n=0
+    for pid in $(as_alice flatpak ps --columns=application,child-pid | awk -v app="$APP" '$1 == app { print $2 }'); do
+        tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q ' service run' && n=$((n + 1))
+    done
+    echo "$n"
 }
 
 wait_stopped() {
     for _ in $(seq 1 120); do
-        [ "$(sandboxes)" = 0 ] && return 0
+        [ "$(services)" = 0 ] && return 0
         sleep 0.25
     done
     fail "Dens didn't stop"
@@ -116,25 +125,29 @@ prepare)
         sleep 0.2
     done
     as_alice systemctl --user daemon-reload
-    # A signing key, as the release's repository has.
+    # A signing key, as the release's repository has, and the release
+    # host the publisher writes to, served as the real one is.
     mkdir -p "$GNUPGHOME"
     chmod 0700 "$GNUPGHOME"
     gpg --batch --passphrase '' --quick-gen-key 'Dens e2e <e2e@dens.chat>' ed25519 sign never 2>/dev/null
-    mkdir -p /srv/dens
-    gpg --batch --export --armor > /srv/dens/key.asc
-    chmod -R a+rX /srv/dens
+    gpg --batch --export --armor > /root/key.asc
+    gpg --batch --export-secret-keys --armor > /root/key.secret.asc
+    gpgconf --kill gpg-agent
+    printf 'Dens for aarch64, which this container never runs\n' > /root/dens-aarch64
+    mkdir -p "$HOST"
+    systemd-run --unit=dens-host python3 -m http.server 8080 --bind 127.0.0.1 --directory "$HOST" >/dev/null
     ;;
-commit)
-    # commit VERSION: add the build of VERSION to the repository.
-    GPG_KEY=$(gpg --list-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }') \
-        bash /root/scripts/flatpak.sh commit "/root/dens-$1" "$1" "$REPO"
-    chmod -R a+rX /srv/dens
-    gpgconf --kill gpg-agent 2>/dev/null || :
+publish)
+    # publish VERSION: release VERSION, and publish its Flatpak as the
+    # release pipeline does.
+    bash /root/scripts/test/flatpak-release.sh release "$HOST" "$1" "/root/dens-$1" /root/dens-aarch64
+    bash /root/scripts/test/flatpak-release.sh publish "$HOST" "$HOST_URL" /root/key.secret.asc /root/key.asc >/root/publish.out 2>&1 ||
+        fail "publishing $1 failed: $(cat /root/publish.out)"
     ;;
 install)
-    as_alice flatpak --user remote-add --if-not-exists --gpg-import=/srv/dens/key.asc dens "file://$REPO"
-    # A static binary needs none of the runtime's extensions.
-    as_alice flatpak --user install -y --noninteractive --no-related dens "$APP"
+    # From the link the site gives, as a member does. A static binary
+    # needs none of the runtime's extensions.
+    as_alice flatpak --user install -y --noninteractive --no-related "${HOST_URL}flatpak/$APP.flatpakref"
     # The app may install its own updates, as KDE asks the member once.
     as_alice flatpak permission-set flatpak updates "$APP" yes
     ;;
@@ -151,10 +164,10 @@ launch-twice)
     grep -c 'Opened Dens in your browser' /root/launch-1.out /root/launch-2.out | grep -c ':1$' | grep -qx 2 ||
         fail "the launches didn't both open the page: $(cat /root/launch-1.out /root/launch-2.out)"
     for _ in $(seq 1 180); do
-        [ "$(sandboxes)" = 1 ] && exit 0
+        [ "$(services)" = 1 ] && exit 0
         sleep 0.25
     done
-    fail "$(sandboxes) sandboxes of Dens run"
+    fail "$(services) services of Dens run"
     ;;
 link)
     # link: the page's pairing link, as dens open prints it.
@@ -230,10 +243,27 @@ update)
     # into it; it migrates after a snapshot of the data before.
     api POST /api/update >/dev/null
     wait_status "d[\"version\"] == \"$1\""
-    [ "$(sandboxes)" = 1 ] || fail "$(sandboxes) sandboxes of Dens run after the update"
+    [ "$(services)" = 1 ] || fail "$(services) services of Dens run after the update"
     python3 -c "import json; d = json.load(open('$data/control/state.json')); print(d['phase'], d['version'])" |
         grep -qx "ready $1" || fail "the state after the update: $(cat "$data/control/state.json")"
     ls "$data"/snapshot/*.backup >/dev/null 2>&1 || fail "the update kept no snapshot"
+    ;;
+update-outside)
+    # Update Dens as the software center does, outside it.
+    as_alice flatpak --user update -y --noninteractive --no-related "$APP" >/dev/null
+    ;;
+wait-installed)
+    # wait-installed VERSION: the page's next look finds VERSION installed,
+    # which Dens asks the newest build installed, where Flatpak's update
+    # monitor names commits alone (M9.4).
+    wait_status "d.get('flatpakUpdate', {}).get('version') == '$1'"
+    ;;
+restart)
+    # restart VERSION: restart from the page into VERSION, which starts
+    # locked, its key remembered nowhere since the restore.
+    api POST /api/restart >/dev/null
+    wait_status "d[\"version\"] == \"$1\""
+    [ "$(services)" = 1 ] || fail "$(services) services of Dens run after the restart"
     ;;
 rollback)
     # rollback VERSION: roll Dens back to the build of VERSION, as a member

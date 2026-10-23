@@ -31,7 +31,7 @@ A service that stops on any other error is started again: by the unit's `Restart
 | Lock | Who | How |
 | --- | --- | --- |
 | `operation.lock` | Maintenance commands | Exclusive; waits up to 5 minutes for another command |
-| `lifecycle.lock` | The service, for its whole run | Exclusive without waiting; a second copy refuses to start. In production the service opens the file read-only, since it can't write the control directory. |
+| `lifecycle.lock` | The service, for its whole run | Exclusive without waiting; a second copy refuses to start. The installed service opens the file read-only, since it can't write the control directory. |
 | `lifecycle.lock` | Maintenance commands, after stopping the service | Exclusive; waits up to 30 seconds |
 | `lifecycle.lock` | A session form's service, before it reads the lifecycle state | Exclusive. A development instance's second copy refuses at once; the Flatpak's waits up to 30 seconds, for an older build handing over to it (M9.3) |
 | `launch.lock`, in the Flatpak's runtime directory | `dens launch`, while it starts the service | Exclusive; waits for another launch, so two at once start one service (M9.3) |

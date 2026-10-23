@@ -13,7 +13,13 @@
 #     Build and publish the CHANGELOG version, or finish an interrupted release.
 #     The workflow runs this only after the tests requested by --plan pass.
 #
-# Otherwise both commands need GITHUB_REPOSITORY, the R2 credentials, and
+#   ./scripts/ci.sh --flatpak
+#     Publish the promoted release's Flatpak to its repository on the release
+#     host, or finish an interrupted publication (scripts/ci/flatpak.sh). The
+#     workflow runs this after --execute, in the flatpak environment, whose
+#     FLATPAK_GPG_KEY signs it, where flatpak and ostree are.
+#
+# Otherwise every command needs GITHUB_REPOSITORY, the R2 credentials, and
 # rclone on PATH.
 # Execution also needs the build toolchain and GitHub's signing/tag permissions.
 # Run from the repository root. Project settings stay in scripts/build.sh.
@@ -26,6 +32,8 @@ CI_SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$CI_SCRIPT_DIR/build.sh"
 # shellcheck source=ci/release.sh
 source "$CI_SCRIPT_DIR/ci/release.sh"
+# shellcheck source=ci/flatpak.sh
+source "$CI_SCRIPT_DIR/ci/flatpak.sh"
 
 NO_CACHE='Cache-Control: no-store, max-age=0, must-revalidate'
 PUBLISH_REMOTE=""
@@ -130,9 +138,13 @@ execute_release() {
 }
 
 ci_main() {
-  if [[ $# -ne 1 || ( "$1" != "--plan" && "$1" != "--execute" ) ]]; then
-    printf 'Usage: ./scripts/ci.sh --plan | --execute\n' >&2
+  if [[ $# -ne 1 || ( "$1" != "--plan" && "$1" != "--execute" && "$1" != "--flatpak" ) ]]; then
+    printf 'Usage: ./scripts/ci.sh --plan | --execute | --flatpak\n' >&2
     return 2
+  fi
+  if [[ "$1" == --flatpak ]]; then
+    publish_flatpak
+    return
   fi
 
   # Before the first release there is nothing to publish, so a push to main

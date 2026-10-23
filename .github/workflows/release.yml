@@ -2,7 +2,8 @@ name: Release
 
 # On pushes to main, ci.sh --plan checks which tests are needed. After those
 # tests pass, ci.sh --execute publishes the release or finishes an interrupted
-# attempt. PRs always run validation and never publish. Before the first
+# attempt, and then ci.sh --flatpak publishes the promoted release's Flatpak,
+# in the flatpak environment. PRs always run validation and never publish. Before the first
 # release (no CHANGELOG.md heading and no version tag), pushes to main get the
 # same validation as PRs and publish nothing.
 #
@@ -258,6 +259,50 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # The Flatpak e2e in Incus containers: the release pipeline's publisher of
+  # the Flatpak, then this tree's Flatpak, published by it and run for a
+  # member. Releases publish the Flatpak, so they wait for it too.
+  flatpak-e2e:
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Incus
+        uses: ./.github/actions/setup-incus
+
+      # Ubuntu 24.04 lets a program make user namespaces only where an
+      # AppArmor profile names it, and none does in a container, where the
+      # Flatpak's sandbox makes them as the member.
+      - name: Let containers make user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run Flatpak E2E
+        run: ./scripts/test.sh -flatpak-e2e
+
+      - name: Show AppArmor's denials
+        if: ${{ failure() }}
+        run: sudo dmesg | grep 'apparmor="DENIED"' | tail -n 40 || true
+
+      - name: Upload Flatpak E2E logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flatpak-e2e-logs
+          path: out/flatpak-e2e-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
   # The media module: regenerates it from its pinned inputs and fails if the
   # committed translation differs, and has exiftool look for anything
   # personal left in stripped copies.
@@ -339,11 +384,13 @@ jobs:
             !contains(needs.*.result, 'skipped') &&
             needs.windows-e2e.result == 'success' &&
             needs.linux-e2e.result == 'success' &&
+            needs.flatpak-e2e.result == 'success' &&
             needs.media-module.result == 'success' &&
             needs.media-fuzz.result == 'success') ||
            (needs.release-plan.outputs.e2e_required == 'false' &&
             needs.windows-e2e.result == 'skipped' &&
             needs.linux-e2e.result == 'skipped' &&
+            needs.flatpak-e2e.result == 'skipped' &&
             needs.media-module.result == 'skipped' &&
             needs.media-fuzz.result == 'skipped')) &&
           !contains(needs.*.result, 'failure') &&
@@ -353,6 +400,7 @@ jobs:
       - release-plan
       - windows-e2e
       - linux-e2e
+      - flatpak-e2e
       - media-module
       - media-fuzz
     # Installer validation runs here too; jobs do not share the E2E daemon.
@@ -397,3 +445,58 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: ./scripts/ci.sh --execute
+
+  # Publishes the promoted release's Flatpak to its repository on the
+  # release host, or finishes an interrupted publication, once the release
+  # has: see scripts/ci/flatpak.sh. Its signing key is a secret of the
+  # flatpak environment, which only main deploys to, so no other branch's
+  # workflow can read it; the R2 credentials are the repository's. Its
+  # failure leaves the release alone: Re-run failed jobs finishes it, as
+  # does the next push to main.
+  flatpak:
+    needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: flatpak
+    # Debian 13, whose flatpak, ostree and AppStream's tools the Flatpak e2e
+    # and the VMs' builds use too.
+    container: debian:13@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install Git and the download tools
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            ca-certificates curl git unzip >/dev/null
+
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install Flatpak's tools
+        run: bash scripts/flatpak.sh deps
+
+      - name: Install pinned rclone
+        run: |
+          set -euo pipefail
+          rclone_bin=$(./scripts/vendor.sh rclone | sed -n 's/^rclone=//p')
+          [[ -n "$rclone_bin" && -x "$rclone_bin" ]] || {
+            echo "vendor.sh returned no executable rclone path" >&2
+            exit 1
+          }
+          dirname "$rclone_bin" >> "$GITHUB_PATH"
+          "$rclone_bin" version
+
+      - name: Publish the Flatpak
+        env:
+          VERBOSE: ${{ vars.VERBOSE }}
+          FLATPAK_GPG_KEY: ${{ secrets.FLATPAK_GPG_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: ./scripts/ci.sh --flatpak

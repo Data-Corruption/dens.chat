@@ -12,6 +12,9 @@ test("an installed Dens's notice gives the update command, and no update gives n
 
 test("the Flatpak's notice restarts into an installed update, updates where Flatpak lets Dens, and sends to the software center otherwise", () => {
     assert.equal(updateNotice({ flatpakUpdate: { available: false, installed: true } }).action, 'restart');
+    // The version, where Dens asked the newest build installed (M9.4).
+    assert.equal(updateNotice({ flatpakUpdate: { installed: true, version: 'v1.2.1' } }).text, 'Dens v1.2.1 is installed.');
+    assert.equal(updateNotice({ flatpakUpdate: { installed: true } }).text, 'An update to Dens is installed.');
     assert.equal(updateNotice({ flatpakUpdate: { available: true, installed: true, can_install: true } }).action, 'restart');
     assert.equal(updateNotice({ flatpakUpdate: { available: true, can_install: true } }).action, 'update');
     const gnome = updateNotice({ flatpakUpdate: { available: true, can_install: false } });

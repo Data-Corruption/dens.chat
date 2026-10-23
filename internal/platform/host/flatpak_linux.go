@@ -294,6 +294,38 @@ func Notify(id, title, body string) error {
 // that ran this process holds it, as a terminal would. files become the new
 // process's descriptors from 3 on.
 func SpawnLatest(argv []string, files ...*os.File) error {
+	fds := map[uint32]*os.File{}
+	for i, f := range files {
+		fds[uint32(3+i)] = f
+	}
+	return spawnLatest(argv, fds)
+}
+
+// SpawnLatestOutput runs argv as SpawnLatest does, and returns what it
+// prints, up to 64 KiB, once it ends or ctx's deadline passes (M9.4).
+func SpawnLatestOutput(ctx context.Context, argv []string) ([]byte, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	err = spawnLatest(argv, map[uint32]*os.File{1: w})
+	// The new process holds the pipe's end now, and closes it as it ends.
+	w.Close()
+	if err != nil {
+		return nil, err
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := r.SetReadDeadline(deadline); err != nil {
+			return nil, err
+		}
+	}
+	return io.ReadAll(io.LimitReader(r, 64<<10))
+}
+
+// spawnLatest has Flatpak's portal start argv from the newest build, with
+// files as the new process's descriptors.
+func spawnLatest(argv []string, files map[uint32]*os.File) error {
 	p, err := dialPortal(nil)
 	if err != nil {
 		return err
@@ -305,8 +337,8 @@ func SpawnLatest(argv []string, files ...*os.File) error {
 		args = append(args, cstring(a))
 	}
 	fds := map[uint32]dbus.UnixFD{}
-	for i, f := range files {
-		fds[uint32(3+i)] = dbus.UnixFD(f.Fd())
+	for n, f := range files {
+		fds[n] = dbus.UnixFD(f.Fd())
 	}
 	var pid uint32
 	return p.conn.Object(flatpakPortalName, flatpakPortalPath).Call(flatpakPortal+".Spawn", 0,

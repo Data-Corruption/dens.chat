@@ -388,8 +388,11 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 		status["updateVersion"] = latest
 		status["updateCommand"] = rt.a.UpdateCommand()
 	}
-	// The Flatpak's notice is Flatpak's update monitor's (M9.3).
+	// The Flatpak's notice is Flatpak's update monitor's (M9.3), and what
+	// the newest build installed says it is, which the page's next look
+	// finds once the software center has installed it (M9.4).
 	if f := rt.a.Flatpak; f != nil && cfg.UpdateNotifications {
+		f.CheckInstalled(r.Context())
 		if u := f.Update(); u.Available || u.Installed {
 			status["flatpakUpdate"] = u
 		}

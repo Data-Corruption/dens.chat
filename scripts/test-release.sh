@@ -354,6 +354,16 @@ if (installer_needs_update install.sh >/dev/null 2>&1); then
   fail "invalid unstaged installer pair was accepted"
 fi
 
+# The Flatpak's committed key is one the publisher signs with: Ed25519, with
+# no expiry (M9.4).
+flatpak_keys=$(GNUPGHOME=$(mktemp -d "$tmp/gnupg.XXXXXX") committed_flatpak_keys) ||
+  fail "scripts/flatpak/dens.asc holds no key the Flatpak can be signed with"
+[[ "$flatpak_keys" == *:22::ed25519 ]] || fail "unexpected Flatpak keys: $flatpak_keys"
+printf -- '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nbm90IGEga2V5\n-----END PGP PUBLIC KEY BLOCK-----\n' > "$tmp/not-a-key.asc"
+if FLATPAK_PUBLIC_KEY="$tmp/not-a-key.asc" GNUPGHOME=$(mktemp -d "$tmp/gnupg.XXXXXX") committed_flatpak_keys >/dev/null 2>&1; then
+  fail "a file with no key passed for the Flatpak's"
+fi
+
 # These releases are made up, so none of them is Dens's first, which the
 # last case keeps.
 DENS_FIRST_RELEASE=v0.9.0
