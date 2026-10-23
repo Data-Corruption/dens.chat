@@ -23,10 +23,12 @@ run_step() {
 
 # download_file "output_path" "url"
 # Downloads a file, with status output. Retries: release infrastructure is the
-# most common source of transient 5xx responses in CI.
+# most common source of transient 5xx responses in CI. The connection, TLS
+# included, gets half a minute: a slow host's handshake can take over ten
+# seconds, as media.xiph.org's has.
 download_file() {
   run_step "Downloaded $2" "Failed to download $2" \
-    curl -fsSL --retry 3 --retry-all-errors --connect-timeout 10 --max-time 300 -o "$1" "$2"
+    curl -fsSL --retry 3 --retry-all-errors --connect-timeout 30 --max-time 300 -o "$1" "$2"
 }
 
 validate_sha256() {
@@ -97,7 +99,7 @@ dep_check() {
   # The build itself is pure Go; gcc is only needed by the host-toolchain
   # test.sh run before production builds.
   local required_bins=(go sed awk sha256sum gzip)
-  if [[ "$BUILD_KIND" != "dev" ]]; then
+  if [[ "$BUILD_KIND" != "dev" ]] && $RUN_TESTS; then
     required_bins+=(gcc)
   fi
 

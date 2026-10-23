@@ -59,6 +59,9 @@ prepare_release_context() {
   MODE="ci"
   BUILD_KIND="prod-all"
   DEV_MODE=false
+  # The release job builds only a version this commit's test jobs passed,
+  # linux-tests' Go suite among them, which it waits for.
+  RUN_TESTS=false
   configure_release_identity
   validate_app_name
   detect_host_arch

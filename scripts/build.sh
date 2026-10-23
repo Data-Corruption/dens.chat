@@ -78,6 +78,7 @@ MODE="local" # frontend tool selection; ci.sh uses the pinned CI tools
 BUILD_KIND="dev" # dev | prod | prod-all
 VERSION="v0.0.0-dev" # dev version marker (valid semver prerelease, so x/mod/semver handles it; any real release compares newer)
 DEV_MODE=true # baked into BuildInfo; true only for the default dev build
+RUN_TESTS=true # production builds run test.sh first; ci.sh's release build doesn't
 HOST_GOARCH=""
 BUILD_OUTS=()
 VERSION_DIR=""
@@ -105,6 +106,8 @@ build_binaries() {
   frontend_hash_assets
   if [[ "$BUILD_KIND" == "dev" ]]; then
     printf "🟢 Skipping tests in dev mode\n"
+  elif ! $RUN_TESTS; then
+    printf "🟢 Skipping tests the CI ran on this commit already\n"
   else
     bash "$BUILD_SCRIPT_DIR/test.sh"
   fi

@@ -191,15 +191,15 @@ jobs:
         run: scripts/test-den-e2e.ps1 -ReleaseDir out/windows-e2e -CaddyZip $env:CADDY_ZIP
 
 
-  # Runs the Linux lifecycle e2e in Incus system containers on every
-  # supported distro, from unsigned fixture releases over file:// URLs.
-  linux-e2e:
+  # The Linux checks that need no containers: the Go suite, which the
+  # release job's build relies on rather than running it again, the
+  # third-party notices, shell lint, the page's tests and the release state
+  # machine.
+  linux-tests:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
-    # Ubuntu 24.04 provides Incus 6.0 LTS. System containers share the runner
-    # kernel, so this does not require nested virtualization or /dev/kvm.
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -222,11 +222,6 @@ jobs:
           dirname "$rclone_bin" >> "$GITHUB_PATH"
           "$rclone_bin" version
 
-      - name: Set up Incus
-        uses: ./.github/actions/setup-incus
-
-      # The only Linux run of the Go suite that survives finalize: cut-matrix
-      # is template-only and windows-e2e covers Windows.
       - name: Test Go packages
         run: ./scripts/test.sh
 
@@ -242,20 +237,71 @@ jobs:
       - name: Test release publication state machine
         run: ./scripts/test.sh -release
 
+  # Runs the Linux lifecycle e2e in Incus system containers on every
+  # supported distro, from unsigned fixture releases over file:// URLs.
+  linux-e2e:
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    # Ubuntu 24.04 provides Incus 6.0 LTS. System containers share the runner
+    # kernel, so this does not require nested virtualization or /dev/kvm.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Incus
+        uses: ./.github/actions/setup-incus
+
       - name: Run lifecycle E2E
         run: ./scripts/test.sh -e2e
-
-      - name: Run den E2E
-        run: ./scripts/test.sh -den-e2e
 
       - name: Upload lifecycle E2E logs
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: lifecycle-e2e-logs
-          path: |
-            out/lifecycle-e2e-logs
-            out/den-e2e-logs
+          path: out/lifecycle-e2e-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # A member joins a den through Caddy, chats, calls, and is banned, in two
+  # Incus containers.
+  linux-den-e2e:
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Incus
+        uses: ./.github/actions/setup-incus
+
+      - name: Run den E2E
+        run: ./scripts/test.sh -den-e2e
+
+      - name: Upload den E2E logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-e2e-logs
+          path: out/den-e2e-logs
           if-no-files-found: ignore
           retention-days: 14
 
@@ -383,13 +429,17 @@ jobs:
           ((needs.release-plan.outputs.e2e_required == 'true' &&
             !contains(needs.*.result, 'skipped') &&
             needs.windows-e2e.result == 'success' &&
+            needs.linux-tests.result == 'success' &&
             needs.linux-e2e.result == 'success' &&
+            needs.linux-den-e2e.result == 'success' &&
             needs.flatpak-e2e.result == 'success' &&
             needs.media-module.result == 'success' &&
             needs.media-fuzz.result == 'success') ||
            (needs.release-plan.outputs.e2e_required == 'false' &&
             needs.windows-e2e.result == 'skipped' &&
+            needs.linux-tests.result == 'skipped' &&
             needs.linux-e2e.result == 'skipped' &&
+            needs.linux-den-e2e.result == 'skipped' &&
             needs.flatpak-e2e.result == 'skipped' &&
             needs.media-module.result == 'skipped' &&
             needs.media-fuzz.result == 'skipped')) &&
@@ -399,7 +449,9 @@ jobs:
       - ci-gate
       - release-plan
       - windows-e2e
+      - linux-tests
       - linux-e2e
+      - linux-den-e2e
       - flatpak-e2e
       - media-module
       - media-fuzz
