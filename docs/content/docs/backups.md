@@ -21,6 +21,9 @@ ran it from (`--output` picks another place):
 dens backup
 ```
 
+In the Flatpak, `dens backup` writes into Dens's own folder,
+`~/.var/app/chat.dens.Dens`, so the settings' **Back up** is the easier way.
+
 A backup holds everything except the cache of other dens' messages and files,
 which fills up again by itself.
 If you host a den, the den is in it too, and a backup keeps every message it
@@ -54,11 +57,23 @@ In an admin terminal:
 dens restore dens-main-20261012-153000.backup
 ```
 {{< /tab >}}
+{{< tab name="Flatpak" >}}
+As yourself, not as admin, handing the file to the Flatpak:
+
+```sh
+flatpak run --command=dens --file-forwarding chat.dens.Dens restore @@ dens-main-20261012-153000.backup @@
+```
+
+Dens starts locked afterwards, until the backup's local password opens it, and
+it no longer remembers its key, so tick **Remember on this computer** again if
+you want it to.
+{{< /tab >}}
 {{< /tabs >}}
 
 ### Open Dens
 
-Run `dens open`. Browsers sign in again after a restore.
+Run `dens open`, or in the Flatpak pick Dens from your apps menu. Browsers sign
+in again after a restore.
 
 {{% /steps %}}
 

@@ -33,7 +33,9 @@ is in [Join a den](../join/#direct-messages).
   PDF can hold its author's name, for one.
 - **To Dens's release site:** once a day, a request for the latest version
   number, which shows the site your IP address. Turn it off in **Settings**,
-  under **System**.
+  under **System**. The Flatpak doesn't ask: Flatpak itself checks Dens's
+  repository there for updates, every 30 minutes while Dens runs, and your
+  software center does too, on its own schedule.
 - **To YouTube**, only if you turn on YouTube videos in the settings: your IP
   address for each video whose cover shows, and which videos you play.
 
@@ -70,6 +72,10 @@ Dens runs on both, but Linux locks it down further.
   running as admin can read it.
 - Dens's Windows files aren't signed with a certificate Windows recognizes.
   The signature check in [Install](../install/) is what proves they're Dens's.
+- [The Flatpak](../install/#the-flatpak) runs as you, not as an account of
+  its own, so programs you run can read its files, and the key it keeps if you
+  tick **Remember on this computer**. Without that key, its data opens only
+  with your local password. Other Flatpak apps can't reach any of it.
 
 ## Why bother
 
