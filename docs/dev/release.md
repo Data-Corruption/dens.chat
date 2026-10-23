@@ -184,7 +184,9 @@ Pull requests always run validation and never contact the release host.
 **Publication order.**
 
 1. Build, package and sign the application, unless verified files for this
-   version are already on the release host. Release builds link with `-s -w`,
+   version are already on the release host. The build runs no tests of its
+   own: it only ever builds a version this commit's test jobs passed,
+   `linux-tests`' Go suite among them. Release builds link with `-s -w`,
    which drops the symbol table and DWARF, about a third of the binary (89.4 MB
    to 56.1 MB for linux-amd64), while a panic still names its functions and
    lines, from Go's own line table; development builds keep both, for
@@ -266,7 +268,9 @@ artifacts also verify when served from a mirror.
 | Job | What it does |
 |---|---|
 | `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, asks for validation and no release |
-| `linux-e2e` | Linux Go tests, shell lint, release tests, and installer tests across distros |
+| `linux-tests` | Linux Go tests, the third-party notices, shell lint, the page's tests and the release tests |
+| `linux-e2e` | The lifecycle e2e, installer tests included, across the supported distros, in Incus containers |
+| `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in two Incus containers |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
 | `flatpak-e2e` | The Flatpak's publisher, then the Flatpak itself, published by it and run for a member, in Incus containers; releases wait for it |
 | `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass |
