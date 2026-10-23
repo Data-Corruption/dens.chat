@@ -58,13 +58,14 @@ source scripts/test/incus.sh
 incus_setup
 
 IMAGE=dens-e2e/flatpak
-# The containers that run the Flatpak. Where AppArmor mediates user
-# namespaces, as Ubuntu's does from 23.10, a container makes them only
-# where its profile says so, which Incus 6.0's doesn't; the Flatpak's
-# sandbox makes them, as the member.
+# The containers that run the Flatpak, whose sandbox makes user
+# namespaces as the member, and writes max_user_namespaces in its own to
+# keep the app from making more. Where AppArmor mediates them, as Ubuntu's
+# does from 23.10, Incus 6.0's profile allows neither, so these run
+# unconfined by AppArmor, as on a host without it.
 FLATPAK_CONTAINER=(-c security.nesting=true)
 if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
-  FLATPAK_CONTAINER+=(-c 'raw.apparmor=userns,')
+  FLATPAK_CONTAINER+=(-c 'raw.lxc=lxc.apparmor.profile=unconfined')
 fi
 RUN_LOG_DIR="$PWD/out/flatpak-e2e-logs/$(date -u +%Y%m%dT%H%M%SZ)-$$"
 mkdir -p "$RUN_LOG_DIR"
