@@ -3,6 +3,7 @@
 // Available functions:
 //   - [Secret] Reads a line without terminal echo.
 //   - [YesNo]  Asks a yes/no question; returns true when the answer is “yes”.
+//   - [Line]   Reads a line of text, without the spaces around it.
 package prompt
 
 import (
@@ -37,6 +38,10 @@ func Secret(p string) (string, error) {
 // YesNo asks a yes/no question to the user until a (y/n) response is given or an error occurs.
 func YesNo(p string) (bool, error) { return yesNoR(os.Stdin, p) }
 
+// Line prompts on stdout and reads a line of text from stdin, without the
+// spaces around it.
+func Line(p string) (string, error) { return lineR(os.Stdin, os.Stdout, p) }
+
 // internal
 
 func secretR(r io.Reader, w io.Writer, prompt string) (string, error) {
@@ -46,6 +51,17 @@ func secretR(r io.Reader, w io.Writer, prompt string) (string, error) {
 		return "", fmt.Errorf("error reading secret: %w", err)
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+func lineR(r io.Reader, w io.Writer, prompt string) (string, error) {
+	fmt.Fprint(w, prompt)
+	line, err := bufio.NewReader(r).ReadString('\n')
+	if err != nil && (err != io.EOF || line == "") {
+		return "", fmt.Errorf("error reading input: %w", err)
+	}
+	// Windows PowerShell 5.1 starts text it pipes to a program with a byte
+	// order mark when $OutputEncoding is UTF-8.
+	return strings.TrimSpace(strings.TrimPrefix(line, "\ufeff")), nil
 }
 
 func yesNoR(r io.Reader, prompt string) (bool, error) {

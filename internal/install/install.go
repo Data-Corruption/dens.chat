@@ -42,6 +42,11 @@ type Options struct {
 	MediaTCPPort int
 	DryRun       bool
 	Out          io.Writer
+	// Confirm, where given, asks before an uninstall deletes the instance,
+	// once its plan is printed, and stops it with an error. holds is what
+	// the instance holds, as "hosts the den Foo" (M10), or "" where that
+	// can't be read: uninstall is the way out of a broken install too.
+	Confirm func(holds string) error
 }
 
 // member is one instance taking part in a transaction.
@@ -307,7 +312,9 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 		}
 	}
 
+	desktop := true
 	if err := sys.StartHelper(target, cfg.DesktopUser); err != nil {
+		desktop = !errors.Is(err, errNoDesktop)
 		p.printf("The shortcut helper starts when %s next signs in (%v).", cfg.DesktopUser.Name, err)
 	}
 
@@ -321,8 +328,19 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 		openCmd += " --instance " + target.Instance
 	}
 	p.printf("As %s, run: %s", cfg.DesktopUser.Name, openCmd)
+	if previous == nil && !desktop {
+		p.printf("With no desktop to open it on, as on a server, set Dens up from the command line instead: %s", serverGuide)
+	}
 	return nil
 }
+
+// errNoDesktop is a desktop user with no desktop session to start the
+// shortcut helper in, as on a server (M10).
+var errNoDesktop = errors.New("no desktop session")
+
+// serverGuide is where the docs say how to host a den on a computer with
+// no desktop, from the command line.
+const serverGuide = "https://dens.chat/docs/server/"
 
 // transactionMembers is the target plus every installed instance, sorted
 // by name so concurrent transactions take locks in the same order.

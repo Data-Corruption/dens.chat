@@ -11,6 +11,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 )
 
@@ -52,6 +53,14 @@ func Uninstall(ctx context.Context, sys System, bi build.BuildInfo, opts Options
 	}
 	if opts.DryRun {
 		return nil
+	}
+	if opts.Confirm != nil {
+		// A database that can't be read leaves the question plainer, and
+		// nothing more: uninstall is the way out of a broken install.
+		held, _ := readHoldings(ctx, filepath.Join(target.DB, database.FileName))
+		if err := opts.Confirm(held.describe()); err != nil {
+			return err
+		}
 	}
 
 	opLock, err := maintenance.AcquireOperationLock(ctx, target)

@@ -69,13 +69,16 @@ func statusCommand(bi build.BuildInfo) *cli.Command {
 			fmt.Printf("instance:  %s\n", status.Instance)
 			fmt.Printf("version:   %s\n", status.Version)
 			fmt.Printf("client:    %s\n", status.ClientURL)
-			fmt.Printf("password:  %s\n", setOrNot(status.PasswordSet))
+			fmt.Printf("password:  %s\n", passwordState(bi, cmd, status.PasswordSet))
 			if status.Locked {
 				fmt.Printf("locked:    unlock it in the browser, with the local password\n")
 			}
 			fmt.Printf("den:       %s\n", enabledOrNot(status.DenEnabled))
 			if status.DenProblem != "" {
 				fmt.Printf("           %s\n", status.DenProblem)
+			}
+			if status.DenEnabled && status.Den == "" {
+				fmt.Printf("           no den is here yet: create one with %s, or in the browser\n", instanceCommand(bi, cmd, "den create NAME ADDRESS"))
 			}
 			if !status.DenExported.IsZero() {
 				fmt.Printf("           %s was exported on %s; once another computer serves it,\n", status.Den, status.DenExported.Local().Format(time.RFC1123))
@@ -89,11 +92,11 @@ func statusCommand(bi build.BuildInfo) *cli.Command {
 	}
 }
 
-func setOrNot(v bool) string {
-	if v {
+func passwordState(bi build.BuildInfo, cmd *cli.Command, set bool) string {
+	if set {
 		return "set"
 	}
-	return "not set (set one in the browser: dens open)"
+	return fmt.Sprintf("not set (set one with %s, or in the browser: %s)", instanceCommand(bi, cmd, "password"), instanceCommand(bi, cmd, "open"))
 }
 
 func enabledOrNot(v bool) string {

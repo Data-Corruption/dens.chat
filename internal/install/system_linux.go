@@ -428,11 +428,11 @@ func (linuxSystem) StartHelper(l layout.Layout, user host.Identity) error {
 	machine := "--machine=" + user.Name + "@"
 	env, err := exec.Command("systemctl", "--user", machine, "show-environment").Output()
 	if err != nil {
-		return fmt.Errorf("%s isn't signed in", user.Name)
+		return fmt.Errorf("%s isn't signed in: %w", user.Name, errNoDesktop)
 	}
 	if !bytes.Contains(env, []byte("\nWAYLAND_DISPLAY=")) && !bytes.Contains(env, []byte("\nDISPLAY=")) &&
 		!bytes.HasPrefix(env, []byte("WAYLAND_DISPLAY=")) && !bytes.HasPrefix(env, []byte("DISPLAY=")) {
-		return fmt.Errorf("%s has no desktop session", user.Name)
+		return fmt.Errorf("%s has no desktop session: %w", user.Name, errNoDesktop)
 	}
 	// The autostart entry's unit comes from systemd's generator, which runs
 	// again on a reload.
