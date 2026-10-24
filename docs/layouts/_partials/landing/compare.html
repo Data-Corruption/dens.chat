@@ -1,68 +1,53 @@
-{{- /* How each app's privacy compares. Every row is phrased so that "yes" is
-   the private answer. y = yes, p = partly, n = no. Facts as of October 2026,
-   from each project's own pages; Matrix means Element, its main app. */ -}}
-{{- $apps := slice "Dens" "Matrix" "Stoat" "Fluxer" "Signal" "Discord" }}
+{{- /* Who sits between you and the people you talk to, app by app. A filled
+   mark is the private answer, half is partly, hollow is no. Facts as of
+   October 2026, from each project's own pages; Matrix means Element, its
+   main app. */ -}}
+{{- $apps := slice "Dens" "Discord" "Signal" "Matrix" }}
 {{- $rows := slice
-  (dict "q" "You can run the server" "a" (slice
+  (dict "q" "Who runs the server" "a" (slice
     (dict "v" "y" "t" "You, or a friend")
-    (dict "v" "y" "t" "Yes, or pick one")
-    (dict "v" "y" "t" "Yes, or use theirs")
-    (dict "v" "y" "t" "Yes, or use theirs")
-    (dict "v" "n" "t" "No")
-    (dict "v" "n" "t" "No")))
-  (dict "q" "Open source" "a" (slice
-    (dict "v" "y" "t" "Yes, MIT")
-    (dict "v" "y" "t" "Yes")
-    (dict "v" "y" "t" "Yes, AGPL")
-    (dict "v" "y" "t" "Yes, AGPL")
-    (dict "v" "y" "t" "Yes")
-    (dict "v" "n" "t" "No")))
-  (dict "q" "Signing up asks for" "a" (slice
-    (dict "v" "y" "t" "An invite")
-    (dict "v" "p" "t" "Up to the server")
-    (dict "v" "p" "t" "Email")
-    (dict "v" "p" "t" "Email")
-    (dict "v" "n" "t" "Phone number¹")
-    (dict "v" "n" "t" "Email, sometimes a phone")))
+    (dict "v" "n" "t" "Discord")
+    (dict "v" "n" "t" "Signal")
+    (dict "v" "y" "t" "You, or a host you pick")))
+  (dict "q" "Who can read your group chats" "a" (slice
+    (dict "v" "n" "t" "The den: channels aren’t end-to-end encrypted")
+    (dict "v" "n" "t" "Discord")
+    (dict "v" "y" "t" "Only the group")
+    (dict "v" "p" "t" "The room, if it’s encrypted; otherwise the server")))
   (dict "q" "DMs end-to-end encrypted" "a" (slice
     (dict "v" "y" "t" "Yes")
-    (dict "v" "y" "t" "Yes")
-    (dict "v" "n" "t" "No, planned")
-    (dict "v" "n" "t" "No, planned")
-    (dict "v" "y" "t" "Yes")
-    (dict "v" "n" "t" "No")))
-  (dict "q" "Group chats end-to-end encrypted" "a" (slice
-    (dict "v" "n" "t" "No: the den can read channels")
-    (dict "v" "p" "t" "Private rooms")
-    (dict "v" "n" "t" "No")
     (dict "v" "n" "t" "No")
     (dict "v" "y" "t" "Yes")
-    (dict "v" "n" "t" "No")))
+    (dict "v" "y" "t" "Yes")))
   (dict "q" "Calls end-to-end encrypted" "a" (slice
     (dict "v" "n" "t" "No: calls pass through the den")
-    (dict "v" "y" "t" "Yes, Element Call")
-    (dict "v" "n" "t" "No")
-    (dict "v" "p" "t" "In testing")
+    (dict "v" "y" "t" "Yes¹")
     (dict "v" "y" "t" "Yes")
-    (dict "v" "y" "t" "Yes²")))
-  (dict "q" "Hides who talks to whom from the server" "a" (slice
+    (dict "v" "y" "t" "Yes, Element Call")))
+  (dict "q" "Signing up asks for" "a" (slice
+    (dict "v" "y" "t" "An invite")
+    (dict "v" "n" "t" "Email, sometimes a phone")
+    (dict "v" "n" "t" "A phone number²")
+    (dict "v" "p" "t" "Up to the server")))
+  (dict "q" "Who sees your IP address" "a" (slice
+    (dict "v" "p" "t" "The den, while you’re connected")
+    (dict "v" "n" "t" "Discord")
+    (dict "v" "n" "t" "Signal")
+    (dict "v" "p" "t" "Your server")))
+  (dict "q" "Open source" "a" (slice
+    (dict "v" "y" "t" "Yes, MIT")
     (dict "v" "n" "t" "No")
-    (dict "v" "n" "t" "No")
-    (dict "v" "n" "t" "No")
-    (dict "v" "n" "t" "No")
-    (dict "v" "y" "t" "Mostly³")
-    (dict "v" "n" "t" "No")))
-  (dict "q" "Free, with no paid tier or ads" "a" (slice
     (dict "v" "y" "t" "Yes")
-    (dict "v" "p" "t" "Free; some hosts charge")
-    (dict "v" "y" "t" "Yes, donations")
-    (dict "v" "n" "t" "Paid tier, $4.99/mo")
-    (dict "v" "y" "t" "Yes, donations")
-    (dict "v" "n" "t" "Nitro, and ads")))
+    (dict "v" "y" "t" "Yes")))
+  (dict "q" "Paid for by" "a" (slice
+    (dict "v" "y" "t" "Nobody: a member’s PC and a domain")
+    (dict "v" "n" "t" "Nitro, and ads")
+    (dict "v" "y" "t" "Donations")
+    (dict "v" "p" "t" "Donations; some hosts charge")))
 }}
 <div class="compare" tabindex="0" role="region" aria-labelledby="compare-cap">
   <table>
-    <caption id="compare-cap">How Dens compares on privacy. Every row is phrased so “yes” is the private answer.</caption>
+    <caption id="compare-cap">Who sits between you and the people you talk to. A filled mark is the private answer, half is partly, hollow is no.</caption>
     <thead>
       <tr>
         <td></td>
@@ -83,8 +68,8 @@
     </tbody>
   </table>
   <p class="compare-notes micro">
-    1. Signal is testing a paid sign-up without a phone number. 2. Since March 2026, except Stage channels; text isn’t end-to-end encrypted.
-    3. Sealed sender hides who sent most messages from Signal’s own servers. Matrix here means Element, its main app.
+    1. Since March 2026, except Stage channels; text isn’t end-to-end encrypted.
+    2. Signal is testing a paid sign-up without a phone number, on Android. Matrix here means Element, its main app.
     Facts as of October 2026, from each project’s own pages.
   </p>
 </div>

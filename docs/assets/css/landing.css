@@ -269,32 +269,22 @@ summary:focus-visible {
   align-items: center;
   gap: 10px 26px;
   padding: 16px var(--pad) 14px;
-  border-bottom: 4px double var(--cyan);
+  border-bottom: 2px solid var(--cyan);
 }
 
 .logo {
   margin-right: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   text-decoration: none;
 }
 
-.logo-bars {
-  display: grid;
-  gap: 3px;
-}
-
-.logo-bars i {
+/* The mark stands as tall as the word's caps. */
+.logo-mark {
   display: block;
-  width: 30px;
-  height: 5px;
-  background: var(--mag);
-}
-
-.logo-bars i:nth-child(2) {
-  width: 22px;
-  background: var(--cyan);
+  width: 17px;
+  height: 17px;
 }
 
 .logo-word {
@@ -437,7 +427,7 @@ summary:focus-visible {
   opacity: calc(1 - var(--dark) * 0.6);
 }
 
-.fucks {
+.lines {
   position: relative;
   z-index: 2;
   display: grid;
@@ -448,25 +438,25 @@ summary:focus-visible {
   padding-left: 26px;
 }
 
-.fucks a {
+.lines a {
   position: relative;
   display: block;
   text-decoration: none;
   color: var(--mag);
 }
 
-.fucks a:nth-child(2) {
+.lines a:nth-child(2) {
   color: var(--cyan);
 }
 
-.fuck {
+.line {
   font: 900 clamp(28px, 4.2vw, 58px) / 1.04 var(--f-x);
   letter-spacing: -0.02em;
   text-transform: uppercase;
 }
 
 /* The third line as highlighter bars, one per line of text. */
-.fucks a:nth-child(3) .fuck {
+.lines a:nth-child(3) .line {
   color: #fff;
   background: var(--mag);
   padding: 0 0.14em;
@@ -482,20 +472,20 @@ summary:focus-visible {
   color: var(--gray);
 }
 
-.fucks .ar {
+.lines .ar {
   width: 14px;
   height: 14px;
   margin-left: 8px;
   vertical-align: super;
 }
 
-.fucks a:hover .fuck {
+.lines a:hover .line {
   text-decoration: underline;
   text-decoration-thickness: 3px;
   text-underline-offset: 6px;
 }
 
-.fucks a:nth-child(3):hover .fuck {
+.lines a:nth-child(3):hover .line {
   text-decoration-color: var(--cyan);
 }
 
@@ -690,10 +680,6 @@ summary:focus-visible {
   color: var(--mag);
 }
 
-.machine-label .micro {
-  display: block;
-  margin-top: 3px;
-}
 
 .eula {
   position: relative;
@@ -745,6 +731,47 @@ summary:focus-visible {
 
 .rod:hover .rod-tag {
   background: var(--cyan);
+}
+
+/* Most visitors don't guess that a rod unrolls: say so under it while it's
+   rolled up, and bob the roll a couple of times when the machines scroll into
+   view (landing.js adds the class). */
+.rod-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 20px);
+  text-align: center;
+  white-space: nowrap;
+  color: var(--mag);
+}
+
+.rod:hover .rod-hint {
+  color: var(--cyan);
+}
+
+.eula[open] .rod-hint {
+  display: none;
+}
+
+.eula:not([open]) .rod:hover::after {
+  transform: translateY(2px);
+}
+
+.eula.beckon:not([open]) .rod::after {
+  animation: beckon 0.9s ease-in-out 2;
+}
+
+@keyframes beckon {
+  50% {
+    transform: translateY(5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eula.beckon:not([open]) .rod::after {
+    animation: none;
+  }
 }
 
 .unroll {
@@ -921,7 +948,7 @@ summary:focus-visible {
 
 .compare table {
   width: 100%;
-  min-width: 860px;
+  min-width: 600px;
   border-collapse: collapse;
   font-size: 12px;
   line-height: 1.35;
@@ -1135,6 +1162,44 @@ td[data-col="dens"].v-n .v-mark {
 /* ---------------------------------------------------------------- under the hood */
 .hood {
   margin-top: clamp(40px, 5vw, 64px);
+}
+
+.hood > .label {
+  list-style: none;
+  cursor: pointer;
+  width: max-content;
+  max-width: 100%;
+}
+
+.hood > .label::-webkit-details-marker {
+  display: none;
+}
+
+.hood > .label:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+}
+
+/* The hollow square fills while it's open, and the hint says which way. */
+.hood[open] > .label .sq--hollow {
+  background: var(--cyan-2);
+}
+
+.hood .label-hint {
+  margin-left: 6px;
+  color: var(--gray);
+}
+
+.hood:not([open]) .label-hint::before {
+  content: "open";
+}
+
+.hood[open] .label-hint::before {
+  content: "close";
+}
+
+.hood[open] .hood-grid {
+  margin-top: 12px;
 }
 
 /* Two across, so four cards make a square. */
@@ -1456,11 +1521,11 @@ td[data-col="dens"].v-n .v-mark {
     top: 42%;
   }
 
-  .fucks {
+  .lines {
     max-width: none;
   }
 
-  .fucks a:not(:nth-child(3)) .fuck {
+  .lines a:not(:nth-child(3)) .line {
     text-shadow: 0 0 2px var(--bg), 0 0 6px var(--bg), 0 0 14px var(--bg);
   }
 }

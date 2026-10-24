@@ -1053,7 +1053,7 @@ Before the first release an audit checked every item here against the code (2026
 
 dens.chat is a landing page and a few pages of docs for people using Dens, built with Hugo and Hextra in `docs/` (see `docs/README.md`), and published with v1.
 
-**The landing page** says what Dens is in one plain paragraph, then argues for it in three sections, hosting your own (01), encrypted and pseudonymous (02) and free (03), with four cards on how it's built. It links into the docs at the install guide (`/docs/install/`, from an Install button beside the hero's caption), the hosting guide (`/docs/host/`) and Privacy (`/docs/privacy/`).
+**The landing page** says what Dens is in one plain paragraph, then argues for it in three sections, hosting it yourself (01), encrypted and pseudonymous (02) and free (03). Its tone is confident and plain, not combative: the hero's three lines are what Dens isn't (on their terms, under their watch, their product), section 01 says in one paragraph what a den is for and what it isn't, a place where the people running it set the rules and keep them with the moderation tools, and not a place for threats or for material whose making hurt someone, and section 02's table compares Dens with Discord, Signal and Matrix on who sits in between, conceding where they do better. Four notes on how it's built fold under "under the hood". It links into the docs at the install guide (`/docs/install/`, from an Install button beside the hero's caption), the hosting guide (`/docs/host/`) and Privacy (`/docs/privacy/`).
 
 **The docs** cover what the app can't show for itself: what happens before Dens runs, outside it (a domain, a router, Caddy), and across devices and time (passwords, recovery, backups), and, once, who can read what.
 

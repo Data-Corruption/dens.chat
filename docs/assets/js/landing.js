@@ -161,6 +161,21 @@
     });
   });
 
+  // When the machines first scroll into view, the rolled-up EULAs beckon:
+  // their rolls bob twice (the animation is in the CSS). Once each.
+  var machines = document.querySelector(".machines");
+  if (machines && !still && "IntersectionObserver" in window) {
+    var seen = new IntersectionObserver(function (entries) {
+      if (!entries.some(function (e) { return e.isIntersecting; })) return;
+      seen.disconnect();
+      Array.prototype.forEach.call(eulas, function (eula) {
+        eula.classList.add("beckon");
+        eula.addEventListener("animationend", function () { eula.classList.remove("beckon"); }, { once: true });
+      });
+    }, { threshold: 0.6 });
+    seen.observe(machines);
+  }
+
   // ---------------------------------------------------------------- cameras
   // Five cameras on the rails while section 02 is on screen. Each follows the
   // pointer on a spring of its own and has tics: a twitch, a nod, a glance
