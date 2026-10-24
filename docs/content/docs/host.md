@@ -10,7 +10,8 @@ domain parts too, assuming you've never done either.
 ## What you need
 
 - **A computer that stays on.** The den is only up while it runs. A normal PC
-  is enough.
+  is enough, or a server: [Host on a server](../server/) sets one up, and
+  moves a den you host now onto it.
 - **Upload speed.** Messages go out once to every member online, and calls and
   screen shares once to every member in them. A new den's limits need about
   20 Mbps of upload when every call is full; you can lower or raise them.
@@ -87,7 +88,8 @@ If your system runs a firewall, let the den's ports through it. Fedora and
 Bazzite do:
 
 ```sh
-sudo firewall-cmd --permanent --add-service=http --add-service=https --add-port=7881/udp --add-port=7882/tcp
+sudo firewall-cmd --permanent --add-service=http --add-service=https
+sudo firewall-cmd --permanent --add-port=7881/udp --add-port=7882/tcp
 sudo firewall-cmd --reload
 ```
 {{< /tab >}}
@@ -130,7 +132,7 @@ called a **DHCP reservation**), so the forwarding keeps pointing at it.
 
 Some internet providers share one public address among many customers (called
 **CGNAT**), and then forwarding can't work. A small rented server (a VPS) with
-an address of its own can host the den instead.
+an address of its own can host the den instead ([Host on a server](../server/)).
 
 ### Invite someone, and test a call
 

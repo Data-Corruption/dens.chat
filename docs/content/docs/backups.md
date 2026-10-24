@@ -1,11 +1,12 @@
 ---
 title: Backups and moving
-weight: 4
+weight: 5
 ---
 
 Everything Dens keeps is on your computer: the keys to your accounts, your
 settings, and the den, if you host one. A backup keeps it safe, and it's how
-you move to another computer.
+you move to another computer. To move a den on its own, use its
+[export](#moving-a-den) instead.
 
 ## Making a backup
 
@@ -92,6 +93,27 @@ goes online by itself. Set up Caddy and the router for the new computer, point
 the domain at it, and turn hosting on in **Settings**, under **System**
 ([Host a den](../host/)). Members' Dens find the den again by themselves.
 
+## Moving a den
+
+A backup moves everything on your computer at once. To move a den alone, to
+a server or to someone else's computer, use its **export**: it only holds the
+den, with its members, messages and files, and none of your client data, the
+dens you've joined, your keys there and your settings, which stay where they
+are. In **Settings**, under **System**, choose **Move the den to another
+computer**, or run `dens den export` with hosting off.
+
+The other computer restores the export as it would a backup, and turns
+hosting on. Once it serves the den, **Remove from this computer** deletes the
+copy on yours, and your Dens reaches the den at its address like any
+member's. [Host on a server](../server/) goes through it step by step.
+
+A restore replaces everything on the install it goes into, so restore an
+export where Dens holds nothing else yet, as on a new server. On a computer
+whose Dens is in use, someone's who's in the den already, say, give the den
+an install of its own: a second instance, as the end of
+[Host a den](../host/#what-hosting-costs-you) describes, and restore into
+that one with `--instance`.
+
 ## Losing your password or your computer
 
 - **Lost the computer**, but you have a backup and its local password: restore
@@ -114,10 +136,10 @@ hour. Whoever joins with it becomes the den's owner, and you become a
 moderator. The den itself stays on your computer, which still has the last
 word: you can make another owner invite whenever you like.
 
-To move the den to their computer as well, they restore a backup of yours. A
-backup holds everything on that install, your own accounts and their keys
-included, so do that only from an install that hosts the den and nothing else of
-yours.
+To move the den to their computer as well, give them its
+[export](#moving-a-den), and remove your copy once they host it. If they
+use Dens on that computer already, they restore it into a second instance,
+which keeps their own accounts as they are.
 
 An owner invite is also the way back if you've locked yourself out of the
 owner's account, say by signing out your only device with no recovery codes

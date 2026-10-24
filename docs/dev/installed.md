@@ -22,6 +22,8 @@ How Dens runs installed, as a service under its own account on Linux and Windows
   - The switch is the service's own preference, `types.Configuration.Hosting`. The first start of a version that has it takes it from the den role v1.0's installer recorded in the instance config (`den.enabled`), so an instance that hosted keeps hosting, and from then on the switch alone decides; nothing else reads the role.
   - Every instance opens its den as it starts, which before the den exists is one row's read. While the switch is on, the service binds the den listener and the media ports, starts the den's calls, its deleting of messages past retention and its forgetting of old changes, and serves it, under a context of its own. Turning it off cancels that and stops the den as a service stop does: its listener first, then its sockets, then its calls, keeping everything it holds, so turning it on again serves the den as it was.
   - A port another program holds, or one the system keeps for itself, fails turning hosting on, changing nothing, and the page names the port and the installer flag that moves it. With hosting on as the service starts, a port it can't bind leaves the rest of the service up, so the page can say why, and the den tries again every 30 seconds.
+  - `dens den hosting on` and `off` turn the switch from the command line, over the control endpoint, for a server with no browser (M10): on takes the local password and prints where Caddy and the router send the den, or the port that's held and its flag; off asks first.
+  - A den moves to another install with its export, and the install it left removes its copy once the other serves it (M10; see Backup, restore, move in [design.md](design.md)). Exporting and removing hold the switch off while they run, so turning hosting on waits for them.
 - Sprout's signed releases, SQLite layer and `state.json` lifecycle phases carry over (see Service lifecycle).
 
 ## Privileged steps and updates
@@ -190,13 +192,13 @@ A failure before step 9 undoes the journal in reverse. A failure after it leaves
 
 ### Restore
 
-`dens restore BACKUP` replaces one instance's data:
+`dens restore BACKUP` replaces one instance's data, with a backup or a den's export (M10), which restores the same way:
 
 1. Refuse unless the instance is `ready` (or mid-`restoring`) at this binary's version.
 2. Refuse a backup larger than the free space, with a gigabyte to spare (M10). Extract it into a staging directory beside the data directory, refusing a backup of another application, one from a newer schema, a wrong password, or a data key that doesn't match the backup's key check value as soon as its database is out, before any upload, and stopping before the disk would fill.
 3. Take `operation.lock`, publish `restoring`, stop the service and take `lifecycle.lock`.
 4. Move the data directory aside (`data.replaced-<time>`) and the staging directory into its place. Move the host-wrapped key aside, and wrap the backup's data key for this host.
-5. Commit the journal, move this machine's logs into the new data directory, start the service and publish `ready`. The service migrates an older backup, clears its browser sessions, turns hosting off (M9.1) and starts its den on a new sync epoch as it starts, so members' clients drop what they cached from it. Then delete the replaced data and key, the client's cache with them: a backup leaves the cache out, and the restored install fills a new one as it reads.
+5. Commit the journal, move this machine's logs into the new data directory, start the service and publish `ready`. The service migrates an older backup, clears its browser sessions, turns hosting off (M9.1) and starts its den on a new sync epoch as it starts, so members' clients drop what they cached from it. Then delete the replaced data and key, the client's cache with them: a backup leaves the cache out, and the restored install fills a new one as it reads. The last line says to pair a browser with `dens open`, or, for a den's export, to turn hosting on with `dens den hosting on`.
 
 ### Uninstall
 
