@@ -65,13 +65,12 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 			_ = os.RemoveAll(staging)
 		}
 	}()
-	key, manifest, err := openBackup(bi, archive, staging, password)
+	key, manifest, err := openBackup(bi, archive, staging, password, target.Form)
 	if err != nil {
 		return err
 	}
 	defer clear(key)
-	p.printf("Backup of instance %s from %s, made by %s %s on %s.",
-		manifest.Instance, manifest.CreatedAt.Format(time.RFC1123), manifest.App, manifest.Version, manifest.Platform)
+	p.printf("%s", describeArchive(manifest))
 	if err := sys.AdoptRestored(target, staging, account); err != nil {
 		return err
 	}
@@ -154,11 +153,39 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 	if err := os.RemoveAll(old); err != nil {
 		p.printf("Couldn't remove the replaced data at %s: %v", old, err)
 	}
-	openCmd := bi.Name + " open"
+	flag := ""
 	if target.Instance != layout.DefaultInstance {
-		openCmd += " --instance " + target.Instance
+		flag = " --instance " + target.Instance
 	}
-	p.printf("Restored instance %s. Browsers don't carry over; pair one with: %s", target.Instance, openCmd)
+	if manifest.DenExport {
+		p.printf("Restored the den's export into instance %s, with hosting off. Turn hosting on with: %s den hosting on%s", target.Instance, bi.Name, flag)
+		return nil
+	}
+	p.printf("Restored instance %s. Browsers don't carry over; pair one with: %s open%s", target.Instance, bi.Name, flag)
+	return nil
+}
+
+// describeArchive is the line a restore gives the archive it read: a
+// backup, or a den's export (M10), which holds the den alone.
+func describeArchive(m backup.Manifest) string {
+	made := fmt.Sprintf("from %s, made by %s %s on %s", m.CreatedAt.Format(time.RFC1123), m.App, m.Version, m.Platform)
+	if m.DenExport {
+		return fmt.Sprintf("The export of the den %s, from instance %s %s. It only holds the den, not any client data of the computer it left.",
+			m.Den, m.Instance, made)
+	}
+	return fmt.Sprintf("Backup of instance %s %s.", m.Instance, made)
+}
+
+// acceptArchive refuses an archive the form can't restore: a den's export
+// where the form hosts no den, as the Flatpak (M10).
+func acceptArchive(form layout.Form, m backup.Manifest) error {
+	if !m.DenExport {
+		return nil
+	}
+	switch form {
+	case layout.Flatpak:
+		return errors.New("this is a den's export, and the Flatpak hosts no den; restore it where Dens is installed on Linux or Windows")
+	}
 	return nil
 }
 
@@ -173,9 +200,10 @@ var freeSpace = host.FreeSpace
 // returns the data key sealed in it under password. It refuses a backup the
 // disk hasn't room for before it starts, and stops one that runs out of
 // room before the disk fills. One from another app or a newer schema, under
-// another password or whose key doesn't match its own database, it refuses
-// as soon as its database is out, before any upload (M10).
-func openBackup(bi build.BuildInfo, archive, dir, password string) ([]byte, backup.Manifest, error) {
+// another password or whose key doesn't match its own database, or one the
+// form can't restore, it refuses as soon as its database is out, before any
+// upload (M10).
+func openBackup(bi build.BuildInfo, archive, dir, password string, form layout.Form) ([]byte, backup.Manifest, error) {
 	file, err := os.Open(archive)
 	if err != nil {
 		return nil, backup.Manifest{}, err
@@ -199,6 +227,9 @@ func openBackup(bi build.BuildInfo, archive, dir, password string) ([]byte, back
 	var key []byte
 	manifest, err := backup.Extract(read, dir, backup.ExtractOptions{
 		Check: func(m backup.Manifest, database string) error {
+			if err := acceptArchive(form, m); err != nil {
+				return err
+			}
 			k, err := checkBackup(bi, m, database, password)
 			key = k
 			return err
@@ -336,13 +367,12 @@ func RestoreSession(ctx context.Context, bi build.BuildInfo, l layout.Layout, ar
 			_ = os.RemoveAll(staging)
 		}
 	}()
-	key, manifest, err := openBackup(bi, archive, staging, password)
+	key, manifest, err := openBackup(bi, archive, staging, password, l.Form)
 	if err != nil {
 		return err
 	}
 	defer clear(key)
-	p.printf("Backup of instance %s from %s, made by %s %s on %s.",
-		manifest.Instance, manifest.CreatedAt.Format(time.RFC1123), manifest.App, manifest.Version, manifest.Platform)
+	p.printf("%s", describeArchive(manifest))
 
 	opLock, err := maintenance.AcquireOperationLock(ctx, l)
 	if err != nil {
@@ -412,6 +442,11 @@ func RestoreSession(ctx context.Context, bi build.BuildInfo, l layout.Layout, ar
 		flag := ""
 		if l.Instance != layout.DefaultInstance {
 			flag = " --instance " + l.Instance
+		}
+		if manifest.DenExport {
+			p.printf("Restored the den's export into instance %s, with hosting off. Start it with: %s service run%s, then turn hosting on with: %s den hosting on%s",
+				l.Instance, bi.Name, flag, bi.Name, flag)
+			break
 		}
 		p.printf("Restored instance %s. Start it with: %s service run%s", l.Instance, bi.Name, flag)
 	}

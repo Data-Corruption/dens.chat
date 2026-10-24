@@ -3,9 +3,9 @@
 Windows lifecycle e2e. Installs Dens as a service through install.ps1 from
 fixture releases and runs the flows the Linux harness runs: host a den with
 Dens's first release and update it to this one, which still hosts it (M9.1);
-then pair a browser, set the password, turn hosting on and off, back up,
-refuse another account, restart the service, update, add a second instance
-that hosts a den, restore, and uninstall.
+then pair a browser, set the password, turn hosting on and off with dens
+den hosting, back up, refuse another account, restart the service, update,
+add a second instance that hosts a den, restore, and uninstall.
 
 It installs the real service and paths, so it refuses to run where Dens is
 installed. From an elevated PowerShell:
@@ -462,12 +462,18 @@ try {
             Fail "the rule $($rule.DisplayName) lets in $program on $($filter.Protocol) $($filter.LocalPort)"
         }
     }
-    if (Invoke-Api POST "/api/hosting" @{ on = $true; password = "wrong wrong wrong" } -AllowFailure) { Fail "hosting turned on with the wrong password" }
-    if ((Invoke-Api POST "/api/hosting" @{ on = $true; password = $Password }).Content -notmatch '"serving":true') { Fail "hosting didn't turn on" }
+    # dens den hosting turns it on and off, as the page's switch does (M10).
+    $wrongOn = Invoke-Dens @("den", "hosting", "on", "--password-stdin") -Stdin "wrong wrong wrong" -AllowFailure
+    if ($wrongOn.Code -eq 0) { Fail "hosting turned on with the wrong password" }
+    $on = Invoke-Dens @("den", "hosting", "on", "--password-stdin") -Stdin $Password
+    if ($on.Output -notmatch "127\.0\.0\.1:8485") { Fail "turning hosting on doesn't say where Caddy sends the den: $($on.Output)" }
     if (-not (Test-DenAnswers)) { Fail "the den listener doesn't answer with hosting on" }
     Assert-Status "main" "den:\s+hosting a den"
-    if ((Invoke-Api POST "/api/hosting" @{ on = $false }).Content -notmatch '"enabled":false,"serving":false') { Fail "hosting didn't turn off" }
+    if ((Invoke-Api GET "/api/hosting").Content -notmatch '"enabled":true,"serving":true') { Fail "the page doesn't see hosting on" }
+    $off = Invoke-Dens @("den", "hosting", "off", "--yes")
+    if ($off.Output -notmatch "Hosting is off\.") { Fail "hosting didn't turn off: $($off.Output)" }
     if (Test-DenAnswers) { Fail "the den listener answers after hosting turned off" }
+    if ((Invoke-Api GET "/api/hosting").Content -notmatch '"enabled":false,"serving":false') { Fail "the page doesn't see hosting off" }
 
     Step "another account is refused"
     $other = Invoke-AsLocalService
@@ -505,7 +511,7 @@ try {
     $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
     Invoke-WebRequest @secondPost -Uri "$secondUrl/api/pair" -Body (@{ token = ($pairing -split "#token=")[-1] } | ConvertTo-Json -Compress) | Out-Null
     Invoke-WebRequest @secondPost -Uri "$secondUrl/api/password" -Body (@{ password = $Password } | ConvertTo-Json -Compress) | Out-Null
-    Invoke-WebRequest @secondPost -Uri "$secondUrl/api/hosting" -Body (@{ on = $true; password = $Password } | ConvertTo-Json -Compress) | Out-Null
+    Invoke-Dens @("den", "hosting", "on", "--password-stdin", "--instance", "second") -Stdin $Password | Out-Null
     Assert-Status "second" "den:\s+hosting a den"
     if (-not (Test-DenAnswers)) { Fail "the den listener doesn't answer" }
     if (@(Get-MediaRules).Count -ne 4) { Fail "want each instance's two media firewall rules" }

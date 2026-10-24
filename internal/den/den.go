@@ -16,11 +16,13 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -158,6 +160,11 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 			&calls.Members, &calls.Callers, &calls.Shares, &calls.ShareViewers, &calls.ShareBitrate, &calls.ShareHeight, &calls.ShareFPS,
 			&retention)
 	if errors.Is(err, sql.ErrNoRows) {
+		// A den erased here may have left files, had the service stopped
+		// before they went (M10).
+		if err := d.tidyFiles(ctx); err != nil {
+			return nil, fmt.Errorf("tidy uploads: %w", err)
+		}
 		return d, nil
 	}
 	if err != nil {
@@ -325,11 +332,11 @@ func (d *Den) ownerInvite(ctx context.Context, unowned bool) ([]byte, error) {
 	now := d.now()
 	err := d.tx(ctx, func(tx *sql.Tx) error {
 		if unowned {
-			var owners int
-			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_members WHERE role = 'owner'`).Scan(&owners); err != nil {
+			owned, err := owned(ctx, tx)
+			if err != nil {
 				return err
 			}
-			if owners > 0 {
+			if owned {
 				return errors.New("the den already has an owner")
 			}
 		}
@@ -342,6 +349,107 @@ func (d *Den) ownerInvite(ctx context.Context, unowned bool) ([]byte, error) {
 		return nil, err
 	}
 	return code, nil
+}
+
+// Owned reports whether the den has an owner, which setting it up gives it:
+// until then the page offers to finish, with SetupInvite, and a den moved
+// here from another computer has one already (M10).
+func (d *Den) Owned(ctx context.Context) (bool, error) {
+	if _, ok := d.Info(); !ok {
+		return false, nil
+	}
+	return owned(ctx, d.db)
+}
+
+func owned(ctx context.Context, q querier) (bool, error) {
+	var owners int
+	if err := q.QueryRowContext(ctx, `SELECT count(*) FROM den_members WHERE role = 'owner'`).Scan(&owners); err != nil {
+		return false, err
+	}
+	return owners > 0, nil
+}
+
+// Erase deletes the den from this install, once another computer serves
+// it (M10): every den table's rows in one transaction, with secure_delete
+// on as ever, then its stored files, as the backups being written let them
+// go, and its identity and key, and what it held in memory, so Info
+// reports none. The caller keeps hosting off throughout, so no socket or
+// call is open. The database's log is checkpointed, so the den's pages
+// leave it too.
+func (d *Den) Erase(ctx context.Context) error {
+	d.update.Lock()
+	defer d.update.Unlock()
+	if _, ok := d.Info(); !ok {
+		return errors.New("the den hasn't been created")
+	}
+	var blobs [][]byte
+	err := d.tx(ctx, func(tx *sql.Tx) error {
+		// The den's tables refer to each other, so their keys are checked
+		// once they're all empty.
+		if _, err := tx.ExecContext(ctx, `PRAGMA defer_foreign_keys = ON`); err != nil {
+			return err
+		}
+		var err error
+		if blobs, err = deleteFiles(ctx, tx, `1`); err != nil {
+			return err
+		}
+		tables, err := database.Tables(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, table := range tables {
+			if !database.IsDenTable(table) {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM "`+strings.ReplaceAll(table, `"`, `""`)+`"`); err != nil {
+				return fmt.Errorf("empty %s: %w", table, err)
+			}
+			// IDs a den created here later takes start again, and the
+			// counts don't stay behind.
+			if _, err := tx.ExecContext(ctx, `DELETE FROM sqlite_sequence WHERE name = ?`, table); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("remove the den: %w", err)
+	}
+	d.mu.Lock()
+	d.info = nil
+	if d.key != nil {
+		d.key.Close()
+		d.key = nil
+	}
+	d.mu.Unlock()
+	d.forget()
+	d.files.stop()
+	d.files.remove(blobs)
+	if _, err := d.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		d.log.Warnf("Couldn't checkpoint the database after removing the den: %v", err)
+	}
+	d.log.Info("Removed the den from this install")
+	return nil
+}
+
+// forget drops what the den held in memory of its members, as erasing it
+// does: sign-ins outstanding and waiting for approval, who's online, and
+// the ring of recent events.
+func (d *Den) forget() {
+	d.nonceMu.Lock()
+	clear(d.nonces)
+	clear(d.nonceOrder)
+	d.nonceOrder, d.nonceHead = d.nonceOrder[:0], 0
+	d.nonceMu.Unlock()
+	d.requests.mu.Lock()
+	clear(d.requests.byID)
+	clear(d.requests.byToken)
+	d.requests.mu.Unlock()
+	d.presence.mu.Lock()
+	clear(d.presence.sockets)
+	clear(d.presence.announced)
+	d.presence.mu.Unlock()
+	d.Hub.forget()
 }
 
 // Update changes the den's name, address, upload limits, limits for calls

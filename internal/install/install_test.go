@@ -521,6 +521,19 @@ func makeBackup(t *testing.T, key []byte, password string) string {
 // makeBackupWith is makeBackup with uploads, by name.
 func makeBackupWith(t *testing.T, key []byte, password string, uploads map[string]string) string {
 	t.Helper()
+	return makeArchive(t, key, password, uploads, backup.Manifest{})
+}
+
+// makeExport makes a den's export (M10), as makeBackup makes a backup.
+func makeExport(t *testing.T, key []byte, password string) string {
+	t.Helper()
+	return makeArchive(t, key, password, map[string]string{"0123456789abcdef": "sealed bytes"}, backup.Manifest{DenExport: true, Den: "Test Den"})
+}
+
+// makeArchive makes an archive with uploads, by name, and a manifest that
+// starts from m.
+func makeArchive(t *testing.T, key []byte, password string, uploads map[string]string, m backup.Manifest) string {
+	t.Helper()
 	dir := t.TempDir()
 	for name, data := range uploads {
 		if err := os.MkdirAll(filepath.Join(dir, "uploads"), 0o700); err != nil {
@@ -567,8 +580,8 @@ func makeBackupWith(t *testing.T, key []byte, password string, uploads map[strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := backup.Manifest{App: "dens", Version: "v1.0.0", Instance: "main", CreatedAt: time.Now(), Platform: "linux/amd64"}
-	if _, err := backup.Write(out, manifest, snapshot, filepath.Join(dir, "uploads")); err != nil {
+	m.App, m.Version, m.Instance, m.CreatedAt, m.Platform = "dens", "v1.0.0", "main", time.Now(), "linux/amd64"
+	if _, err := backup.Write(out, m, snapshot, filepath.Join(dir, "uploads")); err != nil {
 		t.Fatal(err)
 	}
 	if err := out.Close(); err != nil {
@@ -620,6 +633,39 @@ func TestRestore(t *testing.T) {
 	leftovers, _ := filepath.Glob(l.Data + ".*")
 	if len(leftovers) != 0 {
 		t.Fatalf("restore left %v behind", leftovers)
+	}
+}
+
+// A den's export restores as a backup does, and the restore names it, and
+// ends with how to turn hosting on, where a backup's says to pair a browser
+// (M10).
+func TestRestoreNamesAnExport(t *testing.T) {
+	f := newFake(t)
+	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
+		t.Fatal(err)
+	}
+	key := make([]byte, host.HostKeySize)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	var said bytes.Buffer
+	if err := Restore(context.Background(), f, buildInfo("v1.0.0"), Options{Instance: "main", Out: &said}, makeExport(t, key, "correct horse battery"), "correct horse battery"); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	for _, want := range []string{"The export of the den Test Den, from instance main", "only holds the den", "Turn hosting on with: dens den hosting on"} {
+		if !strings.Contains(said.String(), want) {
+			t.Errorf("the restore said\n%s\nwithout %q", said.String(), want)
+		}
+	}
+	if strings.Contains(said.String(), "dens open") {
+		t.Errorf("the restore of an export says to pair a browser:\n%s", said.String())
+	}
+	l, _ := f.Layout("main")
+	if _, err := os.Stat(filepath.Join(l.Uploads, "0123456789abcdef")); err != nil {
+		t.Fatalf("the export's upload: %v", err)
+	}
+	if s := stateOf(t, f, "main"); s.Phase != maintenance.PhaseReady {
+		t.Fatalf("after restoring an export: %+v", s)
 	}
 }
 

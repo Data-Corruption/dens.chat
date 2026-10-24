@@ -20,6 +20,8 @@ computer too, and opens it in their browser.
   and DMs.
 - [Host a den](host/): a domain, your router and Caddy, step by step, then
   running the den.
+- [Host on a server](server/): Dens on a Linux server or container, and moving
+  a den there from your own computer.
 - [Backups and moving](backups/): keeping your data safe, moving to another
   computer, and handing a den on.
 - [Privacy](privacy/): who can read what, and what Dens doesn't protect you

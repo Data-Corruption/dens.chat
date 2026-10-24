@@ -114,6 +114,12 @@ trust)
 hosts)
     printf '%s %s\n' "$1" "$2" >> /etc/hosts
     ;;
+rehost)
+    # rehost IP NAME: point NAME at IP instead, as DNS does once a den
+    # moves to another computer.
+    sed -i "/[[:space:]]$2\$/d" /etc/hosts
+    printf '%s %s\n' "$1" "$2" >> /etc/hosts
+    ;;
 create-den)
     # create-den URL: create the den and its owner; print its ID.
     api POST /api/den "{\"name\":\"E2E Den\",\"url\":\"$1\",\"username\":\"alice\",\"display_name\":\"Alice\",\"password\":\"den password\"}" |
@@ -137,6 +143,84 @@ owner-invite)
     # desktop user with the local password; print it.
     printf 'local password\n' | runuser -u alice -- dens den owner-invite --password-stdin --instance "$INSTANCE" |
         grep '^dens1:' || fail "dens den owner-invite printed no invite"
+    ;;
+hosting-on-cli)
+    # hosting-on-cli: turn hosting on from the command line, as on a server
+    # with no browser (M10); print what it said.
+    printf 'local password\n' | runuser -u alice -- dens den hosting on --password-stdin --yes --instance "$INSTANCE" >/root/hosting.out 2>&1 ||
+        fail "dens den hosting on failed: $(cat /root/hosting.out)"
+    cat /root/hosting.out
+    ;;
+hosting-off-cli)
+    # hosting-off-cli: turn hosting off from the command line (M10).
+    runuser -u alice -- dens den hosting off --yes --instance "$INSTANCE" | grep -qx "Hosting is off." || fail "hosting didn't turn off"
+    ;;
+export)
+    # export FILE: export the den from the command line to FILE, as its
+    # desktop user (M10).
+    rm -f /home/alice/den.backup
+    printf 'local password\n' | runuser -u alice -- dens den export --password-stdin -o /home/alice/den.backup --instance "$INSTANCE" \
+        >/root/export.out 2>&1 || fail "dens den export failed: $(cat /root/export.out)"
+    mv /home/alice/den.backup "$1"
+    ;;
+export-refused)
+    # export-refused: print why exporting the den was refused.
+    if printf 'local password\n' | runuser -u alice -- dens den export --password-stdin -o /home/alice/refused.backup \
+        --instance "$INSTANCE" >/root/export.out 2>&1; then
+        fail "the den was exported"
+    fi
+    cat /root/export.out
+    ;;
+restore)
+    # restore FILE: restore a backup, or a den's export, as root; print what
+    # the restore said.
+    printf 'local password\n' | dens restore "$1" --password-stdin --yes --instance "$INSTANCE" >/root/restore.out 2>&1 ||
+        fail "the restore failed: $(cat /root/restore.out)"
+    cat /root/restore.out
+    ;;
+remove-den)
+    # remove-den: remove this computer's copy of the den, which another
+    # serves now (M10); print what it said. The service's resolver keeps the
+    # hosts file it read for 5 seconds, as Go's does, so the den's new
+    # address can take that long to reach it.
+    for _ in $(seq 1 30); do
+        if printf 'local password\n' | runuser -u alice -- dens den remove --password-stdin --yes --instance "$INSTANCE" >/root/remove.out 2>&1; then
+            cat /root/remove.out
+            exit 0
+        fi
+        grep -q "doesn't answer at" /root/remove.out || break
+        sleep 1
+    done
+    fail "dens den remove failed: $(cat /root/remove.out)"
+    ;;
+remove-refused)
+    # remove-refused: print why removing this computer's copy was refused.
+    if printf 'local password\n' | runuser -u alice -- dens den remove --password-stdin --yes --instance "$INSTANCE" >/root/remove.out 2>&1; then
+        fail "the den was removed"
+    fi
+    cat /root/remove.out
+    ;;
+pair-only)
+    # pair-only: pair the browser session with an instance whose local
+    # password is set, as one restored from an export is.
+    url=$(runuser -u alice -- dens open --print --instance "$INSTANCE")
+    api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
+    ;;
+holds)
+    # holds: print how many dens this instance joined, and whether the den
+    # it holds has an owner.
+    api GET /api/dens | json '"%d %s" % (len(d["dens"]), str(d["hosting"]["owned"]).lower())'
+    ;;
+wait-moved)
+    # wait-moved: wait until the only den is connected at its address,
+    # hosted elsewhere; print this member's role there.
+    for _ in $(seq 1 120); do
+        role=$(api GET /api/dens | json 'd["dens"][0]["role"] if d["dens"] and d["dens"][0]["state"] == "connected" and not d["dens"][0]["own"] else ""')
+        [ -n "$role" ] && { printf '%s\n' "$role"; exit 0; }
+        sleep 0.5
+    done
+    api GET /api/dens >&2
+    fail "the den isn't connected at its address"
     ;;
 wait-role)
     # wait-role ROLE: wait until this member's role in the only den is ROLE.
@@ -665,6 +749,7 @@ PY
 sealed)
     # sealed: fail if any stored upload holds a JPEG in the clear.
     for f in /var/lib/dens/main/data/uploads/*; do
+        [ -e "$f" ] || continue
         if grep -q JFIF "$f"; then
             fail "$f is stored in the clear"
         fi

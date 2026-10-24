@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -90,5 +91,48 @@ func TestFlatpakRestoresAsTheMember(t *testing.T) {
 	defer lease.Close()
 	if lease.Mode != maintenance.StartMigrate || lease.State.Phase != maintenance.PhaseRestoring || lease.State.TargetVersion != bi.Version {
 		t.Fatalf("the restored data's start: %+v", lease)
+	}
+}
+
+// The Flatpak hosts no den, so it refuses a den's export before any upload
+// is written, changing nothing (M10).
+func TestFlatpakRefusesAnExport(t *testing.T) {
+	app := filepath.Join(t.TempDir(), "app")
+	t.Setenv("XDG_DATA_HOME", filepath.Join(app, "data"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(app, "cache"))
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(app, "run"))
+	l, err := layout.New("dens", "main", layout.Flatpak)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.EnsureSession(); err != nil {
+		t.Fatal(err)
+	}
+	ready := maintenance.NewState(maintenance.PhaseReady, "v1.1.0", "")
+	if err := maintenance.WriteState(l.State, ready, nil); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(l.Data, "marker")
+	if err := os.WriteFile(marker, []byte("before"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key := make([]byte, host.HostKeySize)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatal(err)
+	}
+	stops := 0
+	err = RestoreSession(context.Background(), buildInfo("v1.1.0"), l, makeExport(t, key, "correct horse battery"), "correct horse battery",
+		func() error { stops++; return nil }, Options{Instance: "main", Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), "the Flatpak hosts no den") {
+		t.Fatalf("restoring an export in the Flatpak: %v", err)
+	}
+	if state, err := maintenance.ReadState(l.State); err != nil || state != ready || stops != 0 {
+		t.Fatalf("the refused restore left %+v, %v, and stopped the service %d times", state, err, stops)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the refused restore changed the data: %v", err)
+	}
+	if staged, _ := filepath.Glob(filepath.Join(l.Root, "data.restore-*")); len(staged) != 0 {
+		t.Fatalf("the refused restore left %v", staged)
 	}
 }

@@ -4,10 +4,11 @@
 # Incus system containers and runs the M0 flows on each distro (the steps are
 # in scripts/test/lifecycle-guest.sh): host a den with Dens's first release
 # and update it to this one, which still hosts it (M9.1); then install as a
-# sudo user, pair a browser, set the password, turn hosting on and off, back
-# up, refuse another local user, reboot, update, add a second instance that
-# hosts, restore, and uninstall. Each distro after the first restores the
-# backup the previous one made, which covers restoring on another machine.
+# sudo user, pair a browser, set the password, turn hosting on and off with
+# dens den hosting, back up, refuse another local user, reboot, update, add
+# a second instance that hosts, restore, and uninstall. Each distro after
+# the first restores the backup the previous one made, which covers
+# restoring on another machine.
 #
 # Usage:
 #   ./scripts/test-lifecycle-e2e.sh                          # every distro

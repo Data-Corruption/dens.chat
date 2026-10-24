@@ -22,12 +22,13 @@
 #   answers BROWSER             M8: answers reach the den without addresses
 #   hostile BROWSER             M8: a channel of hostile messages
 #   hosting BROWSER             M9.1: hosting turned on and off in the settings
+#   move BROWSER                M10: moving the den to another computer from the settings
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,27p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,28p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

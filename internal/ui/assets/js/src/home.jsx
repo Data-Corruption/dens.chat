@@ -1,7 +1,8 @@
 // The home page, a launcher (M8.3): the dens this install has joined, each
 // a row that opens it or its Manage dialog; sign-ins and approvals waiting
 // on this device above them; adding a den, from an invite or an address;
-// and setting up the den this install hosts, once hosting is on (M9.1).
+// and setting up the den this install hosts, once hosting is on (M9.1),
+// while it has no owner (M10).
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -9,6 +10,7 @@ import { onEvent } from './events.js';
 import { DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { restartDens, updateNotice } from './flatpak.js';
+import { ownRowNote, setupNeeded } from './hosting.js';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
 import { KeyNeeded, PendingSignIns, RecoveryCodes, SignInRequests, SignInSteps } from './private.jsx';
@@ -74,8 +76,8 @@ export function Home({ status, navigate }) {
                     <PendingSignIns list={(view.sign_ins || []).filter((p) => p.id !== adding?.pending)} onRecover={recover} />
                     {connected.map((d) => <SignInRequests key={d.den_id} den={d} />)}
                     {connected.filter((d) => !d.seal).map((d) => <KeyNeeded key={d.den_id} den={d} onSeal={(seal) => showKey(d.name, seal)} />)}
-                    {view.hosting.enabled && !view.hosting.joined && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} hosting={view.hosting.enabled} navigate={navigate} onChanged={refresh} onAdd={() => setAdding({})}
+                    {setupNeeded(view.hosting) && <HostDen hosting={view.hosting} onJoined={joined} />}
+                    <DenList dens={view.dens} hosting={view.hosting} navigate={navigate} onChanged={refresh} onAdd={() => setAdding({})}
                         onSignIn={(den) => setAdding({ den: den.url, username: den.username })} />
                 </>
             )}
@@ -136,7 +138,7 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
                 ) : (
                     <ul class="flex flex-col gap-2">
                         {dens.map((den) => (
-                            <DenRow key={den.den_id} den={den} hostingOff={den.own && !hosting} navigate={navigate} onChanged={onChanged}
+                            <DenRow key={den.den_id} den={den} note={ownRowNote(den, hosting)} navigate={navigate} onChanged={onChanged}
                                 onSignIn={onSignIn} />
                         ))}
                     </ul>
@@ -150,9 +152,10 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
 // when it isn't connected, who the member is there, and Open and Manage,
 // or, for a den that let this device or its member go, signing in again or
 // forgetting it. The den this computer hosts, with hosting off, says so,
-// and leads to the switch (M9.1).
-function DenRow({ den, hostingOff, navigate, onChanged, onSignIn }) {
-    const [dot, label] = hostingOff ? ['bg-base-content/40', 'Hosting is off'] : STATES[den.state] || ['bg-base-content/40', den.state];
+// with note, and leads to the switch (M9.1), or to Hosting once it's
+// exported (M10).
+function DenRow({ den, note, navigate, onChanged, onSignIn }) {
+    const [dot, label] = note ? ['bg-base-content/40', note.label] : STATES[den.state] || ['bg-base-content/40', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
     const forget = useAction();
     const who = gone ? `@${den.username}` : `Signed in as ${den.display_name} · ${ROLES[den.role] || den.role}`;
@@ -168,10 +171,10 @@ function DenRow({ den, hostingOff, navigate, onChanged, onSignIn }) {
                     {who}
                     {den.own && ' · Hosted here'}
                 </p>
-                {hostingOff ? (
+                {note ? (
                     <p class="text-sm text-base-content/70">
-                        Members can't reach it until hosting is back on.{' '}
-                        <button type="button" class="link" onClick={() => openSettings('system')}>Turn hosting on</button>
+                        {note.text}{' '}
+                        <button type="button" class="link" onClick={() => openSettings('system')}>{note.action}</button>
                     </p>
                 ) : den.error && <p class="text-sm text-warning">{den.error}</p>}
                 <ErrorText message={forget.error} />

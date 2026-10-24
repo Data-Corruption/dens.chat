@@ -3,12 +3,14 @@ package client
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 
 	"github.com/go-chi/chi/v5"
@@ -17,16 +19,24 @@ import (
 // downloadFor is how long the link to a backup's archive lasts.
 const downloadFor = time.Minute
 
-// backups are the links the page downloads backups from (M9.3): one for
-// each local password the member typed, which works once, and soon goes.
-// The archive is written as it downloads, so the browser saves it as it
-// does any download, rather than the page holding it.
+// backups are the links the page downloads backups from (M9.3), and the
+// den's export (M10): one for each local password the member typed, which
+// works once, and soon goes. The archive is written as it downloads, so
+// the browser saves it as it does any download, rather than the page
+// holding it.
 type backups struct {
 	mu    sync.Mutex
-	links map[string]time.Time
+	links map[string]backupLink
 }
 
-func (b *backups) issue() (string, error) {
+// backupLink is when a link stops working, and whether it's to the den's
+// export rather than a backup.
+type backupLink struct {
+	expires time.Time
+	export  bool
+}
+
+func (b *backups) issue(export bool) (string, error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
@@ -35,21 +45,21 @@ func (b *backups) issue() (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := time.Now()
-	for t, expires := range b.links {
-		if now.After(expires) {
+	for t, link := range b.links {
+		if now.After(link.expires) {
 			delete(b.links, t)
 		}
 	}
-	b.links[token] = now.Add(downloadFor)
+	b.links[token] = backupLink{expires: now.Add(downloadFor), export: export}
 	return token, nil
 }
 
-func (b *backups) redeem(token string) bool {
+func (b *backups) redeem(token string) (link backupLink, ok bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	expires, ok := b.links[token]
+	link, ok = b.links[token]
 	delete(b.links, token)
-	return ok && time.Now().Before(expires)
+	return link, ok && time.Now().Before(link.expires)
 }
 
 func (rt *router) mountBackups(r chi.Router) {
@@ -83,7 +93,7 @@ func (rt *router) handleBackup(w http.ResponseWriter, r *http.Request) {
 		passwordError(w, r, err)
 		return
 	}
-	token, err := rt.backups.issue()
+	token, err := rt.backups.issue(false)
 	if err != nil {
 		xhttp.Error(r.Context(), w, err)
 		return
@@ -91,14 +101,25 @@ func (rt *router) handleBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"url": "/api/backup/" + token})
 }
 
-// handleDownloadBackup streams the archive dens backup writes, as a
-// download.
+// handleDownloadBackup streams the archive dens backup writes, or the one
+// dens den export writes (M10), as a download.
 func (rt *router) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
-	if !rt.backups.redeem(chi.URLParam(r, "token")) {
+	link, ok := rt.backups.redeem(chi.URLParam(r, "token"))
+	if !ok {
 		http.Error(w, "This backup's link has expired; make the backup again.", http.StatusGone)
 		return
 	}
-	archive, err := rt.a.Backup(r.Context())
+	var archive app.Archive
+	var err error
+	if link.export {
+		archive, err = rt.a.ExportDen(r.Context())
+	} else {
+		archive, err = rt.a.Backup(r.Context())
+	}
+	if errors.Is(err, app.ErrHostingOn) {
+		http.Error(w, "Hosting went on again, so the den wasn't exported.", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		xhttp.Error(r.Context(), w, err)
 		return

@@ -42,9 +42,20 @@
 # who can't join again under the same name. Last, the den's machine makes an
 # owner invite with dens den owner-invite, and whoever redeems it, on the
 # member's machine under a new name, must own the den, with the owner before
-# them a moderator. Both install from unsigned
-# fixture releases through install.sh, like the lifecycle harness; the guest
-# steps are in scripts/test/den-guest.sh.
+# them a moderator.
+#
+# Before the recovery, the den moves to a server (M10): the host exports it
+# from the command line, which waits for hosting to go off, and a third
+# container, on the den's distro, restores the export, turns hosting on
+# with dens den hosting on and serves it behind Caddy, with the first host's
+# certificate authority. den.test then points at the server, the first
+# host's Caddy stops, and the first host removes its copy, which it refuses
+# to while nothing else answers as the den. The member must reconnect by
+# themselves, the owner's install must reach the den at its address as its
+# owner, with its history and DMs, and the two must chat and call through
+# the server, where everything after the move happens. All three install
+# from unsigned fixture releases through install.sh, like the lifecycle
+# harness; the guest steps are in scripts/test/den-guest.sh.
 #
 # Usage:
 #   ./scripts/test-den-e2e.sh
@@ -86,15 +97,16 @@ mkdir -p "$RUN_LOG_DIR"
 HARNESS_DIR=$(mktemp -d)
 DEN="dens-den-e2e-den-$$"
 CLIENT="dens-den-e2e-client-$$"
+SERVER="dens-den-e2e-server-$$"
 passed=false
 
 finish() {
   local status=$?
   trap - EXIT
   if ! $passed && $KEEP_FAILED; then
-    echo ">> Kept $DEN and $CLIENT for inspection: incus exec <name> -- bash"
+    echo ">> Kept $DEN, $CLIENT and $SERVER for inspection: incus exec <name> -- bash"
   else
-    "${INCUS[@]}" delete --force "$DEN" "$CLIENT" >/dev/null 2>&1 || :
+    "${INCUS[@]}" delete --force "$DEN" "$CLIENT" "$SERVER" >/dev/null 2>&1 || :
   fi
   rm -rf "$HARNESS_DIR"
   if $passed; then
@@ -168,9 +180,9 @@ run() {
   caddy=$(./scripts/vendor.sh caddy | sed -n 's/^caddy=//p')
 
   local name distro
-  for name in "$DEN" "$CLIENT"; do
+  for name in "$DEN" "$CLIENT" "$SERVER"; do
     distro=$CLIENT_DISTRO
-    [[ "$name" == "$DEN" ]] && distro=$DEN_DISTRO
+    [[ "$name" != "$CLIENT" ]] && distro=$DEN_DISTRO
     launch_container "$distro" "$name"
     push_release "$name" "$HARNESS_DIR/release"
     "${INCUS[@]}" file push -q scripts/test/den-guest.sh "$name/root/den-guest.sh"
@@ -188,6 +200,9 @@ run() {
   den_ip=$("${INCUS[@]}" list "$DEN" --format csv -c 4 | awk '{print $1}')
   [[ -n "$den_ip" ]] || { echo "error: the den container has no IPv4 address" >&2; return 1; }
   guest "$DEN" hosts 127.0.0.1 den.test
+  # Once the den moves, the first host reaches it at den.test too, as any
+  # member's install does.
+  guest "$DEN" trust /root/.local/share/caddy/pki/authorities/local/root.crt
 
   echo ">> Trusting the den's certificate authority on $CLIENT_DISTRO"
   "${INCUS[@]}" file pull -q "$DEN/root/.local/share/caddy/pki/authorities/local/root.crt" - > "$HARNESS_DIR/root.crt"
@@ -616,6 +631,72 @@ run() {
     { echo "error: the checklist reads: $text" >&2; return 1; }
   echo ">> Every tick from both members stayed"
 
+  echo ">> Moving the den to a server on $DEN_DISTRO"
+  local before refusal said server_ip moved_at
+  before=$(guest "$CLIENT" history "$den_id" "$channel")
+  refusal=$(guest "$DEN" export-refused)
+  [[ "$refusal" == *"hosting is on"* ]] || { echo "error: exporting with hosting on: $refusal" >&2; return 1; }
+  guest "$DEN" hosting-off-cli
+  guest "$DEN" export /root/den.backup
+  refusal=$(guest "$DEN" remove-refused)
+  [[ "$refusal" == *"doesn't answer at https://den.test"* ]] ||
+    { echo "error: removing the den while nothing else serves it: $refusal" >&2; return 1; }
+  echo ">> The export waited for hosting to go off, and the first host keeps its copy while nothing else answers as the den"
+  "${INCUS[@]}" file pull -q "$DEN/root/den.backup" "$HARNESS_DIR/den.backup"
+  "${INCUS[@]}" file push -q "$HARNESS_DIR/den.backup" "$SERVER/root/den.backup"
+  "${INCUS[@]}" file push -q --mode 0755 "$caddy" "$SERVER/usr/local/bin/caddy"
+  guest "$SERVER" install
+  said=$(guest "$SERVER" restore /root/den.backup)
+  [[ "$said" == *"The export of the den E2E Den"* && "$said" == *"dens den hosting on"* ]] ||
+    { echo "error: restoring the export said: $said" >&2; return 1; }
+  said=$(guest "$SERVER" hosting-on-cli)
+  [[ "$said" == *"E2E Den serves at https://den.test"* && "$said" == *"127.0.0.1:8485"* ]] ||
+    { echo "error: hosting on the server said: $said" >&2; return 1; }
+  # The server's Caddy issues den.test's certificate from the first host's
+  # authority, which the members trust already.
+  "${INCUS[@]}" exec "$DEN" -- tar -C /root/.local/share/caddy/pki/authorities -cf - local > "$HARNESS_DIR/ca.tar"
+  "${INCUS[@]}" exec "$SERVER" -- mkdir -p /root/.local/share/caddy/pki/authorities
+  "${INCUS[@]}" exec "$SERVER" -- tar -C /root/.local/share/caddy/pki/authorities -xf - < "$HARNESS_DIR/ca.tar"
+  guest "$SERVER" caddy 8485
+  guest "$SERVER" pair-only
+  [[ "$(guest "$SERVER" holds)" == "0 true" ]] ||
+    { echo "error: the server's dens and owner: $(guest "$SERVER" holds)" >&2; return 1; }
+  server_ip=$("${INCUS[@]}" list "$SERVER" --format csv -c 4 | awk '{print $1}')
+  [[ -n "$server_ip" ]] || { echo "error: the server container has no IPv4 address" >&2; return 1; }
+  moved_at=$(date +%s%3N)
+  guest "$CLIENT" rehost "$server_ip" den.test
+  guest "$DEN" rehost "$server_ip" den.test
+  "${INCUS[@]}" exec "$DEN" -- systemctl stop caddy-e2e
+  guest "$CLIENT" wait-connected "$moved_at" >/dev/null
+  history=$(guest "$CLIENT" history "$den_id" "$channel")
+  [[ "$history" == "$before" ]] || { echo "error: the member's history on the server: $history" >&2; return 1; }
+  echo ">> The server hosts the den from the command line, holding no account and offering nothing to set up, and the member reconnected by themselves, with its history"
+  said=$(guest "$DEN" remove-den)
+  [[ "$said" == *"Removed E2E Den from this computer"* ]] || { echo "error: removing the first host's copy said: $said" >&2; return 1; }
+  [[ "$(guest "$DEN" wait-moved)" == owner ]] || { echo "error: the first host isn't the owner at the den's address" >&2; return 1; }
+  [[ "$(guest "$DEN" sealed)" == 0 ]] || { echo "error: the first host keeps the den's files" >&2; return 1; }
+  history=$(guest "$DEN" history "$den_id" "$channel")
+  [[ "$history" == "$before" ]] || { echo "error: the owner's history at the den's address: $history" >&2; return 1; }
+  history=$(guest "$DEN" history "$den_id" "$dm")
+  [[ "$history" == "a private word"* ]] || { echo "error: the owner's DM at the den's address: $history" >&2; return 1; }
+  echo ">> The first host removed its copy, and reaches the den at its address as its owner, with its history and DMs"
+  guest "$DEN" send "$den_id" "$channel" "after the move" >/dev/null
+  for _ in $(seq 20); do
+    history=$(guest "$CLIENT" history "$den_id" "$channel")
+    [[ "$history" == *"after the move" ]] && break
+    sleep 0.5
+  done
+  [[ "$history" == *"after the move" ]] || { echo "error: the member's history after the move: $history" >&2; return 1; }
+  guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp >"$RUN_LOG_DIR/call-owner-moved.log" 2>&1 &
+  owner=$!
+  if ! guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp >"$RUN_LOG_DIR/call-member-moved.log" 2>&1; then
+    wait "$owner" || :
+    cat "$RUN_LOG_DIR/call-member-moved.log" "$RUN_LOG_DIR/call-owner-moved.log" >&2
+    return 1
+  fi
+  wait "$owner" || { cat "$RUN_LOG_DIR/call-owner-moved.log" >&2; return 1; }
+  echo ">> The owner and the member chat and call through the server"
+
   echo ">> Recovering the member's account on a fresh install"
   local code left signed_out fingerprint key started took reason refusal
   code=$(guest "$CLIENT" code 0)
@@ -688,15 +769,16 @@ run() {
   [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }
   echo ">> The banned member can't come back as bob"
 
-  # The den's machine has the last word on who owns it (M8).
+  # The den's machine, the server now, has the last word on who owns it
+  # (M8).
   echo ">> The den's machine hands the den on with an owner invite"
-  invite=$(guest "$DEN" owner-invite)
+  invite=$(guest "$SERVER" owner-invite)
   role=$(guest "$CLIENT" join "$invite" carol Carol)
   [[ "$role" == owner ]] || { echo "error: the owner invite joined carol as $role" >&2; return 1; }
   guest "$DEN" wait-role moderator
   echo ">> Whoever redeemed the owner invite owns the den, and the owner before them is a moderator"
   echo
-  "${INCUS[@]}" exec "$DEN" -- journalctl -u dens@main -b --no-pager -o cat | tail -n 20
+  "${INCUS[@]}" exec "$SERVER" -- journalctl -u dens@main -b --no-pager -o cat | tail -n 20
 }
 
 run 2>&1 | tee "$RUN_LOG_DIR/den-e2e.log"

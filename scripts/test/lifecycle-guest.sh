@@ -4,7 +4,8 @@
 # twice, with a reboot in between:
 #   lifecycle-guest.sh install        prepare, host a den with the first
 #                                     release and update it, then install,
-#                                     pair, turn hosting on and off, back up
+#                                     pair, turn hosting on and off with
+#                                     dens den hosting, back up
 #   lifecycle-guest.sh after-reboot   check, update, second instance,
 #                                     restore, uninstall
 # or once, for a release built from another commit, whose behavior the
@@ -226,18 +227,21 @@ phase_install() {
         fail "the client listener answered a foreign Host"
     fi
 
-    step "an install hosts nothing until hosting is on"
+    step "an install hosts nothing until hosting is on, which dens den hosting turns on and off"
     as_alice dens status | grep -q "den:       not hosting a den" || fail "a fresh install hosts a den"
     ! den_answers 8485 || fail "the den listener answers with hosting off"
-    if api POST /api/hosting '{"on":true,"password":"wrong wrong wrong"}' >/dev/null 2>&1; then
+    if printf 'wrong wrong wrong\n' | as_alice dens den hosting on --password-stdin >/dev/null 2>&1; then
         fail "hosting turned on with the wrong password"
     fi
-    api POST /api/hosting "{\"on\":true,\"password\":\"$PASSWORD\"}" | grep -q '"serving":true' ||
-        fail "hosting didn't turn on"
+    printf '%s\n' "$PASSWORD" | as_alice dens den hosting on --password-stdin >/tmp/hosting.out ||
+        fail "hosting didn't turn on: $(cat /tmp/hosting.out)"
+    grep -q "127.0.0.1:8485" /tmp/hosting.out || fail "turning hosting on doesn't say where Caddy sends the den: $(cat /tmp/hosting.out)"
     den_answers 8485 || fail "the den listener doesn't answer with hosting on"
     as_alice dens status | grep -q "den:       hosting a den" || fail "dens status doesn't say the instance hosts"
-    api POST /api/hosting '{"on":false}' | grep -q '"enabled":false,"serving":false' || fail "hosting didn't turn off"
+    api GET /api/hosting | grep -q '"enabled":true,"serving":true' || fail "the page doesn't see hosting on: $(api GET /api/hosting)"
+    as_alice dens den hosting off --yes | grep -q "Hosting is off." || fail "hosting didn't turn off"
     ! den_answers 8485 || fail "the den listener answers after hosting turned off"
+    api GET /api/hosting | grep -q '"enabled":false,"serving":false' || fail "the page doesn't see hosting off: $(api GET /api/hosting)"
 
     step "another local user is refused"
     if runuser -u mallory -- dens status >/tmp/mallory.out 2>&1; then
@@ -296,7 +300,8 @@ phase_after_reboot() {
     url=$(as_alice dens open --print --instance second)
     second_api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
     second_api POST /api/password "{\"password\":\"$PASSWORD\"}" >/dev/null
-    second_api POST /api/hosting "{\"on\":true,\"password\":\"$PASSWORD\"}" >/dev/null
+    printf '%s\n' "$PASSWORD" | as_alice dens den hosting on --password-stdin --instance second >/dev/null ||
+        fail "hosting didn't turn on in the second instance"
     as_alice dens status --instance second | grep -q "den:       hosting a den" || fail "the second instance doesn't host a den"
     den_answers 8485 || fail "the den listener doesn't answer"
 

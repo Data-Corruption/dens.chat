@@ -282,6 +282,17 @@ func (h *Hub) trim(now time.Time) {
 	}
 }
 
+// forget drops the events the ring holds, as erasing the den does (M10),
+// so no client resumes into what the den was.
+func (h *Hub) forget() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	clear(h.ring)
+	h.ring, h.head, h.bytes = h.ring[:0], 0, 0
+	h.first = h.seq + 1
+	clear(h.memberRefresh)
+}
+
 // Subscribe registers a socket for a member. When the client's resume
 // point (epoch and seq) is still covered by the ring, it returns the events
 // the member missed and resumed is true; otherwise the client needs a fresh

@@ -116,6 +116,20 @@ func (h *hosting) Set(_ context.Context, on bool) error {
 	return nil
 }
 
+// WhileOff runs f with hosting held off (M10): it refuses while hosting is
+// on, as when its den can't start, and turning hosting on waits for f.
+func (h *hosting) WhileOff(f func() error) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closed {
+		return errors.New("the service is stopping")
+	}
+	if h.on {
+		return app.ErrHostingOn
+	}
+	return f()
+}
+
 // tryLocked starts the den, with hosting on, or plans another try.
 func (h *hosting) tryLocked() {
 	err := h.startDenLocked(false)
@@ -234,7 +248,7 @@ func (h *hosting) close() {
 // save keeps the switch.
 func save(a *app.App, on bool) error {
 	_, err := config.Update(a.DB, func(c *types.Configuration) error {
-		c.Hosting = &on
+		c.SetHosting(on)
 		return nil
 	})
 	return err

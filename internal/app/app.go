@@ -113,7 +113,14 @@ type Hosting interface {
 	// Set turns hosting on or off. Turning it on binds the den's ports,
 	// and fails, changing nothing, while another program holds one.
 	Set(ctx context.Context, on bool) error
+	// WhileOff runs f with hosting held off: turning it on waits for f,
+	// which doesn't run while hosting is on, failing with ErrHostingOn
+	// (M10).
+	WhileOff(f func() error) error
 }
+
+// ErrHostingOn is a den's export or removal while hosting is on (M10).
+var ErrHostingOn = errors.New("hosting is on")
 
 // HostingState is hosting as the page shows it. Serving is whether the
 // den listens now; while hosting is on and it doesn't, Problem says why.
@@ -441,7 +448,7 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 		a.Log.Infof("Hosting is off, %s", why)
 	}
 	return config.Update(a.DB, func(c *types.Configuration) error {
-		c.Hosting = &on
+		c.SetHosting(on)
 		return nil
 	})
 }

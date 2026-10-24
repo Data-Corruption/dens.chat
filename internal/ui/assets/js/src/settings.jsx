@@ -4,9 +4,9 @@
 // happens to links, and whether YouTube videos play in Dens (M4.1); Voice &
 // video the microphone and speaker, noise suppression, how the member
 // sends their voice, their shortcuts (M7) and how they share their screen
-// (M4.2); System hosting a den (M9.1), the cache of other dens' files (M6),
-// update checks, the local password, logging, signing this browser out,
-// and the version.
+// (M4.2); System hosting a den (M9.1) and moving it to another computer
+// (M10), the cache of other dens' files (M6), update checks, the local
+// password, logging, signing this browser out, and the version.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -14,7 +14,7 @@ import { sendSmaller, setSendSmaller } from './compare.jsx';
 import { Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
-import { hostingAsk, hostingNote } from './hosting.js';
+import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { NO_CALLS, NO_SHARING, canCall, canShare, here } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
@@ -742,12 +742,7 @@ function BackUp() {
         e.preventDefault();
         act.run(async () => {
             const { url } = await api.post('/api/backup', { password });
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = '';
-            document.body.append(link);
-            link.click();
-            link.remove();
+            download(url);
             setPassword('');
             setAsking(false);
             setDone(true);
@@ -755,7 +750,7 @@ function BackUp() {
     }
 
     return (
-        <Card title={<>Backup <DocsTip id="docs-backups" page="backups/">What a backup holds, and restoring one here or on another computer.</DocsTip></>}>
+        <Card title={<>Backup <DocsTip id="docs-backups" page="backups/" side="right">What a backup holds, and restoring one here or on another computer.</DocsTip></>}>
             <p class="text-sm text-base-content/70">Your dens, keys and settings, and a den you host, protected by your local password. Not the cache.</p>
             {asking ? (
                 <form class="flex flex-col gap-2" onSubmit={submit}>
@@ -782,24 +777,35 @@ function BackUp() {
 }
 
 // Hosting turns hosting a den on this computer on and off (M9.1). Turning
-// it on opens ports to the internet, so it takes the local password;
-// turning it off asks first, since members can't reach the den until it's
-// back on. While it's on, it says where Caddy and the router send the den.
+// it on opens ports to the internet, so it takes the local password, and
+// for a den exported since, says first that another computer may host it
+// by now (M10); turning it off asks first, since members can't reach the
+// den until it's back on. While it's on, it says where Caddy and the
+// router send the den. Once there's a den, it moves it to another
+// computer, with its export, and, once that computer serves it, removes
+// it from this one (M10).
 function Hosting() {
     const [hosting, setHosting] = useState(null);
-    // asking is the change waiting on the member: 'on' for the password,
-    // 'off' for the confirmation.
+    // asking is what waits on the member: 'on' for the password, 'off' for
+    // the confirmation, and 'move' and 'remove' for the password the
+    // export and removing the den take.
     const [asking, setAsking] = useState('');
     const [password, setPassword] = useState('');
+    const [size, setSize] = useState(null);
+    const [removed, setRemoved] = useState(null);
     const act = useAction();
     useEffect(() => {
         act.run(async () => setHosting(await api.get('/api/hosting')));
     }, []);
 
-    function ask(on) {
+    function begin(what) {
         act.setError('');
         setPassword('');
-        setAsking(hostingAsk(hosting.enabled, on));
+        setRemoved(null);
+        setAsking(what);
+    }
+    function ask(on) {
+        begin(hostingAsk(hosting.enabled, on));
     }
     function turnOn(e) {
         e.preventDefault();
@@ -815,11 +821,42 @@ function Hosting() {
             setAsking('');
         });
     }
+    function askMove() {
+        begin('move');
+        setSize(null);
+        api.get('/api/backup').then((r) => setSize(r.size), () => {});
+    }
+    function move(e) {
+        e.preventDefault();
+        act.run(async () => {
+            const { url } = await api.post('/api/den/export', { password });
+            download(url);
+            setPassword('');
+            setAsking('');
+            // The export is recorded as its download starts.
+            for (let i = 0; i < 20; i++) {
+                const h = await api.get('/api/hosting');
+                setHosting(h);
+                if (h.exported) break;
+                await new Promise((resolve) => setTimeout(resolve, 500));
+            }
+        });
+    }
+    function remove(e) {
+        e.preventDefault();
+        const den = { name: hosting.den, url: hosting.url };
+        act.run(async () => {
+            setHosting(await api.post('/api/den/remove', { password }));
+            setPassword('');
+            setAsking('');
+            setRemoved(den);
+        });
+    }
 
     const title = (
         <>
             Hosting
-            <DocsTip id="docs-hosting" page="host/">Everything a den needs, step by step: a domain, Caddy and your router.</DocsTip>
+            <DocsTip id="docs-hosting" page="host/" side="right">Everything a den needs, step by step: a domain, Caddy and your router.</DocsTip>
         </>
     );
     if (!hosting) {
@@ -832,18 +869,26 @@ function Hosting() {
             </Card>
         );
     }
-    const on = asking ? asking === 'on' : hosting.enabled;
-    const note = asking ? null : hostingNote(hosting);
+    const switching = asking === 'on' || asking === 'off';
+    const on = switching ? asking === 'on' : hosting.enabled;
+    const note = switching ? null : hostingNote(hosting);
+    const moves = switching ? null : moving(hosting);
+    const warning = hostingOnWarning(hosting);
+    const passwordField = (
+        <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+            <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
+        </Field>
+    );
+    const cancel = <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => begin('')}>Cancel</button>;
     return (
         <Card title={title}>
             <Toggle id="hosting" label="Host a den on this computer" checked={on} disabled={act.busy} onChange={ask}
                 hint="A den needs this computer to stay on, a domain, and Caddy in front of it." />
             {asking === 'on' && (
                 <form class="flex flex-col gap-2" onSubmit={turnOn}>
+                    {warning && <p class="text-sm text-warning">{warning}</p>}
                     <p class="text-sm text-base-content/70">Hosting opens ports to the internet, so it takes your local password.</p>
-                    <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
-                        <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
-                    </Field>
+                    {passwordField}
                     <div class="flex gap-2">
                         <SubmitButton busy={act.busy}>Turn hosting on</SubmitButton>
                         <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</button>
@@ -869,9 +914,78 @@ function Hosting() {
                     forwards port {note.udp} (UDP) and port {note.tcp} (TCP) to this computer, for calls.
                 </p>
             )}
+            {moves && (
+                <div class="flex flex-col gap-2 border-t border-base-300 pt-3">
+                    {moves.exported && (
+                        <>
+                            <p class="text-sm">
+                                You exported {moves.den} on {moves.exported}.{' '}
+                                <DocsTip id="docs-server" page="server/">Restoring the den on a server, hosting it there, and removing it from this computer.</DocsTip>
+                            </p>
+                            {asking !== 'remove' && (
+                                <p class="text-sm text-base-content/70">
+                                    Once the other computer hosts it, remove it from this one. Dens here then reaches it at {moves.url}, as any
+                                    member's does.
+                                </p>
+                            )}
+                        </>
+                    )}
+                    {asking === 'move' && (
+                        <form class="flex flex-col gap-2" onSubmit={move}>
+                            <p class="text-sm">
+                                {hosting.enabled ? 'This turns hosting off: members' : 'Members'} can't reach {moves.den} until the other
+                                computer hosts it.
+                            </p>
+                            <p class="text-sm text-base-content/70">The file only holds the den, not any of your client data.</p>
+                            {passwordField}
+                            <div class="flex flex-wrap items-center gap-2">
+                                <SubmitButton busy={act.busy}>Download the den's export</SubmitButton>
+                                {cancel}
+                                {size != null && <span class="text-sm text-base-content/70">About {formatSize(size)}</span>}
+                            </div>
+                        </form>
+                    )}
+                    {asking === 'remove' && (
+                        <form class="flex flex-col gap-2" onSubmit={remove}>
+                            <p class="text-sm">
+                                This deletes this computer's copy of {moves.den}: its members, messages and files. Dens first checks that another
+                                computer serves the den at {moves.url}.
+                            </p>
+                            <p class="text-sm text-base-content/70">Your account in the den stays, and Dens here reaches the den at its address.</p>
+                            {passwordField}
+                            <div class="flex gap-2">
+                                <SubmitButton busy={act.busy} class="btn-error">Remove from this computer</SubmitButton>
+                                {cancel}
+                            </div>
+                        </form>
+                    )}
+                    {!asking && (
+                        <div class="flex flex-wrap gap-2">
+                            {moves.exported && <button type="button" class="btn btn-sm" onClick={() => begin('remove')}>Remove from this computer</button>}
+                            <button type="button" class="btn btn-sm" onClick={askMove}>Move the den to another computer</button>
+                        </div>
+                    )}
+                </div>
+            )}
+            {removed && (
+                <p role="status" class="text-sm text-success">
+                    Removed {removed.name} from this computer. Dens reaches it at {removed.url} now.
+                </p>
+            )}
             <ErrorText message={act.error} />
         </Card>
     );
+}
+
+// download has the browser download what url serves, as it does any
+// download.
+function download(url) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '';
+    document.body.append(link);
+    link.click();
+    link.remove();
 }
 
 // Cache shows how much of other dens' files this computer keeps, which

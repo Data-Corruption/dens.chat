@@ -20,6 +20,17 @@ import (
 // own, and returns a client for it.
 func serveBackup(t *testing.T, archive func() io.Reader) control.Client {
 	t.Helper()
+	return serveHandlers(t, map[string]control.Handler{
+		control.OpBackup: func(context.Context, control.Request) (control.Reply, error) {
+			return control.Reply{Result: control.Backup{Name: "dens-main-20261023-120000.backup", Size: 1 << 20}, Body: io.NopCloser(archive())}, nil
+		},
+	})
+}
+
+// serveHandlers answers control requests with handlers on an endpoint of
+// its own, and returns a client for it.
+func serveHandlers(t *testing.T, handlers map[string]control.Handler) control.Client {
+	t.Helper()
 	me, err := host.CurrentUser()
 	if err != nil {
 		t.Fatal(err)
@@ -37,11 +48,7 @@ func serveBackup(t *testing.T, archive func() io.Reader) control.Client {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	server := &control.Server{Allowed: me, Log: logger, Handlers: map[string]control.Handler{
-		control.OpBackup: func(context.Context, control.Request) (control.Reply, error) {
-			return control.Reply{Result: control.Backup{Name: "dens-main-20261023-120000.backup", Size: 1 << 20}, Body: io.NopCloser(archive())}, nil
-		},
-	}}
+	server := &control.Server{Allowed: me, Log: logger, Handlers: handlers}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -66,7 +73,7 @@ func (brokenReader) Read([]byte) (int, error) {
 func TestWriteBackupKeepsNothingCutShort(t *testing.T) {
 	client := serveBackup(t, func() io.Reader { return io.MultiReader(strings.NewReader("half an archive"), brokenReader{}) })
 	dir := t.TempDir()
-	if _, err := writeBackup(client, control.Request{Op: control.OpBackup}, dir, ""); !errors.Is(err, control.ErrBodyCut) {
+	if _, err := writeBackup(client, control.Request{Op: control.OpBackup}, dir, "", "backup"); !errors.Is(err, control.ErrBodyCut) {
 		t.Fatalf("writeBackup: %v", err)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
@@ -82,7 +89,7 @@ func TestWriteBackupNeedsRoom(t *testing.T) {
 	freeSpace = func(string) (uint64, error) { return 1 << 20, nil }
 	t.Cleanup(func() { freeSpace = free })
 	dir := t.TempDir()
-	_, err := writeBackup(client, control.Request{Op: control.OpBackup}, dir, "")
+	_, err := writeBackup(client, control.Request{Op: control.OpBackup}, dir, "", "backup")
 	if err == nil || !strings.Contains(err.Error(), "about 1 MB") {
 		t.Fatalf("writeBackup without room: %v", err)
 	}
@@ -94,7 +101,7 @@ func TestWriteBackupNeedsRoom(t *testing.T) {
 func TestWriteBackupWritesTheArchive(t *testing.T) {
 	client := serveBackup(t, func() io.Reader { return strings.NewReader("a whole archive") })
 	dir := t.TempDir()
-	path, err := writeBackup(client, control.Request{Op: control.OpBackup}, dir, "")
+	path, err := writeBackup(client, control.Request{Op: control.OpBackup}, dir, "", "backup")
 	if err != nil {
 		t.Fatal(err)
 	}

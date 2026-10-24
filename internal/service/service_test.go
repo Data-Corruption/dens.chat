@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -65,7 +66,12 @@ func startDevServiceWith(t *testing.T, set func(*app.OpenOptions)) (*app.App, co
 // devHome points a development instance's directories into the test's own.
 func devHome(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
+	useHome(t, t.TempDir())
+}
+
+// useHome points a development instance's directories into dir.
+func useHome(t *testing.T, dir string) {
+	t.Helper()
 	t.Setenv("XDG_DATA_HOME", dir)
 	t.Setenv("XDG_RUNTIME_DIR", dir)
 	t.Setenv("LOCALAPPDATA", dir)
@@ -81,11 +87,25 @@ func devInstance() string { return fmt.Sprintf("t%d", time.Now().UnixNano()%1_00
 func runDevService(t *testing.T, set func(*app.OpenOptions)) (*app.App, error) {
 	t.Helper()
 	devHome(t)
-	a := app.New(devBuild)
 	opts := app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}
 	if set != nil {
 		set(&opts)
 	}
+	a, stop, err := serveDev(t, opts)
+	if err != nil {
+		return nil, err
+	}
+	t.Cleanup(stop)
+	return a, nil
+}
+
+// serveDev opens a development instance with opts, in the directories the
+// environment names, and runs it until stop is called. It returns why the
+// service stopped, if it stopped before it was ready, having closed what
+// it opened.
+func serveDev(t *testing.T, opts app.OpenOptions) (a *app.App, stop func(), err error) {
+	t.Helper()
+	a = app.New(devBuild)
 	if err := a.Open(opts); err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -104,21 +124,24 @@ func runDevService(t *testing.T, set func(*app.OpenOptions)) (*app.App, error) {
 	case err := <-done:
 		cancel()
 		_ = a.Close()
-		return nil, err
+		return nil, nil, err
 	case <-time.After(30 * time.Second):
 		cancel()
 		t.Fatal("service did not become ready")
 	}
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("service.Run: %v", err)
-		}
-		if err := a.Close(); err != nil {
-			t.Errorf("Close: %v", err)
-		}
-	})
-	return a, nil
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("service.Run: %v", err)
+			}
+			if err := a.Close(); err != nil {
+				t.Errorf("Close: %v", err)
+			}
+		})
+	}
+	return a, stop, nil
 }
 
 func TestPairSetPasswordAndBackUp(t *testing.T) {
