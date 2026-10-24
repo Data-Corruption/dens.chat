@@ -299,7 +299,9 @@ phase_after_reboot() {
     expect_state main "$version"
     url=$(as_alice dens open --print --instance second)
     second_api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
-    second_api POST /api/password "{\"password\":\"$PASSWORD\"}" >/dev/null
+    # The local password from the command line, as a server sets it (M10).
+    printf '%s\n' "$PASSWORD" | as_alice dens password --password-stdin --instance second >/dev/null ||
+        fail "dens password didn't set the second instance's password"
     printf '%s\n' "$PASSWORD" | as_alice dens den hosting on --password-stdin --instance second >/dev/null ||
         fail "hosting didn't turn on in the second instance"
     as_alice dens status --instance second | grep -q "den:       hosting a den" || fail "the second instance doesn't host a den"
@@ -327,7 +329,15 @@ phase_after_reboot() {
     ! den_answers 8485 || fail "the den listener answers after the restore"
 
     step "uninstall both instances"
-    dens uninstall --instance second --yes
+    # Uninstall asks for its phrase, which a y doesn't give (M10).
+    if printf 'y\n' | dens uninstall --instance second >/root/uninstall.out 2>&1; then
+        fail "a y uninstalled the second instance"
+    fi
+    grep -q 'Type "perm delete data" to uninstall instance second' /root/uninstall.out ||
+        fail "the uninstall didn't ask for its phrase: $(cat /root/uninstall.out)"
+    [ -d /var/lib/dens/second ] || fail "a cancelled uninstall removed the second instance"
+    printf 'perm delete data\n' | dens uninstall --instance second >/dev/null
+    [ ! -e /var/lib/dens/second ] || fail "the second instance survived its uninstall"
     [ -x /usr/local/bin/dens ] || fail "uninstalling one instance removed the shared binary"
     [ -e /etc/xdg/autostart/chat.dens.Dens.desktop ] || fail "uninstalling one instance removed the shortcut helper's autostart entry"
     dens uninstall --yes
