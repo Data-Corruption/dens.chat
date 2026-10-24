@@ -42,10 +42,10 @@ export const DOCS = 'https://dens.chat/docs/';
 
 // DocsTip is a Tip whose i opens the guide to its subject, in a new tab:
 // the gist on hover, the whole story a click away. It stands where those
-// things come up (v1's onboarding).
-export function DocsTip({ id, page, children }) {
+// things come up (v1's onboarding), and opens where a Tip would.
+export function DocsTip({ id, page, side = 'bottom', children }) {
     return (
-        <span class="tooltip tooltip-bottom align-middle font-normal">
+        <span class={`tooltip ${SIDES[side]} align-middle font-normal`}>
             <span id={id} role="tooltip" class="tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal">
                 {children}
                 <span class="mt-1 block text-xs opacity-70">Opens the guide on dens.chat.</span>
