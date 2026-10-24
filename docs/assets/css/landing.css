@@ -1,5 +1,5 @@
 /* dens.chat: the landing page. Metalheart, by way of the 2000s design
-   portals: cyan and hot magenta, vector shards, keylines, barcodes and pixel
+   portals: blue and hot magenta, vector shards, keylines, barcodes and pixel
    microtext. Light or dark follows the system unless the visitor picks a
    skin; the choice is the docs' own (theme.js). */
 
@@ -36,9 +36,9 @@
   --dark: 0;
 
   /* the brand, the same in both skins */
-  --cyan: #2bd2ee;
-  --cyan-2: #8fe6f6;
-  --cyan-3: #dcf6fc;
+  --blue: light-dark(#2b5dee, #5f8cff);
+  --blue-2: #8fa8f6;
+  --blue-3: #dce3fc;
   --mag: #e5338a;
   --mag-2: #ff5aa5;
   --pink: #f7b3d1;
@@ -49,7 +49,7 @@
   /* surfaces and words, by skin */
   --page: light-dark(#ffffff, #130e1a);
   --bg: light-dark(#ffffff, #130e1a);
-  --bg-2: light-dark(#f9fdfe, #1a1323);
+  --bg-2: light-dark(#f9fafe, #1a1323);
   --ink: light-dark(#262626, #f3edf7);
   --text: light-dark(#3d3d3d, #d8d0df);
   --gray: light-dark(#8a8a8a, #948ba6);
@@ -65,8 +65,8 @@
   --no-mark: light-dark(#b9b9b9, #5f5670);
   --bar: light-dark(#141414, #efe9f3);
   --trunk: light-dark(#5b2462, #b98ad0);
-  --grass: light-dark(#1fb2cf, #2bd2ee);
-  --sky: light-dark(#dcf6fc, #0a2a35);
+  --grass: light-dark(#1f48cf, #2b5dee);
+  --sky: light-dark(#dce3fc, #0a1035);
   --sun: light-dark(#fde6f0, #ece4fa);
 
   --f-x: "Archivo Expanded", "Arial Black", "Helvetica Neue", Arial, sans-serif;
@@ -144,7 +144,7 @@ a:hover {
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 
@@ -169,7 +169,7 @@ summary:focus-visible {
 
 .rail--l {
   left: 0;
-  background: linear-gradient(180deg, var(--cyan) 0%, var(--cyan) 58%, #a38be0 84%, var(--mag-2) 100%);
+  background: linear-gradient(180deg, var(--blue) 0%, var(--blue) 58%, #a38be0 84%, var(--mag-2) 100%);
 }
 
 .rail--r {
@@ -224,7 +224,7 @@ summary:focus-visible {
   font: 900 12px / 1 var(--f-x);
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  color: var(--cyan);
+  color: var(--blue);
 }
 
 .label .sq:first-of-type {
@@ -235,12 +235,12 @@ summary:focus-visible {
   display: inline-block;
   width: 8px;
   height: 8px;
-  background: var(--cyan-2);
+  background: var(--blue-2);
 }
 
 .sq--hollow {
   background: none;
-  box-shadow: inset 0 0 0 1px var(--cyan-2);
+  box-shadow: inset 0 0 0 1px var(--blue-2);
 }
 
 .ar {
@@ -251,7 +251,7 @@ summary:focus-visible {
 }
 
 .ar rect {
-  fill: var(--cyan);
+  fill: var(--blue);
 }
 
 .ar path {
@@ -269,7 +269,7 @@ summary:focus-visible {
   align-items: center;
   gap: 10px 26px;
   padding: 16px var(--pad) 14px;
-  border-bottom: 2px solid var(--cyan);
+  border-bottom: 2px solid var(--blue);
 }
 
 .logo {
@@ -300,7 +300,7 @@ summary:focus-visible {
 }
 
 .logo-chat {
-  color: var(--cyan);
+  color: var(--blue);
 }
 
 .topnav {
@@ -318,13 +318,13 @@ summary:focus-visible {
 }
 
 .topnav a:hover {
-  color: var(--cyan);
+  color: var(--blue);
 }
 
 .topnav b {
   margin-right: 5px;
   font: 400 8px / 1 var(--f-px);
-  color: var(--cyan);
+  color: var(--blue);
   vertical-align: 3px;
 }
 
@@ -357,7 +357,7 @@ summary:focus-visible {
 }
 
 .skin button:hover {
-  border-color: var(--cyan);
+  border-color: var(--blue);
 }
 
 .skin button[aria-pressed="true"] {
@@ -446,7 +446,7 @@ summary:focus-visible {
 }
 
 .lines a:nth-child(2) {
-  color: var(--cyan);
+  color: var(--blue);
 }
 
 .line {
@@ -486,7 +486,7 @@ summary:focus-visible {
 }
 
 .lines a:nth-child(3):hover .line {
-  text-decoration-color: var(--cyan);
+  text-decoration-color: var(--blue);
 }
 
 /* The caption, and the way in beside it, or under it on a narrow screen. */
@@ -508,7 +508,7 @@ summary:focus-visible {
   line-height: 1.7;
   color: var(--ink);
   background: var(--caption-bg);
-  border-left: 4px solid var(--cyan);
+  border-left: 4px solid var(--blue);
 }
 
 .caption strong {
@@ -559,7 +559,7 @@ summary:focus-visible {
 
 .install:hover span {
   text-decoration: underline;
-  text-decoration-color: var(--cyan);
+  text-decoration-color: var(--blue);
   text-decoration-thickness: 3px;
   text-underline-offset: 5px;
 }
@@ -576,7 +576,7 @@ summary:focus-visible {
 
 .install b {
   font: 400 12px / 1 var(--f-px);
-  color: var(--cyan-3);
+  color: var(--blue-3);
 }
 
 /* ---------------------------------------------------------------- sections */
@@ -595,14 +595,14 @@ summary:focus-visible {
   align-items: end;
   margin-bottom: clamp(24px, 3vw, 36px);
   padding-bottom: 10px;
-  border-bottom: 1px solid var(--cyan);
+  border-bottom: 1px solid var(--blue);
 }
 
 .sec-num {
   position: relative;
   grid-row: span 2;
   font: 900 clamp(44px, 6vw, 72px) / 0.78 var(--f-x);
-  color: var(--cyan);
+  color: var(--blue);
   letter-spacing: -0.04em;
   /* a halo of page, so the numeral reads over its burst */
   text-shadow: 0 0 2px var(--bg), 0 0 5px var(--bg), 0 0 10px var(--bg), 0 0 16px var(--bg);
@@ -730,7 +730,7 @@ summary:focus-visible {
 }
 
 .rod:hover .rod-tag {
-  background: var(--cyan);
+  background: var(--blue);
 }
 
 /* Most visitors don't guess that a rod unrolls: say so under it while it's
@@ -747,7 +747,7 @@ summary:focus-visible {
 }
 
 .rod:hover .rod-hint {
-  color: var(--cyan);
+  color: var(--blue);
 }
 
 .eula[open] .rod-hint {
@@ -916,7 +916,7 @@ summary:focus-visible {
   max-width: 46em;
   margin: 4px 0 1.2em;
   padding: 10px 14px 12px;
-  border-left: 4px solid var(--cyan);
+  border-left: 4px solid var(--blue);
   background: var(--bg-2);
 }
 
@@ -942,7 +942,7 @@ summary:focus-visible {
 }
 
 .compare:focus-visible {
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--blue);
   outline-offset: 4px;
 }
 
@@ -969,7 +969,7 @@ summary:focus-visible {
   text-transform: uppercase;
   text-align: left;
   color: #fff;
-  background: var(--cyan);
+  background: var(--blue);
   border-left: 1px solid var(--bg);
 }
 
@@ -1022,12 +1022,12 @@ summary:focus-visible {
 }
 
 .v-y .v-mark {
-  background: var(--cyan);
+  background: var(--blue);
 }
 
 .v-p .v-mark {
-  background: linear-gradient(135deg, var(--cyan) 50%, transparent 50%);
-  box-shadow: inset 0 0 0 1px var(--cyan);
+  background: linear-gradient(135deg, var(--blue) 50%, transparent 50%);
+  box-shadow: inset 0 0 0 1px var(--blue);
 }
 
 .v-n .v-mark {
@@ -1118,7 +1118,7 @@ td[data-col="dens"].v-n .v-mark {
 .cam-shade { stroke: #dcdce6; stroke-width: 5; }
 .cam-hood { fill: var(--mag); stroke: var(--line); stroke-width: 1.2; stroke-linejoin: round; }
 .cam-barrel { fill: #3b3646; stroke: var(--line); stroke-width: 1.2; }
-.cam-glass { fill: var(--cyan); stroke: var(--line); stroke-width: 1.4; }
+.cam-glass { fill: var(--blue); stroke: var(--line); stroke-width: 1.4; }
 .cam-glint { fill: #fff; }
 .cam-shutter { fill: #3b3646; opacity: 0; transition: opacity 300ms; }
 .cam-off { font: 400 7px var(--f-px); fill: var(--gray); opacity: 0; transition: opacity 300ms 200ms; }
@@ -1176,13 +1176,13 @@ td[data-col="dens"].v-n .v-mark {
 }
 
 .hood > .label:focus-visible {
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--blue);
   outline-offset: 4px;
 }
 
 /* The hollow square fills while it's open, and the hint says which way. */
 .hood[open] > .label .sq--hollow {
-  background: var(--cyan-2);
+  background: var(--blue-2);
 }
 
 .hood .label-hint {
@@ -1239,7 +1239,7 @@ td[data-col="dens"].v-n .v-mark {
 }
 
 .free-tag b {
-  color: var(--cyan);
+  color: var(--blue);
   font-weight: 400;
   margin-right: 6px;
 }
@@ -1432,7 +1432,7 @@ td[data-col="dens"].v-n .v-mark {
 
 .badge--b b,
 .badge--e b {
-  background: var(--cyan);
+  background: var(--blue);
 }
 
 .badge--c b {
@@ -1440,7 +1440,7 @@ td[data-col="dens"].v-n .v-mark {
 }
 
 .badge--d {
-  background: linear-gradient(180deg, #fff, var(--cyan-3));
+  background: linear-gradient(180deg, #fff, var(--blue-3));
 }
 
 .badge--f b {
