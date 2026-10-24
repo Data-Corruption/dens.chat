@@ -161,6 +161,7 @@ class Socket {
 //   preload: a function's source, run in each document before the page.
 //   prefs: more Firefox prefs, as { name: value }.
 //   size: the window, [1400, 900] unless given.
+//   downloads: a directory downloads go to, without asking (M10).
 export function launch(name, port, opts = {}) {
     return name === 'chromium' ? chromium(port, opts) : firefox(port, opts);
 }
@@ -179,7 +180,7 @@ const CHROMIUM_KEYS = {
     v: ['KeyV', 86, 'v'],
 };
 
-async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900] }) {
+async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900], downloads }) {
     const profile = `/tmp/browsers-chromium-${port}`;
     fs.rmSync(profile, { recursive: true, force: true });
     const args = ['--headless=new', '--no-sandbox', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
@@ -196,6 +197,7 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
     const { sessionId } = await browser.send('Target.attachToTarget', { targetId: target.id, flatten: true });
     const cdp = (method, params = {}, session = sessionId) => browser.send(method, params, session ? { sessionId: session } : {});
     await cdp('Page.enable');
+    if (downloads) await cdp('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads }, null);
     if (preload) await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `(${preload})()` });
     // Frames attach as they load, so frameEval can find them.
     await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
@@ -314,7 +316,7 @@ const FIREFOX_KEYS = {
 };
 const FIREFOX_BUTTONS = { left: 0, back: 3 };
 
-async function firefox(port, { media, screen, preload, prefs = {}, size = [1400, 900] }) {
+async function firefox(port, { media, screen, preload, prefs = {}, size = [1400, 900], downloads }) {
     const profile = `/tmp/browsers-firefox-${port}`;
     fs.rmSync(profile, { recursive: true, force: true });
     fs.mkdirSync(profile, { recursive: true });
@@ -322,6 +324,11 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
     if (media || screen) {
         Object.assign(all, { 'media.navigator.permission.disabled': true, 'media.navigator.streams.fake': media !== 'pulse' && !screen,
             'media.autoplay.default': 0, 'media.autoplay.block-webaudio': false });
+    }
+    if (downloads) {
+        Object.assign(all, { 'browser.download.dir': downloads, 'browser.download.folderList': 2, 'browser.download.useDownloadDir': true,
+            'browser.download.always_ask_before_handling_new_types': false, 'browser.helperApps.neverAsk.saveToDisk': 'application/octet-stream',
+            'browser.download.start_downloads_in_tmp_dir': false });
     }
     Object.assign(all, prefs);
     fs.writeFileSync(`${profile}/user.js`, Object.entries(all).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n'));
