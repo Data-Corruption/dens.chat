@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/backup"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 )
 
@@ -31,7 +32,7 @@ func TestRestoreChecksBeforeUploads(t *testing.T) {
 	bi := buildInfo("v1.0.0")
 
 	staging := t.TempDir()
-	if _, _, err := openBackup(bi, archive, staging, "wrong wrong wrong"); err == nil {
+	if _, _, err := openBackup(bi, archive, staging, "wrong wrong wrong", layout.Installed); err == nil {
 		t.Fatal("the wrong password opened the backup")
 	}
 	if _, err := os.Stat(backup.UploadsPath(staging)); !errors.Is(err, fs.ErrNotExist) {
@@ -39,7 +40,7 @@ func TestRestoreChecksBeforeUploads(t *testing.T) {
 	}
 
 	staging = t.TempDir()
-	got, _, err := openBackup(bi, archive, staging, "correct horse battery")
+	got, _, err := openBackup(bi, archive, staging, "correct horse battery", layout.Installed)
 	if err != nil || !bytes.Equal(got, key) {
 		t.Fatalf("openBackup: %v", err)
 	}
@@ -63,7 +64,7 @@ func TestRestoreNeedsRoom(t *testing.T) {
 
 	freeSpace = func(string) (uint64, error) { return uint64(info.Size()) + restoreFloor - 1, nil }
 	staging := t.TempDir()
-	_, _, err = openBackup(bi, archive, staging, "correct horse battery")
+	_, _, err = openBackup(bi, archive, staging, "correct horse battery", layout.Installed)
 	if err == nil || !strings.Contains(err.Error(), "takes that much, and 1 GB to spare") {
 		t.Fatalf("a backup the disk hasn't room for: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestRestoreNeedsRoom(t *testing.T) {
 		}
 		return restoreFloor, nil
 	}
-	_, _, err = openBackup(bi, archive, t.TempDir(), "correct horse battery")
+	_, _, err = openBackup(bi, archive, t.TempDir(), "correct horse battery", layout.Installed)
 	if err == nil || !strings.Contains(err.Error(), "ran out of room partway") || !strings.Contains(err.Error(), "more") {
 		t.Fatalf("a restore that ran out of room: %v", err)
 	}

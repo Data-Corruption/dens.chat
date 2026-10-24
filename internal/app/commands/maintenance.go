@@ -152,13 +152,18 @@ func refuseFlatpak(bi build.BuildInfo, why string) error {
 	return nil
 }
 
+// askYesNo is prompt.YesNo; tests replace it.
+var askYesNo = prompt.YesNo
+
 func confirm(question string) error {
-	yes, err := prompt.YesNo(question)
+	yes, err := askYesNo(question)
 	if err != nil {
 		return fmt.Errorf("read confirmation (use --yes in scripts): %w", err)
 	}
 	if !yes {
-		return errors.New("cancelled")
+		return errCancelled
 	}
 	return nil
 }
+
+var errCancelled = errors.New("cancelled")

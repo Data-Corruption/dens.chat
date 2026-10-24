@@ -18,6 +18,10 @@ type Configuration struct {
 	// first start of a version that has it, which takes it from the den
 	// role v1.0's installer gave the instance.
 	Hosting *bool `json:"hosting,omitempty"`
+	// DenExported is when the den was last exported to move it to another
+	// computer (M10), and zero when it hasn't been since hosting was last
+	// on: what reached the den since, the export doesn't hold.
+	DenExported time.Time `json:"denExported,omitzero"`
 
 	UpdateNotifications    bool      `json:"updateNotifications"`
 	BackgroundUpdateChecks bool      `json:"backgroundUpdateChecks"`
@@ -44,6 +48,15 @@ type Configuration struct {
 	// StartAtSignIn is whether the Flatpak starts at the member's sign-in
 	// once its key is remembered (M9.3): nil until they choose, which is on.
 	StartAtSignIn *bool `json:"startAtSignIn,omitempty"`
+}
+
+// SetHosting turns the hosting switch. Turning it on forgets an export of
+// the den (M10), which can't hold what reaches the den from then on.
+func (c *Configuration) SetHosting(on bool) {
+	c.Hosting = &on
+	if on {
+		c.DenExported = time.Time{}
+	}
 }
 
 // VoiceActions are what keys are bound to: push to talk, toggle mute and

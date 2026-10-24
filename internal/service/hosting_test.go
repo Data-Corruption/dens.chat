@@ -38,6 +38,15 @@ type browser struct {
 // pair pairs a browser and sets the local password.
 func pair(t *testing.T, a *app.App, client control.Client) *browser {
 	t.Helper()
+	b := pairOnly(t, a, client)
+	b.expect(http.StatusOK, "set the password", "POST", "/api/password", map[string]string{"password": localPassword})
+	return b
+}
+
+// pairOnly pairs a browser with an instance whose local password is set,
+// as one restored from a backup is.
+func pairOnly(t *testing.T, a *app.App, client control.Client) *browser {
+	t.Helper()
 	var p control.Pair
 	if err := client.Call(control.Request{Op: control.OpPair}, &p); err != nil {
 		t.Fatal(err)
@@ -45,7 +54,6 @@ func pair(t *testing.T, a *app.App, client control.Client) *browser {
 	jar, _ := cookiejar.New(nil)
 	b := &browser{t: t, base: fmt.Sprintf("http://127.0.0.1:%d", a.Instance.ClientPort), http: &http.Client{Jar: jar, Timeout: 30 * time.Second}}
 	b.expect(http.StatusOK, "pair", "POST", "/api/pair", map[string]string{"token": p.URL[strings.Index(p.URL, "#token=")+len("#token="):]})
-	b.expect(http.StatusOK, "set the password", "POST", "/api/password", map[string]string{"password": localPassword})
 	return b
 }
 
@@ -87,10 +95,13 @@ func (b *browser) expect(code int, what, method, path string, body any, out ...a
 }
 
 type hostingView struct {
-	Enabled bool   `json:"enabled"`
-	Serving bool   `json:"serving"`
-	Problem string `json:"problem"`
-	DenPort int    `json:"den_port"`
+	Enabled  bool   `json:"enabled"`
+	Serving  bool   `json:"serving"`
+	Problem  string `json:"problem"`
+	DenPort  int    `json:"den_port"`
+	Den      string `json:"den"`
+	URL      string `json:"url"`
+	Exported int64  `json:"exported"`
 }
 
 // hosting is hosting as the settings see it.
@@ -115,18 +126,26 @@ type densView struct {
 		State string `json:"state"`
 	} `json:"dens"`
 	Hosting struct {
-		Enabled bool `json:"enabled"`
-		Joined  bool `json:"joined"`
+		Enabled  bool  `json:"enabled"`
+		Created  bool  `json:"created"`
+		Owned    bool  `json:"owned"`
+		Exported int64 `json:"exported"`
 	} `json:"hosting"`
+}
+
+// dens is the dens view, as home shows it.
+func (b *browser) dens() densView {
+	b.t.Helper()
+	var v densView
+	b.expect(http.StatusOK, "the dens view", "GET", "/api/dens", nil, &v)
+	return v
 }
 
 // ownState is the state of the den this instance hosts, as its page sees
 // it, or "" before it has joined it.
 func (b *browser) ownState() string {
 	b.t.Helper()
-	var v densView
-	b.expect(http.StatusOK, "the dens view", "GET", "/api/dens", nil, &v)
-	for _, d := range v.Dens {
+	for _, d := range b.dens().Dens {
 		if d.Own {
 			return d.State
 		}
@@ -283,5 +302,47 @@ func TestHostingThatCantStartSaysWhy(t *testing.T) {
 	held.Close()
 	if h := b.setHosting(true, localPassword); !h.Serving || h.Problem != "" || !answers(den) {
 		t.Fatalf("hosting is %+v once its port is free", h)
+	}
+}
+
+// dens den hosting turns hosting on and off over the control endpoint, as
+// the page's switch does (M10): on takes the local password, says where
+// Caddy and the router send the den, and fails, naming the port and the
+// flag that moves it, while another program holds one; off needs nothing
+// more, since the command asks first.
+func TestHostingFromTheCommandLine(t *testing.T) {
+	den, udp, tcp := freePort(t), freeUDPPort(t), freePort(t)
+	a, client := startDevServiceWith(t, func(o *app.OpenOptions) {
+		o.DevDenPort, o.DevMediaPorts = den, [2]int{udp, tcp}
+	})
+	b := pair(t, a, client)
+	var h control.Hosting
+	if err := client.Call(control.Request{Op: control.OpHosting, On: false}, &h); err != nil || h.On || h.Serving || answers(den) {
+		t.Fatalf("turning hosting off: %+v, %v", h, err)
+	}
+	if err := client.Call(control.Request{Op: control.OpHosting, On: true, Password: "wrong wrong wrong"}, &h); err == nil || !strings.Contains(err.Error(), "wrong password") {
+		t.Fatalf("turning hosting on with the wrong password: %v", err)
+	}
+	held, err := net.Listen("tcp", fmt.Sprintf(":%d", tcp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.Call(control.Request{Op: control.OpHosting, On: true, Password: localPassword}, &h)
+	held.Close()
+	for _, want := range []string{fmt.Sprint(tcp), "TCP", "--media-tcp-port"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("turning hosting on with a port held: %v, without %s", err, want)
+		}
+	}
+	if b.hosting().Enabled {
+		t.Fatal("a failed turn on left hosting on")
+	}
+	// The password's limiter lets three checks through at once.
+	time.Sleep(2500 * time.Millisecond)
+	if err := client.Call(control.Request{Op: control.OpHosting, On: true, Password: localPassword}, &h); err != nil {
+		t.Fatal(err)
+	}
+	if !h.On || !h.Serving || h.DenPort != den || h.MediaUDPPort != udp || h.MediaTCPPort != tcp || h.Den != "" || !answers(den) {
+		t.Fatalf("hosting turned on from the command line: %+v", h)
 	}
 }

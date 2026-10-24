@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
@@ -75,6 +76,10 @@ func statusCommand(bi build.BuildInfo) *cli.Command {
 			fmt.Printf("den:       %s\n", enabledOrNot(status.DenEnabled))
 			if status.DenProblem != "" {
 				fmt.Printf("           %s\n", status.DenProblem)
+			}
+			if !status.DenExported.IsZero() {
+				fmt.Printf("           %s was exported on %s; once another computer serves it,\n", status.Den, status.DenExported.Local().Format(time.RFC1123))
+				fmt.Printf("           remove it from this one with: %s\n", instanceCommand(bi, cmd, "den remove"))
 			}
 			if status.UpdateAvailable != "" {
 				fmt.Printf("update:    %s is available\n", status.UpdateAvailable)

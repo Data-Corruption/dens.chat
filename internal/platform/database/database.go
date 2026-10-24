@@ -12,6 +12,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/ncruces/go-sqlite3"
@@ -139,6 +141,103 @@ func Snapshot(ctx context.Context, db *sql.DB, path string) error {
 		return fmt.Errorf("snapshot database: %w", err)
 	}
 	return nil
+}
+
+// IsDenTable reports whether a table holds the den's rows rather than the
+// client's: the den's tables are den and den_*, and the client's the rest,
+// so a den's export keeps the den's alone, and removing the den empties
+// them (M10).
+func IsDenTable(name string) bool { return name == "den" || strings.HasPrefix(name, "den_") }
+
+// Querier runs queries: a *sql.DB or a *sql.Tx.
+type Querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// Tables lists the database's tables, but for SQLite's own.
+func Tables(ctx context.Context, q Querier) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list tables: %w", err)
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
+// SnapshotDen writes a copy of the open database to path, as Snapshot does,
+// that holds the den alone: its export, which moves it to another computer
+// (M10). The den's tables stay as they are, and so do the data key sealed
+// under the local password and its check value; every other table empties,
+// the joined dens with their device keys and DM seals and the paired
+// browsers among them, the vault forgets the DM seal new dens start with,
+// and the settings start as a new install's. Those rows go with
+// secure_delete on, and the copy is vacuumed, so no free page keeps them.
+func SnapshotDen(ctx context.Context, db *sql.DB, path string, buildInfo build.BuildInfo) error {
+	if err := Snapshot(ctx, db, path); err != nil {
+		return err
+	}
+	snapshot, err := sql.Open("sqlite3", "file:"+filepath.ToSlash(path)+"?_pragma=foreign_keys(on)&_pragma=secure_delete(on)")
+	if err != nil {
+		return fmt.Errorf("open the snapshot: %w", err)
+	}
+	defer snapshot.Close()
+	snapshot.SetMaxOpenConns(1)
+	// A rollback journal rather than the log, so the copy is one file.
+	var mode string
+	if err := snapshot.QueryRowContext(ctx, `PRAGMA journal_mode = delete`).Scan(&mode); err != nil {
+		return fmt.Errorf("set the snapshot's journal: %w", err)
+	}
+	if !strings.EqualFold(mode, "delete") {
+		return fmt.Errorf("the snapshot kept journal mode %q", mode)
+	}
+	settings, err := json.Marshal(types.DefaultConfig(buildInfo))
+	if err != nil {
+		return err
+	}
+	tx, err := snapshot.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	tables, err := Tables(ctx, tx)
+	if err != nil {
+		return err
+	}
+	for _, table := range tables {
+		if IsDenTable(table) || table == "vault" || table == "config" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM "`+strings.ReplaceAll(table, `"`, `""`)+`"`); err != nil {
+			return fmt.Errorf("empty %s in the snapshot: %w", table, err)
+		}
+	}
+	for _, step := range []struct {
+		query string
+		args  []any
+	}{
+		{`UPDATE vault SET dm_seal = NULL`, nil},
+		{`DELETE FROM config WHERE key != ?`, []any{ConfigDataKey}},
+		{`UPDATE config SET value = ? WHERE key = ?`, []any{string(settings), ConfigDataKey}},
+	} {
+		if _, err := tx.ExecContext(ctx, step.query, step.args...); err != nil {
+			return fmt.Errorf("leave the client out of the snapshot: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if _, err := snapshot.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("vacuum the snapshot: %w", err)
+	}
+	return snapshot.Close()
 }
 
 // OpenReadOnly opens the database file at path without the ability to change

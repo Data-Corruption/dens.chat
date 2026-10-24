@@ -16,8 +16,9 @@ import (
 )
 
 // controlClient returns a client for instance's control endpoint, and the
-// identity the service must have before the client trusts it.
-func controlClient(bi build.BuildInfo, instanceName string) (control.Client, layout.Layout, error) {
+// identity the service must have before the client trusts it; tests
+// replace it.
+var controlClient = func(bi build.BuildInfo, instanceName string) (control.Client, layout.Layout, error) {
 	l, err := layout.New(bi.Name, instanceName, app.FormOf(bi))
 	if err != nil {
 		return control.Client{}, layout.Layout{}, err

@@ -58,7 +58,7 @@ func New(a *app.App) http.Handler {
 		cookieName: "dens_session_" + strconv.Itoa(a.Instance.ClientPort),
 		pageOrigin: guard.PageOrigin(a.Instance.ClientPort),
 		youTube:    youtube.New(),
-		backups:    backups{links: map[string]time.Time{}},
+		backups:    backups{links: map[string]backupLink{}},
 	}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {

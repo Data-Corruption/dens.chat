@@ -251,9 +251,15 @@ func (m *Manager) Run(ctx context.Context) error {
 
 // startLocked starts a connection. The caller holds m.mu.
 func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time) {
-	ctx, stop := context.WithCancel(m.ctx)
+	c := m.newConn(j, token, expires)
+	m.conns = append(m.conns, c)
+	m.runLocked(c)
+}
+
+// newConn makes a connection to a joined den, which runLocked starts.
+func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *conn {
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
-		stop: stop, done: make(chan struct{}), wake: make(chan struct{}, 1),
+		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		due: map[string]bool{}, keysDue: make(chan struct{}, 1), dmFiles: map[string]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1)}
@@ -261,7 +267,14 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 	// The page shows the den as it last was until it sends a snapshot, or
 	// while it's away (M6.2).
 	c.restoreKept()
-	m.conns = append(m.conns, c)
+	return c
+}
+
+// runLocked starts a connection the caller has put among m.conns. The
+// caller holds m.mu.
+func (m *Manager) runLocked(c *conn) {
+	ctx, stop := context.WithCancel(m.ctx)
+	c.stop = stop
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
@@ -357,6 +370,56 @@ func (m *Manager) HostingChanged() {
 	m.mu.Unlock()
 	m.notify()
 }
+
+// Changed tells the pages that something the dens view shows changed
+// outside the dens, as the record of this install's den's export (M10).
+func (m *Manager) Changed() { m.notify() }
+
+// OwnDenGone has the den this install hosted reached at its address, as
+// any other den is, once its copy here is gone (M10). Its connection
+// starts again there, in its place on the list and with the channels the
+// pages show, keeping the account; the device signs in afresh.
+func (m *Manager) OwnDenGone() {
+	m.mu.Lock()
+	var own []*conn
+	for _, c := range m.conns {
+		if c.own {
+			own = append(own, c)
+		}
+	}
+	m.mu.Unlock()
+	for _, c := range own {
+		c.stop()
+		<-c.done
+		c.dropAllKept()
+		c.mu.Lock()
+		focus := c.focus
+		c.mu.Unlock()
+		m.mu.Lock()
+		if i := slices.Index(m.conns, c); i >= 0 && m.ctx != nil && m.ctx.Err() == nil {
+			next := m.newConn(c.j, nil, time.Time{})
+			next.focus = focus
+			m.conns[i] = next
+			m.runLocked(next)
+		}
+		m.mu.Unlock()
+	}
+	m.notify()
+}
+
+// CheckDen reaches a den at url as a member's install would, and checks
+// it proves the identity denID there (M10): how the install that hosted
+// it finds another computer serves it now, before it lets its copy go.
+// Describe words its error for the member.
+func (m *Manager) CheckDen(ctx context.Context, denID []byte, url string) error {
+	a := &api{base: url, client: m.HTTP, agent: m.agent}
+	_, _, err := a.challenge(ctx, denID)
+	return err
+}
+
+// Describe words a failure to reach a den for the member, as a den's
+// status does.
+func Describe(err error) string { return describe(err) }
 
 // Statuses lists the joined dens in the order they were joined.
 func (m *Manager) Statuses() []Status {
@@ -605,9 +668,7 @@ func (m *Manager) CheckAddress(ctx context.Context, denID string) error {
 	if err != nil {
 		return err
 	}
-	a := &api{base: c.status().URL, client: m.HTTP, agent: m.agent}
-	_, _, err = a.challenge(ctx, c.j.denID)
-	return err
+	return m.CheckDen(ctx, c.j.denID, c.status().URL)
 }
 
 // Relocate gives a den a new address, for one that moved while this

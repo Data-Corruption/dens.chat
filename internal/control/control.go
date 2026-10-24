@@ -41,6 +41,15 @@ const (
 	// OpQuit stops a session form's service, which has no service manager
 	// to stop it (M9.3).
 	OpQuit = "quit"
+	// OpHosting turns hosting on or off, as the switch in the settings
+	// does (M10).
+	OpHosting = "hosting"
+	// OpExport streams the den's export, which moves it to another
+	// computer, as OpBackup streams a backup (M10).
+	OpExport = "export"
+	// OpRemoveDen deletes this install's copy of its den once another
+	// computer serves it (M10).
+	OpRemoveDen = "remove-den"
 )
 
 const maxLine = 64 * 1024
@@ -55,6 +64,8 @@ type Request struct {
 	Op string `json:"op"`
 	// Password is the local password, for operations that re-authenticate.
 	Password string `json:"password,omitempty"`
+	// On is the switch OpHosting turns to.
+	On bool `json:"on,omitempty"`
 }
 
 // Response is the service's reply line.
@@ -79,8 +90,12 @@ type Status struct {
 	Locked     bool `json:"locked,omitempty"`
 	DenEnabled bool `json:"denEnabled"`
 	// DenProblem says why the den doesn't serve while hosting is on (M9.1).
-	DenProblem      string `json:"denProblem,omitempty"`
-	UpdateAvailable string `json:"updateAvailable,omitempty"`
+	DenProblem string `json:"denProblem,omitempty"`
+	// Den names the den this instance holds, and DenExported is when it
+	// was exported, if it hasn't been hosted here since (M10).
+	Den             string    `json:"den,omitempty"`
+	DenExported     time.Time `json:"denExported,omitzero"`
+	UpdateAvailable string    `json:"updateAvailable,omitempty"`
 }
 
 // Pair is the result of OpPair: a URL carrying a one-time pairing token.
@@ -93,6 +108,27 @@ type Pair struct {
 type Backup struct {
 	Name string `json:"name"`
 	Size int64  `json:"size"`
+}
+
+// Hosting is the result of OpHosting (M10): the switch, whether the den
+// serves and why not, and, where this instance holds a den, its name and
+// address, with the port Caddy forwards it to and its media ports.
+type Hosting struct {
+	On           bool   `json:"on"`
+	Serving      bool   `json:"serving"`
+	Problem      string `json:"problem,omitempty"`
+	Den          string `json:"den,omitempty"`
+	URL          string `json:"url,omitempty"`
+	DenPort      int    `json:"denPort"`
+	MediaUDPPort int    `json:"mediaUdpPort"`
+	MediaTCPPort int    `json:"mediaTcpPort"`
+}
+
+// RemovedDen is the result of OpRemoveDen: the den, and the address this
+// install reaches it at now.
+type RemovedDen struct {
+	Den string `json:"den"`
+	URL string `json:"url"`
 }
 
 // OwnerInvite is the result of OpOwnerInvite: an invite string for the

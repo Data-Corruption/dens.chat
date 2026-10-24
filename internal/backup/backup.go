@@ -40,6 +40,11 @@ type Manifest struct {
 	Instance      string    `json:"instance"`
 	CreatedAt     time.Time `json:"createdAt"`
 	Platform      string    `json:"platform"`
+	// DenExport marks a den's export (M10), whose database holds the den
+	// named Den and none of the client of the install it left. Older
+	// releases ignore it, and restore one as any backup.
+	DenExport bool   `json:"denExport,omitempty"`
+	Den       string `json:"den,omitempty"`
 }
 
 // Write streams an archive to w: the manifest, the database snapshot at

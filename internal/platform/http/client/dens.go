@@ -13,6 +13,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 
@@ -26,6 +27,8 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Get("/api/hosting", rt.handleHosting)
 	r.Post("/api/hosting", rt.handleSetHosting)
 	r.Post("/api/den", rt.handleCreateDen)
+	r.Post("/api/den/export", rt.handleExportDen)
+	r.Post("/api/den/remove", rt.handleRemoveDen)
 	r.Post("/api/dens/preview", rt.handlePreview)
 	r.Post("/api/dens/join", rt.handleJoin)
 	r.Post("/api/dens/{den}/invites", rt.handleCreateInvite)
@@ -43,15 +46,20 @@ func (rt *router) mountDens(r chi.Router) {
 
 // hosting describes the den this install holds: whether hosting is on
 // (M9.1), whether the den serves, and why not when it's on and doesn't,
-// and how far its setup went.
+// how far its setup went, and when it was exported, if it hasn't been
+// hosted here since (M10).
 type hosting struct {
 	Enabled bool   `json:"enabled"`
 	Serving bool   `json:"serving"`
 	Problem string `json:"problem,omitempty"`
 	Created bool   `json:"created"`
-	Joined  bool   `json:"joined"` // the owner's account exists
-	Name    string `json:"name,omitempty"`
-	URL     string `json:"url,omitempty"`
+	// Owned is whether the den has an owner, which setting it up gives it,
+	// or a den moved here has already (M10).
+	Owned bool   `json:"owned"`
+	Name  string `json:"name,omitempty"`
+	URL   string `json:"url,omitempty"`
+	// Exported is in Unix milliseconds.
+	Exported int64 `json:"exported,omitempty"`
 }
 
 // densView is what the home page shows. Epoch and Version order the
@@ -65,7 +73,7 @@ type densView struct {
 	Hosting hosting                `json:"hosting"`
 }
 
-func (rt *router) densView() densView {
+func (rt *router) densView(ctx context.Context) (densView, error) {
 	state := rt.a.Hosting.State()
 	v := densView{Hosting: hosting{Enabled: state.On, Serving: state.Serving, Problem: state.Problem}}
 	// The version comes first, so the statuses are at least that new.
@@ -74,17 +82,29 @@ func (rt *router) densView() densView {
 	v.SignIns = rt.a.Dens.SignIns()
 	if info, _, ok := rt.a.OwnDen(); ok {
 		v.Hosting.Created, v.Hosting.Name, v.Hosting.URL = true, info.Name, info.URL
-		for _, d := range v.Dens {
-			if d.Own {
-				v.Hosting.Joined = true
-			}
+		owned, err := rt.a.Den.Owned(ctx)
+		if err != nil {
+			return v, err
+		}
+		v.Hosting.Owned = owned
+		cfg, err := config.View(rt.a.DB)
+		if err != nil {
+			return v, err
+		}
+		if !cfg.DenExported.IsZero() {
+			v.Hosting.Exported = cfg.DenExported.UnixMilli()
 		}
 	}
-	return v
+	return v, nil
 }
 
-func (rt *router) handleDens(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, rt.densView())
+func (rt *router) handleDens(w http.ResponseWriter, r *http.Request) {
+	v, err := rt.densView(r.Context())
+	if err != nil {
+		xhttp.Error(r.Context(), w, err)
+		return
+	}
+	writeJSON(w, v)
 }
 
 // handleEvents streams the dens view to the page whenever it changes.
@@ -126,7 +146,12 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	keys, stopKeys := rt.a.Shortcuts.Watch()
 	defer stopKeys()
 	send := func() bool {
-		data, err := json.Marshal(map[string]any{"t": "dens", "d": rt.densView()})
+		v, err := rt.densView(ctx)
+		if err != nil {
+			rt.a.Log.Warnf("The dens view for the page: %v", err)
+			return false
+		}
+		data, err := json.Marshal(map[string]any{"t": "dens", "d": v})
 		if err != nil {
 			return false
 		}
