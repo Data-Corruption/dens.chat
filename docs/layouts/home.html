@@ -29,18 +29,18 @@
   </header>
 
   <section class="intro" aria-label="About">
-    <p class="intro-text">Dens is chat for your friends or community: text channels, DMs, voice and screen share. It runs on your own computer, or a friend’s, instead of a company’s servers.</p>
+    <p class="intro-text">Dens is chat for your friends or small community: text channels, DMs, voice and screen share. It runs on your own computer, or a friend’s, instead of a company’s servers.</p>
   </section>
 
   <section class="hero" aria-labelledby="hero-h">
     <div class="hero-art" aria-hidden="true">{{ partial "landing/hero-art.svg" . }}</div>
-    <h1 id="hero-h" class="fucks">
-      <a href="#host"><span class="idx">01</span><span class="fuck">Fuck their terms of service</span>{{ partial "landing/arrow.html" . }}</a>
-      <a href="#encrypt"><span class="idx">02</span><span class="fuck">Fuck mass surveillance</span>{{ partial "landing/arrow.html" . }}</a>
-      <a href="#free"><span class="idx">03</span><span class="fuck">Fuck being the product</span>{{ partial "landing/arrow.html" . }}</a>
+    <h1 id="hero-h" class="lines">
+      <a href="#host"><span class="idx">01</span><span class="line">Not on their terms</span>{{ partial "landing/arrow.html" . }}</a>
+      <a href="#encrypt"><span class="idx">02</span><span class="line">Not under their watch</span>{{ partial "landing/arrow.html" . }}</a>
+      <a href="#free"><span class="idx">03</span><span class="line">Not their product</span>{{ partial "landing/arrow.html" . }}</a>
     </h1>
     <div class="hero-foot">
-      <p class="caption">People need room to be weird: to make mistakes, make dark art, tell bad jokes, and grow out of it, without it being dug up years later. <strong>Dens is that room.</strong></p>
+      <p class="caption">People need room to talk among themselves: to argue, joke badly, make art, and be wrong, without a company keeping the record. <strong>Dens is that room.</strong> The people in it, not a platform, set its rules.</p>
       <a class="install" href="{{ "docs/install/" | relURL }}"><b aria-hidden="true">&gt;&gt;</b><span>Install</span></a>
     </div>
   </section>
@@ -48,13 +48,14 @@
   <section class="sec sec--host" id="host" aria-labelledby="host-h">
     <header class="sec-head">
       <span class="sec-num" aria-hidden="true">{{ partial "landing/burst.svg" (dict "seed" 1) }}01</span>
-      <h2 id="host-h">Host your own shit</h2>
-      <p class="micro" aria-hidden="true">serving 01 // fuck their tos // fuck their server</p>
+      <h2 id="host-h">Host it yourself</h2>
+      <p class="micro" aria-hidden="true">serving 01 // their terms, declined // their servers, too</p>
     </header>
     <div class="host-body">
       <div class="copy">
-        <p>Big platforms change their rules whenever it suits them, and rarely in your favor. One update and the “naughty” art, jokes, and unpopular opinions are banished, along with whoever posted them. If you built a community there, surprise! you own nothing and have no say in it.</p>
-        <p>The fix is to host it yourself. A few simple steps turn your Dens install from just a client into a server as well. These steps include forwarding a few ports on your router and pointing a domain at your IP. That’s the fucky part, so there’s a <a href="{{ "docs/host/" | relURL }}">step by step guide</a> written for people who’ve never done either.</p>
+        <p>A platform’s rules are written for its advertisers, payment processors and app stores, and they change when those do. Each change takes a slice of what’s allowed, and the people who posted it, with it. A community built there owns nothing and has no say in what happens to it.</p>
+        <p>A den has one rulebook, written by the people who run it, like a friend hosting a game server. Dens gives them what they need to keep it: moderators, bans, deleting messages, and auto-delete so old conversations fade instead of piling up. It isn’t a place to threaten people or to trade in material whose making hurt someone; that’s illegal everywhere Dens is, and nothing here changes that. It is a place where adults decide for themselves what they’ll say, read and make, and answer to each other for it rather than to a policy written for someone else.</p>
+        <p>Hosting means forwarding a few ports on your router and pointing a domain at your IP. That’s the fiddly part, so there’s a <a href="{{ "docs/host/" | relURL }}">step by step guide</a> written for people who’ve never done either.</p>
       </div>
       <div class="machines">
         {{ partial "landing/machines.html" . }}
@@ -66,7 +67,7 @@
     <header class="sec-head">
       <span class="sec-num" aria-hidden="true">{{ partial "landing/burst.svg" (dict "seed" 2) }}02</span>
       <h2 id="encrypt-h">Encrypted and pseudonymous by default</h2>
-      <p class="micro" aria-hidden="true">serving 02 // fuck mass surveillance // smile, you're on camera, not here though</p>
+      <p class="micro" aria-hidden="true">serving 02 // not under their watch // smile, you're on camera. not here though</p>
     </header>
     <div class="copy copy--wide">
       <p>Dens seals your direct messages end to end, so only the two of you can read them. It knows you only as a username and a key that never leaves your computer: no email, no phone number, no account that follows you from den to den. And it strips the location and camera details out of your photos before they’re sent, and never writes your IP address to disk.</p>
@@ -74,23 +75,23 @@
         <p class="note-k">Pseudonymous, not anonymous{{ partial "landing/arrow.html" . }}</p>
         <p>In a den you go by a name you pick, not your real one, and you never hand over an email or a phone number. But the den still sees your IP address while you’re connected, like any server does, so it’s no hiding place from whoever runs it.</p>
       </aside>
-      <p>It’s not perfect, nothing is. Here is how its flavor of privacy compares to similar alternatives.</p>
+      <p>Here’s how that compares with similar apps, including where they do better.</p>
     </div>
     {{ partial "landing/compare.html" . }}
-    <div class="hood">
-      <p class="label">under the hood<span class="sq" aria-hidden="true"></span><span class="sq sq--hollow" aria-hidden="true"></span></p>
+    <details class="hood">
+      <summary class="label">under the hood<span class="sq" aria-hidden="true"></span><span class="sq sq--hollow" aria-hidden="true"></span><span class="label-hint micro" aria-hidden="true"></span></summary>
       <div class="hood-grid">
         <div class="hood-item"><h3>Open source{{ partial "landing/arrow.html" . }}</h3><p>Every line is on GitHub under the MIT license. Read it, fork it, run it, rip it apart. If anything on this page is a lie, you can check.</p></div>
         <div class="hood-item"><h3>Built for home internet{{ partial "landing/arrow.html" . }}</h3><p>Dens is meant to run on a normal PC on a residential connection, where upload speed is precious. A den is sized for about a thousand members.</p></div>
-        <div class="hood-item"><h3>Why it asks for admin{{ partial "landing/arrow.html" . }}</h3><p>Installing and updating ask for admin, but Dens itself never runs as admin. That’s how Dens gets its own locked-down system account: it runs while you’re logged out, and your keys sit in a separate process that your browser, your games and that Skyrim tiddy mod you downloaded can’t read without admin rights.</p></div>
+        <div class="hood-item"><h3>Why it asks for admin{{ partial "landing/arrow.html" . }}</h3><p>Installing and updating ask for admin, but Dens itself never runs as admin. That’s how Dens gets its own locked-down system account: it runs while you’re logged out, and your keys sit in a separate process that your browser, your games and whatever that mod installer did can’t read without admin rights.</p></div>
         <div class="hood-item"><h3>What seals your DMs{{ partial "landing/arrow.html" . }}</h3><p>Standard parts, not homemade ones: X25519 and post-quantum ML-KEM-768 set up each DM’s key, and XChaCha20-Poly1305 seals what you send, all from Go’s own crypto libraries. How they fit together is Dens’s own design, public but not yet independently audited. Your key is made on your computer and the den never sees it, so it carries your DMs without being able to read them. See <a href="{{ "docs/privacy/" | relURL }}">Privacy</a> for what Dens protects you from and what it doesn’t.</p></div>
       </div>
-    </div>
+    </details>
     {{ partial "landing/cams.html" . }}
   </section>
 
   <section class="sec sec--free" id="free" aria-labelledby="free-h">
-    <h2 id="free-h" class="sr-only">Fuck being the product</h2>
+    <h2 id="free-h" class="sr-only">Not their product</h2>
     <p class="micro free-tag" aria-hidden="true"><b>03</b> serving 03 // price: 0.00 // scan me // keep scrolling</p>
     <div class="forest-scroll">
       <div class="forest-stage">
@@ -101,7 +102,7 @@
       </div>
     </div>
     <div class="free-more">
-      <p>Dens has nobody to pay back. There’s no company and no central server: each den runs on a computer belonging to one of its members, so the only running cost is the domain: GitHub Actions and Cloudflare R2, which build and host the downloads, are free at this size. It didn’t need investors to get built either, because I built it with heavy help from AI. I don’t know where that technology is going, but while it’s here, I’d rather point it at something like this. The code’s all public, so you can check the work. Dens is free, open source software, nobody makes money off your den (not even me), and it’ll stay that way.</p>
+      <p>Dens has nobody to pay back. There’s no company and no central server: each den runs on a computer belonging to one of its members, so the only running cost is a domain name. The downloads are built by GitHub Actions and served from Cloudflare R2, both free at this size. It didn’t need investors either. One person built it, working with AI, and every line is public, so the work is there to check. Dens is free software under the MIT license. Nobody makes money off your den, including me.</p>
     </div>
   </section>
 
@@ -110,7 +111,7 @@
       {{ partial "landing/badges.html" . }}
     </div>
     <p class="foot-copy">© {{ now.Year }} <a href="https://github.com/Data-Corruption">Matthew Pombo</a>. MIT licensed. No analytics, no cookies, no newsletter.</p>
-    <p class="micro" aria-hidden="true">dens // host 01 // encrypt 02 // free 03 // $10 a month for dark blue? Discord can eat my entire ass</p>
+    <p class="micro" aria-hidden="true">dens // host 01 // encrypt 02 // free 03 // dark blue is included</p>
   </footer>
 </div>
 {{- $js := resources.Get "js/landing.js" }}

@@ -3,55 +3,55 @@
 <path d="M178 136V150" stroke="#5b2462" stroke-width="1.2"/>
 <path d="M202 136V150" stroke="#5b2462" stroke-width="1.2"/>
 <path d="M218 136V150" stroke="#5b2462" stroke-width="1.2"/>
-<circle cx="120" cy="118" r="36" fill="#2bd2ee"/>
-<circle cx="156" cy="92" r="48" fill="#2bd2ee"/>
-<circle cx="204" cy="88" r="44" fill="#2bd2ee"/>
-<circle cx="246" cy="108" r="36" fill="#2bd2ee"/>
-<circle cx="94" cy="128" r="24" fill="#2bd2ee"/>
-<circle cx="272" cy="126" r="24" fill="#2bd2ee"/>
-<circle cx="184" cy="118" r="42" fill="#2bd2ee"/>
-<rect x="92" y="114" width="182" height="36" rx="18" fill="#2bd2ee"/>
-<circle cx="120" cy="118" r="34" fill="#eefbfe"/>
-<circle cx="156" cy="92" r="46" fill="#eefbfe"/>
-<circle cx="204" cy="88" r="42" fill="#eefbfe"/>
-<circle cx="246" cy="108" r="34" fill="#eefbfe"/>
-<circle cx="94" cy="128" r="22" fill="#eefbfe"/>
-<circle cx="272" cy="126" r="22" fill="#eefbfe"/>
-<circle cx="184" cy="118" r="40" fill="#eefbfe"/>
-<rect x="94" y="116" width="178" height="32" rx="16" fill="#eefbfe"/>
+<circle cx="120" cy="118" r="36" fill="#2b5dee"/>
+<circle cx="156" cy="92" r="48" fill="#2b5dee"/>
+<circle cx="204" cy="88" r="44" fill="#2b5dee"/>
+<circle cx="246" cy="108" r="36" fill="#2b5dee"/>
+<circle cx="94" cy="128" r="24" fill="#2b5dee"/>
+<circle cx="272" cy="126" r="24" fill="#2b5dee"/>
+<circle cx="184" cy="118" r="42" fill="#2b5dee"/>
+<rect x="92" y="114" width="182" height="36" rx="18" fill="#2b5dee"/>
+<circle cx="120" cy="118" r="34" fill="#eef1fe"/>
+<circle cx="156" cy="92" r="46" fill="#eef1fe"/>
+<circle cx="204" cy="88" r="42" fill="#eef1fe"/>
+<circle cx="246" cy="108" r="34" fill="#eef1fe"/>
+<circle cx="94" cy="128" r="22" fill="#eef1fe"/>
+<circle cx="272" cy="126" r="22" fill="#eef1fe"/>
+<circle cx="184" cy="118" r="40" fill="#eef1fe"/>
+<rect x="94" y="116" width="178" height="32" rx="16" fill="#eef1fe"/>
 <path d="M128 84C134 70 150 64 164 66" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
-<text x="184" y="124" text-anchor="middle" font-family="Archivo Expanded, Arial Black, sans-serif" font-weight="900" font-size="15" fill="#2bd2ee">THE CLOUD</text>
+<text x="184" y="124" text-anchor="middle" font-family="Archivo Expanded, Arial Black, sans-serif" font-weight="900" font-size="15" fill="#2b5dee">THE CLOUD</text>
 <text x="184" y="136" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#8a8a8a">(SOMEONE ELSE’S COMPUTER)</text>
 <rect x="150" y="150" width="80" height="96" rx="2" fill="#3b3646" stroke="#5b2462" stroke-width="1.5" stroke-linejoin="round"/>
 <rect x="156" y="156" width="68" height="11" fill="#4d475a" stroke="#655d74" stroke-width="1"/>
 <path d="M162 161.5H194" stroke="#655d74" stroke-width="2"/>
 <circle class="led" cx="202" cy="161.5" r="1.8" fill="#e5338a"/>
-<circle class="led" cx="209" cy="161.5" r="1.8" fill="#2bd2ee"/>
+<circle class="led" cx="209" cy="161.5" r="1.8" fill="#2b5dee"/>
 <circle class="led" cx="216" cy="161.5" r="1.8" fill="#e5338a"/>
 <rect x="156" y="171" width="68" height="11" fill="#4d475a" stroke="#655d74" stroke-width="1"/>
 <path d="M162 176.5H194" stroke="#655d74" stroke-width="2"/>
 <circle class="led" cx="202" cy="176.5" r="1.8" fill="#e5338a"/>
-<circle class="led" cx="209" cy="176.5" r="1.8" fill="#2bd2ee"/>
+<circle class="led" cx="209" cy="176.5" r="1.8" fill="#2b5dee"/>
 <circle class="led" cx="216" cy="176.5" r="1.8" fill="#e5338a"/>
 <rect x="156" y="186" width="68" height="11" fill="#4d475a" stroke="#655d74" stroke-width="1"/>
 <path d="M162 191.5H194" stroke="#655d74" stroke-width="2"/>
 <circle class="led" cx="202" cy="191.5" r="1.8" fill="#e5338a"/>
-<circle class="led" cx="209" cy="191.5" r="1.8" fill="#2bd2ee"/>
+<circle class="led" cx="209" cy="191.5" r="1.8" fill="#2b5dee"/>
 <circle class="led" cx="216" cy="191.5" r="1.8" fill="#e5338a"/>
 <rect x="156" y="201" width="68" height="11" fill="#4d475a" stroke="#655d74" stroke-width="1"/>
 <path d="M162 206.5H194" stroke="#655d74" stroke-width="2"/>
 <circle class="led" cx="202" cy="206.5" r="1.8" fill="#e5338a"/>
-<circle class="led" cx="209" cy="206.5" r="1.8" fill="#2bd2ee"/>
+<circle class="led" cx="209" cy="206.5" r="1.8" fill="#2b5dee"/>
 <circle class="led" cx="216" cy="206.5" r="1.8" fill="#e5338a"/>
 <rect x="156" y="216" width="68" height="11" fill="#4d475a" stroke="#655d74" stroke-width="1"/>
 <path d="M162 221.5H194" stroke="#655d74" stroke-width="2"/>
 <circle class="led" cx="202" cy="221.5" r="1.8" fill="#e5338a"/>
-<circle class="led" cx="209" cy="221.5" r="1.8" fill="#2bd2ee"/>
+<circle class="led" cx="209" cy="221.5" r="1.8" fill="#2b5dee"/>
 <circle class="led" cx="216" cy="221.5" r="1.8" fill="#e5338a"/>
 <rect x="156" y="231" width="68" height="11" fill="#4d475a" stroke="#655d74" stroke-width="1"/>
 <path d="M162 236.5H194" stroke="#655d74" stroke-width="2"/>
 <circle class="led" cx="202" cy="236.5" r="1.8" fill="#e5338a"/>
-<circle class="led" cx="209" cy="236.5" r="1.8" fill="#2bd2ee"/>
+<circle class="led" cx="209" cy="236.5" r="1.8" fill="#2b5dee"/>
 <circle class="led" cx="216" cy="236.5" r="1.8" fill="#e5338a"/>
 <text x="190.0" y="259" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#8a8a8a">RACK 4471 · YOUR STUFF</text>
 <path d="M44 44L190 198" stroke="#e5338a" stroke-width="1" stroke-dasharray="2 4" stroke-opacity=".7"/>
@@ -60,16 +60,16 @@
 <path d="M350 196L190 198" stroke="#e5338a" stroke-width="1" stroke-dasharray="2 4" stroke-opacity=".7"/>
 <path d="M84 290L190 198" stroke="#e5338a" stroke-width="1" stroke-dasharray="2 4" stroke-opacity=".7"/>
 <path d="M300 288L190 198" stroke="#e5338a" stroke-width="1" stroke-dasharray="2 4" stroke-opacity=".7"/>
-<g transform="rotate(-8 44 44)"><clipPath id="eye-0"><path d="M24 44Q44 21.6 64 44Q44 66.4 24 44Z"/></clipPath><path d="M24 44Q44 21.6 64 44Q44 66.4 24 44Z" fill="#fff"/><g clip-path="url(#eye-0)"><circle cx="48.4" cy="46.3" r="12.5" fill="#2bd2ee" stroke="#5b2462" stroke-width="1.2"/><circle cx="48.4" cy="46.3" r="5.6" fill="#1a1a1a"/><circle cx="44.4" cy="42" r="2.5" fill="#fff"/></g><path d="M24 44Q44 21.6 64 44Q44 66.4 24 44Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M24 44Q44 21.6 64 44" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
+<g transform="rotate(-8 44 44)"><clipPath id="eye-0"><path d="M24 44Q44 21.6 64 44Q44 66.4 24 44Z"/></clipPath><path d="M24 44Q44 21.6 64 44Q44 66.4 24 44Z" fill="#fff"/><g clip-path="url(#eye-0)"><circle cx="48.4" cy="46.3" r="12.5" fill="#2b5dee" stroke="#5b2462" stroke-width="1.2"/><circle cx="48.4" cy="46.3" r="5.6" fill="#1a1a1a"/><circle cx="44.4" cy="42" r="2.5" fill="#fff"/></g><path d="M24 44Q44 21.6 64 44Q44 66.4 24 44Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M24 44Q44 21.6 64 44" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
 <text x="44" y="77.8" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#e5338a">ADVERTISERS</text>
-<g transform="rotate(10 322 36)"><clipPath id="eye-1"><path d="M303 36Q322 14.7 341 36Q322 57.3 303 36Z"/></clipPath><path d="M303 36Q322 14.7 341 36Q322 57.3 303 36Z" fill="#fff"/><g clip-path="url(#eye-1)"><circle cx="318.2" cy="38.3" r="11.9" fill="#2bd2ee" stroke="#5b2462" stroke-width="1.2"/><circle cx="318.2" cy="38.3" r="5.4" fill="#1a1a1a"/><circle cx="314.3" cy="34.3" r="2.4" fill="#fff"/></g><path d="M303 36Q322 14.7 341 36Q322 57.3 303 36Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M303 36Q322 14.7 341 36" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
+<g transform="rotate(10 322 36)"><clipPath id="eye-1"><path d="M303 36Q322 14.7 341 36Q322 57.3 303 36Z"/></clipPath><path d="M303 36Q322 14.7 341 36Q322 57.3 303 36Z" fill="#fff"/><g clip-path="url(#eye-1)"><circle cx="318.2" cy="38.3" r="11.9" fill="#2b5dee" stroke="#5b2462" stroke-width="1.2"/><circle cx="318.2" cy="38.3" r="5.4" fill="#1a1a1a"/><circle cx="314.3" cy="34.3" r="2.4" fill="#fff"/></g><path d="M303 36Q322 14.7 341 36Q322 57.3 303 36Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M303 36Q322 14.7 341 36" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
 <text x="322" y="68.6" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#e5338a">PAYMENT PROCESSORS</text>
-<g transform="rotate(-4 26 206)"><clipPath id="eye-2"><path d="M9 206Q26 187 43 206Q26 225 9 206Z"/></clipPath><path d="M9 206Q26 187 43 206Q26 225 9 206Z" fill="#fff"/><g clip-path="url(#eye-2)"><circle cx="31.4" cy="205.9" r="10.7" fill="#2bd2ee" stroke="#5b2462" stroke-width="1.2"/><circle cx="31.4" cy="205.9" r="4.8" fill="#1a1a1a"/><circle cx="28" cy="202.2" r="2.1" fill="#fff"/></g><path d="M9 206Q26 187 43 206Q26 225 9 206Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M9 206Q26 187 43 206" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
+<g transform="rotate(-4 26 206)"><clipPath id="eye-2"><path d="M9 206Q26 187 43 206Q26 225 9 206Z"/></clipPath><path d="M9 206Q26 187 43 206Q26 225 9 206Z" fill="#fff"/><g clip-path="url(#eye-2)"><circle cx="31.4" cy="205.9" r="10.7" fill="#2b5dee" stroke="#5b2462" stroke-width="1.2"/><circle cx="31.4" cy="205.9" r="4.8" fill="#1a1a1a"/><circle cx="28" cy="202.2" r="2.1" fill="#fff"/></g><path d="M9 206Q26 187 43 206Q26 225 9 206Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M9 206Q26 187 43 206" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
 <text x="26" y="236.1" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#e5338a">APP STORES</text>
-<g transform="rotate(6 350 196)"><clipPath id="eye-3"><path d="M332 196Q350 175.8 368 196Q350 216.2 332 196Z"/></clipPath><path d="M332 196Q350 175.8 368 196Q350 216.2 332 196Z" fill="#fff"/><g clip-path="url(#eye-3)"><circle cx="344.2" cy="196" r="11.3" fill="#2bd2ee" stroke="#5b2462" stroke-width="1.2"/><circle cx="344.2" cy="196" r="5.1" fill="#1a1a1a"/><circle cx="340.6" cy="192.2" r="2.3" fill="#fff"/></g><path d="M332 196Q350 175.8 368 196Q350 216.2 332 196Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M332 196Q350 175.8 368 196" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
+<g transform="rotate(6 350 196)"><clipPath id="eye-3"><path d="M332 196Q350 175.8 368 196Q350 216.2 332 196Z"/></clipPath><path d="M332 196Q350 175.8 368 196Q350 216.2 332 196Z" fill="#fff"/><g clip-path="url(#eye-3)"><circle cx="344.2" cy="196" r="11.3" fill="#2b5dee" stroke="#5b2462" stroke-width="1.2"/><circle cx="344.2" cy="196" r="5.1" fill="#1a1a1a"/><circle cx="340.6" cy="192.2" r="2.3" fill="#fff"/></g><path d="M332 196Q350 175.8 368 196Q350 216.2 332 196Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M332 196Q350 175.8 368 196" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
 <text x="350" y="227.3" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#e5338a">DATA BROKERS</text>
-<g transform="rotate(0 84 290)"><clipPath id="eye-4"><path d="M68 290Q84 272.1 100 290Q84 307.9 68 290Z"/></clipPath><path d="M68 290Q84 272.1 100 290Q84 307.9 68 290Z" fill="#fff"/><g clip-path="url(#eye-4)"><circle cx="87.9" cy="288.4" r="10" fill="#2bd2ee" stroke="#5b2462" stroke-width="1.2"/><circle cx="87.9" cy="288.4" r="4.5" fill="#1a1a1a"/><circle cx="84.7" cy="284.9" r="2" fill="#fff"/></g><path d="M68 290Q84 272.1 100 290Q84 307.9 68 290Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M68 290Q84 272.1 100 290" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
+<g transform="rotate(0 84 290)"><clipPath id="eye-4"><path d="M68 290Q84 272.1 100 290Q84 307.9 68 290Z"/></clipPath><path d="M68 290Q84 272.1 100 290Q84 307.9 68 290Z" fill="#fff"/><g clip-path="url(#eye-4)"><circle cx="87.9" cy="288.4" r="10" fill="#2b5dee" stroke="#5b2462" stroke-width="1.2"/><circle cx="87.9" cy="288.4" r="4.5" fill="#1a1a1a"/><circle cx="84.7" cy="284.9" r="2" fill="#fff"/></g><path d="M68 290Q84 272.1 100 290Q84 307.9 68 290Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M68 290Q84 272.1 100 290" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
 <text x="84" y="318.8" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#e5338a">TRUST & SAFETY</text>
-<g transform="rotate(0 300 288)"><clipPath id="eye-5"><path d="M283 288Q300 269 317 288Q300 307 283 288Z"/></clipPath><path d="M283 288Q300 269 317 288Q300 307 283 288Z" fill="#fff"/><g clip-path="url(#eye-5)"><circle cx="295.8" cy="286.3" r="10.7" fill="#2bd2ee" stroke="#5b2462" stroke-width="1.2"/><circle cx="295.8" cy="286.3" r="4.8" fill="#1a1a1a"/><circle cx="292.4" cy="282.7" r="2.1" fill="#fff"/></g><path d="M283 288Q300 269 317 288Q300 307 283 288Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M283 288Q300 269 317 288" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
+<g transform="rotate(0 300 288)"><clipPath id="eye-5"><path d="M283 288Q300 269 317 288Q300 307 283 288Z"/></clipPath><path d="M283 288Q300 269 317 288Q300 307 283 288Z" fill="#fff"/><g clip-path="url(#eye-5)"><circle cx="295.8" cy="286.3" r="10.7" fill="#2b5dee" stroke="#5b2462" stroke-width="1.2"/><circle cx="295.8" cy="286.3" r="4.8" fill="#1a1a1a"/><circle cx="292.4" cy="282.7" r="2.1" fill="#fff"/></g><path d="M283 288Q300 269 317 288Q300 307 283 288Z" fill="none" stroke="#5b2462" stroke-width="1.5"/><path d="M283 288Q300 269 317 288" fill="none" stroke="#e5338a" stroke-width="2.5"/></g>
 <text x="300" y="318.1" text-anchor="middle" font-family="Silkscreen, monospace" font-size="7" fill="#e5338a">SHAREHOLDERS</text>
 </svg>
