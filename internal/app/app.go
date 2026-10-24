@@ -645,6 +645,44 @@ func (a *App) VerifyPassword(ctx context.Context, password string) error {
 func (a *App) SetPassword(ctx context.Context, password string) error {
 	a.passwordMu.Lock()
 	defer a.passwordMu.Unlock()
+	return a.setPasswordLocked(ctx, password)
+}
+
+// ChangePassword sets the local password where none is set yet, as the
+// page's first pairing does, or changes it given the current one, which
+// wraps the data key anew and changes nothing else (M10). It reports
+// whether the password it set was the first. The check of the current
+// one is rate limited, as every check is.
+func (a *App) ChangePassword(ctx context.Context, current, next string) (bool, error) {
+	if err := vault.ValidatePassword(next); err != nil {
+		return false, err
+	}
+	a.passwordMu.Lock()
+	defer a.passwordMu.Unlock()
+	if a.Locked() {
+		return false, ErrLocked
+	}
+	row, err := vaultstore.Get(ctx, a.DB)
+	if err != nil {
+		return false, err
+	}
+	first := row == nil || row.PasswordWrap == ""
+	if !first {
+		if !a.passwordLimiter.Allow() {
+			return false, ErrTooManyAttempts
+		}
+		wrap, err := vault.UnmarshalWrap(row.PasswordWrap)
+		if err != nil {
+			return false, err
+		}
+		if err := a.Vault.VerifyPassword(wrap, current); err != nil {
+			return false, err
+		}
+	}
+	return first, a.setPasswordLocked(ctx, next)
+}
+
+func (a *App) setPasswordLocked(ctx context.Context, password string) error {
 	wrap, err := a.Vault.WrapWithPassword(password)
 	if err != nil {
 		return err

@@ -510,7 +510,8 @@ try {
         ContentType = "application/json"; TimeoutSec = 30 }
     $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
     Invoke-WebRequest @secondPost -Uri "$secondUrl/api/pair" -Body (@{ token = ($pairing -split "#token=")[-1] } | ConvertTo-Json -Compress) | Out-Null
-    Invoke-WebRequest @secondPost -Uri "$secondUrl/api/password" -Body (@{ password = $Password } | ConvertTo-Json -Compress) | Out-Null
+    # The local password from the command line, as a server sets it (M10).
+    Invoke-Dens @("password", "--password-stdin", "--instance", "second") -Stdin $Password | Out-Null
     Invoke-Dens @("den", "hosting", "on", "--password-stdin", "--instance", "second") -Stdin $Password | Out-Null
     Assert-Status "second" "den:\s+hosting a den"
     if (-not (Test-DenAnswers)) { Fail "the den listener doesn't answer" }
@@ -545,7 +546,12 @@ try {
     }
 
     Step "uninstall both instances"
-    Invoke-Dens @("uninstall", "--instance", "second", "--yes") | Out-Null
+    # Uninstall asks for its phrase, which a y doesn't give (M10).
+    $asked = Invoke-Dens @("uninstall", "--instance", "second") -Stdin "y" -AllowFailure
+    if ($asked.Code -eq 0) { Fail "a y uninstalled the second instance" }
+    if ($asked.Output -notmatch 'Type "perm delete data" to uninstall instance second') { Fail "the uninstall didn't ask for its phrase" }
+    if ($null -eq (Get-Service -Name "dens-second" -ErrorAction SilentlyContinue)) { Fail "a cancelled uninstall removed the second instance" }
+    Invoke-Dens @("uninstall", "--instance", "second") -Stdin "perm delete data" | Out-Null
     if (-not (Test-Path -LiteralPath $Dens)) { Fail "uninstalling one instance removed the shared binary" }
     if ($null -eq (Get-HelperTask)) { Fail "uninstalling one instance removed the shortcut helper's task" }
     if (@(Get-MediaRules).Count -ne 2) { Fail "want the main instance's two media firewall rules alone after uninstalling second" }

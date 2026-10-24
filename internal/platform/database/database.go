@@ -244,7 +244,18 @@ func SnapshotDen(ctx context.Context, db *sql.DB, path string, buildInfo build.B
 // it, and without enforcing a schema version. Restore uses it to inspect a
 // backup before installing it.
 func OpenReadOnly(path string) (*sql.DB, error) {
-	dsn := "file:" + filepath.ToSlash(path) + "?mode=ro&_pragma=busy_timeout(10000)"
+	return openReadOnly("file:" + filepath.ToSlash(path) + "?mode=ro&_pragma=busy_timeout(10000)")
+}
+
+// OpenImmutable opens the database file at path as a file nothing changes:
+// SQLite reads it alone, taking no lock and making no WAL or index beside
+// it. A maintenance command reads a stopped instance's database this way,
+// as root, so it leaves no file there the service account can't open (M10).
+func OpenImmutable(path string) (*sql.DB, error) {
+	return openReadOnly("file:" + filepath.ToSlash(path) + "?mode=ro&immutable=1")
+}
+
+func openReadOnly(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

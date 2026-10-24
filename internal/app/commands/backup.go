@@ -62,7 +62,7 @@ func saveArchive(bi build.BuildInfo, cmd *cli.Command, op, what string) (string,
 	if err != nil {
 		return "", err
 	}
-	password, err := readPassword(cmd.Bool("password-stdin"), "Local password: ")
+	password, err := readPassword(cmd.Bool("password-stdin"), "Local password")
 	if err != nil {
 		return "", err
 	}
@@ -153,15 +153,39 @@ func writeBackup(client control.Client, req control.Request, dir, output, what s
 // readPassword prompts on the terminal, or reads one line from standard
 // input for scripts.
 func readPassword(fromStdin bool, label string) (string, error) {
+	passwords, err := readPasswords(fromStdin, label)
+	if err != nil {
+		return "", err
+	}
+	return passwords[0], nil
+}
+
+// readPasswords asks for a password for each label in turn on the
+// terminal, or reads them from standard input for scripts, one a line,
+// through one reader so none is lost to another's buffer.
+func readPasswords(fromStdin bool, labels ...string) ([]string, error) {
+	var in *bufio.Reader
 	if fromStdin {
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		in = bufio.NewReader(os.Stdin)
+	}
+	passwords := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if in == nil {
+			password, err := prompt.Secret(label)
+			if err != nil {
+				return nil, err
+			}
+			passwords = append(passwords, password)
+			continue
+		}
+		line, err := in.ReadString('\n')
 		if err != nil && line == "" {
-			return "", fmt.Errorf("read password from standard input: %w", err)
+			return nil, fmt.Errorf("read password from standard input: %w", err)
 		}
 		// Windows PowerShell 5.1 starts text it pipes to a program with a
 		// byte order mark when $OutputEncoding is UTF-8, as many profiles set.
 		line = strings.TrimPrefix(line, "\ufeff")
-		return strings.TrimRight(line, "\r\n"), nil
+		passwords = append(passwords, strings.TrimRight(line, "\r\n"))
 	}
-	return prompt.Secret(label)
+	return passwords, nil
 }

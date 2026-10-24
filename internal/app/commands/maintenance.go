@@ -9,6 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/install"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/pkg/xterm/prompt"
 
 	"github.com/urfave/cli/v3"
@@ -90,20 +91,48 @@ func uninstallCommand(bi build.BuildInfo) *cli.Command {
 			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak: remove it in your software center, or with: flatpak uninstall "+layout.DesktopID+", which keeps its data unless you add --delete-data"); err != nil {
 				return err
 			}
-			name := cmd.String("instance")
-			if !cmd.Bool("yes") && !cmd.Bool("dry-run") {
-				fmt.Printf("This deletes instance %s and all of its data, including its keys.\n", name)
-				fmt.Printf("Make a backup first if you may want it back: %s backup\n", bi.Name)
-				if err := confirm("Uninstall " + name + "?"); err != nil {
-					return err
-				}
+			opts := install.Options{Instance: cmd.String("instance"), DryRun: cmd.Bool("dry-run")}
+			if !cmd.Bool("yes") {
+				opts.Confirm = func(holds string) error { return confirmUninstall(bi, opts.Instance, holds) }
 			}
-			return install.Uninstall(ctx, install.NewSystem(bi.Name), bi, install.Options{
-				Instance: name,
-				DryRun:   cmd.Bool("dry-run"),
-			})
+			return install.Uninstall(ctx, install.NewSystem(bi.Name), bi, opts)
 		},
 	}
+}
+
+// deletePhrase is what an uninstall asks to be typed (M10): more than the
+// y a reflex gives.
+const deletePhrase = "perm delete data"
+
+// confirmUninstall says what an uninstall deletes, with what the instance
+// holds where it could be read, points to a backup first, and to stopping
+// the service for someone who only wants Dens off, and asks for the
+// phrase.
+func confirmUninstall(bi build.BuildInfo, name, holds string) error {
+	fmt.Printf("This deletes instance %s and all of its data, including its keys", name)
+	if holds != "" {
+		fmt.Printf(": it %s", holds)
+	}
+	fmt.Println(".")
+	fmt.Printf("Make a backup first if you may want it back: %s\n", commandIn(bi, name, "backup"))
+	fmt.Printf("To stop Dens only until the computer restarts, deleting nothing: %s\n", host.AdminCommand(commandIn(bi, name, "service stop")))
+	return confirmPhrase("uninstall instance " + name)
+}
+
+// askLine is prompt.Line; tests replace it.
+var askLine = prompt.Line
+
+// confirmPhrase asks for deletePhrase before what doing names; any other
+// answer cancels.
+func confirmPhrase(doing string) error {
+	answer, err := askLine(fmt.Sprintf("Type %q to %s: ", deletePhrase, doing))
+	if err != nil {
+		return fmt.Errorf("read confirmation (use --yes in scripts): %w", err)
+	}
+	if answer != deletePhrase {
+		return errCancelled
+	}
+	return nil
 }
 
 func restoreCommand(bi build.BuildInfo) *cli.Command {
@@ -126,7 +155,7 @@ func restoreCommand(bi build.BuildInfo) *cli.Command {
 					return err
 				}
 			}
-			password, err := readPassword(cmd.Bool("password-stdin"), "The backup's local password: ")
+			password, err := readPassword(cmd.Bool("password-stdin"), "The backup's local password")
 			if err != nil {
 				return err
 			}

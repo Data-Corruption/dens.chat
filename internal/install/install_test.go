@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +49,8 @@ type fakeSystem struct {
 	// and helperStarts how often one was started now.
 	helpers      map[string]bool
 	helperStarts int
+	// noDesktop is a desktop user with no desktop session, as on a server.
+	noDesktop bool
 }
 
 func newFake(t *testing.T) *fakeSystem {
@@ -154,8 +158,11 @@ func (f *fakeSystem) RegisterHelper(_ layout.Layout, user host.Identity) (func()
 	f.helpers[user.ID] = true
 	return func() error { delete(f.helpers, user.ID); return nil }, nil
 }
-func (f *fakeSystem) StartHelper(layout.Layout, host.Identity) error {
+func (f *fakeSystem) StartHelper(_ layout.Layout, user host.Identity) error {
 	f.helperStarts++
+	if f.noDesktop {
+		return fmt.Errorf("%s has no desktop session: %w", user.Name, errNoDesktop)
+	}
 	return f.fail("StartHelper")
 }
 func (f *fakeSystem) ServiceRunning(l layout.Layout) (bool, error) {
@@ -234,7 +241,9 @@ func install(t *testing.T, f *fakeSystem, version, name string, opts Options) er
 			}
 		}
 	}
-	opts.Out = io.Discard
+	if opts.Out == nil {
+		opts.Out = io.Discard
+	}
 	return Install(context.Background(), f, buildInfo(version), opts)
 }
 
@@ -493,6 +502,90 @@ func TestUninstall(t *testing.T) {
 	}
 }
 
+// An install with no desktop session to open Dens in, as on a server,
+// ends with the guide to setting it up from the command line (M10); one
+// on a desktop, and an update, don't.
+func TestInstallOnAServerNamesTheGuide(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		noDesktop bool
+		update    bool
+		want      bool
+	}{
+		{name: "a server", noDesktop: true, want: true},
+		{name: "a desktop"},
+		{name: "a server's update", noDesktop: true, update: true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFake(t)
+			if c.update {
+				if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.noDesktop = c.noDesktop
+			var said bytes.Buffer
+			if err := install(t, f, "v1.1.0", "main", Options{Out: &said}); err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(said.String(), serverGuide); got != c.want {
+				t.Fatalf("the guide named: %v, want %v, in\n%s", got, c.want, said.String())
+			}
+			if !strings.Contains(said.String(), "As alice, run: dens open") {
+				t.Fatalf("no dens open in\n%s", said.String())
+			}
+		})
+	}
+}
+
+// Uninstall asks, where it's given a question, once its plan is printed,
+// saying what the instance holds (M10). A refusal deletes nothing, and a
+// dry run asks nothing.
+func TestUninstallAsksAfterItsPlan(t *testing.T) {
+	f := newFake(t)
+	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
+		t.Fatal(err)
+	}
+	l, _ := f.Layout("main")
+	if err := holdIn(t, l, testKey(t), 2).Close(); err != nil {
+		t.Fatal(err)
+	}
+	var said bytes.Buffer
+	var asked []string
+	opts := Options{Instance: "main", Out: &said, Confirm: func(holds string) error {
+		asked = append(asked, holds)
+		if !strings.Contains(said.String(), "(all of its data)") {
+			t.Errorf("asked before the plan:\n%s", said.String())
+		}
+		return errors.New("cancelled")
+	}}
+	if err := Uninstall(context.Background(), f, buildInfo("v1.0.0"), opts); err == nil || err.Error() != "cancelled" {
+		t.Fatalf("a refused uninstall: %v", err)
+	}
+	if !slices.Equal(asked, []string{"hosts the den Held and has accounts in 2 dens"}) {
+		t.Fatalf("asked %q", asked)
+	}
+	if _, err := os.Stat(filepath.Join(l.DB, database.FileName)); err != nil || !f.registered["main"] {
+		t.Fatalf("a refused uninstall deleted the instance: %v, registered %v", err, f.registered["main"])
+	}
+	if s := stateOf(t, f, "main"); s.Phase != maintenance.PhaseReady {
+		t.Fatalf("a refused uninstall left %+v", s)
+	}
+
+	opts.DryRun = true
+	if err := Uninstall(context.Background(), f, buildInfo("v1.0.0"), opts); err != nil || len(asked) != 1 {
+		t.Fatalf("a dry run: %v, asked %q", err, asked)
+	}
+	opts.DryRun = false
+	opts.Confirm = func(string) error { return nil }
+	if err := Uninstall(context.Background(), f, buildInfo("v1.0.0"), opts); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(l.Root); err == nil {
+		t.Fatal("the installation root survived")
+	}
+}
+
 func TestUninstallKeepsSharedFilesForOtherInstances(t *testing.T) {
 	f := newFake(t)
 	for _, name := range []string{"main", "second"} {
@@ -521,18 +614,40 @@ func makeBackup(t *testing.T, key []byte, password string) string {
 // makeBackupWith is makeBackup with uploads, by name.
 func makeBackupWith(t *testing.T, key []byte, password string, uploads map[string]string) string {
 	t.Helper()
-	return makeArchive(t, key, password, uploads, backup.Manifest{})
+	return makeArchive(t, key, password, uploads, backup.Manifest{}, nil)
 }
 
 // makeExport makes a den's export (M10), as makeBackup makes a backup.
 func makeExport(t *testing.T, key []byte, password string) string {
 	t.Helper()
-	return makeArchive(t, key, password, map[string]string{"0123456789abcdef": "sealed bytes"}, backup.Manifest{DenExport: true, Den: "Test Den"})
+	return makeExportOf(t, key, password, nil)
+}
+
+// makeExportOf is makeExport of the den with this public key; nil leaves
+// the export's database without a den.
+func makeExportOf(t *testing.T, key []byte, password string, public []byte) string {
+	t.Helper()
+	var fill func(context.Context, *sql.DB)
+	if public != nil {
+		fill = func(ctx context.Context, db *sql.DB) { insertDen(t, ctx, db, "Test Den", public) }
+	}
+	return makeArchive(t, key, password, map[string]string{"0123456789abcdef": "sealed bytes"}, backup.Manifest{DenExport: true, Den: "Test Den"}, fill)
+}
+
+// insertDen gives a database the den named name, with this public key.
+func insertDen(t *testing.T, ctx context.Context, db *sql.DB, name string, public []byte) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage,
+			call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, sync_epoch)
+		VALUES (1, ?, 'https://den.example.com', ?, x'00', 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, x'00')`, name, public); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // makeArchive makes an archive with uploads, by name, and a manifest that
-// starts from m.
-func makeArchive(t *testing.T, key []byte, password string, uploads map[string]string, m backup.Manifest) string {
+// starts from m. fill, if any, adds to its database first.
+func makeArchive(t *testing.T, key []byte, password string, uploads map[string]string, m backup.Manifest, fill func(context.Context, *sql.DB)) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, data := range uploads {
@@ -570,6 +685,9 @@ func makeArchive(t *testing.T, key []byte, password string, uploads map[string]s
 	encoded, _ := vault.MarshalWrap(wrap)
 	if err := vaultstore.SetPasswordWrap(ctx, db, encoded); err != nil {
 		t.Fatal(err)
+	}
+	if fill != nil {
+		fill(ctx, db)
 	}
 	snapshot := filepath.Join(dir, "snapshot.db")
 	if err := database.Snapshot(ctx, db, snapshot); err != nil {

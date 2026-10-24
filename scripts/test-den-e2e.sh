@@ -52,8 +52,9 @@
 # host's Caddy stops, and the first host removes its copy, which it refuses
 # to while nothing else answers as the den. The member must reconnect by
 # themselves, the owner's install must reach the den at its address as its
-# owner, with its history and DMs, and the two must chat and call through
-# the server, where everything after the move happens. All three install
+# owner, with its history and DMs, and refuse the export, which would
+# replace its account there, and the two must chat and call through the
+# server, where everything after the move happens. All three install
 # from unsigned fixture releases through install.sh, like the lifecycle
 # harness; the guest steps are in scripts/test/den-guest.sh.
 #
@@ -680,6 +681,10 @@ run() {
   history=$(guest "$DEN" history "$den_id" "$dm")
   [[ "$history" == "a private word"* ]] || { echo "error: the owner's DM at the den's address: $history" >&2; return 1; }
   echo ">> The first host removed its copy, and reaches the den at its address as its owner, with its history and DMs"
+  refusal=$(guest "$DEN" restore-refused /root/den.backup)
+  [[ "$refusal" == *"has an account in 1 den; restoring a den's export replaces all"* ]] ||
+    { echo "error: restoring the export over the first host's Dens: $refusal" >&2; return 1; }
+  echo ">> The first host, which has the owner's account there, refuses the den's export, and its service reads on"
   guest "$DEN" send "$den_id" "$channel" "after the move" >/dev/null
   for _ in $(seq 20); do
     history=$(guest "$CLIENT" history "$den_id" "$channel")

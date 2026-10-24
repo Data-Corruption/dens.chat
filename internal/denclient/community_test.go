@@ -125,6 +125,42 @@ func TestLeaveForgetsTheDen(t *testing.T) {
 	})
 }
 
+// A den this computer can't reach, as one whose server is gone for good,
+// comes off it without leaving, whoever the member is there: its owner
+// too, on a computer that doesn't host it (M10). A den that answers
+// doesn't, nor does the den this computer hosts.
+func TestForgettingADenThatsGone(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	ctx := context.Background()
+	code, err := h.d.OwnerInvite(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := h.d.Info()
+	heir := h.client(t, noOwnDen)
+	if st := join(t, heir, denproto.EncodeInvite(info.ID, code, info.URL), "carol"); st.Role != denproto.RoleOwner {
+		t.Fatalf("the owner invite made %+v", st)
+	}
+	var input *denclient.InputError
+	if err := heir.Forget(ctx, denID); !asInput(err, &input) {
+		t.Fatalf("forgetting a den that answers: %v", err)
+	}
+	h.stop()
+	for who, m := range map[string]*denclient.Manager{"the member": member, "the owner elsewhere": heir} {
+		waitFor(t, m, "the den gone", func(s denclient.Status) bool { return s.State != denclient.StateConnected })
+		if err := m.Forget(ctx, denID); err != nil {
+			t.Fatalf("%s forgetting a den that's gone: %v", who, err)
+		}
+		if list := m.Statuses(); len(list) != 0 {
+			t.Fatalf("%s still lists %+v", who, list)
+		}
+	}
+	waitFor(t, owner, "the den gone", func(s denclient.Status) bool { return s.State != denclient.StateConnected })
+	if err := owner.Forget(ctx, denID); !asInput(err, &input) {
+		t.Fatalf("forgetting the den this computer hosts: %v", err)
+	}
+}
+
 func asInput(err error, target **denclient.InputError) bool {
 	e, ok := err.(*denclient.InputError)
 	*target = e

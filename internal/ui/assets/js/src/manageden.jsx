@@ -13,6 +13,7 @@ import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } 
 import { onEvent } from './events.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
+import { leaveOffer } from './offline.js';
 import { rank } from './people.jsx';
 import { DMKey, RecoveryCodes } from './private.jsx';
 import { deletesNow, keptFor } from './retention.js';
@@ -961,8 +962,37 @@ function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, o
 }
 
 // Leave takes this member out of a den and forgets it on this computer.
+// A den Dens can't reach, as one whose server is gone for good, can't hear
+// of a leave, so it's removed from this computer alone, as one that let
+// this device go is (M10).
 function Leave({ den, onLeft }) {
     const act = useAction();
+    const offer = leaveOffer(den);
+    if (offer !== 'leave') {
+        return (
+            <>
+                <Heading>Leave {den.name}</Heading>
+                <p>
+                    {offer === 'unreachable'
+                        ? "Dens can't reach this den right now, so it can't take you out of it. If it's gone for good, remove it from this computer instead."
+                        : den.error || 'This den no longer accepts this device.'}
+                </p>
+                <p>
+                    That deletes your keys for the den on this computer, and the messages and files it kept.
+                    {offer === 'unreachable' && ' Your account stays in the den, so if it comes back, you can sign in again from Add a den.'}
+                </p>
+                <ErrorText message={act.error} />
+                <div>
+                    <button type="button" class="btn btn-error" disabled={act.busy} onClick={() => act.run(async () => {
+                        await api.del(`/api/dens/${den.den_id}`);
+                        onLeft();
+                    })}>
+                        Remove from this computer
+                    </button>
+                </div>
+            </>
+        );
+    }
     return (
         <>
             <Heading>Leave {den.name}</Heading>

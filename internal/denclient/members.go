@@ -225,14 +225,21 @@ func (m *Manager) Leave(ctx context.Context, denID string) error {
 	return m.forget(ctx, c)
 }
 
-// Forget deletes a den from this install without telling the den, for a
-// den that no longer accepts this device.
+// Forget deletes a den from this install without telling the den: one
+// that no longer accepts this device, or one this computer can't reach,
+// as when its server is gone for good (M10), whoever the member is there.
+// A den that answers is left with Leave, and the den this computer hosts
+// goes only by moving it.
 func (m *Manager) Forget(ctx context.Context, denID string) error {
 	c, err := m.find(denID)
 	if err != nil {
 		return err
 	}
-	if !gone(c) {
+	switch {
+	case gone(c):
+	case c.own:
+		return inputError(errors.New("the owner can't leave the den this computer hosts"))
+	case c.status().State == StateConnected:
 		return inputError(errors.New("leave the den first"))
 	}
 	return m.forget(ctx, c)

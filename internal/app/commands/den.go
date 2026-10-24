@@ -30,7 +30,7 @@ func denCommand(bi build.BuildInfo) *cli.Command {
 					if err != nil {
 						return err
 					}
-					password, err := readPassword(cmd.Bool("password-stdin"), "Local password: ")
+					password, err := readPassword(cmd.Bool("password-stdin"), "Local password")
 					if err != nil {
 						return err
 					}
@@ -39,8 +39,53 @@ func denCommand(bi build.BuildInfo) *cli.Command {
 						return explainCallError(bi, l, err)
 					}
 					fmt.Printf("An owner invite for %s:\n\n%s\n\n", result.Den, result.Invite)
-					fmt.Println("Whoever pastes it into the Join box of their Dens page becomes the den's owner,")
+					fmt.Println("Whoever pastes it into Add a den, on their own Dens page, becomes the den's owner,")
 					fmt.Println("and the owner now becomes a moderator. It works once, within the hour.")
+					return nil
+				},
+			},
+			{
+				Name:      "create",
+				Usage:     "create the den this instance hosts, and make the invite that gives it its owner, protected by your local password",
+				ArgsUsage: "NAME ADDRESS",
+				Description: "For a computer with no desktop, as a server. It creates the den with no account on this\n" +
+					"computer, and prints a one-time owner invite: whoever pastes it into Add a den, on their own\n" +
+					"Dens page, becomes the den's owner. ADDRESS is where members reach the den, as\n" +
+					"https://den.example.com, served by Caddy. Hosting must be on.\n\n" +
+					"On a computer with a desktop, Create your den on Dens's page does this and joins as the owner.",
+				Flags: []cli.Flag{passwordStdinFlag()},
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					if cmd.Args().Len() != 2 {
+						return errors.New("usage: den create NAME ADDRESS, as: den create \"Our Den\" https://den.example.com")
+					}
+					client, l, err := controlClient(bi, cmd.String("instance"))
+					if err != nil {
+						return err
+					}
+					// What the service would refuse anyway, before the
+					// password is typed for nothing.
+					var status control.Status
+					if err := client.Call(control.Request{Op: control.OpStatus}, &status); err != nil {
+						return explainCallError(bi, l, err)
+					}
+					switch {
+					case status.Den != "":
+						return fmt.Errorf("this instance hosts %s already, and an instance hosts one den", status.Den)
+					case !status.DenEnabled:
+						return fmt.Errorf("hosting is off; turn it on with %s, then create the den", instanceCommand(bi, cmd, "den hosting on"))
+					}
+					password, err := readPassword(cmd.Bool("password-stdin"), "Local password")
+					if err != nil {
+						return err
+					}
+					var result control.OwnerInvite
+					req := control.Request{Op: control.OpCreateDen, Password: password, Name: cmd.Args().Get(0), URL: cmd.Args().Get(1)}
+					if err := client.Call(req, &result); err != nil {
+						return explainCallError(bi, l, err)
+					}
+					fmt.Printf("Created %s, which members reach at %s. Its owner invite:\n\n%s\n\n", result.Den, result.URL, result.Invite)
+					fmt.Println("Whoever pastes it into Add a den, on their own Dens page, becomes the den's owner.")
+					fmt.Printf("It works once, within the hour; make another with: %s\n", instanceCommand(bi, cmd, "den owner-invite"))
 					return nil
 				},
 			},
@@ -137,7 +182,7 @@ func denCommand(bi build.BuildInfo) *cli.Command {
 							return err
 						}
 					}
-					password, err := readPassword(cmd.Bool("password-stdin"), "Local password: ")
+					password, err := readPassword(cmd.Bool("password-stdin"), "Local password")
 					if err != nil {
 						return err
 					}
@@ -179,7 +224,7 @@ func hostingOn(bi build.BuildInfo, cmd *cli.Command) error {
 			return err
 		}
 	}
-	password, err := readPassword(cmd.Bool("password-stdin"), "Local password: ")
+	password, err := readPassword(cmd.Bool("password-stdin"), "Local password")
 	if err != nil {
 		return err
 	}
@@ -194,7 +239,8 @@ func hostingOn(bi build.BuildInfo, cmd *cli.Command) error {
 	case h.Den != "":
 		fmt.Printf("Hosting is on, and %s serves at %s.\n", h.Den, h.URL)
 	default:
-		fmt.Println("Hosting is on. No den is here yet: create one in the browser, or restore a den's export.")
+		fmt.Printf("Hosting is on. No den is here yet: create one with %s, or in the browser,\n", instanceCommand(bi, cmd, "den create NAME ADDRESS"))
+		fmt.Println("or restore a den's export.")
 	}
 	fmt.Printf("Caddy forwards the den's address to 127.0.0.1:%d, and the router forwards\n", h.DenPort)
 	fmt.Printf("port %d (UDP) and port %d (TCP) to this computer, for calls.\n", h.MediaUDPPort, h.MediaTCPPort)
@@ -224,8 +270,13 @@ func refuseConfirmFromStdin(cmd *cli.Command) error {
 // instanceCommand is a dens command for the instance cmd names, as the
 // desktop user types it.
 func instanceCommand(bi build.BuildInfo, cmd *cli.Command, args string) string {
+	return commandIn(bi, cmd.String("instance"), args)
+}
+
+// commandIn is a dens command for the instance named name.
+func commandIn(bi build.BuildInfo, name, args string) string {
 	command := bi.Name + " " + args
-	if name := cmd.String("instance"); name != "" && name != layout.DefaultInstance {
+	if name != "" && name != layout.DefaultInstance {
 		command += " --instance " + name
 	}
 	return command

@@ -6,9 +6,10 @@ weight: 4
 A den can live on a machine that stays on, such as a home server, a mini PC
 in a cupboard, or a small rented server, instead of on the computer you use
 every day. This guide puts Dens on a Linux server you reach over SSH, and
-moves a den you host now onto it. The server needs no desktop or browser:
-everything on it is a command, and you keep running the den from your own
-computer, as its owner.
+moves a den you host now onto it, or
+[starts a new one there](#starting-a-new-den-on-the-server). The server needs
+no desktop or browser: everything on it is a command, and you keep running
+the den from your own computer, as its owner.
 
 ## What you need
 
@@ -168,11 +169,67 @@ your account, your history and your DMs.
 
 {{% /steps %}}
 
+## Starting a new den on the server
+
+To start a den on the server rather than move one there, install Dens on it
+as above. Then, over SSH, as your account:
+
+{{% steps %}}
+
+### Set the local password
+
+```sh
+dens password
+```
+
+It asks for a new local password, twice. As on your own computer, it
+protects Dens on the server: hosting, backups and the den's commands ask for
+it, and a backup of the server opens only with it.
+
+### Turn hosting on
+
+```sh
+dens den hosting on
+```
+
+It asks the local password, and says where Caddy and the router send the
+den. Set Caddy up on the server and forward the ports to it, as in
+[Host a den](../host/).
+
+### Create the den
+
+Give it a name, and the address members will reach it at:
+
+```sh
+dens den create "My Den" https://den.example.com
+```
+
+It asks the local password, and prints the den's **owner invite**:
+
+```text
+Created My Den, which members reach at https://den.example.com. Its owner invite:
+
+dens1:...
+
+Whoever pastes it into Add a den, on their own Dens page, becomes the den's owner.
+It works once, within the hour; make another with: dens den owner-invite
+```
+
+### Become its owner
+
+On your own computer, in Dens, choose **Add a den**, paste the invite, and
+choose a username and a den password. You join as the den's owner, and run it
+from there, from its **Manage**: invite your members, and set it up as you
+like.
+
+{{% /steps %}}
+
 ## Reaching the den from home
 
-If the den is on a server at home and **Remove from this computer** says the
-den doesn't answer at its address, your router may not reach its own public
-address from inside your home. Some routers can, under a setting called
+If the den is on a server at home and your computer can't reach it at its
+address, as when **Remove from this computer** says the den doesn't answer
+there, or its owner invite won't go through, your router may not reach its own
+public address from inside your home. Some routers can, under a setting called
 **NAT loopback** or **hairpin NAT**. If yours can't, give your computer a
 **hosts entry**: a line that points your den's name at the server's local
 address, such as `192.168.1.20`, on this computer alone.
@@ -198,6 +255,8 @@ home that's in the den.
 
 ## Running the den on the server
 
+- **The local password.** `dens password` changes it, given the current one.
+  A backup made before still opens with the password it was made under.
 - **Hosting.** `dens den hosting off` and `dens den hosting on` turn it off and
   on, and `dens status` says whether the den serves, and why not when it
   can't. Turning it off asks first, since members can't reach the den until

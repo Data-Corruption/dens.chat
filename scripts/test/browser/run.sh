@@ -22,7 +22,8 @@
 #   answers BROWSER             M8: answers reach the den without addresses
 #   hostile BROWSER             M8: a channel of hostile messages
 #   hosting BROWSER             M9.1: hosting turned on and off in the settings
-#   move BROWSER                M10: moving the den to another computer from the settings
+#   move BROWSER                M10: moving the den to another computer from the settings,
+#                               and removing it from this one once its server is gone
 # BROWSER is chromium or firefox.
 
 set -euo pipefail

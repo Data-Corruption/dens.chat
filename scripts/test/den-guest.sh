@@ -178,6 +178,17 @@ restore)
         fail "the restore failed: $(cat /root/restore.out)"
     cat /root/restore.out
     ;;
+restore-refused)
+    # restore-refused FILE: print why restoring FILE was refused, as root,
+    # and fail if the refusal left a file beside the instance's database
+    # that its service account doesn't own (M10).
+    if printf 'local password\n' | dens restore "$1" --password-stdin --yes --instance "$INSTANCE" >/root/restore.out 2>&1; then
+        fail "the restore went ahead: $(cat /root/restore.out)"
+    fi
+    stray=$(find "/var/lib/dens/$INSTANCE/data/db" ! -user "dens-$INSTANCE")
+    [ -z "$stray" ] || fail "the refused restore left files the service doesn't own: $stray"
+    cat /root/restore.out
+    ;;
 remove-den)
     # remove-den: remove this computer's copy of the den, which another
     # serves now (M10); print what it said. The service's resolver keeps the

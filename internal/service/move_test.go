@@ -128,6 +128,24 @@ func (c *computer) restore(archive string) string {
 	return said.String()
 }
 
+// refusedRestore restores an archive into the computer's instance, as dens
+// restore does, which must refuse it, saying want, before it stops the
+// service.
+func (c *computer) refusedRestore(archive, want string) {
+	c.t.Helper()
+	useHome(c.t, c.home)
+	l, err := layout.New(devBuild.Name, c.opts.Instance, layout.Development)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	err = install.RestoreSession(context.Background(), devBuild, l, archive, localPassword, func() error {
+		return errors.New("the restore stopped the service")
+	}, install.Options{Instance: c.opts.Instance, Out: io.Discard})
+	if err == nil || !strings.Contains(err.Error(), want) {
+		c.t.Fatalf("the restore: %v, want it refused with %q", err, want)
+	}
+}
+
 // call makes a control request, waiting out the local password's limiter,
 // which lets three checks through at once, then one every 2 seconds.
 func (c *computer) call(req control.Request, out any) error {
@@ -499,22 +517,28 @@ func TestDenMovesToAnotherComputer(t *testing.T) {
 
 	// The den's address leads nowhere yet, and then to a den of another's.
 	pc.refused("removing while the den doesn't answer", control.Request{Op: control.OpRemoveDen, Password: localPassword}, "doesn't answer at "+address.url)
-	server := newComputer(t, hosting(t))
-	serverPage := pair(t, server.a, server.client)
-	serverPage.expect(http.StatusOK, "create another den", "POST", "/api/den", map[string]string{
+	other := newComputer(t, hosting(t))
+	otherPage := pair(t, other.a, other.client)
+	otherPage.expect(http.StatusOK, "create another den", "POST", "/api/den", map[string]string{
 		"name": "Other Den", "url": address.url, "username": "dave", "display_name": "Dave", "password": "den password"})
-	address.to(server.opts.DevDenPort)
+	address.to(other.opts.DevDenPort)
 	pc.refused("removing while another den answers", control.Request{Op: control.OpRemoveDen, Password: localPassword}, "can't prove it is this den")
+
+	// A computer whose Dens is in use doesn't take the export, which would
+	// replace its den and its account there with the export's den alone.
+	other.refusedRestore(exported, "instance "+other.opts.Instance+" hosts the den Other Den and has an account in 1 den")
 
 	// The server restores the export, which holds no account and nothing
 	// to set up, and hosts it from the command line.
+	server := newComputer(t, hosting(t))
+	address.to(server.opts.DevDenPort)
 	said := server.restore(exported)
 	for _, want := range []string{"The export of the den Moving Den", "only holds the den", "den hosting on"} {
 		if !strings.Contains(said, want) {
 			t.Errorf("the restore said:\n%s\nwhich doesn't say %q", said, want)
 		}
 	}
-	serverPage = pairOnly(t, server.a, server.client)
+	serverPage := pairOnly(t, server.a, server.client)
 	if v := serverPage.dens(); len(v.Dens) != 0 || v.Hosting.Enabled || !v.Hosting.Created || !v.Hosting.Owned {
 		t.Fatalf("the server's dens view: %+v", v)
 	}

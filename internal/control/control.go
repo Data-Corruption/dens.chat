@@ -50,6 +50,12 @@ const (
 	// OpRemoveDen deletes this install's copy of its den once another
 	// computer serves it (M10).
 	OpRemoveDen = "remove-den"
+	// OpPassword sets the local password, or changes it given the current
+	// one, so a server never needs the page (M10).
+	OpPassword = "password"
+	// OpCreateDen creates the den this instance hosts, with no account on
+	// this computer, and makes its owner invite (M10).
+	OpCreateDen = "create-den"
 )
 
 const maxLine = 64 * 1024
@@ -66,6 +72,12 @@ type Request struct {
 	Password string `json:"password,omitempty"`
 	// On is the switch OpHosting turns to.
 	On bool `json:"on,omitempty"`
+	// NewPassword is the local password OpPassword sets.
+	NewPassword string `json:"newPassword,omitempty"`
+	// Name and URL are the den OpCreateDen creates: its name, and the
+	// address members reach it at.
+	Name string `json:"name,omitempty"`
+	URL  string `json:"url,omitempty"`
 }
 
 // Response is the service's reply line.
@@ -131,11 +143,19 @@ type RemovedDen struct {
 	URL string `json:"url"`
 }
 
-// OwnerInvite is the result of OpOwnerInvite: an invite string for the
-// page's Join box, and the name of the den it hands on.
+// OwnerInvite is the result of OpOwnerInvite and OpCreateDen: an invite
+// string for the page's Add a den, and the name and address of the den it
+// hands on.
 type OwnerInvite struct {
 	Invite string `json:"invite"`
 	Den    string `json:"den"`
+	URL    string `json:"url,omitempty"`
+}
+
+// PasswordChanged is the result of OpPassword: whether the password it set
+// was the first (M10).
+type PasswordChanged struct {
+	First bool `json:"first"`
 }
 
 // Reply is what a handler returns. Body, if set, is streamed after the

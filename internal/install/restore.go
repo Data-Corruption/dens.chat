@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -65,7 +66,7 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 			_ = os.RemoveAll(staging)
 		}
 	}()
-	key, manifest, err := openBackup(bi, archive, staging, password, target.Form)
+	key, manifest, err := openBackup(bi, archive, staging, password, target)
 	if err != nil {
 		return err
 	}
@@ -189,6 +190,40 @@ func acceptArchive(form layout.Form, m backup.Manifest) error {
 	return nil
 }
 
+// movingGuide is where the docs say how to give a den an instance of its
+// own on a computer whose Dens is in use.
+const movingGuide = "https://dens.chat/docs/backups/#moving-a-den"
+
+// checkTarget refuses a den's export over an instance that would lose
+// something to it (M10): one that has joined a den, or hosts another. The
+// export holds its den alone, so the instance's accounts, and a den of its
+// own, would go with nothing in their place. The same den, on an instance
+// that has joined none, is a move done again with a later export.
+func checkTarget(ctx context.Context, target layout.Layout, m backup.Manifest, snapshot string) error {
+	if !m.DenExport {
+		return nil
+	}
+	held, err := readHoldings(ctx, filepath.Join(target.DB, database.FileName))
+	if err != nil {
+		return fmt.Errorf("check what instance %s holds before restoring a den's export over it: %w", target.Instance, err)
+	}
+	if held.joined == 0 {
+		if held.den == "" {
+			return nil
+		}
+		export, err := readHoldings(ctx, snapshot)
+		if err != nil {
+			return fmt.Errorf("read the export's den: %w", err)
+		}
+		if export.denID != nil && bytes.Equal(export.denID, held.denID) {
+			return nil
+		}
+	}
+	return fmt.Errorf("instance %s %s; restoring a den's export replaces all of an instance's data with the export's den alone.\n"+
+		"Restore it into an instance of its own instead, as %s describes, or uninstall instance %s first if nothing in it needs keeping",
+		target.Instance, held.describe(), movingGuide, target.Instance)
+}
+
 // restoreFloor is the room a restore leaves free on the disk it fills, as
 // the den's uploads leave: the database and the system need it too.
 const restoreFloor = 1 << 30
@@ -200,10 +235,11 @@ var freeSpace = host.FreeSpace
 // returns the data key sealed in it under password. It refuses a backup the
 // disk hasn't room for before it starts, and stops one that runs out of
 // room before the disk fills. One from another app or a newer schema, under
-// another password or whose key doesn't match its own database, or one the
-// form can't restore, it refuses as soon as its database is out, before any
+// another password or whose key doesn't match its own database, one the
+// target's form can't restore, or a den's export that would delete what
+// the target holds, it refuses as soon as its database is out, before any
 // upload (M10).
-func openBackup(bi build.BuildInfo, archive, dir, password string, form layout.Form) ([]byte, backup.Manifest, error) {
+func openBackup(bi build.BuildInfo, archive, dir, password string, target layout.Layout) ([]byte, backup.Manifest, error) {
 	file, err := os.Open(archive)
 	if err != nil {
 		return nil, backup.Manifest{}, err
@@ -227,12 +263,15 @@ func openBackup(bi build.BuildInfo, archive, dir, password string, form layout.F
 	var key []byte
 	manifest, err := backup.Extract(read, dir, backup.ExtractOptions{
 		Check: func(m backup.Manifest, database string) error {
-			if err := acceptArchive(form, m); err != nil {
+			if err := acceptArchive(target.Form, m); err != nil {
 				return err
 			}
 			k, err := checkBackup(bi, m, database, password)
 			key = k
-			return err
+			if err != nil {
+				return err
+			}
+			return checkTarget(context.Background(), target, m, database)
 		},
 		FreeSpace: freeSpace,
 		Floor:     restoreFloor,
@@ -367,7 +406,7 @@ func RestoreSession(ctx context.Context, bi build.BuildInfo, l layout.Layout, ar
 			_ = os.RemoveAll(staging)
 		}
 	}()
-	key, manifest, err := openBackup(bi, archive, staging, password, l.Form)
+	key, manifest, err := openBackup(bi, archive, staging, password, l)
 	if err != nil {
 		return err
 	}

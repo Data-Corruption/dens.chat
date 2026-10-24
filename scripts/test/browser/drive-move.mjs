@@ -7,12 +7,13 @@
 // restores the export and hosts it from the command line, with the den's
 // address forwarded to it, bob reconnects by himself, and alice's copy
 // goes: her den's row is connected at its address, as its owner, and no
-// longer hosted here.
+// longer hosted here. Once the server is gone for good, Leave den, which
+// can't reach the den, removes it from her computer instead (M10).
 //
 //   run.sh move chromium|firefox
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import { ALICE, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, HOME, MANAGE, SETTINGS, checks, launch, lib, openManage, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const c = checks();
@@ -122,6 +123,19 @@ try {
         'her den at its address, as the owner');
     ok("her den's row is connected at its address, as its owner, and no longer hosted here");
     await shot('home-moved');
+
+    step('the server goes for good');
+    lib('stop', 'm2c');
+    await waitFor(() => b.eval(`!!${row} && /Offline|Connecting/.test(${row}.innerText)`), 'her den offline', 60000);
+    await openManage(b, 'Leave den');
+    await waitFor(async () => (await text(MANAGE)).includes("Dens can't reach this den right now"), "Leave den, for a den Dens can't reach");
+    ok(`Leave den says: ${(await text(MANAGE)).match(/Dens can't reach.*?Add a den\./)?.[0]}`);
+    await shot('leave-gone');
+    await b.eval(`${button(MANAGE, 'Remove from this computer')}.click(), true`);
+    await waitFor(() => b.eval(`!${MANAGE} && !${row}`), 'the den off home', 30000);
+    if (JSON.parse(lib('api', 'alice', 'GET', '/api/dens')).dens.length !== 0) throw new Error('the den is still listed');
+    ok('Remove from this computer took the den whose server is gone off her computer');
+    await shot('home-gone');
 } catch (e) {
     c.fail(e);
     await shot('failed').catch(() => {});

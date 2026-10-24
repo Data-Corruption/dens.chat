@@ -157,7 +157,11 @@ version number. You can turn that off in **Settings**, under **System**.
 ## Removing it
 
 This deletes Dens's data on this computer, including any den it hosts, so make
-a [backup](../backups/) first if you might want it back.
+a [backup](../backups/) first if you might want it back. It shows what it
+removes, then asks you to type `perm delete data`, and anything else cancels.
+To stop Dens without deleting anything, until the computer restarts, run
+`sudo dens service stop` on Linux, or `dens service stop` in an admin
+terminal on Windows.
 
 {{< tabs >}}
 {{< tab name="Linux" >}}

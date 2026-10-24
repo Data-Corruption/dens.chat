@@ -27,6 +27,10 @@ type fakeService struct {
 	exported time.Time
 	asked    []string
 	answer   bool
+	// passwordSet is whether the status says a local password is set.
+	passwordSet bool
+	// noDen has the status hold no den yet, with hosting on.
+	noDen bool
 }
 
 func (f *fakeService) keep(req control.Request) {
@@ -50,7 +54,20 @@ func serveDen(t *testing.T) *fakeService {
 		control.OpStatus: func(context.Context, control.Request) (control.Reply, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
-			return control.Reply{Result: control.Status{Den: "Test Den", DenExported: f.exported}}, nil
+			if f.noDen {
+				return control.Reply{Result: control.Status{DenEnabled: true, PasswordSet: f.passwordSet}}, nil
+			}
+			return control.Reply{Result: control.Status{Den: "Test Den", DenExported: f.exported, PasswordSet: f.passwordSet}}, nil
+		},
+		control.OpPassword: func(_ context.Context, req control.Request) (control.Reply, error) {
+			f.keep(req)
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			return control.Reply{Result: control.PasswordChanged{First: !f.passwordSet}}, nil
+		},
+		control.OpCreateDen: func(_ context.Context, req control.Request) (control.Reply, error) {
+			f.keep(req)
+			return control.Reply{Result: control.OwnerInvite{Invite: "dens1:test", Den: req.Name, URL: req.URL}}, nil
 		},
 		control.OpHosting: func(_ context.Context, req control.Request) (control.Reply, error) {
 			f.keep(req)
@@ -116,8 +133,9 @@ func runDens(t *testing.T, stdin string, args ...string) (string, error) {
 	}()
 	stdinWas, stdoutWas := os.Stdin, os.Stdout
 	os.Stdin, os.Stdout = in, out
+	bi := build.BuildInfo{Name: "dens", Version: "v1.3.0"}
 	root := &cli.Command{Name: "dens", Flags: []cli.Flag{InstanceFlag}, Writer: io.Discard, ErrWriter: io.Discard,
-		Commands: []*cli.Command{denCommand(build.BuildInfo{Name: "dens", Version: "v1.3.0"})}}
+		Commands: []*cli.Command{denCommand(bi), passwordCommand(bi)}}
 	err = root.Run(context.Background(), append([]string{"dens"}, args...))
 	os.Stdin, os.Stdout = stdinWas, stdoutWas
 	out.Close()
@@ -218,5 +236,59 @@ func TestExportAndRemoveCommands(t *testing.T) {
 	}
 	if req := f.kept()[1]; req.Op != control.OpRemoveDen || req.Password != "local password" {
 		t.Fatalf("removing asked %+v", req)
+	}
+}
+
+// dens password sets the local password where none is set, which standard
+// input gives once where the terminal asks twice, and changes it given the
+// current one, which comes first (M10).
+func TestPasswordCommand(t *testing.T) {
+	f := serveDen(t)
+	out, err := runDens(t, "a new password\n", "password", "--password-stdin")
+	if err != nil || !strings.Contains(out, "The local password is set.") {
+		t.Fatalf("setting the password: %v, %q", err, out)
+	}
+	if req := f.kept()[0]; req.Op != control.OpPassword || req.Password != "" || req.NewPassword != "a new password" {
+		t.Fatalf("setting the password asked %+v", req)
+	}
+	f.mu.Lock()
+	f.passwordSet = true
+	f.mu.Unlock()
+	out, err = runDens(t, "the current one\r\nthe next one\r\n", "password", "--password-stdin")
+	if err != nil || !strings.Contains(out, "The local password is changed. A backup made before still opens with the one it was made under.") {
+		t.Fatalf("changing the password: %v, %q", err, out)
+	}
+	if req := f.kept()[1]; req.Password != "the current one" || req.NewPassword != "the next one" {
+		t.Fatalf("changing the password asked %+v", req)
+	}
+}
+
+// dens den create creates the den with its name and address, after the
+// local password, and prints its owner invite, and how to make another
+// (M10). Where the instance hosts a den already, or hosting is off, it
+// says so before asking for the password.
+func TestCreateCommand(t *testing.T) {
+	f := serveDen(t)
+	if _, err := runDens(t, "", "den", "create", "Our Den"); err == nil || !strings.Contains(err.Error(), "usage: den create NAME ADDRESS") {
+		t.Fatalf("creating with no address: %v", err)
+	}
+	if _, err := runDens(t, "local password\n", "den", "create", "--password-stdin", "Our Den", "https://den.example.com"); err == nil ||
+		!strings.Contains(err.Error(), "this instance hosts Test Den already") || len(f.kept()) != 0 {
+		t.Fatalf("creating a second den: %v", err)
+	}
+	f.mu.Lock()
+	f.noDen = true
+	f.mu.Unlock()
+	out, err := runDens(t, "local password\n", "den", "create", "--password-stdin", "Our Den", "https://den.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Created Our Den, which members reach at https://den.example.com", "dens1:test", "Add a den", "dens den owner-invite"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("creating the den said %q, without %q", out, want)
+		}
+	}
+	if req := f.kept()[0]; req.Op != control.OpCreateDen || req.Name != "Our Den" || req.URL != "https://den.example.com" || req.Password != "local password" {
+		t.Fatalf("creating the den asked %+v", req)
 	}
 }

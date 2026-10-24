@@ -48,3 +48,23 @@ func TestYesNoR(t *testing.T) {
 		})
 	}
 }
+
+func TestLineR(t *testing.T) {
+	var output bytes.Buffer
+	got, err := lineR(bytes.NewBufferString("  perm delete data \r\n"), &output, "Type it: ")
+	if err != nil || got != "perm delete data" {
+		t.Fatalf("lineR = %q, %v", got, err)
+	}
+	if output.String() != "Type it: " {
+		t.Fatalf("prompt = %q", output.String())
+	}
+	if got, err := lineR(bytes.NewBufferString("\xef\xbb\xbfperm delete data\r\n"), &output, ""); err != nil || got != "perm delete data" {
+		t.Fatalf("a line PowerShell piped with a byte order mark: %q, %v", got, err)
+	}
+	if got, err := lineR(bytes.NewBufferString("no newline"), &output, ""); err != nil || got != "no newline" {
+		t.Fatalf("a last line without its newline: %q, %v", got, err)
+	}
+	if _, err := lineR(bytes.NewBufferString(""), &output, ""); err == nil {
+		t.Fatal("input that ended gave no error")
+	}
+}
