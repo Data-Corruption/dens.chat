@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.3.0] - 2026-10-24
+
+### Added
+
+- Move the den to another computer, such as a server: in the settings, under System, in Hosting, or with `dens den export`. The export only holds the den, with its members, messages and files, not any of your client data. Restore it on the other computer with `dens restore`, which refuses one over an install that hosts a den or has joined one.
+- Once the other computer hosts the den, Remove from this computer, in Hosting, or `dens den remove`, deletes the copy on yours. Your Dens then reaches the den at its address, as its owner, with your history and DMs.
+- Hosting from the command line, for a server with no desktop: `dens den hosting on` and `off`, `dens password` to set or change the local password, and `dens den create` to start a den there, which prints the invite that makes you its owner. The new guide, Host on a server, walks through both ways, and the installer points to it on a computer with no desktop.
+- Leave den offers Remove from this computer for a den Dens can't reach, such as one whose server is gone for good.
+
+### Changed
+
+- Backups write several times faster, and restore checks the disk's free space instead of fixed caps: a den over 256 GB restores, and a disk without room is refused before anything is written, saying how much more it needs. `dens backup` checks its folder has room first, and Back up in the settings says about how large the file will be.
+- Restore checks the local password before it writes any file, so a mistyped one fails at once.
+- `dens uninstall` asks you to type `perm delete data` rather than a y, says what the install holds, and points to `dens service stop` if you only want Dens off for now.
+
+### Fixed
+
+- A backup cut off partway, by an error or a stall, could look finished. Now it fails, from the command line and the page, and leaves no file, and a large one no longer stops at 30 minutes.
+- Password prompts in the terminal printed their colon twice.
+- The help tips beside Backup and Hosting in the settings were cut off on their left.
+
 ## [v1.2.0] - 2026-10-23
 
 ### Added
