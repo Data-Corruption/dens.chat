@@ -139,7 +139,7 @@ DELETE /api/invites/{id}                                            204
 - The client builds the invite string from `den.id`, `code` and `den.url`, and shows it once. The den stores only `SHA-256(code)`, so a code can't be shown again, only revoked.
 - `expires_in` is at most 30 days. `max_uses` is 1 to 100 and defaults to 1.
 - Moderators and the owner create, list and revoke invites. The list names who made each (`created_by`).
-- An owner invite has the owner role, and only the den's own machine makes one: as the den is created, and with `dens den owner-invite` (M8), which refuses while hosting is off (M9.1). It lasts an hour and is used once, and doesn't appear in the list. Redeeming it makes the joiner the owner and the owner before them a moderator: the joiner reaches everyone as `member.joined`, as any joiner does, and the owner before them as `member.updated`.
+- An owner invite has the owner role, and only the den's own machine makes one: as the den is created, from the page or with `dens den create` (M10), and with `dens den owner-invite` (M8), which refuses while hosting is off (M9.1). It lasts an hour and is used once, and doesn't appear in the list. Redeeming it makes the joiner the owner and the owner before them a moderator: the joiner reaches everyone as `member.joined`, as any joiner does, and the owner before them as `member.updated`.
 
 ### Sessions
 

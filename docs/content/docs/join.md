@@ -88,3 +88,10 @@ so start the DM again.
 Open the den's **Manage**, and choose **Leave den** at the bottom. You can come
 back with a new invite, as yourself: join with your old username and den
 password, and your history comes back with you, along with new recovery codes.
+
+Leaving needs the den to answer. If Dens can't reach it, because its server
+is gone for good, say, **Leave den** offers **Remove from this computer**
+instead. That deletes your keys for the den on this computer, and the
+messages and files it kept, without the den hearing of it: your account
+stays there. If the den comes back, sign in again from **Add a den**, with its
+address, your username and your den password.

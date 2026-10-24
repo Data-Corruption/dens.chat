@@ -107,12 +107,13 @@ hosting on. Once it serves the den, **Remove from this computer** deletes the
 copy on yours, and your Dens reaches the den at its address like any
 member's. [Host on a server](../server/) goes through it step by step.
 
-A restore replaces everything on the install it goes into, so restore an
-export where Dens holds nothing else yet, as on a new server. On a computer
-whose Dens is in use, someone's who's in the den already, say, give the den
-an install of its own: a second instance, as the end of
-[Host a den](../host/#what-hosting-costs-you) describes, and restore into
-that one with `--instance`.
+A restore replaces everything on the install it goes into, so an export
+goes only where Dens holds nothing else yet, as on a new server: restore
+refuses one over an install that hosts a den or has joined one, and says
+what it holds. On a computer whose Dens is in use, someone's who's in the den
+already, say, give the den an install of its own: a second instance, as the
+end of [Host a den](../host/#what-hosting-costs-you) describes, and restore
+into that one with `--instance`.
 
 ## Losing your password or your computer
 
