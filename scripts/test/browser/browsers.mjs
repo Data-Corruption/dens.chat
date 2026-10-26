@@ -162,6 +162,9 @@ class Socket {
 //   prefs: more Firefox prefs, as { name: value }.
 //   size: the window, [1400, 900] unless given.
 //   downloads: a directory downloads go to, without asking (M10).
+//   hover: a pointer that hovers, as a desktop's mouse. Headless, both
+//     browsers say they have no pointer, so what shows on hover never
+//     shows (M11). Chromium's touch emulation forgets it.
 export function launch(name, port, opts = {}) {
     return name === 'chromium' ? chromium(port, opts) : firefox(port, opts);
 }
@@ -177,10 +180,12 @@ const CHROMIUM_KEYS = {
     Tab: ['Tab', 9],
     PageUp: ['PageUp', 33],
     PageDown: ['PageDown', 34],
+    Home: ['Home', 36],
+    End: ['End', 35],
     v: ['KeyV', 86, 'v'],
 };
 
-async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900], downloads }) {
+async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900], downloads, hover }) {
     const profile = `/tmp/browsers-chromium-${port}`;
     fs.rmSync(profile, { recursive: true, force: true });
     const args = ['--headless=new', '--no-sandbox', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
@@ -189,6 +194,7 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
     if (media || screen) args.push('--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream');
     if (media) args.push(`--use-file-for-fake-audio-capture=${HOME}/speech.wav`);
     if (screen) args.push('--auto-select-desktop-capture-source=Entire screen');
+    if (hover) args.push('--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2');
     spawn('/usr/bin/chromium', [...args, 'about:blank'], { stdio: 'ignore', detached: true }).unref();
     const target = await waitFor(async () => (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === 'page'), 'chromium');
     const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
@@ -237,6 +243,17 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             await mouse('mouseMoved', x, y);
             await mouse('mousePressed', x, y, { button, clickCount: 1 });
             await mouse('mouseReleased', x, y, { button, clickCount: 1 });
+        },
+        // move moves the pointer there, hovering what's under it (M11).
+        move: (x, y) => mouse('mouseMoved', x, y),
+        // touch has the page take this browser for a touch screen's, or
+        // not, as its pointer and hover media say (M11); tap then taps.
+        async touch(on) {
+            await cdp('Emulation.setTouchEmulationEnabled', on ? { enabled: true, maxTouchPoints: 1 } : { enabled: false });
+        },
+        async tap(x, y) {
+            await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+            await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         },
         async drag(x1, y1, x2, y2) {
             await mouse('mouseMoved', x1, y1);
@@ -321,12 +338,14 @@ const FIREFOX_KEYS = {
     Tab: '',
     PageUp: '',
     PageDown: '',
+    Home: '\uE011',
+    End: '\uE010',
     v: 'v',
 };
 const FIREFOX_BUTTONS = { left: 0, back: 3 };
 const FIREFOX_MODIFIERS = { Control: '\uE009', Shift: '\uE008', Alt: '\uE00A', Meta: '\uE03D' };
 
-async function firefox(port, { media, screen, preload, prefs = {}, size = [1400, 900], downloads }) {
+async function firefox(port, { media, screen, preload, prefs = {}, size = [1400, 900], downloads, hover }) {
     const profile = `/tmp/browsers-firefox-${port}`;
     fs.rmSync(profile, { recursive: true, force: true });
     fs.mkdirSync(profile, { recursive: true });
@@ -340,6 +359,8 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
             'browser.download.always_ask_before_handling_new_types': false, 'browser.helperApps.neverAsk.saveToDisk': 'application/octet-stream',
             'browser.download.start_downloads_in_tmp_dir': false });
     }
+    // A fine pointer that hovers, in Firefox's bits: fine 2, hover 4.
+    if (hover) Object.assign(all, { 'ui.primaryPointerCapabilities': 6, 'ui.allPointerCapabilities': 6 });
     Object.assign(all, prefs);
     fs.writeFileSync(`${profile}/user.js`, Object.entries(all).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});`).join('\n'));
     const args = [`--remote-debugging-port=${port}`, '--profile', profile, '--no-remote', `--width=${size[0]}`, `--height=${size[1]}`];
@@ -391,6 +412,12 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
         click: (x, y, button = 'left') =>
             pointer([{ type: 'pointerMove', x: Math.round(x), y: Math.round(y) }, { type: 'pointerDown', button: FIREFOX_BUTTONS[button] },
                 { type: 'pointerUp', button: FIREFOX_BUTTONS[button] }]),
+        move: (x, y) => pointer([{ type: 'pointerMove', x: Math.round(x), y: Math.round(y) }]),
+        // Firefox takes itself for a touch screen's from prefs, at launch:
+        // ui.primaryPointerCapabilities and ui.allPointerCapabilities at 1,
+        // a coarse pointer that can't hover.
+        tap: (x, y) => bidi.send('input.performActions', { context, actions: [{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' },
+            actions: [{ type: 'pointerMove', x: Math.round(x), y: Math.round(y) }, { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 }] }] }),
         drag: (x1, y1, x2, y2) =>
             pointer([{ type: 'pointerMove', x: Math.round(x1), y: Math.round(y1) }, { type: 'pointerDown', button: 0 },
                 { type: 'pointerMove', x: Math.round(x2), y: Math.round(y2), duration: 200 }, { type: 'pointerUp', button: 0 }]),
