@@ -84,7 +84,7 @@ searchable record is part of being human. Dens is built for that kind of
 everyday privacy.
 
 For more of it: use Linux rather than Windows, a privacy-minded browser such as
-LibreWolf, and keep details that identify you out of what you post. If your
-safety depends on it, use tools built for higher stakes, such as
+Ungoogled Chromium, and keep details that identify you out of what you post. If
+your safety depends on it, use tools built for higher stakes, such as
 [Signal](https://signal.org/) and [Qubes OS](https://www.qubes-os.org/), and
 know that none of them is bulletproof either.
