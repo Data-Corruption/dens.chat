@@ -171,6 +171,36 @@ func TestStripLeavesNothingBehind(t *testing.T) {
 	}
 }
 
+// child is the body of the first box named name among those data holds.
+func child(data []byte, name string) []byte {
+	for off := 0; off+8 <= len(data); {
+		size, head := int(binary.BigEndian.Uint32(data[off:])), 8
+		if size == 1 && off+16 <= len(data) {
+			size, head = int(binary.BigEndian.Uint64(data[off+8:])), 16
+		}
+		if size < head || off+size > len(data) {
+			return nil
+		}
+		if string(data[off+4:off+8]) == name {
+			return data[off+head : off+size]
+		}
+		off += size
+	}
+	return nil
+}
+
+// movieTimescale is the timescale an MP4's movie header gives, or 0.
+func movieTimescale(data []byte) uint32 {
+	mvhd := child(child(data, "moov"), "mvhd")
+	switch {
+	case len(mvhd) >= 24 && mvhd[0] == 1:
+		return binary.BigEndian.Uint32(mvhd[20:])
+	case len(mvhd) >= 16:
+		return binary.BigEndian.Uint32(mvhd[12:])
+	}
+	return 0
+}
+
 // topBoxes lists an MP4's top-level boxes, in order.
 func topBoxes(data []byte) []string {
 	var names []string
@@ -205,6 +235,25 @@ func TestStripWritesPhoneVideoAsMP4WithItsIndexFirst(t *testing.T) {
 	boxes := topBoxes(out.data)
 	if i, j := slices.Index(boxes, "moov"), slices.Index(boxes, "mdat"); i < 0 || j < 0 || i > j {
 		t.Errorf("boxes %v: the index isn't before the media", boxes)
+	}
+}
+
+// A movie's timescale is 1000, whatever its streams', since Firefox misreads
+// the edit lists of one with FFmpeg 9's own choice and plays a track's
+// start late (M11). with-gps.mp4 has 90 kHz video and 48 kHz sound, for
+// which FFmpeg picks 720,000, with-gps.mov 600 and 44,100, 88,200, and
+// late-sound.mp4 a phone's 90 kHz and 44.1 kHz, 4,410,000, with its sound
+// starting late, which Firefox played seconds late.
+func TestStripWritesAMovieTimescaleFirefoxReads(t *testing.T) {
+	r := newRunner(t)
+	for _, name := range []string{"with-gps.mp4", "with-gps.mov", "late-sound.mp4"} {
+		out := &memFile{}
+		if _, err := r.Strip(context.Background(), load(t, name), out, ""); err != nil {
+			t.Fatal(err)
+		}
+		if got := movieTimescale(out.data); got != 1000 {
+			t.Errorf("%s: the stripped movie's timescale is %d", name, got)
+		}
 	}
 }
 

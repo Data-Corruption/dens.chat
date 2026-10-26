@@ -35,3 +35,11 @@ ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=30:duration=2,noise=alls=40:allf=
   -f lavfi -i "sine=frequency=440:duration=2:sample_rate=48000" -c:v libvpx-vp9 -b:v 1500k -g 30 -c:a libopus -b:a 64k \
   -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact vp9.webm
 ```
+
+`late-sound.mp4` is made the same way: H.264 at 160 × 120 and 30 frames a second for a second, of the test pattern, its track counted at 90 kHz as phones count video, with the tone in AAC at 44.1 kHz starting 50 ms late, less AAC's own lead-in. The late start is an empty edit, which Firefox played seconds late in a movie whose timescale is the two's least common multiple, as FFmpeg 9 picks it (M11).
+
+```sh
+ffmpeg -f lavfi -i "testsrc2=size=160x120:rate=30:duration=1" -itsoffset 0.05 -f lavfi -i "sine=frequency=440:duration=1:sample_rate=44100" \
+  -map 0:v -map 1:a -c:v libopenh264 -b:v 200k -g 30 -c:a aac -b:a 64k -video_track_timescale 90000 \
+  -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact -movflags +faststart late-sound.mp4
+```
