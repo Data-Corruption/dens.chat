@@ -2,7 +2,9 @@
 // that owns the keys. The keys card offers to set them up with it, says to
 // confirm them while its dialog is up, shows its names once they're bound,
 // asks it to show its settings, and stops using it; in a call, its presses
-// open the push-to-talk gate.
+// open the push-to-talk gate. A desktop that bound them and holds none now
+// gets a card that says so, with a way out, rather than a button that
+// can't be pressed (M11).
 //
 //   run.sh desktop chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -89,6 +91,20 @@ try {
     await waitFor(async () => (await keyIn('Push to talk')) === 'V', "the page's own key again");
     ok("stopping drops the member's choice, and the card offers set-up again");
     await shot('done');
+
+    step('a desktop that holds none of them now');
+    const mark = h.lines.length;
+    h.send('source', { covers: [], confirms: true, configurable: true });
+    await waitFor(() => has('Your desktop has none of them set now'), 'the note for a desktop holding none');
+    if (await b.eval(`!!${button('Set up with your desktop')}`)) throw new Error('the set-up button shows where it can do nothing');
+    await waitFor(() => b.eval(`!!${button('Change them')} && !!${button('Start over')}`), 'Change them and Start over');
+    h.send('source', { covers: [], confirms: true, note: "Change them in GNOME's Settings, under Apps, then Dens." });
+    await waitFor(() => has("Change them in GNOME's Settings, under Apps, then Dens."), "the desktop's own place for them");
+    if (await b.eval(`!!${button('Change them')}`)) throw new Error('Change them shows for a desktop that has no settings to open');
+    await clickOn(button('Start over'), 'Start over');
+    await waitFor(() => h.lines.slice(mark).some((m) => m.t === 'desktop' && m.d?.do === 'stop'), 'the helper asked to stop', 5000);
+    ok('a desktop holding none of them says so, and where to change them, and starts over');
+    await shot('none');
 } catch (e) {
     c.fail(e);
     await shot('failed').catch(() => {});
