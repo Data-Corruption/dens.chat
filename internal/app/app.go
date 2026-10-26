@@ -377,10 +377,15 @@ func (a *App) unlock(key []byte) error {
 	}
 	a.AddCleanup(func() error { a.Den.Close(); return nil })
 	if phase == maintenance.PhaseRestoring {
-		// A backup can give a new message an ID that a member's client
-		// holds for another, so their caches of this den go (M6).
+		// A backup lacks what came after it, which members' clients may
+		// hold, so their caches of this den go (M6), and its counters move
+		// on, so nothing new takes the ID of what it lacks, which links to
+		// messages may name (M11).
 		if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
 			return fmt.Errorf("start the restored den's sync epoch: %w", err)
+		}
+		if err := a.Den.AdvanceIDs(context.Background()); err != nil {
+			return fmt.Errorf("move the restored den's IDs on: %w", err)
 		}
 	}
 	if l.Form == layout.Development {

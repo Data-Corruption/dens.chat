@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import { h, options, render as mount } from 'preact';
 import { Markdown, firstLine, inCodeBlock, parse, preview, sends } from '../assets/js/src/markdown.jsx';
 import { setOldReddit, shownLink, trimLink } from '../assets/js/src/links.js';
+import { MessageLink } from '../assets/js/src/msglinks.jsx';
 import mentions from '../../denproto/testdata/mentions.json';
 import taskCases from '../../denproto/testdata/tasks.json';
 import linkCases from '../../denproto/testdata/links.json';
@@ -52,7 +53,8 @@ test('mentions are highlighted exactly where the den counts them', () => {
     }
 });
 
-const linksIn = (tree) => nodes(tree).filter((n) => n.type === 'a').map((n) => n.props.href);
+// A link to a message is a chip (M11), a link all the same.
+const linksIn = (tree) => nodes(tree).filter((n) => n.type === 'a' || n.type === MessageLink).map((n) => n.props.href || n.props.url);
 
 test('links end exactly where the den finds them to rewrite', () => {
     for (const c of linkCases.cases) {
@@ -127,6 +129,20 @@ test('links are bare http(s) addresses that show where they go and open safely',
         assert.equal(a.props.target, '_blank');
         assert.deepEqual(a.props.rel.split(' ').sort(), ['nofollow', 'noopener', 'noreferrer']);
     }
+});
+
+test("a link to a message is a chip, and only where it's one", () => {
+    const den = 'TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI';
+    const url = `https://den.example.com/#m/${den}/41/90210`;
+    const tree = render(`in ${url}, not https://den.example.com/x#m/${den}/41/90210 or \`https://den.example.com/#m/${den}/1/2\``);
+    const [chip, ...rest] = nodes(tree).filter((n) => n.type === MessageLink);
+    assert.equal(rest.length, 0);
+    assert.equal(chip.props.url, url);
+    assert.deepEqual(chip.props.link, { den, host: 'den.example.com', channel: '41', message: '90210' });
+    assert.deepEqual(nodes(tree).filter((n) => n.type === 'a').map((a) => a.props.href), [`https://den.example.com/x#m/${den}/41/90210`]);
+    // A preview holds nothing to click.
+    assert.equal(text(preview(url)), url);
+    assert.equal(nodes(preview(url)).filter((n) => n.type === MessageLink).length, 0);
 });
 
 test('code keeps its text literal', () => {

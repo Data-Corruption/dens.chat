@@ -436,7 +436,7 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                                 <span class="text-xs text-base-content/50" title={pct === 0 ? 'Muted for you' : `Plays at ${pct}% for you`}>{pct}%</span>
                             )}
                             {other && (
-                                <button type="button" class="btn btn-ghost btn-xs ml-auto opacity-0 focus:opacity-100 group-hover:opacity-100" data-call-menu
+                                <button type="button" class="btn btn-ghost btn-xs ml-auto opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" data-call-menu
                                     aria-label={`Options for ${name} in the call`} aria-expanded={menu === m.id}
                                     onClick={() => setMenu(menu === m.id ? '' : m.id)}>⋯</button>
                             )}

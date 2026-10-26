@@ -15,11 +15,13 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
+import { ErrorText, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
 } from './files.jsx';
 import { compareIds, newNonce } from './ids.js';
+import { linkTo } from './links.js';
 import { OFFLINE_NOTE } from './offline.js';
 import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
 import { keptFor } from './retention.js';
@@ -50,13 +52,20 @@ function joinNames(names) {
 
 let nextKey = 1;
 
-// pendingJump is a message to show once its channel opens, which the home
-// page's list of files asks for (M5): the pane that opens on its channel
-// jumps there rather than to the newest.
+// pendingJump is a message to show once its channel opens, which the list
+// of a member's files asks for (M5), and a link to a message (M11): the
+// pane that opens on its channel jumps there rather than to the newest.
 let pendingJump = null;
+// jumpers are the panes open, each of which jumps to a message of its own
+// channel where it is.
+const jumpers = new Set();
 
-// openAt has the next pane that opens on a den's channel jump to a message.
+// openAt has the pane showing a den's channel jump to a message, or the
+// next one that opens on it.
 export function openAt(denID, channelID, messageID) {
+    for (const jump of jumpers) {
+        if (jump(denID, channelID, messageID)) return;
+    }
     pendingJump = { denID, channelID, messageID };
 }
 
@@ -78,13 +87,18 @@ export function dividerAt(readPosition, lastMessage) {
 // keys the DM's keys; typing lists who is typing here; closed, when set,
 // says why nothing can be sent; limits are the den's upload limits, and
 // retention the days it keeps a message, 0 for ever (M5). lastMessage is
-// the channel's newest, as its read state has it.
-export function MessagePane({ denID, channel, me, members, readPosition, lastMessage, role, dm, keys, typing, closed, limits, retention, offline, onProfile, onTyping }) {
+// the channel's newest, as its read state has it, and denURL the den's
+// address, which links to its messages start with (M11).
+export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, keys, typing, closed, limits, retention, offline, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
     const [newCount, setNewCount] = useState(0);
     const [replyTo, setReplyTo] = useState(null);
+    // menu is the message whose ⋯ menu is open, and deleting the one whose
+    // delete waits on the member's word (M11).
+    const [menu, setMenu] = useState(null);
+    const [deleting, setDeleting] = useState(null);
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
@@ -249,7 +263,10 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
         }
     }
 
-    async function jumpTo(id) {
+    // jumpTo shows a message, loading the page around it. A pane that
+    // opens on one it can't load, as from a den that's offline, opens at
+    // the newest instead, saying why.
+    async function jumpTo(id, opening) {
         let next = null;
         if (!listRef.current.messages.some((m) => m.id === id)) {
             try {
@@ -257,6 +274,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
                 if (!got) return;
                 next = replayed(fromPage(got.page), got.since);
             } catch (e) {
+                if (opening) await loadNewest();
                 setError(e.message);
                 return;
             }
@@ -334,8 +352,10 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
     useEffect(() => {
         const jump = pendingJump?.denID === denID && pendingJump.channelID === channel.id ? pendingJump.messageID : '';
         pendingJump = null;
-        if (jump) jumpTo(jump);
+        if (jump) jumpTo(jump, true);
         else loadNewest();
+        const here = (d, c, id) => d === denID && c === channel.id && (jumpTo(id), true);
+        jumpers.add(here);
         const onVisible = () => markRead();
         document.addEventListener('visibilitychange', onVisible);
         const stop = onEvent((msg) => {
@@ -348,6 +368,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
         });
         return () => {
             stop();
+            jumpers.delete(here);
             document.removeEventListener('visibilitychange', onVisible);
             // Leaving the channel sends what was read without waiting.
             clearTimeout(readTimer.current);
@@ -399,6 +420,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
             setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
             setViewing((v) => (v && v.message === d.id ? null : v));
+            setDeleting((m) => (m && m.id === d.id ? null : m));
             setList((cur) => withDelete(cur, d));
         }
     }
@@ -414,6 +436,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
         setViewing((v) => (v && gone(v.message) ? null : v));
         setReplyTo((r) => (r && gone(r.id) ? null : r));
         setEditing((id) => (id && gone(id) ? null : id));
+        setDeleting((m) => (m && gone(m.id) ? null : m));
         setList((cur) => withExpired(cur, through));
         // A run that lost every message it held starts again from the newest.
         if (l.hasNewer && l.messages.length && l.messages.every((m) => gone(m.id))) loadNewest();
@@ -561,15 +584,20 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
                 me={me}
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
+                canReply={!closed && canSend}
                 canEdit={!m.locked && (m.author_id === me.id || (m.editors || []).includes(me.id))}
                 canDelete={m.author_id === me.id || (channel.kind !== 'dm' && rank(role) > rank(members.get(m.author_id)?.role))}
+                link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
+                menuOpen={menu === m.id}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
                 candidates={candidates}
                 onUpdated={(u) => setList((cur) => withUpdate(cur, u))}
                 onProfile={onProfile}
+                onMenu={(open) => setMenu(open ? m.id : null)}
                 onReply={() => setReplyTo(m)}
                 onEdit={() => setEditing(m.id)}
                 onEditDone={() => setEditing(null)}
+                onDelete={() => setDeleting(m)}
                 onJump={jumpTo}
                 onView={(f) => setViewing(viewed(m, f))}
                 onToggle={toggled}
@@ -609,7 +637,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
                 </div>
             )}
             {/* The room at the bottom is where who's typing shows, over the list. */}
-            <div ref={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" onScroll={checkEdges}>
+            <div ref={scroller} data-scroller class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" onScroll={checkEdges}>
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
@@ -679,6 +707,9 @@ export function MessagePane({ denID, channel, me, members, readPosition, lastMes
                 <Viewer denID={denID} files={viewing.files} index={viewing.index} onClose={() => setViewing(null)}
                     onIndex={(index) => setViewing((v) => v && { ...v, index })} />
             )}
+            {deleting && (
+                <DeleteDialog denID={denID} m={deleting} author={members.get(deleting.author_id)} me={me} onClose={() => setDeleting(null)} />
+            )}
             {comparing !== null && comparable(files).some((f) => f.key === comparing) && (
                 <Compare denID={denID} files={comparable(files)} index={comparable(files).findIndex((f) => f.key === comparing)} limits={limits}
                     onIndex={(i) => setComparing(comparable(filesRef.current)[i]?.key ?? null)} onSwitch={switchVersions}
@@ -713,9 +744,33 @@ function Quoted({ text, locked, me }) {
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
 }
 
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canEdit, canDelete, editorNames, candidates, onUpdated, onReply, onEdit, onEditDone, onJump, onView, onProfile, onToggle, denID, channelID }) {
-    const [confirming, setConfirming] = useState(false);
+// MessageRow is a message in the list, with its ⋯ menu of what the member
+// may do with it: link is the link to it, for Copy link (M11).
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, editorNames, candidates, onUpdated, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
+    // copied says for a moment what the member just copied.
+    const [copied, setCopied] = useState('');
+    const copiedTimer = useRef(null);
+    useEffect(() => () => clearTimeout(copiedTimer.current), []);
+    async function copy(what, done) {
+        setError('');
+        try {
+            await navigator.clipboard.writeText(what);
+        } catch {
+            setError("The browser didn't let Dens copy that.");
+            return;
+        }
+        setCopied(done);
+        clearTimeout(copiedTimer.current);
+        copiedTimer.current = setTimeout(() => setCopied(''), 1500);
+    }
+    const actions = [
+        canReply && { label: 'Reply', run: onReply },
+        canEdit && { label: 'Edit', run: onEdit },
+        !m.locked && m.text.trim() && { label: 'Copy text', run: () => copy(m.text, 'Text copied') },
+        link && { label: 'Copy link', run: () => copy(link, 'Link copied') },
+        canDelete && { label: 'Delete', run: onDelete, danger: true },
+    ].filter(Boolean);
     async function tick(n, checked, text) {
         setError('');
         try {
@@ -727,18 +782,11 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
             throw e;
         }
     }
-    async function remove() {
-        try {
-            await api.del(`/api/dens/${denID}/messages/${m.id}`);
-        } catch (e) {
-            setError(e.message);
-        }
-        setConfirming(false);
-    }
+    // On a touch screen, where the ⋯ always shows, the text keeps clear of it.
     return (
         <div
             data-id={m.id}
-            class={`group relative rounded px-2 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : 'hover:bg-base-200'}`}
+            class={`group relative rounded px-2 pointer-coarse:pr-10 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'}`}
         >
             {m.reply_to && replied && (
                 <button type="button" class="flex w-full min-w-0 items-center gap-1 pl-2 text-left text-xs text-base-content/60 hover:text-base-content" onClick={() => onJump(m.reply_to)}>
@@ -796,20 +844,137 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     {error && <p class="text-xs text-error">{error}</p>}
                 </div>
             </div>
-            {!editing && (
-                <div class="absolute -top-3 right-2 hidden gap-1 rounded bg-base-100 shadow group-hover:flex">
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={onReply}>Reply</button>
-                    {canEdit && <button type="button" class="btn btn-ghost btn-xs" onClick={onEdit}>Edit</button>}
-                    {canDelete && !confirming && <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirming(true)}>Delete</button>}
-                    {confirming && (
-                        <>
-                            <button type="button" class="btn btn-error btn-xs" onClick={remove}>Delete for everyone</button>
-                            <button type="button" class="btn btn-ghost btn-xs" onClick={() => setConfirming(false)}>Cancel</button>
-                        </>
-                    )}
-                </div>
+            {!editing && actions.length > 0 && <MessageMenu open={menuOpen} onOpen={onMenu} actions={actions} copied={copied} />}
+        </div>
+    );
+}
+
+// A menu's row is about this tall, in px, for deciding where it opens.
+const MENU_ROW = 36;
+
+// MessageMenu is a message's ⋯, which shows on hover or focus, and always
+// on a touch screen, which has no hover, as the ⋯ beside a channel does;
+// and the menu it opens of what the member may do with the message (M11).
+// The menu opens toward whichever side of the list has room for it. Arrow
+// keys move through it, and Escape, Tab or a press elsewhere closes it.
+// copied says what the member just copied.
+function MessageMenu({ open, onOpen, actions, copied }) {
+    const box = useRef(null);
+    const button = useRef(null);
+    const list = useRef(null);
+    const [up, setUp] = useState(false);
+    useEffect(() => {
+        if (!open) return undefined;
+        list.current?.querySelector('[role="menuitem"]')?.focus();
+        const away = (e) => !box.current?.contains(e.target) && onOpen(false);
+        document.addEventListener('pointerdown', away);
+        return () => document.removeEventListener('pointerdown', away);
+    }, [open]);
+    function toggle() {
+        if (!open) {
+            const view = button.current.closest('[data-scroller]')?.getBoundingClientRect();
+            const at = button.current.getBoundingClientRect();
+            const below = view ? view.bottom - at.bottom : Infinity;
+            setUp(below < actions.length * MENU_ROW + 16 && at.top - view.top > below);
+        }
+        onOpen(!open);
+    }
+    // close gives the focus back to the ⋯, unless what was picked takes it.
+    function close() {
+        onOpen(false);
+        button.current?.focus();
+    }
+    function keys(e) {
+        const items = [...list.current.querySelectorAll('[role="menuitem"]')];
+        const at = items.indexOf(document.activeElement);
+        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+        if (to !== undefined) {
+            e.preventDefault();
+            items[(to + items.length) % items.length].focus();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+        } else if (e.key === 'Tab') {
+            onOpen(false);
+        }
+    }
+    const hidden = 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:opacity-100 ' +
+        'pointer-coarse:pointer-events-auto pointer-coarse:opacity-100';
+    // An open menu stands over the rows below it, and their ⋯.
+    return (
+        <div ref={box} class={`absolute -top-3 right-2 flex items-center gap-1 pointer-coarse:right-1 pointer-coarse:top-0 ${open ? 'z-20' : 'z-10'} ${open || copied ? '' : hidden}`}>
+            {copied && <span role="status" class="cursor-default select-none rounded bg-base-100 px-1.5 py-0.5 text-xs shadow">{copied}</span>}
+            <button ref={button} type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:bg-transparent pointer-coarse:shadow-none"
+                aria-label="Message actions" title="More" aria-haspopup="menu" aria-expanded={open} onClick={toggle}
+                onKeyDown={(e) => {
+                    if (e.key !== 'ArrowDown' || open) return;
+                    e.preventDefault();
+                    toggle();
+                }}>
+                ⋯
+            </button>
+            {open && (
+                <ul ref={list} role="menu" aria-label="Message actions" onKeyDown={keys}
+                    class={`menu absolute right-0 z-20 w-44 rounded-box bg-base-100 p-1 shadow ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+                    {actions.map((a) => (
+                        <li key={a.label} role="none">
+                            <button type="button" role="menuitem" tabIndex={-1} class={a.danger ? 'text-error' : ''}
+                                onClick={() => {
+                                    close();
+                                    a.run();
+                                }}>
+                                {a.label}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
             )}
         </div>
+    );
+}
+
+// DeleteDialog asks before a message is deleted, which is for everyone and
+// for good, with its files (M11). Staff deleting another member's message
+// see whose it is. Closing it gives the focus back to the ⋯ that opened it.
+function DeleteDialog({ denID, m, author, me, onClose }) {
+    const act = useAction();
+    const confirm = useRef(null);
+    useEffect(() => {
+        const opener = document.activeElement;
+        confirm.current?.focus();
+        const escape = (e) => e.key === 'Escape' && onClose();
+        document.addEventListener('keydown', escape);
+        return () => {
+            document.removeEventListener('keydown', escape);
+            if (opener?.isConnected) opener.focus();
+        };
+    }, []);
+    const files = m.attachments?.length ? ', with its files' : '';
+    const whose = m.author_id === me.id ? '' : `This is ${name(author)}'s message${author ? `, @${author.username}` : ''}. `;
+    function remove() {
+        act.run(async () => {
+            await api.del(`/api/dens/${denID}/messages/${m.id}`);
+            onClose();
+        });
+    }
+    return (
+        <Dialog title="Delete this message?" onClose={onClose}>
+            <div class="flex min-w-0 cursor-default select-none items-center gap-2 rounded-box border border-base-300 p-2 text-sm">
+                <Avatar member={author} size="sm" />
+                <span class="shrink-0 font-medium">{name(author)}</span>
+                <span class="min-w-0 truncate text-base-content/70"><Quoted text={m.text} locked={m.locked} me={me} /></span>
+            </div>
+            <p class="text-sm">{whose}It goes for everyone{files}, and can't be brought back.</p>
+            <ErrorText message={act.error} />
+            <div class="flex gap-2">
+                <button ref={confirm} type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={remove}>
+                    {act.busy && <span class="loading loading-spinner loading-sm"></span>}
+                    Delete
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+            </div>
+        </Dialog>
     );
 }
 
@@ -927,6 +1092,14 @@ function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
     const [conflict, setConflict] = useState(null);
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
+    // The box takes the focus with the caret at the end, however the edit
+    // started: ↑ in the composer, or Edit in the message's menu.
+    const box = useRef(null);
+    useEffect(() => {
+        const el = box.current;
+        el?.focus();
+        el?.setSelectionRange(el.value.length, el.value.length);
+    }, []);
     const was = base.editors || [];
     const shared = mine && (editors.length !== was.length || editors.some((id) => !was.includes(id)));
     const names = editors.map((id) => name(candidates.find((c) => c.id === id)));
@@ -958,6 +1131,7 @@ function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
                 </div>
             )}
             <textarea
+                ref={box}
                 class="textarea focus-border w-full"
                 rows={Math.min(8, text.split('\n').length + 1)}
                 value={text}
@@ -969,7 +1143,6 @@ function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
                         save();
                     }
                 }}
-                autofocus
             ></textarea>
             {mine && (sharing ? (
                 <div class="flex flex-col gap-1 rounded border border-base-300 p-2">
@@ -1216,8 +1389,8 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
 }
 
 // WritingGuide explains how a message is written: sending, the markdown
-// subset with each example rendered as the list shows it, mentions, links,
-// task lines, editing together and files.
+// subset with each example rendered as the list shows it, mentions, links
+// and links to messages, task lines, editing together and files.
 function WritingGuide({ onClose }) {
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && onClose();
@@ -1256,6 +1429,10 @@ function WritingGuide({ onClose }) {
                     <p>
                         A link shows where it goes, as you paste it; there's no way to give one a label. When it's sent, Dens takes its tracking
                         out, and writes YouTube, Reddit, X and Amazon links in a short form.
+                    </p>
+                    <p>
+                        Copy link, in a message's ⋯ menu, copies a link to that message. Pasted in a message, in this den or another, it shows
+                        the channel it's in, and opens the message for anyone who can see it.
                     </p>
                 </section>
                 <section class="flex flex-col gap-1">

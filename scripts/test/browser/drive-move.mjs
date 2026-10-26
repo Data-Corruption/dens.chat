@@ -5,7 +5,8 @@
 // may host the den by now. Removing her copy is refused while nothing else
 // answers as the den. Once carol's instance, standing in for a server,
 // restores the export and hosts it from the command line, with the den's
-// address forwarded to it, bob reconnects by himself, and alice's copy
+// address forwarded to it, bob reconnects by himself, his next message
+// gets an ID past every one the den gave out (M11), and alice's copy
 // goes: her den's row is connected at its address, as its owner, and no
 // longer hosted here. Once the server is gone for good, Leave den, which
 // can't reach the den, removes it from her computer instead (M10).
@@ -103,6 +104,7 @@ try {
     await shot('refused');
 
     step('the server hosts the den');
+    const restoredAt = Date.now();
     dens(['-i', 'm2c', 'restore', `${DOWNLOADS}/${file}`, '--password-stdin', '--yes'], 'local password\n');
     lib('start', 'm2c', '--port', '18487', '--den-port', '18488', '--media-udp-port', '17883', '--media-tcp-port', '17884');
     const on = dens(['-i', 'm2c', 'den', 'hosting', 'on', '--password-stdin', '--yes'], 'local password\n');
@@ -110,6 +112,13 @@ try {
     fs.writeFileSync(`${HOME}/forward-to`, '18488\n');
     await waitFor(() => JSON.parse(lib('api', 'bob', 'GET', '/api/dens')).dens[0]?.state === 'connected', 'bob back, on the server', 60000);
     ok("carol's instance restored the export and hosts the den, and bob is back by himself");
+    // The restore moved the den's counters on to its time in microseconds,
+    // past every ID the den gave out (M11).
+    const den = process.env.DEN;
+    const general = JSON.parse(lib('api', 'bob', 'GET', `/api/dens/${den}/state`)).channels.find((x) => x.name === 'general').id;
+    const after = lib('send', 'bob', general, 'after the move');
+    if (BigInt(after) < BigInt(restoredAt) * 1000n) throw new Error(`the first message after the restore has ID ${after}`);
+    ok(`the restored den gives a new message an ID past every one it gave out: ${after}`);
 
     step('removing the copy');
     await password('Remove from this computer');

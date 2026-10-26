@@ -39,6 +39,7 @@ func New(a *app.App) http.Handler {
 		})
 	})
 	r.Use(guard.SecurityHeaders)
+	r.Get("/", root)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -118,6 +119,17 @@ func New(a *app.App) http.Handler {
 		denproto.WriteError(w, denproto.Errorf(http.StatusMethodNotAllowed, denproto.CodeNotFound, "method not allowed"))
 	})
 	return r
+}
+
+// rootLine is what the den's address answers a browser with (M11), as
+// when someone opens a link to one of its messages outside Dens: the
+// fragment naming the message never reaches the den, so all it can say is
+// what it is.
+const rootLine = "This is a den: a community on Dens, https://dens.chat. Links to its messages open in Dens, for the members who've joined it.\n"
+
+func root(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = io.WriteString(w, rootLine)
 }
 
 // versionCheck admits requests that speak a protocol version this den

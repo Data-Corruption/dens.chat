@@ -1,6 +1,6 @@
 # Den protocol
 
-How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice), M3 (links, calls that ride out a dropped connection, and staff in calls), M4.2 (screen share and the limits for calls), M5 (retention and managing files) and M6 (compressed frames, what changed while away and the members changed since) in full. The sections for later steps are outlines, filled in with their step.
+How a client talks to a den: HTTP requests for commands and history, and one WebSocket for live events. The design doc explains the reasons; this is the reference to implement and review against. It covers M1.1 (join, sessions, the WebSocket), M1.2 (channels and messages), M1.3 (members, roles, DMs, presence and typing), M1.4 (files), M1.5 (new devices and recovery), M1.6 (shared messages), M1.7 (private DMs and approving new devices), M2 (voice), M3 (links, calls that ride out a dropped connection, and staff in calls), M4.2 (screen share and the limits for calls), M5 (retention and managing files), M6 (compressed frames, what changed while away and the members changed since) and M11 (links to messages) in full. The sections for later steps are outlines, filled in with their step.
 
 Terms used below:
 
@@ -11,7 +11,7 @@ Terms used below:
 ## Conventions
 
 - Bodies are JSON in UTF-8. Receivers ignore unknown fields and unknown event types, so adding either never bumps the protocol version. They still check every known field's type and limits, and reject a body that fails.
-- IDs are decimal strings (`"1000123"`). They come from the den, increase with time within a den, and are never reused.
+- IDs are decimal strings (`"1000123"`). They come from the den, increase with time within a den, and are never reused, even after a restore from a backup, which moves the den's counters on to the restore's time in microseconds (M11). The den's own ID, `den_id`, is another kind (see [Identity and keys](#identity-and-keys)).
 - Times are integers: milliseconds since the Unix epoch, in the den's clock.
 - Keys, nonces, signatures and tokens are base64url without padding.
 - Every request and response is at most 1 MiB, except uploads and files (see [Files](#files-m14)).
@@ -364,6 +364,18 @@ The den rewrites the links in a message's text when it's sent or edited, and in 
 - A Reddit share link (`/r/NAME/s/CODE`) loses only its tracking parameters. Its code is Reddit's own record of who shared the link, and only Reddit can turn it into a post. Amazon's short links, on `amzn.to` and `a.co`, are left the same way.
 - Rewriting a text a second time changes nothing.
 - The page shows a link written as `https://www.reddit.com/comments/…` on `old.reddit.com` in a browser that prefers it.
+
+### Links to messages (M11)
+
+```
+https://den.example.com/#m/<den ID>/41/90210    the den's address, then #m/<den ID>/<channel>/<message>
+GET /                                           200 text/plain: a line saying the address is a den's
+```
+
+- A link to a message is the den's address, as its invites and challenge sign it, followed by `/#m/`, `den_id` in base64url, `/`, the channel's ID, `/` and the message's ID. A client reads only that form: nothing between the address and the fragment but the `/`, which it may leave out, and IDs as the den writes them. It opens a link in the den it joined with that ID, wherever that den is now, so a link outlives a move, and never opens in another den that takes the address; the address names a den the client hasn't joined, and is what a browser opens.
+- A browser never sends a fragment, so a link opened outside a client tells the den nothing of which message. The den answers `GET /` with a line of plain text saying it's a den on Dens, whose links open in Dens.
+- Rewriting links leaves the fragment as it is (see [Links](#links-m3)), so a link to a message reads the same in a channel and in a DM.
+- Before opening one, the client checks that the channel is a text channel or DM the member can see, and that the message is there: `around` it with a `limit` of 1 answers it, or the message after it once it's gone (see [History](#history)).
 
 ### History
 

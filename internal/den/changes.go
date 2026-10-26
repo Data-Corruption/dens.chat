@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 )
 
 // What changed while away (M6): the den logs each change to a message, by
@@ -239,16 +240,72 @@ func (d *Den) readTx(ctx context.Context, fn func(*sql.Tx) error) error {
 }
 
 // NewSyncEpoch starts the den on a new run of versions, as after a restore
-// from a backup: the backup's database counts message IDs from where it
-// was made, so the restored den can give a new message an ID that a client
-// holds for another one, which the backup never had. A client of another
-// epoch drops what it cached from the den.
+// from a backup: the backup lacks what came after it was made, which
+// members' clients may hold, and counts its change log's versions again
+// from where it was. A client of another epoch drops what it cached from
+// the den.
 func (d *Den) NewSyncEpoch(ctx context.Context) error {
 	if _, created := d.Info(); !created {
 		return nil
 	}
 	_, err := d.db.ExecContext(ctx, `UPDATE den SET sync_epoch = ? WHERE id = 1`, []byte(denproto.Random(denproto.SyncEpochSize)))
 	return err
+}
+
+// AdvanceIDs moves the den's ID counters on past every ID it gave out, as
+// after a restore from a backup (M11). The backup's counters are where
+// they were when it was made, so a message, channel, member or anything
+// else made after the restore could take the ID of one the restore lost,
+// which links in other dens and outside Dens, and members' clients, may
+// still name. Each counter moves to the restore's time in microseconds:
+// past every ID the den gave out, which counted from 1, or from the time
+// of an earlier restore, at fewer than a million a second. The change
+// log's counter numbers versions rather than things, and a new sync epoch
+// starts those again.
+func (d *Den) AdvanceIDs(ctx context.Context) error {
+	if _, created := d.Info(); !created {
+		return nil
+	}
+	at := d.now().UnixMicro()
+	return d.tx(ctx, func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, `SELECT name FROM sqlite_schema WHERE type = 'table' AND sql LIKE '%INTEGER PRIMARY KEY AUTOINCREMENT%'`)
+		if err != nil {
+			return err
+		}
+		var tables []string
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			if database.IsDenTable(name) && name != "den_changes" {
+				tables = append(tables, name)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, table := range tables {
+			res, err := tx.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = ?`, at, table)
+			if err != nil {
+				return err
+			}
+			n, err := res.RowsAffected()
+			if err != nil {
+				return err
+			}
+			// A table the backup held no row of yet has no counter, and
+			// gets one.
+			if n == 0 {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)`, table, at); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
 }
 
 // pruner forgets changes older than changeLogAge, hourly, while running.
