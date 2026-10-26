@@ -80,7 +80,7 @@ class Node {
 
 // Preact names a listener as the element names the event's handler, so
 // these make it name them in lower case, as it does in a browser.
-for (const handler of ['onchange', 'onclick', 'oninput', 'onkeydown']) Node.prototype[handler] = null;
+for (const handler of ['onchange', 'onclick', 'oninput', 'onkeydown', 'onpointerdown']) Node.prototype[handler] = null;
 
 globalThis.document = {
     createElement: (name) => new Node(1, name),

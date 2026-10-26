@@ -415,10 +415,12 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                                 <span class="truncate">{name}</span>
                             </button>
                             {talking && <span class="sr-only">speaking</span>}
-                            {m.deafened ? (
-                                <span class="text-base-content/60" title="Deafened: hears nothing of the call" aria-label="deafened"><HeadphonesIcon off size="h-3.5 w-3.5" /></span>
-                            ) : m.muted && (
+                            {/* Deafening mutes too, so it shows both (M11). */}
+                            {(m.muted || m.deafened) && (
                                 <span class="text-base-content/60" title="Muted" aria-label="muted"><MicIcon off size="h-3.5 w-3.5" /></span>
+                            )}
+                            {m.deafened && (
+                                <span class="text-base-content/60" title="Deafened: hears nothing of the call" aria-label="deafened"><HeadphonesIcon off size="h-3.5 w-3.5" /></span>
                             )}
                             {m.staff_muted && (
                                 <span class="flex items-center gap-0.5 text-xs text-warning" title="Muted by staff: nobody hears them" aria-label="muted by staff">

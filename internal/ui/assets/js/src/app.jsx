@@ -16,9 +16,10 @@ import { Chat } from './chat.jsx';
 import { SharePlayer } from './player.jsx';
 import { CallBar, CogIcon } from './voice.jsx';
 
-// chatRoute reads /den/<den>[/<channel>] from a path.
+// chatRoute reads /den/<den>[/<channel>] from a path, where the channel
+// may be dms, the Direct messages tab with no DM open (M11).
 function chatRoute(path) {
-    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+))?\/?$/);
+    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms))?\/?$/);
     return m ? { denID: m[1], channelID: m[2] || '' } : null;
 }
 

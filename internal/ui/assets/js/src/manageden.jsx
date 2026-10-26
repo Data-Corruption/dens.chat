@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
-import { CopyButton, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useLater } from './components.jsx';
+import { CopyButton, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater } from './components.jsx';
 import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } from './dendraft.js';
 import { onEvent } from './events.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
@@ -202,8 +202,9 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
 }
 
 function Frame({ title, onClose, children }) {
+    const backdrop = useBackdrop(onClose);
     return (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
             <div role="dialog" aria-modal="true" aria-label={`Manage ${title}`} class="card flex h-full max-h-[48rem] w-full max-w-3xl flex-col bg-base-100 shadow-xl">
                 <div class="flex items-center gap-2 border-b border-base-300 px-4 py-3">
                     <h2 class="card-title min-w-0 flex-1 truncate">{title}</h2>

@@ -8,10 +8,10 @@
 // (M10), the cache of other dens' files (M6), update checks, the local
 // password, logging, signing this browser out, and the version.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
-import { Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction } from './components.jsx';
+import { Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction, useBackdrop } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
@@ -59,8 +59,9 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (section === 'voice') panel = <VoiceSettings />;
     else if (section === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <ThemePicker />;
+    const backdrop = useBackdrop(onClose);
     return (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
             <div role="dialog" aria-modal="true" aria-label="App settings" class="card flex h-full max-h-[48rem] w-full max-w-2xl flex-col bg-base-100 shadow-xl">
                 <div class="flex items-center gap-2 px-4 pt-3">
                     <h2 class="card-title flex-1">App settings</h2>
@@ -222,6 +223,7 @@ function VoiceSettings() {
     const [inCall, setInCall] = useState(callNow);
     const [testing, setTesting] = useState(false);
     const [capturing, setCapturing] = useState('');
+    const captures = useRef(0);
     const [elsewhere, setElsewhere] = useState(keysElsewhere);
     useEffect(() => onCall((c) => setInCall(!!c.call)), []);
     useEffect(() => onKeys(() => {
@@ -288,9 +290,13 @@ function VoiceSettings() {
             setError(e.message || "Your desktop wasn't asked.");
         }
     }
+    // bind waits for a key for an action. Starting again cancels the wait
+    // before, whose end mustn't clear the one that replaced it.
     async function bind(name) {
+        const run = ++captures.current;
         setCapturing(name);
         const key = await captureKey();
+        if (run !== captures.current) return;
         setCapturing('');
         if (key) await saveKeys({ ...v.keys, [name]: key });
     }
@@ -456,11 +462,24 @@ function KeysNote({ elsewhere, onDesktop }) {
             );
         }
         if (elsewhere.binding) return <p class={text} role="status">Confirm the shortcuts in your desktop's dialog.</p>;
+        // The desktop binds once a session, and this one has none of them
+        // now, as when they were taken out in its settings (M11).
+        if (!elsewhere.bindable) {
+            return (
+                <div class="flex flex-col gap-2">
+                    <p class={text}>Your desktop has none of them set now, so they work only while Dens is focused. {elsewhere.note}</p>
+                    <div class="flex flex-wrap gap-2">
+                        {elsewhere.configurable && <button type="button" class="btn btn-sm" onClick={() => onDesktop('configure')}>Change them</button>}
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDesktop('stop')}>Start over</button>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div class="flex flex-col gap-2">
                 <p class={text}>Work while Dens is focused. To use them in other apps, set them up with your desktop.</p>
                 <div>
-                    <button type="button" class="btn btn-sm" disabled={!elsewhere.bindable} onClick={() => onDesktop('bind')}>
+                    <button type="button" class="btn btn-sm" onClick={() => onDesktop('bind')}>
                         Set up with your desktop
                     </button>
                 </div>

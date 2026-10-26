@@ -6,13 +6,13 @@ import { api } from './api.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
-import { HashIcon, LockIcon, SpeakerIcon } from './icons.jsx';
+import { HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane } from './messages.jsx';
 import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
-import { EditProfile, MemberList, ProfileCard, RemoveMember, isStaff } from './people.jsx';
+import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from './people.jsx';
 import { NO_CALLS, canCall } from './platform.js';
 import { needsCheck } from './private.js';
 import { SignInRequests } from './private.jsx';
@@ -23,6 +23,15 @@ import { CallBlock, CallMembers, CogIcon, useCall } from './voice.jsx';
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
 const LIST_TAB = 'DENS_LIST_TAB:';
+// The text channel last open in each den, which its Den tab opens, and the
+// DM, which its Direct messages tab opens (M11).
+const LAST_TEXT = 'DENS_LAST_TEXT:';
+const LAST_DM = 'DENS_LAST_DM:';
+// The groups folded in each den's channel list (M11).
+const FOLDED = 'DENS_FOLDED:';
+// The address's place for a channel holds this for the Direct messages tab
+// with no DM open, as when there are none (M11).
+export const NO_DM = 'dms';
 // A typing notice shows this long unless another arrives; senders repeat
 // theirs while they type.
 const TYPING_SHOWN = 6000;
@@ -56,16 +65,83 @@ function closedDMs(view) {
     return new Set(view.read_states.filter((r) => r.closed).map((r) => r.channel_id));
 }
 
+// listed arranges a den's channels, DMs aside, as its channel list shows
+// them: those in no group, then each group's, each by position.
+export function listed(view) {
+    const byPosition = (a, b) => a.position - b.position;
+    const channels = view.channels.filter((c) => c.kind !== 'dm');
+    return {
+        ungrouped: channels.filter((c) => !c.group_id).sort(byPosition),
+        groups: [...view.groups].sort(byPosition).map((group) => ({ group, channels: channels.filter((c) => c.group_id === group.id).sort(byPosition) })),
+    };
+}
+
+// denChannel is the text channel the Den tab opens (M11): the one last
+// open in the den, unless it's gone or out of sight, else the list's first.
+export function denChannel(view, lastID) {
+    const { ungrouped, groups } = listed(view);
+    const text = [...ungrouped, ...groups.flatMap((g) => g.channels)].filter((c) => c.kind === 'text');
+    return text.find((c) => c.id === lastID) || text[0] || null;
+}
+
+// recentDMs is a den's DMs as their list shows them, the most recently
+// active first: a DM closed since keeps out until it has a new message,
+// unless it's the one open.
+export function recentDMs(view, reads, open) {
+    return view.channels
+        .filter((c) => c.kind === 'dm' && (!reads.get(c.id)?.closed || c.id === open))
+        .sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
+}
+
+// lastDM is the DM the Direct messages tab opens (M11): the one last open
+// in the den, unless it's gone or was closed since. Otherwise none, rather
+// than one the member didn't pick, whom they might write to unawares.
+export function lastDM(view, reads, lastID) {
+    const c = view.channels.find((x) => x.kind === 'dm' && x.id === lastID);
+    return c && !reads.get(c.id)?.closed ? c : null;
+}
+
 // pick chooses the channel to show: the one in the address, else the last
 // one shown in this den unless it's a DM since closed, else the first text
-// channel.
+// channel. The Direct messages tab with no DM open shows none.
 function pick(view, denID, channelID) {
-    if (!view) return null;
+    if (!view || channelID === NO_DM) return null;
     const shown = view.channels.find((c) => c.id === channelID);
     if (hasMessages(shown)) return shown;
     const last = view.channels.find((c) => c.id === stored(LAST_CHANNEL + denID));
     if (hasMessages(last) && !closedDMs(view).has(last.id)) return last;
-    return view.channels.find((c) => c.kind === 'text') || null;
+    return denChannel(view, '');
+}
+
+// readFolded reads the groups folded in a den's channel list, as the
+// browser keeps them.
+export function readFolded(text) {
+    try {
+        const ids = JSON.parse(text || '[]');
+        return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : []);
+    } catch {
+        return new Set();
+    }
+}
+
+// foldedShows is what a folded group still shows of its channels: the one
+// that's open, and voice channels with a call in them.
+export function foldedShows(channels, open, calls) {
+    return channels.filter((c) => c.id === open || (c.kind === 'voice' && calls.get(c.id)?.members.length > 0));
+}
+
+// hiddenMarks is what a folded group's row says of the channels it hides:
+// whether any is unread, and how many mentions they hold.
+export function hiddenMarks(hidden, reads) {
+    let mentions = 0;
+    let any = false;
+    for (const c of hidden) {
+        const r = reads.get(c.id);
+        if (c.kind !== 'text' || !r) continue;
+        mentions += r.mention_count;
+        any ||= unread(r);
+    }
+    return { unread: any, mentions };
 }
 
 // withStatus takes in the den's status on this computer.
@@ -226,12 +302,15 @@ export function Chat({ denID, channelID, navigate }) {
     const openKind = channel?.kind;
     useEffect(() => {
         if (openKind) setTab(openKind === 'dm' ? 'dms' : 'den');
-    }, [channel?.id]);
+        else if (channelID === NO_DM) setTab('dms');
+    }, [channel?.id, channelID]);
 
     if (error && !view) return <div class="p-6"><div role="alert" class="alert alert-error">{error}</div></div>;
     if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
 
     if (channel) store(LAST_CHANNEL + denID, channel.id);
+    if (channel?.kind === 'text') store(LAST_TEXT + denID, channel.id);
+    if (channel?.kind === 'dm') store(LAST_DM + denID, channel.id);
     const members = new Map(view.members.map((m) => [m.id, m]));
     const reads = new Map(view.read_states.map((r) => [r.channel_id, r]));
     const staff = isStaff(view.role);
@@ -258,9 +337,22 @@ export function Chat({ denID, channelID, navigate }) {
         navigate(`/den/${denID}/${id}`);
     }
 
+    // pickTab shows a tab's list, and opens what's in it, so a den channel
+    // never sits open beside the DM list, nor a DM beside the channels:
+    // nobody writes in a channel thinking it's a DM (M11). Each opens what
+    // was last open in it, so going to the den to copy something and back
+    // returns to the same DM; Direct messages opens none when there's no
+    // DM to return to. The list stays up on a narrow screen.
     function pickTab(next) {
         store(LIST_TAB + denID, next);
         setTab(next);
+        if (next === 'den' && (channel?.kind === 'dm' || channelID === NO_DM)) {
+            const c = denChannel(view, stored(LAST_TEXT + denID));
+            navigate(c ? `/den/${denID}/${c.id}` : `/den/${denID}`);
+        } else if (next === 'dms' && channel?.kind !== 'dm') {
+            const last = lastDM(view, reads, stored(LAST_DM + denID));
+            navigate(`/den/${denID}/${last ? last.id : NO_DM}`);
+        }
     }
 
     function toggleMembers() {
@@ -275,12 +367,11 @@ export function Chat({ denID, channelID, navigate }) {
         openChannel(opened.id);
     }
 
+    // closeDM closes a DM; closing the one open opens no other in its place,
+    // as the tab wouldn't (M11).
     async function closeDM(c) {
         await api.post(`/api/dens/${denID}/dms/${c.id}/close`);
-        if (c.id === channel?.id) {
-            const first = view.channels.find((x) => x.kind === 'text');
-            navigate(first ? `/den/${denID}/${first.id}` : `/den/${denID}`);
-        }
+        if (c.id === channel?.id) navigate(`/den/${denID}/${NO_DM}`);
     }
 
     async function forget() {
@@ -307,7 +398,7 @@ export function Chat({ denID, channelID, navigate }) {
                     </div>
                     <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id} />
                     {tab === 'dms' ? (
-                        <DMList dms={view.channels.filter((c) => c.kind === 'dm')} reads={reads} open={channel?.id} partner={partner} online={online}
+                        <DMList dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
                             keys={view.dm_keys || []} me={view.me.id} onOpen={openChannel} onClose={closeDM} />
                     ) : (
                         <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
@@ -360,6 +451,7 @@ export function Chat({ denID, channelID, navigate }) {
                                 me={view.me}
                                 members={members}
                                 readPosition={reads.get(channel.id)?.message_id}
+                                lastMessage={reads.get(channel.id)?.last_message_id}
                                 role={view.role}
                                 dm={dm}
                                 keys={channel.kind === 'dm' ? (view.dm_keys || []).filter((k) => k.channel_id === channel.id) : undefined}
@@ -372,6 +464,10 @@ export function Chat({ denID, channelID, navigate }) {
                                 onTyping={() => sendTyping(denID, channel.id)}
                             />
                         </>
+                    ) : channelID === NO_DM ? (
+                        <div class="flex flex-col items-start p-6">
+                            <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Direct messages</button>
+                        </div>
                     ) : (
                         <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
                             <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Channels</button>
@@ -379,13 +475,20 @@ export function Chat({ denID, channelID, navigate }) {
                         </div>
                     )}
                 </section>
-                {membersOpen && (
+                {/* Beside a DM, the member list's place shows the other member's
+                    profile (M11); with no DM open, it shows nothing. */}
+                {membersOpen && channelID !== NO_DM && (
                     <aside class="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-base-200 md:static md:z-auto md:w-60 md:shrink-0">
                         <div class="flex items-center justify-between border-b border-base-300 p-3">
-                            <span class="font-semibold">Members</span>
-                            <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={toggleMembers} aria-label="Close the member list">✕</button>
+                            <span class="font-semibold">{channel?.kind === 'dm' ? 'Profile' : 'Members'}</span>
+                            <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={toggleMembers}
+                                aria-label={channel?.kind === 'dm' ? 'Close the profile' : 'Close the member list'}>✕</button>
                         </div>
-                        <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                        {channel?.kind === 'dm' ? (
+                            dm && <ProfilePanel key={dm.id} denID={denID} member={dm} me={view.me} online={online.has(dm.id)} />
+                        ) : (
+                            <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                        )}
                     </aside>
                 )}
                 {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
@@ -460,6 +563,16 @@ function UserPanel({ me, online, onEdit }) {
     );
 }
 
+// ChevronIcon points down beside an unfolded group, and right beside a
+// folded one.
+function ChevronIcon({ folded }) {
+    return (
+        <svg class={`h-3 w-3 shrink-0 ${folded ? '-rotate-90' : ''}`} {...ICON}>
+            <path d="M4 6l4 4 4-4" />
+        </svg>
+    );
+}
+
 function HomeIcon() {
     return (
         <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
@@ -484,10 +597,15 @@ function applyReads(view, reads) {
 }
 
 function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, onDialog }) {
-    const listed = view.channels.filter((c) => c.kind !== 'dm');
-    const ungrouped = listed.filter((c) => !c.group_id).sort((a, b) => a.position - b.position);
-    const groups = [...view.groups].sort((a, b) => a.position - b.position);
+    const { ungrouped, groups } = listed(view);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
+    const [folded, setFolded] = useState(() => readFolded(stored(FOLDED + denID)));
+    function fold(id) {
+        const next = new Set(folded);
+        if (!next.delete(id)) next.add(id);
+        store(FOLDED + denID, JSON.stringify([...next]));
+        setFolded(next);
+    }
     const { call, speaking, volumes, watched, share } = useCall();
     const watching = new Set(watched.map((w) => w.member));
     // Staff reach each channel's and group's settings from a ⋯ beside it
@@ -534,22 +652,33 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
     return (
         <nav aria-label="Channels" class="flex flex-col gap-2 p-2">
             <ul class="flex flex-col">{ungrouped.map(item)}</ul>
-            {groups.map((g) => (
-                <div key={g.id}>
-                    <div class="group flex h-6 cursor-default select-none items-center justify-between px-2 text-xs font-semibold uppercase text-base-content/60">
-                        <span class="truncate">{g.name}</span>
-                        {staff && !gone && (
-                            <button type="button" class={`${settings} font-normal normal-case`} aria-label={`Settings for the group ${g.name}`} title="Group settings"
-                                onClick={() => onDialog({ kind: 'group', group: g })}>
-                                ⋯
+            {groups.map(({ group: g, channels }) => {
+                // A folded group keeps what's open or busy in sight, and its
+                // row says what waits in the rest (M11).
+                const isFolded = folded.has(g.id);
+                const shown = isFolded ? foldedShows(channels, open, calls) : channels;
+                const marks = isFolded ? hiddenMarks(channels.filter((c) => !shown.includes(c)), reads) : null;
+                return (
+                    <div key={g.id}>
+                        <div class="group flex h-6 select-none items-center justify-between gap-1 px-2 text-xs font-semibold uppercase text-base-content/60">
+                            <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left uppercase hover:text-base-content"
+                                aria-expanded={!isFolded} onClick={() => fold(g.id)}>
+                                <ChevronIcon folded={isFolded} />
+                                <span class="truncate">{g.name}</span>
+                                {marks?.mentions > 0 && <span class="badge badge-error badge-xs font-normal normal-case">{marks.mentions}</span>}
+                                {marks?.unread && !marks.mentions && <span class="h-2 w-2 shrink-0 rounded-full bg-base-content" aria-label="unread"></span>}
                             </button>
-                        )}
+                            {staff && !gone && (
+                                <button type="button" class={`${settings} font-normal normal-case`} aria-label={`Settings for the group ${g.name}`} title="Group settings"
+                                    onClick={() => onDialog({ kind: 'group', group: g })}>
+                                    ⋯
+                                </button>
+                            )}
+                        </div>
+                        <ul class="flex flex-col">{shown.map(item)}</ul>
                     </div>
-                    <ul class="flex flex-col">
-                        {listed.filter((c) => c.group_id === g.id).sort((a, b) => a.position - b.position).map(item)}
-                    </ul>
-                </div>
-            ))}
+                );
+            })}
         </nav>
     );
 }
@@ -557,20 +686,19 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
 // DMList shows this member's DMs, the most recently active first. A closed
 // one stays out of it until it has a new message, unless it's open. A DM
 // waiting for this member to compare codes says so.
+// dms are as recentDMs lists them.
 function DMList({ dms, reads, open, partner, online, keys, me, onOpen, onClose }) {
-    const shown = dms.filter((c) => !reads.get(c.id)?.closed || c.id === open);
-    if (shown.length === 0) {
+    if (dms.length === 0) {
         return (
             <p class="cursor-default select-none p-4 text-sm text-base-content/60">
                 No direct messages yet. Open someone's profile to message them; it's end-to-end encrypted.
             </p>
         );
     }
-    const sorted = shown.sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
     return (
         <nav aria-label="Direct messages" class="flex flex-col p-2">
             <ul class="flex flex-col">
-                {sorted.map((c) => {
+                {dms.map((c) => {
                     const other = partner(c);
                     const r = reads.get(c.id);
                     const isUnread = unread(r) && c.id !== open;
@@ -678,7 +806,7 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, onChan
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
                     <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
-                        aria-label="Members" aria-pressed={membersOpen} title="Members">
+                        aria-label={channel.kind === 'dm' ? 'Profile' : 'Members'} aria-pressed={membersOpen} title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
                         <PeopleIcon />
                     </button>
                 </div>
