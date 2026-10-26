@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,11 +15,13 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/time/rate"
 )
 
 func (rt *router) mountDens(r chi.Router) {
@@ -107,7 +110,10 @@ func (rt *router) handleDens(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, v)
 }
 
-// handleEvents streams the dens view to the page whenever it changes.
+// handleEvents streams the dens view to the page whenever it changes, with
+// the dens' events, the voice keys and the page's call, and takes the
+// page's own messages, until the stream closes. Why it closed goes to the
+// log at info, with how long it was open (M11).
 func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// Accept checks the Origin against the Host, which the Host guard has
 	// already pinned to this listener, so other sites can't open it.
@@ -116,8 +122,6 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer c.CloseNow()
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
 	page := hex.EncodeToString(denproto.Random(8))
 	defer rt.a.Dens.DropFocus(page)
 	// The install's call belongs to the page that joined it, and its offers
@@ -138,97 +142,199 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 			rt.a.Dens.DropPage(page)
 		}
 	}()
-	go rt.readPage(ctx, cancel, c, page, deliver)
 	changes, stop := rt.a.Dens.Watch()
 	defer stop()
 	stream, stopStream := rt.a.Dens.Stream()
 	defer stopStream()
 	keys, stopKeys := rt.a.Shortcuts.Watch()
 	defer stopKeys()
-	send := func() bool {
-		v, err := rt.densView(ctx)
-		if err != nil {
-			rt.a.Log.Warnf("The dens view for the page: %v", err)
-			return false
+	// A page's notes on its call go to the log at debug, so a page can't
+	// fill the disk with them: two a second, after the 64 a page keeps
+	// while its stream is down and sends once it's back.
+	notes := rate.NewLimiter(2, 64)
+	opened := time.Now()
+	rt.a.Log.Debugf("Page %s's stream opened", page)
+	why := pageServer{
+		view: func(ctx context.Context) (densView, error) {
+			v, err := rt.densView(ctx)
+			if err != nil && ctx.Err() == nil {
+				rt.a.Log.Warnf("The dens view for the page: %v", err)
+			}
+			return v, err
+		},
+		changes: changes,
+		calls:   calls,
+		stream:  stream,
+		keys:    keys,
+		handle: func(ctx context.Context, msg pageMessage) {
+			if msg.T == "voice.note" && !notes.Allow() {
+				return
+			}
+			rt.pageMessage(ctx, page, msg, deliver)
+		},
+		times: pageTiming,
+	}.serve(r.Context(), c)
+	rt.a.Log.Infof("Page %s's stream closed after %s: %s", page, time.Since(opened).Round(time.Second), why)
+}
+
+// pageTimes are how often a page's stream is pinged, how long its pong may
+// take, and how long a write to it may, which tests shorten.
+type pageTimes struct{ ping, pong, write time.Duration }
+
+var pageTiming = pageTimes{ping: 30 * time.Second, pong: 10 * time.Second, write: 10 * time.Second}
+
+// closeHeard is how long a failed write waits for the reader to hear why
+// the stream closed.
+const closeHeard = 200 * time.Millisecond
+
+// pageServer is what a page's stream carries: the dens view, sent at first
+// and whenever changes says it changed; the events of the call the page
+// holds; the dens' events; and the voice keys' status and the helper's
+// presses (M7). handle takes each of the page's own messages.
+type pageServer struct {
+	view    func(context.Context) (densView, error)
+	changes <-chan struct{}
+	calls   <-chan denclient.CallEvent
+	stream  <-chan denclient.PageEvent
+	keys    <-chan shortcuts.Event
+	handle  func(context.Context, pageMessage)
+	times   pageTimes
+}
+
+// serve writes to a page's stream, and reads from it, until it closes, and
+// returns why: the first cause, since closing the stream brings on the
+// rest. ctx ends as the service stops.
+func (p pageServer) serve(ctx context.Context, c *websocket.Conn) string {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	// The reader hands over its cause before it ends ctx.
+	ended := make(chan string, 1)
+	go p.read(ctx, cancel, c, ended)
+	endedBy := func() string {
+		select {
+		case why := <-ended:
+			return why
+		default:
+			return "the service is stopping"
 		}
-		data, err := json.Marshal(map[string]any{"t": "dens", "d": v})
+	}
+	write := func(t string, d any) string {
+		data, err := json.Marshal(map[string]any{"t": t, "d": d})
 		if err != nil {
-			return false
+			return "a message didn't encode"
 		}
-		wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		return c.Write(wctx, websocket.MessageText, data) == nil
+		wctx, wcancel := context.WithTimeout(ctx, p.times.write)
+		err = c.Write(wctx, websocket.MessageText, data)
+		wcancel()
+		// A write that runs out of time closes the stream, which the
+		// reader may hear first, so the write's own deadline comes first.
+		switch {
+		case err == nil:
+			return ""
+		case errors.Is(err, context.DeadlineExceeded):
+			return "a write stalled"
+		case ctx.Err() != nil:
+			return endedBy()
+		}
+		// A page that closes its end can fail a write just before the
+		// reader hears it close, which says more.
+		select {
+		case why := <-ended:
+			return why
+		case <-time.After(closeHeard):
+			return "a write failed"
+		}
 	}
-	if !send() {
-		return
+	send := func() string {
+		v, err := p.view(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return endedBy()
+			}
+			return "its dens view failed"
+		}
+		return write("dens", v)
 	}
-	ping := time.NewTicker(30 * time.Second)
+	if why := send(); why != "" {
+		return why
+	}
+	// The page fell behind once a feed closes; it reloads everything when
+	// it reconnects.
+	behind := func() string {
+		c.Close(websocket.StatusTryAgainLater, "fell behind")
+		return "it fell behind"
+	}
+	ping := time.NewTicker(p.times.ping)
 	defer ping.Stop()
 	for {
+		var why string
 		select {
 		case <-ctx.Done():
-			return
-		case <-changes:
-			if !send() {
-				return
-			}
-		case e := <-calls:
-			data, err := json.Marshal(map[string]any{"t": "call", "d": e})
-			if err != nil {
-				return
-			}
-			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err = c.Write(wctx, websocket.MessageText, data)
-			cancel()
-			if err != nil {
-				return
-			}
-		case e, ok := <-stream:
+			return endedBy()
+		case <-p.changes:
+			why = send()
+		case e := <-p.calls:
+			why = write("call", e)
+		case e, ok := <-p.stream:
 			if !ok {
-				// The page fell behind; it reloads everything when it
-				// reconnects.
-				c.Close(websocket.StatusTryAgainLater, "fell behind")
-				return
+				return behind()
 			}
-			data, err := json.Marshal(map[string]any{"t": "den", "d": e})
-			if err != nil {
-				return
-			}
-			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err = c.Write(wctx, websocket.MessageText, data)
-			cancel()
-			if err != nil {
-				return
-			}
-		case e, ok := <-keys:
+			why = write("den", e)
+		case e, ok := <-p.keys:
 			if !ok {
-				c.Close(websocket.StatusTryAgainLater, "fell behind")
-				return
+				return behind()
 			}
 			// The voice keys' status, and the helper's presses during a
 			// call, which only the page holding it acts on (M7).
-			msg := map[string]any{"t": "keys", "d": e.Status}
 			if e.Press != nil {
-				msg = map[string]any{"t": "key", "d": e.Press}
-			}
-			data, err := json.Marshal(msg)
-			if err != nil {
-				return
-			}
-			wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err = c.Write(wctx, websocket.MessageText, data)
-			cancel()
-			if err != nil {
-				return
+				why = write("key", e.Press)
+			} else {
+				why = write("keys", e.Status)
 			}
 		case <-ping.C:
-			pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			pctx, pcancel := context.WithTimeout(ctx, p.times.pong)
 			err := c.Ping(pctx)
-			cancel()
+			pcancel()
 			if err != nil {
-				return
+				if ctx.Err() != nil {
+					return endedBy()
+				}
+				return "a ping went unanswered"
 			}
 		}
+		if why != "" {
+			return why
+		}
+	}
+}
+
+// read hands the page's messages to handle until the stream closes, and
+// then over ended why it closed, unless ctx ended first: a page that goes
+// away, as when its tab closes or reloads, closes it with 1001.
+func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, ended chan<- string) {
+	defer cancel()
+	// Room for a call's answer, which messages are otherwise far below.
+	c.SetReadLimit(denproto.MaxClientFrame)
+	for {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				switch code := websocket.CloseStatus(err); {
+				case code == websocket.StatusGoingAway:
+					ended <- "the page went away"
+				case code >= 0:
+					ended <- fmt.Sprintf("the page closed it with %d", code)
+				default:
+					ended <- "the connection broke"
+				}
+			}
+			return
+		}
+		var msg pageMessage
+		if json.Unmarshal(data, &msg) != nil {
+			continue
+		}
+		p.handle(ctx, msg)
 	}
 }
 
@@ -236,60 +342,54 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 // shows in a den ("focus", with an empty channel for none), typing, and
 // its call: joining or resuming it, answering the den's offers, asking for
 // an ICE restart, muting, sharing its screen and watching others' (M4.2),
-// and leaving.
+// holding push to talk and its notes for the log (M11), and leaving.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
-		Den      string `json:"den"`
-		Channel  string `json:"channel"`
-		Muted    bool   `json:"muted"`
-		Deafened bool   `json:"deafened"`
-		Resume   bool   `json:"resume"`
-		Version  int    `json:"version"`
-		SDP      string `json:"sdp"`
-		On       bool   `json:"on"`
-		Sound    bool   `json:"sound"`
-		MemberID string `json:"member_id"`
+		Den      string              `json:"den"`
+		Channel  string              `json:"channel"`
+		Muted    bool                `json:"muted"`
+		Deafened bool                `json:"deafened"`
+		Resume   bool                `json:"resume"`
+		Version  int                 `json:"version"`
+		SDP      string              `json:"sdp"`
+		On       bool                `json:"on"`
+		Sound    bool                `json:"sound"`
+		MemberID string              `json:"member_id"`
+		Note     *denclient.CallNote `json:"note"`
 	} `json:"d"`
 }
 
-// readPage handles the page's messages until the stream closes.
-func (rt *router) readPage(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, page string, deliver func(denclient.CallEvent)) {
-	defer cancel()
-	// Room for a call's answer, which messages are otherwise far below.
-	c.SetReadLimit(denproto.MaxClientFrame)
-	for {
-		_, data, err := c.Read(ctx)
-		if err != nil {
-			return
+// pageMessage acts on one of the page's messages.
+func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage, deliver func(denclient.CallEvent)) {
+	switch msg.T {
+	case "focus":
+		rt.a.Dens.SetFocus(page, msg.D.Den, msg.D.Channel)
+	case "typing":
+		_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
+	case "voice.join":
+		marks := denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened}
+		if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, marks, msg.D.Resume, deliver) != nil {
+			deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
 		}
-		var msg pageMessage
-		if json.Unmarshal(data, &msg) != nil {
-			continue
+	case "voice.answer":
+		rt.a.Dens.AnswerCall(page, msg.D.Den, msg.D.Version, msg.D.SDP)
+	case "voice.restart":
+		rt.a.Dens.RestartCall(ctx, page, msg.D.Den)
+	case "voice.mute":
+		rt.a.Dens.MuteCall(page, msg.D.Den, denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened})
+	case "voice.share":
+		rt.a.Dens.ShareCall(page, msg.D.Den, msg.D.On, msg.D.Sound)
+	case "voice.watch":
+		rt.a.Dens.WatchCall(page, msg.D.Den, msg.D.MemberID, msg.D.On)
+	case "voice.talk":
+		rt.a.Dens.TalkCall(page, msg.D.Den, msg.D.On)
+	case "voice.note":
+		if msg.D.Note != nil {
+			rt.a.Dens.NoteCall(page, msg.D.Den, msg.D.Channel, *msg.D.Note)
 		}
-		switch msg.T {
-		case "focus":
-			rt.a.Dens.SetFocus(page, msg.D.Den, msg.D.Channel)
-		case "typing":
-			_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
-		case "voice.join":
-			marks := denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened}
-			if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, marks, msg.D.Resume, deliver) != nil {
-				deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
-			}
-		case "voice.answer":
-			rt.a.Dens.AnswerCall(page, msg.D.Den, msg.D.Version, msg.D.SDP)
-		case "voice.restart":
-			rt.a.Dens.RestartCall(ctx, page, msg.D.Den)
-		case "voice.mute":
-			rt.a.Dens.MuteCall(page, msg.D.Den, denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened})
-		case "voice.share":
-			rt.a.Dens.ShareCall(page, msg.D.Den, msg.D.On, msg.D.Sound)
-		case "voice.watch":
-			rt.a.Dens.WatchCall(page, msg.D.Den, msg.D.MemberID, msg.D.On)
-		case "voice.leave":
-			rt.a.Dens.LeaveCall(page, msg.D.Den)
-		}
+	case "voice.leave":
+		rt.a.Dens.LeaveCall(page, msg.D.Den)
 	}
 }
 

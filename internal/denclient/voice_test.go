@@ -43,6 +43,7 @@ type page struct {
 	ended   chan string
 	resumed chan struct{}
 	refused chan denclient.CallRefusal
+	talking chan []string
 	stop    chan struct{}
 	// The last offer answered, and its answer, which goes again if the den
 	// sends that offer again after a resume, as the page does.
@@ -58,7 +59,7 @@ func newPage(t *testing.T, m *denclient.Manager, id string) *page {
 	}
 	p := &page{t: t, m: m, id: id, caller: caller, events: make(chan denclient.CallEvent, 16),
 		ended: make(chan string, 16), resumed: make(chan struct{}, 16), refused: make(chan denclient.CallRefusal, 16),
-		stop: make(chan struct{})}
+		talking: make(chan []string, 16), stop: make(chan struct{})}
 	t.Cleanup(func() {
 		close(p.stop)
 		_ = caller.Close()
@@ -89,6 +90,8 @@ func (p *page) run() {
 				p.resumed <- struct{}{}
 			case e.Refused != nil:
 				p.refused <- *e.Refused
+			case e.Talking != nil:
+				p.talking <- *e.Talking
 			case e.Offer != nil:
 				if e.Offer.Version != p.version {
 					answer, err := p.caller.Answer(e.Offer.SDP)
@@ -372,4 +375,58 @@ func TestShareThroughTheClient(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the refusal didn't reach the page")
 	}
+}
+
+// waitTalking waits for word that these members hold push to talk.
+func (p *page) waitTalking(want ...string) {
+	p.t.Helper()
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case got := <-p.talking:
+			if slices.Equal(got, want) {
+				return
+			}
+		case <-timeout:
+			p.t.Fatalf("page %s didn't hear push to talk held by %v", p.id, want)
+		}
+	}
+}
+
+// TestPushToTalkThroughTheClient checks that the push to talk a page holds
+// reaches the den through its install, and the den's word of it the other
+// page in the call (M11).
+func TestPushToTalkThroughTheClient(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.startCalls()
+	name := "Lounge"
+	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+		t.Fatal(err)
+	}
+	var lounge string
+	viewOf(t, member, denID, "the voice channel", func(v denclient.View) bool {
+		for _, c := range v.Channels {
+			if c.Name == name {
+				lounge = c.ID
+			}
+		}
+		return lounge != ""
+	})
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	a, b := newPage(t, owner, "page-a"), newPage(t, member, "page-b")
+	a.join(denID, lounge)
+	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
+	b.join(denID, lounge)
+	viewOf(t, owner, denID, "both in the call", showsCall(lounge, alice, bob))
+	member.TalkCall("page-b", denID, true)
+	a.waitTalking(bob)
+	b.waitTalking(bob)
+	// Only the page that holds the call speaks for it: what another page
+	// says would have reached the den well before Alice's press.
+	member.TalkCall("page-x", denID, false)
+	time.Sleep(300 * time.Millisecond)
+	owner.TalkCall("page-a", denID, true)
+	a.waitTalking(alice, bob)
+	member.TalkCall("page-b", denID, false)
+	a.waitTalking(alice)
 }
