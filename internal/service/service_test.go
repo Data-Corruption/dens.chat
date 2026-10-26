@@ -24,6 +24,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/service"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
+
+	"github.com/coder/websocket"
 )
 
 // The ports tests give an instance come from below those the system hands
@@ -427,4 +429,94 @@ func TestPageDownloadsABackup(t *testing.T) {
 		t.Fatalf("the archive: %+v, %v", manifest, err)
 	}
 	b.expect(http.StatusGone, "the link again", "GET", link.URL, nil)
+}
+
+// TestPageDownloadsTheLogs checks the logs' download from the settings
+// (M11): the newest logs, oldest first, as a file the browser keeps no
+// copy of, for a paired browser alone; and a page's stream closing goes in
+// them, with why.
+func TestPageDownloadsTheLogs(t *testing.T) {
+	a, client := startDevService(t)
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/logs", a.Instance.ClientPort))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("an unpaired browser's download: %d", resp.StatusCode)
+	}
+	b := pair(t, a, client)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(b.base, "http")+"/api/events",
+		&websocket.DialOptions{HTTPClient: b.http, HTTPHeader: http.Header{"Origin": {b.base}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ws.Read(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ws.Close(websocket.StatusGoingAway, "")
+	download := func() (*http.Response, string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", b.base+"/api/logs", nil)
+		resp, err := b.http.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp, string(body)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		resp, logs := download()
+		h := resp.Header
+		if resp.StatusCode != http.StatusOK || h.Get("Content-Type") != "text/plain; charset=utf-8" || h.Get("Cache-Control") != "no-store" ||
+			!strings.HasPrefix(h.Get("Content-Disposition"), `attachment; filename=dens-`+a.Layout.Instance+"-") {
+			t.Fatalf("the download: %d %v", resp.StatusCode, h)
+		}
+		start, closed := strings.Index(logs, "Starting dens v1.0.0"), strings.Index(logs, "stream closed after 0s: the page went away")
+		if start >= 0 && closed > start {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the logs don't start the service and then close the page's stream:\n%s", logs)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// TestLogsOverTheControlEndpoint checks what dens logs asks of the service
+// (M11): the newest logs, as the page downloads them, and the level kept as
+// the page keeps it, which the settings then show.
+func TestLogsOverTheControlEndpoint(t *testing.T) {
+	a, client := startDevService(t)
+	if err := client.Call(control.Request{Op: control.OpLogs, Level: "loud"}, nil); err == nil || !strings.Contains(err.Error(), "one of debug, info, warn, error, none") {
+		t.Fatalf("a level that isn't one: %v", err)
+	}
+	var kept control.LogLevel
+	if err := client.Call(control.Request{Op: control.OpLogs, Level: " INFO "}, &kept); err != nil || kept.Level != "info" {
+		t.Fatalf("setting info: %+v, %v", kept, err)
+	}
+	b := pair(t, a, client)
+	var settings struct {
+		LogLevel string `json:"logLevel"`
+	}
+	b.expect(http.StatusOK, "the settings", "GET", "/api/settings", nil, &settings)
+	if settings.LogLevel != "info" {
+		t.Fatalf("the settings show %q", settings.LogLevel)
+	}
+	var result control.Backup
+	var logs bytes.Buffer
+	if err := client.CallBody(control.Request{Op: control.OpLogs}, &result, func() (io.Writer, error) { return &logs, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(result.Name, "dens-"+a.Layout.Instance+"-") || !strings.HasSuffix(result.Name, "-logs.txt") || result.Size != int64(logs.Len()) ||
+		!strings.Contains(logs.String(), "Starting dens v1.0.0") {
+		t.Fatalf("the logs: %+v, %d bytes", result, logs.Len())
+	}
 }

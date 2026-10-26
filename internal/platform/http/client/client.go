@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,6 +94,7 @@ func New(a *app.App) http.Handler {
 			r.Get("/api/settings", rt.handleSettings)
 			r.Post("/api/settings", rt.handleSettingsUpdate)
 			r.Post("/api/cache/clear", rt.handleClearCache)
+			r.Get("/api/logs", rt.handleLogs)
 			r.Post("/api/shortcuts/desktop", rt.handleShortcutsDesktop)
 			rt.mountBackups(r)
 			rt.mountFlatpak(r)
@@ -287,6 +289,20 @@ func (rt *router) handleShortcutsDesktop(w http.ResponseWriter, r *http.Request)
 	default:
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+}
+
+// handleLogs downloads the newest logs as one text file, for the member to
+// send with a problem (M11).
+func (rt *router) handleLogs(w http.ResponseWriter, r *http.Request) {
+	name, logs, err := rt.a.Logs()
+	if err != nil {
+		xhttp.Error(r.Context(), w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(logs)
 }
 
 // handleClearCache empties the client's cache of files (M6).

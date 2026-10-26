@@ -56,6 +56,10 @@ const (
 	// OpCreateDen creates the den this instance hosts, with no account on
 	// this computer, and makes its owner invite (M10).
 	OpCreateDen = "create-den"
+	// OpLogs streams the newest logs, as the settings' Logging card
+	// downloads them, or with Level sets how much they say, as the card's
+	// level does (M11), so a server needs the page for neither.
+	OpLogs = "logs"
 )
 
 const maxLine = 64 * 1024
@@ -78,6 +82,8 @@ type Request struct {
 	// address members reach it at.
 	Name string `json:"name,omitempty"`
 	URL  string `json:"url,omitempty"`
+	// Level is the log level OpLogs sets.
+	Level string `json:"level,omitempty"`
 }
 
 // Response is the service's reply line.
@@ -108,6 +114,11 @@ type Status struct {
 	Den             string    `json:"den,omitempty"`
 	DenExported     time.Time `json:"denExported,omitzero"`
 	UpdateAvailable string    `json:"updateAvailable,omitempty"`
+}
+
+// LogLevel is the result of OpLogs that sets the level: the level kept.
+type LogLevel struct {
+	Level string `json:"level"`
 }
 
 // Pair is the result of OpPair: a URL carrying a one-time pairing token.
