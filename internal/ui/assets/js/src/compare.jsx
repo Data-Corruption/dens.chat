@@ -9,6 +9,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { useBackdrop } from './components.jsx';
 import { fitBox, formatSize, step } from './files.jsx';
 
 const SMALLER = 'DENS_SEND_SMALLER';
@@ -183,6 +184,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const close = useRef(null);
     const players = useRef({});
     const at = useRef(index);
+    const backdrop = useBackdrop(onClose);
     at.current = index;
 
     // The stage's size is known before the first paint, so the photo
@@ -341,7 +343,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const layer = (which) => `absolute inset-0 h-full w-full object-fill ${visible === which ? '' : 'opacity-0'}`;
     return (
         <div role="dialog" aria-modal="true" aria-label={`Compare the two versions of ${entry.result.name}`}
-            class="fixed inset-0 z-50 flex flex-col gap-3 bg-black/85 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+            class="fixed inset-0 z-50 flex flex-col gap-3 bg-black/85 p-4" {...backdrop}>
             <div ref={stage} class={`relative min-h-0 flex-1 overflow-hidden ${actual ? 'cursor-grab active:cursor-grabbing' : ''}`}
                 onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; }}>
                 <div key={entry.result.id} class={`absolute select-none overflow-hidden rounded ${actual ? '' : 'cursor-zoom-in'}`}

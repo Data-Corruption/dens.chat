@@ -387,9 +387,10 @@ try {
         `${B.browser} keeps Alice's volume into the next call: ${JSON.stringify(again)}, then ${JSON.stringify(reset)}`);
 
     // Deafen: Bob hears nothing of the call and is muted, which Alice sees
-    // as his deafened mark; hearing again puts his microphone back.
+    // as his deafened mark, beside his muted one (M11); hearing again puts
+    // his microphone back.
     const PANEL_BUTTON = (label) => `document.querySelector('button[aria-label="${label}"]')`;
-    const DEAFENED_MARK = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes('Bob') && li.querySelector('[aria-label=deafened]'))`;
+    const DEAFENED_MARK = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes('Bob') && li.querySelector('[aria-label=deafened]') && li.querySelector('[aria-label=muted]'))`;
     await waitFor(() => B.b.eval(`!!${PANEL_BUTTON('Deafen')}`), `${B.browser} deafen button`);
     await B.b.eval(`(${PANEL_BUTTON('Deafen')}.click(), true)`);
     await sleep(800);

@@ -23,7 +23,7 @@ import { compareIds, newNonce } from './ids.js';
 import { OFFLINE_NOTE } from './offline.js';
 import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
 import { keptFor } from './retention.js';
-import { Markdown, Preview } from './markdown.jsx';
+import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { isStaff, rank } from './people.jsx';
 import { LOCKED, keyChanges } from './private.js';
@@ -67,11 +67,19 @@ function viewed(m, file) {
     return index < 0 ? null : { message: m.id, files, index };
 }
 
+// dividerAt is where a channel's New divider goes, as the channel opens:
+// after the read position when messages came after it, and nowhere when
+// none did, so messages that arrive while it's open get none (M11).
+export function dividerAt(readPosition, lastMessage) {
+    return readPosition && compareIds(lastMessage, readPosition) > 0 ? readPosition : '';
+}
+
 // MessagePane shows a channel or DM. dm is the other member of a DM, and
 // keys the DM's keys; typing lists who is typing here; closed, when set,
 // says why nothing can be sent; limits are the den's upload limits, and
-// retention the days it keeps a message, 0 for ever (M5).
-export function MessagePane({ denID, channel, me, members, readPosition, role, dm, keys, typing, closed, limits, retention, offline, onProfile, onTyping }) {
+// retention the days it keeps a message, 0 for ever (M5). lastMessage is
+// the channel's newest, as its read state has it.
+export function MessagePane({ denID, channel, me, members, readPosition, lastMessage, role, dm, keys, typing, closed, limits, retention, offline, onProfile, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -90,7 +98,7 @@ export function MessagePane({ denID, channel, me, members, readPosition, role, d
     // compares (M5).
     const [comparing, setComparing] = useState(null);
     const [dragging, setDragging] = useState(false);
-    const [divider] = useState(readPosition || '');
+    const [divider] = useState(() => dividerAt(readPosition, lastMessage));
     const scroller = useRef(null);
     const content = useRef(null);
     const anchor = useRef(null);
@@ -950,13 +958,13 @@ function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
                 </div>
             )}
             <textarea
-                class="textarea w-full"
+                class="textarea focus-border w-full"
                 rows={Math.min(8, text.split('\n').length + 1)}
                 value={text}
                 onInput={(e) => setText(e.currentTarget.value)}
                 onKeyDown={(e) => {
                     if (e.key === 'Escape') onDone();
-                    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                    if (sends(e)) {
                         e.preventDefault();
                         save();
                     }
@@ -1171,7 +1179,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                 <div class="relative min-w-0 flex-1">
                     <textarea
                         ref={box}
-                        class="textarea h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-10"
+                        class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-10"
                         rows={Math.min(8, text.split('\n').length)}
                         placeholder={placeholder}
                         value={text}
@@ -1183,7 +1191,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                         }}
                         onInput={(e) => input(e.currentTarget.value)}
                         onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+                            if (sends(e)) {
                                 e.preventDefault();
                                 submit();
                             } else if (e.key === 'Escape' && replyTo) {
@@ -1222,7 +1230,10 @@ function WritingGuide({ onClose }) {
             <div class="flex flex-col gap-4 text-sm">
                 <section class="flex flex-col gap-1">
                     <h3 class="font-semibold">Sending</h3>
-                    <p>{kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line.</p>
+                    <p>
+                        {kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line, as {kbd('Enter')} does inside a code block,
+                        and {kbd('Ctrl')}+{kbd('Enter')} sends from anywhere.
+                    </p>
                     <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
                     <p>A message holds up to 4,000 characters. One taller than about 16 lines shows folded, and readers open the rest.</p>
                 </section>

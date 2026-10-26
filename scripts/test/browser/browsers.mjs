@@ -251,6 +251,15 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             if (type !== 'up') await cdp('Input.dispatchKeyEvent', down);
             if (type !== 'down') await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
         },
+        // chord presses a key while modifiers ('Control', 'Shift', 'Alt',
+        // 'Meta') are held (M11).
+        async chord(mods, key) {
+            const bits = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+            const modifiers = mods.reduce((m, k) => m | bits[k], 0);
+            const [code, vk] = CHROMIUM_KEYS[key];
+            await cdp('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode: vk, modifiers });
+            await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, modifiers });
+        },
         // type types text into what has focus, as keys would.
         async type(text) {
             await cdp('Input.insertText', { text });
@@ -315,6 +324,7 @@ const FIREFOX_KEYS = {
     v: 'v',
 };
 const FIREFOX_BUTTONS = { left: 0, back: 3 };
+const FIREFOX_MODIFIERS = { Control: '\uE009', Shift: '\uE008', Alt: '\uE00A', Meta: '\uE03D' };
 
 async function firefox(port, { media, screen, preload, prefs = {}, size = [1400, 900], downloads }) {
     const profile = `/tmp/browsers-firefox-${port}`;
@@ -388,6 +398,14 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
             const actions = [];
             if (type !== 'up') actions.push({ type: 'keyDown', value: FIREFOX_KEYS[key] });
             if (type !== 'down') actions.push({ type: 'keyUp', value: FIREFOX_KEYS[key] });
+            await bidi.send('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions }] });
+        },
+        async chord(mods, key) {
+            const actions = [
+                ...mods.map((m) => ({ type: 'keyDown', value: FIREFOX_MODIFIERS[m] })),
+                { type: 'keyDown', value: FIREFOX_KEYS[key] }, { type: 'keyUp', value: FIREFOX_KEYS[key] },
+                ...mods.map((m) => ({ type: 'keyUp', value: FIREFOX_MODIFIERS[m] })),
+            ];
             await bidi.send('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions }] });
         },
         async type(text) {

@@ -64,26 +64,20 @@ export function MemberList({ members, online, onProfile }) {
     );
 }
 
-// ProfileCard shows a member, and what the viewer can do with them.
-export function ProfileCard({ denID, member, me, role, online, onClose, onMessage, onEdit, onRemove }) {
+// Profile shows a member: their banner and picture, their names and role,
+// how long they've been in the den, and their bio. In a panel the bio runs
+// its full length, which the panel scrolls.
+function Profile({ denID, member, me, online, panel = false }) {
     const [bio, setBio] = useState(null);
     const [error, setError] = useState('');
-    const act = useAction();
     // A bio usually arrives at once; the dots show only if it's slow.
     const slow = useLater(bio === null && !error, 1000);
     useEffect(() => {
         api.get(`/api/dens/${denID}/members/${member.id}`).then((p) => setBio(p.bio || ''), (e) => setError(e.message));
     }, [member.id, member.display_name]);
-    const self = member.id === me.id;
     const left = !!member.left_at;
-    const canManage = !self && rank(role) > rank(member.role);
-
-    function setRole(next) {
-        act.run(() => api.put(`/api/dens/${denID}/members/${member.id}/role`, { role: next }));
-    }
-
     return (
-        <Dialog title="Profile" onClose={onClose}>
+        <>
             {member.banner?.id && <Banner denID={denID} image={member.banner} />}
             <div class="flex items-center gap-4">
                 <Avatar member={member} size="lg" online={left ? undefined : online} />
@@ -96,11 +90,40 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
             <p class="text-xs text-base-content/60">{left ? `No longer in this den since ${day(member.left_at)}` : `Member since ${day(member.joined_at)}`}</p>
             {slow && <span class="loading loading-dots loading-sm"></span>}
             {bio && (
-                <div class="max-h-48 overflow-y-auto rounded bg-base-200 p-2 text-sm">
+                <div class={`rounded p-2 text-sm ${panel ? 'bg-base-100' : 'max-h-48 overflow-y-auto bg-base-200'}`}>
                     <Markdown text={bio} me={me} />
                 </div>
             )}
-            <ErrorText message={error || act.error} />
+            <ErrorText message={error} />
+        </>
+    );
+}
+
+// ProfilePanel shows the other member of a DM beside it, in the member
+// list's place (M11).
+export function ProfilePanel({ denID, member, me, online }) {
+    return (
+        <div class="flex flex-col gap-3 p-3">
+            <Profile denID={denID} member={member} me={me} online={online} panel />
+        </div>
+    );
+}
+
+// ProfileCard shows a member, and what the viewer can do with them.
+export function ProfileCard({ denID, member, me, role, online, onClose, onMessage, onEdit, onRemove }) {
+    const act = useAction();
+    const self = member.id === me.id;
+    const left = !!member.left_at;
+    const canManage = !self && rank(role) > rank(member.role);
+
+    function setRole(next) {
+        act.run(() => api.put(`/api/dens/${denID}/members/${member.id}/role`, { role: next }));
+    }
+
+    return (
+        <Dialog title="Profile" onClose={onClose}>
+            <Profile denID={denID} member={member} me={me} online={online} />
+            <ErrorText message={act.error} />
             <div class="flex flex-wrap gap-2">
                 {self && <button type="button" class="btn btn-sm" onClick={onEdit}>Edit profile</button>}
                 {!self && !left && <button type="button" class="btn btn-primary btn-sm" onClick={() => onMessage(member)}>Message</button>}

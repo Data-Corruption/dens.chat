@@ -1,7 +1,7 @@
 // Small shared pieces. Everything shown here goes through Preact's text
 // rendering; nothing sets HTML from a string.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { InfoIcon } from './icons.jsx';
 
 export function Card({ title, children, class: extra = '' }) {
@@ -132,6 +132,24 @@ export function SubmitButton({ busy, children, class: extra = 'btn-primary' }) {
             {children}
         </button>
     );
+}
+
+// useBackdrop gives a dialog's backdrop what closes the dialog on a click
+// outside it. A press that starts inside the dialog, as when selecting
+// text, and is let go outside it ends in a click on the backdrop too, so a
+// click counts only when its press didn't start inside (M11).
+export function useBackdrop(onClose) {
+    const inside = useRef(false);
+    return {
+        onPointerDown: (e) => {
+            inside.current = e.target !== e.currentTarget;
+        },
+        onClick: (e) => {
+            const pressedInside = inside.current;
+            inside.current = false;
+            if (e.target === e.currentTarget && !pressedInside) onClose();
+        },
+    };
 }
 
 // useAction runs an async action once at a time, keeping its error.

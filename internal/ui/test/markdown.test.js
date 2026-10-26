@@ -5,7 +5,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, options, render as mount } from 'preact';
-import { Markdown, firstLine, parse, preview } from '../assets/js/src/markdown.jsx';
+import { Markdown, firstLine, inCodeBlock, parse, preview, sends } from '../assets/js/src/markdown.jsx';
 import { setOldReddit, shownLink, trimLink } from '../assets/js/src/links.js';
 import mentions from '../../denproto/testdata/mentions.json';
 import taskCases from '../../denproto/testdata/tasks.json';
@@ -234,4 +234,32 @@ test("a tick reaches the row's current handler", () => {
     assert.deepEqual(ticks, [['current', 0, true, 'milk']]);
     mount(h(Markdown, { text: '[ ] milk' }), root);
     assert.equal(root.find((n) => n.localName === 'input').attributes.disabled, 'true');
+});
+
+test('a caret is in a code block between a fence and the next', () => {
+    const at = (marked) => inCodeBlock(marked.replace('|', ''), marked.indexOf('|'));
+    assert.equal(at('hello|'), false);
+    assert.equal(at('```|'), true, 'just after an opening fence');
+    assert.equal(at('```js|'), true, 'after a language');
+    assert.equal(at('```\nlet x = 1|'), true);
+    assert.equal(at('```\nlet x = 1\n```|'), false, 'just after the closing fence');
+    assert.equal(at('```\na\n```\nafter|'), false);
+    assert.equal(at('```\na|\n```'), true, 'inside a closed block');
+    assert.equal(at('  ```\nindented fence|'), true, 'a fence after spaces, as parse reads it');
+    assert.equal(at('see ``` here|'), false, 'three backticks inside a line open nothing');
+    assert.equal(at('``|`'), false);
+});
+
+test('Enter sends outside a code block, Shift+Enter never does, and Ctrl+Enter always does', () => {
+    const key = (marked, mods = {}) => {
+        const value = marked.replace('|', '');
+        return sends({ key: 'Enter', isComposing: false, currentTarget: { value, selectionStart: marked.indexOf('|') }, ...mods });
+    };
+    assert.equal(key('hi|'), true);
+    assert.equal(key('hi|', { shiftKey: true }), false);
+    assert.equal(key('```\ncode|'), false);
+    assert.equal(key('```\ncode|', { ctrlKey: true }), true);
+    assert.equal(key('```\ncode\n```|'), true);
+    assert.equal(key('hi|', { isComposing: true }), false, 'an input method composing keeps Enter');
+    assert.equal(sends({ key: 'a', currentTarget: { value: '', selectionStart: 0 } }), false);
 });

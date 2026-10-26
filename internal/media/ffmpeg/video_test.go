@@ -201,6 +201,9 @@ func TestMuxPutsACopyTogether(t *testing.T) {
 	if i, j := slices.Index(boxes, "moov"), slices.Index(boxes, "mdat"); i < 0 || j < 0 || i > j {
 		t.Errorf("boxes %v: the index isn't before the media", boxes)
 	}
+	if ts := movieTimescale(out.data); ts != 1000 {
+		t.Errorf("the copy's movie timescale is %d", ts)
+	}
 
 	// It keeps the video's turn, and nothing else the full size carries.
 	before, err := r.Probe(ctx, in)

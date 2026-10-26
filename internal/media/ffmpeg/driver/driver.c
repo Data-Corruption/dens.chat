@@ -35,6 +35,16 @@
 
 #define IO_BUFFER (64 * 1024)
 
+// The timescale an MP4 or MOV the driver writes gives its movie, which its
+// edit lists count in. Left to itself, FFmpeg 9 takes the least common
+// multiple of its streams' time bases: 4,410,000 for a phone's 90 kHz video
+// with 44.1 kHz sound. Firefox reads the empty edit that starts a track
+// late against the track's own timescale instead, so in such a file it
+// played a clip's picture, then its sound, a hundred times 22 ms later.
+// 1000, FFmpeg's default before, and most files', plays in time in every
+// browser (M11).
+#define MOVIE_TIMESCALE "1000"
+
 static int log_level = AV_LOG_WARNING;
 
 static void log_callback(void *avcl, int level, const char *fmt, va_list vl) {
@@ -747,6 +757,7 @@ DM_EXPORT(dm_strip) int32_t dm_strip(const char *muxer) {
     }
     if (!strcmp(muxer, "mp4") || !strcmp(muxer, "mov") || !strcmp(muxer, "ipod")) {
         av_dict_set(&opts, "movflags", "+faststart", 0);
+        av_dict_set(&opts, "movie_timescale", MOVIE_TIMESCALE, 0);
     }
     ret = avformat_write_header(oc, &opts);
     if (ret < 0) {
@@ -1805,7 +1816,8 @@ DM_EXPORT(dm_mux) int32_t dm_mux(int32_t width, int32_t height) {
         map[i] = ost->index;
         sounds++;
     }
-    if ((ret = av_dict_set(&opts, "movflags", "+faststart", 0)) < 0 || (ret = avformat_write_header(oc, &opts)) < 0) {
+    if ((ret = av_dict_set(&opts, "movflags", "+faststart", 0)) < 0 ||
+        (ret = av_dict_set(&opts, "movie_timescale", MOVIE_TIMESCALE, 0)) < 0 || (ret = avformat_write_header(oc, &opts)) < 0) {
         goto end;
     }
 

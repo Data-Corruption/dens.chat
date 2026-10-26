@@ -99,17 +99,33 @@ fresh() {
     LOUNGE=$(channel Lounge voice)
 }
 
-# channel NAME [KIND] makes a channel as alice, a text one unless KIND is
-# voice, and prints its ID once bob has it.
+# channel NAME [KIND] [GROUP] makes a channel as alice, a text one unless
+# KIND is voice, in the group whose ID is GROUP if there is one, and prints
+# its ID once bob has it.
 channel() {
-    local id
-    api alice POST "/api/dens/$DEN/channels" "{\"name\":\"$1\",\"kind\":\"${2:-text}\"}" >/dev/null
+    local id group=""
+    [[ -n ${3:-} ]] && group=",\"group_id\":\"$3\""
+    api alice POST "/api/dens/$DEN/channels" "{\"name\":\"$1\",\"kind\":\"${2:-text}\"$group}" >/dev/null
     for _ in $(seq 80); do
         id=$(api bob GET "/api/dens/$DEN/state" | json "next((c['id'] for c in d['channels'] if c['name'] == '$1'), '')")
         [[ -n $id ]] && { echo "$id"; return 0; }
         sleep 0.25
     done
     echo "bob never saw channel $1" >&2
+    return 1
+}
+
+# group NAME makes a channel group as alice, and prints its ID once bob
+# has it.
+group() {
+    local id
+    api alice POST "/api/dens/$DEN/groups" "{\"name\":\"$1\"}" >/dev/null
+    for _ in $(seq 80); do
+        id=$(api bob GET "/api/dens/$DEN/state" | json "next((g['id'] for g in d['groups'] if g['name'] == '$1'), '')")
+        [[ -n $id ]] && { echo "$id"; return 0; }
+        sleep 0.25
+    done
+    echo "bob never saw group $1" >&2
     return 1
 }
 

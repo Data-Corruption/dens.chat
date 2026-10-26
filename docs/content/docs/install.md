@@ -15,6 +15,10 @@ your computer, and it keeps running while you're logged out.
   and Pop!\_OS, Arch, and CachyOS. On the others, such as NixOS and SteamOS,
   use [the Flatpak](#the-flatpak), which joins dens but can't host one.
 - **An up-to-date browser**: Firefox, Chrome, Edge, or one built on them.
+  [Ungoogled Chromium](https://github.com/ungoogled-software/ungoogled-chromium)
+  works best: Dens has had the fewest problems in it, its screen shares can
+  carry a tab's sound, which Firefox and the browsers built on it can't, and
+  it makes the smaller copies of videos you send several times faster.
 
 Linux keeps Dens more tightly locked down than Windows can; [Privacy](../privacy/#linux-and-windows)
 has the details.

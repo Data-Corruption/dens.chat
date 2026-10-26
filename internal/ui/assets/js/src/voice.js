@@ -865,6 +865,12 @@ function boundButton(code) {
     return KEYS.some((a) => keyStatus.keys[a]?.code === code);
 }
 
+// pointerdown ends the wait for a key on a press of any other button, as
+// a click elsewhere in the page, as Escape does (M11).
+function pointerdown(e) {
+    if (capture && !MOUSE[e.button]) cancelCapture();
+}
+
 function mousedown(e) {
     const code = MOUSE[e.button];
     if (!code) return;
@@ -949,6 +955,7 @@ function listenForKeys() {
     listening = true;
     window.addEventListener('keydown', keydown, true);
     window.addEventListener('keyup', keyup, true);
+    window.addEventListener('pointerdown', pointerdown, true);
     window.addEventListener('mousedown', mousedown, true);
     window.addEventListener('mouseup', mouseup, true);
     window.addEventListener('auxclick', auxclick, true);

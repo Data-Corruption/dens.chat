@@ -59,7 +59,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, commits it to a repository, and writes the repository's deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, and the browser checks (`scripts/test/browser/`), run by hand before each manual test |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
-| `docs/dev/` | Internal docs: the design and each deployment form's, the milestones, the lifecycle, the den protocol and the release process |
+| `docs/dev/` | Internal docs: the design and each deployment form's, the milestones and loose ideas, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
 
 ## Documents of record
@@ -73,9 +73,11 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 - [docs/dev/flatpak.md](docs/dev/flatpak.md): the Flatpak (M9), run by the
   member in their session: its sandbox, locked start and remembered
   key, lifecycle with no installer, updates, its publishing, and its harness.
-- [docs/dev/android.md](docs/dev/android.md): the Android app (M11 to M13).
+- [docs/dev/android.md](docs/dev/android.md): the Android app (M12 to M14).
 - [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
-  the plan for the one under way, and ideas after it.
+  and the plan for the one under way.
+- [docs/dev/loose-ideas.md](docs/dev/loose-ideas.md): ideas and fixes no
+  milestone has taken up yet.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
   locks every form shares, development instances, and the lifecycle e2e
   harnesses.

@@ -21,10 +21,23 @@
     background-color: oklch(from var(--color-base-100) min(1, l + 0.03) c h);
 }
 
-/* A button beside a text field, bordered as the field is. */
+/* A field that shows its focus by its border alone, a little darker:
+   DaisyUI's ring a little outside it doubled the border, which looked
+   heavy on the message box, always on screen (M11). */
+@utility focus-border {
+    &:focus,
+    &:focus-within {
+        --input-color: color-mix(in oklab, var(--color-base-content) 45%, #0000);
+        outline: none;
+    }
+}
+
+/* A button beside a text field, bordered and shaded as DaisyUI's field
+   is, so its top edge is no heavier than the field's. */
 @utility btn-field {
-    border-color: color-mix(in oklab, var(--color-base-content) 20%, #0000);
-    box-shadow: 0 1px color-mix(in oklab, var(--color-base-content) 20%, #0000) inset;
+    --input-color: color-mix(in oklab, var(--color-base-content) 20%, #0000);
+    border-color: var(--input-color);
+    box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
 }
 
 /* A role's badge, with a badge's color (badge-warning, badge-info): its

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -25,14 +26,36 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/ui"
 )
 
+// The ports tests give an instance come from below those the system hands
+// out by itself, from 32768 on Linux and 49152 on Windows. A port asked for
+// with :0 comes from there, and once its listener closes, the system can
+// hand it to another test's connection, as a listener of another package
+// running at the same time does: a den whose hosting turns off and on
+// again, or that restarts, would then find its port taken.
+const testPortsFrom, testPortsSpan = 20000, 12000
+
+// freePort finds a TCP port free on loopback.
 func freePort(t *testing.T) int {
 	t.Helper()
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+	return findPort(t, func(port int) error {
+		ln, err := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", port))
+		if err == nil {
+			ln.Close()
+		}
+		return err
+	})
+}
+
+// findPort tries ports among the tests' until one is free.
+func findPort(t *testing.T, try func(port int) error) int {
+	t.Helper()
+	for range 200 {
+		if port := testPortsFrom + rand.IntN(testPortsSpan); try(port) == nil {
+			return port
+		}
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port
+	t.Fatal("found no free port")
+	return 0
 }
 
 // startDevService opens and runs a development instance in temporary

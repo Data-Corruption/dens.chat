@@ -323,6 +323,28 @@ function Spoiler({ children }) {
     );
 }
 
+// inCodeBlock says whether a caret at offset at in text is inside a code
+// block, which a line starting with three backticks opens and the next
+// one closes, as parse reads them (M11). The fence a caret ends counts, so
+// Enter after an opening one starts the code, and after a closing one
+// sends.
+export function inCodeBlock(text, at) {
+    let open = false;
+    for (const line of text.slice(0, at).split('\n')) {
+        if (line.trim().startsWith('```')) open = !open;
+    }
+    return open;
+}
+
+// sends says whether Enter, as a keydown, sends a message or saves an
+// edit, rather than starting a new line: anywhere with Ctrl, and without
+// Shift outside a code block (M11).
+export function sends(e) {
+    if (e.key !== 'Enter' || e.isComposing) return false;
+    if (e.ctrlKey || e.metaKey) return true;
+    return !e.shiftKey && !inCodeBlock(e.currentTarget.value, e.currentTarget.selectionStart);
+}
+
 // firstLine is a text's first non-empty line, for previews.
 export function firstLine(text) {
     return (text.split('\n').find((l) => l.trim()) || '')

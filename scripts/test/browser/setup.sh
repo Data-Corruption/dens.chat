@@ -86,6 +86,7 @@ push internal/media/ffmpeg/testdata/rotated.heic photos/iphone-xr.heic
 for file in iphone-x-h264.mov iphone-12-pro-hevc.mov; do push "$media/$file" "videos/$file"; done
 push internal/media/ffmpeg/testdata/grain-60fps.mp4 videos/grain-60fps.mp4
 push internal/media/ffmpeg/testdata/vp9.webm videos/vp9.webm
+push internal/media/ffmpeg/testdata/late-sound.mp4 videos/late-sound.mp4
 push internal/media/ffmpeg/testdata/with-gps.mp4 clip.mp4
 for file in scripts/test/browser/*; do push "$file" "browser/$(basename "$file")" 0755; done
 

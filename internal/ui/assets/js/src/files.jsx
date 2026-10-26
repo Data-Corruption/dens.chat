@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { APIError, pageHeaders, reloadIfStale } from './api.js';
+import { useBackdrop } from './components.jsx';
 import { canCopy, followUpload } from './copier.js';
 
 // Previews fit these boxes in the message list; one image gets more room
@@ -465,9 +466,10 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
     const size = fitBox(file.width, file.height, Math.max(64, win.w - (several ? 128 : 32)), Math.max(64, win.h - 112));
     const box = { width: `${size.width}px`, height: `${size.height}px` };
     const side = 'btn btn-circle btn-ghost absolute top-1/2 -translate-y-1/2 text-3xl text-white hover:bg-white/15';
+    const backdrop = useBackdrop(onClose);
     return (
         <div role="dialog" aria-label={file.name} class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-4"
-            onClick={(e) => e.target === e.currentTarget && onClose()}>
+            {...backdrop}>
             {several && index > 0 && (
                 <button type="button" class={`${side} left-4`} aria-label="Previous image" onClick={() => onIndex(index - 1)}>‹</button>
             )}
