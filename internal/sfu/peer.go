@@ -99,6 +99,7 @@ type Peer struct {
 	connected bool
 	answerBy  *time.Timer
 	connectBy *time.Timer
+	offeredAt time.Time // when the offer that's out went, for the log (M11)
 	// screen and sound receive the member's share, from their first share
 	// in the call (M4.2), and shareBitrate is the most the screen's section
 	// asks their browser for.
@@ -166,6 +167,14 @@ func (s *SFU) Join(room, member string, bitrate int, signal Signal) (*Peer, erro
 	}
 	pc.OnTrack(p.forward)
 	pc.OnConnectionStateChange(p.stateChanged)
+	// The log follows the call's ICE and DTLS, and the path it takes (M11):
+	// only its protocol and the candidates' types, never their addresses.
+	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) { p.note("ICE %s", state) })
+	dtls := p.mic.Receiver().Transport()
+	dtls.OnStateChange(func(state webrtc.DTLSTransportState) { p.note("DTLS %s", state) })
+	dtls.ICETransport().OnSelectedCandidatePairChange(func(pair *webrtc.ICECandidatePair) {
+		p.note("its path is %s, from a %s candidate to a %s one", pair.Remote.Protocol, pair.Remote.Typ, pair.Local.Typ)
+	})
 
 	s.mu.Lock()
 	if s.closed {
@@ -227,12 +236,13 @@ func (p *Peer) Answer(version int, sdp string) {
 	}
 	p.waiting, p.answered = false, true
 	p.answerBy.Stop()
+	p.note("offer %d answered after %s", version, time.Since(p.offeredAt).Round(time.Millisecond))
 	p.spare = append(p.spare, p.offered...)
 	p.offered = nil
 	opened := p.opened
 	p.opened = nil
 	if !p.connected && p.connectBy == nil {
-		p.connectBy = time.AfterFunc(p.sfu.connect, p.fail)
+		p.connectBy = time.AfterFunc(p.sfu.connect, p.connectDue)
 	}
 	again := p.stale
 	p.mu.Unlock()
@@ -268,14 +278,52 @@ func (p *Peer) negotiate() {
 		return
 	}
 	p.version++
+	restart := p.restart
 	p.waiting, p.stale, p.restart = true, false, false
 	p.offered = append(p.offered, p.retiring...)
 	p.retiring = nil
 	p.opened = append(p.opened, p.opening...)
 	p.opening = nil
 	p.offer = shapeSections(denproto.StripCandidates(offer.SDP), p.shapes())
-	p.answerBy = time.AfterFunc(p.sfu.answer, p.fail)
+	p.offeredAt = time.Now()
+	p.answerBy = p.answerDue(p.version)
+	if restart {
+		p.note("offer %d sent, restarting ICE", p.version)
+	} else {
+		p.note("offer %d sent", p.version)
+	}
 	p.signal.Offer(p.version, p.offer)
+}
+
+// answerDue fails the call if the offer with that version is still out
+// once its answer is due, unless the call is held, whose offer waits. A
+// timer that fires as the answer arrives fails nothing.
+func (p *Peer) answerDue(version int) *time.Timer {
+	return time.AfterFunc(p.sfu.answer, func() {
+		p.mu.Lock()
+		due := !p.closed && !p.held && p.waiting && p.version == version
+		p.mu.Unlock()
+		if due {
+			p.note("offer %d went unanswered for %s", version, p.sfu.answer)
+			p.fail()
+		}
+	})
+}
+
+// connectDue fails the call if its connection isn't up once it's due.
+func (p *Peer) connectDue() {
+	p.mu.Lock()
+	due := !p.closed && !p.connected
+	p.mu.Unlock()
+	if due {
+		p.note("its connection wasn't up %s after its first answer", p.sfu.connect)
+		p.fail()
+	}
+}
+
+// note puts a line about the call in the den's log, at debug.
+func (p *Peer) note(format string, args ...any) {
+	p.sfu.debugf("The call of member %s in channel %s: "+format, append([]any{p.member, p.room}, args...)...)
 }
 
 // shapes gives, by mid, what each of the member's sections asks of their
@@ -330,7 +378,8 @@ func (p *Peer) Resume() {
 	}
 	p.held = false
 	if p.waiting {
-		p.answerBy = time.AfterFunc(p.sfu.answer, p.fail)
+		p.answerBy = p.answerDue(p.version)
+		p.note("offer %d sent again", p.version)
 		p.signal.Offer(p.version, p.offer)
 		p.mu.Unlock()
 		return
@@ -354,6 +403,7 @@ func (p *Peer) Restart() {
 	}
 	p.restart = true
 	p.mu.Unlock()
+	p.note("its client asked to restart ICE")
 	p.negotiate()
 }
 
@@ -592,6 +642,7 @@ func (p *Peer) fail() {
 }
 
 func (p *Peer) stateChanged(state webrtc.PeerConnectionState) {
+	p.note("its connection is %s", state)
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		p.mu.Lock()

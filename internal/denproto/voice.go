@@ -29,6 +29,10 @@ const (
 	EventVoiceShare   = "voice.share" // a client frame
 	EventVoiceWatch   = "voice.watch" // a client frame
 	EventVoiceRefused = "voice.refused"
+	// From M11: a member holds push to talk, or lets go, and the den tells
+	// the call's members who holds it.
+	EventVoiceTalk    = "voice.talk" // a client frame
+	EventVoiceTalking = "voice.talking"
 )
 
 // MaxSDP bounds an offer or an answer, in bytes.
@@ -177,6 +181,23 @@ type VoiceRefused struct {
 	MemberID  string `json:"member_id,omitempty"`
 	Reason    string `json:"reason"`
 }
+
+// VoiceTalk says the member holds push to talk, or let go of it (M11).
+type VoiceTalk struct {
+	On bool `json:"on"`
+}
+
+// VoiceTalking lists the members of a call who hold push to talk, in the
+// order they joined, for the call's members alone (M11). Each replaces the
+// last.
+type VoiceTalking struct {
+	ChannelID string   `json:"channel_id"`
+	Members   []string `json:"members"`
+}
+
+// TalksPerSecond is how often the den lights a member's push-to-talk ring
+// at most (M11); a release always puts it out.
+const TalksPerSecond = 5
 
 // VoiceMuteRequest is staff muting a member in calls, or lifting it.
 type VoiceMuteRequest struct {

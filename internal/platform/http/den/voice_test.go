@@ -548,3 +548,153 @@ func TestCallHoldsItsLimit(t *testing.T) {
 	later.join(games.ID)
 	later.wait(ended(games.ID, denproto.VoiceFull))
 }
+
+// talking matches word of who holds push to talk in a call (M11).
+func talking(channel string, members ...string) (string, func(denproto.Event) bool) {
+	return "push to talk in " + channel + " to be held by " + strings.Join(members, ", "), func(e denproto.Event) bool {
+		var x denproto.VoiceTalking
+		return e.T == denproto.EventVoiceTalking && json.Unmarshal(e.D, &x) == nil && x.ChannelID == channel && slices.Equal(x.Members, members)
+	}
+}
+
+// drain drops the events a socket heard already.
+func (v *voiceSocket) drain() {
+	for {
+		select {
+		case <-v.events:
+		default:
+			return
+		}
+	}
+}
+
+// lit counts the times a socket hears a member's push-to-talk ring light,
+// over d.
+func (v *voiceSocket) lit(member string, d time.Duration) int {
+	n := 0
+	held := false
+	timeout := time.After(d)
+	for {
+		select {
+		case e, ok := <-v.events:
+			if !ok {
+				return n
+			}
+			var x denproto.VoiceTalking
+			if e.T != denproto.EventVoiceTalking || json.Unmarshal(e.D, &x) != nil {
+				continue
+			}
+			now := slices.Contains(x.Members, member)
+			if now && !held {
+				n++
+			}
+			held = now
+		case <-timeout:
+			return n
+		}
+	}
+}
+
+// TestPushToTalkRings checks the push-to-talk ring the den passes around a
+// call (M11): to the call's members alone, never for a member muted or
+// staff muted, lit at most five times a second, and put out as the member
+// lets go, mutes, leaves, or their socket closes. A member joining hears
+// who holds it already.
+func TestPushToTalkRings(t *testing.T) {
+	f := newFixture(t)
+	f.startCalls(sfu.Config{})
+	aliceToken, _ := f.owner()
+	owner := f.session(aliceToken)
+	bobToken := f.member(aliceToken, "bob")
+	carolToken := f.member(aliceToken, "carol")
+	lounge := f.channel(owner, "Lounge", denproto.KindVoice, false)
+	alice := f.voiceSocket(aliceToken, newCaller(t))
+	bob := f.voiceSocket(bobToken, newCaller(t))
+	// Dave sees the call, and isn't in it.
+	dave := f.voiceSocket(f.member(aliceToken, "dave"), nil)
+	alice.join(lounge.ID)
+	bob.wait(inCall(lounge.ID, alice.me))
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, alice.me, bob.me))
+	talk := func(v *voiceSocket, on bool) { v.send(denproto.EventVoiceTalk, denproto.VoiceTalk{On: on}) }
+
+	talk(bob, true)
+	alice.wait(talking(lounge.ID, bob.me))
+	bob.wait(talking(lounge.ID, bob.me))
+	talk(bob, false)
+	alice.wait(talking(lounge.ID))
+
+	// Carol joins as Alice holds it.
+	talk(alice, true)
+	bob.wait(talking(lounge.ID, alice.me))
+	carol := f.voiceSocket(carolToken, newCaller(t))
+	carol.join(lounge.ID)
+	carol.wait(talking(lounge.ID, alice.me))
+
+	// Muting puts it out, and a muted member's press lights nothing: the
+	// next ring Bob hears is Carol's alone.
+	alice.send(denproto.EventVoiceMute, denproto.VoiceMute{Muted: true})
+	bob.wait(talking(lounge.ID))
+	talk(alice, false)
+	talk(alice, true)
+	talk(carol, true)
+	bob.wait(talking(lounge.ID, carol.me))
+	talk(carol, false)
+	bob.wait(talking(lounge.ID))
+
+	// So do staff's: Bob's ring goes out as staff mute him, and stays out.
+	talk(bob, true)
+	alice.wait(talking(lounge.ID, bob.me))
+	if err := f.d.SetStaffMute(context.Background(), owner, bob.me, true); err != nil {
+		t.Fatal(err)
+	}
+	alice.wait(talking(lounge.ID))
+	talk(bob, false)
+	talk(bob, true)
+	talk(carol, true)
+	alice.wait(talking(lounge.ID, carol.me))
+	talk(carol, false)
+	alice.wait(talking(lounge.ID))
+	if err := f.d.SetStaffMute(context.Background(), owner, bob.me, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Twenty presses at once light Bob's ring five times, from a full
+	// bucket, and once more for each fifth of a second they take.
+	talk(bob, false)
+	time.Sleep(1100 * time.Millisecond)
+	carol.drain()
+	start := time.Now()
+	for range 20 {
+		talk(bob, true)
+		talk(bob, false)
+	}
+	sent := time.Since(start)
+	if n, most := carol.lit(bob.me, 500*time.Millisecond), denproto.TalksPerSecond+int(sent/(time.Second/denproto.TalksPerSecond)); n < 1 || n > most {
+		t.Errorf("twenty presses in %s lit Bob's ring %d times, not 1 to %d", sent, n, most)
+	}
+
+	// Leaving puts it out, and so does a socket closing, which holds the
+	// call.
+	time.Sleep(300 * time.Millisecond)
+	talk(bob, true)
+	carol.wait(talking(lounge.ID, bob.me))
+	bob.send(denproto.EventVoiceLeave, struct{}{})
+	carol.wait(talking(lounge.ID))
+	talk(carol, true)
+	alice.wait(talking(lounge.ID, carol.me))
+	carol.c.Close(websocket.StatusGoingAway, "")
+	alice.wait(talking(lounge.ID))
+
+	// Dave heard none of it.
+	for {
+		select {
+		case e := <-dave.events:
+			if e.T == denproto.EventVoiceTalking {
+				t.Fatalf("a member outside the call heard %s", e.D)
+			}
+		default:
+			return
+		}
+	}
+}

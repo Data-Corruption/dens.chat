@@ -175,6 +175,10 @@ type Config struct {
 	// Log takes Pion's own messages. They name addresses, so only
 	// development instances set it; otherwise they're dropped.
 	Log func(string)
+	// Debugf takes the SFU's own notes on each call, which name members
+	// and channels by ID alone (M11): its ICE and DTLS states and its
+	// path's protocol, offers sent, answered and unanswered, and restarts.
+	Debugf func(format string, args ...any)
 	// Loopback has the den answer checks that reach it on loopback, which
 	// browsers don't send but tests do.
 	Loopback bool
@@ -189,6 +193,7 @@ type SFU struct {
 	tcp     *ice.TCPMuxDefault
 	answer  time.Duration
 	connect time.Duration
+	debugf  func(format string, args ...any)
 
 	// mu guards the rooms, and is taken before any peer's lock.
 	mu     sync.Mutex
@@ -219,7 +224,11 @@ func New(udp *net.UDPConn, tcp net.Listener, cfg Config) (*SFU, error) {
 		}),
 		answer:  cfg.AnswerTimeout,
 		connect: cfg.ConnectTimeout,
+		debugf:  cfg.Debugf,
 		rooms:   map[string]map[string]*Peer{},
+	}
+	if s.debugf == nil {
+		s.debugf = func(string, ...any) {}
 	}
 	if s.answer == 0 {
 		s.answer = answerTimeout

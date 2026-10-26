@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ const (
 	pingInterval  = 30 * time.Second
 	pingTimeout   = 15 * time.Second
 	writeTimeout  = 10 * time.Second
+	closeHeard    = 200 * time.Millisecond // a failed write waits this long to hear why the socket closed
 	eventsPerSend = 256
 	replayChunk   = 500
 	// frameBudget bounds a frame's events as JSON, below the 1 MiB a client
@@ -45,6 +47,9 @@ type socket struct {
 	// voiceOut holds the offers and endings of the call this socket joined,
 	// which go to it alone.
 	voiceOut chan denproto.Event
+	// sub is the socket's subscription, set before it reads a frame, which
+	// takes what goes to the call's members alone (M11).
+	sub *Sub
 	// forGood marks a socket the den closed because its device or member is
 	// done here, whose call ends rather than waits for the device (M3).
 	forGood atomic.Bool
@@ -213,6 +218,31 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	c.SetReadLimit(denproto.MaxClientFrame)
 	d.socketsChanged(s.MemberID, 1)
 	defer d.socketsChanged(s.MemberID, -1)
+	// Why the socket closed goes to the log, with how long it was open
+	// (M11): the first cause, since closing it brings on the rest, and the
+	// time it was found, before any close handshake. The reader and the
+	// pinger hand theirs over before they end its context.
+	opened := time.Now()
+	var why string
+	var lasted time.Duration
+	end := func(cause string) {
+		if why == "" {
+			why, lasted = cause, time.Since(opened)
+		}
+	}
+	ended := make(chan string, 2)
+	endedBy := func() string {
+		select {
+		case w := <-ended:
+			return w
+		default:
+			return "its context ended"
+		}
+	}
+	defer func() {
+		end("its handler ended")
+		d.log.Infof("The socket of member %d closed after %s: %s", s.MemberID, lasted.Round(time.Second), why)
+	}()
 
 	// The request context ends when the service stops. The socket outlives
 	// it until the den closes it with 1012, after the listener has closed.
@@ -226,15 +256,37 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	}
 	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, IsStaff(s.Role), epoch, after)
 	defer d.Hub.Unsubscribe(sub)
+	sock.sub = sub
 
 	write := func(events ...denproto.Event) bool {
 		frame, err := denproto.EncodeFrame(events...)
 		if err != nil {
+			end("a frame didn't encode")
 			return false
 		}
 		wctx, wcancel := context.WithTimeout(ctx, writeTimeout)
 		defer wcancel()
-		return c.Write(wctx, websocket.MessageText, frame) == nil
+		err = c.Write(wctx, websocket.MessageText, frame)
+		// A write that runs out of time closes the socket, which the
+		// reader may hear first, so the write's own deadline comes first.
+		switch {
+		case err == nil:
+			return true
+		case errors.Is(err, context.DeadlineExceeded):
+			end("a write stalled")
+		case ctx.Err() != nil:
+			end(endedBy())
+		default:
+			// A client that closes its end can fail a write just before the
+			// reader hears it close, which says more.
+			select {
+			case w := <-ended:
+				end(w)
+			case <-time.After(closeHeard):
+				end("a write failed")
+			}
+		}
+		return false
 	}
 	// sendReady sends a snapshot starting at seq. Subscribing first means
 	// nothing published after the snapshot is lost; an event racing it may
@@ -246,6 +298,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		snap, err := d.snapshot(ctx, s.MemberID, d.Hub.Staff(sub), seq, members)
 		if err != nil {
 			d.log.Errorf("den snapshot: %v", err)
+			end("its snapshot failed")
 			c.Close(websocket.StatusInternalError, "")
 			return false
 		}
@@ -281,7 +334,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	var expires atomic.Int64
 	expires.Store(s.ExpiresAt.UnixMilli())
 	ephemeral := make(chan denproto.Event, 8)
-	go d.readClient(ctx, cancel, c, s, sock, sub, &expires, ephemeral)
+	go d.readClient(ctx, cancel, c, s, sock, sub, &expires, ephemeral, ended)
 	go func() {
 		t := time.NewTicker(pingInterval)
 		defer t.Stop()
@@ -294,6 +347,9 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 				err := c.Ping(pctx)
 				pcancel()
 				if err != nil {
+					if ctx.Err() == nil {
+						ended <- "a ping went unanswered"
+					}
 					cancel()
 					return
 				}
@@ -306,15 +362,19 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	for {
 		select {
 		case <-ctx.Done():
+			end(endedBy())
 			return
 		case req := <-sock.closeReq:
+			end(fmt.Sprintf("the den closed it with %d, %s", req.code, req.reason))
 			c.Close(req.code, req.reason)
 			return
 		case e, ok := <-sub.Events:
 			if !ok {
 				if sub.Slow() {
+					end("it fell behind")
 					c.Close(denproto.CloseTooSlow, "too slow")
 				}
+				end("its subscription ended")
 				return
 			}
 			// Under load, send everything already queued as one frame. A
@@ -367,6 +427,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		case <-expiry.C:
 			left := time.Until(time.UnixMilli(expires.Load()))
 			if left <= 0 {
+				end("its session expired")
 				c.Close(denproto.CloseSessionExpired, "session expired")
 				return
 			}
@@ -375,17 +436,29 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	}
 }
 
-// readClient handles frames from the client until the socket closes.
+// readClient handles frames from the client until the socket closes, and
+// hands over why it stopped, unless the socket's context ended first.
 func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *websocket.Conn, s *Session,
-	sock *socket, sub *Sub, expires *atomic.Int64, ephemeral chan<- denproto.Event) {
+	sock *socket, sub *Sub, expires *atomic.Int64, ephemeral chan<- denproto.Event, ended chan<- string) {
 	defer cancel()
+	stop := func(why string) {
+		if ctx.Err() == nil {
+			ended <- why
+		}
+	}
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
+			if code := websocket.CloseStatus(err); code >= 0 {
+				stop(fmt.Sprintf("the client closed it with %d", code))
+			} else {
+				stop("the connection broke")
+			}
 			return
 		}
 		events, err := denproto.DecodeFrame(data)
 		if err != nil {
+			stop("a frame didn't decode")
 			sock.requestClose(websocket.StatusInvalidFramePayloadData, "malformed frame")
 			return
 		}
@@ -398,6 +471,7 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				}
 				until, err := d.Renew(ctx, s, req.Nonce, req.Proof)
 				if denproto.IsCode(err, denproto.CodeKeyRevoked) {
+					stop("its device was signed out")
 					sock.requestClose(denproto.CloseRevoked, denproto.CloseReasonKeyRevoked)
 					return
 				}
@@ -460,6 +534,11 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				var req denproto.VoiceWatch
 				if json.Unmarshal(e.D, &req) == nil {
 					d.watchCall(s, sock, req)
+				}
+			case denproto.EventVoiceTalk:
+				var req denproto.VoiceTalk
+				if json.Unmarshal(e.D, &req) == nil {
+					d.talkCall(sock, req)
 				}
 			}
 			// Unknown event types are ignored, as the protocol requires.
