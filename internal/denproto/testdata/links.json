@@ -90,6 +90,11 @@
     {"text": "**a `b**c` d** https://youtu.be/dQw4w9WgXcQ?si=abc", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "**a `b**c` d** https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
     {"text": "* _ ~~ || ** https://youtu.be/dQw4w9WgXcQ?si=abc", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "* _ ~~ || ** https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
     {"text": "**a*https://youtu.be/dQw4w9WgXcQ?si=abc**", "links": ["https://youtu.be/dQw4w9WgXcQ?si=abc"], "clean": "**a*https://www.youtube.com/watch?v=dQw4w9WgXcQ**"},
-    {"text": "https://example.com/a?utm_source=x)))))", "links": ["https://example.com/a?utm_source=x"], "clean": "https://example.com/a)))))"}
+    {"text": "https://example.com/a?utm_source=x)))))", "links": ["https://example.com/a?utm_source=x"], "clean": "https://example.com/a)))))"},
+
+    {"text": "see https://den.example.com/#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/41/90210.", "links": ["https://den.example.com/#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/41/90210"]},
+    {"text": "(https://den.example.com:8443/#m/2SmKENGwc1g33EvYXaxkGw887yekfl1TpU8vP1svz_o/41/90210)", "links": ["https://den.example.com:8443/#m/2SmKENGwc1g33EvYXaxkGw887yekfl1TpU8vP1svz_o/41/90210"]},
+    {"text": "https://den.example.com/?utm_source=chat#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/41/90210", "links": ["https://den.example.com/?utm_source=chat#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/41/90210"], "clean": "https://den.example.com/#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/41/90210"},
+    {"text": "> https://den.example.com/#m/2SmKENGwc1g33EvYXaxkGw887yekfl1TpU8vP1svz_o/41/90210 and http://127.0.0.1:8485/#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/7/8", "links": ["https://den.example.com/#m/2SmKENGwc1g33EvYXaxkGw887yekfl1TpU8vP1svz_o/41/90210", "http://127.0.0.1:8485/#m/TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI/7/8"]}
   ]
 }

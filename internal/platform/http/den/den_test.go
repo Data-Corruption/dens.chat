@@ -175,6 +175,29 @@ func TestVersionAndCreation(t *testing.T) {
 	wantError(t, f.post("/api/invites", denproto.InviteCreateRequest{}, nil), http.StatusUnauthorized, denproto.CodeUnauthorized)
 }
 
+// The den's address answers a browser with what it is (M11), under the
+// den's security headers, and a path that's no route still answers 404.
+func TestRootSaysWhatItIs(t *testing.T) {
+	f := newFixture(t)
+	resp, err := http.Get(f.srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "text/plain; charset=utf-8" || string(body) != rootLine {
+		t.Fatalf("root: %d %q %q", resp.StatusCode, resp.Header.Get("Content-Type"), body)
+	}
+	if resp.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(resp.Header.Get("Content-Security-Policy"), "default-src 'none'") {
+		t.Fatalf("root's headers: %v", resp.Header)
+	}
+	resp, err = http.Get(f.srv.URL + "/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantError(t, resp, http.StatusNotFound, denproto.CodeNotFound)
+}
+
 func TestClientIP(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:5000"
