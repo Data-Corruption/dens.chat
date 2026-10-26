@@ -203,6 +203,15 @@ func (l *Logger) SetLevel(level string) error {
 	return nil
 }
 
+// Newest returns the newest limit bytes of the logs, oldest first, from the
+// start of a line, with what's buffered written out first.
+func (l *Logger) Newest(limit int64) ([]byte, error) {
+	if l.closed.Load() {
+		return nil, ErrClosed
+	}
+	return l.writer.Newest(limit)
+}
+
 // Close flushes and closes the underlying writer. Records logged after Close
 // are dropped.
 func (l *Logger) Close() error {

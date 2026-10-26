@@ -3,6 +3,7 @@ package rlog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -368,5 +369,58 @@ func TestConcurrentWrites(t *testing.T) {
 	want := goroutines * perGo * len(msg)
 	if len(got) != want {
 		t.Errorf("bytes written: got %d want %d", len(got), want)
+	}
+}
+
+// --- reading back --------------------------------------------------------------
+
+// TestNewest verifies that Newest reads the newest logs back in order,
+// across rotated files, up to its limit and from the start of a line, with
+// what's buffered flushed first.
+func TestNewest(t *testing.T) {
+	tempDir := t.TempDir()
+	// Four lines of nine bytes fill a file.
+	w, err := NewWriter(Config{DirPath: tempDir, MaxFileSize: 40, MaxLogFiles: -1})
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	defer w.Close()
+	var lines []string
+	for i := range 30 {
+		line := fmt.Sprintf("line %03d\n", i)
+		lines = append(lines, line)
+		if _, err := w.Write([]byte(line)); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		if err := w.Flush(); err != nil {
+			t.Fatalf("Flush: %v", err)
+		}
+	}
+	last := func(n int) string { return strings.Join(lines[len(lines)-n:], "") }
+	for _, c := range []struct {
+		limit int64
+		want  string
+	}{
+		{1 << 20, last(30)},
+		{9 * 7, last(7)},
+		{9*7 + 4, last(7)},
+		{9*7 - 1, last(6)},
+		{4, ""},
+	} {
+		got, err := w.Newest(c.limit)
+		if err != nil {
+			t.Fatalf("Newest(%d): %v", c.limit, err)
+		}
+		if string(got) != c.want {
+			t.Errorf("Newest(%d) = %q, want %q", c.limit, got, c.want)
+		}
+	}
+	// What the writer holds comes last.
+	if _, err := w.Write([]byte("line 030\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got, err := w.Newest(9 * 2)
+	if err != nil || string(got) != "line 029\nline 030\n" {
+		t.Errorf("Newest after a buffered write = %q, %v", got, err)
 	}
 }
