@@ -14,8 +14,8 @@ import { NO_SHARING, canShare } from './platform.js';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import {
-    byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, setDeafened, setMuted, setPreview, setVolume, startShare,
-    stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
+    byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, rings, setDeafened, setMuted, setPreview, setVolume,
+    startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
@@ -353,8 +353,9 @@ function LeaveIcon() {
 }
 
 // CallMembers lists who is in a voice channel's call, under the channel.
-// In the page's own call, a ring marks whoever is speaking: speaking holds
-// member IDs, and "self" for this page's member, me. A member's name opens
+// In the page's own call, a ring marks whoever is speaking or holds push to
+// talk (M11): speaking holds member IDs, and "self" for this page's member,
+// me. A member's name opens
 // their profile through onProfile. Everyone else's row has a menu that sets
 // how loud they play here, from volumes, and gives staff a way to mute or
 // disconnect those they rank above. A member who shares their screen has a
@@ -397,8 +398,7 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                 {byName(call.members, members).map((m) => {
                     const member = members.get(m.id);
                     const name = member?.display_name || 'Unknown member';
-                    const heard = !m.muted && !m.staff_muted;
-                    const talking = heard && speaking && speaking.has(m.id === me?.id ? 'self' : m.id);
+                    const talking = rings(m, me?.id, speaking);
                     // Everyone else's row has a menu, for their volume here,
                     // and for staff's actions when the member here outranks them.
                     const other = me && m.id !== me.id;

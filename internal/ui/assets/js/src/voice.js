@@ -18,6 +18,10 @@
 // From M4.2 the page shares its member's screen in the call, and plays the
 // shares they watch, which the player shows. It follows what the den says
 // of the call's den, to know its limits and who shares and watches.
+//
+// From M11 a member holding push to talk rings for everyone in the call,
+// through the den, and the page notes what its connection does for the
+// service's log.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
@@ -56,6 +60,10 @@ const RESTART_WAIT = 15 * 1000;
 const SPEAKING_DB = -50;
 const METER_MS = 100;
 const SPEAKING_HOLD = 400;
+// The page sums its call's statistics up for the service's log this often,
+// and keeps this many notes while its stream to the service is down (M11).
+const STATS_EVERY = 10 * 1000;
+const NOTES_KEPT = 64;
 
 function stored(key) {
     try {
@@ -98,7 +106,12 @@ const audios = new Map();
 let meterContext = null;
 const meters = new Map();
 let meterTimer = null;
+// speaking is who rings in the call: those the meters hear, audible, those
+// the den says hold push to talk, talkers (M11), and "self" while this
+// page's member speaks or holds it.
 let speaking = new Set();
+let audible = new Set();
+let talkers = new Set();
 const lastLoud = new Map();
 // What the page last heard about each den's connection, and its own
 // stream to the service.
@@ -126,8 +139,10 @@ function start() {
     started = true;
     watchKeys();
     onEvent(handle);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => note({ what: 'hidden', hidden: document.hidden }));
     onConnection((up) => {
         live = up;
+        if (up) sendNotes();
         // The helper's releases come over the stream too.
         if (!up) {
             for (const action of ['ptt', 'pushMute']) if (covered(action)) releaseAction(action);
@@ -204,6 +219,9 @@ export async function joinCall(den, channel, label) {
     denView = null;
     stopMicTest();
     call = { den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false };
+    audible = new Set();
+    talkers = new Set();
+    unsent.length = 0;
     loadDen(call);
     // The click that joins lets audio start, so the meters' context starts
     // here, and the voice processor's: one made after the browser has asked
@@ -299,12 +317,19 @@ async function connect() {
     pc.ontrack = (e) => play(e);
     pc.onconnectionstatechange = () => {
         if (pc !== own || call !== c) return;
+        note({ what: 'state', state: own.connectionState, ice: own.iceConnectionState });
+        noteStats();
         stateChanged(c, own.connectionState);
     };
+    clearInterval(statsTimer);
+    statsTimer = setInterval(noteStats, STATS_EVERY);
     if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened })) {
-        dropped('disconnected');
+        dropped('disconnected', 'stream');
         return;
     }
+    // The den hears push to talk afresh in each call it joins (M11).
+    c.talkSent = false;
+    tellTalking();
     // A call joined again, as after the den restarted, takes the page's
     // share and the shares it watched back, which the den checks again.
     if (share && share.status !== 'picking') {
@@ -316,7 +341,7 @@ async function connect() {
     c.offerBy = setTimeout(() => {
         if (call !== c || pc !== own || c.version) return;
         sendCall('voice.leave', { den: c.den });
-        dropped('failed');
+        dropped('failed', 'no_offer');
     }, OFFER_WAIT);
 }
 
@@ -336,15 +361,15 @@ function stateChanged(c, state) {
         case 'disconnected':
             clearTimeout(c.restartAfter);
             c.restartAfter = setTimeout(() => {
-                if (call === c && pc?.connectionState !== 'connected') restart(c);
+                if (call === c && pc?.connectionState !== 'connected') restart(c, 'disconnected');
             }, RESTART_AFTER);
             break;
         case 'failed':
             if (!c.connected) {
                 sendCall('voice.leave', { den: c.den });
-                dropped('failed');
+                dropped('failed', 'never_connected');
             } else {
-                restart(c);
+                restart(c, 'failed');
             }
             break;
     }
@@ -352,14 +377,16 @@ function stateChanged(c, state) {
 
 // restart asks the den for an ICE restart, unless the den is away, when
 // resuming asks for one; a connection still down after it joins again.
-function restart(c) {
+// why says what the connection did, for the log.
+function restart(c, why) {
     if (c.held || c.restartBy) return;
+    note({ what: 'restart', why });
     sendCall('voice.restart', { den: c.den });
     c.restartBy = setTimeout(() => {
         c.restartBy = null;
         if (call !== c || pc?.connectionState === 'connected') return;
         sendCall('voice.leave', { den: c.den });
-        dropped('failed');
+        dropped('failed', 'restart_timeout');
     }, RESTART_WAIT);
 }
 
@@ -644,10 +671,67 @@ export function gateFor(v, rnnoise, held) {
 
 // applySending sends what the member chose: nothing while muted, and what
 // the gate lets through otherwise. Without the processor, push to talk
-// holds the track back itself, and voice activity sends everything.
+// holds the track back itself, and voice activity sends everything. The
+// call hears whether they hold push to talk, which rings for it (M11).
 function applySending() {
     for (const c of [chain, testing?.chain]) c?.node.port.postMessage({ gate: gateFor(voice, c.rnnoise, pttHeld) });
     if (sent) sent.enabled = !isMuted() && (chain || voice.mode !== 'ptt' || pttHeld);
+    tellTalking();
+    ring();
+}
+
+// Push to talk's ring (M11) ---------------------------------------------------
+
+// talking says whether a member rings for holding push to talk: while they
+// send by it, hold its key and aren't muted.
+export function talking(v, held, muted) {
+    return v.mode === 'ptt' && held && !muted;
+}
+
+function talks() {
+    return !!call && talking(voice, pttHeld, call.muted);
+}
+
+// tellTalking tells the den, as it changes, whether the page's member
+// holds push to talk.
+function tellTalking() {
+    const c = call;
+    if (!c) return;
+    const on = talks();
+    if (on !== !!c.talkSent && sendCall('voice.talk', { den: c.den, on })) c.talkSent = on;
+}
+
+// talked is the den's word on who holds push to talk in the call.
+function talked(members) {
+    talkers = new Set(members);
+    ring();
+}
+
+// ringing says who rings in a call: whoever the meters hear, whoever the
+// den says holds push to talk, and this page's member, "self", while they
+// hold it here, at once, where the den's word comes a moment later.
+export function ringing(heardNow, talkersNow, me, self) {
+    const out = new Set(heardNow);
+    for (const id of talkersNow) if (id !== me) out.add(id);
+    if (self) out.add('self');
+    return out;
+}
+
+// rings says whether a member of a call rings, from who rings in it, by
+// their ID or "self" for this page's member, me: never while they're
+// muted, by themselves or by staff, whatever the den or the meters say.
+export function rings(m, me, ringingNow) {
+    return !m.muted && !m.staff_muted && !!ringingNow?.has(m.id === me ? 'self' : m.id);
+}
+
+// ring brings who rings in the call up to date, and tells the page as it
+// changes.
+function ring() {
+    const next = ringing(audible, talkers, denView?.me, talks());
+    if (next.size !== speaking.size || [...next].some((k) => !speaking.has(k))) {
+        speaking = next;
+        notify();
+    }
 }
 
 // The voice processor's reports: its level, RNNoise's estimate of speech,
@@ -791,6 +875,27 @@ function releaseAction(action) {
         pushMuted = false;
         setMuted(false);
     }
+}
+
+// listenIn has another window of the page's, as a share's own (M11), take
+// the voice keys while it has focus, as the page does, and returns a
+// function that stops.
+export function listenIn(win) {
+    const on = keyHandlers(win);
+    for (const [target, type, fn, capture] of on) target.addEventListener(type, fn, capture);
+    return () => {
+        for (const [target, type, fn, capture] of on) target.removeEventListener(type, fn, capture);
+    };
+}
+
+// keyHandlers are what a window of the page listens to for the keys.
+function keyHandlers(win) {
+    const doc = win.document || document;
+    return [
+        [win, 'keydown', keydown, true], [win, 'keyup', keyup, true], [win, 'pointerdown', pointerdown, true], [win, 'mousedown', mousedown, true],
+        [win, 'mouseup', mouseup, true], [win, 'auxclick', auxclick, true], [win, 'blur', release, false],
+        [doc, 'visibilitychange', () => doc.hidden && release(), false],
+    ];
 }
 
 // The page acts on its own keys, except those the helper reads during a
@@ -953,14 +1058,7 @@ let watchingKeys = false;
 function listenForKeys() {
     if (listening || typeof window === 'undefined') return;
     listening = true;
-    window.addEventListener('keydown', keydown, true);
-    window.addEventListener('keyup', keyup, true);
-    window.addEventListener('pointerdown', pointerdown, true);
-    window.addEventListener('mousedown', mousedown, true);
-    window.addEventListener('mouseup', mouseup, true);
-    window.addEventListener('auxclick', auxclick, true);
-    window.addEventListener('blur', release);
-    document.addEventListener('visibilitychange', () => document.hidden && release());
+    listenIn(window);
 }
 
 function watchKeys() {
@@ -999,6 +1097,7 @@ function handle(msg) {
     if (e.offer) answer(e.offer);
     else if (e.resumed) resumed();
     else if (e.refused) refused(e.refused);
+    else if (e.talking) talked(e.talking);
     else if (e.ended) ended(e.ended);
 }
 
@@ -1052,6 +1151,7 @@ async function answer(offer) {
     } catch {
         if (call !== c || pc !== own) return;
         sendCall('voice.leave', { den: c.den });
+        note({ what: 'ended', why: 'browser' });
         finish({ text: "This browser couldn't set the call up." });
     }
 }
@@ -1103,10 +1203,10 @@ function ended(reason) {
     // A resume that found no call joins again; another failure, as before.
     if (reason === 'failed' && call.resuming) {
         call.resuming = false;
-        dropped('failed');
+        dropped('failed', 'resume_failed');
         return;
     }
-    if (reason === 'failed') dropped(reason);
+    if (reason === 'failed') dropped(reason, 'den_failed');
     else finish({ text: endedText(reason, call.ports) });
 }
 
@@ -1115,22 +1215,30 @@ function ended(reason) {
 function hold() {
     const c = call;
     if (!c || !pc) {
-        if (c) dropped('disconnected');
+        if (c) dropped('disconnected', 'den_away');
         return;
     }
     c.held = true;
     c.resuming = false;
     clearTimeout(c.restartBy);
     c.restartBy = null;
+    // The den's word on push to talk waits for the resume (M11).
+    talkers = new Set();
+    ring();
     if (c.status !== 'reconnecting') {
         c.status = 'reconnecting';
         clearTimeout(c.giveUp);
-        c.giveUp = setTimeout(() => {
-            if (call === c && c.status === 'reconnecting') finish({ text: endedText('lost') });
-        }, REJOIN_WINDOW);
+        c.giveUp = setTimeout(() => gaveUp(c), REJOIN_WINDOW);
     }
     notify();
     tryResume();
+}
+
+// gaveUp ends a call that couldn't be taken back or joined again in time.
+function gaveUp(c) {
+    if (call !== c || c.status !== 'reconnecting') return;
+    note({ what: 'ended', why: 'lost' });
+    finish({ text: endedText('lost') });
 }
 
 // tryResume asks the den for the held call once the den and the service
@@ -1162,37 +1270,43 @@ function resumed() {
         c.status = 'connected';
     } else {
         c.status = 'connecting';
-        restart(c);
+        restart(c, 'resumed');
     }
-    // A mark changed while the den was away goes now.
+    // A mark changed while the den was away goes now, and push to talk the
+    // den let go of as the socket closed (M11).
     sendCall('voice.mute', { den: c.den, muted: c.muted, deafened: c.deafened });
+    c.talkSent = false;
+    tellTalking();
     notify();
 }
 
 // dropped holds on to a call whose connection broke, to join it again
 // once the den and this computer's service are back. A call that failed
 // without ever coming up most likely can't reach the den's media ports,
-// which trying again won't open.
-function dropped(reason) {
+// which trying again won't open. why says what broke, for the log.
+function dropped(reason, why) {
     const c = call;
     closePeer();
     if (reason === 'failed' && !c.connected) {
+        note({ what: 'ended', why: 'never_connected' });
         finish({ text: endedText('failed', c.ports) });
         return;
     }
     if (c.attempts >= REJOINS) {
+        note({ what: 'ended', why: 'lost' });
         finish({ text: endedText('lost') });
         return;
     }
+    note({ what: 'rejoin', why });
     c.attempts += 1;
     c.held = false;
     c.resuming = false;
+    talkers = new Set();
+    ring();
     if (c.status !== 'reconnecting') {
         c.status = 'reconnecting';
         clearTimeout(c.giveUp);
-        c.giveUp = setTimeout(() => {
-            if (call === c && c.status === 'reconnecting') finish({ text: endedText('lost') });
-        }, REJOIN_WINDOW);
+        c.giveUp = setTimeout(() => gaveUp(c), REJOIN_WINDOW);
     }
     notify();
     tryRejoin();
@@ -1212,6 +1326,8 @@ function clearTimers(c) {
 }
 
 function closePeer() {
+    clearInterval(statsTimer);
+    statsTimer = null;
     if (pc) {
         pc.ontrack = null;
         pc.onconnectionstatechange = null;
@@ -1242,9 +1358,77 @@ function finish(why) {
     warmContext?.close().catch(() => {});
     warmContext = null;
     stopMeters();
+    audible = new Set();
+    talkers = new Set();
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
     notify();
+}
+
+// Notes for the log (M11) -----------------------------------------------------
+
+// The page notes what its call's connection does, which the service logs
+// at debug by the notes' own fields alone: each change of its state, the
+// restarts it asks for, each join again and giving up, with why, its tab
+// hidden or shown, and at each change and every STATS_EVERY a summary of
+// its statistics. Notes made while the stream to the service is down wait,
+// the newest NOTES_KEPT, and go once it's back, saying how long before.
+let statsTimer = null;
+const unsent = [];
+
+function note(fields) {
+    const c = call;
+    if (!c) return;
+    const n = { den: c.den, channel: c.channel, note: fields };
+    if (live && !unsent.length && sendCall('voice.note', n)) return;
+    unsent.push({ ...n, at: Date.now() });
+    if (unsent.length > NOTES_KEPT) unsent.shift();
+}
+
+function sendNotes() {
+    while (unsent.length) {
+        const { at, ...n } = unsent[0];
+        if (!sendCall('voice.note', { ...n, note: { ...n.note, ago: Date.now() - at } })) return;
+        unsent.shift();
+    }
+}
+
+async function noteStats() {
+    const own = pc;
+    if (!own) return;
+    let report;
+    try {
+        report = await own.getStats();
+    } catch {
+        return;
+    }
+    if (pc === own) note({ what: 'stats', stats: summarize(report) });
+}
+
+// summarize sums a getStats report up for the log: the path the call takes,
+// its protocol and its candidates' types, packets and bytes sent and
+// received, packets lost on the way in, and jitter and round-trip time, in
+// milliseconds. Chromium names the path in its transport's stats, and
+// Firefox marks its candidate pair selected; Firefox times the round trip
+// only in what the den reports back.
+export function summarize(report) {
+    const all = [...report.values()];
+    const byID = new Map(all.map((x) => [x.id, x]));
+    const transport = all.find((x) => x.type === 'transport' && x.selectedCandidatePairId);
+    const pair = byID.get(transport?.selectedCandidatePairId) || all.find((x) => x.type === 'candidate-pair' && x.selected) ||
+        all.find((x) => x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded');
+    const local = byID.get(pair?.localCandidateId);
+    const remote = byID.get(pair?.remoteCandidateId);
+    const sum = (type, field) => all.filter((x) => x.type === type).reduce((n, x) => n + (Number(x[field]) || 0), 0);
+    const ms = (seconds) => Math.round((Number(seconds) || 0) * 1000);
+    const rtt = pair?.currentRoundTripTime ?? all.find((x) => x.type === 'remote-inbound-rtp' && x.roundTripTime !== undefined)?.roundTripTime;
+    const jitter = Math.max(0, ...all.filter((x) => x.type === 'inbound-rtp').map((x) => Number(x.jitter) || 0));
+    return {
+        protocol: local?.protocol || '', local: local?.candidateType || '', remote: remote?.candidateType || '',
+        packets_sent: sum('outbound-rtp', 'packetsSent'), bytes_sent: sum('outbound-rtp', 'bytesSent'),
+        packets_received: sum('inbound-rtp', 'packetsReceived'), bytes_received: sum('inbound-rtp', 'bytesReceived'),
+        packets_lost: Math.max(0, sum('inbound-rtp', 'packetsLost')), jitter: ms(jitter), rtt: ms(rtt),
+    };
 }
 
 // Screen share --------------------------------------------------------------
@@ -1586,11 +1770,8 @@ function measure() {
         levels.set(key, rmsDb(m.buffer));
     }
     if (call?.muted) levels.delete('self');
-    const next = speakingNow(levels, lastLoud, now);
-    if (next.size !== speaking.size || [...next].some((k) => !speaking.has(k))) {
-        speaking = next;
-        notify();
-    }
+    audible = speakingNow(levels, lastLoud, now);
+    ring();
 }
 
 // rmsDb is a block's level in dBFS.

@@ -86,6 +86,14 @@ func serveDen(t *testing.T) *fakeService {
 			return control.Reply{Result: control.Backup{Name: "dens-main-den-20261023-120000.backup", Size: 1 << 10},
 				Body: io.NopCloser(strings.NewReader("the den's export"))}, nil
 		},
+		control.OpLogs: func(_ context.Context, req control.Request) (control.Reply, error) {
+			f.keep(req)
+			if req.Level != "" {
+				return control.Reply{Result: control.LogLevel{Level: req.Level}}, nil
+			}
+			return control.Reply{Result: control.Backup{Name: "dens-main-20261026-120000-logs.txt", Size: 10},
+				Body: io.NopCloser(strings.NewReader("the logs\n"))}, nil
+		},
 	})
 	dial, ask := controlClient, askYesNo
 	controlClient = func(build.BuildInfo, string) (control.Client, layout.Layout, error) {
@@ -135,7 +143,7 @@ func runDens(t *testing.T, stdin string, args ...string) (string, error) {
 	os.Stdin, os.Stdout = in, out
 	bi := build.BuildInfo{Name: "dens", Version: "v1.3.0"}
 	root := &cli.Command{Name: "dens", Flags: []cli.Flag{InstanceFlag}, Writer: io.Discard, ErrWriter: io.Discard,
-		Commands: []*cli.Command{denCommand(bi), passwordCommand(bi)}}
+		Commands: []*cli.Command{denCommand(bi), passwordCommand(bi), logsCommand(bi)}}
 	err = root.Run(context.Background(), append([]string{"dens"}, args...))
 	os.Stdin, os.Stdout = stdinWas, stdoutWas
 	out.Close()
@@ -290,5 +298,27 @@ func TestCreateCommand(t *testing.T) {
 	}
 	if req := f.kept()[0]; req.Op != control.OpCreateDen || req.Name != "Our Den" || req.URL != "https://den.example.com" || req.Password != "local password" {
 		t.Fatalf("creating the den asked %+v", req)
+	}
+}
+
+// dens logs saves the newest logs, as the settings' Logging card downloads
+// them, and with --level sets how much they say, as the card does (M11).
+func TestLogsCommand(t *testing.T) {
+	f := serveDen(t)
+	saved := filepath.Join(t.TempDir(), "logs.txt")
+	out, err := runDens(t, "", "logs", "--output", saved)
+	if err != nil || !strings.Contains(out, "Logs written to "+saved) {
+		t.Fatalf("saving the logs: %v, %q", err, out)
+	}
+	if b, err := os.ReadFile(saved); err != nil || string(b) != "the logs\n" {
+		t.Fatalf("the logs saved: %q, %v", b, err)
+	}
+	if _, err := runDens(t, "", "logs", "--output", saved); err == nil {
+		t.Fatal("the logs went over a file there already")
+	}
+	out, err = runDens(t, "", "logs", "--level", "debug")
+	kept := f.kept()
+	if err != nil || !strings.Contains(out, "at debug from now on") || len(kept) != 2 || kept[0].Level != "" || kept[1].Level != "debug" {
+		t.Fatalf("setting the level: %v, %q, %+v", err, out, kept)
 	}
 }

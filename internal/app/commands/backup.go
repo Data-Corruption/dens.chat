@@ -68,17 +68,9 @@ func saveArchive(bi build.BuildInfo, cmd *cli.Command, op, what string) (string,
 	}
 
 	output := cmd.String("output")
-	dir := "."
-	if l.Form == layout.Flatpak {
-		// The sandbox writes only in the app's own folder, which the
-		// member finds at the same path.
-		dir = filepath.Dir(os.Getenv("XDG_DATA_HOME"))
-	}
-	if output != "" {
-		dir = filepath.Dir(output)
-		if _, err := os.Lstat(output); err == nil {
-			return "", fmt.Errorf("%s already exists", output)
-		}
+	dir, err := outputDir(l, output)
+	if err != nil {
+		return "", err
 	}
 	fmt.Printf("Making the %s ...\n", what)
 	path, err := writeBackup(client, control.Request{Op: op, Password: password}, dir, output, what)

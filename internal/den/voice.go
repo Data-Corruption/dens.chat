@@ -42,6 +42,9 @@ type call struct {
 	// started (M4.2).
 	sharing, sound bool
 	watching       []int64
+	// talking is whether the member holds push to talk, as the call's
+	// members hear (M11).
+	talking bool
 }
 
 // callRoom is a voice channel's call.
@@ -78,8 +81,12 @@ func newCallRegistry() callRegistry {
 		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}}
 }
 
-// StartCalls runs calls on the den's media ports.
+// StartCalls runs calls on the den's media ports. The SFU's notes on each
+// call go to the den's log at debug, unless cfg sends them elsewhere.
 func (d *Den) StartCalls(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) error {
+	if cfg.Debugf == nil {
+		cfg.Debugf = d.log.Debugf
+	}
 	s, err := sfu.New(udp, tcp, cfg)
 	if err != nil {
 		return err
@@ -223,6 +230,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	}
 	room.members = append(room.members, nc)
 	d.publishCallsLocked(changed...)
+	d.publishTalkingLocked(cid, sock)
 	d.log.Infof("Member %d joined the call in channel %d", s.MemberID, cid)
 }
 
@@ -243,6 +251,8 @@ func (d *Den) resumeCall(sock *socket, cid int64, channel string) {
 		// Queued before the offer the peer may send again, which follows.
 		sock.voice(denproto.EventVoiceResumed, denproto.VoiceResumed{ChannelID: channel})
 		c.peer.Resume()
+		// Who held push to talk may have changed while the socket was away.
+		d.publishTalkingLocked(c.channel, sock)
 		d.log.Infof("The call of member %d in channel %d resumed", c.member, c.channel)
 		return
 	}
@@ -291,7 +301,70 @@ func (d *Den) muteCall(sock *socket, marks denproto.VoiceMute) {
 		return
 	}
 	c.muted, c.deafened = marks.Muted, marks.Deafened
+	if c.muted {
+		d.stopTalkingLocked(c)
+	}
 	d.publishCallsLocked(c.channel)
+}
+
+// talkCall lights the push-to-talk ring of the member whose call this
+// socket holds, for the call's members, or puts it out (M11). A press while
+// the member is muted or staff muted, or past TalksPerSecond, lights
+// nothing; a release always puts a lit ring out.
+func (d *Den) talkCall(sock *socket, req denproto.VoiceTalk) {
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := r.byMember[sock.member]
+	if c == nil || c.sock.Load() != sock || c.talking == req.On {
+		return
+	}
+	if !req.On {
+		d.stopTalkingLocked(c)
+		return
+	}
+	if c.muted || r.staffMuted[c.member] || d.Allow(LimitTalk, strconv.FormatInt(c.member, 10)) != nil {
+		return
+	}
+	c.talking = true
+	d.publishTalkingLocked(c.channel, nil)
+}
+
+// stopTalkingLocked puts a member's push-to-talk ring out, if it's lit, and
+// tells their call. The caller holds the registry's lock.
+func (d *Den) stopTalkingLocked(c *call) {
+	if !c.talking {
+		return
+	}
+	c.talking = false
+	d.publishTalkingLocked(c.channel, nil)
+}
+
+// publishTalkingLocked tells the members of a channel's call who holds push
+// to talk in it (M11): on every socket that holds a call in it, or only on
+// to. Only the call's members hear, as only their pages ring for speech.
+// The caller holds the registry's lock.
+func (d *Den) publishTalkingLocked(cid int64, to *socket) {
+	room := d.calls.rooms[cid]
+	if room == nil {
+		return
+	}
+	t := denproto.VoiceTalking{ChannelID: denproto.FormatID(cid), Members: []string{}}
+	subs := map[*Sub]bool{}
+	for _, x := range room.members {
+		if x.talking {
+			t.Members = append(t.Members, denproto.FormatID(x.member))
+		}
+		if sock := x.sock.Load(); sock != nil && (to == nil || sock == to) {
+			subs[sock.sub] = true
+		}
+	}
+	if len(subs) == 0 {
+		return
+	}
+	if err := d.Hub.Ephemeral(denproto.EventVoiceTalking, t, func(sub *Sub) bool { return subs[sub] }); err != nil {
+		d.log.Errorf("announce push to talk: %v", err)
+	}
 }
 
 // leaveCall ends the call this socket holds, if any: the member left it.
@@ -328,6 +401,8 @@ func (d *Den) socketClosed(sock *socket) {
 	}
 	c.sock.Store(nil)
 	c.peer.Hold()
+	// The member's page can't let go of push to talk while it's away.
+	d.stopTalkingLocked(c)
 	c.hold = time.AfterFunc(d.CallHold, func() { d.endHeld(c) })
 	d.log.Infof("The call of member %d in channel %d is held", c.member, c.channel)
 }
@@ -380,6 +455,7 @@ func (d *Den) dropCallLocked(c *call) {
 			unwatchedLocked(room, c.member)
 		}
 	}
+	d.stopTalkingLocked(c)
 	if c.hold != nil {
 		c.hold.Stop()
 		c.hold = nil
@@ -717,6 +793,7 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 			// The den forwards nothing from a muted member, their screen
 			// included, so their share ends rather than freezing (M4.2).
 			d.endShareLocked(c)
+			d.stopTalkingLocked(c)
 		}
 		d.publishCallsLocked(c.channel)
 	}

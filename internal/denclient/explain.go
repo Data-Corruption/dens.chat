@@ -71,6 +71,40 @@ func ShownCode(e *denproto.Error) string {
 	return fmt.Sprintf("HTTP %d", e.Status)
 }
 
+// unreached says why reaching a den failed, for the log, naming no address
+// and none of the den's own text (M11).
+func unreached(err error) string {
+	var perr *denproto.Error
+	var dns *net.DNSError
+	var netErr net.Error
+	var verify *tls.CertificateVerificationError
+	var unknown x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	var moved *MovedError
+	switch {
+	case errors.As(err, &moved):
+		return "it moved, and " + unreached(moved.Err)
+	case errors.Is(err, denproto.ErrWrongIdentity):
+		return "the server at its address couldn't prove it's the den"
+	case errors.Is(err, ErrMoveRefused):
+		return "Dens won't follow it to the address it moved to"
+	case errors.Is(err, errFollowLater):
+		return "its new address waits for the next minute's check"
+	case errors.As(err, &perr):
+		return "it answered " + ShownCode(perr)
+	case errors.As(err, &verify), errors.As(err, &unknown), errors.As(err, &hostname), errors.As(err, &invalid):
+		return "its certificate didn't verify"
+	case errors.As(err, &dns):
+		return "its name didn't resolve"
+	case host.ConnRefused(err):
+		return "nothing answered at its address"
+	case errors.As(err, &netErr) && netErr.Timeout():
+		return "it didn't answer in time"
+	}
+	return "it couldn't be reached"
+}
+
 // logged gives an error for a log line. A network error goes as Explain
 // describes it, since Go's name the address they failed to reach, and logs
 // carry no addresses (M8); any other goes as it is.

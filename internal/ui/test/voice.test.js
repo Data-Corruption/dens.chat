@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     actionFor, answerFor, applyCalls, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, readKeyStatus, readKeys,
-    readVoice, readVolumes, rmsDb, rnnoiseChosen, speakingNow, typesInto, volumeIn, withVolume,
+    readVoice, readVolumes, ringing, rings, rmsDb, rnnoiseChosen, speakingNow, summarize, talking, typesInto, volumeIn, withVolume,
 } from '../assets/js/src/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
@@ -202,4 +202,59 @@ test("a call's members show by name, whatever order they joined in", () => {
     const joined = ['4', '2', '3', '99', '10'].map((id) => ({ id, muted: false }));
     assert.deepEqual(byName(joined, members).map((m) => m.id), ['99', '10', '3', '2', '4']);
     assert.deepEqual(joined.map((m) => m.id), ['4', '2', '3', '99', '10'], 'the den\'s order is left as it was');
+});
+
+// Push to talk lights its ring for everyone in the call (M11): the den
+// tells the others, and this page's member rings at once here.
+test('push to talk rings while held, through the den for the others, and never for a muted member', () => {
+    const ptt = readVoice(JSON.stringify({ mode: 'ptt' }));
+    assert.equal(talking(ptt, true, false), true);
+    assert.equal(talking(ptt, true, true), false, 'muted');
+    assert.equal(talking(ptt, false, false), false, 'let go');
+    assert.equal(talking(readVoice(''), true, false), false, 'sending by voice activity, where the key does nothing');
+    // The meters hear 3; the den says 1, this page's member, and 2 hold it.
+    const ring = ringing(new Set(['3']), new Set(['1', '2']), '1', true);
+    assert.deepEqual([...ring].sort(), ['2', '3', 'self']);
+    assert.deepEqual([...ringing(new Set(), new Set(['1']), '1', false)], [], "the den's word on this page's member comes late, and the key here decides");
+    assert.equal(rings({ id: '2' }, '1', ring), true);
+    assert.equal(rings({ id: '3' }, '1', ring), true);
+    assert.equal(rings({ id: '1' }, '1', ring), true);
+    for (const m of [{ id: '2', muted: true }, { id: '2', staff_muted: true }, { id: '1', muted: true }, { id: '1', staff_muted: true }, { id: '4' }]) {
+        assert.equal(rings(m, '1', ring), false, JSON.stringify(m));
+    }
+    assert.equal(rings({ id: '2' }, '1', null), false, 'outside the call, nobody rings');
+});
+
+// The page's notes for the log sum its connection's statistics up (M11).
+test("a call's statistics sum up for the log, as Chromium and Firefox give them", () => {
+    const report = (stats) => new Map(stats.map((x) => [x.id, x]));
+    const chromium = report([
+        { id: 'T1', type: 'transport', selectedCandidatePairId: 'CP1' },
+        { id: 'CP1', type: 'candidate-pair', localCandidateId: 'L1', remoteCandidateId: 'R1', currentRoundTripTime: 0.028 },
+        { id: 'CP2', type: 'candidate-pair', localCandidateId: 'L2', remoteCandidateId: 'R2', currentRoundTripTime: 0.5 },
+        { id: 'L1', type: 'local-candidate', candidateType: 'host', protocol: 'udp', address: '192.0.2.5' },
+        { id: 'R1', type: 'remote-candidate', candidateType: 'host', protocol: 'udp', address: '198.51.100.7' },
+        { id: 'O1', type: 'outbound-rtp', packetsSent: 1000, bytesSent: 120000 },
+        { id: 'I1', type: 'inbound-rtp', packetsReceived: 900, bytesReceived: 100000, packetsLost: 3, jitter: 0.004 },
+        { id: 'I2', type: 'inbound-rtp', packetsReceived: 100, bytesReceived: 20000, packetsLost: 1, jitter: 0.002 },
+    ]);
+    assert.deepEqual(summarize(chromium), {
+        protocol: 'udp', local: 'host', remote: 'host', packets_sent: 1000, bytes_sent: 120000, packets_received: 1000, bytes_received: 120000,
+        packets_lost: 4, jitter: 4, rtt: 28,
+    });
+    const firefox = report([
+        { id: 'p1', type: 'candidate-pair', localCandidateId: 'l1', remoteCandidateId: 'r1', selected: true, nominated: true, state: 'succeeded' },
+        { id: 'l1', type: 'local-candidate', candidateType: 'host', protocol: 'tcp' },
+        { id: 'r1', type: 'remote-candidate', candidateType: 'host', protocol: 'tcp' },
+        { id: 'o1', type: 'outbound-rtp', packetsSent: 10, bytesSent: 1000 },
+        { id: 'ri1', type: 'remote-inbound-rtp', roundTripTime: 0.031 },
+        { id: 'i1', type: 'inbound-rtp', packetsReceived: 5, bytesReceived: 500, packetsLost: -2, jitter: 0.01 },
+    ]);
+    assert.deepEqual(summarize(firefox), {
+        protocol: 'tcp', local: 'host', remote: 'host', packets_sent: 10, bytes_sent: 1000, packets_received: 5, bytes_received: 500,
+        packets_lost: 0, jitter: 10, rtt: 31,
+    });
+    assert.deepEqual(summarize(new Map()), {
+        protocol: '', local: '', remote: '', packets_sent: 0, bytes_sent: 0, packets_received: 0, bytes_received: 0, packets_lost: 0, jitter: 0, rtt: 0,
+    }, 'before there is a path');
 });

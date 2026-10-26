@@ -166,17 +166,27 @@ func (c *conn) run(ctx context.Context) {
 				return
 			}
 			if revoked(err) {
+				c.logf(true, "it no longer accepts this device")
 				c.setState(StateRevoked, "This den no longer accepts this device.")
 				c.dropCache()
 				return
 			}
+			c.logf(false, "couldn't sign in: %s", unreached(err))
 			c.setState(StateOffline, describe(err))
 			c.pause(ctx, b.next())
 			continue
 		}
-		connectedAt, code, err := c.stream(ctx)
+		connectedAt, code, why, err := c.stream(ctx)
 		if ctx.Err() != nil {
 			return
+		}
+		// Why the connection closed goes to the log at info, with how long
+		// it was up (M11). One that never came up goes at debug, since a
+		// den that's down fails every half minute.
+		if connectedAt.IsZero() {
+			c.logf(false, "couldn't connect: %s", why)
+		} else {
+			c.logf(true, "its connection closed after %s: %s", time.Since(connectedAt).Round(time.Second), why)
 		}
 		if !connectedAt.IsZero() && time.Since(connectedAt) >= time.Minute {
 			b.reset()
@@ -203,6 +213,18 @@ func (c *conn) run(ctx context.Context) {
 		}
 		c.setState(StateOffline, msg)
 		c.pause(ctx, wait)
+	}
+}
+
+// logf logs a line about the den's connection, at info or at debug,
+// naming the den by its ID as the page shows it, and its name.
+func (c *conn) logf(info bool, format string, args ...any) {
+	s := c.status()
+	args = append([]any{s.Fingerprint, s.Name}, args...)
+	if info {
+		c.m.log.Infof("Den %s, %q: "+format, args...)
+	} else {
+		c.m.log.Debugf("Den %s, %q: "+format, args...)
 	}
 }
 
@@ -395,11 +417,12 @@ func (c *conn) call(ctx context.Context, method, path string, req, resp any) err
 }
 
 // stream holds one WebSocket connection until it closes, and returns when
-// it came up (zero if it never did) and its close status.
-func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocket.StatusCode, err error) {
+// it came up (zero if it never did), its close status, and why it closed,
+// for the log.
+func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocket.StatusCode, why string, err error) {
 	token, err := c.session(ctx)
 	if err != nil {
-		return time.Time{}, -1, err
+		return time.Time{}, -1, "couldn't sign in: " + unreached(err), err
 	}
 	a := c.remote()
 	u := a.base + "/api/ws"
@@ -426,12 +449,12 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		CompressionMode: websocket.CompressionNoContextTakeover})
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-			return time.Time{}, -1, errDialUnauthorized
+			return time.Time{}, -1, "it no longer accepts the session", errDialUnauthorized
 		}
 		if resp != nil {
-			return time.Time{}, -1, denproto.ReadError(resp)
+			err = denproto.ReadError(resp)
 		}
-		return time.Time{}, -1, err
+		return time.Time{}, -1, unreached(err), err
 	}
 	defer ws.CloseNow()
 	ws.SetReadLimit(denproto.MaxBody)
@@ -454,9 +477,13 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	defer helpers.Wait()
 	defer cancel()
 	helpers.Add(2)
+	var pingLost atomic.Bool
 	go func() {
 		defer helpers.Done()
-		c.ping(sctx, cancel, ws)
+		if !c.ping(sctx, ws) {
+			pingLost.Store(true)
+			cancel()
+		}
 	}()
 	go func() {
 		defer helpers.Done()
@@ -465,12 +492,20 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	for {
 		_, data, err := ws.Read(sctx)
 		if err != nil {
-			return connectedAt, websocket.CloseStatus(err), err
+			code := websocket.CloseStatus(err)
+			why := "the connection broke"
+			switch {
+			case pingLost.Load():
+				why = "a ping went unanswered"
+			case code >= 0:
+				why = fmt.Sprintf("the den closed it with %d", code)
+			}
+			return connectedAt, code, why, err
 		}
 		events, err := denproto.DecodeFrame(data)
 		if err != nil {
 			ws.Close(websocket.StatusInvalidFramePayloadData, "malformed frame")
-			return connectedAt, -1, err
+			return connectedAt, -1, "a frame didn't decode", err
 		}
 		var forward []denproto.Event
 		fresh := false
@@ -479,7 +514,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			if err != nil {
 				c.m.log.Warnf("den protocol violation: %v", err)
 				ws.Close(websocket.StatusPolicyViolation, "protocol violation")
-				return connectedAt, -1, err
+				return connectedAt, -1, "the den broke the protocol", err
 			}
 			if ok {
 				forward = append(forward, out)
@@ -487,6 +522,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			if e.T == denproto.EventReady || e.T == denproto.EventResumed {
 				if connectedAt.IsZero() {
 					connectedAt = time.Now()
+					c.logf(false, "its connection is up")
 				}
 				c.setState(StateConnected, "")
 				fresh = true
@@ -586,7 +622,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
 			CallLimits: d.CallLimits, Retention: d.Retention})
 		return out, err == nil, err
-	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused:
+	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(e)
 	case denproto.EventAuthRenewed:
@@ -815,22 +851,22 @@ func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	return m, true
 }
 
-// ping checks the connection is alive; a den that stops answering is
-// reconnected rather than waited on.
-func (c *conn) ping(ctx context.Context, cancel context.CancelFunc, ws *websocket.Conn) {
+// ping checks the connection is alive until ctx ends, and reports false
+// once a ping goes unanswered: a den that stops answering is reconnected
+// rather than waited on.
+func (c *conn) ping(ctx context.Context, ws *websocket.Conn) bool {
 	t := time.NewTicker(c.m.PingInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return true
 		case <-t.C:
 			pctx, pcancel := context.WithTimeout(ctx, c.m.PingTimeout)
 			err := ws.Ping(pctx)
 			pcancel()
 			if err != nil {
-				cancel()
-				return
+				return ctx.Err() != nil
 			}
 		}
 	}

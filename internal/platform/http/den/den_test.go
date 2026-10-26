@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -33,6 +34,7 @@ type fixture struct {
 	t   *testing.T
 	d   *dens.Den
 	srv *httptest.Server
+	log *xlog.Logger
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -60,7 +62,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, d: d, srv: httptest.NewServer(New(&app.App{Den: d, Log: log}))}
+	f := &fixture{t: t, d: d, srv: httptest.NewServer(New(&app.App{Den: d, Log: log})), log: log}
 	t.Cleanup(func() {
 		f.srv.Listener.Close()
 		d.CloseSockets(time.Second)
@@ -277,6 +279,64 @@ func TestSocketClosesOnExpiry(t *testing.T) {
 	if websocket.CloseStatus(err) != denproto.CloseSessionExpired {
 		t.Fatalf("close status %v", err)
 	}
+}
+
+// logged waits for a line in the den's log.
+func (f *fixture) logged(want string) {
+	f.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		logs, err := f.log.Newest(1 << 20)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		if strings.Contains(string(logs), want) {
+			return
+		}
+		if time.Now().After(deadline) {
+			f.t.Fatalf("the log doesn't say %q:\n%s", want, logs)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestSocketClosesAreLogged checks that the den logs why each member's
+// socket closed, and how long it was open (M11): as its client closed it,
+// with a code or without, and as the den closed it, with its own.
+func TestSocketClosesAreLogged(t *testing.T) {
+	f := newFixture(t)
+	if err := f.log.SetLevel("info"); err != nil {
+		t.Fatal(err)
+	}
+	f.d.TokenLifetime = time.Minute
+	token, _ := f.owner()
+	s, _ := f.d.Authenticate(context.Background(), token)
+	closed := func(why string) string {
+		return fmt.Sprintf("The socket of member %d closed after 0s: %s", s.MemberID, why)
+	}
+	c, _ := f.dial(token, "")
+	c.Close(websocket.StatusGoingAway, "")
+	f.logged(closed("the client closed it with 1001"))
+	c, _ = f.dial(token, "")
+	c.CloseNow()
+	f.logged(closed("the connection broke"))
+	c, _ = f.dial(token, "")
+	f.d.CloseMemberSockets(s.MemberID, denproto.CloseTooSlow, "too slow")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, _, err := c.Read(ctx); websocket.CloseStatus(err) != denproto.CloseTooSlow {
+		t.Fatalf("close status %v", err)
+	}
+	f.logged(closed("the den closed it with 4008, too slow"))
+	f.d.TokenLifetime = 300 * time.Millisecond
+	short := f.member(token, "bob")
+	expiring, _ := f.d.Authenticate(context.Background(), short)
+	c, _ = f.dial(short, "")
+	defer c.CloseNow()
+	if _, _, err := c.Read(ctx); websocket.CloseStatus(err) != denproto.CloseSessionExpired {
+		t.Fatalf("close status %v", err)
+	}
+	f.logged(fmt.Sprintf("The socket of member %d closed after 0s: its session expired", expiring.MemberID))
 }
 
 // member joins a second member with an invite from the owner, and returns

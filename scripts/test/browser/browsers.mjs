@@ -165,6 +165,9 @@ class Socket {
 //   hover: a pointer that hovers, as a desktop's mouse. Headless, both
 //     browsers say they have no pointer, so what shows on hover never
 //     shows (M11). Chromium's touch emulation forgets it.
+// A launched browser's windows, windowEval, closeWindow and windowShot reach
+// the windows its page opens, as a share's own (M11): how many there are,
+// and the newest.
 export function launch(name, port, opts = {}) {
     return name === 'chromium' ? chromium(port, opts) : firefox(port, opts);
 }
@@ -216,8 +219,34 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
     const mouse = (type, x, y, extra = {}) => cdp('Input.dispatchMouseEvent', { type, x, y, ...extra });
     const answers = new Map();
     let answering = false;
+    // The page's own windows are the pages besides it, each attached once.
+    const windows = async () => (await cdp('Target.getTargets', {}, null)).targetInfos.filter((t) => t.type === 'page' && t.targetId !== target.id);
+    const sessions = new Map();
+    const newest = async () => {
+        const t = (await windows()).at(-1);
+        if (!t) return null;
+        if (!sessions.has(t.targetId)) sessions.set(t.targetId, (await browser.send('Target.attachToTarget', { targetId: t.targetId, flatten: true })).sessionId);
+        return { target: t.targetId, session: sessions.get(t.targetId) };
+    };
     return {
         name: 'chromium',
+        windows: async () => (await windows()).length,
+        async windowEval(expression) {
+            const w = await newest();
+            if (!w) return null;
+            const r = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, w.session);
+            if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description || ''));
+            return r.result.value;
+        },
+        async closeWindow() {
+            const w = await newest();
+            if (w) await cdp('Target.closeTarget', { targetId: w.target }, null);
+        },
+        async windowShot(file) {
+            const w = await newest();
+            const r = await cdp('Page.captureScreenshot', { format: 'png' }, w.session);
+            fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
+        },
         cdp,
         events: browser.events,
         async go(url) {
@@ -374,6 +403,9 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
     await bidi.send('session.new', { capabilities: {} });
     if (preload) await bidi.send('script.addPreloadScript', { functionDeclaration: preload });
     const { context } = await bidi.send('browsingContext.create', { type: 'tab' });
+    // The page's own windows are the top-level contexts that came after it.
+    const before = new Set((await bidi.send('browsingContext.getTree', {})).contexts.map((x) => x.context));
+    const windows = async () => (await bidi.send('browsingContext.getTree', {})).contexts.filter((x) => !before.has(x.context));
     const evaluate = async (expression, target, extra = {}) => {
         const r = await bidi.send('script.evaluate', { expression, target: { context: target }, awaitPromise: true, ...extra });
         if (r.type === 'exception') throw new Error(JSON.stringify(r.exceptionDetails?.text || r));
@@ -399,6 +431,20 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
         name: 'firefox',
         bidi: (method, params) => bidi.send(method, params),
         context,
+        windows: async () => (await windows()).length,
+        async windowEval(expression) {
+            const w = (await windows()).at(-1);
+            return w ? json(expression, w.context) : null;
+        },
+        async closeWindow() {
+            const w = (await windows()).at(-1);
+            if (w) await bidi.send('browsingContext.close', { context: w.context });
+        },
+        async windowShot(file) {
+            const w = (await windows()).at(-1);
+            const r = await bidi.send('browsingContext.captureScreenshot', { context: w.context });
+            fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
+        },
         async go(url) {
             await bidi.send('browsingContext.navigate', { context, url, wait: 'complete' });
             await sleep(1500);

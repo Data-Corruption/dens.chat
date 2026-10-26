@@ -32,5 +32,5 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 ## Small
 
-- One member on Fedora KDE with Waterfox leaves and rejoins calls without doing anything: flickering in and out, dropping out for a few seconds every 30 to 60 seconds (the timing may be off). M11's logs should say which connection breaks; the fix waits for them.
-- In the profile edit dialog, let members pick their name's color, including start-to-end gradients.
+- One member on Fedora KDE with Waterfox leaves and rejoins calls without doing anything: flickering in and out, dropping out for a few seconds every 30 to 60 seconds (the timing may be off). M11's logs say which connection breaks first, once the member and the den's owner set them to debug and send them after the next drop (see design.md's What's logged); the fix waits for them.
+- In the profile edit dialog, let members pick their name's color, including start-to-end gradients. It waits for custom themes, after the phone layout, so both cover it.

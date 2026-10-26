@@ -44,9 +44,11 @@
 package rlog
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -265,6 +267,88 @@ func (w *Writer) Flush() error {
 		return ErrClosed
 	}
 	return w.flush()
+}
+
+// Newest returns the newest limit bytes of the logs in the directory, oldest
+// first, from the start of a line: latest.log and the rotated files before
+// it, as far back as fit, with what the Writer holds flushed first. It reads
+// under the lock that rotation takes, so no file is renamed or pruned while
+// it reads, but not under the Writer's own: writes go on meanwhile, and
+// wait only for a flush.
+func (w *Writer) Newest(limit int64) ([]byte, error) {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil, ErrClosed
+	}
+	// A writer that failed still has its files to read.
+	_ = w.flush()
+	w.mu.Unlock()
+
+	lock, err := w.acquireFileLock()
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
+	entries, err := os.ReadDir(w.cfg.DirPath)
+	if err != nil {
+		return nil, fmt.Errorf("list log files: %w", err)
+	}
+	var names []string
+	for _, e := range entries {
+		if name := e.Name(); !e.IsDir() && name != "latest.log" && filepath.Ext(name) == ".log" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names) // timestamped names sort oldest-first
+	names = append(names, "latest.log")
+	// Each file's end, from the newest back, until limit is spent.
+	var parts [][]byte
+	for i := len(names) - 1; i >= 0 && limit > 0; i-- {
+		b, err := tail(filepath.Join(w.cfg.DirPath, names[i]), limit)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, b)
+		limit -= int64(len(b))
+	}
+	var out []byte
+	for i := len(parts) - 1; i >= 0; i-- {
+		out = append(out, parts[i]...)
+	}
+	return out, nil
+}
+
+// tail reads at most limit bytes from the end of a file, from the start of a
+// line: a file cut short leaves out what comes before its first line break.
+func tail(path string, limit int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat %s: %w", filepath.Base(path), err)
+	}
+	from := max(fi.Size()-limit, 0)
+	// A byte before from, to tell whether a line starts there.
+	start := max(from-1, 0)
+	b := make([]byte, fi.Size()-start)
+	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("read %s: %w", filepath.Base(path), err)
+	}
+	if from > 0 {
+		cut := bytes.IndexByte(b, '\n')
+		if cut < 0 {
+			return nil, nil
+		}
+		b = b[cut+1:]
+	}
+	return b, nil
 }
 
 // Error returns the last error encountered by the Writer.

@@ -613,6 +613,16 @@ function SystemSettings({ instance, version, pair }) {
                         {settings.logLevels.map((level) => <option key={level} value={level}>{level}</option>)}
                     </select>
                 </Field>
+                {/* The service keeps the logs where an installed Dens's
+                    desktop user can't read them, so the page downloads
+                    them (M11). */}
+                <p class="text-sm text-base-content/70">
+                    The logs say what Dens did and when, to send with a problem: debug says the most, calls in detail. They hold no messages,
+                    keys or addresses, but they do name your dens, with their IDs.
+                </p>
+                <div>
+                    <a class="btn btn-outline btn-sm" href="/api/logs" download>Download the newest logs</a>
+                </div>
             </Card>
             <ErrorText message={save.error} />
             <Card title="This browser">

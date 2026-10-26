@@ -721,7 +721,7 @@ call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_mu
                                    "sharing"? (M4.2), "sound"? (M4.2), "watching"? (M4.2)}, …]}
 ```
 
-Client frames, with `resume` and `voice.restart` from M3, and `voice.share` and `voice.watch` from M4.2:
+Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voice.watch` from M4.2, and `voice.talk` from M11:
 
 ```json
 [{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false}}]
@@ -731,15 +731,17 @@ Client frames, with `resume` and `voice.restart` from M3, and `voice.share` and 
 [{"t": "voice.restart", "d": {}}]
 [{"t": "voice.share", "d": {"on": true, "sound": true}}]
 [{"t": "voice.watch", "d": {"member_id": "7", "on": true}}]
+[{"t": "voice.talk", "d": {"on": true}}]
 [{"t": "voice.leave", "d": {}}]
 ```
 
-Den events, all ephemeral, with `voice.resumed` from M3 and `voice.refused` from M4.2:
+Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2 and `voice.talking` from M11:
 
 ```json
 {"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
 {"t": "voice.resumed", "d": {"channel_id": "41"}}
 {"t": "voice.refused", "d": {"channel_id": "41", "what": "watch", "member_id": "7", "reason": "full"}}
+{"t": "voice.talking", "d": {"channel_id": "41", "members": ["7"]}}
 {"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
 {"t": "voice.state", "d": {"calls": [call, …]}}
 ```
@@ -784,6 +786,14 @@ A call's socket can close while its media still flows, or come back after its me
 - A held call ends like any other call: when the member joins another, leaves the den or is removed, when its device is signed out, when staff disconnect them, or when they can no longer see the channel. It ends with `failed` once its hold runs out.
 - `voice.restart` asks the den to restart ICE, as when the client's media connection broke. The den's next offer carries new ICE credentials: at once, or as soon as the outstanding offer is answered. The client writes the den's addresses into that offer afresh. DTLS carries on, so the call keeps its sections and keys. A restart before the call's first answer is ignored, and a restart counts toward the member's other writes.
 - A call whose media stops answering connectivity checks for 30 seconds ends with `failed`, held or not.
+
+### Push to talk (M11)
+
+A member who sends by push to talk rings for everyone in their call while they hold its key, whatever their microphone hears (see the design doc's Voice controls).
+
+- `voice.talk` with `"on": true` says the member holds push to talk in the call this socket holds, and `"on": false` that they let go. A frame from a socket that holds no call is ignored.
+- `voice.talking` lists the members of the call who hold push to talk, in the order they joined, and goes to the sockets that hold the call's members' calls alone, as only their pages ring for speech. Each replaces the last. A socket gets it as its call starts and as it takes a held call back, and whenever the list changes.
+- The den lights a member's ring at most five times a second; a press past that, or while the member is muted or staff muted, lights nothing, and a release always puts a lit ring out. Muting, a staff mute, leaving the call or moving to another, the call ending and the socket closing, which holds the call, put it out too; a client that takes a held call back says again whether its member holds the key.
 
 ### Staff in calls (M3)
 
@@ -838,4 +848,5 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
 | Other writes, including mute, ICE restarts, sharing and watching, and staff disconnecting and muting | 30 per 10 seconds per member |
+| Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

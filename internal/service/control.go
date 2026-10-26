@@ -1,8 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"strings"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/control"
@@ -12,6 +15,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
+	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
 func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handler {
@@ -64,6 +68,9 @@ func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handl
 		control.OpCreateDen: func(ctx context.Context, req control.Request) (control.Reply, error) {
 			return createDenReply(ctx, a, req)
 		},
+		control.OpLogs: func(_ context.Context, req control.Request) (control.Reply, error) {
+			return logsReply(a, req.Level)
+		},
 		control.OpQuit: func(context.Context, control.Request) (control.Reply, error) {
 			if !a.Layout.Form.Session() {
 				return control.Reply{}, control.Errorf("the service manager runs this instance; stop it with: %s",
@@ -94,6 +101,27 @@ func passwordProblem(a *app.App, err error, doing string) error {
 		return control.Errorf("%v", err)
 	}
 	return err
+}
+
+// logsReply streams the newest logs, or with level sets how much they say
+// from now on (M11).
+func logsReply(a *app.App, level string) (control.Reply, error) {
+	if level != "" {
+		normalized, err := xlog.NormalizeLevel(level)
+		if err != nil {
+			return control.Reply{}, control.Errorf("the log level is one of %s", strings.ReplaceAll(xlog.ValidLevels, "|", ", "))
+		}
+		kept, err := a.SetLogLevel(normalized)
+		if err != nil {
+			return control.Reply{}, err
+		}
+		return control.Reply{Result: control.LogLevel{Level: kept}}, nil
+	}
+	name, logs, err := a.Logs()
+	if err != nil {
+		return control.Reply{}, err
+	}
+	return control.Reply{Result: control.Backup{Name: name, Size: int64(len(logs))}, Body: io.NopCloser(bytes.NewReader(logs))}, nil
 }
 
 func statusReply(ctx context.Context, a *app.App) (control.Reply, error) {

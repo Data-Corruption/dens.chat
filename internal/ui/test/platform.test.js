@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { browserOf, canCall, canShare, systemOf } from '../assets/js/src/platform.js';
+import { browserOf, canCall, canPopOut, canShare, systemOf } from '../assets/js/src/platform.js';
 
 const AGENTS = {
     chromeWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -46,4 +46,14 @@ test('calls need WebRTC, and sharing a screen getDisplayMedia too', () => {
     assert.deepEqual([canCall(gnomeWeb), canShare(gnomeWeb)], [false, false]);
     assert.deepEqual([canCall(insecure), canShare(insecure)], [true, false]);
     assert.deepEqual([canCall({}), canShare({})], [false, false]);
+});
+
+// A share's window of its own is for a desktop's monitors (M11).
+test("a share opens in a window of its own where the browser opens one that moves between monitors", () => {
+    const pc = function RTCPeerConnection() {};
+    const desktop = { RTCPeerConnection: pc, navigator: { mediaDevices: { getUserMedia() {}, getDisplayMedia() {} } }, open() {} };
+    const webView = { RTCPeerConnection: pc, navigator: { mediaDevices: { getUserMedia() {} } }, open() {} };
+    assert.equal(canPopOut(desktop), true);
+    assert.equal(canPopOut(webView), false, "Android's WebView");
+    assert.equal(canPopOut({ ...desktop, open: undefined }), false);
 });

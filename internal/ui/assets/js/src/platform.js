@@ -37,6 +37,14 @@ export function canShare(win = globalThis) {
     return canCall(win) && typeof win.navigator?.mediaDevices?.getDisplayMedia === 'function';
 }
 
+// canPopOut says whether the browser opens a share in a window of its own
+// that the member can move to another monitor (M11). Phones' browsers and
+// Android's WebView open no such window, and capture no screen either,
+// which tells them apart.
+export function canPopOut(win = globalThis) {
+    return typeof win.open === 'function' && canShare(win);
+}
+
 // NO_CALLS and NO_SHARING say so where the page would offer them.
 export const NO_CALLS = "This browser can't make calls. Open Dens in Firefox, Chrome or Edge to join one.";
 export const NO_SHARING = "This browser can't share a screen.";
