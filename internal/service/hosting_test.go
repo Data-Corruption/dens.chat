@@ -18,14 +18,17 @@ import (
 
 const localPassword = "correct horse battery"
 
+// freeUDPPort finds a UDP port free on every interface, as the media port
+// binds, among the tests' ports.
 func freeUDPPort(t *testing.T) int {
 	t.Helper()
-	conn, err := net.ListenUDP("udp", &net.UDPAddr{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	return conn.LocalAddr().(*net.UDPAddr).Port
+	return findPort(t, func(port int) error {
+		conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: port})
+		if err == nil {
+			conn.Close()
+		}
+		return err
+	})
 }
 
 // browser is a paired browser on a development instance's page.
