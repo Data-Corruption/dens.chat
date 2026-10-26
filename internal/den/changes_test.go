@@ -341,6 +341,64 @@ func TestNewSyncEpoch(t *testing.T) {
 	}
 }
 
+// A restore moves the den's ID counters on (M11): a backup's are where
+// they were when it was made, and nothing made after the restore may take
+// the ID of what the backup lacks, which a link elsewhere may name.
+func TestAdvanceIDs(t *testing.T) {
+	f, owner, _ := chatFixture(t)
+	ctx := context.Background()
+	c := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	f.send(owner, c.ID, "in the backup")
+	lost := f.send(owner, c.ID, "after the backup")
+	// What the backup holds: not the second message, and the counter where
+	// it was before it.
+	id, _ := denproto.ParseID(lost.ID)
+	for _, q := range []string{`DELETE FROM den_messages WHERE id = ?`, `UPDATE sqlite_sequence SET seq = ? - 1 WHERE name = 'den_messages'`} {
+		if _, err := f.db.ExecContext(ctx, q, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seq := func(table string) int64 {
+		t.Helper()
+		var n int64
+		if err := f.db.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = ?`, table).Scan(&n); err != nil {
+			t.Fatalf("%s's counter: %v", table, err)
+		}
+		return n
+	}
+	version := seq("den_changes")
+	if err := f.d.AdvanceIDs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	at := f.clock.UnixMicro()
+	if next := f.send(owner, c.ID, "after the restore"); next.ID != denproto.FormatID(at+1) {
+		t.Fatalf("the next message's ID is %s, want %d", next.ID, at+1)
+	}
+	if next := f.newChannel(owner, "later", denproto.ChannelRequest{}); next.ID != denproto.FormatID(at+1) {
+		t.Fatalf("the next channel's ID is %s, want %d", next.ID, at+1)
+	}
+	// Every counter moves, one the backup had no row for yet too, as for
+	// DM keys here; the change log's counts versions, which a new sync
+	// epoch starts again.
+	for _, table := range []string{"den_members", "den_invites", "den_groups", "den_files", "den_dm_keys"} {
+		if got := seq(table); got != at {
+			t.Errorf("%s's counter is %d, want %d", table, got, at)
+		}
+	}
+	if got := seq("den_changes"); got != version {
+		t.Errorf("the change log's counter moved from %d to %d", version, got)
+	}
+	// The service starting again before the restore is done does it again,
+	// and no counter moves back, whatever the clock says.
+	f.clock = f.clock.Add(-time.Hour)
+	if err := f.d.AdvanceIDs(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := seq("den_members"); got != at {
+		t.Fatalf("den_members' counter after a second pass: %d, want %d", got, at)
+	}
+}
+
 // members lists the usernames a snapshot sends, with the cursor it took.
 func (f *fixture) membersSince(s *Session, mc *membersCursor) ([]string, *int64) {
 	f.t.Helper()
