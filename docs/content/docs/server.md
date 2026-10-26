@@ -270,3 +270,7 @@ home that's in the den.
 - **Backups.** `dens backup`, as your account, writes a backup of the server
   into the folder you're in. Copy it off the server, to keep it somewhere
   else. It holds the den, as the export did.
+- **Logs.** `dens logs` saves the newest logs into the folder you're in, to
+  send with a problem, and `dens logs --level debug` has them say the most,
+  calls in detail, until you set it back with `--level warn`
+  ([Sending logs](../install/#sending-logs)).
