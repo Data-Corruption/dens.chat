@@ -2,7 +2,8 @@
 // ~~strikethrough~~, `inline code`, ``` code blocks ```, > quotes,
 // ||spoilers||, @mentions, bare http(s) links, and task lines that start
 // with [ ] or [x]. There are no [label](url) links, so a link always shows
-// where it goes.
+// where it goes; a link to a message shows the channel it's in, with its
+// address on hover (M11).
 //
 // Every message comes from a den, and dens are other people's servers. The
 // renderer builds Preact nodes whose text is always text: nothing here
@@ -11,7 +12,8 @@
 // takes time in proportion to its length, whatever its delimiters (M8).
 
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { shownLink, trimLink, videoOf } from './links.js';
+import { messageLink, shownLink, trimLink, videoOf } from './links.js';
+import { MessageLink } from './msglinks.jsx';
 
 const NAME_CHAR = /[A-Za-z0-9_]/;
 const SPACE = /\s/;
@@ -232,10 +234,14 @@ function inline(line, marks, ctx, key, start, end) {
                 const shown = shownLink(url);
                 const video = ctx.videos && !ctx.spoiler && videoOf(url);
                 if (video) ctx.videos.push(video);
+                // A link to a message is a chip naming where it points (M11).
+                const message = !ctx.preview && messageLink(url);
                 flush();
                 out.push(
                     ctx.preview ? (
                         <span key={`${key}-${n++}`} class="text-primary">{shown}</span>
+                    ) : message ? (
+                        <MessageLink key={`${key}-${n++}`} url={url} link={message} />
                     ) : (
                         <a key={`${key}-${n++}`} href={shown} target="_blank" rel="noopener noreferrer nofollow" class="link link-primary break-all">
                             {shown}

@@ -98,6 +98,36 @@ export function startSeconds(t) {
     return Number.isSafeInteger(n) ? n : 0;
 }
 
+// A link to a message (M11) is its den's address, then the den's ID and
+// the message's channel and ID in the fragment, as Copy link writes it:
+// https://den.example.com/#m/<den ID>/41/90210. It opens by the den's ID,
+// which the den's identity key proves on every connection, so it still
+// opens once the den moves to another address, and never in another den
+// that takes the old one. The address
+// names a den the member hasn't joined, and opens in a browser, which
+// never sends the fragment, so the den learns nothing of which message.
+// The IDs are as a den writes them: its own, 32 bytes in base64url, and
+// the channel's and message's, 1 to 19 digits without a leading zero, no
+// larger than a signed 64-bit integer.
+const MESSAGE_LINK = /^https?:\/\/([^/?#@\s]+)\/?#m\/([A-Za-z0-9_-]{43})\/([1-9][0-9]{0,18})\/([1-9][0-9]{0,18})$/;
+const MAX_ID = '9223372036854775807';
+
+const fitsID = (id) => id.length < MAX_ID.length || id <= MAX_ID;
+
+// messageLink reads a link to a message as { den, host, channel, message },
+// where den is the den's ID, or null for any other link.
+export function messageLink(url) {
+    const m = MESSAGE_LINK.exec(url);
+    if (!m || !fitsID(m[3]) || !fitsID(m[4])) return null;
+    return { den: m[2], host: m[1].toLowerCase(), channel: m[3], message: m[4] };
+}
+
+// linkTo is the link to a message in the den with ID denID at denURL, as
+// Copy link writes it.
+export function linkTo(denURL, denID, channelID, messageID) {
+    return `${denURL}/#m/${denID}/${channelID}/${messageID}`;
+}
+
 // shownLink is a link as this browser shows it.
 export function shownLink(url, preferOld = oldReddit()) {
     return preferOld && url.startsWith(REDDIT_POST) ? 'https://old.reddit.com/' + url.slice('https://www.reddit.com/'.length) : url;
