@@ -1,5 +1,39 @@
 # Changelog
 
+## [v1.4.0] - 2026-10-26
+
+### Added
+
+- Each message's actions are in a ⋯ menu that touch screens and keyboards reach: Reply, Edit, Copy text, Copy link and Delete, each where you may. Arrow keys, Home and End move through it, and Escape closes it.
+- Copy link copies a link to the message. Pasted in a message, in this den or another, it shows as a chip naming the channel, and a click opens the den and jumps to the message, or says why it can't: you haven't joined that den, the channel is gone or out of sight, or the message is gone. A link keeps working after its den moves to another address.
+- Push to talk lights your ring for everyone in the call while you hold the key, whether or not you're making a sound, as long as you aren't muted.
+- A share you watch opens in a window of its own, from the button in its controls, to move to another monitor, resize and make full screen. The player keeps its place, with a button that brings it back, and closing the window brings it back too.
+- Download the newest logs, in the settings under System, to send with a problem; on a server, `dens logs`, with `dens logs --level debug` to have them say the most. They hold no messages, keys or addresses. At debug they follow calls closely, to find out why one drops. The install guide's new Sending logs says how.
+- Clicking a channel group's name folds it, and clicking again unfolds it. A folded group still shows the channel that's open and any voice channel with a call in it.
+- Beside a DM, the member list's place shows the other member's profile.
+
+### Changed
+
+- Deleting a message asks first, in a dialog, and staff deleting someone else's see whose it is.
+- Den opens the den's text channel last open, and Direct messages the DM last open, or none: never a DM you didn't pick.
+- Enter starts a new line in a code block, and Ctrl+Enter sends from anywhere.
+- A dialog closes on a click outside it only when the press started outside it too, so selecting text that ends past its edge leaves it open.
+- A click elsewhere cancels the wait for a key in the settings, as Escape does.
+- Where Set up with your desktop can't be pressed, the keys' card says why, and what to do.
+- The New divider marks only where unread messages started when you opened the channel.
+- A deafened member shows as muted too, as deafening mutes them.
+- The message box shows its focus by a darker border alone, and the composer's + lines up with it.
+- A channel's ⋯ shows once Tab reaches it, and a call member's ⋯ shows on touch screens.
+- The den's address answers a browser with a line saying it's a den on Dens, where it answered a 404.
+- The install guide recommends Ungoogled Chromium, where Dens has had the fewest problems.
+
+### Fixed
+
+- Firefox played the sound of some videos, such as short Android clips, a couple of seconds after the picture. Videos sent from now on play in step, once the den runs this version.
+- After a restore from a backup, a den could give a new message the ID of one it had given out before, which a link elsewhere might name.
+- A message opened from Manage den's list of files, in the channel already open, didn't scroll to it.
+- A call could fail when its answer reached the den at the moment the answer was due.
+
 ## [v1.3.0] - 2026-10-24
 
 ### Added
