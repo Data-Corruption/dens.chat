@@ -2,6 +2,7 @@
 // rendering; nothing sets HTML from a string.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { copyText } from './clipboard.js';
 import { InfoIcon } from './icons.jsx';
 
 export function Card({ title, children, class: extra = '' }) {
@@ -171,20 +172,26 @@ export function useAction() {
     return { busy, error, setError, run };
 }
 
+// CopyButton copies text, and says for a moment whether it could. Where
+// the browser lets nothing copy, the text stays there to select.
 export function CopyButton({ text, label = 'Copy' }) {
-    const [copied, setCopied] = useState(false);
+    const [said, setSaid] = useState('');
+    const timer = useRef(null);
+    useEffect(() => () => clearTimeout(timer.current), []);
     async function copy() {
+        let result = 'Copied';
         try {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            await copyText(text);
         } catch {
-            // Clipboard access can be refused; the text stays selectable.
+            result = "Couldn't copy";
         }
+        setSaid(result);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => setSaid(''), 2000);
     }
     return (
         <button type="button" class="btn btn-sm" onClick={copy}>
-            {copied ? 'Copied' : label}
+            {said || label}
         </button>
     );
 }

@@ -204,7 +204,8 @@ export function App({ instance, version, pair, pairLink }) {
 // Unpaired says how to pair this browser: with dens open, or, in the
 // Flatpak, which has no command for it, by opening Dens from the apps
 // menu, either of which opens the default browser; and in another, with the
-// link dens open --print prints.
+// link dens open --print prints. The Android app, with neither, pairs its
+// own page as it opens it (M12).
 function Unpaired({ pair, pairLink, error }) {
     return (
         <Card title="Pair this browser">
@@ -214,11 +215,13 @@ function Unpaired({ pair, pairLink, error }) {
                     <pre class="rounded bg-base-300 p-3"><code>{pair}</code></pre>
                     <p class="text-sm text-base-content/70">It opens this page again in your default browser, with a one-time link.</p>
                 </>
-            ) : (
+            ) : pairLink ? (
                 <>
                     <p>This page only works in a browser paired with Dens on this computer. Open Dens from your apps menu.</p>
                     <p class="text-sm text-base-content/70">It opens this page again in your default browser, with a one-time link.</p>
                 </>
+            ) : (
+                <p>This page isn't paired with Dens anymore. Close Dens, then open it again from your apps, which pairs it.</p>
             )}
             {pairLink && (
                 <>

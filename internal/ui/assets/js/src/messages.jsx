@@ -15,6 +15,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
+import { copyText } from './clipboard.js';
 import { ErrorText, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import {
@@ -755,9 +756,9 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
     async function copy(what, done) {
         setError('');
         try {
-            await navigator.clipboard.writeText(what);
-        } catch {
-            setError("The browser didn't let Dens copy that.");
+            await copyText(what);
+        } catch (e) {
+            setError(e.message);
             return;
         }
         setCopied(done);
