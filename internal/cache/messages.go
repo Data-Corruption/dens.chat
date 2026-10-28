@@ -726,6 +726,13 @@ func (s *Store) Page(denID []byte, channel int64, q Query, gen int64, offline, e
 		if err != nil {
 			return p, false, err
 		}
+		// A run that lost every message it held to deletes says nothing
+		// of what lies before it, unless it starts the channel: the den
+		// answers, as for a page before. An empty page with older ones
+		// would give the page no message to ask for them before.
+		if len(ms) == 0 && !tail.First {
+			return p, false, nil
+		}
 		p = Page{Messages: ms, HasOlder: hasOlder}
 	}
 	if p.Messages == nil {
