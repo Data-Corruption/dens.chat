@@ -2,7 +2,8 @@
 
 # Writes the third-party notices the binary carries, internal/build/notices.txt:
 # the license of everything a release binary includes besides Dens's own
-# code. dens licenses prints it, and the page links to it.
+# code, and of what the Android app's APK carries beside it (M12). dens
+# licenses prints it, and the page links to it.
 #
 # The Go modules are those the binary links on every platform it's released
 # for, with each license read from the module cache. The rest come with the
@@ -106,6 +107,16 @@ generate() {
   section "Preact ${DEFAULT_PREACT_VERSION}, in the page" "$TEXTS/preact.txt" "https://preactjs.com"
   section "Tailwind CSS ${DEFAULT_TAILWIND_VERSION#v}, in the page's styles" "$TEXTS/tailwindcss.txt" "https://tailwindcss.com"
   section "daisyUI ${DEFAULT_DAISYUI_VERSION#v}, in the page's styles" "$TEXTS/daisyui.txt" "https://daisyui.com"
+  local kotlin
+  kotlin=$(printf '%s\n' "${ANDROID_TOOLS[@]}" | sed -n 's/^kotlin-compiler-\([0-9.]*\)\.zip .*/\1/p')
+  section "Kotlin's standard library ${kotlin}, in the Android app's shell" "$TEXTS/kotlin.txt" "https://kotlinlang.org" \
+    "Copyright 2010-2024 JetBrains s.r.o and respective authors and developers." \
+    "Its collections derive from GWT, (C) 2007-08 Google Inc., and its unsigned numbers on the JVM" \
+    "from Guava's UnsignedLongs, (C) 2011 The Guava Authors, both under this license too."
+  section "The ThreeTen backport, as Kotlin's standard library's time includes it" "$TEXTS/kotlin-threetenbp.txt" \
+    "https://www.threeten.org/threetenbp/"
+  section "Boost's special math functions, as Kotlin's standard library includes them" "$TEXTS/kotlin-boost.txt" \
+    "Copyright Eric Ford & Hubert Holin 2001."
 }
 
 case "${1:-}" in

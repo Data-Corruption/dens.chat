@@ -83,6 +83,31 @@ BROWSER_MEDIA=(
   "iphone-12-pro-hevc.mov 41cc5f00b7318627f83a67ef8be08aca65a26e6d39d265a6079717e520d6e096 https://raw.githubusercontent.com/immich-app/test-assets/ec56cc6c1d76c45bc9615dc6ea232470a2b0a3a1/videos/train.mov"
 )
 
+# The Android app (M12): the NDK, which builds Dens for Android with cgo;
+# the SDK's build tools and platform, Kotlin and a JDK, which build the APK
+# around it without Gradle; and the platform tools (adb), the emulator and
+# its system images, which the Android e2e runs in its container: Android
+# 17, and Android 12, the oldest the app runs on. Google publishes SHA-1s
+# alone for its downloads, which each matched when these were pinned;
+# Kotlin's and the JDK's SHA-256s are as their releases list them. Each is
+# its name in tools/, its SHA-256, and where it comes from.
+ANDROID_TOOLS=(
+  "android-ndk-r30-linux.zip 753611f410d002cfcd3f3dc2ef49aad532089d3180b436c060a90bf0fcb64df2 https://dl.google.com/android/repository/android-ndk-r30-linux.zip"
+  "build-tools_r37_linux.zip 01af179347cbcd9c208b7f8171f7b21f6dd1d2f85bcd15e88caa51d5d7b86060 https://dl.google.com/android/repository/build-tools_r37_linux.zip"
+  "platform-37.0_r02.zip 840b23e827f96e64aea4c89a1194aac3dc5f6bad37edb231c5c795d890330e8d https://dl.google.com/android/repository/platform-37.0_r02.zip"
+  "kotlin-compiler-2.4.21.zip 7cc140e76daf416a0424a5557f99afd7ca89ebd463ea1101261e3e01c33e75cd https://github.com/JetBrains/kotlin/releases/download/v2.4.21/kotlin-compiler-2.4.21.zip"
+  "OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz d7f5d5cf865a2902b70ff549b97586a7d3f234e016f041ab447ea740c7d66d1c https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.13%2B9/OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz"
+)
+ANDROID_EMULATOR_TOOLS=(
+  "platform-tools_r37.0.1-linux.zip d230f13842f60f782a8645f9c813f8f845bf36089ea7289f28c48f17979313f1 https://dl.google.com/android/repository/platform-tools_r37.0.1-linux.zip"
+  "emulator-linux_x64-16428233.zip b08fc43d8608d2955f607f1b287beb525041e730086bdca3af152accac3af9c1 https://dl.google.com/android/repository/emulator-linux_x64-16428233.zip"
+  "x86_64-37.0_r08.zip 75ed072b88f9bb7edde0e3d22427deddbdad8be168b058a79269b55de40f6f25 https://dl.google.com/android/repository/sys-img/google_apis/x86_64-37.0_r08.zip"
+  "x86_64-31_r14.zip 7e7081f5784e98dd391ddae52573a75bc1db17a2fd286cb20be46d3eec251f94 https://dl.google.com/android/repository/sys-img/google_apis/x86_64-31_r14.zip"
+)
+# Where the APK build finds the SDK's pieces, unpacked.
+ANDROID_BUILD_TOOLS_DIR="37.0.0"
+ANDROID_PLATFORM="android-37.0"
+
 ESBUILD_VERSION="${ESBUILD_VERSION:-$DEFAULT_ESBUILD_VERSION}"
 TAILWIND_VERSION="${TAILWIND_VERSION:-$DEFAULT_TAILWIND_VERSION}"
 DAISYUI_VERSION="${DAISYUI_VERSION:-$DEFAULT_DAISYUI_VERSION}"
@@ -224,6 +249,8 @@ VENDOR_RNNOISE_SRC=""
 VENDOR_RNNOISE_MODEL=""
 VENDOR_BROWSER_MEDIA=""
 VENDOR_FIRST_RELEASE=""
+VENDOR_ANDROID=""
+VENDOR_ANDROID_EMULATOR=""
 
 # Signing binary. Defaults to whatever `cosign` resolves to on PATH so local
 # harnesses can substitute a stand-in; vendor_cosign repoints it at the pinned
@@ -233,7 +260,8 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
-  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake browser-media)
+  wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake browser-media
+  android android-emulator)
 
 # Pin validation --------------------------------------------------------------
 
@@ -319,6 +347,10 @@ validate_pins() {
   for entry in "${BROWSER_MEDIA[@]}"; do
     read -r _ sha _ <<<"$entry"
     validate_sha256 "$sha" "BROWSER_MEDIA"
+  done
+  for entry in "${ANDROID_TOOLS[@]}" "${ANDROID_EMULATOR_TOOLS[@]}"; do
+    read -r _ sha _ <<<"$entry"
+    validate_sha256 "$sha" "ANDROID_TOOLS"
   done
 }
 
@@ -727,6 +759,60 @@ vendor_browser_media() {
   printf '🟢 Vendored the browser checks'"'"' media\n'
 }
 
+# vendor_android_unpack NAME DIR TOP unpacks the verified download NAME
+# from ANDROID_TOOLS to DIR, from its top directory TOP, once: DIR keeps
+# the SHA-256 it came from, so a new pin unpacks again.
+vendor_android_unpack() {
+  local name=$1 dir=$2 top=$3 entry file sha url
+  for entry in "${ANDROID_TOOLS[@]}"; do
+    read -r file sha url <<<"$entry"
+    [[ "$file" == "$name" ]] && break
+  done
+  [[ "$file" == "$name" ]] || { printf "error: %s isn't pinned\n" "$name" >&2; return 1; }
+  download_verified "$TOOLS_DIR/$name" "$url" "$sha" "$name"
+  [[ "$(cat "$dir/.vendored" 2>/dev/null)" == "$sha" ]] && return 0
+  local extract="$TOOLS_DIR/.android-extract"
+  rm -rf "$extract" "$dir"
+  mkdir -p "$extract" "$(dirname "$dir")"
+  case "$name" in
+    *.zip) unzip -q "$TOOLS_DIR/$name" -d "$extract" ;;
+    *.tar.gz) tar --no-same-owner -xzf "$TOOLS_DIR/$name" -C "$extract" ;;
+  esac
+  mv "$extract/$top" "$dir"
+  rm -rf "$extract"
+  printf '%s\n' "$sha" > "$dir/.vendored"
+}
+
+# vendor_android resolves to a directory holding what builds the Android
+# app, each unpacked: ndk, sdk (its build tools and platform), kotlinc and
+# jdk. The NDK and the build tools are built for x86_64 Linux alone.
+vendor_android() {
+  vendor_require_amd64 "Android NDK"
+  vendor_require_bins unzip tar gzip
+  VENDOR_ANDROID="$TOOLS_DIR/android"
+  vendor_android_unpack android-ndk-r30-linux.zip "$VENDOR_ANDROID/ndk" android-ndk-r30
+  vendor_android_unpack build-tools_r37_linux.zip "$VENDOR_ANDROID/sdk/build-tools/$ANDROID_BUILD_TOOLS_DIR" android-37.0
+  vendor_android_unpack platform-37.0_r02.zip "$VENDOR_ANDROID/sdk/platforms/$ANDROID_PLATFORM" android-37.0
+  vendor_android_unpack kotlin-compiler-2.4.21.zip "$VENDOR_ANDROID/kotlinc" kotlinc
+  vendor_android_unpack OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz "$VENDOR_ANDROID/jdk" jdk-21.0.13+9
+  printf '🟢 Vendored the Android NDK, SDK, Kotlin and JDK\n'
+}
+
+# vendor_android_emulator resolves to a directory of the verified
+# downloads the Android e2e's container unpacks: the platform tools, the
+# emulator and its system images, about 4 GB.
+vendor_android_emulator() {
+  vendor_require_amd64 "Android emulator"
+  VENDOR_ANDROID_EMULATOR="$TOOLS_DIR/android-emulator"
+  mkdir -p "$VENDOR_ANDROID_EMULATOR"
+  local entry name sha url
+  for entry in "${ANDROID_EMULATOR_TOOLS[@]}"; do
+    read -r name sha url <<<"$entry"
+    download_verified "$VENDOR_ANDROID_EMULATOR/$name" "$url" "$sha" "$name"
+  done
+  printf '🟢 Vendored the Android emulator\n'
+}
+
 vendor_cmake() {
   vendor_require_bins tar gzip
   local arch sha
@@ -800,6 +886,8 @@ vendor_ensure() {
     aom-src) vendor_aom_src ;;
     cmake) vendor_cmake ;;
     browser-media) vendor_browser_media ;;
+    android) vendor_android ;;
+    android-emulator) vendor_android_emulator ;;
     *)
       printf "error: unknown vendored tool '%s'\n" "$1" >&2
       printf "known tools: %s\n" "${VENDOR_FETCHABLE[*]}" >&2
@@ -832,6 +920,8 @@ vendor_resolved() {
     aom-src) printf '%s' "$VENDOR_AOM_SRC" ;;
     cmake) printf '%s' "$VENDOR_CMAKE" ;;
     browser-media) printf '%s' "$VENDOR_BROWSER_MEDIA" ;;
+    android) printf '%s' "$VENDOR_ANDROID" ;;
+    android-emulator) printf '%s' "$VENDOR_ANDROID_EMULATOR" ;;
   esac
 }
 
@@ -879,9 +969,10 @@ vendor_main() {
     local candidate
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
-        # The media module's and RNNoise's inputs, and the browser checks'
-        # media, are large, and only their builds and checks ask for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake|*:browser-media) continue ;;
+        # The media module's and RNNoise's inputs, the browser checks'
+        # media, and the Android app's tools are large, and only their
+        # builds and checks ask for them.
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake|*:browser-media|*:android|*:android-emulator) continue ;;
       esac
       tools+=("$candidate")
     done
