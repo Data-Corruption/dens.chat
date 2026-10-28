@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- The page's window: no title bar, light or dark as the phone is,
-         which the WebView passes on to the page as prefers-color-scheme. -->
-    <style name="Page" parent="@android:style/Theme.DeviceDefault.DayNight">
-        <item name="android:windowActionBar">false</item>
-        <item name="android:windowNoTitle">true</item>
-    </style>
-</resources>
