@@ -10,6 +10,7 @@
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
 #   ./scripts/test.sh -flatpak-e2e                 # the Flatpak's publisher, then the Flatpak, made from this tree, in containers
+#   ./scripts/test.sh -android-e2e [--no-build]    # the Android app, made from this tree, in Android's emulator
 #   ./scripts/test.sh -windows                     # Go tests on the Windows host (WSL only)
 #   ./scripts/test.sh -all                         # every available suite
 #
@@ -34,6 +35,7 @@ EOF
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
   -den-e2e  Test joining a den through Caddy; remaining arguments go to test-den-e2e.sh
   -flatpak-e2e  Test the Flatpak's publisher, then the Flatpak, made from this tree's binary and published by it, in containers
+  -android-e2e  Test the Android app, made from this tree, in Android's emulator, joining a den in a container; --no-build uses out/'s builds
   -windows  From WSL, run the Go tests natively on the Windows host
   -all      Run every available suite
 EOF
@@ -148,6 +150,8 @@ run_shell_lint() {
     scripts/test/flatpak-release.sh
     scripts/test/flatpak-publish.sh
     scripts/flatpak.sh
+    scripts/test-android-e2e.sh
+    scripts/test/android/*.sh
     scripts/test/browser/*.sh
     scripts/dev/seed-chat.sh
     scripts/dev/flatpak-vm.sh
@@ -216,6 +220,9 @@ case "$mode" in
     require_no_args "-flatpak-e2e" "$@"
     bash scripts/test-flatpak-e2e.sh
     ;;
+  -android-e2e)
+    bash scripts/test-android-e2e.sh "$@"
+    ;;
   -windows)
     require_no_args "-windows" "$@"
     run_windows_tests
@@ -229,6 +236,7 @@ case "$mode" in
     run_lifecycle_e2e
     bash scripts/test-den-e2e.sh
     bash scripts/test-flatpak-e2e.sh
+    bash scripts/test-android-e2e.sh
     ;;
   -h|--help)
     require_no_args "$mode" "$@"
