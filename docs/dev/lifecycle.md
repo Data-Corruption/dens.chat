@@ -20,7 +20,7 @@ When the service starts, `maintenance.AuthorizeStart` compares the state with th
 | Transitional, target `V` | Applies pending migrations, then starts. In `restoring` it also clears the restored browser sessions. |
 | Anything else | Records why and exits with status 78 (a service-specific exit code on Windows), which neither service manager retries |
 
-A session form's service, a development instance's or the Flatpak's, has no installer to publish its transitions: it takes its lifecycle lock first, and only then reads `state.json` and decides, publishing what an installer would (`maintenance.SessionStart`; see Development instances, and [flatpak.md](flatpak.md)). It publishes `ready` itself once it has started.
+A session form's service, a development instance's, the Flatpak's or the Android app's, has no installer to publish its transitions: it takes its lifecycle lock first, and only then reads `state.json` and decides, publishing what an installer would (`maintenance.SessionStart`; see Development instances, [flatpak.md](flatpak.md) and [android.md](android.md)). It publishes `ready` itself once it has started.
 
 A service that refuses to start, or stops on an error, writes the reason to its log once the log is open. It also goes to the journal on Linux (`journalctl -u dens@<name>`, from the service's error output) and to the Application event log on Windows, under the source `dens-<name>` that install registers. Those two cover failures from before the log opens.
 
@@ -33,7 +33,7 @@ A service that stops on any other error is started again: by the unit's `Restart
 | `operation.lock` | Maintenance commands | Exclusive; waits up to 5 minutes for another command |
 | `lifecycle.lock` | The service, for its whole run | Exclusive without waiting; a second copy refuses to start. The installed service opens the file read-only, since it can't write the control directory. |
 | `lifecycle.lock` | Maintenance commands, after stopping the service | Exclusive; waits up to 30 seconds |
-| `lifecycle.lock` | A session form's service, before it reads the lifecycle state | Exclusive. A development instance's second copy refuses at once; the Flatpak's waits up to 30 seconds, for an older build handing over to it (M9.3) |
+| `lifecycle.lock` | A session form's service, before it reads the lifecycle state | Exclusive. A development instance's second copy refuses at once; the Flatpak's waits up to 30 seconds, for an older build handing over to it (M9.3), and the Android app's, for a Dens its shell started before that is still stopping (M12) |
 | `launch.lock`, in the Flatpak's runtime directory | `dens launch`, while it starts the service | Exclusive; waits for another launch, so two at once start one service (M9.3) |
 
 Holding `lifecycle.lock` proves the service is down. A transaction over several instances takes each lock in instance-name order, so two commands can't deadlock.

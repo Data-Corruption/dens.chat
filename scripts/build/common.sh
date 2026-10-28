@@ -120,9 +120,9 @@ parse_args() {
   local kind_set=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --prod|--prod-all)
+      --prod|--prod-all|--android)
         if [[ "$kind_set" == "true" ]]; then
-          printf "error: --prod and --prod-all are mutually exclusive\n" >&2
+          printf "error: --prod, --prod-all and --android are mutually exclusive\n" >&2
           exit 1
         fi
         kind_set=true
@@ -135,8 +135,8 @@ parse_args() {
         ;;
     esac
   done
-  # only the default dev build bakes DevMode
-  [[ "$BUILD_KIND" == "dev" ]] || DEV_MODE=false
+  # only the dev builds bake DevMode: the default, and Android's
+  [[ "$BUILD_KIND" == "dev" || "$BUILD_KIND" == "android" ]] || DEV_MODE=false
 }
 
 validate_app_name() {

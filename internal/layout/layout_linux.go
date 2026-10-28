@@ -60,6 +60,21 @@ func (l *Layout) resolve() error {
 		l.Snapshot = filepath.Join(l.Root, "snapshot")
 		l.Runtime = filepath.Join(dirs["XDG_RUNTIME_DIR"], "app", DesktopID, l.Instance)
 		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
+	case Android:
+		// The app's shell names its files directory in XDG_DATA_HOME, as
+		// Flatpak names the app's own (M12), and everything lives there,
+		// the cache too: Android empties an app's cache directory when
+		// storage runs low, even under the running app, and the cache's
+		// database can't lose its files.
+		dataHome := os.Getenv("XDG_DATA_HOME")
+		if !filepath.IsAbs(dataHome) {
+			return fmt.Errorf("the Android app's XDG_DATA_HOME is %q, not an absolute path", dataHome)
+		}
+		l.Root = filepath.Join(dataHome, l.App, l.Instance)
+		l.derive()
+		l.HostKey = filepath.Join(l.Control, "datakey.keystore")
+		l.Runtime = filepath.Join(l.Root, "run")
+		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
 	default:
 		return fmt.Errorf("no layout for the %s", l.Form)
 	}

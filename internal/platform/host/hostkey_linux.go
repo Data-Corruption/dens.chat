@@ -1,3 +1,5 @@
+//go:build !android
+
 package host
 
 import (
@@ -12,10 +14,6 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
 )
-
-// HostKeyCredential is the credential name of the data key, both inside the
-// encrypted credential and in $CREDENTIALS_DIRECTORY.
-const HostKeyCredential = "datakey"
 
 // LoadHostKey returns the data key systemd decrypted for this unit from its
 // LoadCredentialEncrypted= setting. The encrypted file itself is root-only;

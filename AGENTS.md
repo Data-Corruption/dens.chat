@@ -13,7 +13,9 @@ also host one den (a community). Linux (systemd) and Windows 11 (SCM) are suppor
 The binary's elevated maintenance commands own install, update, restore and
 uninstall; the installer scripts only download, verify and hand off to them.
 On the distributions the installer refuses, a Flatpak runs the same binary as
-the member, in their session, and hosts no den.
+the member, in their session, and hosts no den. On Android, an app runs it as
+the child process of a thin Kotlin shell, with the page in a WebView, and
+hosts no den either (M12).
 
 The target design is [docs/dev/design.md](docs/dev/design.md), with each deployment form's own beside it: [installed.md](docs/dev/installed.md), [flatpak.md](docs/dev/flatpak.md) and [android.md](docs/dev/android.md).
 
@@ -38,7 +40,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/youtube` | The covers of YouTube's players (M4.1): a linked video's title and picture, fetched for the page from YouTube's fixed addresses, checked, and held in memory |
 | `internal/media` | What a file is, taking image metadata out without re-encoding, previews, which photos get smaller copies, and a video's copy, planned to fit and made in chunks, or by the page, with what WebCodecs decodes a video by; the client strips with it and the den checks with it |
 | `internal/media/ffmpeg` | The media module: FFmpeg, libaom and Dens's C driver (`driver/`) in WebAssembly, translated to Go (`module/`, generated), the worker process each job runs in, and the Runner that answers its reads and writes, with the chunks of a video's copy side by side |
-| `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory, and the shortcut helper's keys (Windows' key state, X11's over a small client, and Wayland's global shortcuts portal over D-Bus) and its taking up a new binary |
+| `internal/platform/host` | Runtime OS seams: service host, data key unwrap, control endpoint, locked memory, and the shortcut helper's keys (Windows' key state, X11's over a small client, and Wayland's global shortcuts portal over D-Bus) and its taking up a new binary; Android's, as `_android.go` files, for locked memory and the data key from the app's shell |
 | `internal/control` | CLI-to-service protocol over the control endpoint, with the stream the shortcut helper keeps |
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
 | `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
@@ -49,7 +51,8 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, the share player, the copier that makes videos' smaller copies with WebCodecs, and the voice worklet with RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed) |
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
-| `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers |
+| `android/` | The Android app's shell (M12): Kotlin with no AndroidX, its manifest and resources, and the newer framework calls it makes behind a version check |
+| `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers, and the Android app's APKs, built without Gradle, with the check that stands in for Android Lint's NewApi |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery, and the Flatpak's publication after each release |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
@@ -57,7 +60,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, commits it to a repository, and writes the repository's deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
-| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, and the browser checks (`scripts/test/browser/`), run by hand before each manual test |
+| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the browser checks (`scripts/test/browser/`), run by hand before each manual test, and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` also works a phone over wireless debugging |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
 | `docs/dev/` | Internal docs: the design and each deployment form's, the milestones and loose ideas, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
@@ -73,7 +76,9 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 - [docs/dev/flatpak.md](docs/dev/flatpak.md): the Flatpak (M9), run by the
   member in their session: its sandbox, locked start and remembered
   key, lifecycle with no installer, updates, its publishing, and its harness.
-- [docs/dev/android.md](docs/dev/android.md): the Android app (M12 to M14).
+- [docs/dev/android.md](docs/dev/android.md): the Android app (M12 to M14):
+  its design, its build, its form, its shell and the page in its WebView, and
+  its e2e.
 - [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
   and the plan for the one under way.
 - [docs/dev/loose-ideas.md](docs/dev/loose-ideas.md): ideas and fixes no
@@ -123,8 +128,9 @@ SQLite `secure_delete` stays on.
 The service never replaces its binary, edits its unit or SCM registration, or
 writes lifecycle state; it migrates its data only when `state.json` names its
 version as the target of a transition. A session form's service, a development
-instance's or the Flatpak's, has no installer, and publishes its own lifecycle
-state, deciding under its lifecycle lock (see `docs/dev/lifecycle.md`).
+instance's, the Flatpak's or the Android app's, has no installer, and publishes
+its own lifecycle state, deciding under its lifecycle lock (see
+`docs/dev/lifecycle.md`).
 
 **Starting the services is the point of no return.** Until then a
 transaction's journal undoes every step. Once a service may have migrated,
@@ -155,19 +161,25 @@ unknown message types. Only breaking changes bump it (see the design doc).
 **OS-specific code lives in two places.** Runtime seams go in
 `internal/platform/host` as function pairs in `_linux.go` and `_windows.go`;
 install-time steps go behind the `System` interface in `internal/install`.
+Go builds `_linux.go` files for Android too, so where Android differs, an
+`_android.go` file takes the seam's place and its Linux one says `!android`.
 Nothing else gets build tags. A platform difference must never reach the
 protocol, database or HTTP layers; if a feature seems to need one, raise it as
 a design problem. What differs by how Dens is deployed, its form (installed,
-a development build's instance, or the Flatpak), is chosen at runtime from
-`layout.Form`, as a `switch` on the form where it differs, never by build
-tags. Like a platform difference, a form never reaches the protocol or the
-database, and reaches the page only as what it can do.
+a development build's instance, the Flatpak, or the Android app), is chosen
+at runtime from `layout.Form`, as a `switch` on the form where it differs,
+never by build tags. Like a platform difference, a form never reaches the
+protocol or the database, and reaches the page only as what it can do.
 
 **Windows code compiles only under `GOOS=windows`.** After touching a
 `_windows.go` file, run `GOOS=windows go vet ./...` and
 `GOOS=windows go test -c -o /dev/null ./<pkg>` to catch build breaks. From
 WSL, `./scripts/test.sh -windows` runs the Go tests natively on the Windows
-host; CI runs them on a Windows runner.
+host; CI runs them on a Windows runner. Android code likewise compiles only
+under `GOOS=android`: after touching an `_android.go` file, run
+`GOOS=android GOARCH=arm64 go vet ./...` (amd64 needs cgo even to vet), and
+`./scripts/test.sh -android-e2e` runs the host package's tests in the emulator,
+as the app.
 
 **SQLite uses a modest fixed pool (4) per process.** The Wasm driver gives each
 connection its own memory sandbox and SQLite serializes writers anyway.
@@ -220,29 +232,34 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
 ./scripts/test.sh -flatpak-e2e # the Flatpak's publisher, then the Flatpak, made from this tree and published: launched, unlocked, updated and rolled back, in Incus containers
+./scripts/test.sh -android-e2e # the Android app, made from this tree, in Android 17's and 12's emulators: paired, joined to a den behind Caddy, chatting, sending and saving a photo
+scripts/test/android/phone.sh SERIAL COMMAND  # a phone through the Android container's adb: pair, connect, install, log, pull
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
 scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build in it
 scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
 ./scripts/build.sh --prod-all  # all release binaries
+./scripts/build.sh --android   # the Android app's development APKs, out/android-{arm64,amd64}.apk
 ./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build
 ./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
 ./scripts/rnnoise.sh           # rebuild RNNoise's module for the page after changing its build
 ./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes
 go test ./internal/build/winres -args -update  # rewrite cmd's Windows resource objects after changing the manifest
-gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
+gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./... && GOOS=android GOARCH=arm64 go vet ./...
 ```
 
-The `-release`, `-e2e`, `-den-e2e` and `-flatpak-e2e` harnesses, and the browser
-checks, run on Linux only; the harnesses' logs land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
+The `-release`, `-e2e`, `-den-e2e`, `-flatpak-e2e` and `-android-e2e` harnesses,
+and the browser checks, run on Linux only, the Android e2e on x86_64 with KVM;
+the harnesses' logs land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 `scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
 Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
 cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests,
 Caddy for the den e2e, the media module's FFmpeg, zlib, libaom, CMake,
-wasi-sdk, binaryen and wasm2go, and RNNoise's source and model) are pinned by version and
+wasi-sdk, binaryen and wasm2go, RNNoise's source and model, and the Android
+app's NDK, SDK pieces, emulator, Kotlin and JDK) are pinned by version and
 SHA-256 in `scripts/vendor.sh` and fetched into the gitignored `tools/`.
 Never depend on `tools/` contents directly.
 

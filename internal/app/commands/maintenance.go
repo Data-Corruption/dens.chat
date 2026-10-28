@@ -36,7 +36,7 @@ func installCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "print what would change, and change nothing"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak, which Flatpak installs and updates; dens install installs Dens where its installer runs"); err != nil {
+			if err := refusePackaged(bi, "Dens runs here as a Flatpak, which Flatpak installs and updates; dens install installs Dens where its installer runs"); err != nil {
 				return err
 			}
 			if cmd.IsSet("den") {
@@ -67,7 +67,7 @@ func updateCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "skip-verify", Usage: "don't verify the installer or the release, for unsigned test releases (a release refuses it)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak: update it in your software center, or with: flatpak update "+layout.DesktopID); err != nil {
+			if err := refusePackaged(bi, "Dens runs here as a Flatpak: update it in your software center, or with: flatpak update "+layout.DesktopID); err != nil {
 				return err
 			}
 			return install.Update(ctx, install.NewSystem(bi.Name), bi, install.Options{
@@ -88,7 +88,7 @@ func uninstallCommand(bi build.BuildInfo) *cli.Command {
 			&cli.BoolFlag{Name: "dry-run", Usage: "print what would be removed, and remove nothing"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
-			if err := refuseFlatpak(bi, "Dens runs here as a Flatpak: remove it in your software center, or with: flatpak uninstall "+layout.DesktopID+", which keeps its data unless you add --delete-data"); err != nil {
+			if err := refusePackaged(bi, "Dens runs here as a Flatpak: remove it in your software center, or with: flatpak uninstall "+layout.DesktopID+", which keeps its data unless you add --delete-data"); err != nil {
 				return err
 			}
 			opts := install.Options{Instance: cmd.String("instance"), DryRun: cmd.Bool("dry-run")}
@@ -172,11 +172,15 @@ func restoreCommand(bi build.BuildInfo) *cli.Command {
 	}
 }
 
-// refuseFlatpak refuses a maintenance command in the Flatpak, which
-// Flatpak installs, updates and removes (M9.3), saying why.
-func refuseFlatpak(bi build.BuildInfo, why string) error {
-	if app.FormOf(bi) == layout.Flatpak {
-		return errors.New(why)
+// refusePackaged refuses a maintenance command in the Flatpak, which
+// Flatpak installs, updates and removes (M9.3), saying why, and in the
+// Android app, which Android does (M12).
+func refusePackaged(bi build.BuildInfo, flatpakWhy string) error {
+	switch app.FormOf(bi) {
+	case layout.Flatpak:
+		return errors.New(flatpakWhy)
+	case layout.Android:
+		return errors.New("Dens runs here as the Android app, which Android installs, updates and removes")
 	}
 	return nil
 }

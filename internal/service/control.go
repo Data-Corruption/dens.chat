@@ -71,6 +71,12 @@ func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handl
 		control.OpLogs: func(_ context.Context, req control.Request) (control.Reply, error) {
 			return logsReply(a, req.Level)
 		},
+		control.OpShell: func(context.Context, control.Request) (control.Reply, error) {
+			if a.Layout.Form != layout.Android {
+				return control.Reply{}, control.Errorf("only the Android app's shell keeps this stream")
+			}
+			return control.Reply{Stream: shellStream(a)}, nil
+		},
 		control.OpQuit: func(context.Context, control.Request) (control.Reply, error) {
 			if !a.Layout.Form.Session() {
 				return control.Reply{}, control.Errorf("the service manager runs this instance; stop it with: %s",

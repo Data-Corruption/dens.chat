@@ -35,7 +35,7 @@ func TestLocalBuildIgnoresCIEnvironment(t *testing.T) {
 	if err != nil {
 		t.Skipf("bash unavailable: %v", err)
 	}
-	for _, kind := range []string{"dev", "prod", "prod-all"} {
+	for _, kind := range []string{"dev", "prod", "prod-all", "android"} {
 		t.Run(kind, func(t *testing.T) {
 			// Stop at compilation so this checks the public build flow without
 			// downloading tools or compiling every release target in a unit test.
@@ -46,7 +46,7 @@ expected_kind="$3"
 build_binaries() {
   [[ "$MODE" == local && "$VERSION" == v0.0.0-dev && "$CERT_IDENTITY" == "" ]]
   [[ "$BUILD_KIND" == "$expected_kind" ]]
-  if [[ "$expected_kind" == dev ]]; then
+  if [[ "$expected_kind" == dev || "$expected_kind" == android ]]; then
     [[ "$DEV_MODE" == true ]]
   else
     [[ "$DEV_MODE" == false ]]
@@ -56,6 +56,7 @@ build_binaries() {
     exit 1
   fi
 }
+android_build() { build_binaries; }
 shift 3
 build_main "$@"
 `

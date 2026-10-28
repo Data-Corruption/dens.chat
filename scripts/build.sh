@@ -24,6 +24,14 @@
 #     Run tests, then build every release target: linux-amd64/arm64 and
 #     windows-amd64/arm64 (pure Go, plain GOOS/GOARCH cross-builds).
 #
+# Android (dev):
+#   ./scripts/build.sh --android
+#     Build the Android app's development APKs, chat.dens.Dens.dev, around a
+#     DevMode binary built with cgo through the NDK: out/android-arm64.apk for
+#     phones and out/android-amd64.apk for the emulator (scripts/build/
+#     android.sh). Leaves the rest of out/ as it is. Needs an x86_64 host, and
+#     python3 and unzip besides the tools vendor.sh pins.
+#
 # Release automation lives in scripts/ci.sh.
 #
 # Mirrors: there is no build mode for mirrors. Signed release artifacts are
@@ -32,7 +40,8 @@
 #
 # Dependencies: go, gcc (only when tests run: go test -race needs cgo), and
 # curl. The build is pure Go (no cgo), so Linux release binaries are fully
-# static and run on any distro, including NixOS.
+# static and run on any distro, including NixOS. Android's alone uses cgo,
+# through the NDK vendor.sh pins.
 #
 # NixOS: the downloaded tailwind standalone is dynamically linked and won't
 # run; local builds prefer a tailwindcss found on PATH instead. Use the repo
@@ -75,7 +84,7 @@ ASSETS_DIR="./internal/ui/assets"
 GO_MAIN_PATH="./cmd"
 
 MODE="local" # frontend tool selection; ci.sh uses the pinned CI tools
-BUILD_KIND="dev" # dev | prod | prod-all
+BUILD_KIND="dev" # dev | prod | prod-all | android
 VERSION="v0.0.0-dev" # dev version marker (valid semver prerelease, so x/mod/semver handles it; any real release compares newer)
 DEV_MODE=true # baked into BuildInfo; true only for the default dev build
 RUN_TESTS=true # production builds run test.sh first; ci.sh's release build doesn't
@@ -95,6 +104,8 @@ CERT_IDENTITY=""
 source "$BUILD_SCRIPT_DIR/build/common.sh"
 # shellcheck source=build/artifacts.sh
 source "$BUILD_SCRIPT_DIR/build/artifacts.sh"
+# shellcheck source=build/android.sh
+source "$BUILD_SCRIPT_DIR/build/android.sh"
 
 # Build -----------------------------------------------------------------------
 
@@ -120,6 +131,11 @@ build_main() {
   validate_app_name
   detect_host_arch
   validate_pins
+  if [[ "$BUILD_KIND" == "android" ]]; then
+    dep_check
+    android_build
+    return
+  fi
   clean_out_dir
   build_binaries
 }

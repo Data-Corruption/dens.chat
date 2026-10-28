@@ -1,0 +1,5 @@
+# The framework calls the shell makes that are newer than the oldest
+# Android it runs on (API 31), each behind a check of Build.VERSION.SDK_INT.
+# scripts/build/apicheck.py fails the build on any other.
+android.window.OnBackInvokedDispatcher.registerOnBackInvokedCallback(ILandroid/window/OnBackInvokedCallback;)V  # PageActivity, from 33
+android.app.Activity.getOnBackInvokedDispatcher()Landroid/window/OnBackInvokedDispatcher;  # PageActivity, from 33

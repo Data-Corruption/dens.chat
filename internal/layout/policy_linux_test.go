@@ -3,6 +3,7 @@ package layout
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,60 @@ func TestFlatpakLayoutUsesTheAppsDirectories(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", "cache")
 	if _, err := New("dens", "main", Flatpak); err == nil || !strings.Contains(err.Error(), "XDG_CACHE_HOME") {
 		t.Fatalf("a relative cache directory = %v, want refused", err)
+	}
+}
+
+// The Android app keeps everything in the files directory its shell names,
+// the cache and the control socket too, beside the key its shell wraps
+// (M12).
+func TestAndroidLayoutUsesTheAppsFiles(t *testing.T) {
+	files := filepath.Join(t.TempDir(), "data", "user", "0", "chat.dens.Dens", "files")
+	t.Setenv("XDG_DATA_HOME", files)
+	l, err := New("dens", "main", Android)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(files, "dens", "main")
+	for path, want := range map[string]string{
+		l.Root:            root,
+		l.Cache:           filepath.Join(root, "data", "cache"),
+		l.ControlEndpoint: filepath.Join(root, "run", "control.sock"),
+		l.HostKey:         filepath.Join(root, "control", "datakey.keystore"),
+	} {
+		if path != want {
+			t.Errorf("path %s, want %s", path, want)
+		}
+	}
+	if l.Binary != "" || l.ServiceName != "" || l.Account != "" || l.KeyringKey != "" || l.Snapshot != "" {
+		t.Fatalf("the Android app's layout has what another form's has: %+v", l)
+	}
+	if err := l.EnsureSession(); err != nil {
+		t.Fatalf("EnsureSession: %v", err)
+	}
+	if err := os.WriteFile(l.HostKey, []byte("wrapped"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.CheckControl(l.HostKey); err != nil {
+		t.Fatalf("CheckControl: %v", err)
+	}
+	if err := l.CheckData(); err != nil {
+		t.Fatalf("CheckData: %v", err)
+	}
+	if err := l.EnsureData(); err != nil {
+		t.Fatalf("EnsureData: %v", err)
+	}
+	if !slices.Contains(l.ServiceControlFiles(), l.HostKey) {
+		t.Fatal("the service doesn't check the shell's wrapped key")
+	}
+	if err := os.Chmod(l.HostKey, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.CheckControl(l.HostKey); err == nil || !strings.Contains(err.Error(), "permissions") {
+		t.Fatalf("a wrapped key others may read = %v, want refused", err)
+	}
+
+	t.Setenv("XDG_DATA_HOME", "files")
+	if _, err := New("dens", "main", Android); err == nil || !strings.Contains(err.Error(), "XDG_DATA_HOME") {
+		t.Fatalf("a relative files directory = %v, want refused", err)
 	}
 }

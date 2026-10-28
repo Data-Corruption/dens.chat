@@ -51,7 +51,9 @@ type Layout struct {
 	// HostKey is the data key kept for this host: wrapped by systemd-creds
 	// or DPAPI for an installed instance, and in a file for a development
 	// one, and for the Flatpak until its local password exists, or where
-	// it remembers the key without a keyring it can trust (M9.3).
+	// it remembers the key without a keyring it can trust (M9.3). The
+	// Android app's shell keeps it wrapped with a Keystore key, and hands
+	// it to the service unwrapped (M12).
 	HostKey string
 	// KeyringKey is the Flatpak's data key wrapped with the secret the
 	// member's keyring keeps for the app, through the Secret portal, once

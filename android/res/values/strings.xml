@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app's name: a development build's link puts its own over it. -->
+    <string name="name">Dens</string>
+</resources>

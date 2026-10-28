@@ -60,6 +60,9 @@ const (
 	// downloads them, or with Level sets how much they say, as the card's
 	// level does (M11), so a server needs the page for neither.
 	OpLogs = "logs"
+	// OpShell opens the stream the Android app's shell keeps with the
+	// service (M12).
+	OpShell = "shell"
 )
 
 const maxLine = 64 * 1024

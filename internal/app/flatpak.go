@@ -92,11 +92,16 @@ func inFlatpak() bool {
 
 // sessionOptions say how a session form's start takes its lease. The
 // Flatpak waits for an older build that's handing over to it, and keeps a
-// snapshot of the data an older version left before it migrates them.
+// snapshot of the data an older version left before it migrates them. The
+// Android app waits for a Dens its shell started before, still stopping;
+// Android installs no older version over a newer one, so it keeps no
+// snapshot (M12).
 func (a *App) sessionOptions() maintenance.SessionOptions {
 	switch a.Layout.Form {
 	case layout.Flatpak:
 		return maintenance.SessionOptions{Wait: maintenance.LifecycleLockTimeout, Snapshot: a.snapshot}
+	case layout.Android:
+		return maintenance.SessionOptions{Wait: maintenance.LifecycleLockTimeout}
 	}
 	return maintenance.SessionOptions{}
 }

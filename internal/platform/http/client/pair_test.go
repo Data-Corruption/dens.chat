@@ -12,7 +12,7 @@ import (
 
 // The page says how to pair a browser: the command that opens the default
 // one, which the Flatpak's apps menu is, and the one that prints the link
-// for any other (M9.3).
+// for any other (M9.3). The Android app pairs its own page (M12).
 func TestPairCommands(t *testing.T) {
 	for _, c := range []struct {
 		form       layout.Form
@@ -22,6 +22,7 @@ func TestPairCommands(t *testing.T) {
 		{layout.Installed, "main", "dens open", "dens open --print"},
 		{layout.Development, "second", "dens open --instance second", "dens open --instance second --print"},
 		{layout.Flatpak, "main", "", "flatpak run --command=dens chat.dens.Dens open --print"},
+		{layout.Android, "main", "", ""},
 	} {
 		a := app.New(build.BuildInfo{Name: "dens", Version: "v1.1.0"})
 		a.Layout = layout.Layout{Form: c.form, Instance: c.instance}

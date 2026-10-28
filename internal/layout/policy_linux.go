@@ -129,9 +129,11 @@ func checkOwned(path string, dir bool, uid, gid int, perm fs.FileMode) error {
 // On Linux the installed data key is root-only, and systemd decrypts it for
 // the service; a development instance reads its own. The Flatpak's copies
 // of its key are there only while it keeps them, and are checked as read.
+// The Android app's shell reads its wrapped key before the service starts,
+// and the service checks it as it checks its own.
 func (l Layout) ServiceControlFiles() []string {
 	files := []string{l.State, l.LifecycleLock, l.InstanceConfig}
-	if l.Form == Development {
+	if l.Form == Development || l.Form == Android {
 		files = append(files, l.HostKey)
 	}
 	return files
