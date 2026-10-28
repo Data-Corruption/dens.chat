@@ -58,6 +58,8 @@ func explainCallError(bi build.BuildInfo, l layout.Layout, err error) error {
 			return fmt.Errorf("the development service for instance %s isn't running; start it with: %s service run%s: %w", l.Instance, bi.Name, flag, err)
 		case layout.Flatpak:
 			return fmt.Errorf("Dens isn't running; open it from your apps menu, or start it with: flatpak run %s: %w", layout.DesktopID, err)
+		case layout.Android:
+			return fmt.Errorf("Dens isn't running; open it from your apps: %w", err)
 		}
 		start := bi.Name + " service start" + flag
 		return fmt.Errorf("the Dens service for instance %s isn't running; start it with: %s: %w", l.Instance, host.AdminCommand(start), err)

@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -169,11 +170,15 @@ func New(buildInfo build.BuildInfo) *App {
 
 func (a *App) BuildInfo() build.BuildInfo { return a.buildInfo }
 
-// FormOf is the form a process of this build runs in (M9): a development
-// build's is Development; the release binary in Dens's Flatpak sandbox the
-// Flatpak, so it runs as it is; and every other Installed.
+// FormOf is the form a process of this build runs in (M9): on Android,
+// Android, a development build's too, since the app's shell runs either
+// (M12); elsewhere a development build's is Development; the release binary
+// in Dens's Flatpak sandbox the Flatpak, so it runs as it is; and every
+// other Installed.
 func FormOf(bi build.BuildInfo) layout.Form {
 	switch {
+	case runtime.GOOS == "android":
+		return layout.Android
 	case bi.DevMode:
 		return layout.Development
 	case inFlatpak():
@@ -460,10 +465,10 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 
 // CanHost reports whether the instance may host its den. The Flatpak may
 // not: it runs in the member's session, which a den has to outlive, and
-// has no Caddy beside it (M9.3).
+// has no Caddy beside it (M9.3). Nor may the Android app, on a phone (M12).
 func (a *App) CanHost() bool {
 	switch a.Layout.Form {
-	case layout.Flatpak:
+	case layout.Flatpak, layout.Android:
 		return false
 	}
 	return true
@@ -496,7 +501,7 @@ func (a *App) OwnDen() (denproto.Den, string, bool) {
 
 func (a *App) loadKey() ([]byte, error) {
 	switch a.Layout.Form {
-	case layout.Installed:
+	case layout.Installed, layout.Android:
 		return host.LoadHostKey(a.Layout.HostKey)
 	case layout.Development:
 		return host.LoadOrCreateDevKey(a.Layout.HostKey)
@@ -544,8 +549,11 @@ func (a *App) prepareSession(opts OpenOptions) error {
 		}
 		cfg = instance.Default(l.Instance)
 		cfg.DesktopUser = me
-		if l.Form == layout.Flatpak {
+		switch {
+		case l.Form == layout.Flatpak:
 			cfg.ClientPort = instance.FlatpakClientPort
+		case l.Form == layout.Android && a.buildInfo.DevMode:
+			cfg.ClientPort = instance.AndroidDevClientPort
 		}
 		if opts.DevClientPort != 0 {
 			cfg.ClientPort = opts.DevClientPort

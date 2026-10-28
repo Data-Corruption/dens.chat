@@ -213,14 +213,20 @@ func (rt *router) pageData(title string) map[string]any {
 // pairCommands are what pair a browser with this instance: open, which
 // opens the page in the default browser, dens open, or none in the
 // Flatpak, which pairs as it's opened from the apps menu (M9.3); and link,
-// which prints the link to open in any other.
+// which prints the link to open in any other. The Android app has neither:
+// it pairs the page it shows itself (M12).
 func (rt *router) pairCommands() (open, link string) {
 	name, args := rt.a.BuildInfo().Name, "open"
 	if instance := rt.a.Layout.Instance; instance != layout.DefaultInstance {
 		args += " --instance " + instance
 	}
-	if rt.a.Layout.Form == layout.Flatpak {
+	switch rt.a.Layout.Form {
+	case layout.Flatpak:
 		return "", fmt.Sprintf("flatpak run --command=%s %s %s --print", name, layout.DesktopID, args)
+	case layout.Android:
+		// The app pairs its own page as it opens it, and no other browser
+		// on the phone may pair (M12).
+		return "", ""
 	}
 	return name + " " + args, name + " " + args + " --print"
 }

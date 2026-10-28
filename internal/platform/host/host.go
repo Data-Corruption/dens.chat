@@ -3,7 +3,9 @@
 // nothing above this package needs build tags: running under the service
 // manager, the host-bound data key, the local control endpoint and its peer
 // identity, locked memory for key material, low-priority child processes,
-// service control, opening a URL, and free disk space.
+// service control, opening a URL, and free disk space. Go builds _linux.go
+// files for Android too, so where Android differs, an _android.go file
+// takes the piece's place and its Linux one says !android (M12).
 package host
 
 import (
@@ -82,6 +84,10 @@ type ServiceState struct {
 
 // HostKeySize is the length of the data key in bytes.
 const HostKeySize = 32
+
+// HostKeyCredential is the credential name of the data key, both inside the
+// encrypted credential and in $CREDENTIALS_DIRECTORY, on Linux.
+const HostKeyCredential = "datakey"
 
 func checkKeySize(key []byte) error {
 	if len(key) != HostKeySize {

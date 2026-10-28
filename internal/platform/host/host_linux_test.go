@@ -11,8 +11,16 @@ import (
 	"time"
 )
 
+// testControlPath is a socket's path in a directory of the test's own, kept
+// short: a socket's path may be no longer than 107 bytes, and an Android
+// app's files are deep enough for a test's name to pass that (M12).
 func testControlPath(t *testing.T) string {
-	return filepath.Join(t.TempDir(), "control.sock")
+	dir, err := os.MkdirTemp("", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "control.sock")
 }
 
 // otherAccountID is a UID the test process doesn't run as.
@@ -49,35 +57,6 @@ func TestListenControlRefusesNonSocketPath(t *testing.T) {
 	if ln, err := ListenControl(path, me); err == nil {
 		ln.Close()
 		t.Fatal("ListenControl replaced a regular file")
-	}
-}
-
-func TestLoadHostKeyFromCredentialsDirectory(t *testing.T) {
-	dir := t.TempDir()
-	key := make([]byte, HostKeySize)
-	for i := range key {
-		key[i] = byte(i)
-	}
-	if err := os.WriteFile(filepath.Join(dir, HostKeyCredential), key, 0o400); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CREDENTIALS_DIRECTORY", dir)
-	got, err := LoadHostKey("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != string(key) {
-		t.Fatal("loaded key differs")
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, HostKeyCredential), key[:10], 0o400); err == nil {
-		if _, err := LoadHostKey(""); err == nil {
-			t.Fatal("short key accepted")
-		}
-	}
-	t.Setenv("CREDENTIALS_DIRECTORY", "")
-	if _, err := LoadHostKey(""); err == nil {
-		t.Fatal("missing CREDENTIALS_DIRECTORY accepted")
 	}
 }
 

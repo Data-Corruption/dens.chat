@@ -169,12 +169,13 @@ func (e *RolledBackError) Error() string {
 // starts against the lifecycle state it found under the lock (none, unless
 // found), as an installer decides for an installed one. A development
 // instance migrates whichever way its version moves, since its data is
-// disposable. The Flatpak's versions move only forward (M9.3): data an
-// older version left is an update, which it keeps a snapshot of first;
-// data a newer one wrote, a rollback, which it refuses; and a transition
-// another build began, it resumes or takes over where the target is its
-// version or older, since migrations are ordered and safe to run again,
-// and refuses where it's newer.
+// disposable. The Flatpak's versions move only forward (M9.3), as the
+// Android app's do (M12): data an older version left is an update, which
+// the plan says to keep a snapshot of first; data a newer one wrote, a
+// rollback, which it refuses; and a transition another build began, it
+// resumes or takes over where the target is its version or older, since
+// migrations are ordered and safe to run again, and refuses where it's
+// newer.
 func SessionStart(form layout.Form, state State, found bool, version string) (SessionPlan, error) {
 	if !form.Session() {
 		return SessionPlan{}, fmt.Errorf("SessionStart called for the %s", form)

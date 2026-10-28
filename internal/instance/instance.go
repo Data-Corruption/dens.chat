@@ -31,6 +31,11 @@ const (
 // installed Dens's, so neither takes the other's port or cookie.
 const FlatpakClientPort = 8494
 
+// AndroidDevClientPort is the client port of a development build's Android
+// app (M12), which runs beside the release's, on DefaultClientPort, on a
+// phone whose apps all share loopback.
+const AndroidDevClientPort = 18484
+
 const maxConfigSize = 16 * 1024
 
 // Den holds the den's ports, which it listens on while hosting is on. Its

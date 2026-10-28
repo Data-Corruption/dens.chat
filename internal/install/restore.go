@@ -384,6 +384,11 @@ func RestoreSession(ctx context.Context, bi build.BuildInfo, l layout.Layout, ar
 	if !l.Form.Session() {
 		return fmt.Errorf("RestoreSession called on the %s layout", l.Form)
 	}
+	// The backup's key would have to be wrapped anew by the app's shell,
+	// with its Keystore key, which nothing else may use (M12).
+	if l.Form == layout.Android {
+		return errors.New("the Android app restores no backup")
+	}
 	prior, err := maintenance.ReadState(l.State)
 	if errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("instance %s has no data yet; start Dens once, then restore into it", l.Instance)

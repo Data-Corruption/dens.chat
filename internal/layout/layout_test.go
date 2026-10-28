@@ -126,6 +126,7 @@ func TestFormsAreKnownAndSay(t *testing.T) {
 		{Installed, "installed", false},
 		{Development, "development", true},
 		{Flatpak, "Flatpak", true},
+		{Android, "Android app", true},
 	} {
 		if c.form.String() != c.name || c.form.Session() != c.session {
 			t.Errorf("%d: %q, session %v; want %q, session %v", int(c.form), c.form, c.form.Session(), c.name, c.session)
