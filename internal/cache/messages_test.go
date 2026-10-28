@@ -218,6 +218,27 @@ func TestDeletesAndRetentionStayGone(t *testing.T) {
 	}
 }
 
+func TestAnEmptiedNewestRunAsksTheDen(t *testing.T) {
+	f := newFixture(t)
+	// A message the client caught live, alone, in connection 7, and then
+	// deleted: the run that held it holds nothing, and doesn't start the
+	// channel.
+	f.addRun(1, 30, 30, false, 7, msgs(1, 30))
+	if err := f.s.DeleteMessage(denA, 30); err != nil {
+		t.Fatal(err)
+	}
+	f.page(1, Query{Limit: 10}, 7, false)
+	// A run that starts the channel and lost every message it held is
+	// the empty channel it says.
+	f.addRun(2, 1, 5, true, 7, msgs(2, 5))
+	if err := f.s.DeleteMessage(denA, 5); err != nil {
+		t.Fatal(err)
+	}
+	if p := f.page(2, Query{Limit: 10}, 7, true); len(p.Messages) != 0 || p.HasOlder {
+		t.Fatalf("an emptied first run: %v older %v", ids(p.Messages), p.HasOlder)
+	}
+}
+
 func TestQuotesFollowTheirOriginals(t *testing.T) {
 	f := newFixture(t)
 	original := msg(10, 1, "  the original")
