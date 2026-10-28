@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dens for Android (M12): a thin shell around Dens, which runs as its
+     child process from the native library directory, and the page, in a
+     WebView. The code names no resource, so the build makes no R class:
+     only this manifest names them. A development build is renamed
+     chat.dens.Dens.dev and made debuggable as it's linked
+     (scripts/build/android.sh), so it runs beside the release's. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="chat.dens.Dens">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- extractNativeLibs puts lib/<abi>/libdens.so in the native library
+         directory, the only place an app may run a binary from. Backups
+         and transfers to a new phone take none of the app's data: its key
+         is wrapped with a Keystore key, which stays on this phone, so
+         moving phones is a Dens backup and restore. -->
+    <application
+        android:label="@string/name"
+        android:icon="@drawable/icon"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:extractNativeLibs="true"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:enableOnBackInvokedCallback="true"
+        android:theme="@style/Page">
+
+        <!-- The WebView sends Google neither its usage metrics nor the
+             addresses it loads, which are the page's own and YouTube's
+             player's. -->
+        <meta-data android:name="android.webkit.WebView.MetricsOptOut" android:value="true" />
+        <meta-data android:name="android.webkit.WebView.EnableSafeBrowsing" android:value="false" />
+
+        <activity
+            android:name="chat.dens.shell.PageActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="chat.dens.shell.DensService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a chat client's connections to its servers open, so messages arrive" />
+        </service>
+
+        <receiver android:name="chat.dens.shell.StartReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
