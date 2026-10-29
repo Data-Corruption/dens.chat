@@ -32,12 +32,15 @@
 #                               in a window of its own and back, and the logs downloaded
 #   callaudio BROWSER BROWSER   M12.2: a call played as Android's app plays it, through a context
 #                               made once the microphone is open, and played again on resume
+#   notify BROWSER              M12.3: a DM's notification from a tab in the background, its click,
+#                               taken back once read, none on screen or muted; and with no tab open,
+#                               the helper's through the desktop's notifications, and its click
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,36p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,39p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

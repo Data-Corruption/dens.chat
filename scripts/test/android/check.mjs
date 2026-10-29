@@ -8,6 +8,8 @@
 //   node check.mjs SERIAL heard TEXT      waits for a message saying TEXT there
 //   node check.mjs SERIAL photo FILE      sends the photo at FILE, a path the app reads, as its smaller copy
 //   node check.mjs SERIAL download        saves the newest photo there, from the viewer's Download
+//   node check.mjs SERIAL at DEN/CHANNEL/MESSAGE   waits for the page open at a message, as a
+//                                         notification's tap opens it (M12.3)
 //
 // Each prints what it found, or fails saying what it waited for.
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -97,6 +99,13 @@ try {
             await sleep(500);
             await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
             console.log(`download: asked for ${link}`);
+            break;
+        }
+        case 'at': {
+            const [den, channel, message] = arg.split('/');
+            await waitFor(() => b.eval(`location.pathname === '/den/${den}/${channel}' && location.hash === '' &&
+                !!document.querySelector('[data-id="${message}"]')`), `the page at message ${message}`);
+            console.log(`at: the page shows the DM at message ${message}`);
             break;
         }
         default:

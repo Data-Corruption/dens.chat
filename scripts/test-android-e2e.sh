@@ -10,7 +10,10 @@
 # or camera left in it. A call with the den's owner goes on through two
 # and a half minutes off screen (M12.2), most of them silent, as the app
 # holds its page as shown, and lets the page and the microphone go once
-# the call ends. Dens killed under the shell starts again, and the
+# the call ends. A DM from the den's owner while the app is behind the
+# others posts its notification (M12.3), whose tap opens the page at the
+# message, and reading it takes the next back. Dens killed under the shell
+# starts again, and the
 # app force-stopped and opened again keeps its page's session; Back leaves
 # the page, and a link opens outside it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Android 12's
@@ -54,6 +57,8 @@ phone() { scripts/test/android/phone.sh "$serial" "$@"; }
 check() { incus exec "$CONTAINER" -- /root/node /root/check.mjs "$serial" "$@" | tee -a "$RUN_LOG_DIR/checks-$serial.log"; }
 den() { scripts/test/android/den.sh "$@"; }
 shell_log() { adb shell run-as "$APP" cat files/shell/shell.log | tr -d '\r'; }
+# front is the app's activity on top.
+front() { [[ $(adb shell dumpsys activity activities) =~ topResumedActivity=[^$'\n']*$APP/ ]]; }
 ok() { printf '✓ %s\n' "$*"; }
 fail() {
   printf '✗ %s\n' "$*" >&2
@@ -215,6 +220,56 @@ shell_log | grep -q 'page: no longer held' || fail "the page still held after it
 [[ $(services) == *'types=0x40000000'* ]] || fail "the service kept the microphone's type after the call"
 ok "the call held through $(((on - off) / 1000)) s off screen, both ways, and once it ended the service let the microphone and the page go"
 
+# Notifications (M12.3). Desk and the phone's member check their DM's
+# digits, as members comparing codes do, and the member turns DMs on in the
+# page's settings. Android asked for notifications at the call, which the
+# member allowed, so it doesn't ask again. A DM from desk while the app is
+# behind the others posts through the shell, and its tap opens the page at
+# the message; read on the den, the next is taken back.
+echo ">> A DM's notification"
+pagejson() { phone drive eval "fetch('$1').then((r) => r.json()).then((v) => $2)" | tr -d '"'; }
+den_id=$(pagejson /api/dens 'v.dens[0].den_id')
+member_id=$(pagejson "/api/dens/$den_id/state" 'v.me.id')
+dm=$(den dm "$member_id")
+desk_half="" phone_half=""
+for _ in $(seq 60); do
+  desk_half=$(den api GET "/api/dens/$den_id/dms/$dm/check" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("half", ""))')
+  phone_half=$(pagejson "/api/dens/$den_id/dms/$dm/check" "v.half || ''")
+  [[ -n "$desk_half" && -n "$phone_half" ]] && break
+  sleep 0.5
+done
+[[ -n "$desk_half" && -n "$phone_half" ]] || fail "the DM's check codes never came"
+den api POST "/api/dens/$den_id/dms/$dm/check" "{\"digits\":\"$phone_half\"}" >/dev/null
+phone drive api POST "/api/dens/$den_id/dms/$dm/check" "{\"digits\":\"$desk_half\"}" | grep -q '^200' || fail "the phone's check of the DM"
+phone drive api POST /api/settings '{"notifications":{"dms":true}}' | grep -q '^200' || fail "turning DMs on"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+notifications() { adb shell dumpsys notification --noredact | tr -d '\r'; }
+shows() { [[ $(notifications) == *"$1"* ]]; }
+first=$(den say "$dm" "a DM for the phone")
+waitfor 20 "the DM's notification" shows "a DM for the phone"
+[[ $(notifications) == *"pkg=$APP"*"channel=messages"* ]] || fail "the notification isn't the app's, in its Messages channel"
+! shell_log | grep -q 'asking Android for POST_NOTIFICATIONS' || fail "Android was asked for notifications again"
+adb shell cmd statusbar expand-notifications
+sleep 2
+bounds=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE 'text="a DM for the phone"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' |
+  head -n 1 | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
+[[ -n "$bounds" ]] || fail "no notification to tap in the shade"
+read -r x1 y1 x2 y2 <<<"$bounds"
+adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+waitfor 20 "the page in front" front
+check at "$den_id/$dm/$first" >/dev/null || fail "the tap didn't open the page at the DM's message"
+shell_log | grep -q "page: opening a notification's message" || fail "the shell didn't open the message"
+ok "a DM posted its notification while the app was behind the others, and its tap opened the page at the message"
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+second=$(den say "$dm" "another DM for the phone")
+waitfor 20 "the second DM's notification" shows "another DM for the phone"
+phone drive api PUT "/api/dens/$den_id/channels/$dm/read" "{\"message_id\":\"$second\"}" | grep -q '^200' || fail "reading the DM"
+hidden() { ! shows "another DM for the phone"; }
+waitfor 20 "the notification taken back" hidden
+ok "read on the den, the DM's notification was taken back"
+
 adb shell run-as "$APP" sh -c "'kill -9 \$(pidof libdens.so)'"
 waitfor 30 "Dens started again" sh -c "scripts/test/android/phone.sh $serial log -s Dens:* | grep -q 'Dens ended (signal 9)'"
 waitfor 30 "the page again" check paired
@@ -231,7 +286,6 @@ waitfor 10 "the link to go out" sh -c "scripts/test/android/phone.sh $serial log
 [[ $(phone drive eval 'location.pathname') == '"/"' ]] || fail "the page left for the link"
 # The browser takes a while to come up the first time, and would come up
 # over the page again: each move waits for the last.
-front() { [[ $(adb shell dumpsys activity activities) =~ topResumedActivity=[^$'\n']*$APP/ ]]; }
 behind() { ! front; }
 waitfor 20 "the link's app in front" behind
 adb shell am start -n "$APP/chat.dens.shell.PageActivity" >/dev/null 2>&1
