@@ -95,6 +95,10 @@ type Layout struct {
 	AutostartFile string
 	DesktopFile   string
 	IconFile      string
+	// StartMenuShortcut opens the page from the Start menu, and carries
+	// Dens's app ID, which Windows shows Dens's toasts under (M12.3).
+	// Windows-only.
+	StartMenuShortcut string
 }
 
 // New returns the layout of instance for application app, deployed as

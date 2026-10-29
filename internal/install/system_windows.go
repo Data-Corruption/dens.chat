@@ -389,11 +389,30 @@ func helperTaskPrefix(l layout.Layout) string {
 
 // RegisterHelper has Task Scheduler start the helper as user signs in,
 // with their interactive token, at normal priority, since a task's default
-// of below normal could fall behind a game, and with no time limit.
+// of below normal could fall behind a game, and with no time limit. It
+// makes the Start menu's Dens too, which opens the page and carries the app
+// ID Windows shows the helper's notifications under (M12.3).
 func (windowsSystem) RegisterHelper(l layout.Layout, user host.Identity) (func() error, error) {
 	if _, err := windows.StringToSid(user.ID); err != nil {
 		return nil, fmt.Errorf("desktop user %q is not a SID: %w", user.ID, err)
 	}
+	_, statErr := os.Stat(l.StartMenuShortcut)
+	if err := host.MakeShortcut(l.StartMenuShortcut, l.Binary, "open", "Opens Dens in your browser", layout.DesktopID); err != nil {
+		return nil, fmt.Errorf("make the Start menu shortcut: %w", err)
+	}
+	undoShortcut := func() error { return nil }
+	if errors.Is(statErr, fs.ErrNotExist) {
+		undoShortcut = func() error { return os.Remove(l.StartMenuShortcut) }
+	}
+	undo, err := registerHelperTask(l, user)
+	if err != nil {
+		return nil, errors.Join(err, undoShortcut())
+	}
+	return func() error { return errors.Join(undo(), undoShortcut()) }, nil
+}
+
+// registerHelperTask creates or replaces the helper's scheduled task.
+func registerHelperTask(l layout.Layout, user host.Identity) (func() error, error) {
 	name := helperTask(l, user)
 	existed := schtasks("/Query", "/TN", name) == nil
 	file, err := os.CreateTemp("", "dens-task-*.xml")
@@ -412,7 +431,7 @@ func (windowsSystem) RegisterHelper(l layout.Layout, user host.Identity) (func()
 		return nil, err
 	}
 	if existed {
-		return nil, nil
+		return func() error { return nil }, nil
 	}
 	return func() error { return schtasks("/Delete", "/TN", name, "/F") }, nil
 }
@@ -541,6 +560,9 @@ func (windowsSystem) UnregisterService(l layout.Layout) error {
 
 func (windowsSystem) RemoveShared(l layout.Layout) error {
 	joined := errors.Join(removeHelperTasks(l), setSystemPath(l.BinaryDir, false), werExclusion(filepath.Base(l.Binary), false))
+	if err := os.Remove(l.StartMenuShortcut); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		joined = errors.Join(joined, err)
+	}
 	removeStaleBinaries(l)
 	_ = os.Remove(l.Cosign)
 	if err := os.Remove(l.Binary); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -581,6 +603,7 @@ func (windowsSystem) Plan(l layout.Layout) []string {
 		fmt.Sprintf("data key      %s, machine-scope DPAPI", l.HostKey),
 		fmt.Sprintf("CLI endpoint  %s", l.ControlEndpoint),
 		fmt.Sprintf("shortcuts     %s %s at the desktop user's sign-in, by a scheduled task", l.Binary, shortcuts.Command),
+		fmt.Sprintf("start menu    %s, which opens the page, under the app ID Windows shows Dens's notifications under", l.StartMenuShortcut),
 	}
 }
 
@@ -589,6 +612,7 @@ func (windowsSystem) UninstallPlan(l layout.Layout, last bool) []string {
 	if last {
 		lines = append(lines, fmt.Sprintf("removes %s from the system PATH and deletes it (no instances remain)", l.BinaryDir))
 		lines = append(lines, "ends and deletes the shortcut helper's scheduled tasks")
+		lines = append(lines, fmt.Sprintf("deletes the Start menu's %s", l.StartMenuShortcut))
 	}
 	return lines
 }

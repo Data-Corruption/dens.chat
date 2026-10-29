@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 
@@ -40,14 +42,51 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 			// Under Wayland the desktop owns the keys, through its portal;
 			// elsewhere the helper reads them itself.
 			defer h.UseSystem(false)()
-			if l, err := layout.New(bi.Name, layout.DefaultInstance, app.FormOf(bi)); err == nil && l.Binary != "" {
+			l, err := layout.New(bi.Name, layout.DefaultInstance, app.FormOf(bi))
+			if err == nil && l.Binary != "" {
 				h.Restart = func() error { return host.ReplaceProcess(l.Binary, shortcuts.Command) }
 			}
-			err := h.Run(ctx)
+			// Notifications show as the desktop's own where it has something
+			// to show them with (M12.3), and a click opens the page paired,
+			// as dens open opens it.
+			if notes, err := openNotifier(l); err != nil {
+				h.Logf("Notifications show only in a Dens tab: %v", err)
+			} else {
+				defer notes.Close()
+				h.Notifier = notes
+			}
+			h.OpenPage = func(instance string, n notify.Notification) error {
+				client, _, err := controlClient(bi, instance)
+				if err != nil {
+					return err
+				}
+				var p control.Pair
+				if err := client.Call(control.Request{Op: control.OpPair}, &p); err != nil {
+					return err
+				}
+				origin, token, ok := strings.Cut(p.URL, "/#token=")
+				if !ok {
+					return fmt.Errorf("the service's pairing link is %d characters with no token", len(p.URL))
+				}
+				return host.OpenURL(n.URL(origin, token))
+			}
+			err = h.Run(ctx)
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}
 			return err
 		},
 	}
+}
+
+// openNotifier opens the desktop's notifications for the helper. Windows
+// shows Dens's toasts only under the app ID its Start menu shortcut
+// carries, which the installer makes.
+func openNotifier(l layout.Layout) (*host.Notifier, error) {
+	if l.StartMenuShortcut != "" {
+		if _, err := os.Stat(l.StartMenuShortcut); err != nil {
+			return nil, fmt.Errorf("Windows shows Dens's notifications once its Start menu shortcut is there: %w", err)
+		}
+	}
+	return host.OpenNotifier(layout.DesktopID, false)
 }
