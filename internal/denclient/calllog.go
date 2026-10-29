@@ -21,7 +21,8 @@ type CallNote struct {
 	// What is what happened: "state", the connection changed; "restart",
 	// the page asks for an ICE restart; "rejoin", it joins the call again;
 	// "ended", it gave the call up; "hidden", its tab was hidden or shown;
-	// or "stats", a summary of the connection's statistics.
+	// "frozen" and "resumed", its browser froze the page and thawed it
+	// (M12); or "stats", a summary of the connection's statistics.
 	What string `json:"what"`
 	// State and ICE are the connection's state and ICE's, and Why why the
 	// page restarts, joins again or gave up.
@@ -38,7 +39,12 @@ type CallNote struct {
 // CallStats sums a call's statistics up, from the page's getStats: the
 // path's protocol and its candidates' types, packets and bytes each way,
 // packets lost on the way in, and jitter and round-trip time in
-// milliseconds.
+// milliseconds. From M12, what the page sent a second since its last
+// summary and what its encoder aims at, in kbit/s, the aim 0 where the
+// browser doesn't say, and how far its voice processor runs behind the
+// clock, in milliseconds, where one runs: together they tell a renderer
+// short of CPU, as on a phone off screen, from Opus's rate falling with
+// the network's.
 type CallStats struct {
 	Protocol        string `json:"protocol"`
 	Local           string `json:"local"`
@@ -50,6 +56,9 @@ type CallStats struct {
 	PacketsLost     int64  `json:"packets_lost"`
 	Jitter          int64  `json:"jitter"`
 	RTT             int64  `json:"rtt"`
+	SendRate        int64  `json:"send_rate"`
+	TargetRate      int64  `json:"target_rate"`
+	Behind          *int64 `json:"behind,omitempty"`
 }
 
 // The words a note's fields may hold: the states of a browser's connection
@@ -97,14 +106,24 @@ func (n CallNote) line() (string, bool) {
 		if n.Hidden {
 			s = "its tab is hidden"
 		}
+	case "frozen":
+		s = "its browser froze it"
+	case "resumed":
+		s = "its browser thawed it, and it plays the call again"
 	case "stats":
 		if n.Stats == nil {
 			return "", false
 		}
 		x := n.Stats
-		s = fmt.Sprintf("over %s, from a %s candidate to a %s one: sent %d packets, %d bytes; received %d packets, %d bytes, %d lost; jitter %d ms, round trip %d ms",
+		s = fmt.Sprintf("over %s, from a %s candidate to a %s one: sent %d packets, %d bytes; received %d packets, %d bytes, %d lost; jitter %d ms, round trip %d ms; sending %d kbit/s",
 			word(protocols, x.Protocol), word(candidateTypes, x.Local), word(candidateTypes, x.Remote), count(x.PacketsSent), count(x.BytesSent),
-			count(x.PacketsReceived), count(x.BytesReceived), count(x.PacketsLost), count(x.Jitter), count(x.RTT))
+			count(x.PacketsReceived), count(x.BytesReceived), count(x.PacketsLost), count(x.Jitter), count(x.RTT), count(x.SendRate))
+		if x.TargetRate > 0 {
+			s += fmt.Sprintf(" of the %d its encoder aims at", count(x.TargetRate))
+		}
+		if x.Behind != nil {
+			s += fmt.Sprintf("; its voice processor %d ms behind", count(*x.Behind))
+		}
 	default:
 		return "", false
 	}

@@ -33,6 +33,19 @@ func TestPairCommands(t *testing.T) {
 	}
 }
 
+// The page may start audio without a click in the Android app's WebView
+// alone, where it then makes its call's audio once the microphone is open
+// (M12).
+func TestAutoplaysInTheAndroidAppAlone(t *testing.T) {
+	for form, want := range map[layout.Form]bool{layout.Installed: false, layout.Development: false, layout.Flatpak: false, layout.Android: true} {
+		a := app.New(build.BuildInfo{Name: "dens", Version: "v1.1.0"})
+		a.Layout = layout.Layout{Form: form, Instance: "main"}
+		if got := (&router{a: a}).autoplays(); got != want {
+			t.Errorf("%s: autoplays %t, want %t", form, got, want)
+		}
+	}
+}
+
 // A request from a page another version of Dens served, as one open across
 // an update, is refused with the header that has the page load again; one
 // from this version's page, or naming none, as a script's, passes (M9.3).

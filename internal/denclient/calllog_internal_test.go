@@ -22,12 +22,21 @@ func TestCallNotesLogTheirFieldsAlone(t *testing.T) {
 		{`{"what": "ended", "why": "never_connected"}`, "it gave the call up, as its connection never came up"},
 		{`{"what": "hidden", "hidden": true}`, "its tab is hidden"},
 		{`{"what": "hidden"}`, "its tab shows"},
+		{`{"what": "frozen"}`, "its browser froze it"},
+		{`{"what": "resumed", "ago": 2000}`, "its browser thawed it, and it plays the call again (noted 2s before)"},
 		{`{"what": "stats", "stats": {"protocol": "udp", "local": "host", "remote": "prflx", "packets_sent": 1500, "bytes_sent": 180000,
-			"packets_received": 3000, "bytes_received": 360000, "packets_lost": 4, "jitter": 3, "rtt": 28}}`,
-			"over udp, from a host candidate to a prflx one: sent 1500 packets, 180000 bytes; received 3000 packets, 360000 bytes, 4 lost; jitter 3 ms, round trip 28 ms"},
+			"packets_received": 3000, "bytes_received": 360000, "packets_lost": 4, "jitter": 3, "rtt": 28, "send_rate": 41, "target_rate": 96, "behind": 12}}`,
+			"over udp, from a host candidate to a prflx one: sent 1500 packets, 180000 bytes; received 3000 packets, 360000 bytes, 4 lost; jitter 3 ms, round trip 28 ms; " +
+				"sending 41 kbit/s of the 96 its encoder aims at; its voice processor 12 ms behind"},
+		// Firefox's encoder doesn't say what it aims at, and a call whose
+		// processor couldn't run has none to fall behind.
+		{`{"what": "stats", "stats": {"protocol": "tcp", "local": "host", "remote": "host", "packets_sent": 10, "bytes_sent": 1000,
+			"packets_received": 5, "bytes_received": 500, "packets_lost": 0, "jitter": 10, "rtt": 31, "send_rate": 0, "target_rate": 0, "behind": 0}}`,
+			"over tcp, from a host candidate to a host one: sent 10 packets, 1000 bytes; received 5 packets, 500 bytes, 0 lost; jitter 10 ms, round trip 31 ms; " +
+				"sending 0 kbit/s; its voice processor 0 ms behind"},
 		{`{"what": "stats", "stats": {"protocol": "secret", "local": "192.0.2.5", "remote": "relay", "packets_sent": -5, "bytes_sent": 99999999999999999,
-			"packets_received": 0, "bytes_received": 0, "packets_lost": 0, "jitter": 0, "rtt": 0, "address": "192.0.2.5"}}`,
-			"over ?, from a ? candidate to a relay one: sent 0 packets, 9007199254740992 bytes; received 0 packets, 0 bytes, 0 lost; jitter 0 ms, round trip 0 ms"},
+			"packets_received": 0, "bytes_received": 0, "packets_lost": 0, "jitter": 0, "rtt": 0, "address": "192.0.2.5", "send_rate": -3}}`,
+			"over ?, from a ? candidate to a relay one: sent 0 packets, 9007199254740992 bytes; received 0 packets, 0 bytes, 0 lost; jitter 0 ms, round trip 0 ms; sending 0 kbit/s"},
 		{`{"what": "state", "state": "disconnected", "ice": "disconnected", "ago": 1500}`, "its connection is disconnected, its ICE disconnected (noted 1.5s before)"},
 		{`{"what": "state", "state": "failed", "ice": "failed", "ago": 3600000}`, "its connection is failed, its ICE failed"},
 		{`{"what": "state", "state": "failed", "ice": "failed", "ago": -20}`, "its connection is failed, its ICE failed"},
