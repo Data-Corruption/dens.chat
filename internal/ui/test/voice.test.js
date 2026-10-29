@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    actionFor, answerFor, applyCalls, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, readKeyStatus, readKeys,
-    readVoice, readVolumes, ringing, rings, rmsDb, rnnoiseChosen, speakingNow, summarize, talking, typesInto, volumeIn, withVolume,
+    actionFor, answerFor, applyCalls, behindBy, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, playAgain,
+    readCallVolume, readKeyStatus, readKeys, readVoice, readVolumes, ringing, rings, rmsDb, rnnoiseChosen, sendRate, speakingNow, summarize, talking,
+    typesInto, volumeIn, withVolume,
 } from '../assets/js/src/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
@@ -234,27 +235,67 @@ test("a call's statistics sum up for the log, as Chromium and Firefox give them"
         { id: 'CP2', type: 'candidate-pair', localCandidateId: 'L2', remoteCandidateId: 'R2', currentRoundTripTime: 0.5 },
         { id: 'L1', type: 'local-candidate', candidateType: 'host', protocol: 'udp', address: '192.0.2.5' },
         { id: 'R1', type: 'remote-candidate', candidateType: 'host', protocol: 'udp', address: '198.51.100.7' },
-        { id: 'O1', type: 'outbound-rtp', packetsSent: 1000, bytesSent: 120000 },
+        { id: 'O1', type: 'outbound-rtp', kind: 'audio', mid: '0', packetsSent: 1000, bytesSent: 120000, targetBitrate: 96000 },
+        { id: 'O2', type: 'outbound-rtp', kind: 'audio', mid: '3', packetsSent: 0, bytesSent: 0, targetBitrate: 128000 },
         { id: 'I1', type: 'inbound-rtp', packetsReceived: 900, bytesReceived: 100000, packetsLost: 3, jitter: 0.004 },
         { id: 'I2', type: 'inbound-rtp', packetsReceived: 100, bytesReceived: 20000, packetsLost: 1, jitter: 0.002 },
     ]);
     assert.deepEqual(summarize(chromium), {
         protocol: 'udp', local: 'host', remote: 'host', packets_sent: 1000, bytes_sent: 120000, packets_received: 1000, bytes_received: 120000,
-        packets_lost: 4, jitter: 4, rtt: 28,
-    });
+        packets_lost: 4, jitter: 4, rtt: 28, target_rate: 96,
+    }, "the voice's encoder aims at its rate, whatever a share's sound does");
     const firefox = report([
         { id: 'p1', type: 'candidate-pair', localCandidateId: 'l1', remoteCandidateId: 'r1', selected: true, nominated: true, state: 'succeeded' },
         { id: 'l1', type: 'local-candidate', candidateType: 'host', protocol: 'tcp' },
         { id: 'r1', type: 'remote-candidate', candidateType: 'host', protocol: 'tcp' },
-        { id: 'o1', type: 'outbound-rtp', packetsSent: 10, bytesSent: 1000 },
+        { id: 'o1', type: 'outbound-rtp', kind: 'audio', packetsSent: 10, bytesSent: 1000 },
         { id: 'ri1', type: 'remote-inbound-rtp', roundTripTime: 0.031 },
         { id: 'i1', type: 'inbound-rtp', packetsReceived: 5, bytesReceived: 500, packetsLost: -2, jitter: 0.01 },
     ]);
     assert.deepEqual(summarize(firefox), {
         protocol: 'tcp', local: 'host', remote: 'host', packets_sent: 10, bytes_sent: 1000, packets_received: 5, bytes_received: 500,
-        packets_lost: 0, jitter: 10, rtt: 31,
+        packets_lost: 0, jitter: 10, rtt: 31, target_rate: 0,
     });
     assert.deepEqual(summarize(new Map()), {
         protocol: '', local: '', remote: '', packets_sent: 0, bytes_sent: 0, packets_received: 0, bytes_received: 0, packets_lost: 0, jitter: 0, rtt: 0,
+        target_rate: 0,
     }, 'before there is a path');
+});
+
+// The notes say what a call sent a second since the last, and how far its
+// voice processor's clock fell behind the page's (M12).
+test('a call sends at the rate its bytes went since the last summary', () => {
+    assert.equal(sendRate({ bytes: 1000, at: 1000 }, 51000, 11000), 40, '50 kB in 10 s is 40 kbit/s');
+    assert.equal(sendRate(null, 51000, 11000), 0, 'without a summary before');
+    assert.equal(sendRate({ bytes: 1000, at: 11000 }, 2000, 11000), 0, 'no time gone by');
+    assert.equal(sendRate({ bytes: 5000, at: 1000 }, 0, 2000), 0, 'counters that started again');
+});
+
+test("a voice processor falls behind by the time its context didn't render", () => {
+    const start = { contextTime: 2, performanceTime: 10000 };
+    assert.equal(behindBy(start, { contextTime: 12, performanceTime: 20003 }), 3);
+    assert.equal(behindBy(start, { contextTime: 11.5, performanceTime: 20000 }), 500, 'half a second missed');
+    assert.equal(behindBy(start, { contextTime: 12.002, performanceTime: 20000 }), 0, 'never ahead');
+});
+
+// Chromium pauses a frozen page's media elements, and the page plays them
+// again as it thaws (M12).
+test("the call's elements play again, those stopped with a stream", () => {
+    const played = [];
+    const el = (name, paused, stream = {}) => ({ name, paused, srcObject: stream, play: () => (played.push(name), Promise.resolve()) });
+    playAgain([el('paused', true), el('playing', false), el('emptied', true, null)]);
+    assert.deepEqual(played, ['paused']);
+    const refused = { paused: true, srcObject: {}, play: () => Promise.reject(new Error('NotAllowedError')) };
+    assert.doesNotThrow(() => playAgain([refused]), 'a browser that refuses waits for the next');
+});
+
+// The call's volume turns everyone down at once (M12), and the browser
+// keeps it.
+test("a call plays at full volume unless chosen, and the kept volume makes sense or is ignored", () => {
+    assert.equal(readCallVolume(''), 1, 'nothing kept');
+    assert.equal(readCallVolume('0.5'), 0.5);
+    assert.equal(readCallVolume('0'), 0, 'silent, as chosen');
+    assert.equal(readCallVolume('0.33'), 0.35, 'in steps of 5%');
+    assert.equal(readCallVolume('7'), 1, 'never past full');
+    assert.equal(readCallVolume('loud'), 1);
 });

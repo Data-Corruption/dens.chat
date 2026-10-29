@@ -21,9 +21,9 @@ import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
-    callLimits, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel, keysElsewhere,
-    micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setKeys, setRNNoise, setShareSettings, setVoice, shareSettings, startMicTest,
-    stopMicTest, voiceSettings,
+    callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
+    keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise, setShareSettings, setVoice,
+    shareSettings, startMicTest, stopMicTest, voiceSettings,
 } from './voice.js';
 
 const openers = new Set();
@@ -210,12 +210,14 @@ function ChatSettings() {
     );
 }
 
-// VoiceSettings chooses the microphone and speaker, the noise suppression,
-// how the member sends their voice, and their shortcuts. Its meter shows
+// VoiceSettings chooses the microphone and speaker, how loud calls play
+// (M12), the noise suppression, how the member sends their voice, and their
+// shortcuts. Its meter shows
 // what the voice processor hears and whether it sends it: in the call
 // while there is one, and otherwise in a test the member starts.
 function VoiceSettings() {
     const [v, setV] = useState(voiceSettings);
+    const [loud, setLoud] = useState(callVolume);
     const [suppression, setSuppression] = useState(noiseSuppression);
     const [list, setList] = useState(null);
     const [error, setError] = useState('');
@@ -251,6 +253,10 @@ function VoiceSettings() {
     function pickSpeaker(id) {
         setList({ ...list, speaker: id });
         chooseSpeaker(id);
+    }
+    function pickLoudness(volume) {
+        setCallVolume(volume);
+        setLoud(callVolume());
     }
     function pickSuppression(on) {
         setSuppression({ rnnoise: on, failed: false, processorFailed: false });
@@ -330,6 +336,14 @@ function VoiceSettings() {
                         )}
                     </div>
                 )}
+                <Field label="Call volume" hint="Everyone in a call, at once, under each one's own volume.">
+                    <div class="flex items-center gap-3">
+                        <input type="range" class="range range-xs min-w-0 flex-1" min="0" max="100" step="5" value={Math.round(loud * 100)}
+                            aria-label="Call volume" aria-valuetext={`${Math.round(loud * 100)}%`}
+                            onInput={(e) => pickLoudness(Number(e.currentTarget.value) / 100)} />
+                        <span class="w-10 text-right text-sm tabular-nums">{Math.round(loud * 100)}%</span>
+                    </div>
+                </Field>
                 <Toggle id="noise" label="Noise suppression" checked={suppression.rnnoise} onChange={pickSuppression}
                     hint="Removes keyboard, fan and background noise."
                     tip="It adds 30 ms of delay and uses a little of this computer's processor. Off, the browser's own suppression takes out only steady noise, such as a fan's." />
