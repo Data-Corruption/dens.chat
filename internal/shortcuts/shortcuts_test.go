@@ -3,6 +3,7 @@ package shortcuts
 import (
 	"context"
 	"errors"
+	"maps"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/control"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -204,7 +206,7 @@ var keysV = map[string]types.VoiceKey{
 
 func TestPressesReachThePagesOnlyDuringACall(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	keys := newFakeKeys()
 	run(t, helperFor(t, "v1.0.0", serve(t, hub, me), keys))
 	events, stop := hub.Watch()
@@ -244,7 +246,7 @@ func TestPressesReachThePagesOnlyDuringACall(t *testing.T) {
 
 func TestKeyHeldWithAnotherModifierStillPushes(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	keys := newFakeKeys()
 	run(t, helperFor(t, "v1.0.0", serve(t, hub, me), keys))
 	events, stop := hub.Watch()
@@ -259,7 +261,7 @@ func TestKeyHeldWithAnotherModifierStillPushes(t *testing.T) {
 
 func TestNewKeysReachTheHelper(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", nil, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", nil, testLog(t))
 	keys := newFakeKeys()
 	run(t, helperFor(t, "v1.0.0", serve(t, hub, me), keys))
 	events, stop := hub.Watch()
@@ -277,7 +279,7 @@ func TestNewKeysReachTheHelper(t *testing.T) {
 
 func TestHelperWithoutKeysSaysWhy(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	h := helperFor(t, "v1.0.0", serve(t, hub, me), nil)
 	h.Problem = "no way to read keys here"
 	run(t, h)
@@ -291,7 +293,7 @@ func TestHelperWithoutKeysSaysWhy(t *testing.T) {
 
 func TestPagesLearnTheHelperWent(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	h := helperFor(t, "v1.0.0", serve(t, hub, me), newFakeKeys())
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -311,7 +313,7 @@ func TestPagesLearnTheHelperWent(t *testing.T) {
 
 func TestNewerHelperReplacesTheLast(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	client := serve(t, hub, me)
 	events, stop := hub.Watch()
 	defer stop()
@@ -334,7 +336,7 @@ func TestNewerHelperReplacesTheLast(t *testing.T) {
 
 func TestHelperRestartsForANewerService(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.1.0", keysV, testLog(t))
+	hub := NewHub("v1.1.0", "http://localhost:18484", keysV, testLog(t))
 	h := helperFor(t, "v1.0.0", serve(t, hub, me), newFakeKeys())
 	restarted := errors.New("restarted")
 	h.Restart = func() error { return restarted }
@@ -355,7 +357,7 @@ func TestHelperRestartsForANewerService(t *testing.T) {
 }
 
 func TestHelperStopsWhereNothingAnswersIt(t *testing.T) {
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	client := serve(t, hub, host.Identity{ID: "an-account-that-isnt-this-one", Name: "bob"})
 	r := run(t, helperFor(t, "v1.0.0", client, newFakeKeys()))
 	if !r.stopped(5 * time.Second) {
@@ -377,7 +379,7 @@ func TestHelperStopsWhereNothingAnswersIt(t *testing.T) {
 }
 
 func TestPageThatFallsBehindIsClosed(t *testing.T) {
-	hub := NewHub("v1.0.0", nil, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", nil, testLog(t))
 	events, stop := hub.Watch()
 	defer stop()
 	for range pageBuffer + 1 {
@@ -395,7 +397,7 @@ func TestPageThatFallsBehindIsClosed(t *testing.T) {
 
 func TestTheKeyWithMoreModifiersTakesThePress(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", map[string]types.VoiceKey{
+	hub := NewHub("v1.0.0", "http://localhost:18484", map[string]types.VoiceKey{
 		"ptt":        {Code: "KeyV", Label: "V"},
 		"toggleMute": {Code: "KeyV", Label: "V", Ctrl: true},
 	}, testLog(t))
@@ -488,7 +490,7 @@ func nextDesktop(t *testing.T, opened <-chan *fakeDesktop) *fakeDesktop {
 
 func TestTheDesktopBindsTheKeysTheMemberAsksIt(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", map[string]types.VoiceKey{"ptt": {Code: "KeyV", Label: "V", Ctrl: true}, "toggleMute": {Code: "Mouse4", Label: "Mouse 4"}}, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", map[string]types.VoiceKey{"ptt": {Code: "KeyV", Label: "V", Ctrl: true}, "toggleMute": {Code: "Mouse4", Label: "Mouse 4"}}, testLog(t))
 	var kept []bool
 	var keptMu sync.Mutex
 	hub.UseDesktop(false, func(on bool) { keptMu.Lock(); kept = append(kept, on); keptMu.Unlock() })
@@ -574,7 +576,7 @@ func TestTheDesktopBindsTheKeysTheMemberAsksIt(t *testing.T) {
 
 func TestATurnedDownDialogIsntAskedAgainUnasked(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	// The member set it up before, so the helper binds as it starts.
 	hub.UseDesktop(true, func(bool) {})
 	h := helperFor(t, "v1.0.0", serve(t, hub, me), nil)
@@ -611,7 +613,7 @@ func TestATurnedDownDialogIsntAskedAgainUnasked(t *testing.T) {
 
 func TestADesktopThatEndsTheSessionGetsAnother(t *testing.T) {
 	me, _ := host.CurrentUser()
-	hub := NewHub("v1.0.0", keysV, testLog(t))
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
 	h := helperFor(t, "v1.0.0", serve(t, hub, me), nil)
 	open, opened := desktops()
 	h.OpenDesktop = open
@@ -641,5 +643,132 @@ func TestKeysBecomeTheDesktopsTriggers(t *testing.T) {
 		if got := desktopTrigger(c.key); got != c.want {
 			t.Errorf("desktopTrigger(%+v) = %q, want %q", c.key, got, c.want)
 		}
+	}
+}
+
+// fakeNotifier is the desktop's notifications, which the test clicks.
+type fakeNotifier struct {
+	mu        sync.Mutex
+	shown     map[string]host.DesktopNotification
+	withdrawn []string
+	clicks    chan string
+}
+
+func newFakeNotifier() *fakeNotifier {
+	return &fakeNotifier{shown: map[string]host.DesktopNotification{}, clicks: make(chan string, 4)}
+}
+
+func (f *fakeNotifier) Show(id string, n host.DesktopNotification) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.shown[id] = n
+	return nil
+}
+
+func (f *fakeNotifier) Withdraw(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.shown, id)
+	f.withdrawn = append(f.withdrawn, id)
+	return nil
+}
+
+func (f *fakeNotifier) Clicks() <-chan string { return f.clicks }
+
+func (f *fakeNotifier) showing() map[string]host.DesktopNotification {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return maps.Clone(f.shown)
+}
+
+// The helper shows the notifications the service sends it, replacing a
+// channel's with its newer one, takes back those it's told to, and a
+// click opens the page at the message (M12.3). Until a helper that shows
+// them is connected, the hub shows none.
+func TestTheHelperShowsNotifications(t *testing.T) {
+	me, _ := host.CurrentUser()
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
+	n := notify.Notification{Key: "d1/7", Den: "d1", DenName: "Den", Channel: "7", Message: "10", Title: "Alice", Text: "hello",
+		Path: "/den/d1/7#message=10"}
+	if hub.Show(n) {
+		t.Fatal("the hub showed a notification with no helper")
+	}
+	notes := newFakeNotifier()
+	opened := make(chan string, 4)
+	h := helperFor(t, "v1.0.0", serve(t, hub, me), newFakeKeys())
+	h.Notifier = notes
+	h.OpenPage = func(instance string, n notify.Notification) error {
+		opened <- instance + " " + n.Path
+		return nil
+	}
+	run(t, h)
+	events, stop := hub.Watch()
+	defer stop()
+	if st := waitStatus(t, events, func(s *Status) bool { return s.Helper && s.Notifies }); !st.Notifies {
+		t.Fatalf("status = %+v", st)
+	}
+
+	if !hub.Show(n) {
+		t.Fatal("the hub couldn't show a notification with a helper that shows them")
+	}
+	waitFor(t, "the notification", func() bool { return len(notes.showing()) == 1 })
+	want := host.DesktopNotification{Title: "Alice · Den", Body: "hello", Open: "http://localhost:18484/den/d1/7#message=10"}
+	if got := notes.showing()["main/d1/7"]; got != want {
+		t.Fatalf("shown %+v, want %+v", got, want)
+	}
+	newer := n
+	newer.Message, newer.Text, newer.Path = "11", "again", "/den/d1/7#message=11"
+	hub.Show(newer)
+	waitFor(t, "the newer notification", func() bool { return notes.showing()["main/d1/7"].Body == "again" })
+	if len(notes.showing()) != 1 {
+		t.Fatalf("showing %v; a channel's newer notification replaces its last", notes.showing())
+	}
+
+	notes.clicks <- "main/d1/7"
+	select {
+	case got := <-opened:
+		if got != "main /den/d1/7#message=11" {
+			t.Fatalf("a click opened %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a click opened nothing")
+	}
+
+	other := n
+	other.Key, other.Channel, other.Path = "d1/8", "8", "/den/d1/8#message=12"
+	hub.Show(other)
+	waitFor(t, "another channel's notification", func() bool { return len(notes.showing()) == 1 && notes.showing()["main/d1/8"].Body != "" })
+	hub.Withdraw([]string{"d1/8", "d1/9"})
+	waitFor(t, "the notification taken back", func() bool { return len(notes.showing()) == 0 })
+	// The click took its notification back too.
+	if !slices.Equal(notes.withdrawn, []string{"main/d1/7", "main/d1/8"}) {
+		t.Fatalf("took back %v; only what shows comes back", notes.withdrawn)
+	}
+}
+
+// A helper with nothing to show notifications with says so, and the hub
+// shows none through it.
+func TestAHelperWithoutNotifications(t *testing.T) {
+	me, _ := host.CurrentUser()
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
+	run(t, helperFor(t, "v1.0.0", serve(t, hub, me), newFakeKeys()))
+	events, stop := hub.Watch()
+	defer stop()
+	if st := waitStatus(t, events, func(s *Status) bool { return s.Helper && len(s.Covers) > 0 }); st.Notifies {
+		t.Fatalf("status = %+v", st)
+	}
+	if hub.Show(notify.Notification{Key: "d1/7"}) {
+		t.Fatal("the hub showed a notification through a helper that can't")
+	}
+}
+
+func waitFor(t *testing.T, what string, ok func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !ok() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

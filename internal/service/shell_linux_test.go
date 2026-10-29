@@ -17,6 +17,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/service"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
@@ -168,5 +169,75 @@ func TestAndroidServiceStartsFromTheShellsKey(t *testing.T) {
 	_, _, _, err = runAndroid(t, androidBuild("v1.4.0"), port)
 	if rolled := (*maintenance.RolledBackError)(nil); !errors.As(err, &rolled) {
 		t.Fatalf("an older build over newer data = %v, want refused", err)
+	}
+}
+
+// next is the next line on a stream but a ping.
+func next(t *testing.T, s *control.Stream) control.Message {
+	t.Helper()
+	for {
+		msg, err := s.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msg.T != control.MessagePing {
+			return msg
+		}
+	}
+}
+
+// The shell's stream carries the notifications the shell posts (M12.3):
+// whether the member turned any on, each one to post and each to take
+// back, and the shell's word on the app being in front and on Android
+// letting it post them.
+func TestTheShellPostsNotifications(t *testing.T) {
+	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
+	a, client, _, err := runAndroid(t, androidBuild("v1.5.0"), freePort(t))
+	if err != nil {
+		t.Fatalf("the service didn't start: %v", err)
+	}
+	stream, err := client.Open(control.Request{Op: control.OpShell})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	if msg := next(t, stream); msg.T != "hello" {
+		t.Fatalf("first line %s, want hello", msg.T)
+	}
+	if msg := next(t, stream); msg.T != "notifying" || string(msg.D) != `{"on":false}` {
+		t.Fatalf("second line %s %s, want notifying off", msg.T, msg.D)
+	}
+	if err := stream.Send("notifies", map[string]bool{"on": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Notify.SetKinds(new(true), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if msg := next(t, stream); msg.T != "notifying" || string(msg.D) != `{"on":true}` {
+		t.Fatalf("after DMs turned on: %s %s, want notifying on", msg.T, msg.D)
+	}
+	for range 100 {
+		if st := a.Notify.Status(); st.Shell != nil && st.Shell.Allowed {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if st := a.Notify.Status(); st.Shell == nil || !st.Shell.Allowed {
+		t.Fatalf("the status says %+v of the shell, which said Android lets it post", st.Shell)
+	}
+
+	// With the app behind, a DM posts through the shell.
+	if err := stream.Send("front", map[string]bool{"on": false}); err != nil {
+		t.Fatal(err)
+	}
+	a.Notify.Message(notify.Message{Den: "d1", DenName: "Den", Channel: "7", DM: true, ID: "10", Author: "Alice", Text: "hi"})
+	msg := next(t, stream)
+	var n notify.Notification
+	if err := json.Unmarshal(msg.D, &n); err != nil || msg.T != "notify" || n.Key != "d1/7" || n.Title != "Alice" || n.Text != "hi" || n.Path != "/den/d1/7#message=10" {
+		t.Fatalf("got %s %s, want the DM's notification", msg.T, msg.D)
+	}
+	a.Notify.Cleared("d1", "7", "10")
+	if msg := next(t, stream); msg.T != "unnotify" || string(msg.D) != `{"keys":["d1/7"]}` {
+		t.Fatalf("after the DM was read: %s %s, want it taken back", msg.T, msg.D)
 	}
 }

@@ -74,6 +74,14 @@ type DesktopPress struct {
 // ErrDesktopCancelled is the member turning the desktop's dialog down.
 var ErrDesktopCancelled = errors.New("cancelled")
 
+// DesktopNotification is a notification the helper shows as the desktop's
+// own (M12.3): its heading and text, which are plain text, and the address
+// a click opens where the desktop opens it itself, as Windows' toasts do.
+// Elsewhere a click comes back to the helper, which opens it paired.
+type DesktopNotification struct {
+	Title, Body, Open string
+}
+
 // ServiceState is what service control reports about an installed service.
 type ServiceState struct {
 	Running bool

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/control"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"golang.org/x/mod/semver"
@@ -46,11 +47,22 @@ type DesktopKeys interface {
 	Close() error
 }
 
+// Notifier shows notifications as the desktop's own (M12.3): host.Notifier,
+// through the freedesktop notification service or Windows' toasts, or the
+// Flatpak's portal, or a test's. Each shows under an ID of the helper's,
+// which a newer one replaces, and Clicks delivers the ID of each the member
+// clicks, where the desktop doesn't open its address itself.
+type Notifier interface {
+	Show(id string, n host.DesktopNotification) error
+	Withdraw(id string) error
+	Clicks() <-chan string
+}
+
 // Helper is the desktop user's side, which dens shortcuts runs at login.
 // It keeps a stream to every instance that answers it, reads the keys
 // bound there while that instance holds a call, and sends it each press
 // and release. Keys reach other programs only as far as the instances'
-// pages act on them.
+// pages act on them. It shows their notifications where no page can.
 type Helper struct {
 	Version string
 	// Instances lists the instances to try, and Open opens the stream to
@@ -74,11 +86,19 @@ type Helper struct {
 	// version than this helper; Run returns what it returns.
 	Restart func() error
 	Logf    func(format string, args ...any)
+	// Notifier shows the instances' notifications (M12.3), nil where the
+	// desktop has nothing to show them with; OpenPage opens an instance's
+	// page at a notification's message, as a click on it asks, paired as
+	// dens open pairs it.
+	Notifier Notifier
+	OpenPage func(instance string, n notify.Notification) error
 
 	mu      sync.Mutex
 	remotes map[*remote]struct{}
 	wake    chan struct{}
 	ctx     context.Context
+	// notes are the notifications showing, by the ID each shows under.
+	notes map[string]note
 
 	// desk is the desktop's session, deskNames its names for the actions
 	// it bound (nil until it binds), deskBusy whether its dialog is up, and
@@ -126,14 +146,22 @@ func (h *Helper) UseSystem(sandboxed bool) (close func()) {
 	return func() { _ = keys.Close() }
 }
 
-// remote is one instance's stream and what it asks the helper to watch.
+// remote is one instance's stream and what it asks the helper to watch,
+// with its page's origin.
 type remote struct {
 	name   string
+	page   string
 	stream *control.Stream
 	keys   map[string]types.VoiceKey
 	call   bool
 	bound  map[string]bound
 	held   map[string]bool
+}
+
+// note is a notification showing: its instance's, and what it shows.
+type note struct {
+	instance string
+	n        notify.Notification
 }
 
 // bound is a key resolved to what the reader reads.
@@ -167,8 +195,12 @@ func (h *Helper) Run(ctx context.Context) error {
 	h.remotes = make(map[*remote]struct{})
 	h.wake = make(chan struct{}, 1)
 	h.deskWake = make(chan struct{}, 1)
+	h.notes = make(map[string]note)
 	h.ctx = ctx
 	go h.poll(ctx)
+	if h.Notifier != nil {
+		go h.clicks(ctx)
+	}
 	if h.OpenDesktop != nil {
 		h.reopenDesktop(nil)
 		go h.desktopLoop(ctx)
@@ -275,10 +307,16 @@ func (h *Helper) serve(ctx context.Context, cancel context.CancelCauseFunc, name
 		switch msg.T {
 		case msgHello:
 			var hi hello
-			if json.Unmarshal(msg.D, &hi) == nil && newer(hi.Version, h.Version) && h.Restart != nil {
+			if json.Unmarshal(msg.D, &hi) != nil {
+				continue
+			}
+			if newer(hi.Version, h.Version) && h.Restart != nil {
 				cancel(errRestart)
 				return nil
 			}
+			h.mu.Lock()
+			r.page = hi.Page
+			h.mu.Unlock()
 		case msgState:
 			var st state
 			if json.Unmarshal(msg.D, &st) != nil {
@@ -296,9 +334,89 @@ func (h *Helper) serve(ctx context.Context, cancel context.CancelCauseFunc, name
 				continue
 			}
 			h.desktopRequest(r, req.Do)
+		case msgNotify:
+			var n notify.Notification
+			if json.Unmarshal(msg.D, &n) == nil && n.Key != "" {
+				h.notify(r, n)
+			}
+		case msgUnnotify:
+			var u unnotify
+			if json.Unmarshal(msg.D, &u) == nil {
+				h.unnotify(r, u.Keys)
+			}
 		case msgReplaced:
 			cancel(errReplaced)
 			return nil
+		}
+	}
+}
+
+// notify shows an instance's notification, replacing its channel's. A click
+// on it opens the page at its message: the helper does, paired, where the
+// desktop hands the click back, and the desktop itself where it opens the
+// address, as Windows does.
+func (h *Helper) notify(r *remote, n notify.Notification) {
+	if h.Notifier == nil {
+		return
+	}
+	id := r.name + "/" + n.Key
+	h.mu.Lock()
+	h.notes[id] = note{instance: r.name, n: n}
+	open := ""
+	if r.page != "" {
+		open = n.URL(r.page, "")
+	}
+	h.mu.Unlock()
+	if err := h.Notifier.Show(id, host.DesktopNotification{Title: n.Heading(), Body: n.Text, Open: open}); err != nil {
+		h.Logf("The desktop didn't show a notification: %v", err)
+	}
+}
+
+// unnotify takes an instance's notifications back.
+func (h *Helper) unnotify(r *remote, keys []string) {
+	if h.Notifier == nil {
+		return
+	}
+	for _, key := range keys {
+		id := r.name + "/" + key
+		h.mu.Lock()
+		_, ok := h.notes[id]
+		delete(h.notes, id)
+		h.mu.Unlock()
+		if ok {
+			if err := h.Notifier.Withdraw(id); err != nil {
+				h.Logf("The desktop didn't take a notification back: %v", err)
+			}
+		}
+	}
+}
+
+// clicks opens the page at the message of each notification the member
+// clicks, and takes the notification back, which most desktops do for a
+// click by themselves.
+func (h *Helper) clicks(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case id, ok := <-h.Notifier.Clicks():
+			if !ok {
+				return
+			}
+			h.mu.Lock()
+			nt, found := h.notes[id]
+			delete(h.notes, id)
+			h.mu.Unlock()
+			if !found {
+				continue
+			}
+			_ = h.Notifier.Withdraw(id)
+			if h.OpenPage == nil {
+				continue
+			}
+			if err := h.OpenPage(nt.instance, nt.n); err != nil {
+				h.Logf("Couldn't open the page at a notification's message: %v", err)
+			}
 		}
 	}
 }
@@ -353,6 +471,7 @@ func (h *Helper) sourceLocked(r *remote) Source {
 			Binding:      h.deskBusy,
 			Configurable: h.desk.CanConfigure(),
 			Note:         h.desk.Note(),
+			Notifies:     h.Notifier != nil,
 		}
 		if h.deskNames != nil {
 			src.Names = map[string]string{}
@@ -365,7 +484,7 @@ func (h *Helper) sourceLocked(r *remote) Source {
 		}
 		return src
 	}
-	src := Source{Covers: []string{}, Problem: h.Problem, Note: h.Note}
+	src := Source{Covers: []string{}, Problem: h.Problem, Note: h.Note, Notifies: h.Notifier != nil}
 	for _, action := range types.VoiceActions {
 		if _, ok := r.bound[action]; ok {
 			src.Covers = append(src.Covers, action)
