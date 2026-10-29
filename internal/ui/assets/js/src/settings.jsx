@@ -1,7 +1,8 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
 // a call stay in view (M3.3), in four tabs (M8.3). Appearance holds the
-// theme; Chat & media whether photos and videos go compressed (M5), what
-// happens to links, and whether YouTube videos play in Dens (M4.1); Voice &
+// theme; Chat & media what notifies the member (M12.3), whether photos and
+// videos go compressed (M5), what happens to links, and whether YouTube
+// videos play in Dens (M4.1); Voice &
 // video the microphone and speaker, noise suppression, how the member
 // sends their voice, their shortcuts (M7) and how they share their screen
 // (M4.2); System hosting a den (M9.1) and moving it to another computer
@@ -11,11 +12,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
-import { Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction, useBackdrop } from './components.jsx';
+import {
+    Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction, useBackdrop, useNotifications,
+} from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
+import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
 import { NO_CALLS, NO_SHARING, canCall, canShare, here } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
@@ -179,6 +183,7 @@ function ChatSettings() {
     const [players, setPlayers] = useState(youTubePlayers);
     return (
         <>
+            <NotificationSettings />
             <Card title="Photos and videos">
                 <Toggle id="compress" label="Compress photos and videos" checked={compress}
                     hint="Sends faster and saves space. You can still choose the original before sending."
@@ -207,6 +212,48 @@ function ChatSettings() {
                     }} />
             </Card>
         </>
+    );
+}
+
+// NotificationSettings turns each kind of notification on or off, and the
+// message's start in them (M12.3). The service keeps them, so every browser
+// paired with it shares them; turning a kind on asks this browser to let
+// the page notify, where it hasn't asked, and the card says where they
+// show, by what this browser, the desktop's helper and Android allow.
+function NotificationSettings() {
+    const status = useNotifications();
+    const [browser, setBrowser] = useState(permission);
+    const [elsewhere, setElsewhere] = useState(keysElsewhere);
+    const act = useAction();
+    // What came between the first render and this effect counts too.
+    useEffect(() => {
+        const update = () => setElsewhere(keysElsewhere());
+        update();
+        return onKeys(update);
+    }, []);
+    function change(kind, on) {
+        // The browser asks only in answer to the click.
+        const asked = on && kind !== 'hideText' ? askToNotify() : null;
+        act.run(async () => {
+            if (asked) {
+                setBrowser(await asked);
+                tell();
+            }
+            await api.post('/api/settings', { notifications: { [kind]: on } });
+        });
+    }
+    if (!status) return null;
+    return (
+        <Card title="Notifications">
+            <Toggle id="notify-dms" label="Direct messages" checked={!!status.dms} disabled={act.busy} onChange={(on) => change('dms', on)} />
+            <Toggle id="notify-mentions" label="Mentions" hint="Messages in a den's channels that mention you by your username."
+                checked={!!status.mentions} disabled={act.busy} onChange={(on) => change('mentions', on)} />
+            <Toggle id="notify-text" label="Show the message" hint="The start of each message, in its notification."
+                checked={!status.hideText} disabled={act.busy || !notifying(status)} onChange={(on) => change('hideText', !on)} />
+            {notifying(status) && <p class="text-sm text-base-content/70">{whereTheyShow(status, browser, elsewhere)}</p>}
+            <p class="text-sm text-base-content/70">Mute a den or a channel from the bell beside its name.</p>
+            <ErrorText message={act.error} />
+        </Card>
     );
 }
 

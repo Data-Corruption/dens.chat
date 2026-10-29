@@ -48,6 +48,29 @@ type Configuration struct {
 	// StartAtSignIn is whether the Flatpak starts at the member's sign-in
 	// once its key is remembered (M9.3): nil until they choose, which is on.
 	StartAtSignIn *bool `json:"startAtSignIn,omitempty"`
+	// Notifications are what the service notifies the member of (M12.3).
+	// The service keeps them, so every browser paired with the instance
+	// shares them, as it shares the voice keys.
+	Notifications Notifications `json:"notifications,omitzero"`
+}
+
+// Notifications are the member's choices for what notifies them (M12.3):
+// each kind stays off until they turn it on, a notification carries the
+// start of its message unless they hide it, and a den or channel they
+// muted notifies nothing.
+type Notifications struct {
+	DMs      bool `json:"dms,omitempty"`
+	Mentions bool `json:"mentions,omitempty"`
+	HideText bool `json:"hideText,omitempty"`
+	// Muted holds what the member muted, by den ID.
+	Muted map[string]Muted `json:"muted,omitempty"`
+}
+
+// Muted is what a member muted in one den: the whole den, and channels of
+// it, DMs among them, by ID.
+type Muted struct {
+	Den      bool     `json:"den,omitempty"`
+	Channels []string `json:"channels,omitempty"`
 }
 
 // SetHosting turns the hosting switch. Turning it on forgets an export of

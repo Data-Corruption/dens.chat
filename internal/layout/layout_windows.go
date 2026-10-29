@@ -30,6 +30,11 @@ func (l *Layout) resolve() error {
 		l.Cosign = filepath.Join(l.BinaryDir, "cosign.exe")
 		l.ServiceName = l.App + "-" + l.Instance
 		l.Account = `NT SERVICE\` + l.ServiceName
+		programs, err := knownFolder(windows.FOLDERID_CommonPrograms)
+		if err != nil {
+			return err
+		}
+		l.StartMenuShortcut = filepath.Join(programs, title+".lnk")
 	case Development:
 		local := os.Getenv("LOCALAPPDATA")
 		if !filepath.IsAbs(local) {

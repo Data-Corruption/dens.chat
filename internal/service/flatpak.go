@@ -16,8 +16,10 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 
@@ -176,7 +178,9 @@ func (f *flatpak) showConnected(ctx context.Context) {
 
 // runHelper runs the shortcut helper inside the service, its stream a pipe
 // to the hub, and its keys the desktop's shortcuts portal, which knows the
-// sandboxed app by its Flatpak ID in every session, or X11's.
+// sandboxed app by its Flatpak ID in every session, or X11's. It shows the
+// member's notifications through the desktop's Notification portal
+// (M12.3), and a click opens the page paired, through the OpenURI portal.
 func (f *flatpak) runHelper(ctx context.Context) {
 	a := f.a
 	h := &shortcuts.Helper{
@@ -187,9 +191,23 @@ func (f *flatpak) runHelper(ctx context.Context) {
 			go func() { _ = a.Shortcuts.Serve(ctx, control.NewStream(hubs)) }()
 			return control.NewStream(mine), nil
 		},
+		OpenPage: func(_ string, n notify.Notification) error {
+			token, err := a.Pairing.Issue()
+			if err != nil {
+				return err
+			}
+			a.Log.Info("Issued a pairing link, for a notification's click")
+			return host.OpenURL(n.URL(guard.PageOrigin(a.Instance.ClientPort), token))
+		},
 		Logf: func(format string, args ...any) { a.Log.Infof("Voice keys: "+format, args...) },
 	}
 	defer h.UseSystem(true)()
+	if notes, err := host.OpenNotifier(layout.DesktopID, true); err != nil {
+		a.Log.Infof("Notifications show only in a Dens tab: %v", err)
+	} else {
+		defer notes.Close()
+		h.Notifier = notes
+	}
 	if err := h.Run(ctx); err != nil && ctx.Err() == nil {
 		a.Log.Warnf("The voice keys' helper stopped: %v", err)
 	}

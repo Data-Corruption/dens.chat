@@ -3,7 +3,9 @@
 // helper runs as the desktop user in their session, watches the keys they
 // bound while a page is in a call, and sends each press over a stream on
 // the control endpoint. The Hub is the service's side of that stream, and
-// the Helper the desktop user's.
+// the Helper the desktop user's. The same stream carries the member's
+// notifications to the helper, which shows them as the desktop's own where
+// no page can (M12.3).
 package shortcuts
 
 import (
@@ -17,6 +19,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
@@ -31,16 +34,20 @@ const AppID = layout.DesktopID
 
 // Lines on the stream, besides pings. The service sends hello first, then
 // state whenever the keys, its call or the member's use of the desktop's
-// keys change, desktop for what the member asks of the desktop, and
-// replaced when a newer helper takes over. The helper sends source, what it
-// can watch, after each state and whenever that changes, press for each
-// press and release of a bound key, and bound once the desktop took the
-// keys the member asked it to.
+// keys change, desktop for what the member asks of the desktop, replaced
+// when a newer helper takes over, and from M12.3 notify for a notification
+// to show, which replaces its channel's, and unnotify for those to take
+// back. The helper sends source, what it can watch and whether it shows
+// notifications, after each state and whenever that changes, press for
+// each press and release of a bound key, and bound once the desktop took
+// the keys the member asked it to.
 const (
 	msgHello    = "hello"
 	msgState    = "state"
 	msgDesktop  = "desktop"
 	msgReplaced = "replaced"
+	msgNotify   = "notify"
+	msgUnnotify = "unnotify"
 	msgSource   = "source"
 	msgPress    = "press"
 	msgBound    = "bound"
@@ -60,8 +67,16 @@ type desktopRequest struct {
 	Do string `json:"do"`
 }
 
+// hello is the service's version, and from M12.3 its page's origin, which a
+// notification's click opens.
 type hello struct {
 	Version string `json:"version"`
+	Page    string `json:"page,omitempty"`
+}
+
+// unnotify names the notifications to take back, by their keys.
+type unnotify struct {
+	Keys []string `json:"keys"`
 }
 
 // state is what the helper watches: the keys, by action, while the
@@ -74,12 +89,13 @@ type state struct {
 	Desktop bool                      `json:"desktop"`
 }
 
-// Source is what the helper's keys can do, which pages learn: the actions
-// it watches and, where the desktop owns the keys (M7.2), that it confirms
+// Source is what the helper can do, which pages learn: the actions it
+// watches and, where the desktop owns the keys (M7.2), that it confirms
 // them, whether they can be bound, whether its dialog is up, its names for
 // the keys, and whether it can show its settings for them. Note says what
 // the system keeps from the helper or where the keys change, for the
-// settings to show, and Problem why it can't watch any.
+// settings to show, and Problem why it can't watch any. Notifies is
+// whether it shows notifications as the desktop's own (M12.3).
 type Source struct {
 	Covers       []string          `json:"covers"`
 	Confirms     bool              `json:"confirms,omitempty"`
@@ -89,6 +105,7 @@ type Source struct {
 	Configurable bool              `json:"configurable,omitempty"`
 	Note         string            `json:"note,omitempty"`
 	Problem      string            `json:"problem,omitempty"`
+	Notifies     bool              `json:"notifies,omitempty"`
 }
 
 // actionNames are what the actions do, for the desktop's dialog and
@@ -124,6 +141,7 @@ const pageBuffer = 64
 // call, the one helper connected, and the pages listening.
 type Hub struct {
 	version string
+	page    string
 	log     *xlog.Logger
 
 	mu      sync.Mutex
@@ -142,10 +160,33 @@ type link struct {
 	wake   chan struct{}
 }
 
-// NewHub returns a hub for a service at version, with the member's keys.
-func NewHub(version string, keys map[string]types.VoiceKey, log *xlog.Logger) *Hub {
-	return &Hub{version: version, log: log, keys: maps.Clone(keys), pages: make(map[chan Event]struct{})}
+// NewHub returns a hub for a service at version, whose page is at the
+// origin page, with the member's keys.
+func NewHub(version, page string, keys map[string]types.VoiceKey, log *xlog.Logger) *Hub {
+	return &Hub{version: version, page: page, log: log, keys: maps.Clone(keys), pages: make(map[chan Event]struct{})}
 }
+
+// Show has the helper show a notification, where one is connected that
+// shows them (M12.3): the Hub is the helper's place among notify's.
+func (h *Hub) Show(n notify.Notification) bool {
+	h.mu.Lock()
+	l, can := h.helper, h.source.Notifies
+	h.mu.Unlock()
+	return l != nil && can && l.stream.Send(msgNotify, n) == nil
+}
+
+// Withdraw has the helper take notifications back.
+func (h *Hub) Withdraw(keys []string) {
+	h.mu.Lock()
+	l := h.helper
+	h.mu.Unlock()
+	if l != nil {
+		_ = l.stream.Send(msgUnnotify, unnotify{Keys: keys})
+	}
+}
+
+// Settings is a place's: the helper needs none of the member's settings.
+func (h *Hub) Settings(types.Notifications) {}
 
 // UseDesktop says whether the member uses the desktop's keys, as the
 // settings kept it, and keeps it with keep as it changes.
@@ -258,7 +299,7 @@ func (h *Hub) Serve(ctx context.Context, s *control.Stream) error {
 	h.log.Info("The shortcut helper connected")
 	defer h.drop(l)
 
-	if err := s.Send(msgHello, hello{Version: h.version}); err != nil {
+	if err := s.Send(msgHello, hello{Version: h.version, Page: h.page}); err != nil {
 		return err
 	}
 	go s.KeepAlive(ctx)

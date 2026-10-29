@@ -41,11 +41,13 @@ import java.net.URL
 // WebView asks of the app. The WebView stays on the page: every other
 // address opens in the phone's browser, but YouTube's player in its frame.
 // The page gets the microphone for its calls, and while it has it, the
-// activity holds it as shown, whatever the screen does.
+// activity holds it as shown, whatever the screen does. A notification's
+// tap opens the page at its message (M12.3).
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
         const val MIC = 2
+        const val NOTIFY_ASK = 3
     }
 
     private lateinit var root: FrameLayout
@@ -59,6 +61,10 @@ class PageActivity : Activity() {
     // The page's origin, once the WebView has it, and whether its last load
     // failed, as when Dens started again under it.
     private var origin: Uri? = null
+    // target is where a notification's tap asks the page to open, until
+    // it's loaded; started is whether the activity shows.
+    private var target: String? = null
+    private var started = false
     private var failed = false
     private var toldOld = false
     private var files: ValueCallback<Array<Uri>>? = null
@@ -69,6 +75,7 @@ class PageActivity : Activity() {
             if (!isDestroyed) {
                 show()
                 hold()
+                askToNotify()
             }
         }
     }
@@ -91,10 +98,15 @@ class PageActivity : Activity() {
         // The browser checks' driver reaches a development build's page
         // over adb, as it reaches Chromium.
         if (Dens.debuggable(this)) WebView.setWebContentsDebuggingEnabled(true)
+        target = tapped(intent)
         DensService.watch(watcher)
         DensService.start(this)
         show()
     }
+
+    // tapped is the page's path a notification's tap opens, or null for any
+    // other way in.
+    private fun tapped(i: Intent?): String? = if (i?.action == Notes.OPEN) Notes.openable(i.getStringExtra(Notes.PATH)) else null
 
     // show puts up what the activity has to show: the page, once Dens has
     // said where it is, or what keeps it from showing.
@@ -127,22 +139,30 @@ class PageActivity : Activity() {
         }
     }
 
-    // open loads the page in the WebView: as it is, while the WebView's
-    // session still opens it, or else at a pairing link Dens gives the
-    // shell, as dens open gives a desktop's browser.
+    // open loads the page in the WebView: as it is, or at a notification's
+    // message, while the WebView's session still opens it, or else at a
+    // pairing link Dens gives the shell, as dens open gives a desktop's
+    // browser.
     private fun open(page: Uri) {
         val w = webView()
         origin = page
+        val path = target
+        target = null
+        if (path != null) Dens.log(this, "page: opening a notification's message")
         Thread {
-            val target = try {
-                if (paired(page)) page.toString() else pairingLink()
+            val url = try {
+                if (paired(page)) addressAt(page, path) else pairingLink(path)
             } catch (e: Exception) {
                 Dens.log(this, "page: couldn't check the page's session: ${e.javaClass.simpleName}")
-                page.toString()
+                addressAt(page, path)
             }
-            runOnUiThread { if (!isDestroyed) w.loadUrl(target) }
+            runOnUiThread { if (!isDestroyed) w.loadUrl(url) }
         }.start()
     }
+
+    // addressAt is the page's address at path, which a notification's tap
+    // opens, or the page's own.
+    private fun addressAt(page: Uri, path: String?) = if (path == null) page.toString() else page.toString().trimEnd('/') + path
 
     // paired asks the page's API whether the WebView's session cookie still
     // opens it: none, or one Dens forgot, as when the member logged out,
@@ -160,10 +180,14 @@ class PageActivity : Activity() {
         }
     }
 
-    private fun pairingLink(): String {
+    // pairingLink is a link that pairs the page, at path where a
+    // notification's tap opens one: the page takes both from the fragment.
+    private fun pairingLink(path: String? = null): String {
         val link = Control.call(this, "pair").getString("url")
         Dens.log(this, "page: pairing the page")
-        return link
+        if (path == null) return link
+        val token = link.substringAfter("#token=", "")
+        return link.substringBefore("/#") + path.substringBefore('#') + "#token=" + token + "&" + path.substringAfter('#')
     }
 
     // repair pairs the page again, once it's shown, where its session no
@@ -186,7 +210,40 @@ class PageActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        repair()
+        val at = tapped(intent)
+        if (at == null) return repair()
+        // The page loads at the message once Dens says where the page is.
+        target = at
+        open(origin ?: return)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        started = true
+        DensService.inFront(true)
+        // The member may have let the app post notifications, or stopped
+        // it, in Android's settings meanwhile.
+        DensService.tellAllowed(this)
+        askToNotify()
+    }
+
+    override fun onStop() {
+        started = false
+        DensService.inFront(false)
+        super.onStop()
+    }
+
+    // askToNotify asks Android to let the app post notifications once the
+    // member turns some on, unless it asked before, as at their first call
+    // (M12.2): a member who refused then finds where to allow them in the
+    // settings.
+    private fun askToNotify() {
+        if (Build.VERSION.SDK_INT < 33 || !started || !DensService.notifying || micAsk != null) return
+        val prefs = DensService.prefs(this)
+        if (prefs.getBoolean("askedToNotify", false) || checkSelfPermission(NOTIFY) == PackageManager.PERMISSION_GRANTED) return
+        prefs.edit().putBoolean("askedToNotify", true).apply()
+        Dens.log(this, "page: asking Android for POST_NOTIFICATIONS")
+        requestPermissions(arrayOf(NOTIFY), NOTIFY_ASK)
     }
 
     override fun onRestart() {
@@ -362,6 +419,7 @@ class PageActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
         if (requestCode == MIC) answerMic()
+        DensService.tellAllowed(this)
     }
 
     // hold holds the page as shown while it has the microphone, as in a

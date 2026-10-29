@@ -6,11 +6,13 @@ import { api } from './api.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
-import { HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
+import { useNotifications } from './components.jsx';
+import { BellIcon, HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane, openAt } from './messages.jsx';
 import { LinkContext } from './msglinks.jsx';
+import { mutedIn, notifying, withdraw } from './notify.js';
 import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from './people.jsx';
@@ -197,6 +199,11 @@ export function Chat({ denID, channelID, navigate }) {
     const [visible, setVisible] = useState(document.visibilityState === 'visible');
     const [live, setLive] = useState(true);
     const { call: myCall } = useCall();
+    // What the member muted here, which the bells show once they turned
+    // notifications on (M12.3).
+    const notifications = useNotifications();
+    const muted = mutedIn(notifications, denID);
+    const bells = notifying(notifications);
     // newDevice is a device that just signed in to this member's account.
     const [newDevice, setNewDevice] = useState(null);
     // status is the den's status on this computer: its sign-ins waiting
@@ -302,9 +309,15 @@ export function Chat({ denID, channelID, navigate }) {
     }, [anyTyping]);
 
     const channel = pick(view, denID, channelID);
-    // The den sends typing only where this member is looking.
+    // The den sends typing only where this member is looking, and the
+    // service notifies them of nothing there (M12.3); this page takes back
+    // its own notification of what it shows, which the service may have
+    // lost track of, as when the page's stream reconnected.
     const shown = visible && channel ? channel.id : '';
-    useEffect(() => showChannel(denID, shown), [denID, shown]);
+    useEffect(() => {
+        showChannel(denID, shown);
+        if (shown) withdraw([`${denID}/${shown}`]);
+    }, [denID, shown]);
     // Opening a channel or a DM shows the list it's in.
     const openKind = channel?.kind;
     useEffect(() => {
@@ -386,6 +399,12 @@ export function Chat({ denID, channelID, navigate }) {
         navigate('/');
     }
 
+    // mute mutes the den's notifications, or a channel's, or unmutes them;
+    // the service's status says so to every page.
+    function mute(channel, on) {
+        api.post(`/api/dens/${denID}/notifications`, { channel, muted: on }).catch(() => {});
+    }
+
     // A link to a message opens it here, or in the den it points into (M11).
     const links = {
         denID, view, dens,
@@ -408,6 +427,14 @@ export function Chat({ denID, channelID, navigate }) {
                                     <HomeIcon />
                                 </a>
                                 <span class="min-w-0 flex-1 truncate font-semibold">{view.name}</span>
+                                {bells && (
+                                    <button type="button" class="btn btn-ghost btn-xs btn-square -my-1" aria-pressed={muted.den}
+                                        aria-label={muted.den ? `Unmute ${view.name}` : `Mute ${view.name}`}
+                                        title={muted.den ? "Unmute the den's notifications" : "Mute the den's notifications"}
+                                        onClick={() => mute('', !muted.den)}>
+                                        <BellIcon off={muted.den} />
+                                    </button>
+                                )}
                                 {!(live && view.state === 'connected') && (
                                     <span class="badge badge-xs badge-warning" title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
                                 )}
@@ -417,10 +444,10 @@ export function Chat({ denID, channelID, navigate }) {
                         <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id} />
                         {tab === 'dms' ? (
                             <DMList dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
-                                keys={view.dm_keys || []} me={view.me.id} onOpen={openChannel} onClose={closeDM} />
+                                keys={view.dm_keys || []} me={view.me.id} muted={bells ? muted.channels : null} onOpen={openChannel} onClose={closeDM} />
                         ) : (
                             <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
-                                onOpen={openChannel} onDialog={setDialog} />
+                                muted={bells ? muted.channels : null} onOpen={openChannel} onDialog={setDialog} />
                         )}
                         <div class="mt-auto">
                             {staff && !gone && (
@@ -460,6 +487,7 @@ export function Chat({ denID, channelID, navigate }) {
                             <>
                                 <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} elsewhere={elsewhere}
                                     online={dm && online.has(dm.id)} membersOpen={membersOpen}
+                                    muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
                                     onChannels={() => setListOpen(true)} onMembers={toggleMembers}
                                     onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                                 <MessagePane
@@ -616,7 +644,9 @@ function applyReads(view, reads) {
     return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
 }
 
-function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, onDialog }) {
+// muted holds the channels the member muted, or is null while no kind of
+// notification is on (M12.3).
+function ChannelList({ denID, view, reads, members, open, staff, gone, muted, onOpen, onDialog }) {
     const { ungrouped, groups } = listed(view);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
     const [folded, setFolded] = useState(() => readFolded(stored(FOLDED + denID)));
@@ -653,6 +683,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
                         <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}</span>
                         <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
                         {c.staff_only && <span class="text-base-content/50" title="Staff only" aria-label="staff only"><LockIcon /></span>}
+                        {muted?.has(c.id) && <span class="text-base-content/50" title="Muted" aria-label="muted"><BellIcon off size="h-3.5 w-3.5" /></span>}
                         {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                     </button>
                     {managed && (
@@ -708,7 +739,9 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, onOpen, o
 // one stays out of it until it has a new message, unless it's open. A DM
 // waiting for this member to compare codes says so.
 // dms are as recentDMs lists them.
-function DMList({ dms, reads, open, partner, online, keys, me, onOpen, onClose }) {
+// muted holds the DMs the member muted, or is null while no kind of
+// notification is on (M12.3).
+function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, onClose }) {
     if (dms.length === 0) {
         return (
             <p class="cursor-default select-none p-4 text-sm text-base-content/60">
@@ -732,6 +765,7 @@ function DMList({ dms, reads, open, partner, online, keys, me, onOpen, onClose }
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
                                 <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{other ? other.display_name : 'Unknown member'}</span>
+                                {muted?.has(c.id) && <span class="text-base-content/50" title="Muted" aria-label="muted"><BellIcon off size="h-3.5 w-3.5" /></span>}
                                 {needsCheck(keys, c.id, me) && <span class="badge badge-warning badge-xs ml-auto" title="Compare check codes">Check</span>}
                                 {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                             </button>
@@ -765,8 +799,9 @@ function PeopleIcon() {
 
 // ChannelHeader names the channel or the DM's other member. A channel's
 // description shows its first line, which opens the rest when there is
-// more than fits.
-function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, onChannels, onMembers, onProfile }) {
+// more than fits. Its bell mutes the channel's notifications, once the
+// member turned some on (M12.3): muted is null until then.
+function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
     const clipped = useClipped(line, channel.description);
@@ -826,6 +861,13 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, onChan
                     </button>
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
+                    {muted !== null && channel.kind !== 'voice' && (
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" aria-pressed={muted} onClick={() => onMute(!muted)}
+                            aria-label={`${muted ? 'Unmute' : 'Mute'} ${channel.kind === 'dm' ? `the DM with ${dm ? dm.display_name : 'this member'}` : `#${channel.name}`}`}
+                            title={muted ? 'Unmute its notifications' : 'Mute its notifications'}>
+                            <BellIcon off={muted} />
+                        </button>
+                    )}
                     <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
                         aria-label={channel.kind === 'dm' ? 'Profile' : 'Members'} aria-pressed={membersOpen} title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
                         <PeopleIcon />

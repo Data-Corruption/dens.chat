@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Sets up the browser checks' Incus container, or brings an existing one up
-# to date: Debian 13 with Chromium, Firefox ESR, Xvfb and PulseAudio, a user
-# tester, and in tester's home this branch's development binary, the voice
-# probe, the pinned Node.js, the media the checks send, and this directory.
-# Then run a check with run.sh.
+# to date: Debian 13 with Chromium, Firefox ESR, Xvfb, PulseAudio, and dunst
+# for the desktop's notifications (M12.3), a user tester, and in tester's
+# home this branch's development binary, the voice probe, the pinned
+# Node.js, the media the checks send, and this directory. Then run a check
+# with run.sh.
 #
 # The checks drive real browsers through every milestone's page features,
 # from M2's calls on. CI doesn't run them: they're the check before each
@@ -52,7 +53,7 @@ incus info "$CONTAINER" | grep -q '^Status: RUNNING' || incus start "$CONTAINER"
 
 # What the container needs, which each run sees to.
 packages=(chromium firefox-esr xvfb xauth pulseaudio pulseaudio-utils dbus-user-session python3 curl ca-certificates
-    fonts-dejavu-core fonts-liberation espeak-ng procps iptables sudo)
+    fonts-dejavu-core fonts-liberation espeak-ng procps iptables sudo dunst)
 if ! incus exec "$CONTAINER" -- dpkg-query -W "${packages[@]}" >/dev/null 2>&1; then
     incus exec "$CONTAINER" -- sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ${packages[*]} >/dev/null"
 fi

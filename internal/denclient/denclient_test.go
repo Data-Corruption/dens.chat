@@ -223,9 +223,9 @@ func (h *denHost) own() denclient.OwnDen {
 
 // client starts a Manager whose HTTP client trusts the test certificate and
 // reaches example.com at the den's public server.
-func (h *denHost) client(t *testing.T, own denclient.OwnDen) *denclient.Manager {
+func (h *denHost) client(t *testing.T, own denclient.OwnDen, setup ...func(*denclient.Manager)) *denclient.Manager {
 	t.Helper()
-	m, _ := h.clientFrom(t, newStore(t), own)
+	m, _ := h.clientVia(t, newStore(t), own, h.public.Listener.Addr().String(), setup...)
 	return m
 }
 
@@ -238,7 +238,8 @@ func (h *denHost) clientFrom(t *testing.T, s store, own denclient.OwnDen) (*denc
 
 // clientVia starts a Manager as clientFrom does, which reaches example.com
 // at address, and example.com at another port at that port on loopback.
-func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address string) (*denclient.Manager, func()) {
+// setup changes it before it starts.
+func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address string, setup ...func(*denclient.Manager)) (*denclient.Manager, func()) {
 	t.Helper()
 	m := denclient.New(s.db, s.v, s.log, "dens-test", own)
 	m.Cache = s.cache
@@ -265,6 +266,9 @@ func (h *denHost) clientVia(t *testing.T, s store, own denclient.OwnDen, address
 	m.MinTokenLife = 200 * time.Millisecond
 	m.RenewLead = 600 * time.Millisecond
 	m.RenewRetry = 100 * time.Millisecond
+	for _, f := range setup {
+		f(m)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -470,8 +474,8 @@ func TestAddressProblems(t *testing.T) {
 }
 
 // chatDen starts a den with an owner (alice) and a member (bob), both
-// connected, and a channel.
-func chatDen(t *testing.T) (h *denHost, owner, member *denclient.Manager, denID, channelID string) {
+// connected, and a channel; setup changes bob's Manager before it starts.
+func chatDen(t *testing.T, setup ...func(*denclient.Manager)) (h *denHost, owner, member *denclient.Manager, denID, channelID string) {
 	t.Helper()
 	h = startDen(t, newStore(t), time.Hour)
 	h.d.RelaxLimits() // the tests send faster than members may
@@ -497,7 +501,7 @@ func chatDen(t *testing.T) (h *denHost, owner, member *denclient.Manager, denID,
 	if err != nil {
 		t.Fatal(err)
 	}
-	member = h.client(t, noOwnDen)
+	member = h.client(t, noOwnDen, setup...)
 	join(t, member, invite, "bob")
 	name := "general"
 	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name}); err != nil {

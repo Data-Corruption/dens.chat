@@ -14,6 +14,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
@@ -42,6 +43,7 @@ func (rt *router) mountDens(r chi.Router) {
 	r.Post("/api/dens/{den}/check", rt.handleCheckAddress)
 	r.Post("/api/dens/{den}/address", rt.handleAddress)
 	rt.mountChat(r)
+	rt.mountNotify(r)
 	rt.mountMembers(r)
 	rt.mountFiles(r)
 	rt.mountDevices(r)
@@ -148,6 +150,8 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer stopStream()
 	keys, stopKeys := rt.a.Shortcuts.Watch()
 	defer stopKeys()
+	notified, stopNotified := rt.a.Notify.Watch(page)
+	defer stopNotified()
 	// A page's notes on its call go to the log at debug, so a page can't
 	// fill the disk with them: two a second, after the 64 a page keeps
 	// while its stream is down and sends once it's back.
@@ -166,6 +170,7 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 		calls:   calls,
 		stream:  stream,
 		keys:    keys,
+		notes:   notified,
 		handle: func(ctx context.Context, msg pageMessage) {
 			if msg.T == "voice.note" && !notes.Allow() {
 				return
@@ -189,14 +194,16 @@ const closeHeard = 200 * time.Millisecond
 
 // pageServer is what a page's stream carries: the dens view, sent at first
 // and whenever changes says it changed; the events of the call the page
-// holds; the dens' events; and the voice keys' status and the helper's
-// presses (M7). handle takes each of the page's own messages.
+// holds; the dens' events; the voice keys' status and the helper's presses
+// (M7); and the notifications' status, and those the page shows through
+// the browser (M12.3). handle takes each of the page's own messages.
 type pageServer struct {
 	view    func(context.Context) (densView, error)
 	changes <-chan struct{}
 	calls   <-chan denclient.CallEvent
 	stream  <-chan denclient.PageEvent
 	keys    <-chan shortcuts.Event
+	notes   <-chan notify.Event
 	handle  func(context.Context, pageMessage)
 	times   pageTimes
 }
@@ -291,6 +298,18 @@ func (p pageServer) serve(ctx context.Context, c *websocket.Conn) string {
 			} else {
 				why = write("keys", e.Status)
 			}
+		case e, ok := <-p.notes:
+			if !ok {
+				return behind()
+			}
+			switch {
+			case e.Show != nil:
+				why = write("notify", e.Show)
+			case e.Withdraw != nil:
+				why = write("unnotify", map[string][]string{"keys": e.Withdraw})
+			case e.Status != nil:
+				why = write("notifications", e.Status)
+			}
 		case <-ping.C:
 			pctx, pcancel := context.WithTimeout(ctx, p.times.pong)
 			err := c.Ping(pctx)
@@ -342,7 +361,9 @@ func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *webs
 // shows in a den ("focus", with an empty channel for none), typing, and
 // its call: joining or resuming it, answering the den's offers, asking for
 // an ICE restart, muting, sharing its screen and watching others' (M4.2),
-// holding push to talk and its notes for the log (M11), and leaving.
+// holding push to talk and its notes for the log (M11), and leaving; and
+// from M12.3 "page", whether it's on screen and whether the browser lets
+// it notify.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
@@ -357,6 +378,8 @@ type pageMessage struct {
 		Sound    bool                `json:"sound"`
 		MemberID string              `json:"member_id"`
 		Note     *denclient.CallNote `json:"note"`
+		Visible  bool                `json:"visible"`
+		Allowed  bool                `json:"allowed"`
 	} `json:"d"`
 }
 
@@ -365,6 +388,9 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 	switch msg.T {
 	case "focus":
 		rt.a.Dens.SetFocus(page, msg.D.Den, msg.D.Channel)
+		rt.a.Notify.Focus(page, msg.D.Den, msg.D.Channel)
+	case "page":
+		rt.a.Notify.SetPage(page, msg.D.Visible, msg.D.Allowed)
 	case "typing":
 		_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 	case "voice.join":

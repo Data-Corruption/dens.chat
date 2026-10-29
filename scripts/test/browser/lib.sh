@@ -149,6 +149,32 @@ send() {
         "{\"nonce\":\"$(nonce)\",\"text\":\"$text\",\"attachments\":[$files]}" | json 'd["id"]'
 }
 
+# checked_dm A B opens a DM from A to B, has both their Dens make its key
+# and each check the other's digits, as members comparing codes do, and
+# prints its ID.
+checked_dm() {
+    local other dm a="" b=""
+    other=$(api "$2" GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
+    dm=$(api "$1" POST "/api/dens/$DEN/dms" "{\"member_id\":\"$other\"}" | json 'd["id"]')
+    if [[ $(api "$1" GET "/api/dens/$DEN/dms/$dm/check" | json 'd["stage"]') == none ]]; then
+        api "$1" POST "/api/dens/$DEN/dms/$dm/key" '{}' >/dev/null
+    fi
+    for _ in $(seq 60); do
+        a=$(api "$1" GET "/api/dens/$DEN/dms/$dm/check" | json 'd.get("half", "")')
+        b=$(api "$2" GET "/api/dens/$DEN/dms/$dm/check" | json 'd.get("half", "")')
+        [[ -n $a && -n $b ]] && break
+        sleep 0.5
+    done
+    [[ -n $a && -n $b ]] || { echo "the DM's check code never came" >&2; return 1; }
+    api "$1" POST "/api/dens/$DEN/dms/$dm/check" "{\"digits\":\"$b\"}" >/dev/null
+    api "$2" POST "/api/dens/$DEN/dms/$dm/check" "{\"digits\":\"$a\"}" >/dev/null
+    for _ in $(seq 20); do
+        [[ $(api "$2" GET "/api/dens/$DEN/dms/$dm/check" | json 'd["checked"] and d["partner"]') == True ]] && break
+        sleep 0.5
+    done
+    echo "$dm"
+}
+
 # restart_den restarts alice's instance in place, as an update would.
 restart_den() {
     stop m2a

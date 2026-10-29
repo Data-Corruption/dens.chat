@@ -19,15 +19,18 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 // DensService is the foreground service Dens runs under (M12): it starts
 // Dens with its data key, starts it again when it ends, but for a start
 // Dens refuses, and keeps the shell's stream with it, which says where the
-// page is. A foreground service of the specialUse type holds the dens'
+// page is, and carries the member's notifications, which the shell posts
+// (M12.3). A foreground service of the specialUse type holds the dens'
 // connections while the app isn't on screen, and of the microphone's type
 // too while the page has the microphone, as in a call, whose sound it
 // routes.
@@ -66,6 +69,21 @@ class DensService : Service() {
         var calling = false
             private set
 
+        // notifying is whether the member turned any notifications on, as
+        // Dens last said (M12.3), which the activity asks Android to let it
+        // post; front is whether the page's activity shows, which Dens
+        // hears, since the activity holds the page as shown through a call.
+        @Volatile
+        var notifying = false
+            private set
+
+        @Volatile
+        private var front = false
+
+        // The shell's stream with Dens, while it's open.
+        @Volatile
+        private var stream: Control.Stream? = null
+
         private val watchers = CopyOnWriteArraySet<() -> Unit>()
 
         fun watch(w: () -> Unit) = watchers.add(w)
@@ -82,6 +100,32 @@ class DensService : Service() {
             ctx.startForegroundService(Intent(ctx, DensService::class.java))
         }
 
+        // inFront tells Dens whether the page's activity shows (M12.3): a
+        // page held as shown for a call isn't on screen otherwise, and
+        // Dens notifies the member of what it shows only while it isn't.
+        fun inFront(on: Boolean) {
+            front = on
+            tell("front", JSONObject().put("on", on))
+        }
+
+        // tellAllowed tells Dens whether Android lets the app post the
+        // member's notifications, which the page's settings say.
+        fun tellAllowed(ctx: Context) = tell("notifies", JSONObject().put("on", Notes.allowed(ctx)))
+
+        // tell sends Dens a line, in turn with the others, off the thread
+        // that asks.
+        private val teller = Executors.newSingleThreadExecutor()
+
+        private fun tell(type: String, data: JSONObject) {
+            teller.execute {
+                try {
+                    stream?.send(type, data)
+                } catch (e: IOException) {
+                    // The stream's reader sees it closed, and opens another.
+                }
+            }
+        }
+
         // call gives the service the microphone's type, which Android needs
         // to let the page record off screen, as the shell grants the page
         // the microphone.
@@ -96,7 +140,6 @@ class DensService : Service() {
 
     @Volatile private var stopping = false
     @Volatile private var process: Process? = null
-    @Volatile private var stream: Control.Stream? = null
     private var runner: Thread? = null
     private var linker: Thread? = null
     private val retry = LinkedBlockingQueue<Unit>()
@@ -386,12 +429,27 @@ class DensService : Service() {
             try {
                 while (true) {
                     val msg = s.next() ?: break
-                    if (msg.optString("t") == "hello") {
-                        val d = msg.optJSONObject("d")
-                        page = d?.optString("page")?.takeIf { it.startsWith("http://localhost:") }
-                        problem = null
-                        Dens.log(this, "service: Dens ${d?.optString("version")} is up")
-                        changed()
+                    val d = msg.optJSONObject("d")
+                    when (msg.optString("t")) {
+                        "hello" -> {
+                            page = d?.optString("page")?.takeIf { it.startsWith("http://localhost:") }
+                            problem = null
+                            Dens.log(this, "service: Dens ${d?.optString("version")} is up")
+                            // What Dens needs to know to notify the member
+                            // where it should.
+                            inFront(front)
+                            tellAllowed(this)
+                            changed()
+                        }
+                        "notify" -> if (d != null) Notes.post(this, d)
+                        "unnotify" -> {
+                            val keys = d?.optJSONArray("keys")
+                            if (keys != null) Notes.cancel(this, List(keys.length()) { keys.optString(it) })
+                        }
+                        "notifying" -> {
+                            notifying = d?.optBoolean("on") == true
+                            changed()
+                        }
                     }
                 }
             } finally {

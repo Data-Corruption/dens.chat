@@ -110,6 +110,9 @@ type Manager struct {
 	// calls in order, each with the state as it is then.
 	OnCall func(active bool)
 	hookMu sync.Mutex
+	// Notices hears what the dens' events say of the member's
+	// notifications (M12.3).
+	Notices Notices
 
 	// follows are uploads the page follows, by its keys (M5.4).
 	followMu sync.Mutex
@@ -307,6 +310,9 @@ func (m *Manager) forget(ctx context.Context, c *conn) error {
 	c.dropAllKept()
 	c.dropCache()
 	m.dropDenFocus(c.j.denID.String())
+	if m.Notices != nil {
+		m.Notices.Forgot(c.j.denID.String())
+	}
 	m.notify()
 	if _, err := m.db.ExecContext(ctx, `DELETE FROM joined_dens WHERE den_id = ?`, []byte(c.j.denID)); err != nil {
 		return fmt.Errorf("forget den: %w", err)

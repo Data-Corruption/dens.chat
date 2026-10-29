@@ -45,3 +45,15 @@ export function InfoIcon({ size = 'h-3.5 w-3.5' }) {
         </svg>
     );
 }
+
+// BellIcon is notifications (M12.3): a den's, a channel's or a DM's bell,
+// struck through where the member muted them.
+export function BellIcon({ off, size = 'h-4 w-4' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3z" />
+            <path d="M6.75 14a1.5 1.5 0 0 0 2.5 0" />
+            {off && <path d="M2.5 2.5l11 11" />}
+        </svg>
+    );
+}

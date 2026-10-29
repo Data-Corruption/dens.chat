@@ -83,6 +83,39 @@ Be wary of "I'm @them over there, let's compare there": compare where you know
 who you're talking to. If the digits don't match, someone may be in the middle,
 so start the DM again.
 
+## Notifications
+
+Dens can tell you about a DM, or a message that mentions you by your username.
+Nothing notifies you until you turn it on: open **Settings**, then **Chat &
+media**, and turn on **Direct messages**, **Mentions**, or both. The settings
+live in Dens on your computer, so every browser you use it with shares them.
+
+Where they show depends on what's open:
+
+- **A Dens tab, anywhere in your browser.** Turning one on asks the browser to
+  let Dens show notifications; say yes. Clicking one brings the tab forward at
+  the message. If you said no, allow notifications for `localhost` in the
+  browser's site settings.
+- **No Dens tab open.** Dens's helper, which starts when you sign in, shows them
+  as your desktop's own, and clicking one opens Dens in your default browser at
+  the message. On Windows, a click opens it straight away if that browser is
+  still signed in to Dens; otherwise run `dens open`, or pick Dens from the
+  Start menu.
+- **Android.** The app shows them while it isn't open on that channel. If you
+  didn't allow notifications when Android asked, allow them for Dens in
+  Android's settings, under Apps.
+
+Nothing shows for a channel Dens has open on your screen, and reading a channel
+on any of your devices clears its notification everywhere. A busy DM is one
+notification, with its newest message.
+
+Once they're on, the bell beside a den's name mutes the whole den, and the bell
+at the top of a channel or DM mutes just that one.
+
+A notification shows the start of the message, a DM's too, to anyone who can
+see your screen, or your phone's lock screen. Turn off **Show the message** and
+it says only who sent one. Spoilers never show.
+
 ## Leaving
 
 Open the den's **Manage**, and choose **Leave den** at the bottom. You can come

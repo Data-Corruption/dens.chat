@@ -31,6 +31,11 @@ type fakeFlatpakPortals struct {
 	backgroundOpts map[string]dbus.Variant
 	status         string
 	notified       []string
+	// noNotifications leaves the Notification portal out, and removed and
+	// actions are what its notifications asked of it (M12.3).
+	noNotifications bool
+	removed         []string
+	actions         []string
 
 	spawned [][]string
 	flags   uint32
@@ -80,10 +85,10 @@ type fakeFlatpakProperties fakeFlatpakPortals
 
 func (f *fakeFlatpakProperties) Get(iface, name string) (dbus.Variant, *dbus.Error) {
 	f.mu.Lock()
-	up := f.secretUp
+	up, notifications := f.secretUp, !f.noNotifications
 	f.mu.Unlock()
 	switch {
-	case iface == portalSecret && up, iface == portalBackground:
+	case iface == portalSecret && up, iface == portalBackground, iface == portalNotification && notifications:
 		return dbus.MakeVariant(uint32(2)), nil
 	}
 	return dbus.Variant{}, dbus.NewError("org.freedesktop.DBus.Error.UnknownInterface", []any{"No such interface " + iface})
@@ -137,8 +142,18 @@ func (f *fakeNotification) AddNotification(id string, n map[string]dbus.Variant)
 	p := (*fakeFlatpakPortals)(f)
 	title, _ := n["title"].Value().(string)
 	body, _ := n["body"].Value().(string)
+	action, _ := n["default-action"].Value().(string)
 	p.mu.Lock()
 	p.notified = append(p.notified, id+": "+title+": "+body)
+	p.actions = append(p.actions, action)
+	p.mu.Unlock()
+	return nil
+}
+
+func (f *fakeNotification) RemoveNotification(id string) *dbus.Error {
+	p := (*fakeFlatpakPortals)(f)
+	p.mu.Lock()
+	p.removed = append(p.removed, id)
 	p.mu.Unlock()
 	return nil
 }

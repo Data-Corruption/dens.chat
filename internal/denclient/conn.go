@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 
 	"github.com/coder/websocket"
 )
@@ -594,6 +595,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// again.
 		c.m.files.drop(c.j.denID.String())
 		c.cacheReady(r)
+		c.tellReadNotices(r.ReadStates)
 		c.m.publish(PageEvent{DenID: c.j.denID.String(), Reset: true})
 		return e, false, nil
 	case denproto.EventDenUpdated:
@@ -648,6 +650,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	// The message as the den sent it, for the cache, which keeps a DM's
 	// sealed (M6.2).
 	var kept *denproto.Message
+	// What it may notify the member of, or, for their own, the channel
+	// they read by sending it (M12.3).
+	var notice *notify.Message
+	var own *denproto.Message
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
 		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {
@@ -661,10 +667,19 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		var m denproto.Message
 		if json.Unmarshal(out.D, &m) == nil {
 			kept = &m
+			opened := PageMessage{Message: m}
 			if m.Sealed != nil {
-				out, err = denproto.NewEvent(out.T, out.Seq, c.openLocked(m))
+				opened = c.openLocked(m)
+				out, err = denproto.NewEvent(out.T, out.Seq, opened)
 			} else {
 				c.noteLocked(m)
+			}
+			switch {
+			case e.T != denproto.EventMessageCreated:
+			case m.AuthorID == me:
+				own = &m
+			default:
+				notice = c.noticeLocked(opened.Message, opened.Locked != "")
 			}
 		}
 	case e.T == denproto.EventDMKey:
@@ -677,6 +692,9 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	c.mu.Unlock()
 	if requests && err == nil {
 		c.requestChanged(e)
+	}
+	if err == nil && ok {
+		c.tellNotices(e, out, notice, own)
 	}
 	if err == nil {
 		c.cacheMessageEvent(e, kept)

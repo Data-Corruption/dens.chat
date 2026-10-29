@@ -29,12 +29,14 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/maintenance"
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/pairing"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
+	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/platform/release"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
@@ -71,8 +73,10 @@ type App struct {
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
 	// Shortcuts carries the voice keys from the desktop user's helper to
-	// the pages (M7).
+	// the pages (M7), and the notifications it shows to the helper.
 	Shortcuts *shortcuts.Hub
+	// Notify decides what notifies the member, and where it shows (M12.3).
+	Notify *notify.Hub
 	// Cache is the client's cache of other dens' files (M6).
 	Cache *cache.Store
 	// Media runs the media module's jobs, the den's and the client's, one
@@ -402,7 +406,7 @@ func (a *App) unlock(key []byte) error {
 		return err
 	}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
-	a.Shortcuts = shortcuts.NewHub(a.buildInfo.Version, cfg.VoiceKeys, a.Log)
+	a.Shortcuts = shortcuts.NewHub(a.buildInfo.Version, guard.PageOrigin(a.Instance.ClientPort), cfg.VoiceKeys, a.Log)
 	a.Shortcuts.UseDesktop(cfg.DesktopKeys, func(on bool) {
 		if _, err := config.Update(a.DB, func(c *types.Configuration) error {
 			c.DesktopKeys = on
@@ -412,6 +416,14 @@ func (a *App) unlock(key []byte) error {
 		}
 	})
 	a.Dens.OnCall = a.Shortcuts.SetCall
+	a.Notify = notify.New(a.Log, cfg.Notifications, func(n types.Notifications) error {
+		_, err := config.Update(a.DB, func(c *types.Configuration) error {
+			c.Notifications = n
+			return nil
+		})
+		return err
+	}, a.Shortcuts, l.Form == layout.Android)
+	a.Dens.Notices = a.Notify
 	a.Dens.TempDir = l.Temp
 	a.Dens.Media = a.Media
 	if a.Cache, err = cache.Open(l.Cache, a.Vault, a.Log, cfg.CacheLimit); err != nil {

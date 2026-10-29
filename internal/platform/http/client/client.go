@@ -275,6 +275,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"cacheLimit":             usage.Limit,
 		"cacheUsed":              usage.Used,
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
+		"notifications":          rt.a.Notify.Status(),
 	}
 	// What only the Flatpak has (M9.3): its remembered key, starting at
 	// sign-in, and updates through Flatpak.
@@ -553,9 +554,22 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		CacheLimit             *int64  `json:"cacheLimit"`
 		// VoiceKeys replaces the member's keys, all of them (M7).
 		VoiceKeys *map[string]types.VoiceKey `json:"voiceKeys"`
+		// Notifications turns each kind on or off, and the text, as given
+		// (M12.3); mutes go through their den's.
+		Notifications *struct {
+			DMs      *bool `json:"dms"`
+			Mentions *bool `json:"mentions"`
+			HideText *bool `json:"hideText"`
+		} `json:"notifications"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
+	}
+	if n := body.Notifications; n != nil {
+		if err := rt.a.Notify.SetKinds(n.DMs, n.Mentions, n.HideText); err != nil {
+			xhttp.Error(r.Context(), w, err)
+			return
+		}
 	}
 	if body.CacheLimit != nil {
 		if *body.CacheLimit < cache.MinLimit || *body.CacheLimit > cache.MaxLimit || rt.a.Cache == nil {
