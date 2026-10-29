@@ -94,9 +94,12 @@ object Control {
             }
         }
 
+        // send writes a line of type, carrying data where there is some.
         @Synchronized
-        fun send(type: String) {
-            c.socket.outputStream.write((JSONObject().put("t", type).toString() + "\n").toByteArray())
+        fun send(type: String, data: JSONObject? = null) {
+            val line = JSONObject().put("t", type)
+            if (data != null) line.put("d", data)
+            c.socket.outputStream.write((line.toString() + "\n").toByteArray())
         }
 
         override fun close() {
