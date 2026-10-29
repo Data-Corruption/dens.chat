@@ -1,8 +1,11 @@
 package chat.dens.shell
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -37,13 +40,19 @@ import java.net.URL
 // alone, as in a desktop browser, and the shell answers only what the
 // WebView asks of the app. The WebView stays on the page: every other
 // address opens in the phone's browser, but YouTube's player in its frame.
+// The page gets the microphone for its calls, and while it has it, the
+// activity holds it as shown, whatever the screen does.
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
+        const val MIC = 2
     }
 
     private lateinit var root: FrameLayout
-    private var web: WebView? = null
+    private var web: HeldWebView? = null
+    // The page's request for the microphone, while Android asks the member
+    // for it.
+    private var micAsk: PermissionRequest? = null
     // What shows over the page, or instead of it: Dens starting, or why it
     // can't show the page.
     private var note: View? = null
@@ -55,7 +64,14 @@ class PageActivity : Activity() {
     private var files: ValueCallback<Array<Uri>>? = null
     private var fullScreen: View? = null
     private var fullScreenDone: WebChromeClient.CustomViewCallback? = null
-    private val watcher: () -> Unit = { runOnUiThread { if (!isDestroyed) show() } }
+    private val watcher: () -> Unit = {
+        runOnUiThread {
+            if (!isDestroyed) {
+                show()
+                hold()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -185,7 +201,7 @@ class PageActivity : Activity() {
 
     private fun webView(): WebView {
         web?.let { return it }
-        val w = WebView(this)
+        val w = HeldWebView(this)
         web = w
         root.addView(w, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.requestApplyInsets()
@@ -234,10 +250,22 @@ class PageActivity : Activity() {
         }
         w.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
-                // The page asks for the microphone in a call, which the
-                // shell grants from M12.2 on, and for nothing else.
-                Dens.log(this@PageActivity, "page: refused it ${request.resources.joinToString { it.substringAfterLast('.') }}")
-                request.deny()
+                // The page asks for the microphone in a call, which it gets
+                // once Android lets the app have it; anything else is
+                // refused.
+                val mic = request.resources.toList() == listOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                if (!mic || !onPage(request.origin)) {
+                    Dens.log(this@PageActivity, "page: refused it ${request.resources.joinToString { it.substringAfterLast('.') }}")
+                    request.deny()
+                    return
+                }
+                micAsk?.deny()
+                micAsk = request
+                askForMic()
+            }
+
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                if (micAsk == request) micAsk = null
             }
 
             override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
@@ -298,6 +326,56 @@ class PageActivity : Activity() {
         }
     }
 
+    // askForMic asks Android for the microphone where the app hasn't it
+    // yet, and, the first time, to let the app show notifications, since
+    // the call's holds the buttons that move its sound; then it answers the
+    // page.
+    private fun askForMic() {
+        val want = mutableListOf<String>()
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) want += Manifest.permission.RECORD_AUDIO
+        val prefs = DensService.prefs(this)
+        if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("askedToNotify", false) && checkSelfPermission(NOTIFY) != PackageManager.PERMISSION_GRANTED) {
+            want += NOTIFY
+            prefs.edit().putBoolean("askedToNotify", true).apply()
+        }
+        if (want.isEmpty()) return answerMic()
+        Dens.log(this, "page: asking Android for ${want.joinToString(" and ") { it.substringAfterLast('.') }}")
+        requestPermissions(want.toTypedArray(), MIC)
+    }
+
+    // answerMic grants the page the microphone if Android gave the app it,
+    // once the service has the microphone's type, which keeps the page
+    // recording off screen; and holds the page as shown while it records.
+    private fun answerMic() {
+        val request = micAsk ?: return
+        micAsk = null
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Dens.log(this, "page: Android refused the app the microphone")
+            Toast.makeText(this, "Calls need the microphone: allow it for Dens in Android's settings, under Apps", Toast.LENGTH_LONG).show()
+            request.deny()
+            return
+        }
+        DensService.call(this)
+        request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        Dens.log(this, "page: granted it the microphone")
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
+        if (requestCode == MIC) answerMic()
+    }
+
+    // hold holds the page as shown while it has the microphone, as in a
+    // call, and lets it go after: Chromium freezes a hidden page a minute
+    // after its sound stops, which stops a call sending, and leaves it
+    // silent once the page thaws.
+    private fun hold() {
+        val w = web ?: return
+        val on = DensService.calling
+        if (w.held == on) return
+        w.held = on
+        Dens.log(this, if (on) "page: held as shown, for its call" else "page: no longer held")
+    }
+
     private fun updateWebView(pkg: String?) {
         val name = pkg ?: "com.google.android.webview"
         try {
@@ -351,12 +429,14 @@ class PageActivity : Activity() {
     }
 
     // back walks the page's history, then leaves the page, as in a
-    // browser; full screen goes first.
+    // browser; full screen goes first. A page in a call goes behind the
+    // phone's other apps instead, as Home sends it, and its call goes on.
     private fun back() {
         val w = web
         when {
             fullScreen != null -> fullScreenDone?.onCustomViewHidden()
             w != null && w.canGoBack() -> w.goBack()
+            DensService.calling -> moveTaskToBack(true)
             else -> finish()
         }
     }
@@ -384,8 +464,30 @@ class PageActivity : Activity() {
 
     override fun onDestroy() {
         DensService.unwatch(watcher)
+        micAsk?.deny()
+        micAsk = null
         web?.destroy()
         web = null
         super.onDestroy()
+    }
+}
+
+// The permission to show notifications, from Android 13.
+private const val NOTIFY = "android.permission.POST_NOTIFICATIONS"
+
+// HeldWebView tells Chromium its window shows while it's held, whatever the
+// window does, and passes the window's own visibility on otherwise (M12).
+class HeldWebView(ctx: Context) : WebView(ctx) {
+    private var shown = View.VISIBLE
+    var held = false
+        set(on) {
+            if (field == on) return
+            field = on
+            super.onWindowVisibilityChanged(if (on) View.VISIBLE else shown)
+        }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        shown = visibility
+        super.onWindowVisibilityChanged(if (held) View.VISIBLE else visibility)
     }
 }
