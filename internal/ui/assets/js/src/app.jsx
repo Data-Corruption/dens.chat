@@ -13,6 +13,8 @@ import { Home } from './home.jsx';
 import { ManageDialog } from './manageden.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
+import { openAt } from './messages.jsx';
+import { startNotifications } from './notify.js';
 import { SharePlayer } from './player.jsx';
 import { CallBar, CogIcon } from './voice.jsx';
 
@@ -24,14 +26,24 @@ function chatRoute(path) {
 }
 
 // dens open opens the page with a one-time token in the URL fragment,
-// which never reaches the server in the request line. The page takes it,
-// removes it from the address bar and history, and redeems it once.
-function takePairingToken() {
-    const hash = window.location.hash;
-    if (!hash.startsWith('#')) return '';
-    const token = new URLSearchParams(hash.slice(1)).get('token') || '';
-    if (token) history.replaceState(null, '', window.location.pathname);
-    return token;
+// which never reaches the server in the request line, and a notification's
+// click with the message to open there too (M12.3). The page takes them,
+// removes them from the address bar and history, and redeems the token
+// once.
+function takeFragment(loc = window.location, hist = history) {
+    if (!loc.hash.startsWith('#')) return { token: '', message: '' };
+    const params = new URLSearchParams(loc.hash.slice(1));
+    const token = params.get('token') || '';
+    const message = /^[0-9]+$/.test(params.get('message') || '') ? params.get('message') : '';
+    if (token || params.has('message')) hist.replaceState(null, '', loc.pathname);
+    return { token, message };
+}
+
+// openHere opens a message in the channel the page's address names, as a
+// notification's link asks.
+function openHere(message) {
+    const at = chatRoute(window.location.pathname);
+    if (message && at?.channelID && at.channelID !== 'dms') openAt(at.denID, at.channelID, message);
 }
 
 // takeSettingsPath opens the settings over the home page for /settings,
@@ -63,7 +75,8 @@ export function App({ instance, version, pair, pairLink }) {
     }
 
     useEffect(() => {
-        const token = takePairingToken();
+        const { token, message } = takeFragment();
+        openHere(message);
         (async () => {
             if (token) {
                 try {
@@ -78,9 +91,12 @@ export function App({ instance, version, pair, pairLink }) {
         const onPop = () => setPath(window.location.pathname);
         window.addEventListener('popstate', onPop);
         // A pairing link pasted into a tab already on this page changes only
-        // the fragment, which doesn't load the page again.
+        // the fragment, which doesn't load the page again, as does the
+        // Android app's shell opening a notification's message in the
+        // channel the page shows.
         const onHash = async () => {
-            const next = takePairingToken();
+            const { token: next, message: at } = takeFragment();
+            openHere(at);
             if (!next) return;
             try {
                 await api.post('/api/pair', { token: next });
@@ -111,8 +127,17 @@ export function App({ instance, version, pair, pairLink }) {
     const passwordSet = ready && state.status.passwordSet;
     const open = passwordSet && !locked;
     const chat = open ? chatRoute(path) : null;
-    // The event stream needs a paired browser, so it starts only then.
+    // The event stream needs a paired browser, so it starts only then, and
+    // with it the notifications this page shows (M12.3), whose click opens
+    // their message.
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
+    useEffect(() => {
+        if (!open) return;
+        startNotifications((den, channel, message) => {
+            openAt(den, channel, message);
+            navigate(`/den/${den}/${channel}`);
+        });
+    }, [open]);
     // An update installed meanwhile, as in the software center, shows once
     // the member is back on the page, and within a minute while they stay
     // (M9.3): the service asks the newest build installed as the page asks

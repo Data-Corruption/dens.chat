@@ -1,8 +1,9 @@
 // The local event stream, shared by every view: one WebSocket to the
 // service, which pushes den statuses and den events. The page sends on it
-// too: the channel it shows in each den, and typing. The service is on
-// this computer, so a lost stream retries quickly; after a reconnect,
-// views reload, since events may have been missed while it was down.
+// too: the channel it shows in each den, typing, and from M12.3 whether
+// it's on screen and may notify. The service is on this computer, so a
+// lost stream retries quickly; after a reconnect, views reload, since
+// events may have been missed while it was down.
 //
 // While the stream is down, the page asks the service over plain HTTP
 // whether it's back, and still knows this browser, before opening another
@@ -29,14 +30,17 @@ let down = false;
 let everConnected = false;
 let delay = MIN_DELAY;
 let retry = null;
-// The service sends den statuses, and the voice keys' (M7), when the
-// stream opens and when they change, so a view that starts listening later
-// gets the latest from here.
+// The service sends den statuses, the voice keys' (M7) and the
+// notifications' (M12.3), when the stream opens and when they change, so a
+// view that starts listening later gets the latest from here.
 let latestDens = null;
 let latestKeys = null;
-// The channel shown in each den, sent again after a reconnect, since the
-// service forgets it when the stream closes.
+let latestNotifications = null;
+// The channel shown in each den, and what the page says of itself, sent
+// again after a reconnect, since the service forgets them when the stream
+// closes.
 const focus = new Map();
+let pageState = null;
 
 function start() {
     if (started) return;
@@ -92,6 +96,7 @@ function connect() {
         clearTimeout(slow);
         delay = MIN_DELAY;
         focus.forEach((channel, den) => send({ t: 'focus', d: { den, channel } }));
+        if (pageState) send({ t: 'page', d: pageState });
         const missed = everConnected || down;
         if (down) {
             down = false;
@@ -109,6 +114,7 @@ function connect() {
         }
         if (message.t === 'dens') latestDens = message;
         if (message.t === 'keys') latestKeys = message;
+        if (message.t === 'notifications') latestNotifications = message;
         dispatch(message);
     });
     socket.addEventListener('close', () => {
@@ -143,6 +149,15 @@ export function showChannel(den, channel) {
     send({ t: 'focus', d: { den, channel } });
 }
 
+// setPageState tells the service whether this page is on screen, and
+// whether the browser lets it notify (M12.3), so a notification shows
+// once, in the right place.
+export function setPageState(visible, allowed) {
+    if (pageState?.visible === visible && pageState?.allowed === allowed) return;
+    pageState = { visible, allowed };
+    send({ t: 'page', d: pageState });
+}
+
 // sendTyping tells a den this member is typing in a channel.
 export function sendTyping(den, channel) {
     send({ t: 'typing', d: { den, channel } });
@@ -163,7 +178,7 @@ export function sendCall(t, d) {
 export function onEvent(fn) {
     start();
     listeners.add(fn);
-    for (const replay of [latestDens, latestKeys]) {
+    for (const replay of [latestDens, latestKeys, latestNotifications]) {
         if (replay) queueMicrotask(() => listeners.has(fn) && fn(replay));
     }
     return () => listeners.delete(fn);

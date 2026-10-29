@@ -656,6 +656,8 @@ export function readKeyStatus(d) {
         names,
         configurable: helper && !!d.configurable,
         desktop: !!d?.desktop,
+        // The helper shows notifications as the desktop's own (M12.3).
+        notifies: helper && !!d.notifies,
     };
 }
 

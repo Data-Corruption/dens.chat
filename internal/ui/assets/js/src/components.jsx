@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { copyText } from './clipboard.js';
 import { InfoIcon } from './icons.jsx';
+import { onNotifications } from './notify.js';
 
 export function Card({ title, children, class: extra = '' }) {
     return (
@@ -214,4 +215,13 @@ export function checkPasswords(password, confirm) {
     if (password.length < 8) return 'The password needs at least 8 characters.';
     if (password !== confirm) return "The passwords don't match.";
     return '';
+}
+
+// useNotifications is the service's status of notifications (M12.3): the
+// member's settings, by kind, with what they muted, and on Android, the
+// shell's word; null until it comes.
+export function useNotifications() {
+    const [status, setStatus] = useState(null);
+    useEffect(() => onNotifications(setStatus), []);
+    return status;
 }
