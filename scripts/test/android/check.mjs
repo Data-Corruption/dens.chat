@@ -26,8 +26,11 @@ async function waitFor(fn, what, ms = 30000) {
     }
 }
 
-// The messages there, as their text, and the newest's photos.
+// The messages there, as their text, and the newest's ID. The page shows
+// only a long channel's newest stretch, and the e2e's den keeps its channel
+// from run to run, so a message sent may push an old one out of the page.
 const messages = `[...document.querySelectorAll('[data-id]')].map((m) => m.innerText.replace(/\\s+/g, ' ').trim())`;
+const newest = `[...document.querySelectorAll('[data-id]')].at(-1)?.dataset.id ?? ''`;
 const chips = `[...document.querySelectorAll('ul[aria-label="Files to send"] li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim())`;
 const composer = `document.querySelector('textarea[placeholder^="Message #"]')`;
 
@@ -69,7 +72,7 @@ try {
             break;
         }
         case 'photo': {
-            const before = (await b.eval(messages)).length;
+            const before = await b.eval(newest);
             await b.attach('input[type=file][multiple]', [arg]);
             // The page strips the photo, and makes its smaller copy, before
             // the chip says what goes.
@@ -79,7 +82,7 @@ try {
             }, 'the photo to settle on its smaller copy', 60000);
             await b.eval(`${composer}.focus(), true`);
             await enter();
-            await waitFor(async () => (await b.eval(chips)).length === 0 && (await b.eval(messages)).length > before, 'the photo to go');
+            await waitFor(async () => (await b.eval(chips)).length === 0 && (await b.eval(newest)) !== before, 'the photo to go');
             const shown = await waitFor(() => b.eval(`[...document.querySelectorAll('[data-id]')].at(-1)?.querySelector('img')?.complete`), 'the photo in the channel');
             console.log(`photo: went as "${chip}", shown ${shown}`);
             break;

@@ -10,8 +10,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.media.AudioRecordingConfiguration
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArraySet
@@ -22,11 +28,25 @@ import java.util.concurrent.TimeUnit
 // Dens with its data key, starts it again when it ends, but for a start
 // Dens refuses, and keeps the shell's stream with it, which says where the
 // page is. A foreground service of the specialUse type holds the dens'
-// connections while the app isn't on screen.
+// connections while the app isn't on screen, and of the microphone's type
+// too while the page has the microphone, as in a call, whose sound it
+// routes.
 class DensService : Service() {
     companion object {
         private const val NOTIFICATION = 1
         private const val CHANNEL = "service"
+        // The service's actions besides starting: the page takes the
+        // microphone (CALL), and a button on the call's notification moves
+        // its sound (ROUTE, with the route in an extra of that name).
+        private const val CALL = "call"
+        private const val ROUTE = "route"
+        // How long after the page stops recording its call ends: it may
+        // record again first, as when the member picks another microphone.
+        private const val CALL_ENDS_MS = 10_000L
+        // How long after a headset comes or goes the shell routes a call:
+        // the WebView's Chromium routes it by its own lights then, and the
+        // last to say is where it plays.
+        private const val SETTLE_MS = 500L
 
         // What the page's activity shows: the page's address, once Dens has
         // said it, or why Dens doesn't run.
@@ -36,6 +56,14 @@ class DensService : Service() {
 
         @Volatile
         var problem: String? = null
+            private set
+
+        // calling is whether the page has the microphone, as in a call: from
+        // the shell's granting it until the page has stopped recording for
+        // CALL_ENDS_MS. The service has the microphone's type then, and the
+        // activity holds the page as shown.
+        @Volatile
+        var calling = false
             private set
 
         private val watchers = CopyOnWriteArraySet<() -> Unit>()
@@ -53,6 +81,17 @@ class DensService : Service() {
             prefs(ctx).edit().putBoolean("running", true).apply()
             ctx.startForegroundService(Intent(ctx, DensService::class.java))
         }
+
+        // call gives the service the microphone's type, which Android needs
+        // to let the page record off screen, as the shell grants the page
+        // the microphone.
+        fun call(ctx: Context) {
+            if (!calling) {
+                calling = true
+                changed()
+            }
+            ctx.startForegroundService(Intent(ctx, DensService::class.java).setAction(CALL))
+        }
     }
 
     @Volatile private var stopping = false
@@ -61,10 +100,110 @@ class DensService : Service() {
     private var runner: Thread? = null
     private var linker: Thread? = null
     private val retry = LinkedBlockingQueue<Unit>()
+    private val main = Handler(Looper.getMainLooper())
+    // The recordings the page's call has made, by session; where the member
+    // chose its sound plays, if they did; and where Android last said it
+    // plays.
+    private var recorded = emptySet<Int>()
+    private var chosen: Audio.Route? = null
+    private var on: Audio.Route? = null
+
+    // The page records through the WebView, in the app's process, and
+    // Android says so here. It names no app, but a phone records for one
+    // app at a time. The WebView routes the call its own way as each
+    // recording opens, the first and any after, as when the member picks
+    // another microphone, so the shell routes it after.
+    private val recordings = object : AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) {
+            if (!calling) return
+            main.removeCallbacks(callEnds)
+            if (configs.isEmpty()) main.postDelayed(callEnds, CALL_ENDS_MS)
+            val sessions = configs.map { it.clientAudioSessionId }.toSet()
+            if ((sessions - recorded).isNotEmpty()) route(chosen ?: Audio.choose(this@DensService), if (recorded.isEmpty()) "as the call starts" else "as the page records again")
+            recorded = recorded + sessions
+        }
+    }
+
+    // A headset that connects during a call takes it, as on a phone call.
+    // A headset can show as more than one device, which come one by one.
+    private val headsetCame = Runnable {
+        chosen = null
+        route(Audio.choose(this), "as a headset connected")
+    }
+    private val devices = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
+            val headset = added.any { d -> Audio.routeOf(d)?.headset == true }
+            if (!calling || recorded.isEmpty() || !headset) return
+            main.removeCallbacks(headsetCame)
+            main.postDelayed(headsetCame, SETTLE_MS)
+        }
+    }
+
+    // The notification follows where the call's sound plays, whoever moved
+    // it. Android puts a call whose headset went on the earpiece, or on
+    // nothing; it goes where it would by itself instead.
+    private val moved = AudioManager.OnCommunicationDeviceChangedListener { d ->
+        if (!calling) return@OnCommunicationDeviceChangedListener
+        val was = on
+        on = Audio.routeOf(d)
+        Dens.log(this, "audio: Android plays the call ${on?.where ?: "where it would by itself"}")
+        update()
+        if (was?.headset == true && on != was) {
+            main.postDelayed({
+                if (calling && was !in Audio.available(this)) {
+                    if (chosen == was) chosen = null
+                    route(chosen ?: Audio.choose(this), "as its headset went")
+                }
+            }, SETTLE_MS)
+        }
+    }
+
+    // callEnds ends the page's call once it has stopped recording a while:
+    // the service drops the microphone's type, and the page is seen as it
+    // is again.
+    private val callEnds = Runnable {
+        Dens.log(this, "service: the page stopped recording, so its call is over")
+        calling = false
+        recorded = emptySet()
+        chosen = null
+        on = null
+        main.removeCallbacks(headsetCame)
+        Audio.clear(this)
+        foreground()
+        changed()
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        val am = getSystemService(AudioManager::class.java)
+        am.registerAudioRecordingCallback(recordings, main)
+        am.registerAudioDeviceCallback(devices, main)
+        am.addOnCommunicationDeviceChangedListener(mainExecutor, moved)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            // Only the notification changes: the service is in front
+            // already, and Android may not let a service take the
+            // microphone's type again from the background.
+            ROUTE -> {
+                val to = Audio.Route.entries.firstOrNull { it.name == intent.getStringExtra(ROUTE) }
+                if (calling && to != null) {
+                    chosen = to
+                    route(to, "as the member asked")
+                }
+                return START_STICKY
+            }
+            CALL -> {
+                // A page that never records, as when its microphone wouldn't
+                // open, has no call; one already recording stays in it.
+                main.removeCallbacks(callEnds)
+                if (getSystemService(AudioManager::class.java).activeRecordingConfigurations.isEmpty()) main.postDelayed(callEnds, CALL_ENDS_MS)
+                Dens.log(this, "service: the page has the microphone")
+            }
+        }
         foreground()
         stopping = false
         if (runner?.isAlive != true) {
@@ -84,23 +223,58 @@ class DensService : Service() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, "Connection", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) }
         )
+        // Android 14 and later need the service's type said; the
+        // microphone's keeps the page's recording going off screen.
+        val base = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        val mic = if (calling) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+        try {
+            startForeground(NOTIFICATION, notification(), base or mic)
+        } catch (e: Exception) {
+            Dens.log(this, "service: Android refused the foreground service${if (mic != 0) " with the microphone's type" else ""}: ${e.javaClass.simpleName}")
+            // The call goes on while the app is on screen.
+            if (mic != 0) {
+                try {
+                    startForeground(NOTIFICATION, notification(), base)
+                } catch (e: Exception) {
+                    Dens.log(this, "service: Android refused the foreground service: ${e.javaClass.simpleName}")
+                }
+            }
+        }
+    }
+
+    // notification is the service's: that it keeps the dens connected, or
+    // in a call, where the call's sound plays, with a button for each other
+    // place it may.
+    private fun notification(): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, PageActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        val n = Notification.Builder(this, CHANNEL)
+        val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(Dens.drawable(this, "notification"))
             .setContentTitle(applicationInfo.loadLabel(packageManager))
-            .setContentText("Keeps your dens connected")
             .setContentIntent(open)
             .setOngoing(true)
-            .build()
-        try {
-            if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIFICATION, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else {
-                startForeground(NOTIFICATION, n)
-            }
-        } catch (e: Exception) {
-            Dens.log(this, "service: Android refused the foreground service: ${e.javaClass.simpleName}")
+        if (!calling) return b.setContentText("Keeps your dens connected").build()
+        val now = Audio.current(this)
+        b.setContentText(if (now == null) "In a call" else "In a call, ${now.where}")
+        val here = Audio.available(this)
+        for (r in Audio.Route.entries) {
+            if (r == now || r !in here) continue
+            val go = Intent(this, DensService::class.java).setAction(ROUTE).putExtra(ROUTE, r.name)
+            b.addAction(Notification.Action.Builder(null, r.label, PendingIntent.getService(this, 1 + r.ordinal, go, PendingIntent.FLAG_IMMUTABLE)).build())
         }
+        return b.build()
+    }
+
+    // update shows the service's notification as things are now.
+    private fun update() {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification())
+    }
+
+    // route has the page's call play on route, as why says.
+    private fun route(to: Audio.Route?, why: String) {
+        if (to == null || !calling) return
+        val ok = Audio.set(this, to)
+        Dens.log(this, "audio: the call plays ${to.where} $why${if (ok) "" else ", which Android refused"}")
+        update()
     }
 
     // keepRunning keeps Dens running: it starts Dens with its key, and when
@@ -237,6 +411,11 @@ class DensService : Service() {
     override fun onDestroy() {
         Dens.log(this, "service: stopping")
         stopping = true
+        val am = getSystemService(AudioManager::class.java)
+        am.unregisterAudioRecordingCallback(recordings)
+        am.unregisterAudioDeviceCallback(devices)
+        am.removeOnCommunicationDeviceChangedListener(moved)
+        main.removeCallbacksAndMessages(null)
         stream?.close()
         // Dens stops on SIGTERM, as under systemd.
         process?.destroy()

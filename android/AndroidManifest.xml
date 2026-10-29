@@ -13,6 +13,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Calls (M12): the microphone, and the service's type for it while
+         the page has it; setting a call's mode and route, which the
+         WebView does too; and the call's notification, whose buttons move
+         its sound, which Android shows only once the member allows it. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- extractNativeLibs puts lib/<abi>/libdens.so in the native library
          directory, the only place an app may run a binary from. Backups
@@ -50,7 +58,7 @@
         <service
             android:name="chat.dens.shell.DensService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|microphone">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a chat client's connections to its servers open, so messages arrive" />

@@ -22,10 +22,16 @@
 // From M11 a member holding push to talk rings for everyone in the call,
 // through the den, and the page notes what its connection does for the
 // service's log.
+//
+// From M12 the page plays its call again as it thaws from a freeze. Where
+// audio may start without a click, as in Android's app, it makes its call's
+// audio contexts once the microphone is open, and plays the members' voices
+// through one of them, which Android then plays as a call's: under the
+// call's volume, and on the route the app's shell sets.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
-import { NO_CALLS, NO_SHARING, canCall, canShare } from './platform.js';
+import { NO_CALLS, NO_SHARING, autoplays, canCall, canShare } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
 
 const MIC = 'DENS_MIC';
@@ -34,6 +40,7 @@ const MUTED = 'DENS_MUTED';
 const DEAFENED = 'DENS_DEAFENED';
 const RNNOISE = 'DENS_RNNOISE';
 const VOLUMES = 'DENS_VOLUMES';
+const CALL_VOLUME = 'DENS_CALL_VOLUME';
 const VOICE = 'DENS_VOICE';
 const SHARE = 'DENS_SHARE';
 // How often a share checks its size, since a window it shows can change,
@@ -102,9 +109,13 @@ let warmContext = null;
 // audios plays each other member's stream, by their member ID: the den
 // labels the stream it sends their audio on with it.
 const audios = new Map();
-// meters measure each member's audio, and this page's own as sent ("self").
-let meterContext = null;
+// callContext is the call's audio context, where meters measure each
+// member's audio, and this page's own as sent ("self"). Where audio may
+// start without a click, it plays the members too, each through their gain
+// in voices, by member ID (M12).
+let callContext = null;
 const meters = new Map();
+const voices = new Map();
 let meterTimer = null;
 // speaking is who rings in the call: those the meters hear, audible, those
 // the den says hold push to talk, talkers (M11), and "self" while this
@@ -121,6 +132,8 @@ let rejoinTimer = null;
 let started = false;
 // volumes is how loud each member plays here, by den and member.
 let volumes = readVolumes(stored(VOLUMES));
+// wholeVolume is how loud the whole call plays here (M12).
+let wholeVolume = readCallVolume(stored(CALL_VOLUME));
 // share is the page's screen share (M4.2), or null: its status ("picking"
 // while the browser asks, "starting" until the den says it's live, then
 // "live"), its stream, tracks and quality, and the timer that checks its
@@ -139,7 +152,17 @@ function start() {
     started = true;
     watchKeys();
     onEvent(handle);
-    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => note({ what: 'hidden', hidden: document.hidden }));
+    if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => note({ what: 'hidden', hidden: document.hidden }));
+        // Chromium freezes a hidden page a minute after its sound stops,
+        // which pauses its media elements and never plays them again: the
+        // page plays its call's again as it thaws (M12).
+        document.addEventListener('freeze', () => note({ what: 'frozen' }));
+        document.addEventListener('resume', () => {
+            note({ what: 'resumed' });
+            playAgain(audios.values());
+        });
+    }
     onConnection((up) => {
         live = up;
         if (up) sendNotes();
@@ -223,11 +246,16 @@ export async function joinCall(den, channel, label) {
     talkers = new Set();
     unsent.length = 0;
     loadDen(call);
-    // The click that joins lets audio start, so the meters' context starts
+    // The click that joins lets audio start, so the call's context starts
     // here, and the voice processor's: one made after the browser has asked
-    // for the microphone may need another click to start.
-    startMeters();
-    if (!mic && !processorFailed) warmContext ??= new AudioContext({ sampleRate: 48000 });
+    // for the microphone may need another click to start. Where audio may
+    // start without one, both wait for the microphone: Android's app plays
+    // a context made while the microphone is open as a call's, and one made
+    // before it as media, never on a headset during a call (M12).
+    if (!autoplays()) {
+        startMeters();
+        if (!mic && !processorFailed) warmContext ??= new AudioContext({ sampleRate: 48000 });
+    }
     notify();
     await connect();
 }
@@ -269,7 +297,7 @@ function mute(muted) {
 function hear(on) {
     store(DEAFENED, on ? '' : '1');
     if (call) call.deafened = !on;
-    for (const audio of audios.values()) audio.muted = !on;
+    for (const member of audios.keys()) level(member);
     notify();
 }
 
@@ -294,7 +322,7 @@ async function connect() {
         notify();
     }, MIC_WAIT);
     try {
-        if (!mic) await openMic();
+        if (!mic) await openMic(c);
     } catch (e) {
         if (call === c) finish({ text: micProblem(e) });
         return;
@@ -314,6 +342,7 @@ async function connect() {
     c.screenMid = c.soundMid = null;
     pc = new RTCPeerConnection({ iceServers: [] });
     const own = pc;
+    sentBefore = { bytes: 0, at: performance.now() };
     pc.ontrack = (e) => play(e);
     pc.onconnectionstatechange = () => {
         if (pc !== own || call !== c) return;
@@ -390,14 +419,27 @@ function restart(c, why) {
     }, RESTART_WAIT);
 }
 
-async function openMic() {
+// openMic opens the microphone for call c, and sends it, and reports
+// whether it did: one that opens once c has ended, as when the member left
+// while the browser asked for it, closes again, since nothing would.
+async function openMic(c) {
     const v = await openVoice();
+    if (call !== c) {
+        v.stream.getTracks().forEach((t) => t.stop());
+        v.chain?.ctx.close().catch(() => {});
+        return false;
+    }
     closeChain();
     mic = v.stream;
     chain = v.chain;
     sent = v.track;
     applySending();
+    // Where audio may start without a click, the call's context starts now
+    // that the microphone is open (M12); otherwise it started as the call
+    // did.
+    startMeters();
     meter('self', new MediaStream([sent]));
+    return true;
 }
 
 // openVoice opens the microphone as chosen and runs it through the voice
@@ -524,22 +566,28 @@ export async function setRNNoise(on) {
     await restartMicTest();
 }
 
-// reopenMic opens the microphone again as chosen, and sends it.
+// reopenMic opens the microphone again as chosen, and sends it. The one it
+// replaces closes once the new one goes, or once the call has ended.
 async function reopenMic() {
-    if (!call || !mic) return;
+    const c = call;
+    if (!c || !mic) return;
     const old = mic;
     const oldChain = chain;
     chain = null;
     mic = null;
+    let opened;
     try {
-        await openMic();
+        opened = await openMic(c);
     } catch (e) {
-        mic = old;
-        chain = oldChain;
-        throw e;
+        if (call === c) {
+            mic = old;
+            chain = oldChain;
+            throw e;
+        }
+        opened = false;
     }
     const sender = pc?.getTransceivers()[0]?.sender;
-    if (sender && call?.attached) await sender.replaceTrack(sent);
+    if (opened && sender && call?.attached) await sender.replaceTrack(sent);
     old.getTracks().forEach((t) => t.stop());
     if (oldChain) oldChain.ctx.close().catch(() => {});
 }
@@ -1179,8 +1227,11 @@ function play(e) {
         if (speaker && audio.setSinkId) audio.setSinkId(speaker).catch(() => {});
         audios.set(member, audio);
     }
-    audio.volume = volumeIn(volumes, call?.den, member);
-    audio.muted = isDeafened();
+    // Where audio may start without a click, the call's context plays the
+    // member, as the call's sound (M12). Chromium decodes a member's stream
+    // only while a media element plays it, so theirs plays it too, muted.
+    if (autoplays()) playVoice(member, stream);
+    level(member);
     audio.srcObject = stream;
     audio.play().catch(() => {});
     meter(member, stream);
@@ -1190,8 +1241,53 @@ function play(e) {
             audio.srcObject = null;
             audios.delete(member);
             unmeter(member);
+            dropVoice(member);
         }
     };
+}
+
+// playVoice plays a member's stream through the call's context, at the
+// level the member here chose for them (M12).
+function playVoice(member, stream) {
+    if (!callContext) return;
+    dropVoice(member);
+    try {
+        const source = callContext.createMediaStreamSource(stream);
+        const gain = callContext.createGain();
+        source.connect(gain).connect(callContext.destination);
+        voices.set(member, { source, gain });
+    } catch {
+        // A stream without audio yet, as in meter.
+    }
+}
+
+function dropVoice(member) {
+    const v = voices.get(member);
+    if (!v) return;
+    v.source.disconnect();
+    v.gain.disconnect();
+    voices.delete(member);
+}
+
+// level plays a member as loud as the member here chose, under the call's
+// volume, and not at all while they're deafened: through the call's
+// context where it plays them, with their element muted, and through their
+// element otherwise.
+function level(member) {
+    const audio = audios.get(member);
+    const v = voices.get(member);
+    const volume = volumeIn(volumes, call?.den, member) * wholeVolume;
+    if (audio) {
+        audio.volume = volume;
+        audio.muted = !!v || isDeafened();
+    }
+    if (v) v.gain.gain.value = isDeafened() ? 0 : volume;
+}
+
+// playAgain plays again each element that holds a stream but stopped, as
+// a frozen page's do.
+export function playAgain(elements) {
+    for (const el of elements) if (el.srcObject && el.paused) el.play().catch(() => {});
 }
 
 function ended(reason) {
@@ -1328,6 +1424,7 @@ function clearTimers(c) {
 function closePeer() {
     clearInterval(statsTimer);
     statsTimer = null;
+    sentBefore = null;
     if (pc) {
         pc.ontrack = null;
         pc.onconnectionstatechange = null;
@@ -1338,6 +1435,7 @@ function closePeer() {
         audio.pause();
         audio.srcObject = null;
         unmeter(member);
+        dropVoice(member);
     }
     audios.clear();
 }
@@ -1370,11 +1468,15 @@ function finish(why) {
 // The page notes what its call's connection does, which the service logs
 // at debug by the notes' own fields alone: each change of its state, the
 // restarts it asks for, each join again and giving up, with why, its tab
-// hidden or shown, and at each change and every STATS_EVERY a summary of
-// its statistics. Notes made while the stream to the service is down wait,
-// the newest NOTES_KEPT, and go once it's back, saying how long before.
+// hidden or shown, its page frozen and thawed (M12), and at each change and
+// every STATS_EVERY a summary of its statistics. Notes made while the
+// stream to the service is down wait, the newest NOTES_KEPT, and go once
+// it's back, saying how long before.
 let statsTimer = null;
 const unsent = [];
+// sentBefore is how much the call had sent at its last summary, and when,
+// which the next measures the rate it sends at from.
+let sentBefore = null;
 
 function note(fields) {
     const c = call;
@@ -1393,6 +1495,10 @@ function sendNotes() {
     }
 }
 
+// noteStats notes a summary of the call's statistics, with the rate it has
+// sent at since the last, and how far the voice processor runs behind,
+// which tell a renderer short of CPU, as on a phone off screen, apart from
+// Opus's rate falling with the network's (M12).
 async function noteStats() {
     const own = pc;
     if (!own) return;
@@ -1402,15 +1508,49 @@ async function noteStats() {
     } catch {
         return;
     }
-    if (pc === own) note({ what: 'stats', stats: summarize(report) });
+    if (pc !== own) return;
+    const stats = summarize(report);
+    const now = performance.now();
+    stats.send_rate = sendRate(sentBefore, stats.bytes_sent, now);
+    sentBefore = { bytes: stats.bytes_sent, at: now };
+    const behind = processorBehind();
+    if (behind !== null) stats.behind = behind;
+    note({ what: 'stats', stats });
+}
+
+// sendRate is the rate in kbit/s a call sent at from before, what it had
+// sent and when, to now, when it has sent bytes; 0 without before.
+export function sendRate(before, bytes, now) {
+    if (!before || now <= before.at) return 0;
+    return Math.round((Math.max(0, bytes - before.bytes) * 8) / (now - before.at));
+}
+
+// processorBehind is how far the voice processor's audio has fallen behind
+// the clock since the call first summed its statistics up, in milliseconds,
+// or null where no processor runs. A processor that misses its turns, as
+// in a renderer short of CPU, renders less than the time gone by, and what
+// the call sends has gaps.
+function processorBehind() {
+    const ctx = chain?.ctx;
+    const t = ctx?.getOutputTimestamp?.();
+    if (!t?.performanceTime) return null;
+    chain.clock ??= t;
+    return behindBy(chain.clock, t);
+}
+
+// behindBy is how far an audio context's clock fell behind the page's
+// between two of its output timestamps, in milliseconds.
+export function behindBy(start, now) {
+    return Math.max(0, Math.round(now.performanceTime - start.performanceTime - (now.contextTime - start.contextTime) * 1000));
 }
 
 // summarize sums a getStats report up for the log: the path the call takes,
 // its protocol and its candidates' types, packets and bytes sent and
 // received, packets lost on the way in, and jitter and round-trip time, in
-// milliseconds. Chromium names the path in its transport's stats, and
-// Firefox marks its candidate pair selected; Firefox times the round trip
-// only in what the den reports back.
+// milliseconds, with the rate in kbit/s its encoder aims at (M12), which
+// Firefox doesn't say. Chromium names the path in its transport's stats,
+// and Firefox marks its candidate pair selected; Firefox times the round
+// trip only in what the den reports back.
 export function summarize(report) {
     const all = [...report.values()];
     const byID = new Map(all.map((x) => [x.id, x]));
@@ -1423,11 +1563,16 @@ export function summarize(report) {
     const ms = (seconds) => Math.round((Number(seconds) || 0) * 1000);
     const rtt = pair?.currentRoundTripTime ?? all.find((x) => x.type === 'remote-inbound-rtp' && x.roundTripTime !== undefined)?.roundTripTime;
     const jitter = Math.max(0, ...all.filter((x) => x.type === 'inbound-rtp').map((x) => Number(x.jitter) || 0));
+    // The voice goes on the den's first section, and a share's sound on one
+    // of its own.
+    const outAudio = all.filter((x) => x.type === 'outbound-rtp' && x.kind === 'audio');
+    const voiceOut = outAudio.find((x) => x.mid === '0') || outAudio[0];
     return {
         protocol: local?.protocol || '', local: local?.candidateType || '', remote: remote?.candidateType || '',
         packets_sent: sum('outbound-rtp', 'packetsSent'), bytes_sent: sum('outbound-rtp', 'bytesSent'),
         packets_received: sum('inbound-rtp', 'packetsReceived'), bytes_received: sum('inbound-rtp', 'bytesReceived'),
         packets_lost: Math.max(0, sum('inbound-rtp', 'packetsLost')), jitter: ms(jitter), rtt: ms(rtt),
+        target_rate: Math.round((Number(voiceOut?.targetBitrate) || 0) / 1000),
     };
 }
 
@@ -1717,12 +1862,12 @@ export function clearShareNotice() {
 // Speaking ----------------------------------------------------------------
 
 function startMeters() {
-    if (meterContext) return;
+    if (callContext) return;
     try {
-        meterContext = new AudioContext();
-        meterContext.resume().catch(() => {});
+        callContext = new AudioContext();
+        callContext.resume().catch(() => {});
     } catch {
-        meterContext = null;
+        callContext = null;
         return;
     }
     meterTimer = setInterval(measure, METER_MS);
@@ -1732,8 +1877,8 @@ function stopMeters() {
     clearInterval(meterTimer);
     meterTimer = null;
     for (const key of [...meters.keys()]) unmeter(key);
-    meterContext?.close().catch(() => {});
-    meterContext = null;
+    callContext?.close().catch(() => {});
+    callContext = null;
     lastLoud.clear();
     speaking = new Set();
 }
@@ -1742,11 +1887,11 @@ function stopMeters() {
 // Chromium measures a remote stream only while a media element plays it,
 // as play() does.
 function meter(key, stream) {
-    if (!meterContext) return;
+    if (!callContext) return;
     unmeter(key);
     try {
-        const source = meterContext.createMediaStreamSource(stream);
-        const analyser = meterContext.createAnalyser();
+        const source = callContext.createMediaStreamSource(stream);
+        const analyser = callContext.createAnalyser();
         analyser.fftSize = 512;
         source.connect(analyser);
         meters.set(key, { source, analyser, buffer: new Float32Array(analyser.fftSize) });
@@ -1801,6 +1946,10 @@ export function speakingNow(levels, last, now) {
 // speaker, so someone turned down stays down in the next call. It's the
 // volume of the media element that plays them, which tops out at 1: more
 // would mean playing them through Web Audio instead.
+//
+// The call's volume turns everyone down at once, under their own (M12):
+// a phone's loudspeaker plays a call loud even at its lowest call volume.
+// The browser keeps it too.
 
 const volumeKey = (den, member) => `${den}:${member}`;
 
@@ -1843,12 +1992,31 @@ export function withVolume(volumes, den, member, volume) {
     return next;
 }
 
+// readCallVolume reads the call's volume the browser kept: full unless
+// it's a volume.
+export function readCallVolume(text) {
+    const n = Number(text);
+    return text && Number.isFinite(n) ? clampVolume(n) : 1;
+}
+
+// callVolume is how loud the whole call plays here.
+export function callVolume() {
+    return wholeVolume;
+}
+
+// setCallVolume sets how loud the whole call plays here, mid-call too, and
+// keeps it.
+export function setCallVolume(volume) {
+    wholeVolume = clampVolume(volume);
+    store(CALL_VOLUME, wholeVolume === 1 ? '' : String(wholeVolume));
+    for (const member of audios.keys()) level(member);
+}
+
 // setVolume sets how loud a member plays here, mid-call too, and keeps it.
 export function setVolume(den, member, volume) {
     volumes = withVolume(volumes, den, member, volume);
     store(VOLUMES, Object.keys(volumes).length ? JSON.stringify(volumes) : '');
-    const audio = call?.den === den && audios.get(member);
-    if (audio) audio.volume = volumeIn(volumes, den, member);
+    if (call?.den === den) level(member);
     notify();
 }
 

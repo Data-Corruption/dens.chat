@@ -207,7 +207,16 @@ func (rt *router) pageData(title string) map[string]any {
 	data := rt.a.UI.PageData(title, rt.a.BuildInfo().Version)
 	data["Instance"] = rt.a.Layout.Instance
 	data["Pair"], data["PairLink"] = rt.pairCommands()
+	data["Autoplay"] = rt.autoplays()
 	return data
+}
+
+// autoplays reports whether the page's audio may start without a click,
+// which the Android app's WebView lets it: the page then makes its call's
+// audio once the microphone is open, which Android plays as a call's
+// (M12). A browser's page waits for a click as its browser may.
+func (rt *router) autoplays() bool {
+	return rt.a.Layout.Form == layout.Android
 }
 
 // pairCommands are what pair a browser with this instance: open, which

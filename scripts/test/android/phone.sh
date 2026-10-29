@@ -14,6 +14,7 @@
 #   pull                 copy the shell's files and Dens's logs to out/android/SERIAL
 #   log                  the app's own log lines
 #   shot FILE            a screenshot, if the app is in front
+#   allow                allow the permissions Android asks for on screen, as a member taps them
 #   drive ARGS           drive.mjs on the page
 #   serve [ARCH]         serve the APK to the device's browser at http://127.0.0.1:18499/dens.apk
 #   pair CODE            pair with a phone's wireless debugging: SERIAL is the pairing
@@ -76,6 +77,26 @@ case $COMMAND in
     fi
     adb exec-out screencap -p >"$1"
     ;;
+  allow)
+    # Android's dialogs come one at a time: the microphone's "While using
+    # the app", then, say, notifications' "Allow". The permission
+    # controller names its buttons alike on every version the app runs on.
+    allowed=0
+    for _ in 1 2 3 4; do
+      bounds=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null |
+        grep -oE 'resource-id="com.android.permissioncontroller:id/permission_allow_(foreground_only_)?button"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' |
+        head -n 1 | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
+      if [[ -z "$bounds" ]]; then
+        sleep 1
+        continue
+      fi
+      read -r x1 y1 x2 y2 <<<"$bounds"
+      adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+      allowed=$((allowed + 1))
+      sleep 1
+    done
+    echo "allowed $allowed"
+    ;;
   drive)
     incus file push -q scripts/test/android/drive.mjs "$CONTAINER/root/drive.mjs"
     incus exec "$CONTAINER" --env ANDROID_APP="$APP" -- /root/node /root/drive.mjs -s "$SERIAL" "$@"
@@ -93,7 +114,7 @@ case $COMMAND in
     incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb connect "$SERIAL"
     ;;
   *)
-    sed -n '8,23p' "$0" >&2
+    sed -n '8,24p' "$0" >&2
     exit 2
     ;;
 esac

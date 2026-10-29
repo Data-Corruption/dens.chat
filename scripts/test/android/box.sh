@@ -78,13 +78,14 @@ booted() {
 
 # boot NAME PORT starts the emulator on device NAME, headless, with
 # software graphics, unless it's up, and waits for Android to finish
-# starting.
+# starting. Its sound card hears silence and plays to nowhere: a call's
+# page records from it as on a phone, which Android reports to the app.
 boot() {
   if booted "$2"; then
     echo "$1 is up"
     return 0
   fi
-  nohup "$SDK/emulator/emulator" -avd "$1" -no-window -no-audio -no-snapshot -no-boot-anim \
+  nohup "$SDK/emulator/emulator" -avd "$1" -no-window -audio none -no-snapshot -no-boot-anim \
     -gpu swiftshader_indirect -port "$2" >"/root/emulator-$1.log" 2>&1 &
   i=0
   until booted "$2"; do

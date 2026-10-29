@@ -37,6 +37,13 @@ export function canShare(win = globalThis) {
     return canCall(win) && typeof win.navigator?.mediaDevices?.getDisplayMedia === 'function';
 }
 
+// autoplays says whether the page's audio may start without a click, as
+// the service says its form lets it: Android's app does (M12). doc is the
+// page's document, or a stand-in in the tests.
+export function autoplays(doc = globalThis.document) {
+    return doc?.getElementById?.('app')?.dataset?.autoplay === 'true';
+}
+
 // canPopOut says whether the browser opens a share in a window of its own
 // that the member can move to another monitor (M11). Phones' browsers and
 // Android's WebView open no such window, and capture no screen either,
