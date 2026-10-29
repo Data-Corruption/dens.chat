@@ -16,8 +16,8 @@ computer too, and opens it in their browser.
 
 - [Install](install/): putting Dens on Linux or Windows, or its Flatpak on
   other Linux distributions, updating it and removing it.
-- [Join a den](join/): invites, your passwords and recovery codes, new devices
-  and DMs.
+- [Join a den](join/): invites, your passwords and recovery codes, new devices,
+  DMs and notifications.
 - [Host a den](host/): a domain, your router and Caddy, step by step, then
   running the den.
 - [Host on a server](server/): Dens on a Linux server or container, and moving

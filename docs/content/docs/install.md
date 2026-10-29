@@ -119,7 +119,8 @@ Waterfox on Windows can show a blank page for a link another program opens.
 If it does, click the address bar and press Enter: the link is still there,
 and still works.
 
-On Linux you can also pick Dens from your apps menu.
+On Linux you can also pick Dens from your apps menu, and on Windows from the
+Start menu.
 
 {{% /steps %}}
 

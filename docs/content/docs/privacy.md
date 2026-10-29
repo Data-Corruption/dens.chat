@@ -54,6 +54,9 @@ held until the backup itself is deleted.
   and sees who DMs whom and when. Join dens run by people you trust, or host
   your own.
 - **Members** screenshotting or repeating what you say.
+- **Whoever sees your screen.** A notification shows the start of a message, a
+  DM's included. Turn off **Show the message**, in the settings under **Chat &
+  media**, and it says only who sent one.
 - **A compromised computer**, yours or the den's.
 - **Traffic analysis.** A den sees its members' IP addresses while they're
   connected.
