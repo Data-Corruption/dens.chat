@@ -219,9 +219,15 @@ journalctl -u dens-publish-host --since "$journal_since" -q --no-pager | grep -q
 
 echo ">> A host whose repository doesn't check out is refused"
 release v1.2.2
-object=$(find "$HOST/flatpak/repo/objects" -name '*.filez' | head -n 1)
+# A byte of the largest file object, the binary's, turned into another in
+# its middle: a small object's compressed stream may end before the byte,
+# and what lies past its end goes unread.
+object=$(find "$HOST/flatpak/repo/objects" -name '*.filez' -printf '%s %p\n' | sort -n | tail -n 1 | cut -d' ' -f2-)
 cp "$object" "$WORK/object"
-printf 'X' | dd of="$object" bs=1 seek=40 conv=notrunc 2>/dev/null
+at=$(($(stat -c %s "$object") / 2))
+byte=$(od -An -tu1 -j "$at" -N1 "$object" | tr -d ' ')
+printf '%b' "\\0$(printf '%03o' $(((byte + 1) % 256)))" | dd of="$object" bs=1 seek="$at" conv=notrunc 2>/dev/null
+cmp -s "$object" "$WORK/object" && fail "the object didn't change"
 refused "doesn't check out"
 cp "$WORK/object" "$object"
 rm -rf "$SNAPSHOT"
