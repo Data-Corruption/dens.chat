@@ -7,7 +7,10 @@
 # its page without a token; the page takes a local password and joins the
 # den; a message goes each way from the composer; a phone photo goes as a
 # smaller copy, and saved from the viewer it reaches Downloads with no GPS
-# or camera left in it. Dens killed under the shell starts again, and the
+# or camera left in it. A call with the den's owner goes on through two
+# and a half minutes off screen (M12.2), most of them silent, as the app
+# holds its page as shown, and lets the page and the microphone go once
+# the call ends. Dens killed under the shell starts again, and the
 # app force-stopped and opened again keeps its page's session; Back leaves
 # the page, and a link opens outside it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Android 12's
@@ -169,6 +172,49 @@ left=$("$exiftool" -s -s -s -GPS:all -Make -Model -DateTimeOriginal "$RUN_LOG_DI
 [[ -z "$left" ]] || fail "the saved photo kept: $left"
 ok "a phone photo went as its smaller copy, and saved from the viewer it reached Downloads, its GPS and camera gone"
 
+# A call with desk, whose fake microphone speaks but for most of the two
+# and a half minutes the phone's screen is off. The emulator's microphone
+# hears silence, so the phone's page hears and sends nothing then: Chromium
+# would freeze a page that quiet a minute after it hid, but the app tells
+# its WebView it shows while the page has the microphone.
+echo ">> A call, off screen"
+incus file push -q --uid 1000 --gid 1000 scripts/test/android/call.mjs dens-browsers/home/tester/browser/call.mjs
+incus exec dens-browsers --user 1000 --group 1000 --cwd /home/tester/browser --env HOME=/home/tester --env XDG_RUNTIME_DIR=/run/user/1000 -- \
+  /home/tester/node call.mjs desk 215 quiet 20 150 >"$RUN_LOG_DIR/call-desk.log" 2>&1 &
+desk_call=$!
+sleep 5
+incus exec "$CONTAINER" -- /root/node /root/call.mjs phone 200 "$serial" >"$RUN_LOG_DIR/call-phone.log" 2>&1 &
+phone_call=$!
+sleep 3
+[[ $(phone allow) == "allowed 2" ]] || fail "Android didn't ask for the microphone and notifications"
+granted() { shell_log | grep -q 'page: granted it the microphone'; }
+waitfor 20 "the page to get the microphone" granted
+routed() { shell_log | grep -q 'audio: the call plays on the loudspeaker as the call starts'; }
+waitfor 20 "the call's route" routed
+# Whole, since grep -q leaves adb writing to a closed pipe, which
+# pipefail counts as failing.
+services() { adb shell dumpsys activity services "$APP"; }
+[[ $(services) == *'types=0x40000080'* ]] || fail "the service hasn't the microphone's type"
+[[ $(adb shell dumpsys notification --noredact) == *'In a call, on the loudspeaker'* ]] || fail "no call in the service's notification"
+ok "Android asked for the microphone and notifications, the service took the microphone's type, and the call went to the loudspeaker"
+sleep 8
+adb shell input keyevent KEYCODE_SLEEP
+off=$(date +%s%3N)
+sleep 150
+adb shell input keyevent KEYCODE_WAKEUP
+on=$(date +%s%3N)
+adb shell wm dismiss-keyguard >/dev/null 2>&1 || :
+wait "$phone_call" || fail "the phone's side of the call: $(tail -n 3 "$RUN_LOG_DIR/call-phone.log")"
+wait "$desk_call" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/call-desk.log")"
+"$(./scripts/vendor.sh node 2>/dev/null | sed -n 's/^node=//p')" scripts/test/android/call.mjs judge \
+  "$RUN_LOG_DIR/call-phone.log" "$RUN_LOG_DIR/call-desk.log" "$off" "$on" | tee "$RUN_LOG_DIR/call-judged.log" ||
+  fail "the call off screen"
+ended() { shell_log | grep -q 'service: the page stopped recording, so its call is over'; }
+waitfor 25 "the call's end" ended
+shell_log | grep -q 'page: no longer held' || fail "the page still held after its call"
+[[ $(services) == *'types=0x40000000'* ]] || fail "the service kept the microphone's type after the call"
+ok "the call held through $(((on - off) / 1000)) s off screen, both ways, and once it ended the service let the microphone and the page go"
+
 adb shell run-as "$APP" sh -c "'kill -9 \$(pidof libdens.so)'"
 waitfor 30 "Dens started again" sh -c "scripts/test/android/phone.sh $serial log -s Dens:* | grep -q 'Dens ended (signal 9)'"
 waitfor 30 "the page again" check paired
@@ -183,10 +229,15 @@ ok "Dens killed started again, and the app force-stopped kept its page's session
 phone drive eval 'location.href = "https://example.com/", true' >/dev/null
 waitfor 10 "the link to go out" sh -c "scripts/test/android/phone.sh $serial log -s Dens:* | grep -q 'a https link went out'"
 [[ $(phone drive eval 'location.pathname') == '"/"' ]] || fail "the page left for the link"
+# The browser takes a while to come up the first time, and would come up
+# over the page again: each move waits for the last.
+front() { [[ $(adb shell dumpsys activity activities) =~ topResumedActivity=[^$'\n']*$APP/ ]]; }
+behind() { ! front; }
+waitfor 20 "the link's app in front" behind
 adb shell am start -n "$APP/chat.dens.shell.PageActivity" >/dev/null 2>&1
+waitfor 10 "the page in front again" front
 adb shell input keyevent KEYCODE_BACK
-sleep 2
-! adb shell dumpsys activity activities | grep -E 'topResumedActivity' | grep -q "$APP" || fail "Back at the page's first address didn't leave it"
+waitfor 5 "Back to leave the page at its first address" behind
 ok "a link opened outside the page, and Back left it"
 
 incus file push -q "$RUN_LOG_DIR/host.test" "$CONTAINER/root/host.test"

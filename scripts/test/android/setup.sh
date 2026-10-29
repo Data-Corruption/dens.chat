@@ -60,5 +60,5 @@ in_box /root/box.sh sdk
 in_box /root/box.sh avd a17 android-37.0/google_apis/x86_64
 in_box /root/box.sh avd a12 android-31/google_apis/x86_64
 incus file push -q --mode 0755 "$node" "$CONTAINER/root/node"
-incus file push -q scripts/test/android/drive.mjs scripts/test/android/check.mjs "$CONTAINER/root/"
+incus file push -q scripts/test/android/drive.mjs scripts/test/android/check.mjs scripts/test/android/call.mjs "$CONTAINER/root/"
 echo "$CONTAINER is ready"

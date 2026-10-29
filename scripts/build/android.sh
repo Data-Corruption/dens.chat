@@ -77,7 +77,9 @@ android_build() {
   export JAVA_HOME="$tools/jdk"
   export PATH="$JAVA_HOME/bin:$PATH"
 
-  local work="$OUT_DIR/android"
+  # Its own directory: out/android holds what phone.sh and bg.sh keep of
+  # each device.
+  local work="$OUT_DIR/android-build"
   rm -rf "$work" "$OUT_DIR"/android-*.apk*
   mkdir -p "$work/dex"
   frontend_build
