@@ -415,6 +415,31 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # The Android app, built as a development build, signed with a key the
+  # build makes on the runner: Go vetted for Android, the shell compiled and
+  # its calls checked against the oldest Android it runs on, both APKs, and
+  # the host package's tests built for the emulator. The release job builds
+  # the release's APK, so releases wait for it; the emulator's e2e runs on a
+  # developer's machine (scripts/test-android-e2e.sh).
+  android-build:
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build the Android app
+        run: ./scripts/test.sh -android
+
   release:
     # Pull requests never publish, and a push publishes only when the plan
     # asks for a release job, which it never does before the first release.
@@ -435,7 +460,8 @@ jobs:
             needs.linux-den-e2e.result == 'success' &&
             needs.flatpak-e2e.result == 'success' &&
             needs.media-module.result == 'success' &&
-            needs.media-fuzz.result == 'success') ||
+            needs.media-fuzz.result == 'success' &&
+            needs.android-build.result == 'success') ||
            (needs.release-plan.outputs.e2e_required == 'false' &&
             needs.windows-e2e.result == 'skipped' &&
             needs.linux-tests.result == 'skipped' &&
@@ -443,7 +469,8 @@ jobs:
             needs.linux-den-e2e.result == 'skipped' &&
             needs.flatpak-e2e.result == 'skipped' &&
             needs.media-module.result == 'skipped' &&
-            needs.media-fuzz.result == 'skipped')) &&
+            needs.media-fuzz.result == 'skipped' &&
+            needs.android-build.result == 'skipped')) &&
           !contains(needs.*.result, 'failure') &&
           !contains(needs.*.result, 'cancelled') }}
     needs:
@@ -456,6 +483,7 @@ jobs:
       - flatpak-e2e
       - media-module
       - media-fuzz
+      - android-build
     # Installer validation runs here too; jobs do not share the E2E daemon.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
