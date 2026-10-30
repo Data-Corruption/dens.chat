@@ -2,3 +2,7 @@
 *.go text eol=lf
 internal/build/notices.txt text eol=lf
 *.syso binary
+# A release's signed checksums, which tests check byte for byte, and
+# Sigstore's trusted root as its TUF repository served it (M12.4).
+internal/platform/release/testdata/** -text
+internal/platform/release/trusted_root.json -text

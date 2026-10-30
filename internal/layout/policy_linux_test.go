@@ -125,6 +125,7 @@ func TestAndroidLayoutUsesTheAppsFiles(t *testing.T) {
 		l.Cache:           filepath.Join(root, "data", "cache"),
 		l.ControlEndpoint: filepath.Join(root, "run", "control.sock"),
 		l.HostKey:         filepath.Join(root, "control", "datakey.keystore"),
+		l.Update:          filepath.Join(root, "update"),
 	} {
 		if path != want {
 			t.Errorf("path %s, want %s", path, want)

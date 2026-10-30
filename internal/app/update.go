@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -21,10 +20,13 @@ const UpdateCheckInterval = 24 * time.Hour
 
 // ChecksForUpdates reports whether this instance asks the release host for
 // updates, and tells the member of them: an installed one does, given a
-// release host. A development build has nothing to update to.
+// release host, and so does the Android app, whose release names its host,
+// and which downloads each update for its shell to install (M12). A
+// development build has nothing to update to, and the Flatpak updates
+// through Flatpak.
 func (a *App) ChecksForUpdates() bool {
 	switch a.Layout.Form {
-	case layout.Installed:
+	case layout.Installed, layout.Android:
 		return a.Instance.ReleaseURL != ""
 	}
 	return false
@@ -83,12 +85,18 @@ func (a *App) CheckForUpdate(ctx context.Context) error {
 
 // RunUpdateChecker checks once a day while background checks are enabled.
 // Preferences are reread every hour, so turning checks off takes effect
-// without a restart. It never installs anything.
+// without a restart. It never installs anything: on Android it downloads
+// what it finds, which the shell hands to Android's installer once the
+// member asks it to (M12).
 func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 	ready()
 	if !a.ChecksForUpdates() {
 		<-ctx.Done()
 		return nil
+	}
+	android := a.Layout.Form == layout.Android
+	if android {
+		a.checkStagedUpdate()
 	}
 	for {
 		delay := time.Hour
@@ -100,16 +108,14 @@ func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 				time.Since(cfg.LastUpdateCheck) >= UpdateCheckInterval
 			if due {
 				if err := a.CheckForUpdate(ctx); err != nil && ctx.Err() == nil {
-					// Go's network errors name the address they failed to
-					// reach, which logs don't keep (M8).
-					var netErr net.Error
-					if errors.As(err, &netErr) {
-						err = errors.New("the release host can't be reached")
-					}
-					a.Log.Warnf("update check failed: %v", err)
+					a.Log.Warnf("update check failed: %v", quietNetError(err))
 				}
 			} else if until := time.Until(cfg.LastUpdateCheck.Add(UpdateCheckInterval)); until < delay {
 				delay = max(until, time.Minute)
+			}
+			// A download cut off tries again within the hour.
+			if android {
+				a.readyAndroidUpdate(ctx)
 			}
 		}
 		timer := time.NewTimer(delay)

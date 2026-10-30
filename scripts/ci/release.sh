@@ -4,19 +4,26 @@
 # release policy, immutable objects, installer publication, promotion, tagging,
 # and retention. Keep durable remote writes in protocol order.
 
-RELEASE_CHECKSUM_OBJECTS=(
-  linux-amd64.gz
-  linux-arm64.gz
-  windows-amd64.exe.gz
-  windows-arm64.exe.gz
-  ffmpeg-source.tar.xz
-  version
-)
-RELEASE_OBJECTS=(
-  "${RELEASE_CHECKSUM_OBJECTS[@]}"
-  checksums.txt
-  checksums.txt.cosign.bundle
-)
+# The first release with the Android app's APK (M12.4): an older one has
+# none to check.
+ANDROID_FIRST_RELEASE=v1.5.0
+
+# release_checksum_objects VERSION lists the files VERSION's checksums
+# name: the binaries, FFmpeg's source and the version marker, and from
+# ANDROID_FIRST_RELEASE the APK for phones.
+release_checksum_objects() {
+  printf '%s\n' linux-amd64.gz linux-arm64.gz windows-amd64.exe.gz windows-arm64.exe.gz ffmpeg-source.tar.xz version
+  if [[ "$(semver_compare "$1" "$ANDROID_FIRST_RELEASE")" != -1 ]]; then
+    printf '%s\n' android-arm64.apk
+  fi
+}
+
+# release_objects VERSION lists every file of VERSION's release, in the
+# order they're uploaded: the checksums and their signature last.
+release_objects() {
+  release_checksum_objects "$1"
+  printf '%s\n' checksums.txt checksums.txt.cosign.bundle
+}
 
 # Remote inspection uses one status convention throughout this file:
 # 0 is present/verified, 1 is absent/incomplete, and 2 is invalid or unreadable.
@@ -219,8 +226,12 @@ remote_file_exists() {
 upload_remote_file() {
   local source="$1"
   local path="$2"
+  # An APK is served as one, which a phone's browser hands to Android's
+  # installer (M12.4).
+  local type=()
+  [[ "$path" != *.apk ]] || type=(--header-upload "Content-Type: application/vnd.android.package-archive")
   run_step "Uploaded $path" "Failed to upload $path" \
-    rclone copyto "$source" "$PUBLISH_REMOTE/$path" "${UPLOAD_ARGS[@]}" "${RCLONE_ARGS[@]}"
+    rclone copyto "$source" "$PUBLISH_REMOTE/$path" "${UPLOAD_ARGS[@]}" "${type[@]}" "${RCLONE_ARGS[@]}"
 }
 
 download_remote_file() {
@@ -277,8 +288,9 @@ remote_tag_exists() {
 verify_release_files() {
   local dir="$1"
   local version="$2"
-  local file count
-  for file in "${RELEASE_CHECKSUM_OBJECTS[@]}"; do
+  local file count objects
+  mapfile -t objects < <(release_checksum_objects "$version")
+  for file in "${objects[@]}"; do
     count=$(awk -v file="$file" '$2 == file {count++} END {print count+0}' "$dir/checksums.txt")
     if [[ "$count" -ne 1 ]]; then
       printf "error: signed checksums contain %d entries for %s\n" "$count" "$file" >&2
@@ -306,8 +318,9 @@ verify_remote_release() {
   local version="$1"
   local destination="$2"
   local prefix="releases/$version"
-  local file status
-  for file in "${RELEASE_OBJECTS[@]}"; do
+  local file status objects
+  mapfile -t objects < <(release_objects "$version")
+  for file in "${objects[@]}"; do
     if remote_file_exists "$prefix/$file"; then
       :
     else
@@ -319,7 +332,7 @@ verify_remote_release() {
 
   rm -rf "$destination"
   mkdir -p "$destination"
-  for file in "${RELEASE_OBJECTS[@]}"; do
+  for file in "${objects[@]}"; do
     if ! rclone copyto "$PUBLISH_REMOTE/$prefix/$file" "$destination/$file" "${RCLONE_ARGS[@]}" >/dev/null 2>&1; then
       printf "error: failed to download %s/%s for verification\n" "$prefix" "$file" >&2
       return 2
@@ -398,8 +411,9 @@ resolve_release_policy() {
 }
 
 upload_application_release() {
-  local file
-  for file in "${RELEASE_OBJECTS[@]}"; do
+  local file objects
+  mapfile -t objects < <(release_objects "$VERSION")
+  for file in "${objects[@]}"; do
     upload_remote_file "$VERSION_DIR/$file" "releases/$VERSION/$file"
   done
   local verified="$OUT_DIR/verified-$VERSION"
@@ -678,6 +692,38 @@ promote_release() {
   printf "🟢 Promoted release %s\n" "$VERSION"
 }
 
+# publish_root_apk keeps a copy of the promoted release's APK at the
+# release host's root, dens.apk, which the install guide links to, since a
+# release's own paths name its version (M12.4). It's replaced as each
+# release is promoted, by the APK this run verified with the release, which
+# its checksums and their signature cover, and read back.
+publish_root_apk() {
+  if [[ "$(semver_compare "$VERSION" "$ANDROID_FIRST_RELEASE")" == -1 ]]; then
+    return
+  fi
+  local apk="$VERSION_DIR/android-arm64.apk" remote="$OUT_DIR/root-apk" want status
+  want=$(sha256sum "$apk" | awk '{print $1}')
+  if remote_file_exists dens.apk; then
+    rm -f "$remote"
+    if rclone copyto "$PUBLISH_REMOTE/dens.apk" "$remote" "${RCLONE_ARGS[@]}" >/dev/null 2>&1 &&
+        [[ "$(sha256sum "$remote" | awk '{print $1}')" == "$want" ]]; then
+      printf "🟢 dens.apk is %s's already\n" "$VERSION"
+      return
+    fi
+  else
+    status=$?
+    [[ "$status" -eq "$REMOTE_ABSENT" ]] || exit "$status"
+  fi
+  upload_remote_file "$apk" dens.apk
+  rm -f "$remote"
+  if ! rclone copyto "$PUBLISH_REMOTE/dens.apk" "$remote" "${RCLONE_ARGS[@]}" >/dev/null 2>&1 ||
+      [[ "$(sha256sum "$remote" | awk '{print $1}')" != "$want" ]]; then
+    printf "error: dens.apk doesn't read back as %s's APK\n" "$VERSION" >&2
+    exit 1
+  fi
+  printf "🟢 dens.apk is %s's\n" "$VERSION"
+}
+
 ensure_promotion_marker() {
   local path=".state/promotions/$VERSION"
   local status
@@ -875,4 +921,23 @@ cleanup_old_releases() {
 sign_application_release() {
   run_step "Signed checksums.txt" "Failed to sign checksums.txt" \
     "$COSIGN_BIN" sign-blob --yes --bundle "$VERSION_DIR/checksums.txt.cosign.bundle" "$VERSION_DIR/checksums.txt"
+}
+
+# check_signature_as_the_app checks the new release's signed checksums as
+# the Android app's updater will, which reads the bundle itself, where no
+# cosign runs, against the trusted root its build embeds (M12.4): a change
+# in what cosign writes, or in Sigstore's root, stops the release before
+# anything is published, rather than every app's next update.
+check_signature_as_the_app() {
+  run_step "Checked the signed checksums as the Android app does" "The Android app can't check this release's signature" \
+    env DENS_CHECK_RELEASE="$(cd "$VERSION_DIR" && pwd)" DENS_CHECK_IDENTITY="$CERT_IDENTITY" DENS_CHECK_ISSUER="$OIDC_ISSUER" \
+      go test ./internal/platform/release -run '^TestReleaseChecksOutForTheApp$' -count=1 -v
+}
+
+# package_android builds the release's APK into its directory (M12.4).
+package_android() {
+  if [[ "$(semver_compare "$VERSION" "$ANDROID_FIRST_RELEASE")" == -1 ]]; then
+    return
+  fi
+  android_release "$VERSION_DIR"
 }

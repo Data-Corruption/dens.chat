@@ -16,6 +16,8 @@ computer too, and opens it in their browser.
 
 - [Install](install/): putting Dens on Linux or Windows, or its Flatpak on
   other Linux distributions, updating it and removing it.
+- [Android](android/): the app for your phone, installing it, keeping it
+  connected, and its updates.
 - [Join a den](join/): invites, your passwords and recovery codes, new devices,
   DMs and notifications.
 - [Host a den](host/): a domain, your router and Caddy, step by step, then

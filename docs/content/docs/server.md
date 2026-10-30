@@ -1,6 +1,6 @@
 ---
 title: Host on a server
-weight: 4
+weight: 5
 ---
 
 A den can live on a machine that stays on, such as a home server, a mini PC

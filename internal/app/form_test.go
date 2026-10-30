@@ -59,9 +59,10 @@ func TestFormOfBuild(t *testing.T) {
 	}
 }
 
-// Only an installed instance asks its release host for updates and tells
-// the member of one; a development build has nothing to update to.
-func TestOnlyAnInstalledInstanceChecksForUpdates(t *testing.T) {
+// An installed instance and the Android app ask their release host for
+// updates and tell the member of one (M12.4); a development build has
+// nothing to update to, and the Flatpak updates through Flatpak.
+func TestWhoChecksForUpdates(t *testing.T) {
 	const source = "https://releases.example"
 	found := &types.Configuration{UpdateCheckSource: source, LatestUpdateVersion: "v1.2.0"}
 	for _, c := range []struct {
@@ -71,7 +72,10 @@ func TestOnlyAnInstalledInstanceChecksForUpdates(t *testing.T) {
 	}{
 		{layout.Installed, source, true},
 		{layout.Installed, "", false},
+		{layout.Android, source, true},
+		{layout.Android, "", false},
 		{layout.Development, source, false},
+		{layout.Flatpak, source, false},
 	} {
 		a := &App{
 			buildInfo: build.BuildInfo{Name: "dens", Version: "v1.1.0"},

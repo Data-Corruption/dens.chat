@@ -256,3 +256,48 @@ test('a microphone that opens once its call has ended closes again', async () =>
     await joining;
     assert.equal(mics.at(-1).getTracks()[0].readyState, 'ended');
 });
+
+// Chromium keeps the stream that played a call's members a few seconds
+// after the call, and hands it to the next call's, which the S24 can't
+// start again: every other quick rejoin there was silent (M12). A call
+// joined soon after the last plays its members afresh a moment in; one
+// joined once that stream has gone needn't.
+test("where audio may start without a click, a call joined soon after the last plays its members afresh a moment in", async () => {
+    const timers = [];
+    const pageTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = (fn, ms, ...args) => {
+        if (ms === 2000 || ms === 200) {
+            timers.push({ fn, ms });
+            return timers.length;
+        }
+        return pageTimeout(fn, ms, ...args);
+    };
+    const later = (ms) => (performance.now = () => Object.getPrototypeOf(performance).now.call(performance) + ms);
+    try {
+        await joined(true);
+        leaveCall();
+        timers.length = 0;
+        const { element } = await joined(true);
+        const member = element.srcObject;
+        const replay = timers.find((t) => t.ms === 2000);
+        assert.ok(replay, 'the call means to play its members afresh');
+        replay.fn();
+        assert.equal(element.srcObject, null, 'the element lets its stream go');
+        assert.ok(timers.find((t) => t.ms === 200), 'and plays it again a moment later');
+        timers.find((t) => t.ms === 200).fn();
+        assert.equal(element.srcObject, member);
+        assert.equal(element.paused, false);
+        assert.equal(element.muted, true, "still playing nothing itself: the call's context plays the member");
+        leaveCall();
+
+        timers.length = 0;
+        later(7000);
+        const { element: once } = await joined(true);
+        assert.equal(timers.filter((t) => t.ms === 2000).length, 0, 'a call joined once the stream has gone plays its members once');
+        assert.equal(once.paused, false);
+        leaveCall();
+    } finally {
+        globalThis.setTimeout = pageTimeout;
+        delete performance.now;
+    }
+});

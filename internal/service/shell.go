@@ -18,7 +18,10 @@ import (
 // page, and from M12.3 notify for a notification to post, which replaces
 // its channel's, unnotify for those to take back, and notifying, whether
 // the member has any turned on, which the shell asks Android to let it
-// post. The shell sends front as the app comes in front and leaves it, and
+// post. From M12.4 it sends update, a newer release's APK the updater
+// checked, which the shell posts is ready, and install, the member asking
+// the page to install it, which the shell hands to Android's installer.
+// The shell sends front as the app comes in front and leaves it, and
 // notifies, whether Android lets it post notifications, as the stream
 // opens and as that changes.
 const (
@@ -26,6 +29,8 @@ const (
 	msgShellNotify    = "notify"
 	msgShellUnnotify  = "unnotify"
 	msgShellNotifying = "notifying"
+	msgShellUpdate    = "update"
+	msgShellInstall   = "install"
 	msgShellFront     = "front"
 	msgShellNotifies  = "notifies"
 )
@@ -60,6 +65,10 @@ func (p shellPlace) Settings(s types.Notifications) {
 	_ = p.s.Send(msgShellNotifying, shellSwitch{On: s.DMs || s.Mentions})
 }
 
+// The shell, as the updater tells it of an update (M12.4).
+func (p shellPlace) UpdateReady(u app.UpdateReady)   { _ = p.s.Send(msgShellUpdate, u) }
+func (p shellPlace) InstallUpdate(u app.UpdateReady) { _ = p.s.Send(msgShellInstall, u) }
+
 // shellStream serves the shell's stream until either side closes it, or
 // the service stops.
 func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error {
@@ -75,6 +84,8 @@ func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error 
 		place := shellPlace{s}
 		a.Notify.SetShell(place)
 		defer a.Notify.DropShell(place)
+		a.SetUpdateShell(place)
+		defer a.DropUpdateShell(place)
 		go s.KeepAlive(ctx)
 		for {
 			// A newer shell's lines this service doesn't know, it ignores.

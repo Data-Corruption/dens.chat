@@ -73,6 +73,7 @@ func (l *Layout) resolve() error {
 		l.Root = filepath.Join(dataHome, l.App, l.Instance)
 		l.derive()
 		l.HostKey = filepath.Join(l.Control, "datakey.keystore")
+		l.Update = filepath.Join(l.Root, "update")
 		l.Runtime = filepath.Join(l.Root, "run")
 		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
 	default:

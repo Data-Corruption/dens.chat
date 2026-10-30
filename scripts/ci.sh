@@ -11,7 +11,9 @@
 #
 #   ./scripts/ci.sh --execute
 #     Build and publish the CHANGELOG version, or finish an interrupted release.
-#     The workflow runs this only after the tests requested by --plan pass.
+#     The workflow runs this only after the tests requested by --plan pass, in
+#     the android environment, whose ANDROID_KEYSTORE and
+#     ANDROID_KEYSTORE_PASSWORD sign the Android app's APK (M12.4).
 #
 #   ./scripts/ci.sh --flatpak
 #     Publish the promoted release's Flatpak to its repository on the release
@@ -123,9 +125,11 @@ execute_release() {
   if $RELEASE_BUILD_REQUIRED; then
     package_binaries
     package_ffmpeg_source
+    package_android
     write_release_version
     generate_checksums
     sign_application_release
+    check_signature_as_the_app
     upload_application_release
   fi
   write_root_version_candidate
@@ -135,6 +139,7 @@ execute_release() {
   publish_installers
 
   promote_release
+  publish_root_apk
   ensure_promotion_marker
   tag_release
   cleanup_old_releases

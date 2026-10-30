@@ -2,8 +2,9 @@ name: Release
 
 # On pushes to main, ci.sh --plan checks which tests are needed. After those
 # tests pass, ci.sh --execute publishes the release or finishes an interrupted
-# attempt, and then ci.sh --flatpak publishes the promoted release's Flatpak,
-# in the flatpak environment. PRs always run validation and never publish. Before the first
+# attempt, in the android environment, whose key signs the Android app's APK,
+# and then ci.sh --flatpak publishes the promoted release's Flatpak, in the
+# flatpak environment. PRs always run validation and never publish. Before the first
 # release (no CHANGELOG.md heading and no version tag), pushes to main get the
 # same validation as PRs and publish nothing.
 #
@@ -457,7 +458,13 @@ jobs:
       - media-fuzz
     # Installer validation runs here too; jobs do not share the E2E daemon.
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
+    # The Android app's release key is a secret of the android environment,
+    # which only main deploys to, so no other branch's workflow can read it
+    # (release.md's The APK's key). Naming it changes the claims about the
+    # job that the signing certificate carries, but not the identity
+    # releases are checked against, which is this file's path and ref.
+    environment: android
     permissions:
       contents: write # ci.sh pushes the release tag
       id-token: write # cosign keyless signing
@@ -496,6 +503,8 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: ./scripts/ci.sh --execute
 
   # Publishes the promoted release's Flatpak to its repository on the

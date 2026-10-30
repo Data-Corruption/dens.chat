@@ -30,7 +30,8 @@ import java.util.concurrent.TimeUnit
 // Dens with its data key, starts it again when it ends, but for a start
 // Dens refuses, and keeps the shell's stream with it, which says where the
 // page is, and carries the member's notifications, which the shell posts
-// (M12.3). A foreground service of the specialUse type holds the dens'
+// (M12.3), and the updates Dens readies, which it hands to Android's
+// installer (M12.4). A foreground service of the specialUse type holds the dens'
 // connections while the app isn't on screen, and of the microphone's type
 // too while the page has the microphone, as in a call, whose sound it
 // routes.
@@ -79,6 +80,10 @@ class DensService : Service() {
 
         @Volatile
         private var front = false
+
+        // isFront is whether the page's activity shows, which Android needs
+        // of an app that starts its installer's confirmation (M12.4).
+        val isFront get() = front
 
         // The shell's stream with Dens, while it's open.
         @Volatile
@@ -290,8 +295,11 @@ class DensService : Service() {
     // place it may.
     private fun notification(): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, PageActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        // A group of its own, so Android doesn't bundle it with the app's
+        // other quiet notifications, whose taps the bundle's would take.
         val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(Dens.drawable(this, "notification"))
+            .setGroup(CHANNEL)
             .setContentTitle(applicationInfo.loadLabel(packageManager))
             .setContentIntent(open)
             .setOngoing(true)
@@ -434,6 +442,8 @@ class DensService : Service() {
                         "hello" -> {
                             page = d?.optString("page")?.takeIf { it.startsWith("http://localhost:") }
                             problem = null
+                            // Dens says again what update is ready, if any.
+                            Updates.forget(this)
                             Dens.log(this, "service: Dens ${d?.optString("version")} is up")
                             // What Dens needs to know to notify the member
                             // where it should.
@@ -450,6 +460,10 @@ class DensService : Service() {
                             notifying = d?.optBoolean("on") == true
                             changed()
                         }
+                        // An update Dens downloaded and checked (M12.4), and
+                        // the member asking the page to install it.
+                        "update" -> if (d != null) Updates.offer(this, d.optString("version"), d.optString("apk"))
+                        "install" -> if (d != null) Updates.install(this, d.optString("version"), d.optString("apk"))
                     }
                 }
             } finally {

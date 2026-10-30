@@ -74,8 +74,10 @@ func (l Layout) EnsureSession() error {
 		}
 	}
 	dirs := append([]string{l.Root, l.Control, l.Runtime}, l.DataDirs()...)
-	if l.Snapshot != "" {
-		dirs = append(dirs, l.Snapshot)
+	for _, dir := range []string{l.Snapshot, l.Update} {
+		if dir != "" {
+			dirs = append(dirs, dir)
+		}
 	}
 	for _, dir := range dirs {
 		if err := ensurePrivateDir(dir); err != nil {

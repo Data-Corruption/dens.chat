@@ -1,6 +1,6 @@
 ---
 title: Host a den
-weight: 3
+weight: 4
 ---
 
 Dens, installed on Linux or Windows, can also host one den; the Flatpak can't.

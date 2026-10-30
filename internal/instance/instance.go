@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -126,11 +127,26 @@ func (c Config) validate(denPorts bool) error {
 	}
 	if c.ReleaseURL != "" {
 		u, err := url.Parse(c.ReleaseURL)
-		if err != nil || (u.Scheme != "https" && u.Scheme != "file") || !strings.HasSuffix(c.ReleaseURL, "/") {
-			return fmt.Errorf("release URL %q must be an https (or file, for testing) URL ending in /", c.ReleaseURL)
+		if err != nil || !(u.Scheme == "https" || u.Scheme == "file" || LoopbackHTTP(u)) || !strings.HasSuffix(c.ReleaseURL, "/") {
+			return fmt.Errorf("release URL %q must be an https (or file, or http on loopback, for testing) URL ending in /", c.ReleaseURL)
 		}
 	}
 	return nil
+}
+
+// LoopbackHTTP reports whether u is plain http to this machine's loopback,
+// which only a test release's host is: the Android e2e's, which adb
+// forwards the emulator's loopback to (M12). Nothing on the way can change
+// what loopback carries, and a release's signature covers it anyway.
+func LoopbackHTTP(u *url.URL) bool {
+	if u.Scheme != "http" {
+		return false
+	}
+	if u.Hostname() == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	return ip != nil && ip.IsLoopback()
 }
 
 // Encode returns the file contents for c.

@@ -73,6 +73,11 @@ type Layout struct {
 	// left, kept as it updates them: a backup archive, the last one only
 	// (M9.3). Empty for the other forms.
 	Snapshot string
+	// Update holds the newer release's APK the Android app's updater
+	// downloaded and checked, with the release's signed checksums, until
+	// the shell hands it to Android's installer (M12). Empty for the other
+	// forms.
+	Update string
 
 	// Runtime is the directory holding the control socket on Linux. It is
 	// empty on Windows, where the control endpoint is a named pipe.

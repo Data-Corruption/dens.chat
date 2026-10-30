@@ -102,6 +102,16 @@ class PageActivity : Activity() {
         DensService.watch(watcher)
         DensService.start(this)
         show()
+        installTapped(intent)
+    }
+
+    // installTapped installs the update a notification's tap names (M12.4),
+    // now the activity is in front, where Android lets the app start its
+    // installer's confirmation.
+    private fun installTapped(i: Intent?) {
+        if (i?.action != Updates.INSTALL) return
+        Dens.log(this, "page: installing a notification's update")
+        Updates.install(this, i.getStringExtra(Updates.VERSION) ?: "", i.getStringExtra(Updates.APK))
     }
 
     // tapped is the page's path a notification's tap opens, or null for any
@@ -210,6 +220,7 @@ class PageActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == Updates.INSTALL) return installTapped(intent)
         val at = tapped(intent)
         if (at == null) return repair()
         // The page loads at the message once Dens says where the page is.

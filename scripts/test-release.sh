@@ -364,6 +364,60 @@ if FLATPAK_PUBLIC_KEY="$tmp/not-a-key.asc" GNUPGHOME=$(mktemp -d "$tmp/gnupg.XXX
   fail "a file with no key passed for the Flatpak's"
 fi
 
+# From ANDROID_FIRST_RELEASE a release holds the Android app's APK, at a
+# version code that grows with each release (M12.4); one before it has
+# none, and still verifies.
+[[ "$(release_checksum_objects v1.4.0)" != *android* ]] || fail "a release before the APK needs one"
+[[ "$(release_checksum_objects "$ANDROID_FIRST_RELEASE")" == *android-arm64.apk* ]] ||
+  fail "the first release with the APK doesn't list it"
+[[ "$(release_objects v1.5.0 | tail -n 2 | tr '\n' ' ')" == "checksums.txt checksums.txt.cosign.bundle " ]] ||
+  fail "a release's checksums aren't uploaded last"
+[[ "$(android_version_code v1.5.0)" == 1005000 && "$(android_version_code v99.0.2-e2e)" == 99000002 &&
+  "$(android_version_code v2.0.0)" -gt "$(android_version_code v1.999.999)" ]] || fail "unexpected Android version codes"
+if android_version_code v1.1000.0 >/dev/null 2>&1; then
+  fail "a minor version past 999 got a version code"
+fi
+(
+  VERSION=v1.5.0
+  VERSION_DIR="$tmp/android-release/releases/$VERSION"
+  mkdir -p "$VERSION_DIR"
+  for file in linux-amd64.gz linux-arm64.gz windows-amd64.exe.gz windows-arm64.exe.gz ffmpeg-source.tar.xz android-arm64.apk; do
+    printf '%s\n' "$file" > "$VERSION_DIR/$file"
+  done
+  printf '%s\n' "$VERSION" > "$VERSION_DIR/version"
+  generate_checksums >/dev/null
+  grep -q '  android-arm64.apk$' "$VERSION_DIR/checksums.txt" || fail "the checksums don't list the APK"
+  sign_application_release >/dev/null
+  verify_release_files "$VERSION_DIR" "$VERSION" || fail "a release with its APK didn't verify"
+  upload_application_release >/dev/null
+  verify_remote_release "$VERSION" "$tmp/android-verified" || fail "an uploaded release with its APK didn't verify"
+  # The root's copy, which the install guide links to, is the promoted
+  # release's, and a rerun leaves it.
+  OUT_DIR="$tmp/android-out"
+  mkdir -p "$OUT_DIR"
+  publish_root_apk >/dev/null
+  cmp -s "$PUBLISH_REMOTE/dens.apk" "$VERSION_DIR/android-arm64.apk" || fail "dens.apk isn't the release's APK"
+  [[ "$(publish_root_apk)" == *"already"* ]] || fail "a rerun replaced dens.apk"
+  printf 'an older APK\n' > "$PUBLISH_REMOTE/dens.apk"
+  publish_root_apk >/dev/null
+  cmp -s "$PUBLISH_REMOTE/dens.apk" "$VERSION_DIR/android-arm64.apk" || fail "dens.apk kept an older release's APK"
+  rm "$PUBLISH_REMOTE/dens.apk"
+  # A release before the APK publishes none.
+  (VERSION=v1.4.0 publish_root_apk)
+  [[ ! -e "$PUBLISH_REMOTE/dens.apk" ]] || fail "a release before the APK published one"
+  rm "$PUBLISH_REMOTE/releases/$VERSION/android-arm64.apk"
+  if verify_remote_release "$VERSION" "$tmp/android-verified" >/dev/null 2>&1; then
+    fail "a release missing its APK verified"
+  fi
+  # Checksums that leave the APK out, signed, are a release without one.
+  rm "$VERSION_DIR/android-arm64.apk"
+  generate_checksums >/dev/null
+  sign_application_release >/dev/null
+  if verify_release_files "$VERSION_DIR" "$VERSION" >/dev/null 2>&1; then
+    fail "checksums without the APK passed for a release that has one"
+  fi
+)
+
 # These releases are made up, so none of them is Dens's first, which the
 # last case keeps.
 DENS_FIRST_RELEASE=v0.9.0

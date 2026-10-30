@@ -98,6 +98,9 @@ make_ldflags() {
   ldflags+=" -X '${pkg}.releaseURL=$RELEASE_URL'"
   ldflags+=" -X '${pkg}.certIdentity=$CERT_IDENTITY'"
   ldflags+=" -X '${pkg}.oidcIssuer=$OIDC_ISSUER'"
+  # Only a test release, whose signatures a Sigstore of its own makes,
+  # names its root (M12.4).
+  [[ -z "${SIGSTORE_ROOT:-}" ]] || ldflags+=" -X '${pkg}.sigstoreRoot=$SIGSTORE_ROOT'"
   ldflags+=" -X '${pkg}.devMode=$1'"
   [[ "$1" == "true" ]] || ldflags+=" -s -w"
   printf '%s' "$ldflags"
@@ -158,6 +161,8 @@ verify_build() {
   if [[ "$MODE" == "ci" ]]; then
     check_var "certIdentity" "$CERT_IDENTITY"
     check_var "oidcIssuer" "$OIDC_ISSUER"
+    # A release checks updates against Sigstore's own root (M12.4).
+    check_var "sigstoreRoot" ""
   fi
 
   printf "🟢 Build variables verified\n"
@@ -231,12 +236,16 @@ package_ffmpeg_source() {
 }
 
 # One file listing the sha256 of every release artifact (gzipped binaries,
-# FFmpeg's source and the version marker). Each installer verifies its cosign
-# signature once, then plain sha256-matches the selected artifact against it.
+# FFmpeg's source, the version marker, and from M12.4 the APK for phones).
+# Each installer verifies its cosign signature once, then plain
+# sha256-matches the selected artifact against it, as the Android app's
+# updater does its APK.
 generate_checksums() {
   (
     cd "$VERSION_DIR" || exit 1
-    sha256sum linux-*.gz windows-*.gz ffmpeg-source.tar.xz version > checksums.txt
+    local apks=()
+    mapfile -t apks < <(compgen -G 'android-*.apk' || :)
+    sha256sum linux-*.gz windows-*.gz ffmpeg-source.tar.xz version "${apks[@]}" > checksums.txt
   )
   printf "🟢 Generated checksums.txt\n"
 }

@@ -62,6 +62,14 @@ const RESTART_AFTER = 2000;
 // member for it, before the call says what it's waiting for.
 const MIC_WAIT = 1500;
 const RESTART_WAIT = 15 * 1000;
+// Chromium keeps the stream that played a call's members a few seconds
+// after the call ends, and hands it to the next call's; on the S24 one
+// opened before the call ended won't start again, which left every other
+// quick rejoin silent. So a call that begins within STREAM_KEPT of the
+// last one's end plays its members afresh REPLAY_AFTER after they start,
+// once Chromium has let that stream go (M12).
+const STREAM_KEPT = 6000;
+const REPLAY_AFTER = 2000;
 // Speaking: a level above this, in dBFS, measured this often, and held
 // this long after it drops.
 const SPEAKING_DB = -50;
@@ -130,6 +138,8 @@ let denStates = new Map();
 let live = true;
 let rejoinTimer = null;
 let started = false;
+// callEnded is when the page last ended a call, closing its elements.
+let callEnded = -Infinity;
 // volumes is how loud each member plays here, by den and member.
 let volumes = readVolumes(stored(VOLUMES));
 // wholeVolume is how loud the whole call plays here (M12).
@@ -1236,6 +1246,7 @@ function play(e) {
     level(member);
     audio.srcObject = stream;
     audio.play().catch(() => {});
+    if (autoplays()) replaySoon();
     meter(member, stream);
     // A member who leaves takes their track with them.
     stream.onremovetrack = () => {
@@ -1246,6 +1257,35 @@ function play(e) {
             dropVoice(member);
         }
     };
+}
+
+// replaySoon plays the call's members afresh a moment after they start,
+// where the call began soon after the last one ended: Chromium may have
+// handed them the stream it kept from the last, which some phones can't
+// start again (STREAM_KEPT).
+function replaySoon() {
+    const c = call;
+    if (!c || c.replay || performance.now() - callEnded > STREAM_KEPT) return;
+    c.replay = setTimeout(() => {
+        if (call !== c) return;
+        const held = [...audios].map(([member, audio]) => [member, audio, audio.srcObject]);
+        for (const [, audio] of held) audio.srcObject = null;
+        // Every element lets its stream go before any plays again, so
+        // Chromium opens a new one for them.
+        setTimeout(() => {
+            for (const [member, audio, stream] of held) {
+                if (call !== c || audios.get(member) !== audio || audio.srcObject !== null) continue;
+                if (!stream || stream.getTracks().length === 0) {
+                    audios.delete(member);
+                    unmeter(member);
+                    dropVoice(member);
+                    continue;
+                }
+                audio.srcObject = stream;
+                audio.play().catch(() => {});
+            }
+        }, 200);
+    }, REPLAY_AFTER);
 }
 
 // playVoice plays a member's stream through the call's context, at the
@@ -1420,7 +1460,7 @@ function tryRejoin() {
 }
 
 function clearTimers(c) {
-    for (const t of [c.giveUp, c.offerBy, c.resumeBy, c.restartAfter, c.restartBy]) clearTimeout(t);
+    for (const t of [c.giveUp, c.offerBy, c.resumeBy, c.restartAfter, c.restartBy, c.replay]) clearTimeout(t);
 }
 
 function closePeer() {
@@ -1451,6 +1491,7 @@ function finish(why) {
     watched.clear();
     denView = null;
     closePeer();
+    callEnded = performance.now();
     mic?.getTracks().forEach((t) => t.stop());
     mic = null;
     sent = null;

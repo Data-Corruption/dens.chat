@@ -656,7 +656,11 @@ function SystemSettings({ instance, version, pair }) {
                         onChange={(on) => change('backgroundUpdateChecks', on)} />
                     <Toggle id="update-notices" label="Show a notice when an update is available" checked={settings.updateNotifications}
                         onChange={(on) => change('updateNotifications', on)} />
-                    <p class="text-sm text-base-content/70">A check asks the release host for the newest version, which sees this computer's IP address.</p>
+                    <p class="text-sm text-base-content/70">
+                        {settings.updatesDownload
+                            ? "A check asks the release host for the newest version, which sees this phone's IP address. Dens downloads a newer one as it finds it, checks it was signed by Dens's release process, and Android asks you before installing it."
+                            : "A check asks the release host for the newest version, which sees this computer's IP address."}
+                    </p>
                 </Card>
             )}
             {settings.updatesThroughFlatpak && (

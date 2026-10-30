@@ -277,6 +277,11 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
 		"notifications":          rt.a.Notify.Status(),
 	}
+	// The Android app downloads the updates it finds, for Android's
+	// installer to install (M12.4).
+	if rt.a.Layout.Form == layout.Android {
+		settings["updatesDownload"] = rt.a.ChecksForUpdates()
+	}
 	// What only the Flatpak has (M9.3): its remembered key, starting at
 	// sign-in, and updates through Flatpak.
 	if f := rt.a.Flatpak; f != nil {
@@ -416,7 +421,13 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if rt.a.Layout.Form == layout.Flatpak {
 		status["remember"] = rt.a.Remembering()
 	}
-	if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
+	// The Android app's notice waits for the update to be downloaded and
+	// checked, which its Install hands to Android's installer (M12.4).
+	if rt.a.Layout.Form == layout.Android {
+		if u, ok := rt.a.ReadyUpdate(); ok && cfg.UpdateNotifications {
+			status["updateReady"] = u.Version
+		}
+	} else if latest, ok := rt.a.LatestUpdate(cfg); ok && cfg.UpdateNotifications {
 		status["updateVersion"] = latest
 		status["updateCommand"] = rt.a.UpdateCommand()
 	}
