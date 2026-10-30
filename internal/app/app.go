@@ -105,6 +105,8 @@ type App struct {
 	RetrieveSecret func(ctx context.Context, wait time.Duration) ([]byte, error)
 
 	updateCheckMu sync.Mutex
+	// apk is the Android app's updater's (M12).
+	apk apkUpdate
 	// Argon2id makes each password check expensive; the limiter keeps a
 	// local caller from turning that into a denial of service.
 	passwordMu      sync.Mutex
@@ -566,6 +568,11 @@ func (a *App) prepareSession(opts OpenOptions) error {
 			cfg.ClientPort = instance.FlatpakClientPort
 		case l.Form == layout.Android && a.buildInfo.DevMode:
 			cfg.ClientPort = instance.AndroidDevClientPort
+		case l.Form == layout.Android:
+			// The app's updater checks the release host its release
+			// names, as an installer records where it installed from
+			// (M12).
+			cfg.ReleaseURL = a.buildInfo.ReleaseURL
 		}
 		if opts.DevClientPort != 0 {
 			cfg.ClientPort = opts.DevClientPort

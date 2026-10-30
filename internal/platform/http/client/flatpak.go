@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 
@@ -12,7 +13,8 @@ import (
 
 // mountFlatpak serves what only the Flatpak's page asks of its service
 // (M9.3): installing an update through Flatpak, restarting into the newest
-// build installed, quitting, and starting at sign-in.
+// build installed, quitting, and starting at sign-in. The Android app's
+// page installs its update at the same address (M12.4).
 func (rt *router) mountFlatpak(r chi.Router) {
 	r.Post("/api/update", rt.handleUpdate)
 	r.Post("/api/restart", rt.handleRestart)
@@ -40,8 +42,18 @@ func (rt *router) stopAfter(w http.ResponseWriter, why string) {
 
 // handleUpdate has Flatpak install the update, where it lets Dens, and
 // restarts into it; where it won't, the page says to update in the
-// software center.
+// software center. In the Android app, the shell hands the update the
+// updater checked to Android's installer, which asks the member to confirm
+// over the page (M12.4).
 func (rt *router) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if rt.a.Layout.Form == layout.Android {
+		if err := rt.a.InstallUpdate(); err != nil {
+			jsonError(w, http.StatusConflict, "No update is ready to install. Open Dens again, then try again.")
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+		return
+	}
 	if !rt.flatpak(w) {
 		return
 	}

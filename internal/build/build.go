@@ -31,6 +31,10 @@ var (
 	// dens update runs.
 	certIdentity string
 	oidcIssuer   string
+	// A test release's own Sigstore trusted root, in base64, which the
+	// Android app's updater checks its releases against in place of
+	// Sigstore's public one (M12). Releases never set it.
+	sigstoreRoot string
 	devMode      string
 )
 
@@ -45,6 +49,10 @@ type BuildInfo struct {
 	// includes the repository and workflow path.
 	CertIdentity string `json:"certIdentity"`
 	OidcIssuer   string `json:"oidcIssuer"`
+	// SigstoreRoot is a test release's own Sigstore trusted root, in
+	// base64, in place of Sigstore's public one, as the Android e2e's
+	// fixture releases sign with (M12). Empty in every release.
+	SigstoreRoot string `json:"sigstoreRoot"`
 	// DevMode builds run as a development instance: storage under the
 	// developer's own data directory, no service manager, debug logging.
 	// Only the default local build sets it.
@@ -84,6 +92,7 @@ func Info() BuildInfo {
 		DefaultLogLevel: logLevel,
 		CertIdentity:    certIdentity,
 		OidcIssuer:      oidcIssuer,
+		SigstoreRoot:    sigstoreRoot,
 		DevMode:         devMode == "true",
 	}
 }

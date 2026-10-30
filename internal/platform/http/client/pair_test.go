@@ -74,3 +74,24 @@ func TestRequestsFromAnotherVersionsPage(t *testing.T) {
 		}
 	}
 }
+
+// The page's Install hands the Android app's update to its shell only
+// once the updater has one ready (M12.4); elsewhere the address is the
+// Flatpak's alone.
+func TestInstallingAnUpdateByForm(t *testing.T) {
+	for _, c := range []struct {
+		form layout.Form
+		code int
+	}{
+		{layout.Android, http.StatusConflict},
+		{layout.Installed, http.StatusNotFound},
+	} {
+		a := app.New(build.BuildInfo{Name: "dens", Version: "v1.5.0"})
+		a.Layout = layout.Layout{Form: c.form, Instance: "main"}
+		w := httptest.NewRecorder()
+		(&router{a: a}).handleUpdate(w, httptest.NewRequest(http.MethodPost, "/api/update", nil))
+		if w.Code != c.code {
+			t.Errorf("%s with no update ready: %d %s, want %d", c.form, w.Code, w.Body, c.code)
+		}
+	}
+}

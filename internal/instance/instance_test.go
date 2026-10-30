@@ -39,6 +39,7 @@ func TestValidateRejectsBadConfigs(t *testing.T) {
 		"port out of range":   func(c *Config) { c.ClientPort = 70000 },
 		"den port collides":   func(c *Config) { c.Den.Port = c.ClientPort },
 		"plain http release":  func(c *Config) { c.ReleaseURL = "http://releases.dens.chat/" },
+		"http on the network": func(c *Config) { c.ReleaseURL = "http://10.0.2.2:18480/" },
 		"release without /":   func(c *Config) { c.ReleaseURL = "https://releases.dens.chat" },
 		"media tcp collides":  func(c *Config) { c.Den.MediaTCPPort = c.Den.Port },
 		"negative media port": func(c *Config) { c.Den.MediaUDPPort = -1 },
@@ -48,6 +49,15 @@ func TestValidateRejectsBadConfigs(t *testing.T) {
 		mutate(&c)
 		if err := c.Validate(); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+	// A test release's host may be plain http on loopback, as the Android
+	// e2e's is (M12).
+	for _, url := range []string{"http://127.0.0.1:18480/", "http://localhost:18480/", "http://[::1]:18480/"} {
+		c := validConfig()
+		c.ReleaseURL = url
+		if err := c.Validate(); err != nil {
+			t.Errorf("release host %s refused: %v", url, err)
 		}
 	}
 	// The UDP port may share its number with a TCP one.
