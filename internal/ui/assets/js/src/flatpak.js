@@ -5,13 +5,18 @@
 import { api } from './api.js';
 
 // updateNotice is home's notice of an update, or null: the release host's
-// for an installed Dens, with the command that installs it, or Flatpak's,
-// with what the member can do about it: restart into an update something
+// for an installed Dens, with the command that installs it; the Android
+// app's, once its update is downloaded and checked, which Android's
+// installer installs once the member confirms (M12.4); or Flatpak's, with
+// what the member can do about it: restart into an update something
 // installed, update from Dens where Flatpak lets it, or update in the
 // software center.
 export function updateNotice(status) {
     if (status.updateVersion) {
         return { text: `Dens ${status.updateVersion} is available. To update, run:`, command: status.updateCommand };
+    }
+    if (status.updateReady) {
+        return { text: `Dens ${status.updateReady} is ready to install.`, action: 'install', label: 'Install' };
     }
     const u = status.flatpakUpdate;
     if (!u) return null;

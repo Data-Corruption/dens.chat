@@ -90,13 +90,18 @@ export function Home({ status, navigate }) {
 }
 
 // UpdateNotice says an update is there, and what installs it: a command for
-// an installed Dens, and for the Flatpak, a button where Dens may install
-// it or restart into it, or the software center (M9.3).
+// an installed Dens; for the Flatpak, a button where Dens may install it or
+// restart into it, or the software center (M9.3); and in the Android app, a
+// button that has Android's installer ask the member to confirm it, over
+// the page (M12.4).
 function UpdateNotice({ status }) {
     const notice = updateNotice(status);
     const act = useAction();
     if (!notice) return null;
-    const go = () => act.run(() => restartDens(notice.action === 'update' ? '/api/update' : '/api/restart'));
+    const go = () => act.run(async () => {
+        if (notice.action === 'install') await api.post('/api/update');
+        else await restartDens(notice.action === 'update' ? '/api/update' : '/api/restart');
+    });
     return (
         <div role="status" class="alert alert-info flex flex-wrap">
             <span>
@@ -106,7 +111,7 @@ function UpdateNotice({ status }) {
             {notice.action && (
                 <button type="button" class="btn btn-sm" disabled={act.busy} onClick={go}>
                     {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                    {act.busy ? 'Restarting…' : notice.label}
+                    {act.busy ? (notice.action === 'install' ? 'Opening the installer…' : 'Restarting…') : notice.label}
                 </button>
             )}
             <ErrorText message={act.error} />
