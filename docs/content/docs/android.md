@@ -62,7 +62,8 @@ leave it off: while it's on, Dens can't install its updates either.
 
 Android asks whether to install Dens: tap **Install**. Play Protect may offer
 to scan it first, which sends the app's details to Google. Scanning it is up
-to you.
+to you. Scanned, it may say the app may be harmful, without saying why: to
+install it anyway, tap the arrow beside the warning, then **Install anyway**.
 
 ### Open Dens
 
