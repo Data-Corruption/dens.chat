@@ -345,6 +345,7 @@ artifacts also verify when served from a mirror.
 | `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in two Incus containers |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
 | `flatpak-e2e` | The Flatpak's publisher, then the Flatpak itself, published by it and run for a member, in Incus containers; releases wait for it |
+| `android-build` | The Android app as a development build (`test.sh -android`): Go vetted for Android, both APKs, and the host package's tests for the emulator; releases wait for it |
 | `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass, in the `android` environment, whose key signs the APK |
 | `flatpak` | Runs `ci.sh --flatpak` in the `flatpak` environment once `release` succeeds |
 

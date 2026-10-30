@@ -10,6 +10,7 @@
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
 #   ./scripts/test.sh -flatpak-e2e                 # the Flatpak's publisher, then the Flatpak, made from this tree, in containers
+#   ./scripts/test.sh -android                     # the Android app built: vetted for Android, its APKs, its host tests
 #   ./scripts/test.sh -android-e2e [--no-build]    # the Android app, made from this tree, in Android's emulator
 #   ./scripts/test.sh -windows                     # Go tests on the Windows host (WSL only)
 #   ./scripts/test.sh -all                         # every available suite
@@ -35,6 +36,7 @@ EOF
   -e2e      Test the Linux lifecycle; remaining arguments go to test-lifecycle-e2e.sh
   -den-e2e  Test joining a den through Caddy; remaining arguments go to test-den-e2e.sh
   -flatpak-e2e  Test the Flatpak's publisher, then the Flatpak, made from this tree's binary and published by it, in containers
+  -android  Build the Android app: Go vetted for Android, the development APKs, and the host package's tests for the emulator
   -android-e2e  Test the Android app, made from this tree, in Android's emulator, joining a den in a container; --no-build uses out/'s builds
   -windows  From WSL, run the Go tests natively on the Windows host
   -all      Run every available suite
@@ -186,6 +188,22 @@ run_release_tests() {
   bash scripts/test-release.sh
 }
 
+# run_android_build builds the Android app as CI's android-build job does,
+# with no emulator: Go vetted for Android, whose _android.go seams nothing
+# else compiles; the development APKs, which compile the shell and check its
+# calls against the oldest Android it runs on; and the host package's tests
+# built for the emulator, as the Android e2e runs them.
+run_android_build() {
+  ensure_ui_placeholders
+  GOOS=android GOARCH=arm64 go vet ./...
+  ./scripts/build.sh --android
+  local tools
+  tools=$(./scripts/vendor.sh android | sed -n 's/^android=//p')
+  GOOS=android GOARCH=amd64 CGO_ENABLED=1 CC="$tools/ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android31-clang" \
+    go test -c -ldflags=-checklinkname=0 -o /dev/null ./internal/platform/host
+  printf '🟢 Built the Android app, and its host tests for the emulator\n'
+}
+
 run_lifecycle_e2e() {
   bash scripts/test-lifecycle-e2e.sh "$@"
 }
@@ -220,6 +238,10 @@ case "$mode" in
     require_no_args "-flatpak-e2e" "$@"
     bash scripts/test-flatpak-e2e.sh
     ;;
+  -android)
+    require_no_args "-android" "$@"
+    run_android_build
+    ;;
   -android-e2e)
     bash scripts/test-android-e2e.sh "$@"
     ;;
@@ -233,6 +255,7 @@ case "$mode" in
     run_shell_lint
     run_js_tests
     run_release_tests
+    run_android_build
     run_lifecycle_e2e
     bash scripts/test-den-e2e.sh
     bash scripts/test-flatpak-e2e.sh

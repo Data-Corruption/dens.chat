@@ -233,6 +233,7 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
 ./scripts/test.sh -flatpak-e2e # the Flatpak's publisher, then the Flatpak, made from this tree and published: launched, unlocked, updated and rolled back, in Incus containers
+./scripts/test.sh -android     # the Android app built, as CI's android-build job: vetted for Android, both APKs, the host tests for the emulator
 ./scripts/test.sh -android-e2e # the Android app, made from this tree, in Android 17's and 12's emulators: paired, joined to a den behind Caddy, chatting, sending and saving a photo, in a call off screen, and updated from fixture releases
 scripts/test/android/phone.sh SERIAL COMMAND  # a phone through the Android container's adb: pair, connect, install, log, pull
 scripts/test/android/bg.sh SERIAL [SECONDS]   # a phone's call with its screen off, ten minutes unless given, watched and summed up

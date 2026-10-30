@@ -789,6 +789,7 @@ vendor_android_unpack() {
 vendor_android() {
   vendor_require_amd64 "Android NDK"
   vendor_require_bins unzip tar gzip
+  mkdir -p "$TOOLS_DIR"
   VENDOR_ANDROID="$TOOLS_DIR/android"
   vendor_android_unpack android-ndk-r30-linux.zip "$VENDOR_ANDROID/ndk" android-ndk-r30
   vendor_android_unpack build-tools_r37_linux.zip "$VENDOR_ANDROID/sdk/build-tools/$ANDROID_BUILD_TOOLS_DIR" android-37.0
