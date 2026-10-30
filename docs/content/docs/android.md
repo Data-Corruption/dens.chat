@@ -100,7 +100,8 @@ about 25 MB on whatever connection the phone has, checks that Dens's release
 process signed it, and says so in a notification and on Dens's home. Tap
 either, and Android asks you to confirm. The first time, Android asks you to
 let Dens install apps, as it asked of your browser: turn on **Allow from this
-source** for Dens.
+source** for Dens. Play Protect may warn about an update as it did about the
+install: tap the arrow beside the warning, then **Install anyway**.
 
 You can turn the checks off in **Settings**, under **System**.
 

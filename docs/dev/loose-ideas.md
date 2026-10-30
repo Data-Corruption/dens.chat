@@ -1,12 +1,10 @@
 # Dens — Loose ideas
 
-Ideas and fixes no milestone has taken up yet. A lot of these are still loose, and not all of them may turn out possible or practical. One leaves this list when a milestone's plan in [milestones.md](milestones.md) takes it up.
+Ideas and fixes no milestone has taken up yet. A lot of these are still loose, and not all of them may turn out possible or practical. One leaves this list when a milestone's plan in [milestones.md](milestones.md) takes it up. Those weighed and set aside are under Probably not doing, with why.
 
 ## Big
 
-- Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 to M14 hold it; more in [android.md](android.md).
-- Dens's own F-Droid repository, from which F-Droid 2.0 updates apps by itself, with the app's updater stepping aside when F-Droid installed it. M14 held it until 2026-10-29, when it went: the APK on the release host and the updater install and update the app with one tap, and a repository would be another signed thing to publish and keep each release, for updates that need no tap.
-- UnifiedPush through the den, so a den wakes its members' phones: an additive protocol change, which needs nothing from Google. M14 held it until 2026-10-29, when it went: the foreground service's own connections keep the app connected, for about 1% of the battery a night per den in the spike, and a phone that stops Dens would stop the distributor UnifiedPush needs on the phone too, unless the member exempts it from the battery's limits, as they'd exempt Dens.
+- Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app, and M13 and M14 hold the rest; more in [android.md](android.md).
 - End-to-end encrypted group DMs, then end-to-end encrypted calls with SFrame, one to one and in groups, piggybacking off the keys used for DMs? A call button in that person's or group's DM channel? Beside a group DM, the panel that shows a DM's other member (M11) would list the group's members.
 
 ## Medium
@@ -36,3 +34,9 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 - One member on Fedora KDE with Waterfox leaves and rejoins calls without doing anything: flickering in and out, dropping out for a few seconds every 30 to 60 seconds (the timing may be off). M11's logs say which connection breaks first, once the member and the den's owner set them to debug and send them after the next drop (see design.md's What's logged); the fix waits for them.
 - In the profile edit dialog, let members pick their name's color, including start-to-end gradients. It waits for custom themes, after the phone layout, so both cover it.
+- On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
+
+## Probably not doing
+
+- Dens's own F-Droid repository, from which F-Droid 2.0 updates apps by itself, with the app's updater stepping aside when F-Droid installed it. The APK on the release host and the updater already install and update the app with one tap, and a repository would be another signed thing to publish and keep each release, for updates that need no tap.
+- UnifiedPush through the den, so a den wakes its members' phones: an additive protocol change, which needs nothing from Google. The foreground service's own connections keep the app connected, for about 1% of the battery a night per den in the spike, and a phone that stops Dens would stop the distributor UnifiedPush needs on the phone too, unless the member exempts it from the battery's limits, as they'd exempt Dens.
