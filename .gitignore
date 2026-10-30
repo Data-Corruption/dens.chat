@@ -25,6 +25,8 @@
 *.pem
 *.p12
 *.pfx
+# The Android release key's certificate, which is public; the key isn't.
+!/android/release.pem
 
 # Local files for trying uploads by hand; tests generate their own
 /test-files/
