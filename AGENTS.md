@@ -78,8 +78,8 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
   member in their session: its sandbox, locked start and remembered
   key, lifecycle with no installer, updates, its publishing, and its harness.
 - [docs/dev/android.md](docs/dev/android.md): the Android app (M12 to M14):
-  its design, its build, its form, its shell and the page in its WebView, and
-  its e2e.
+  its design, its build, its form, its shell and the page in its WebView, its
+  calls, notifications and updates, and its e2e.
 - [docs/dev/milestones.md](docs/dev/milestones.md): what each milestone built,
   and the plan for the one under way.
 - [docs/dev/loose-ideas.md](docs/dev/loose-ideas.md): ideas and fixes no
