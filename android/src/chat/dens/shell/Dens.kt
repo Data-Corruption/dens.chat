@@ -35,6 +35,8 @@ object Dens {
     fun wrappedKey(ctx: Context) = File(control(ctx), "datakey.keystore")
     fun state(ctx: Context) = File(control(ctx), "state.json")
     fun socket(ctx: Context) = File(root(ctx), "run/control.sock")
+    // Where Dens keeps an update it downloaded and checked (M12.4).
+    fun updateDir(ctx: Context) = File(root(ctx), "update")
 
     // controlDir makes the instance's control directory as the service
     // wants it, private to the app, for the key the shell wraps before the

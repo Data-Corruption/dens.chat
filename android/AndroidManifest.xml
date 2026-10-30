@@ -21,6 +21,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The updater (M12.4) hands each update Dens checked to Android's
+         installer, which asks the member to confirm it. Never
+         UPDATE_PACKAGES_WITHOUT_USER_ACTION: Play Protect calls an app that
+         asks for it harmful. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- extractNativeLibs puts lib/<abi>/libdens.so in the native library
          directory, the only place an app may run a binary from. Backups
@@ -63,6 +68,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a chat client's connections to its servers open, so messages arrive" />
         </service>
+
+        <!-- Android's word on an update's install session, sent through the
+             session's own pending intent. -->
+        <receiver android:name="chat.dens.shell.UpdateReceiver" android:exported="false" />
 
         <receiver android:name="chat.dens.shell.StartReceiver" android:exported="true">
             <intent-filter>
