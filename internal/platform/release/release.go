@@ -1,11 +1,14 @@
-// Package release resolves the newest published version from a release host.
+// Package release resolves the newest published version from a release host,
+// and checks a release's signed checksums where no cosign runs.
 //
 // A release host publishes one root `version` object containing a single
 // SemVer string. Installers read that pointer and pin it for the rest of their
 // run; this package reads the same object so the application and the
 // installer can never disagree about what "latest" means. Everything else
 // about a release (checksums, signatures, binaries) lives under the immutable
-// `releases/<version>/` prefix and is the installer's concern, not ours.
+// `releases/<version>/` prefix and is the installer's concern, but for the
+// Android app, whose updater checks the checksums' cosign bundle itself
+// (TrustedRoot.Verify) before it takes the APK they name (M12.4).
 package release
 
 import (
