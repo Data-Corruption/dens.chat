@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.5.1] - 2026-10-30
+
+### Changed
+
+- The Android guide shows the warning Play Protect may give as you install the app, and how to install it anyway. Dens itself is as it was in v1.5.0.
+
 ## [v1.5.0] - 2026-10-29
 
 ### Added
