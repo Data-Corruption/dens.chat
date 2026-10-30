@@ -1,5 +1,25 @@
 # Changelog
 
+## [v1.5.0] - 2026-10-29
+
+### Added
+
+- Dens for Android, for phones on Android 12 or later: open releases.dens.chat/dens.apk in your phone's browser. It runs Dens on the phone, which keeps its own keys, and joins dens as any install does: chat, DMs, photos, which go as smaller copies with their location and camera details removed, and calls that keep going with the screen off. A call's notification moves its sound between the loudspeaker, the earpiece and a headset. It updates itself: when a new version is ready, it says so, and Android asks you before it installs it. It can't host a den or share your screen. The new Android guide has the steps, and the settings Galaxy phones need.
+- Notifications of DMs and mentions, on every install, once you turn them on in the settings' Chat & media tab: each kind on its own, with the start of the message or without it. The bell beside a den's name mutes the den, and the bell at the top of a channel or DM mutes just that one. With a Dens tab open they show through your browser, and with none, as your desktop's own; clicking one opens the message. Reading a channel on any of your devices clears its notification everywhere.
+- Call volume, in the voice settings, turns everyone in a call down at once, under the level you set for each member.
+- On Windows, Dens is in the Start menu, which opens it.
+
+### Changed
+
+- A copy button says so when the browser won't copy, where it said nothing.
+- At debug, the logs of a call also say what it sent each second, and when the browser froze the page and let it go again.
+
+### Fixed
+
+- A channel whose newest messages had been deleted could show its loading dots for good.
+- A call stopped playing the others once the browser had frozen its page and let it go again, as phones do with pages they hide. It plays them again.
+- The microphone stayed on if you left a call while the browser was asking for it.
+
 ## [v1.4.0] - 2026-10-26
 
 ### Added
