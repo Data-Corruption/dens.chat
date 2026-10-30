@@ -14,6 +14,8 @@ your computer, and it keeps running while you're logged out.
   Ubuntu 24.04 or later and the distributions built on it, such as Linux Mint
   and Pop!\_OS, Arch, and CachyOS. On the others, such as NixOS and SteamOS,
   use [the Flatpak](#the-flatpak), which joins dens but can't host one.
+- **Android 12** or later, as [an app](../android/) that joins dens but
+  can't host one.
 - **An up-to-date browser**: Firefox, Chrome, Edge, or one built on them.
   [Ungoogled Chromium](https://github.com/ungoogled-software/ungoogled-chromium)
   works best: Dens has had the fewest problems in it, its screen shares can

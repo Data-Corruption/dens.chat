@@ -1,6 +1,6 @@
 ---
 title: Privacy
-weight: 6
+weight: 7
 ---
 
 Dens keeps your conversations away from big platforms, data brokers and ad

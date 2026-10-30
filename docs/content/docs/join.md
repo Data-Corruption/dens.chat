@@ -1,6 +1,6 @@
 ---
 title: Join a den
-weight: 2
+weight: 3
 ---
 
 A **den** is one community on Dens: its channels, its members and their DMs,

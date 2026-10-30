@@ -47,12 +47,12 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
 | `internal/platform/database` | SQLite open and pool, ordered migrations, focused accessors per table |
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
-| `internal/platform/release` | Reads the root `version` pointer from the release host |
+| `internal/platform/release` | Reads the root `version` pointer from the release host, and checks a release's signed checksums where no cosign runs, as the Android app's updater does, against Sigstore's trusted root, embedded (M12.4); `sigstoretest`, a Sigstore of the tests' own, for tests and the Android e2e's fixture releases |
 | `internal/types` | Configuration shape |
 | `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, the share player, the copier that makes videos' smaller copies with WebCodecs, and the voice worklet with RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed) |
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
-| `android/` | The Android app's shell (M12): Kotlin with no AndroidX, its manifest and resources, and the newer framework calls it makes behind a version check |
+| `android/` | The Android app's shell (M12): Kotlin with no AndroidX, its manifest and resources, the newer framework calls it makes behind a version check, and the release key's certificate (`release.pem`), which a release's APK must be signed by |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers, and the Android app's APKs, built without Gradle, with the check that stands in for Android Lint's NewApi |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery, and the Flatpak's publication after each release |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
@@ -61,7 +61,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, commits it to a repository, and writes the repository's deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
-| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the browser checks (`scripts/test/browser/`), run by hand before each manual test, and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` also works a phone over wireless debugging, and `bg.sh` holds its call off screen |
+| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the browser checks (`scripts/test/browser/`), run by hand before each manual test, and the Android e2e's container, drivers, den and fixture releases (`scripts/test/android/`), whose `phone.sh` also works a phone over wireless debugging, and `bg.sh` holds its call off screen |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
 | `docs/dev/` | Internal docs: the design and each deployment form's, the milestones and loose ideas, the lifecycle, the den protocol and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra) |
@@ -233,7 +233,7 @@ module imports nothing, and the voice worklet gives it nothing.
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
 ./scripts/test.sh -flatpak-e2e # the Flatpak's publisher, then the Flatpak, made from this tree and published: launched, unlocked, updated and rolled back, in Incus containers
-./scripts/test.sh -android-e2e # the Android app, made from this tree, in Android 17's and 12's emulators: paired, joined to a den behind Caddy, chatting, sending and saving a photo, and in a call off screen
+./scripts/test.sh -android-e2e # the Android app, made from this tree, in Android 17's and 12's emulators: paired, joined to a den behind Caddy, chatting, sending and saving a photo, in a call off screen, and updated from fixture releases
 scripts/test/android/phone.sh SERIAL COMMAND  # a phone through the Android container's adb: pair, connect, install, log, pull
 scripts/test/android/bg.sh SERIAL [SECONDS]   # a phone's call with its screen off, ten minutes unless given, watched and summed up
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host

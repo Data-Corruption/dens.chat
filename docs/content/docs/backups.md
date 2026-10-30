@@ -1,6 +1,6 @@
 ---
 title: Backups and moving
-weight: 5
+weight: 6
 ---
 
 Everything Dens keeps is on your computer: the keys to your accounts, your

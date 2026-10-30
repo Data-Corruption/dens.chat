@@ -913,14 +913,14 @@ Dens supports Linux and Windows for both the client and the den. Linux is recomm
 
 ### Deployment forms (M9)
 
-Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M12, Android (under the app's shell). `layout.Form` names the form, and `app.FormOf` chooses it at runtime: on Android (`GOOS=android`) Android, for a development build too, since the app's shell runs either; elsewhere a development build is Development, a sandbox whose `/.flatpak-info` and `FLATPAK_ID` name `chat.dens.Dens` the Flatpak, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it, as a `switch` on the form rather than a type per form, since there are few forms and each differs from the others in a few lines: where the paths are, how the data key unwraps, whether the instance checks the release host for updates, which only an installed one with a release host does (`App.ChecksForUpdates`), the settings' update options with it, what the update notice says, how the CLI checks the service it talks to and what it advises when none is running, whether the helper runs inside the service, and whether the instance may host. A form `layout` doesn't know has no paths, so no process runs as one. Forms other than Installed are session forms (`Form.Session`): they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`, which the Android app refuses too, since its shell would have to wrap the backup's key. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
+Besides the system, Dens differs by how it's deployed: installed (the service under its own account), development (as the developer, with a plaintext key), the Flatpak (as the member, in their session) and, from M12, Android (under the app's shell). `layout.Form` names the form, and `app.FormOf` chooses it at runtime: on Android (`GOOS=android`) Android, for a development build too, since the app's shell runs either; elsewhere a development build is Development, a sandbox whose `/.flatpak-info` and `FLATPAK_ID` name `chat.dens.Dens` the Flatpak, and anything else Installed, so the Flatpak runs the release binary as it is. Each seam that differs by form takes it, as a `switch` on the form rather than a type per form, since there are few forms and each differs from the others in a few lines: where the paths are, how the data key unwraps, whether the instance checks the release host for updates, which an installed one with a release host does, and the Android app, whose release names its host (`App.ChecksForUpdates`), the settings' update options with it, what the update notice says and what installs the update, how the CLI checks the service it talks to and what it advises when none is running, whether the helper runs inside the service, and whether the instance may host. A form `layout` doesn't know has no paths, so no process runs as one. Forms other than Installed are session forms (`Form.Session`): they run as their user with no service manager, write their own instance config and lifecycle state, and take no maintenance command but `restore`, which the Android app refuses too, since its shell would have to wrap the backup's key. As with a platform difference, a form never reaches the protocol or the database, and reaches the page only as what it can do.
 
 | Form | Runs as | Its data key | Installed and updated by | Hosts a den | Its doc |
 | --- | --- | --- | --- | --- | --- |
 | Installed | A service under its own account: a systemd unit on Linux, an SCM service on Windows | Bound to the host: `systemd-creds` or DPAPI | Its maintenance commands, which the installer scripts run | Yes | [installed.md](installed.md) |
 | Development | The developer, from a terminal | A plaintext file | The developer's own builds | Yes | [lifecycle.md](lifecycle.md)'s Development instances |
 | The Flatpak (M9) | The member, in their session | None that opens without them, unless they ask it to remember | Flatpak | No | [flatpak.md](flatpak.md) |
-| Android (M12) | The app's shell, as its child process | A Keystore key | The app's updater, or F-Droid | No | [android.md](android.md) |
+| Android (M12) | The app's shell, as its child process | A Keystore key | Android's installer: the APK from the release host, then each update the app's updater checks | No | [android.md](android.md) |
 
 ### Platform layer
 
@@ -1093,6 +1093,12 @@ Before the first release an audit checked every item here against the code (2026
 - [x] Nothing about a notification is logged but its IDs.
 - [x] A click opens only the page, at an address the service builds from IDs the den gave it; the Android shell loads only a path of the page's form, and a pairing link is made at the click, never kept in a notification.
 
+**The Android app's updates (M12.4)**
+
+- [x] The updater downloads an APK only once the release's checksums check out, against the release workflow's identity and Sigstore's trusted root, as cosign would check them, and offers it only matching them, newer than itself; a build without the identity updates from nothing.
+- [x] Android's installer installs it only once the member confirms, and only signed with the release's key; the app asks for `REQUEST_INSTALL_PACKAGES` alone.
+- [x] The APK's key reaches only the release job, from `main`, and a release's build refuses an APK that key alone didn't sign. The release pipeline checks each release's signature as the app will before publishing it.
+
 **Hosting and the Flatpak (M9)**
 
 - [x] Nothing of the den listens until the owner turns hosting on, with the local password, and turning it off closes the den listener and the media ports at once.
@@ -1155,7 +1161,7 @@ What the rest of this document commits the docs to, by page:
 - Privacy:
   - The den can read channels and the files in them, could listen to calls and watch screen shares, and sees who DMs whom and when; DMs and the photos in them are end-to-end encrypted (Privacy model, End-to-end encrypted DMs, Calls). The docs say the den rather than its owner: whoever or whatever gets hold of the den's computer, someone else who uses it or malware on it, can do the same.
   - Files that aren't photos, videos or audio, such as documents and archives, go as they are, with whatever they carry inside (Metadata stripping).
-  - An update check asks the release host for the latest version number, which shows it the install's IP address (Privileged steps and updates, in [installed.md](installed.md)), and a member who turns on YouTube's players shows YouTube their IP address (YouTube players).
+  - An update check asks the release host for the latest version number, which shows it the install's IP address (Privileged steps and updates, in [installed.md](installed.md)), and the Android app downloads the update it finds from there too (android.md's Updates); a member who turns on YouTube's players shows YouTube their IP address (YouTube players).
   - Windows is weaker than Linux, as Weaker than Linux lists.
   - The installed service keeps its data under its own account, out of reach of the member's programs; the Flatpak runs as the member, so their programs can read it ([flatpak.md](flatpak.md)).
   - The short philosophy section and its recommendations: Linux over Windows, Ungoogled Chromium, no identifying details for low-stakes use, and Signal, Qubes OS and similar tools for higher stakes, none of them bulletproof (Privacy model).

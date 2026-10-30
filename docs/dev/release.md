@@ -21,13 +21,15 @@ install.sh.cosign.bundle
 install.ps1
 install.ps1.cosign.bundle
 version
+dens.apk
 releases/
-  v1.0.0/
+  v1.5.0/
     version
     linux-amd64.gz
     linux-arm64.gz
     windows-amd64.exe.gz
     windows-arm64.exe.gz
+    android-arm64.apk
     ffmpeg-source.tar.xz
     checksums.txt
     checksums.txt.cosign.bundle
@@ -41,6 +43,15 @@ flatpak/
 ```
 
 `ffmpeg-source.tar.xz` holds FFmpeg's source, as the binaries include it, with zlib's and libaom's, the driver and the script that builds the module (M1.8, M5.4), as the LGPL asks of a binary that includes FFmpeg.
+
+`android-arm64.apk` is the Android app (M12.4), `chat.dens.Dens`, in each
+release from v1.5.0 (`ANDROID_FIRST_RELEASE` in `scripts/ci/release.sh`), and
+listed in the release's checksums as the binaries are: a release before it has
+none, and still verifies. Its version code is the release's version, vX.Y.Z as
+X×1,000,000 + Y×1,000 + Z, so each release's is higher, as Android needs of an
+update. `dens.apk` at the root is a copy of the promoted release's, which the
+install guide links to, since a release's own paths name its version; the
+publisher replaces it as it promotes each release, and reads it back.
 
 `flatpak/` holds Dens's Flatpak (M9.4): `repo/`, its OSTree repository, with
 the builds of the promoted release's Linux binaries for x86_64 and aarch64,
@@ -67,6 +78,19 @@ kind of signature: one Ed25519 key, which every client checks, that never
 expires, since a key that expired would fail every Flatpak's check, the
 summary's that would bring them a new key included. Its secret half only the
 `flatpak` job reads (see The Flatpak's key).
+
+The Android app's APK is signed with a key of its own too, the APK's key,
+since Android takes an update only signed with the key the app was installed
+with: one EC P-256 key, in a PKCS #12 keystore whose certificate holds for 100
+years, which only the `release` job reads, in the `android` environment (see
+The APK's key). Naming the environment changes what the job's cosign
+certificates say of the job, but not the identity installs check them
+against, which is the workflow's path and ref. The app checks the checksums'
+cosign bundle itself, where no cosign runs, against the release identity its
+build carries and the Sigstore trusted root it embeds
+(`internal/platform/release/trusted_root.json`, from Sigstore's TUF
+repository), and the release pipeline checks each new release's the same way
+before publishing it.
 
 ## One-time setup
 
@@ -131,6 +155,47 @@ cp "$GNUPGHOME"/openpgp-revocs.d/*.rev dens-flatpak.rev
 5. Delete the copies left on the machine: `gpgconf --kill gpg-agent`, then
    `rm -r "$GNUPGHOME"`, and the two files once they're in their two places.
 
+### The APK's key
+
+Make it once, on your own machine, before the first release with the APK, with
+the `keytool` of the JDK `vendor.sh` pins (which fetches it the first time), in
+a directory of its own, starting from the repository's root. Its password, one
+line with no newline at its end, only opens the keystore: the environment is
+what guards the key in CI, and the password manager and the drive offline.
+
+```sh
+keytool=$(./scripts/vendor.sh android | sed -n 's/^android=//p')/jdk/bin/keytool
+cd "$(mktemp -d)" && umask 077
+head -c 32 /dev/urandom | base64 | tr -d '\n' > dens-android.password
+"$keytool" -genkeypair -keystore dens-android.p12 -storetype PKCS12 \
+  -storepass:file dens-android.password -alias dens \
+  -keyalg EC -groupname secp256r1 -validity 36500 -dname "CN=Dens"
+"$keytool" -exportcert -rfc -keystore dens-android.p12 \
+  -storepass:file dens-android.password -alias dens > release.pem
+"$keytool" -printcert -file release.pem | grep SHA256
+```
+
+1. **Keep `dens-android.p12` and `dens-android.password` offline, together, in
+   two places**, such as a password manager and a USB drive kept elsewhere.
+   Every update must carry this key's signature: if every copy is lost, no
+   update reaches an installed app, and every member uninstalls Dens, which
+   deletes its data on the phone, and installs it again (see Losing or
+   leaking the APK's key).
+2. **Commit `release.pem`**, the key's certificate, as `android/release.pem`.
+   A release's build refuses an APK signed by any other key.
+3. **Settings → Environments → New environment**, named `android`, before
+   anything that names it reaches `main`: the `release` job names it, and
+   runs on every push to `main`, and GitHub makes one with no rules for a
+   workflow that names one that doesn't exist. Under **Deployment branches
+   and tags**, choose **Selected branches and tags** and add the branch
+   `main`, as for the `flatpak` environment, with no reviewer.
+4. In the environment, **Add environment secret** `ANDROID_KEYSTORE`, with the
+   keystore in base64 (`base64 -w0 dens-android.p12`), and
+   `ANDROID_KEYSTORE_PASSWORD`, with the password (`cat dens-android.password`),
+   and nothing after it.
+5. Delete the copies left on the machine once they're in their two places:
+   `rm -r` the directory.
+
 ## Publish
 
 1. Check all production targets locally: `./scripts/build.sh --prod-all`.
@@ -190,7 +255,13 @@ Pull requests always run validation and never contact the release host.
    which drops the symbol table and DWARF, about a third of the binary (89.4 MB
    to 56.1 MB for linux-amd64), while a panic still names its functions and
    lines, from Go's own line table; development builds keep both, for
-   debuggers (M9.1).
+   debuggers (M9.1). From v1.5.0 the build makes the APK too, around Dens
+   built for Android, signs it with the APK's key, and refuses it unless that
+   key alone signed it, as `android/release.pem` names it. Once cosign has
+   signed the checksums, the build checks the signature as the Android app
+   will (`TestReleaseChecksOutForTheApp`), which reads cosign's bundle itself:
+   a change in what cosign writes, or in Sigstore's trusted root, stops the
+   release before anything is published, rather than every app's next update.
 2. Upload the files to `releases/<version>/`, download them again and check
    their signatures and checksums.
 3. Generate the installer scripts from the project settings. Test changed
@@ -200,7 +271,8 @@ Pull requests always run validation and never contact the release host.
    such as the version currently offered, or the one a push without a new
    version reuses, is installed through the installer alone, verifying its
    signature, and uninstalled (`--installer-only`).
-4. Update the root `version` file to make the new release available.
+4. Update the root `version` file to make the new release available, then
+   `dens.apk`, the promoted release's APK.
 5. Record the release commit and publication time, push the Git tag, and remove
    old releases under the retention rule.
 
@@ -273,7 +345,7 @@ artifacts also verify when served from a mirror.
 | `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in two Incus containers |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
 | `flatpak-e2e` | The Flatpak's publisher, then the Flatpak itself, published by it and run for a member, in Incus containers; releases wait for it |
-| `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass |
+| `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass, in the `android` environment, whose key signs the APK |
 | `flatpak` | Runs `ci.sh --flatpak` in the `flatpak` environment once `release` succeeds |
 
 A failed plan, failed test or cancellation blocks publication. Tests skipped at
@@ -362,12 +434,31 @@ key is lost, nothing can sign a summary members' Flatpaks trust: publish under
 a new key, and every member installs Dens again. That's why the key is kept in
 two places.
 
+## Losing or leaking the APK's key
+
+Android checks each update's signature against the key the app was installed
+with. APK Signature Scheme v3 lets that key hand over to a new one: `apksigner
+rotate` makes a signing lineage, the old key's signature over the new, and an
+update signed with the new key, carrying the lineage, installs over the old;
+the lineage's capabilities say what the old key may still sign after. So a key
+that leaks can be replaced while it's still in hand. The key alone can't reach
+installed apps, whose updater takes only an APK the release's signed checksums
+name, but whoever holds it can sign an APK that a member who downloads it from
+elsewhere installs over Dens. If every copy of the key is lost, nothing can
+sign an update installed apps take: publish under a new key, and every member
+uninstalls Dens and installs it again, losing what it kept on the phone.
+That's why it's kept in two places.
+
 ## Testing release changes
 
 After touching `scripts/ci/`, `scripts/ci.sh` or the installers, run
 `./scripts/test.sh -release`. It uses an rclone local backend and a cosign
 stand-in to exercise interruption, resume, promotion, installer pair recovery,
-immutable tags and retention without a real bucket. After touching the Flatpak's
+immutable tags, retention, and the APK's place in releases from v1.5.0 and
+at the root, without a real bucket. The Android app's updater is tested
+against releases of its own (`scripts/test/android/releases.sh`), in the
+Android e2e, whose checksums a Sigstore of the tests' own signs
+(`internal/platform/release/sigstoretest`). After touching the Flatpak's
 publisher (`scripts/ci/flatpak.sh`, `scripts/flatpak.sh`), run
 `./scripts/test.sh -flatpak-e2e`, whose first stage tests it the same way (see
 [flatpak.md](flatpak.md)).

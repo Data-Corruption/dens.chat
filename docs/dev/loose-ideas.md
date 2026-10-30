@@ -5,6 +5,8 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 ## Big
 
 - Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 to M14 hold it; more in [android.md](android.md).
+- Dens's own F-Droid repository, from which F-Droid 2.0 updates apps by itself, with the app's updater stepping aside when F-Droid installed it. M14 held it until 2026-10-29, when it went: the APK on the release host and the updater install and update the app with one tap, and a repository would be another signed thing to publish and keep each release, for updates that need no tap.
+- UnifiedPush through the den, so a den wakes its members' phones: an additive protocol change, which needs nothing from Google. M14 held it until 2026-10-29, when it went: the foreground service's own connections keep the app connected, for about 1% of the battery a night per den in the spike, and a phone that stops Dens would stop the distributor UnifiedPush needs on the phone too, unless the member exempts it from the battery's limits, as they'd exempt Dens.
 - End-to-end encrypted group DMs, then end-to-end encrypted calls with SFrame, one to one and in groups, piggybacking off the keys used for DMs? A call button in that person's or group's DM channel? Beside a group DM, the panel that shows a DM's other member (M11) would list the group's members.
 
 ## Medium
