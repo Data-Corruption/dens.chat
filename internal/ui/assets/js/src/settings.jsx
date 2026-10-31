@@ -387,7 +387,7 @@ function VoiceSettings() {
                 )}
                 <Field label="Call volume" hint="Everyone in a call, at once, under each one's own volume.">
                     <div class="flex items-center gap-3">
-                        <input type="range" class="range range-xs min-w-0 flex-1" min="0" max="100" step="5" value={Math.round(loud * 100)}
+                        <input type="range" class="range range-md min-w-0 flex-1" min="0" max="100" step="5" value={Math.round(loud * 100)}
                             aria-label="Call volume" aria-valuetext={`${Math.round(loud * 100)}%`}
                             onInput={(e) => pickLoudness(Number(e.currentTarget.value) / 100)} />
                         <span class="w-10 text-right text-sm tabular-nums">{Math.round(loud * 100)}%</span>
@@ -422,7 +422,7 @@ function VoiceSettings() {
                         {!auto && (
                             <label class="flex flex-col gap-1">
                                 <span class="text-sm">Sensitivity</span>
-                                <input type="range" class="range range-xs w-full" min="-100" max="0" step="1" value={v.threshold}
+                                <input type="range" class="range range-md w-full" min="-100" max="0" step="1" value={v.threshold}
                                     aria-label="Sensitivity" aria-valuetext={`${v.threshold} dB`} onInput={(e) => change({ threshold: Number(e.currentTarget.value) })} />
                             </label>
                         )}

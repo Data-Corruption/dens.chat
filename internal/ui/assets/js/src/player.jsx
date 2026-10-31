@@ -226,7 +226,8 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
                 </span>
             )}
             {popped && <span role="status" class="absolute inset-x-0 top-0 bg-black/70 p-2 text-center text-xs text-white">{popped}</span>}
-            <div class="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
+            {/* A touch screen, which has no hover, always shows them (M13.2). */}
+            <div class="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100">
                 <span class="min-w-0 flex-1 truncate px-1 text-xs">{w.label}</span>
                 <div class={`group/volume relative shrink-0 ${w.self ? 'hidden' : 'flex'}`}>
                     <button type="button" class={button} onClick={() => setShareVolume(w.member, w.volume === 0 ? 1 : 0)} disabled={deafened}
@@ -235,7 +236,7 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
                     </button>
                     <div class="absolute bottom-full left-1/2 hidden -translate-x-1/2 pb-1 group-focus-within/volume:flex group-hover/volume:flex">
                         <div class="flex rounded bg-black/70 px-1 py-2">
-                            <input type="range" class="h-16 w-4 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
+                            <input type="range" class="h-16 w-6 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
                                 step="0.05" value={w.volume} onInput={(e) => setShareVolume(w.member, Number(e.currentTarget.value))}
                                 aria-label={`Volume of ${w.label}'s share`} aria-orientation="vertical" aria-valuetext={`${Math.round(w.volume * 100)}%`} />
                         </div>

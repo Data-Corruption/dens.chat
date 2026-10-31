@@ -1,10 +1,11 @@
 // Small shared pieces. Everything shown here goes through Preact's text
 // rendering; nothing sets HTML from a string.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { copyText } from './clipboard.js';
 import { InfoIcon } from './icons.jsx';
 import { onNotifications } from './notify.js';
+import { tipShift } from './touch.js';
 
 export function Card({ title, children, class: extra = '' }) {
     return (
@@ -20,20 +21,102 @@ export function Card({ title, children, class: extra = '' }) {
 // Where a tip opens, spelled out so Tailwind keeps every class. Below,
 // centered on the i, unless the i sits near a panel's left edge, which
 // would cut a centered tip off: then to its right, from the i's top down,
-// so one by a panel's top edge isn't cut off either.
-const SIDES = { bottom: 'tooltip-bottom', right: 'tooltip-right [--tt-inset:0_auto] [--tt-trans:0]' };
+// so one by a panel's top edge isn't cut off either. One that would still
+// run past the window's edge moves in from it, and one with no room below
+// opens above.
+const SIDES = {
+    bottom: 'tooltip-bottom',
+    right: 'tooltip-right [--tt-inset:0_auto] [--tt-trans:0]',
+    top: 'tooltip-top',
+};
 
-// Tip is an i beside a label that says more on hover or focus: the detail
-// a one-line hint leaves out (M8.3).
-export function Tip({ id, side = 'bottom', children }) {
+// useTip opens a tip on hover by a mouse, on keyboard focus, and on a tap,
+// which a touch screen has instead of hover (M13.2): a tap's tip stays
+// until the next tap, on it or anywhere else, or Escape. side is where it
+// opens if there's room; its place moves to stay within the window.
+function useTip(side) {
+    const wrap = useRef(null);
+    const content = useRef(null);
+    const [hover, setHover] = useState(false);
+    const [focus, setFocus] = useState(false);
+    const [pinned, setPinned] = useState(false);
+    const [place, setPlace] = useState({ side, shift: 0 });
+    const open = hover || focus || pinned;
+    useEffect(() => {
+        if (!pinned) return undefined;
+        const away = (e) => !wrap.current?.contains(e.target) && setPinned(false);
+        const escape = (e) => e.key === 'Escape' && setPinned(false);
+        document.addEventListener('pointerdown', away, true);
+        document.addEventListener('keydown', escape);
+        return () => {
+            document.removeEventListener('pointerdown', away, true);
+            document.removeEventListener('keydown', escape);
+        };
+    }, [pinned]);
+    // Where the tip goes is reckoned from its i, which stays put, rather
+    // than from the tip, whose move to its last place may still be under
+    // way, so it settles at once.
+    useLayoutEffect(() => {
+        if (!open) {
+            if (place.side !== side || place.shift) setPlace({ side, shift: 0 });
+            return;
+        }
+        const el = content.current;
+        const at = wrap.current?.getBoundingClientRect();
+        if (!el || !at) return;
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        const vw = document.documentElement.clientWidth;
+        let next = place.side;
+        if (next === 'right' && at.right + 8 + w > vw - 8) next = 'bottom';
+        if (next === 'bottom' && at.bottom + 8 + h > innerHeight - 8 && at.top - 8 - h > 8) next = 'top';
+        const left = at.left + at.width / 2 - w / 2;
+        const shift = next === 'right' ? 0 : Math.round(tipShift({ left, right: left + w, width: w }, vw));
+        if (next !== place.side || shift !== place.shift) setPlace({ side: next, shift });
+    }, [open, place]);
+    return {
+        open,
+        pinned,
+        setPinned,
+        wrapProps: {
+            ref: wrap,
+            class: `tooltip ${SIDES[place.side]} ${open ? 'tooltip-open' : ''}`,
+            onPointerEnter: (e) => e.pointerType === 'mouse' && setHover(true),
+            onPointerLeave: (e) => e.pointerType === 'mouse' && setHover(false),
+        },
+        contentProps: {
+            ref: content,
+            hidden: !open,
+            style: place.shift ? { '--tt-trans': `calc(-50% + ${Math.round(place.shift)}px)` } : undefined,
+        },
+        triggerProps: {
+            onFocus: (e) => setFocus(e.currentTarget.matches?.(':focus-visible') ?? false),
+            onBlur: () => setFocus(false),
+        },
+    };
+}
+
+// A tip fades in, without sliding from where it would have run past the
+// window's edge.
+const TIP = 'tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal normal-case [transition-property:opacity]';
+
+// The i, or what stands in its place, is at least 24 pixels each way, and
+// takes room around it on a touch screen.
+const TRIGGER = 'relative inline-flex min-h-6 min-w-6 items-center justify-center rounded p-1 text-base-content/60 hover:text-base-content touch-room';
+
+// Tip is an i beside a label that says more: the detail a one-line hint
+// leaves out (M8.3), on hover or focus, or a tap (M13.2). trigger stands in
+// the i's place, as a mark whose meaning a title held, and label names it.
+export function Tip({ id, side = 'bottom', label = 'More about this', trigger, children }) {
+    const tip = useTip(side);
     return (
-        <span class={`tooltip ${SIDES[side]} align-middle`}>
-            <span id={id} role="tooltip" class="tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal">
+        <span {...tip.wrapProps} class={`${tip.wrapProps.class} align-middle`}>
+            <span id={id} role="tooltip" class={TIP} {...tip.contentProps}>
                 {children}
             </span>
-            <button type="button" class="inline-flex cursor-help p-0.5 text-base-content/60 hover:text-base-content" aria-label="More about this"
-                aria-describedby={id}>
-                <InfoIcon />
+            <button type="button" class={`${TRIGGER} cursor-help`} aria-label={label} aria-describedby={id} {...tip.triggerProps}
+                onClick={() => tip.setPinned(!tip.pinned)}>
+                {trigger || <InfoIcon />}
             </button>
         </span>
     );
@@ -44,16 +127,28 @@ export const DOCS = 'https://dens.chat/docs/';
 
 // DocsTip is a Tip whose i opens the guide to its subject, in a new tab:
 // the gist on hover, the whole story a click away. It stands where those
-// things come up (v1's onboarding), and opens where a Tip would.
+// things come up (v1's onboarding), and opens where a Tip would. A tap's
+// first opens the tip, and a second the guide (M13.2).
 export function DocsTip({ id, page, side = 'bottom', children }) {
+    const tip = useTip(side);
+    const touched = useRef(false);
     return (
-        <span class={`tooltip ${SIDES[side]} align-middle font-normal`}>
-            <span id={id} role="tooltip" class="tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal">
+        <span {...tip.wrapProps} class={`${tip.wrapProps.class} align-middle font-normal`}>
+            <span id={id} role="tooltip" class={TIP} {...tip.contentProps}>
                 {children}
-                <span class="mt-1 block text-xs opacity-70">Opens the guide on dens.chat.</span>
+                <span class="mt-1 block text-xs opacity-70">{tip.pinned ? 'Tap the i again to open the guide on dens.chat.' : 'Opens the guide on dens.chat.'}</span>
             </span>
-            <a href={DOCS + page} target="_blank" rel="noopener noreferrer" class="inline-flex p-0.5 text-base-content/60 hover:text-base-content"
-                aria-label="Open the guide" aria-describedby={id}>
+            <a href={DOCS + page} target="_blank" rel="noopener noreferrer" class={TRIGGER} aria-label="Open the guide" aria-describedby={id}
+                {...tip.triggerProps}
+                onPointerDown={(e) => {
+                    touched.current = e.pointerType === 'touch' || e.pointerType === 'pen';
+                }}
+                onClick={(e) => {
+                    const first = touched.current && !tip.pinned;
+                    touched.current = false;
+                    if (first) e.preventDefault();
+                    tip.setPinned(first);
+                }}>
                 <InfoIcon />
             </a>
         </span>
@@ -69,6 +164,12 @@ export function Field({ label, hint, children }) {
         </fieldset>
     );
 }
+
+// What a phone's keyboard offers a field (M13.2): a username, an invite, a
+// code or a key takes no capitals or corrections, PLAIN, and an address
+// asks for the keyboard for addresses too, ADDRESS.
+export const PLAIN = { autocapitalize: 'none', autocorrect: 'off', spellcheck: false };
+export const ADDRESS = { ...PLAIN, inputmode: 'url' };
 
 export function TextInput({ value, onInput, type = 'text', ...rest }) {
     return <input class="input w-full" type={type} value={value} onInput={(e) => onInput(e.currentTarget.value)} {...rest} />;

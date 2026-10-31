@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Waiting, checkPasswords, useAction } from './components.jsx';
+import { ADDRESS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, Waiting, checkPasswords, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { restartDens, updateNotice } from './flatpak.js';
 import { ownRowNote, setupNeeded } from './hosting.js';
@@ -168,7 +168,7 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
         <li class="flex flex-wrap items-center gap-3 rounded-box bg-base-100 p-3">
             <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                    <span role="img" aria-label={label} title={label} class={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`}></span>
+                    <Tip id={`den-state-${den.den_id}`} label={label} trigger={<span class={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`}></span>}>{label}</Tip>
                     <span class="truncate text-lg font-semibold">{den.name}</span>
                     <DenMarks den={den} />
                     {den.state !== 'connected' && <span class="shrink-0 text-sm text-base-content/60">{label}</span>}
@@ -226,7 +226,7 @@ function AccountFields({ form, set }) {
     return (
         <>
             <Field label="Username" hint="2 to 32 letters, digits and _. It can't change later.">
-                <TextInput value={form.username} onInput={(v) => set('username', v)} autocomplete="username" required />
+                <TextInput value={form.username} onInput={(v) => set('username', v)} autocomplete="username" required {...PLAIN} />
             </Field>
             <Field label="Display name" hint="What others see. You can change it later.">
                 <TextInput value={form.displayName} onInput={(v) => set('displayName', v)} required maxlength="32" />
@@ -320,7 +320,7 @@ function AddDen({ start, signIns, hosting, onJoined, onClose, onPending }) {
         body = (
             <form class="flex flex-col gap-2" onSubmit={paste}>
                 <Field label="Paste an invite or den address">
-                    <TextInput value={text} onInput={setText} placeholder="dens1:… or https://den.example.com" autocomplete="off" required autofocus />
+                    <TextInput value={text} onInput={setText} placeholder="dens1:… or https://den.example.com" autocomplete="off" required autofocus {...ADDRESS} />
                 </Field>
                 <ErrorText message={act.error} />
                 <div><SubmitButton busy={act.busy}>Continue</SubmitButton></div>
@@ -366,12 +366,12 @@ function AddDen({ start, signIns, hosting, onJoined, onClose, onPending }) {
         body = (
             <form class="flex flex-col gap-2" onSubmit={signIn}>
                 <Field label="Username">
-                    <TextInput value={form.username} onInput={(v) => set('username', v)} autocomplete="username" required />
+                    <TextInput value={form.username} onInput={(v) => set('username', v)} autocomplete="username" required {...PLAIN} />
                 </Field>
                 {recovering ? (
                     <>
                         <Field label="Recovery code" hint="One of the codes you saved when you joined. It works once.">
-                            <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" />
+                            <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" {...PLAIN} />
                         </Field>
                         <PasswordFields password={form.password} setPassword={(v) => set('password', v)} confirm={form.confirm}
                             setConfirm={(v) => set('confirm', v)} hint="Your new password for this den." />
@@ -449,7 +449,7 @@ function HostDen({ hosting, onJoined }) {
                                 <TextInput value={form.name} onInput={(v) => set('name', v)} required maxlength="32" />
                             </Field>
                             <Field label="Public address" hint="The address members use to connect, such as https://den.example.com.">
-                                <TextInput type="url" value={form.url} onInput={(v) => set('url', v)} required />
+                                <TextInput type="url" value={form.url} onInput={(v) => set('url', v)} required {...PLAIN} />
                             </Field>
                         </>
                     )}

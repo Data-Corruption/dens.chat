@@ -9,7 +9,7 @@ import { api } from './api.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
-import { useNotifications } from './components.jsx';
+import { Tip, useNotifications } from './components.jsx';
 import { BellIcon, HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
@@ -39,6 +39,9 @@ const FOLDED = 'DENS_FOLDED:';
 // The address's place for a channel holds this for the Direct messages tab
 // with no DM open, as when there are none (M11).
 export const NO_DM = 'dms';
+// What the den's state dot says, as Home's rows name each state, where the
+// state has no error to say why (M13.2).
+const STATE_WORDS = { connecting: 'Connecting', offline: 'Offline', revoked: 'Signed out', removed: 'Not a member' };
 // A typing notice shows this long unless another arrives; senders repeat
 // theirs while they type.
 const TYPING_SHOWN = 6000;
@@ -477,7 +480,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 </a>
                                 <span class="min-w-0 flex-1 truncate font-semibold">{view.name}</span>
                                 {bells && (
-                                    <button type="button" class="btn btn-ghost btn-xs btn-square -my-1" aria-pressed={muted.den}
+                                    <button type="button" class="btn btn-ghost btn-xs btn-square relative -my-1 touch-room" aria-pressed={muted.den}
                                         aria-label={muted.den ? `Unmute ${view.name}` : `Mute ${view.name}`}
                                         title={muted.den ? "Unmute the den's notifications" : "Mute the den's notifications"}
                                         onClick={() => mute('', !muted.den)}>
@@ -485,7 +488,9 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     </button>
                                 )}
                                 {!(live && view.state === 'connected') && (
-                                    <span class="badge badge-xs badge-warning" title={live ? view.error || view.state : 'Not in touch with Dens on this computer'}></span>
+                                    <Tip id={`state-${denID}`} label="The den's connection" trigger={<span class="badge badge-xs badge-warning"></span>}>
+                                        {live ? view.error || STATE_WORDS[view.state] || view.state : 'Not in touch with Dens on this computer.'}
+                                    </Tip>
                                 )}
                             </div>
                             {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
@@ -731,6 +736,17 @@ function usePaneRow(at, ready, onSwipe) {
     return row;
 }
 
+// rowLabel names a list's row by its name and what its marks say, when
+// they say anything.
+function rowLabel(name, ...marks) {
+    const said = marks.filter(Boolean);
+    return said.length ? [name, ...said].join(', ') : undefined;
+}
+
+// What a channel's or a DM's marks mean, which their tips say.
+const STAFF_ONLY = 'Staff only: only moderators and the owner can see it.';
+const MUTED = "Muted: its messages don't notify you.";
+
 // Marks says on a button what waits behind it: how many mentions, or a dot
 // for unread messages.
 function Marks({ mentions, unread }) {
@@ -790,7 +806,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     // (M4.2), which shows on hover or focus, and always on touch screens,
     // which have no hover. It shows once its row has the focus, since Tab
     // passes over what's hidden (M11).
-    const settings = 'btn btn-ghost btn-xs btn-square invisible group-hover:visible group-focus-within:visible pointer-coarse:visible';
+    const settings = 'btn btn-ghost btn-xs btn-square invisible group-hover:visible group-focus-within:visible pointer-coarse:visible touch-room';
     const item = (c) => {
         const r = reads.get(c.id);
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
@@ -798,22 +814,27 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         const inCall = voice && call?.den === denID && call.channel === c.id;
         const label = { den: view.name, channel: c.name };
         const managed = staff && !gone;
+        const isMuted = !!muted?.has(c.id);
+        const mentions = c.id !== open ? r?.mention_count || 0 : 0;
         return (
             <li key={c.id}>
-                <div class="group relative">
+                {/* The row's button reaches across it, under its marks, whose
+                    tips say on a tap what they mean (M13.2). */}
+                <div class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11 ${managed ? 'pr-8' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}>
                     <button
                         type="button"
-                        class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left ${managed ? 'pr-8' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
+                        class="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded"
                         onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
                         title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
+                        aria-label={rowLabel(c.name, c.staff_only && 'staff only', isMuted && 'muted', mentions && `${mentions} mentions`)}
                     >
                         <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}</span>
                         <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
-                        {c.staff_only && <span class="text-base-content/50" title="Staff only" aria-label="staff only"><LockIcon /></span>}
-                        {muted?.has(c.id) && <span class="text-base-content/50" title="Muted" aria-label="muted"><BellIcon off size="h-3.5 w-3.5" /></span>}
-                        {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
                     </button>
+                    {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
+                    {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
+                    {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
                     {managed && (
                         <button type="button" class={`${settings} absolute right-1 top-1/2 -translate-y-1/2`} title="Channel settings"
                             aria-label={`Settings for ${c.name}`} onClick={() => onDialog({ kind: 'channel', channel: c })}>
@@ -840,8 +861,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 const marks = isFolded ? hiddenMarks(channels.filter((c) => !shown.includes(c)), reads) : null;
                 return (
                     <div key={g.id}>
-                        <div class="group flex h-6 select-none items-center justify-between gap-1 px-2 text-xs font-semibold uppercase text-base-content/60">
-                            <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left uppercase hover:text-base-content"
+                        <div class="group flex min-h-6 select-none items-center justify-between gap-1 px-2 text-xs font-semibold uppercase text-base-content/60 pointer-coarse:min-h-11">
+                            <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch text-left uppercase hover:text-base-content"
                                 aria-expanded={!isFolded} onClick={() => fold(g.id)}>
                                 <ChevronIcon folded={isFolded} />
                                 <span class="truncate">{g.name}</span>
@@ -849,7 +870,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                                 {marks?.unread && !marks.mentions && <span class="h-2 w-2 shrink-0 rounded-full bg-base-content" aria-label="unread"></span>}
                             </button>
                             {staff && !gone && (
-                                <button type="button" class={`${settings} font-normal normal-case`} aria-label={`Settings for the group ${g.name}`} title="Group settings"
+                                <button type="button" class={`${settings} relative font-normal normal-case`} aria-label={`Settings for the group ${g.name}`} title="Group settings"
                                     onClick={() => onDialog({ kind: 'group', group: g })}>
                                     ⋯
                                 </button>
@@ -884,23 +905,32 @@ function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, on
                     const other = partner(c);
                     const r = reads.get(c.id);
                     const isUnread = unread(r) && c.id !== open;
+                    const isMuted = !!muted?.has(c.id);
+                    const checking = needsCheck(keys, c.id, me);
+                    const mentions = c.id !== open ? r?.mention_count || 0 : 0;
+                    const who = other ? other.display_name : 'Unknown member';
                     return (
-                        <li key={c.id} class="group relative">
+                        <li key={c.id} class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-8 pointer-coarse:min-h-11 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}>
                             <button
                                 type="button"
-                                class={`flex w-full items-center gap-2 rounded px-2 py-1 pr-8 text-left ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'} ${other?.left_at ? 'opacity-60' : ''}`}
+                                class={`flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded ${other?.left_at ? 'opacity-60' : ''}`}
                                 onClick={() => onOpen(c.id)}
+                                aria-label={rowLabel(who, isMuted && 'muted', checking && 'check codes to compare', mentions && `${mentions} mentions`)}
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
-                                <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{other ? other.display_name : 'Unknown member'}</span>
-                                {muted?.has(c.id) && <span class="text-base-content/50" title="Muted" aria-label="muted"><BellIcon off size="h-3.5 w-3.5" /></span>}
-                                {needsCheck(keys, c.id, me) && <span class="badge badge-warning badge-xs ml-auto" title="Compare check codes">Check</span>}
-                                {r?.mention_count > 0 && c.id !== open && <span class="badge badge-error badge-xs ml-auto">{r.mention_count}</span>}
+                                <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{who}</span>
                             </button>
+                            {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
+                            {checking && (
+                                <Tip id={`check-${c.id}`} label="Compare check codes" trigger={<span class="badge badge-warning badge-xs">Check</span>}>
+                                    Compare check codes with {who} before you write: open the DM to see them.
+                                </Tip>
+                            )}
+                            {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
                             {/* Touch screens have no hover, so there the X always shows. */}
                             <button
                                 type="button"
-                                class="btn btn-ghost btn-xs btn-square absolute right-1 top-1/2 -translate-y-1/2 md:invisible md:group-hover:visible md:focus:visible"
+                                class="btn btn-ghost btn-xs btn-square absolute right-1 top-1/2 -translate-y-1/2 touch-room md:pointer-fine:invisible md:pointer-fine:group-hover:visible md:pointer-fine:focus:visible"
                                 aria-label={`Close the DM with ${other ? other.display_name : 'this member'}`}
                                 title="Close"
                                 onClick={() => onClose(c)}
@@ -963,12 +993,13 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted,
                     <span class="flex shrink-0 items-center gap-1 font-semibold">
                         <span class="text-base-content/50"><HashIcon /></span>
                         {channel.name}
+                        {channel.staff_only && <Tip id={`header-staff-${channel.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
                     </span>
                 )}
                 {channel.description && (
                     <button
                         type="button"
-                        class="flex min-w-0 items-center gap-1 rounded px-1 text-left text-sm text-base-content/60 enabled:hover:bg-base-200 enabled:hover:text-base-content disabled:cursor-default"
+                        class="flex min-h-8 min-w-0 items-center gap-1 rounded px-1 text-left text-sm text-base-content/60 enabled:hover:bg-base-200 enabled:hover:text-base-content disabled:cursor-default"
                         disabled={!expandable}
                         aria-expanded={expandable ? expanded : undefined}
                         title={expandable ? (expanded ? 'Hide the description' : 'Show the whole description') : undefined}

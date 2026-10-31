@@ -171,7 +171,7 @@ export function CropDialog({ file, shape, busy, error, onCrop, onClose }) {
                     ></canvas>
                     <label class="flex w-full max-w-xs items-center gap-2 text-sm">
                         <span class="cursor-default select-none">Zoom</span>
-                        <input type="range" class="range range-sm flex-1" min="1" max={MAX_ZOOM} step="0.01" value={zoom}
+                        <input type="range" class="range range-md flex-1" min="1" max={MAX_ZOOM} step="0.01" value={zoom}
                             disabled={!bitmap} onInput={(e) => zoomTo(Number(e.currentTarget.value))} />
                     </label>
                     <p class="cursor-default select-none text-xs text-base-content/60">Drag the picture to choose what shows.</p>
