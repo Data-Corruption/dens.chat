@@ -1,5 +1,30 @@
 # Changelog
 
+## [v1.6.0] - 2026-10-31
+
+### Added
+
+- A layout for phones, and for any window narrower than a tablet: a den's channel list, the channel you're reading and its members are three screens side by side, which you swipe between, or reach by the buttons at the top of the channel. Back closes whatever's open, then goes up a step at a time, from the members to the channel, the list and home. Home shows what's waiting in each den: a count of mentions and DMs, or a dot for anything else unread.
+- Touch in place of hovering, on any touch screen: hold your finger on a message for its actions, and moderators and the owner on a channel or a group for its settings. Menus slide up from the bottom of a phone's screen, small marks and ⓘ say what they mean when tapped, and in the message box ↵ starts a new line while a button sends.
+- On a phone, dialogs slide up from the bottom, and the settings and each den's Manage list their sections, each a page that Back leaves.
+- A photo opens full screen on a phone, where you swipe to the message's other photos and down to close it. Zoom in with two fingers or a double tap, or on a computer with a double click or the wheel; comparing a photo's two copies zooms the same way.
+- Calls on a phone: a bar across the top of the channel shows the call, with buttons to stop hearing it and to leave, and a tap on it goes to the call's members and its other buttons. A round button by your thumb mutes and unmutes, or works as push to talk or push to mute, as you choose in the settings under Voice & video: green while you talk, struck through in red while you're muted. A screen you watch shows across the top of the channel, and a tap plays it full screen, turning with the phone.
+- In the Android app, the status and navigation bars take Dens's colors, and a den lists the phone among your devices by its name and model, from your next join or sign-in there.
+
+### Changed
+
+- Nothing you tap or click is smaller than 24 pixels across, and on a touch screen lists' rows are 44 pixels tall.
+- On a touch screen, messages and channels have no ⋯: hold your finger on one instead. A mouse and the keyboard keep it.
+- In a wide window, Back from a den goes home, rather than back through the channels you opened in it.
+- A phone's settings leave out what it can't do, the keyboard shortcuts and screen share, and its keyboard writes usernames, invites and addresses without capitals or corrections. Dens says "this device" where a phone shows the words too.
+- Add a den offers to host one only where Dens can host: not in the Android app or the Flatpak.
+
+### Fixed
+
+- On a phone, Back left the channel on screen and stepped through older pages, and the member list, once opened, stayed open over every channel. Back now moves between them, as above.
+- In the Android app, tapping a notification during a call loaded the page again, which ended the call. It opens the message on the page now, and the call goes on.
+- Things ran past the right edge of a phone's screen in places, such as the settings' System tab, a channel's settings, the recovery codes, comparing a photo's copies, and a DM's note where its keys changed. They fit now.
+
 ## [v1.5.1] - 2026-10-30
 
 ### Changed
