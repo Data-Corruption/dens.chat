@@ -39,17 +39,20 @@
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
-#                               given), failing on a control under 24 pixels, and with a finger a list's
-#                               row under 44 or a control only a hover shows; getting around the panes by
-#                               swipes, taps and Back (M13.1); and touch, a long press, a sheet's swipe
-#                               down, three lines sent and a tip's tap (M13.2). PART is member, around,
-#                               touch, call, owner or before; all unless given
+#                               given), failing on anything past the right edge, a control under 24
+#                               pixels, and with a finger a list's row under 44 or a control only a hover
+#                               shows; getting around the panes by swipes, taps and Back (M13.1); touch, a
+#                               long press, a sheet's swipe down, three lines sent and a tip's tap
+#                               (M13.2); and pages, the settings and Manage as lists of pages Back walks
+#                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down
+#                               (M13.3). PART is member, around, touch, pages, call, owner or before;
+#                               all unless given
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,48p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,51p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
