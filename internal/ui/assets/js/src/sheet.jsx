@@ -8,50 +8,18 @@ import { useBackdrop } from './components.jsx';
 import { useLayer } from './nav.js';
 import { SLOP, dismisses } from './touch.js';
 
-// Sheet frames a sheet: label names it, and title, if given, heads it,
-// under the handle. Its rows are SheetRows, or anything else as tall. The
-// focus starts on its first row, and goes back to where it was once the
-// sheet closes.
-export function Sheet({ label, title, onClose, children }) {
-    useLayer(onClose);
-    const backdrop = useBackdrop(onClose);
+// useDragDown has a sheet follow a press that moves down from where grab
+// says it may start, and close once let go far enough or fast enough,
+// going back up otherwise; the press's click goes nowhere, and a slider's
+// press stays the slider's. It returns the sheet's ref, its style, and its
+// handlers.
+export function useDragDown(onClose, grab) {
     const panel = useRef(null);
     const drag = useRef(null);
     const [dy, setDy] = useState(0);
     const [dragging, setDragging] = useState(false);
-    // A sheet taller than the room scrolls, and then only its top drags.
-    const [scrolls, setScrolls] = useState(false);
-    useLayoutEffect(() => {
-        const el = panel.current;
-        setScrolls(el.scrollHeight > el.clientHeight + 1);
-    });
-    useEffect(() => {
-        const opener = document.activeElement;
-        panel.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
-        return () => {
-            if (opener?.isConnected) opener.focus({ preventScroll: true });
-        };
-    }, []);
-    function keys(e) {
-        const items = [...panel.current.querySelectorAll('[role="menuitem"]:not(:disabled)')];
-        const at = items.indexOf(document.activeElement);
-        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
-        if (to !== undefined && items.length) {
-            e.preventDefault();
-            items[(to + items.length) % items.length].focus();
-        } else if (e.key === 'Escape' || e.key === 'Tab') {
-            e.preventDefault();
-            e.stopPropagation();
-            onClose();
-        }
-    }
-    // A press that moves down past the slop drags the sheet with it, and
-    // the press's click goes nowhere; let go far enough or fast enough,
-    // the sheet closes, and otherwise goes back up. A slider's press is
-    // the slider's.
     function down(e) {
-        if (e.button !== 0 || e.target.closest('input')) return;
-        if (scrolls && !e.target.closest('[data-sheet-top]')) return;
+        if (e.button !== 0 || e.target.closest('input') || !grab(e)) return;
         drag.current = { id: e.pointerId, y: e.clientY, last: e.clientY, at: e.timeStamp, speed: 0, moved: false };
     }
     function move(e) {
@@ -83,6 +51,48 @@ export function Sheet({ label, title, onClose, children }) {
         setDragging(false);
         setDy(0);
     }
+    return {
+        ref: panel,
+        style: { transform: dy ? `translateY(${dy}px)` : undefined, transition: dragging ? 'none' : 'transform 150ms ease-out' },
+        handlers: { onPointerDown: down, onPointerMove: move, onPointerUp: up, onPointerCancel: cancel },
+    };
+}
+
+// Sheet frames a sheet: label names it, and title, if given, heads it,
+// under the handle. Its rows are SheetRows, or anything else as tall. The
+// focus starts on its first row, and goes back to where it was once the
+// sheet closes.
+export function Sheet({ label, title, onClose, children }) {
+    useLayer(onClose);
+    const backdrop = useBackdrop(onClose);
+    // A sheet taller than the room scrolls, and then only its top drags.
+    const [scrolls, setScrolls] = useState(false);
+    const drag = useDragDown(onClose, (e) => !scrolls || !!e.target.closest('[data-sheet-top]'));
+    const panel = drag.ref;
+    useLayoutEffect(() => {
+        const el = panel.current;
+        setScrolls(el.scrollHeight > el.clientHeight + 1);
+    });
+    useEffect(() => {
+        const opener = document.activeElement;
+        panel.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+        return () => {
+            if (opener?.isConnected) opener.focus({ preventScroll: true });
+        };
+    }, []);
+    function keys(e) {
+        const items = [...panel.current.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+        const at = items.indexOf(document.activeElement);
+        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+        if (to !== undefined && items.length) {
+            e.preventDefault();
+            items[(to + items.length) % items.length].focus();
+        } else if (e.key === 'Escape' || e.key === 'Tab') {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+        }
+    }
     // Presses inside go no further than the sheet, so the message or list
     // it opened from doesn't take them for its own.
     return (
@@ -93,16 +103,22 @@ export function Sheet({ label, title, onClose, children }) {
             }}>
             <div ref={panel} role="dialog" aria-modal="true" aria-label={label} data-sheet onKeyDown={keys}
                 class={`max-h-[85%] overflow-y-auto overscroll-contain rounded-t-box bg-base-100 pb-[env(safe-area-inset-bottom)] shadow-xl ${scrolls ? 'touch-pan-y' : 'touch-none'}`}
-                style={{ transform: dy ? `translateY(${dy}px)` : undefined, transition: dragging ? 'none' : 'transform 150ms ease-out' }}
-                onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}>
+                style={drag.style} {...drag.handlers}>
                 <div data-sheet-top class="touch-none">
-                    <div class="flex justify-center pb-1 pt-2" aria-hidden="true">
-                        <span class="h-1 w-10 rounded-full bg-base-content/30"></span>
-                    </div>
+                    <Handle />
                     {title && <div class="cursor-default select-none px-4 pb-2 text-sm">{title}</div>}
                 </div>
                 <div role="menu" aria-label={label} class="flex flex-col pb-2">{children}</div>
             </div>
+        </div>
+    );
+}
+
+// Handle is the bar atop a sheet that says it drags.
+export function Handle() {
+    return (
+        <div class="flex justify-center pb-1 pt-2" aria-hidden="true">
+            <span class="h-1 w-10 rounded-full bg-base-content/30"></span>
         </div>
     );
 }

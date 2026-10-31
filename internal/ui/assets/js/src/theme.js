@@ -1,7 +1,10 @@
 // Theme Management
 // Every DaisyUI theme, chosen in the settings and remembered per browser;
 // until one is chosen, the page follows the system's light or dark
-// preference, with Light and Dark.
+// preference, with Light and Dark. The service hears the theme's
+// background as it changes, for the Android app's bars (M13.3).
+
+import { setBars } from './events.js';
 
 const LIGHT_THEME = 'light';
 const DARK_THEME = 'dark';
@@ -51,6 +54,29 @@ function apply() {
     const choice = themeChoice();
     const theme = choice === 'system' ? (dark()?.matches ? DARK_THEME : LIGHT_THEME) : choice;
     document.documentElement.setAttribute('data-theme', theme);
+    tellBars();
+}
+
+// hex is a CSS color as #rrggbb, in sRGB, as a canvas draws it: a theme's
+// colors are OKLCH, which Android takes no more than a hex's.
+function hex(color) {
+    const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    if (!ctx) return '';
+    // A color the canvas can't read leaves the one before.
+    ctx.fillStyle = '#010203';
+    ctx.fillStyle = color;
+    if (ctx.fillStyle === '#010203') return '';
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Tells the service the page's background, once there's a page to read
+    it from */
+export function tellBars() {
+    if (!document.body) return;
+    const color = hex(getComputedStyle(document.body).backgroundColor);
+    if (color) setBars(color);
 }
 
 /** Chooses a theme by name, or "system" to follow the system again */

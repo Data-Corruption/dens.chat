@@ -70,7 +70,7 @@ export function Home({ status, navigate }) {
         <>
             <UpdateNotice status={status} />
             {!view ? (
-                <Waiting label="Waiting for Dens on this computer…" />
+                <Waiting label="Waiting for Dens on this device…" />
             ) : (
                 <>
                     <PendingSignIns list={(view.sign_ins || []).filter((p) => p.id !== adding?.pending)} onRecover={recover} />
@@ -82,7 +82,8 @@ export function Home({ status, navigate }) {
                 </>
             )}
             {adding && view && (
-                <AddDen start={adding} signIns={view.sign_ins || []} hosting={view.hosting.enabled} onJoined={joined} onClose={() => setAdding(null)}
+                <AddDen start={adding} signIns={view.sign_ins || []} offerHosting={!!view.hosting.can_host && !view.hosting.enabled} onJoined={joined}
+                    onClose={() => setAdding(null)}
                     onPending={(id) => setAdding((a) => ({ ...a, pending: id }))} />
             )}
         </>
@@ -156,16 +157,17 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
 // DenRow is one den in the launcher: a dot for its state, named in words
 // when it isn't connected, what waits there (M13.1), who the member is
 // there, and Open and Manage, or, for a den that let this device or its
-// member go, signing in again or forgetting it. The den this computer
-// hosts, with hosting off, says so, with note, and leads to the switch
-// (M9.1), or to Hosting once it's exported (M10).
+// member go, signing in again or forgetting it; on the phone layout they
+// sit under the den's name, which keeps the row's width (M13.3). The den
+// this computer hosts, with hosting off, says so, with note, and leads to
+// the switch (M9.1), or to Hosting once it's exported (M10).
 function DenRow({ den, note, navigate, onChanged, onSignIn }) {
     const [dot, label] = note ? ['bg-base-content/40', note.label] : STATES[den.state] || ['bg-base-content/40', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
     const forget = useAction();
     const who = gone ? `@${den.username}` : `Signed in as ${den.display_name} · ${ROLES[den.role] || den.role}`;
     return (
-        <li class="flex flex-wrap items-center gap-3 rounded-box bg-base-100 p-3">
+        <li class="flex flex-col gap-3 rounded-box bg-base-100 p-3 md:flex-row md:items-center">
             <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                     <Tip id={`den-state-${den.den_id}`} label={label} trigger={<span class={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`}></span>}>{label}</Tip>
@@ -186,17 +188,17 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
                 <ErrorText message={forget.error} />
             </div>
             {gone ? (
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap justify-end gap-2">
                     {den.state === 'revoked' && <button type="button" class="btn btn-primary btn-sm" onClick={() => onSignIn(den)}>Sign in again</button>}
                     <button type="button" class="btn btn-sm" disabled={forget.busy} onClick={() => forget.run(async () => {
                         await api.del(`/api/dens/${den.den_id}`);
                         await onChanged();
                     })}>
-                        Remove from this computer
+                        Remove from this device
                     </button>
                 </div>
             ) : (
-                <div class="flex items-center gap-2">
+                <div class="flex items-center justify-end gap-2">
                     <button type="button" class="btn btn-ghost btn-sm" onClick={() => openManage(den.den_id)}>Manage</button>
                     <button type="button" class="btn btn-primary" onClick={() => navigate(`/den/${den.den_id}`)}>Open</button>
                 </div>
@@ -241,8 +243,9 @@ function AccountFields({ form, set }) {
 // its den and then joins it as someone new or signs in to an account
 // there, or a den's address, which signs in. A sign-in that waits for
 // another device's approval goes on a step at a time, from the service's
-// record of it.
-function AddDen({ start, signIns, hosting, onJoined, onClose, onPending }) {
+// record of it. Where this install could host a den and doesn't,
+// offerHosting, it leads there too (M13.3).
+function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) {
     const again = !!start.den;
     const [step, setStep] = useState(again ? 'signin' : 'paste');
     const [text, setText] = useState('');
@@ -324,7 +327,7 @@ function AddDen({ start, signIns, hosting, onJoined, onClose, onPending }) {
                 </Field>
                 <ErrorText message={act.error} />
                 <div><SubmitButton busy={act.busy}>Continue</SubmitButton></div>
-                {!hosting && (
+                {offerHosting && (
                     <p class="mt-2 text-sm text-base-content/70">
                         Want a den of your own?{' '}
                         <button type="button" class="link" onClick={() => {

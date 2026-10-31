@@ -4,20 +4,30 @@
 import { useState } from 'preact/hooks';
 import { api } from './api.js';
 import { ErrorText, Field, SubmitButton, TextInput, useAction, useBackdrop } from './components.jsx';
-import { useLayer } from './nav.js';
+import { useLayer, useNarrow } from './nav.js';
+import { Handle, useDragDown } from './sheet.jsx';
 
 // Dialog frames a dialog over the page, which Back closes, as do its ✕ and
-// a click outside it (M13.1).
+// a click outside it (M13.1). On the phone layout it's a sheet from the
+// screen's foot, as tall as it needs up to the screen's, its title and ✕
+// staying at its top as the rest scrolls, and a swipe down from there
+// closes it too (M13.3).
 export function Dialog({ title, onClose, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
+    const narrow = useNarrow();
+    const drag = useDragDown(onClose, (e) => narrow && !!e.target.closest('[data-sheet-top]') && !e.target.closest('button'));
     return (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
-            <div role="dialog" aria-label={title} class="card max-h-full w-full max-w-md overflow-y-auto bg-base-100 shadow-xl">
-                <div class="card-body gap-3">
-                    <div class="flex items-center justify-between">
-                        <h2 class="card-title">{title}</h2>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
+        <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4" {...backdrop}>
+            <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={title} style={drag.style} {...drag.handlers}
+                class="card max-h-[calc(100%-1.5rem)] w-full overflow-y-auto overscroll-contain bg-base-100 shadow-xl max-md:rounded-b-none max-md:pb-[env(safe-area-inset-bottom)] md:max-h-full md:max-w-md">
+                <div class="card-body gap-3 max-md:px-4 max-md:pt-0">
+                    <div data-sheet-top class="sticky top-0 z-10 -mx-1 bg-base-100 px-1 max-md:touch-none max-md:pb-1 md:static">
+                        <div class="md:hidden"><Handle /></div>
+                        <div class="flex items-center justify-between gap-2">
+                            <h2 class="card-title min-w-0">{title}</h2>
+                            <button type="button" class="btn btn-ghost btn-sm shrink-0" onClick={onClose} aria-label="Close">✕</button>
+                        </div>
                     </div>
                     {children}
                 </div>

@@ -44,6 +44,21 @@ export function autoplays(doc = globalThis.document) {
     return doc?.getElementById?.('app')?.dataset?.autoplay === 'true';
 }
 
+// hasKeys says whether the page has keys its shortcuts may take, as the
+// service says its form has them: Android's app has none (M13.3), and its
+// settings leave the shortcuts out.
+export function hasKeys(doc = globalThis.document) {
+    return doc?.getElementById?.('app')?.dataset?.keys !== 'false';
+}
+
+// inApp says whether the page shows in Dens's own app rather than a
+// browser, as the service says its form has it: Android's app (M13.3). The
+// app holds the page's permissions, as for the microphone, which the
+// phone's settings allow, and pairs the page as it opens it.
+export function inApp(doc = globalThis.document) {
+    return doc?.getElementById?.('app')?.dataset?.inApp === 'true';
+}
+
 // canPopOut says whether the browser opens a share in a window of its own
 // that the member can move to another monitor (M11). Phones' browsers and
 // Android's WebView open no such window, and capture no screen either,
@@ -54,4 +69,4 @@ export function canPopOut(win = globalThis) {
 
 // NO_CALLS and NO_SHARING say so where the page would offer them.
 export const NO_CALLS = "This browser can't make calls. Open Dens in Firefox, Chrome or Edge to join one.";
-export const NO_SHARING = "This browser can't share a screen.";
+export const NO_SHARING = "This page can't share a screen.";

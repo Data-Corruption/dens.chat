@@ -6,11 +6,13 @@
 // and everything else as a download. A file's name comes from a den and is
 // shown as text, never used as anything else.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { APIError, pageHeaders, reloadIfStale } from './api.js';
 import { useBackdrop } from './components.jsx';
-import { useLayer } from './nav.js';
+import { useLayer, useNarrow } from './nav.js';
 import { canCopy, followUpload } from './copier.js';
+import { dismisses } from './touch.js';
+import { fitted, isFitted, maxScale, useZoom } from './zoom.js';
 
 // Previews fit these boxes in the message list; one image gets more room
 // than several.
@@ -96,7 +98,7 @@ export function upload(denID, channelID, file, name, onProgress, replaces, send,
             if (xhr.status >= 200 && xhr.status < 300 && data) resolve(data);
             else reject(new APIError(data?.error || `The upload failed (HTTP ${xhr.status}).`, xhr.status));
         };
-        xhr.onerror = () => reject(new APIError("The upload failed. Is Dens still running on this computer?", 0));
+        xhr.onerror = () => reject(new APIError("The upload failed. Is Dens still running on this device?", 0));
         xhr.onabort = () => reject(new APIError('Upload stopped.', 0));
         xhr.send(file);
         // Followed from the start: Firefox says the file went only once the
@@ -283,7 +285,7 @@ function VideoTile({ denID, file, box }) {
                 onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
                 onVolumeChange={(e) => { setMuted(e.currentTarget.muted); setVolume(e.currentTarget.volume); }}
                 onWaiting={() => setWaiting(true)} onPlaying={() => setWaiting(false)} onCanPlay={() => setWaiting(false)}
-                onError={(e) => setFailed(e.currentTarget.error?.code === 2 ? "The video couldn't be loaded." : "This browser can't play this video.")} />
+                onError={(e) => setFailed(e.currentTarget.error?.code === 2 ? "The video couldn't be loaded." : "This page can't play this video.")} />
             {failed ? (
                 <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 p-2 text-center text-xs text-white">
                     <span>{failed}</span>
@@ -434,17 +436,43 @@ export function step(index, count, delta) {
     return Math.min(count - 1, Math.max(0, index + delta));
 }
 
-// Viewer shows an image whole, over everything, fitted to the window: the
-// one at index of a message's images, files. The preview shows at once
-// and the original replaces it as it loads. With several images, ‹ and ›
-// at its sides, and the ← and → keys, move between them (M5), and onIndex
-// hears where to. Back closes it (M13.1).
+// The room between a message's pictures as a swipe slides them past, in
+// pixels, and how long they take to settle once it's let go, in ms.
+const GAP = 16;
+const SETTLE = 200;
+
+// Viewer shows a message's images whole, over everything (M5): the one at
+// index of files, its preview at once and the original as it loads. In a
+// wide window it's fitted with room round it, and ‹ and › beside it move
+// between them, as do ← and →; on the phone layout it takes the screen,
+// the picture its width, and a swipe sideways moves to the next or last,
+// and one down closes it (M13.3). Two fingers or a double tap zoom it, as
+// do the wheel and a double click, and a finger or the mouse pans it then
+// (zoom.js). Its name, size, Download and Close sit in a bar at its foot.
+// onIndex hears where to move; Back closes it (M13.1).
 export function Viewer({ denID, files, index, onIndex, onClose }) {
     useLayer(onClose);
-    const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
+    const narrow = useNarrow();
+    const stageRef = useRef(null);
     const close = useRef(null);
+    const [stage, setStage] = useState({ width: 0, height: 0 });
+    // slide is where a swipe has the pictures, x across and y down, along
+    // the axis it took; settling, once it's let go, with the index it
+    // settles on, or -1 to stay.
+    const [slide, setSlide] = useState({ x: 0, y: 0, axis: '', settling: false, to: -1 });
+    const sliding = useRef(slide);
+    sliding.current = slide;
+    const settled = useRef(0);
     const at = useRef(index);
     at.current = index;
+    useLayoutEffect(() => {
+        const el = stageRef.current;
+        const measure = () => setStage({ width: el.clientWidth, height: el.clientHeight });
+        measure();
+        const watch = new ResizeObserver(measure);
+        watch.observe(el);
+        return () => watch.disconnect();
+    }, []);
     useEffect(() => {
         const onKey = (e) => {
             if (e.key === 'Escape') onClose();
@@ -454,40 +482,113 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
             const next = step(at.current, files.length, delta);
             if (next !== at.current) onIndex(next);
         };
-        const onResize = () => setWin({ w: window.innerWidth, h: window.innerHeight });
         window.addEventListener('keydown', onKey);
-        window.addEventListener('resize', onResize);
         close.current?.focus();
-        return () => {
-            window.removeEventListener('keydown', onKey);
-            window.removeEventListener('resize', onResize);
-        };
+        return () => window.removeEventListener('keydown', onKey);
     }, [files]);
+    useEffect(() => () => clearTimeout(settled.current), []);
     const file = files[index];
     const several = files.length > 1;
-    const size = fitBox(file.width, file.height, Math.max(64, win.w - (several ? 128 : 32)), Math.max(64, win.h - 112));
-    const box = { width: `${size.width}px`, height: `${size.height}px` };
-    const side = 'btn btn-circle btn-ghost absolute top-1/2 -translate-y-1/2 text-3xl text-white hover:bg-white/15';
+    // A picture's box: the stage's width on the phone layout, and in a
+    // wider window, room beside it for ‹ and ›.
+    const boxOf = (f) => fitBox(f.width, f.height, Math.max(64, stage.width - (!narrow && several ? 96 : 0)), Math.max(64, stage.height));
+    const box = boxOf(file);
+    const motion = typeof matchMedia === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // settle lets the pictures go to x, then moves to the index to, if
+    // it's one.
+    function settle(x, to) {
+        const s = { x, y: 0, axis: '', settling: true, to };
+        sliding.current = s;
+        setSlide(s);
+        clearTimeout(settled.current);
+        settled.current = setTimeout(done, motion ? SETTLE + 50 : 0);
+    }
+    function done() {
+        clearTimeout(settled.current);
+        const s = sliding.current;
+        if (!s.settling) return;
+        if (s.to >= 0) onIndex(s.to);
+        setSlide({ x: 0, y: 0, axis: '', settling: false, to: -1 });
+    }
+    const zoom = useZoom({
+        box, stage, max: maxScale(file.width, box, window.devicePixelRatio), key: file.id,
+        on: {
+            drag(dx, dy) {
+                const axis = sliding.current.axis || (Math.abs(dx) > Math.abs(dy) ? 'x' : 'y');
+                // Past the first or last picture it gives a little.
+                const there = files[at.current + (dx < 0 ? 1 : -1)];
+                const s = axis === 'x' ? { x: there ? dx : dx / 4, y: 0, axis, settling: false, to: -1 } : { x: 0, y: Math.max(0, dy), axis, settling: false, to: -1 };
+                sliding.current = s;
+                setSlide(s);
+            },
+            drop(dx, dy, speed) {
+                const axis = sliding.current.axis;
+                if (axis === 'y') {
+                    if (dismisses(dy, stage.height, speed.y)) onClose();
+                    else settle(0, -1);
+                    return;
+                }
+                const dir = dx < 0 ? 1 : -1;
+                const to = at.current + dir;
+                const far = Math.abs(dx) > stage.width / 5 || (Math.abs(speed.x) > 0.4 && Math.sign(speed.x) === -dir);
+                if (axis === 'x' && to >= 0 && to < files.length && far) settle(-dir * (stage.width + GAP), to);
+                else settle(0, -1);
+            },
+            cancel: () => settle(0, -1),
+            // A tap beside the picture closes it, as a click beside it does.
+            tap(x, y) {
+                const v = zoom.view;
+                if (x < v.x || y < v.y || x > v.x + box.width * v.scale || y > v.y + box.height * v.scale) onClose();
+            },
+        },
+    });
     const backdrop = useBackdrop(onClose);
-    return (
-        <div role="dialog" aria-label={file.name} class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-4"
-            {...backdrop}>
-            {several && index > 0 && (
-                <button type="button" class={`${side} left-4`} aria-label="Previous image" onClick={() => onIndex(index - 1)}>‹</button>
-            )}
-            {several && index < files.length - 1 && (
-                <button type="button" class={`${side} right-4`} aria-label="Next image" onClick={() => onIndex(index + 1)}>›</button>
-            )}
-            <div key={file.id} class="relative overflow-hidden rounded" style={box}>
-                {file.thumb && <img src={thumbURL(denID, file.id)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
-                <img src={fileURL(denID, file.id)} alt={file.name} width={size.width} height={size.height} class="relative h-full w-full object-contain" />
+    // Full screen it's black, as a phone's photos are, and over a wider
+    // window the page shows through a little; a swipe down fades it.
+    const dark = narrow ? 1 : 0.85;
+    const shade = slide.axis === 'y' ? Math.max(0.3, 1 - slide.y / Math.max(1, stage.height)) * dark : dark;
+    const side = 'btn btn-circle btn-ghost absolute top-1/2 z-10 -translate-y-1/2 text-3xl text-white hover:bg-white/15 pointer-coarse:max-md:hidden';
+    const keep = { onPointerDown: (e) => e.stopPropagation() };
+    // The picture shown, and those beside it, out of sight until a swipe.
+    const picture = (d) => {
+        const f = files[index + d];
+        if (!f) return null;
+        const b = d === 0 ? box : boxOf(f);
+        const v = d === 0 ? zoom.view : fitted(b, stage);
+        const style = { left: `${v.x + d * (stage.width + GAP)}px`, top: `${v.y}px`, width: `${b.width * v.scale}px`, height: `${b.height * v.scale}px` };
+        return (
+            <div key={f.id} class="absolute overflow-hidden md:rounded" style={style} aria-hidden={d !== 0 || undefined} data-shown={d === 0 || undefined}>
+                {f.thumb && <img src={thumbURL(denID, f.id)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
+                <img src={fileURL(denID, f.id)} alt={d === 0 ? f.name : ''} class="relative h-full w-full object-contain" draggable={false} />
             </div>
-            <div class="flex max-w-full items-center gap-3 text-sm text-white">
+        );
+    };
+    return (
+        <div role="dialog" aria-modal="true" aria-label={file.name} class="fixed inset-0 z-50 flex flex-col md:gap-3 md:p-4"
+            style={{ backgroundColor: `rgb(0 0 0 / ${shade})` }} {...backdrop}>
+            <div ref={stageRef} data-stage class={`relative min-h-0 w-full flex-1 touch-none select-none overflow-hidden ${isFitted(zoom.view) ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                {...zoom.handlers}>
+                <div class="absolute inset-0" style={{ transform: slide.x || slide.y ? `translate(${slide.x}px, ${slide.y}px)` : undefined,
+                    transition: slide.settling && motion ? `transform ${SETTLE}ms ease-out` : 'none' }}
+                    onTransitionEnd={(e) => e.target === e.currentTarget && slide.settling && done()}>
+                    {picture(-1)}
+                    {picture(0)}
+                    {picture(1)}
+                </div>
+                {several && index > 0 && (
+                    <button type="button" class={`${side} left-0`} aria-label="Previous image" {...keep} onClick={() => onIndex(index - 1)}>‹</button>
+                )}
+                {several && index < files.length - 1 && (
+                    <button type="button" class={`${side} right-0`} aria-label="Next image" {...keep} onClick={() => onIndex(index + 1)}>›</button>
+                )}
+            </div>
+            <div class="flex shrink-0 items-center gap-2 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-sm text-white max-md:bg-black/60 md:max-w-full md:justify-center md:gap-3 md:self-center md:p-0">
                 {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
-                <span class="truncate" title={file.name}>{file.name}</span>
+                <span class="min-w-0 flex-1 truncate md:flex-initial" title={file.name}>{file.name}</span>
                 <span class="shrink-0 cursor-default select-none text-white/60">{formatSize(file.size)}</span>
-                <a class="btn btn-sm" href={downloadURL(denID, file)} download={file.name}>Download</a>
-                <button ref={close} type="button" class="btn btn-ghost btn-sm text-white" onClick={onClose}>Close</button>
+                <a class="btn btn-sm shrink-0" href={downloadURL(denID, file)} download={file.name}>Download</a>
+                <button ref={close} type="button" class="btn btn-ghost btn-sm shrink-0 text-white" onClick={onClose}>Close</button>
             </div>
         </div>
     );

@@ -1,7 +1,8 @@
 // The local event stream, shared by every view: one WebSocket to the
 // service, which pushes den statuses and den events. The page sends on it
-// too: the channel it shows in each den, typing, and from M12.3 whether
-// it's on screen and may notify. The service is on this computer, so a
+// too: the channel it shows in each den, typing, from M12.3 whether it's
+// on screen and may notify, and from M13.3 its background, which the
+// Android app's shell paints its bars with. The service is on this computer, so a
 // lost stream retries quickly; after a reconnect, views reload, since
 // events may have been missed while it was down.
 //
@@ -41,6 +42,7 @@ let latestNotifications = null;
 // closes.
 const focus = new Map();
 let pageState = null;
+let bars = '';
 
 function start() {
     if (started) return;
@@ -97,6 +99,7 @@ function connect() {
         delay = MIN_DELAY;
         focus.forEach((channel, den) => send({ t: 'focus', d: { den, channel } }));
         if (pageState) send({ t: 'page', d: pageState });
+        if (bars) send({ t: 'bars', d: { color: bars } });
         const missed = everConnected || down;
         if (down) {
             down = false;
@@ -156,6 +159,13 @@ export function setPageState(visible, allowed) {
     if (pageState?.visible === visible && pageState?.allowed === allowed) return;
     pageState = { visible, allowed };
     send({ t: 'page', d: pageState });
+}
+
+// setBars tells the service the page's background, as #rrggbb (M13.3).
+export function setBars(color) {
+    if (bars === color) return;
+    bars = color;
+    send({ t: 'bars', d: { color } });
 }
 
 // sendTyping tells a den this member is typing in a channel.

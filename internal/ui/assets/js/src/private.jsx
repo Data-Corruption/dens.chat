@@ -229,7 +229,7 @@ export function SignInRequests({ den }) {
                         <p class="text-sm">Another of your devices is approving it.</p>
                     ) : r.lost ? (
                         <p class="text-sm">
-                            Dens on this computer restarted while you were approving it, which lost its part of the check. Refuse it, and
+                            Dens on this device restarted while you were approving it, which lost its part of the check. Refuse it, and
                             sign in again on the new device.
                         </p>
                     ) : !r.here ? (
@@ -382,7 +382,7 @@ export function KeyShown({ seal, fresh }) {
         <div class="flex flex-col gap-2">
             <h3 class="font-semibold">Your DM recovery key</h3>
             <p>{KEY_WHY}</p>
-            {!fresh && <p class="text-sm text-base-content/70">It's the same key your other dens on this computer use.</p>}
+            {!fresh && <p class="text-sm text-base-content/70">It's the same key your other dens on this device use.</p>}
             <p class="select-all rounded bg-base-100 px-3 py-2 font-mono text-sm">{seal}</p>
             <div><CopyButton text={seal} label="Copy key" /></div>
         </div>
@@ -404,10 +404,10 @@ export function RecoveryCodes({ denName, codes, seal, sealNew, onDone }) {
                 <>
                     <p>
                         If you forget your password for this den, one of these codes lets you set a new one. Each works once. They're
-                        shown only now: store them somewhere safe, away from this computer.
+                        shown only now: store them somewhere safe, away from this device.
                     </p>
-                    <ol class="grid grid-cols-2 gap-2 font-mono text-sm">
-                        {codes.map((code) => <li key={code} class="rounded bg-base-100 px-3 py-1">{code}</li>)}
+                    <ol class="grid gap-2 font-mono text-sm sm:grid-cols-2">
+                        {codes.map((code) => <li key={code} class="whitespace-nowrap rounded bg-base-100 px-3 py-1">{code}</li>)}
                     </ol>
                     <div><CopyButton text={codes.join('\n')} label="Copy codes" /></div>
                 </>
@@ -524,7 +524,7 @@ export function DMKey({ den, onSeal }) {
                         setShown(result.seal);
                     });
                 }}>
-                    <Field label="Local password" hint="The one that protects Dens on this computer, not your den password.">
+                    <Field label="Local password" hint="The one that protects Dens on this device, not your den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
                     </Field>
                     <ErrorText message={act.error} />

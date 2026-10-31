@@ -31,7 +31,7 @@
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
-import { NO_CALLS, NO_SHARING, autoplays, canCall, canShare } from './platform.js';
+import { NO_CALLS, NO_SHARING, autoplays, canCall, canShare, inApp } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
 
 const MIC = 'DENS_MIC';
@@ -1212,7 +1212,7 @@ async function answer(offer) {
         if (call !== c || pc !== own) return;
         sendCall('voice.leave', { den: c.den });
         note({ what: 'ended', why: 'browser' });
-        finish({ text: "This browser couldn't set the call up." });
+        finish({ text: "This page couldn't set the call up." });
     }
 }
 
@@ -2138,11 +2138,15 @@ export function endedText(reason, ports) {
     return "Couldn't connect the call.";
 }
 
-// micProblem says why the microphone didn't open.
-export function micProblem(e) {
+// micProblem says why the microphone didn't open, and where a refused one
+// is allowed: a browser's site settings, or where the app holds the page's
+// permissions, Android's (M13.3).
+export function micProblem(e, app = inApp()) {
     switch (e?.name) {
         case 'NotAllowedError':
-            return "Calls need your microphone. Allow it for this page in your browser's site settings, then join again.";
+            return app
+                ? "Calls need your microphone. Allow it for Dens in Android's settings, under Apps, then join again."
+                : "Calls need your microphone. Allow it for this page in your browser's site settings, then join again.";
         case 'NotFoundError':
             return 'No microphone was found.';
         case 'NotReadableError':

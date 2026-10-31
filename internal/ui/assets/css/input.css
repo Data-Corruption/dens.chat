@@ -55,10 +55,17 @@
 }
 
 /* A label that holds its checkbox or radio is what a finger or a mouse
-   aims at, so it's at least 24 pixels tall, WCAG 2.2's minimum (M13.2). */
-@layer base {
+   aims at, so it's at least 24 pixels tall, WCAG 2.2's minimum (M13.2).
+   Its words wrap, where DaisyUI keeps a label on one line, which ran a
+   long one past a phone's edge, and its box keeps its size (M13.3). In
+   the utilities' own layer, it outranks DaisyUI's, nested within it. */
+@layer utilities {
     label.label:has(input) {
         min-height: 1.5rem;
+        white-space: normal;
+        > input {
+            flex-shrink: 0;
+        }
     }
 }
 

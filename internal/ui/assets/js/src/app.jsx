@@ -43,11 +43,12 @@ function openThere({ message, open }) {
 }
 
 // takeSettingsPath opens the settings over the home page for /settings,
-// where they were a page of their own.
+// where they were a page of their own: '' is the settings open at their
+// first section, or on the phone layout their list, and null closed.
 function takeSettingsPath() {
     if (window.location.pathname !== '/settings') return null;
     history.replaceState(null, '', '/');
-    return 'appearance';
+    return '';
 }
 
 export function App({ instance, version, pair, pairLink }) {
@@ -185,7 +186,7 @@ export function App({ instance, version, pair, pairLink }) {
         <div class="flex h-screen flex-col">
             {open && !live && (
                 <div role="status" class="alert alert-warning alert-soft shrink-0 rounded-none">
-                    <span>Lost touch with the Dens service on this computer; reconnecting…</span>
+                    <span>Lost touch with the Dens service on this device; reconnecting…</span>
                 </div>
             )}
             {chat ? (
@@ -200,7 +201,7 @@ export function App({ instance, version, pair, pairLink }) {
                     </div>
                     {open && (
                         <a href="/settings" class="btn fixed bottom-4 left-4 shadow-sm" aria-label="App settings"
-                            onClick={(e) => { e.preventDefault(); openSettings('appearance'); }}>
+                            onClick={(e) => { e.preventDefault(); openSettings(); }}>
                             <CogIcon size="h-5 w-5" />
                             App settings
                         </a>
@@ -209,7 +210,7 @@ export function App({ instance, version, pair, pairLink }) {
             )}
             {/* The shares this member watches play over every page (M4.2). */}
             {open && <SharePlayer />}
-            {open && settings && (
+            {open && settings !== null && (
                 <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} instance={instance} version={version}
                     pair={pair} />
             )}
@@ -228,7 +229,7 @@ export function App({ instance, version, pair, pairLink }) {
 // own page as it opens it (M12).
 function Unpaired({ pair, pairLink, error }) {
     return (
-        <Card title="Pair this browser">
+        <Card title={pair || pairLink ? 'Pair this browser' : 'Pair this page'}>
             {pair ? (
                 <>
                     <p>This page only works in a browser paired with Dens on this computer. Run this in a terminal:</p>
@@ -325,7 +326,7 @@ function SetPassword({ canRemember, onDone }) {
                 machine, or view your keys.
             </p>
             <p class="text-sm text-base-content/70">
-                Nobody can recover it for you. If you lose both this password and this computer, your local data is gone; your den
+                Nobody can recover it for you. If you lose both this password and this device, your local data is gone; your den
                 accounts can still be recovered with their recovery codes.
             </p>
             <form class="flex flex-col gap-2" onSubmit={submit}>

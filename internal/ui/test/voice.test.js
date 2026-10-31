@@ -34,7 +34,9 @@ test("a call that never connected names the den's ports, when the page has them"
 });
 
 test("a microphone that won't open says why", () => {
-    assert.match(micProblem({ name: 'NotAllowedError' }), /Allow it/);
+    assert.match(micProblem({ name: 'NotAllowedError' }, false), /Allow it for this page in your browser's site settings/);
+    // In the Android app, the app holds the page's microphone (M13.3).
+    assert.match(micProblem({ name: 'NotAllowedError' }, true), /Allow it for Dens in Android's settings, under Apps/);
     assert.match(micProblem({ name: 'NotFoundError' }), /No microphone/);
     assert.match(micProblem({ name: 'NotReadableError' }), /in use/);
     assert.match(micProblem(new Error('odd')), /couldn't be opened/);

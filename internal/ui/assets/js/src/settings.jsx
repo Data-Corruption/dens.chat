@@ -1,5 +1,6 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
-// a call stay in view (M3.3), in four tabs (M8.3). Appearance holds the
+// a call stay in view (M3.3), in four tabs (M8.3), or on the phone layout
+// a list of the four, each a page (M13.3). Appearance holds the
 // theme; Chat & media what notifies the member (M12.3), whether photos and
 // videos go compressed (M5), what happens to links, and whether YouTube
 // videos play in Dens (M4.1); Voice &
@@ -19,11 +20,12 @@ import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
-import { useLayer } from './nav.js';
+import { useLayer, useNarrow } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
-import { NO_CALLS, NO_SHARING, canCall, canShare, here } from './platform.js';
+import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
+import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import {
     callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
@@ -34,8 +36,9 @@ import {
 const openers = new Set();
 
 // openSettings opens the settings at a tab, "appearance", "chat", "voice"
-// or "system", from anywhere on the page.
-export function openSettings(section = 'appearance') {
+// or "system", from anywhere on the page; with none, at the first, or on
+// the phone layout at the list of them.
+export function openSettings(section = '') {
     openers.forEach((fn) => fn(section));
 }
 
@@ -52,20 +55,42 @@ const SECTIONS = [
 ];
 
 // SettingsDialog shows a tab of the settings. It closes with its ✕,
-// Escape, a click outside it, or Back (M13.1).
+// Escape, a click outside it, or Back (M13.1). On the phone layout it takes
+// the screen, its tabs a list of pages, and Back and Escape go from a page
+// to the list (M13.3).
 export function SettingsDialog({ section, onSection, onClose, instance, version, pair }) {
     useLayer(onClose);
+    const narrow = useNarrow();
+    useSectionPage(narrow && !!section, () => onSection(''));
+    const at = section || (narrow ? '' : 'appearance');
     useEffect(() => {
-        const escape = (e) => e.key === 'Escape' && onClose();
+        const escape = (e) => e.key === 'Escape' && (narrow && section ? onSection('') : onClose());
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
-    }, [onClose]);
+    }, [onClose, narrow, section]);
     let panel;
-    if (section === 'chat') panel = <ChatSettings />;
-    else if (section === 'voice') panel = <VoiceSettings />;
-    else if (section === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
+    if (at === 'chat') panel = <ChatSettings />;
+    else if (at === 'voice') panel = <VoiceSettings />;
+    else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <ThemePicker />;
     const backdrop = useBackdrop(onClose);
+    if (narrow) {
+        return (
+            <div role="dialog" aria-modal="true" aria-label="App settings" class="fixed inset-0 z-50 flex flex-col bg-base-100">
+                {at ? (
+                    <>
+                        <PageHeader title={SECTIONS.find(([id]) => id === at)?.[1]} onBack={() => onSection('')} />
+                        <div data-panel class={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${PLAIN_CARDS}`}>{panel}</div>
+                    </>
+                ) : (
+                    <>
+                        <PageHeader title="App settings" onClose={onClose} />
+                        <SectionList label="Settings" groups={[['', SECTIONS]]} onPick={onSection} />
+                    </>
+                )}
+            </div>
+        );
+    }
     return (
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
             <div role="dialog" aria-modal="true" aria-label="App settings" class="card flex h-full max-h-[48rem] w-full max-w-2xl flex-col bg-base-100 shadow-xl">
@@ -75,13 +100,13 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
                 </div>
                 <div role="tablist" class="tabs tabs-border flex-nowrap overflow-x-auto px-2">
                     {SECTIONS.map(([id, name]) => (
-                        <button key={id} type="button" role="tab" aria-selected={section === id}
-                            class={`tab whitespace-nowrap ${section === id ? 'tab-active' : ''}`} onClick={() => onSection(id)}>
+                        <button key={id} type="button" role="tab" aria-selected={at === id}
+                            class={`tab whitespace-nowrap ${at === id ? 'tab-active' : ''}`} onClick={() => onSection(id)}>
                             {name}
                         </button>
                     ))}
                 </div>
-                <div role="tabpanel" class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
+                <div role="tabpanel" data-panel class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
             </div>
         </div>
     );
@@ -119,7 +144,7 @@ function ThemePicker() {
         <Card title="Theme">
             <div role="radiogroup" aria-label="Theme" class="grid grid-cols-3 gap-2">
                 {[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([theme, name]) => (
-                    <label key={theme} class={`flex cursor-pointer flex-col items-center gap-2 rounded-box bg-base-100 px-2 py-3 hover:bg-base-300 ${ring}`}>
+                    <label key={theme} class={`flex cursor-pointer flex-col items-center gap-2 rounded-box bg-base-100 px-2 py-3 hover:bg-base-300 max-md:bg-base-200 ${ring}`}>
                         <input type="radio" name="theme" class="sr-only" value={theme} checked={choice === theme} onChange={() => pick(theme)} />
                         {theme === 'system' ? <SystemSwatch large /> : <Swatch theme={theme} large />}
                         <span class="text-sm font-medium">{name}</span>
@@ -139,7 +164,7 @@ function ThemePicker() {
                 <div role="radiogroup" aria-label="More themes" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1">
                     {THEMES.filter((t) => t !== 'light' && t !== 'dark').map((theme) => (
                         <label key={theme}
-                            class={`flex cursor-pointer items-center gap-2 rounded-field px-2 py-1.5 text-sm hover:bg-base-300 has-[:checked]:bg-base-100 has-[:checked]:font-medium ${ring}`}>
+                            class={`flex cursor-pointer items-center gap-2 rounded-field px-2 py-1.5 text-sm hover:bg-base-300 has-[:checked]:bg-base-100 has-[:checked]:font-medium max-md:has-[:checked]:bg-base-200 ${ring}`}>
                             <input type="radio" name="theme" class="sr-only" value={theme} checked={choice === theme} onChange={() => pick(theme)} />
                             <Swatch theme={theme} />
                             <span class="truncate">{themeName(theme)}</span>
@@ -189,7 +214,7 @@ function ChatSettings() {
             <Card title="Photos and videos">
                 <Toggle id="compress" label="Compress photos and videos" checked={compress}
                     hint="Sends faster and saves space. You can still choose the original before sending."
-                    tip="A photo goes at most 2,560 pixels across, and a video at most 720p, made on this computer before it's sent, which takes about as long as the video lasts. A file larger than a den allows is compressed either way."
+                    tip="A photo goes at most 2,560 pixels across, and a video at most 720p, made on this device before it's sent, which takes about as long as the video lasts. A file larger than a den allows is compressed either way."
                     onChange={(on) => {
                         setSendSmaller(on);
                         setCompress(on);
@@ -260,10 +285,12 @@ function NotificationSettings() {
 }
 
 // VoiceSettings chooses the microphone and speaker, how loud calls play
-// (M12), the noise suppression, how the member sends their voice, and their
-// shortcuts. Its meter shows
-// what the voice processor hears and whether it sends it: in the call
-// while there is one, and otherwise in a test the member starts.
+// (M12), the noise suppression, how the member sends their voice, their
+// shortcuts, and how they share their screen. Its meter shows what the
+// voice processor hears and whether it sends it: in the call while there
+// is one, and otherwise in a test the member starts. What the page can't
+// use leaves it, as on a phone (M13.3): the shortcuts where the service
+// says there are no keys, and sharing where the browser can't share.
 function VoiceSettings() {
     const [v, setV] = useState(voiceSettings);
     const [loud, setLoud] = useState(callVolume);
@@ -282,7 +309,7 @@ function VoiceSettings() {
         setElsewhere(keysElsewhere());
     }), []);
     useEffect(() => {
-        devices().then(setList, () => setError("This browser didn't list its devices."));
+        devices().then(setList, () => setError("Dens couldn't list the microphones and speakers."));
         const off = onVoiceLevel(setReport);
         return () => {
             off();
@@ -359,7 +386,8 @@ function VoiceSettings() {
     const auto = v.mode === 'voice' && v.auto && suppressing;
     const desktopHolds = (name) => elsewhere.confirms && elsewhere.covers.includes(name);
     let talk = 'Set a push-to-talk shortcut below.';
-    if (desktopHolds('ptt')) talk = 'Hold the push-to-talk shortcut your desktop runs to talk.';
+    if (!hasKeys()) talk = "Hold the call's button to talk.";
+    else if (desktopHolds('ptt')) talk = 'Hold the push-to-talk shortcut your desktop runs to talk.';
     else if (v.keys.ptt) talk = `Hold ${keyLabel(v.keys.ptt)} to talk.`;
     return (
         <>
@@ -395,13 +423,13 @@ function VoiceSettings() {
                 </Field>
                 <Toggle id="noise" label="Noise suppression" checked={suppression.rnnoise} onChange={pickSuppression}
                     hint="Removes keyboard, fan and background noise."
-                    tip="It adds 30 ms of delay and uses a little of this computer's processor. Off, the browser's own suppression takes out only steady noise, such as a fan's." />
+                    tip="It adds 30 ms of delay and uses a little of this device's processor. Off, the built-in suppression takes out only steady noise, such as a fan's." />
                 {suppression.processorFailed ? (
                     <p class="text-sm text-warning">
-                        This browser couldn't run Dens's voice processing, so its own noise suppression is on, and voice activity sends whatever
+                        Dens's voice processing couldn't run here, so the built-in noise suppression is on, and voice activity sends whatever
                         it hears. Push to talk still works.
                     </p>
-                ) : suppression.failed && <p class="text-sm text-warning">Noise suppression couldn't start in this browser, so its own is on.</p>}
+                ) : suppression.failed && <p class="text-sm text-warning">Noise suppression couldn't start here, so the built-in one is on.</p>}
             </Card>
             <Card title="Sending your voice">
                 <div role="radiogroup" aria-label="Sending your voice" class="flex flex-wrap gap-4">
@@ -415,7 +443,7 @@ function VoiceSettings() {
                     </label>
                 </div>
                 {v.mode === 'voice' ? (
-                    <div class="flex flex-col gap-3 rounded-box bg-base-100 p-3">
+                    <div class="flex flex-col gap-3 rounded-box bg-base-100 p-3 max-md:bg-base-200">
                         <Toggle id="auto-sensitivity" label="Automatic sensitivity" checked={auto} disabled={!suppressing}
                             hint={suppressing ? "Detects when you're speaking." : 'Needs noise suppression.'}
                             onChange={(on) => change({ auto: on })} />
@@ -439,7 +467,7 @@ function VoiceSettings() {
                     )}
                 </div>
             </Card>
-            <Card title="Keyboard shortcuts">
+            {hasKeys() && <Card title="Keyboard shortcuts">
                 {KEYS.map(([name, title]) => (
                     <div key={name} class="flex flex-wrap items-center gap-2">
                         <span class="min-w-32 flex-1">{title}</span>
@@ -474,8 +502,8 @@ function VoiceSettings() {
                 ))}
                 {capturing && <p class="text-sm text-base-content/70">Press a key, or a mouse's side button. Escape cancels.</p>}
                 <KeysNote elsewhere={elsewhere} onDesktop={desktop} />
-            </Card>
-            <ShareSettings />
+            </Card>}
+            {canShare() && <ShareSettings />}
             {error && <ErrorText message={error} />}
         </>
     );
@@ -591,7 +619,6 @@ function ShareSettings() {
     const resolution = (h) => (h === 2160 ? '4K (2160p)' : `${h}p`);
     return (
         <Card title="Screen share">
-            {canCall() && !canShare() && <p class="text-sm text-warning">{NO_SHARING}</p>}
             <div class="grid gap-x-3 sm:grid-cols-2">
                 <Field label="Resolution">
                     <select class="select w-full" value={s.height} onChange={(e) => change({ height: Number(e.currentTarget.value) })}>
@@ -692,11 +719,12 @@ function SystemSettings({ instance, version, pair }) {
                 </div>
             </Card>
             <ErrorText message={save.error} />
-            <Card title="This browser">
+            <Card title={inApp() ? 'This page' : 'This browser'}>
                 <p class="text-sm text-base-content/70">
-                    {pair
-                        ? <>Signing out unpairs this browser. To pair it again, run <code class="rounded bg-base-300 px-1">{pair}</code>.</>
-                        : 'Signing out unpairs this browser. To pair it again, open Dens from your apps menu.'}
+                    {inApp() ? 'Signing out unpairs this page. Dens pairs it again as you open it from your apps.'
+                        : pair
+                            ? <>Signing out unpairs this browser. To pair it again, run <code class="rounded bg-base-300 px-1">{pair}</code>.</>
+                            : 'Signing out unpairs this browser. To pair it again, open Dens from your apps menu.'}
                 </p>
                 <div>
                     <button type="button" class="btn btn-outline btn-sm" onClick={() => save.run(async () => {
@@ -850,7 +878,7 @@ function BackUp() {
             <p class="text-sm text-base-content/70">Your dens, keys and settings, and a den you host, protected by your local password. Not the cache.</p>
             {asking ? (
                 <form class="flex flex-col gap-2" onSubmit={submit}>
-                    <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+                    <Field label="Local password" hint="The one that protects Dens on this device, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
                     </Field>
                     <div class="flex flex-wrap items-center gap-2">
@@ -1149,7 +1177,7 @@ function LocalPassword() {
 
     return (
         <Card title="Local password">
-            <p class="text-sm text-base-content/70">Protects Dens on this computer. It's separate from your den passwords.</p>
+            <p class="text-sm text-base-content/70">Protects Dens on this device. It's separate from your den passwords.</p>
             {open ? (
                 <form class="flex flex-col gap-2" onSubmit={submit}>
                     <Field label="Current password">

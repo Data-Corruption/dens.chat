@@ -13,6 +13,7 @@ import { useBackdrop } from './components.jsx';
 import { useLayer } from './nav.js';
 import { fitBox, formatSize, step } from './files.jsx';
 import { useCoarse } from './touch.js';
+import { fitted, isFitted, useZoom, zoomAt } from './zoom.js';
 
 const SMALLER = 'DENS_SEND_SMALLER';
 let smaller = null;
@@ -105,19 +106,6 @@ export function actualSize(v, dpr) {
     return { width: v.width / r, height: v.height / r };
 }
 
-// clampPan keeps a picture of size box, at offset in a view, covering the
-// view where it's larger than the view, and centered where it's smaller.
-export function clampPan(offset, box, view) {
-    const axis = (o, b, v) => (b <= v ? (v - b) / 2 : Math.min(0, Math.max(v - b, o)));
-    return { x: axis(offset.x, box.width, view.width), y: axis(offset.y, box.height, view.height) };
-}
-
-// panTo centers the view on the point at fractions fx and fy across a
-// picture of size box, as far as the picture reaches.
-export function panTo(fx, fy, box, view) {
-    return clampPan({ x: view.width / 2 - fx * box.width, y: view.height / 2 - fy * box.height }, box, view);
-}
-
 // usage says how much of their space the member uses on the den, against
 // the den's limit for each member.
 export function usage(storage, limits) {
@@ -150,9 +138,6 @@ function formatTime(seconds) {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-// How far a press may move and still count as a click, not a drag.
-const CLICK_SLOP = 4;
-
 // How long a finger rests on the picture before it shows the other
 // version, until it's lifted, as Space held does (M13.2); a quicker tap
 // looks closer, as a click does.
@@ -161,21 +146,21 @@ const HOLD = 250;
 // Compare shows a photo or video waiting to be sent in its two versions, so
 // the member picks one: fitted to the window, as the viewer shows everyone,
 // or at 100%, where they drag to look around, with the smaller copy scaled
-// up to match, as someone who downloads it would see it. The switch flips
-// between them in place, and holding Space, or a finger on the picture,
-// shows the other one while it's held. A video's two play in place, kept at the same moment, so a flip
-// shows the same frame; a version the browser can't play, such as a
-// full size in HEVC in Firefox, leaves the other alone, and says why. files
-// are the message's files with two versions, and ← and → move between
-// them; onSwitch sends the files given as the version given.
+// up to match, as someone who downloads it would see it; and as two
+// fingers or the wheel zoom it, between (M13.3). The switch flips between
+// them in place, and holding Space, or a finger on the picture, shows the
+// other one while it's held. A video's two play in place, kept at the
+// same moment, so a flip shows the same frame; a version the browser
+// can't play, such as a full size in HEVC in Firefox, leaves the other
+// alone, and says why. files are the message's files with two versions,
+// and ← and → move between them; onSwitch sends the files given as the
+// version given.
 export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClose }) {
     const entry = files[index];
     const versions = entry.result.versions;
     const video = isVideo(versions);
     const [shown, setShown] = useState(versions.sent);
     const [held, setHeld] = useState(false);
-    const [actual, setActual] = useState(false);
-    const [pan, setPan] = useState({ x: 0, y: 0 });
     const [all, setAll] = useState(false);
     const [storage, setStorage] = useState(null);
     const [view, setView] = useState({ width: 0, height: 0 });
@@ -187,7 +172,6 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     // sound without a picture, as Chromium does with HEVC it can't decode.
     const [broken, setBroken] = useState({});
     const stage = useRef(null);
-    const drag = useRef(null);
     const close = useRef(null);
     const players = useRef({});
     const at = useRef(index);
@@ -195,7 +179,6 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const touch = useCoarse();
     useLayer(onClose);
     at.current = index;
-    useEffect(() => () => clearTimeout(drag.current?.timer), []);
 
     // The stage's size is known before the first paint, so the photo
     // never shows at a guess.
@@ -245,11 +228,38 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
         };
     }, [files, onClose, onIndex]);
 
-    // Another file starts as the version it goes as, from the middle.
+    const full = versions.full;
+    const box = fitBox(full.width, full.height, Math.max(64, view.width), Math.max(64, view.height));
+    // At 100% each of the full size's pixels is one of the screen's.
+    const real = actualSize(full, window.devicePixelRatio).width / box.width;
+    const min = Math.min(1, real);
+    const max = Math.max(4, 2 * real);
+    const zoom = useZoom({
+        box, stage: view, max, min, key: entry.key, hold: HOLD, double: false,
+        on: {
+            hold: setHeld,
+            // A click on the fitted file looks at that spot at 100%, and
+            // one zoomed fits it again. One beside it closes, as in the
+            // viewer.
+            tap(x, y) {
+                const v = zoom.view;
+                if (!isFitted(v)) return zoom.set(fitted(box, view));
+                if (x < v.x || y < v.y || x > v.x + box.width || y > v.y + box.height) return onClose();
+                zoom.set(zoomAt(v, real, x, y, box, view, max, min));
+            },
+        },
+    });
+    const actual = Math.abs(zoom.view.scale - real) < 0.01;
+    // Another file starts as the version it goes as, from the middle, at
+    // 100% if the last one was.
+    const wasActual = useRef(false);
     useEffect(() => {
         setShown(entry.result.versions.sent);
-        setPan((p) => (actual ? panTo(0.5, 0.5, actualSize(entry.result.versions.full, window.devicePixelRatio), view) : p));
+        if (wasActual.current) zoom.set(zoomAt(fitted(box, view), real, view.width / 2, view.height / 2, box, view, max, min));
     }, [entry.key]);
+    useEffect(() => {
+        wasActual.current = actual;
+    });
     // A switched file is a new upload, whose versions load again.
     useEffect(() => {
         setLoaded({});
@@ -258,13 +268,10 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
         setBroken({});
     }, [entry.result.id]);
 
-    const full = versions.full;
     // A version the browser can't play shows the other instead.
     const flip = held ? other(shown) : shown;
     const visible = broken[flip] && !broken[other(flip)] ? other(flip) : flip;
-    const fitted = fitBox(full.width, full.height, Math.max(64, view.width), Math.max(64, view.height));
-    const box = actual ? actualSize(full, window.devicePixelRatio) : fitted;
-    const offset = actual ? clampPan(pan, box, view) : { x: (view.width - box.width) / 2, y: (view.height - box.height) / 2 };
+    const shownAt = { left: zoom.view.x, top: zoom.view.y, width: box.width * zoom.view.scale, height: box.height * zoom.view.scale };
 
     // play starts a version. One the comparison pauses before it starts, as
     // a quick flip does, hasn't failed; one the browser won't play has.
@@ -305,57 +312,8 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
         setTime(t);
     }
 
-    function down(e) {
-        if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        const d = { x: e.clientX, y: e.clientY, pan: offset, moved: false, holding: false, timer: 0 };
-        if (e.pointerType !== 'mouse') {
-            d.timer = setTimeout(() => {
-                d.holding = true;
-                setHeld(true);
-            }, HOLD);
-        }
-        drag.current = d;
-    }
-    function move(e) {
-        const d = drag.current;
-        if (!d || d.holding) return;
-        const dx = e.clientX - d.x;
-        const dy = e.clientY - d.y;
-        d.moved = d.moved || Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP;
-        if (d.moved) clearTimeout(d.timer);
-        if (actual && d.moved) setPan(clampPan({ x: d.pan.x + dx, y: d.pan.y + dy }, box, view));
-    }
-    // let go ends a press: one that held shows the version shown again.
-    function letGo() {
-        const d = drag.current;
-        drag.current = null;
-        clearTimeout(d?.timer);
-        if (d?.holding) setHeld(false);
-        return d;
-    }
-    function up(e) {
-        const d = letGo();
-        if (!d || d.moved || d.holding) return;
-        // A click on the fitted file looks at that spot at 100%, and one at
-        // 100% fits it again. One beside it closes, as in the viewer.
-        if (actual) {
-            setActual(false);
-            return;
-        }
-        const r = e.currentTarget.getBoundingClientRect();
-        const fx = (e.clientX - r.left - offset.x) / box.width;
-        const fy = (e.clientY - r.top - offset.y) / box.height;
-        if (fx < 0 || fx > 1 || fy < 0 || fy > 1) {
-            onClose();
-            return;
-        }
-        setPan(panTo(fx, fy, actualSize(full, window.devicePixelRatio), view));
-        setActual(true);
-    }
     function showActual(on) {
-        if (on && !actual) setPan(panTo(0.5, 0.5, actualSize(full, window.devicePixelRatio), view));
-        setActual(on);
+        zoom.set(on ? zoomAt(fitted(box, view), real, view.width / 2, view.height / 2, box, view, max, min) : fitted(box, view));
     }
 
     const to = other(versions.sent);
@@ -369,11 +327,10 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     return (
         <div role="dialog" aria-modal="true" aria-label={`Compare the two versions of ${entry.result.name}`}
             class="fixed inset-0 z-50 flex flex-col gap-3 bg-black/85 p-4" {...backdrop}>
-            <div ref={stage} class={`relative min-h-0 flex-1 touch-none overflow-hidden ${actual ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={letGo}
-                onContextMenu={(e) => touch && e.preventDefault()}>
-                <div key={entry.result.id} class={`absolute select-none overflow-hidden rounded ${actual ? '' : 'cursor-zoom-in'}`}
-                    style={{ left: `${offset.x}px`, top: `${offset.y}px`, width: `${box.width}px`, height: `${box.height}px` }}>
+            <div ref={stage} class={`relative min-h-0 flex-1 touch-none overflow-hidden ${isFitted(zoom.view) ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                {...zoom.handlers} onContextMenu={(e) => touch && e.preventDefault()}>
+                <div key={entry.result.id} class={`absolute select-none overflow-hidden rounded ${isFitted(zoom.view) ? 'cursor-zoom-in' : ''}`}
+                    style={{ left: `${shownAt.left}px`, top: `${shownAt.top}px`, width: `${shownAt.width}px`, height: `${shownAt.height}px` }}>
                     {['smaller', 'full'].map((which) => (video ? (
                         <video key={which} ref={(el) => { players.current[which] = el; }} src={versionURL(denID, entry.result.id, which)}
                             aria-label={visible === which ? label(which) : undefined} preload="auto" playsInline loop
@@ -423,9 +380,9 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                 <div class="flex max-w-full flex-wrap items-center justify-center gap-2">
                     {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
                     <span class="max-w-60 truncate" title={entry.result.name}>{entry.result.name}</span>
-                    <div role="group" aria-label="Version shown" class="join">
+                    <div role="group" aria-label="Version shown" class="join max-md:join-vertical max-md:w-full">
                         {['smaller', 'full'].map((which) => (
-                            <button key={which} type="button" class={toggle(visible === which)} aria-pressed={visible === which}
+                            <button key={which} type="button" class={`${toggle(visible === which)} max-md:justify-start`} aria-pressed={visible === which}
                                 disabled={!!broken[which]} onClick={() => setShown(which)}>
                                 {which === 'smaller' ? 'Smaller' : 'Full size'}
                                 <span class="font-normal opacity-70">{describe(versions[which])}</span>
@@ -434,15 +391,15 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                         ))}
                     </div>
                     <div role="group" aria-label="Zoom" class="join">
-                        <button type="button" class={toggle(!actual)} aria-pressed={!actual} onClick={() => showActual(false)}>Fit</button>
+                        <button type="button" class={toggle(isFitted(zoom.view))} aria-pressed={isFitted(zoom.view)} onClick={() => showActual(false)}>Fit</button>
                         <button type="button" class={toggle(actual)} aria-pressed={actual} onClick={() => showActual(true)}>100%</button>
                     </div>
                 </div>
                 <div class="flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-1">
                     <span class="cursor-default select-none text-white/60">
-                        {broken.full && broken.smaller ? "This browser can't play either version."
-                            : broken.full ? "This browser can't play the full size, so only the smaller copy shows."
-                                : broken.smaller ? "This browser can't play the smaller copy, which is AV1, so only the full size shows."
+                        {broken.full && broken.smaller ? "This page can't play either version."
+                            : broken.full ? "This page can't play the full size, so only the smaller copy shows."
+                                : broken.smaller ? "This page can't play the smaller copy, which is AV1, so only the full size shows."
                                     : touch ? 'Hold a finger on the picture to see the other one.' : 'Hold Space to see the other one.'}{' '}
                         {usage(storage, limits)}
                     </span>
