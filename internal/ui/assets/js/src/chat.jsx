@@ -1,7 +1,10 @@
 // A den's chat: the sidebar of channels and DMs, the open channel, and the
-// member list.
+// member list. Below 768 pixels they're three panes in a row, one on screen
+// at a time (M13.1): the list, the channel, and the members or a DM's
+// profile, which the browser's own scrolling swipes between, snapping to
+// each, and the page's history walks.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
@@ -12,6 +15,7 @@ import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane, openAt } from './messages.jsx';
 import { LinkContext } from './msglinks.jsx';
+import { nav, useNarrow } from './nav.js';
 import { mutedIn, notifying, withdraw } from './notify.js';
 import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
@@ -106,12 +110,16 @@ export function lastDM(view, reads, lastID) {
 
 // pick chooses the channel to show: the one in the address, else the last
 // one shown in this den unless it's a DM since closed, else the first text
-// channel. The Direct messages tab with no DM open shows none.
+// channel. The Direct messages tab with no DM open shows none, as does a
+// den last left there, whose list the phone layout shows at its own
+// address.
 function pick(view, denID, channelID) {
     if (!view || channelID === NO_DM) return null;
     const shown = view.channels.find((c) => c.id === channelID);
     if (hasMessages(shown)) return shown;
-    const last = view.channels.find((c) => c.id === stored(LAST_CHANNEL + denID));
+    const lastID = stored(LAST_CHANNEL + denID);
+    if (!channelID && lastID === NO_DM) return null;
+    const last = view.channels.find((c) => c.id === lastID);
     if (hasMessages(last) && !closedDMs(view).has(last.id)) return last;
     return denChannel(view, '');
 }
@@ -182,14 +190,16 @@ function expireTypers(typing, now) {
     return changed ? next : typing;
 }
 
-export function Chat({ denID, channelID, navigate }) {
+// pane is the pane the page's history shows on the phone layout: list,
+// chan or side.
+export function Chat({ denID, channelID, pane, navigate }) {
     const [view, setView] = useState(null);
     const [error, setError] = useState('');
     const [dialog, setDialog] = useState(null);
-    // On a narrow screen the channel list and the channel take turns.
-    const [listOpen, setListOpen] = useState(!channelID);
-    // The member list starts open where it fits beside the channel, until
-    // the member closes it (M8.3).
+    const narrow = useNarrow();
+    // In a wider window the member list starts open where it fits beside
+    // the channel, until the member closes it (M8.3); on the phone layout
+    // it's a pane of its own.
     const [membersOpen, setMembersOpen] = useState(() => {
         const kept = stored(MEMBERS_OPEN);
         return kept ? kept === '1' : window.matchMedia?.('(min-width: 768px)').matches ?? false;
@@ -213,6 +223,9 @@ export function Chat({ denID, channelID, navigate }) {
     const [dens, setDens] = useState([]);
     // tab is the list the sidebar shows: the den's channels, or DMs.
     const [tab, setTab] = useState(() => stored(LIST_TAB + denID) || 'den');
+    // showing changes as the phone layout's list shows another channel
+    // behind it, which pick reads from the browser.
+    const [, setShowing] = useState('');
     const reloadTimer = useRef(null);
     // loads counts the view's reloads, so one that lands after a newer one
     // is dropped. caught holds, for each reload out, the events that came
@@ -309,6 +322,9 @@ export function Chat({ denID, channelID, navigate }) {
     }, [anyTyping]);
 
     const channel = pick(view, denID, channelID);
+    // noDM is the Direct messages tab open with no DM, as the address says,
+    // or the phone layout's list, at its own address, left it.
+    const noDM = channelID === NO_DM || (!channelID && !!view && stored(LAST_CHANNEL + denID) === NO_DM);
     // The den sends typing only where this member is looking, and the
     // service notifies them of nothing there (M12.3); this page takes back
     // its own notification of what it shows, which the service may have
@@ -322,8 +338,19 @@ export function Chat({ denID, channelID, navigate }) {
     const openKind = channel?.kind;
     useEffect(() => {
         if (openKind) setTab(openKind === 'dm' ? 'dms' : 'den');
-        else if (channelID === NO_DM) setTab('dms');
-    }, [channel?.id, channelID]);
+        else if (noDM) setTab('dms');
+    }, [channel?.id, channelID, noDM]);
+    // shownID is the channel shown, for the page's history: its ID, NO_DM,
+    // or '' for none.
+    const shownID = channel ? channel.id : noDM ? NO_DM : '';
+    // The members' place: the member list, or beside a DM the other
+    // member's profile (M11); with no DM open, there's none.
+    const hasSide = !noDM;
+    // at is the pane on screen on the phone layout, '' in a wider window.
+    const at = !narrow ? '' : pane === 'side' && hasSide ? 'side' : pane === 'list' || (!pane && !channelID) ? 'list' : 'chan';
+    const toPane = (next) => nav().den(denID, shownID, next);
+    // A swipe that settles on another pane goes there in the history too.
+    const row = usePaneRow(at, !!view, (near) => near !== at && toPane(near));
 
     if (error && !view) return <div class="p-6"><div role="alert" class="alert alert-error">{error}</div></div>;
     if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
@@ -343,7 +370,7 @@ export function Chat({ denID, channelID, navigate }) {
     const typers = channel
         ? [...(typing.get(channel.id)?.keys() || [])].filter((id) => id !== view.me.id).map((id) => members.get(id)).filter(Boolean)
         : [];
-    // What waits elsewhere, for the channels button on a narrow screen.
+    // What waits elsewhere, for the channels button on the phone layout.
     const elsewhere = { mentions: 0, unread: false };
     for (const c of view.channels) {
         const r = reads.get(c.id);
@@ -353,8 +380,14 @@ export function Chat({ denID, channelID, navigate }) {
     }
 
     function openChannel(id) {
-        setListOpen(false);
-        navigate(`/den/${denID}/${id}`);
+        nav().den(denID, id, 'chan');
+    }
+
+    // showInList shows a channel behind the phone layout's list, which
+    // keeps its own address, as the list would have it in a wider window.
+    function showInList(id) {
+        store(LAST_CHANNEL + denID, id);
+        setShowing(id);
     }
 
     // pickTab shows a tab's list, and opens what's in it, so a den channel
@@ -362,20 +395,21 @@ export function Chat({ denID, channelID, navigate }) {
     // nobody writes in a channel thinking it's a DM (M11). Each opens what
     // was last open in it, so going to the den to copy something and back
     // returns to the same DM; Direct messages opens none when there's no
-    // DM to return to. The list stays up on a narrow screen.
+    // DM to return to. The phone layout's list stays on screen, with what
+    // the tab opens behind it.
     function pickTab(next) {
         store(LIST_TAB + denID, next);
         setTab(next);
-        if (next === 'den' && (channel?.kind === 'dm' || channelID === NO_DM)) {
-            const c = denChannel(view, stored(LAST_TEXT + denID));
-            navigate(c ? `/den/${denID}/${c.id}` : `/den/${denID}`);
-        } else if (next === 'dms' && channel?.kind !== 'dm') {
-            const last = lastDM(view, reads, stored(LAST_DM + denID));
-            navigate(`/den/${denID}/${last ? last.id : NO_DM}`);
-        }
+        let to = null;
+        if (next === 'den' && (channel?.kind === 'dm' || !channel)) to = denChannel(view, stored(LAST_TEXT + denID))?.id || '';
+        else if (next === 'dms' && channel?.kind !== 'dm') to = lastDM(view, reads, stored(LAST_DM + denID))?.id || NO_DM;
+        if (to === null) return;
+        if (at === 'list') showInList(to);
+        else nav().den(denID, to, 'chan');
     }
 
     function toggleMembers() {
+        if (narrow) return toPane(at === 'side' ? 'chan' : 'side');
         store(MEMBERS_OPEN, membersOpen ? '0' : '1');
         setMembersOpen(!membersOpen);
     }
@@ -391,7 +425,9 @@ export function Chat({ denID, channelID, navigate }) {
     // as the tab wouldn't (M11).
     async function closeDM(c) {
         await api.post(`/api/dens/${denID}/dms/${c.id}/close`);
-        if (c.id === channel?.id) navigate(`/den/${denID}/${NO_DM}`);
+        if (c.id !== channel?.id) return;
+        if (at === 'list') showInList(NO_DM);
+        else nav().den(denID, NO_DM, 'chan');
     }
 
     async function forget() {
@@ -410,21 +446,34 @@ export function Chat({ denID, channelID, navigate }) {
         denID, view, dens,
         open: (den, channelID, messageID) => {
             openAt(den, channelID, messageID);
-            setListOpen(false);
             navigate(`/den/${den}/${channelID}`);
         },
     };
+    // What waits in the other dens, for the list's Home button.
+    const away = { mentions: 0, unread: false };
+    for (const d of dens) {
+        if (d.den_id === denID) continue;
+        away.mentions += d.mentions || 0;
+        away.unread ||= d.unread > 0;
+    }
 
     return (
         <DenContext.Provider value={denID}>
             <LinkContext.Provider value={links}>
-                <div class="flex h-full min-h-0">
-                    <aside class={`${listOpen ? 'flex' : 'hidden'} w-full shrink-0 flex-col overflow-y-auto bg-base-200 md:flex md:w-64`}>
+                {/* On the phone layout a row that scrolls sideways, snapping to
+                    each pane; the side panes take 85% of it, so the channel shows
+                    at their edge, dimmed, and a tap there goes back to it. Panes
+                    off screen are inert. */}
+                <div ref={row} class="relative flex h-full min-h-0 snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] md:snap-none md:overflow-x-visible [&::-webkit-scrollbar]:hidden"
+                    onClick={(e) => at && at !== 'chan' && e.target === e.currentTarget && toPane('chan')}>
+                    <aside data-pane="list" inert={!!at && at !== 'list'} class="flex w-[85%] shrink-0 snap-start flex-col overflow-y-auto bg-base-200 md:w-64">
                         <div class="border-b border-base-300 p-3">
                             <div class="flex items-center gap-2">
-                                <a href="/" class="btn btn-ghost btn-sm btn-square -my-1 -ml-1" aria-label="Home" title="Home"
+                                <a href="/" class="btn btn-ghost btn-sm btn-square relative -my-1 -ml-1" title="Home"
+                                    aria-label={away.mentions ? `Home, ${away.mentions} unread mentions in other dens` : away.unread ? 'Home, unread in other dens' : 'Home'}
                                     onClick={(e) => { e.preventDefault(); navigate('/'); }}>
                                     <HomeIcon />
+                                    <Marks mentions={away.mentions} unread={away.unread} />
                                 </a>
                                 <span class="min-w-0 flex-1 truncate font-semibold">{view.name}</span>
                                 {bells && (
@@ -460,7 +509,8 @@ export function Chat({ denID, channelID, navigate }) {
                             <UserPanel me={view.me} online={live && view.state === 'connected'} onEdit={() => setDialog({ kind: 'edit' })} />
                         </div>
                     </aside>
-                    <section class={`${listOpen ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col md:flex`}>
+                    <section data-pane="chan" inert={!!at && at !== 'chan'}
+                        class="relative flex w-full min-w-0 shrink-0 snap-start snap-always flex-col md:w-auto md:flex-1 md:shrink">
                         {gone && (
                             <div role="status" class="alert alert-warning alert-soft m-2 flex flex-wrap">
                                 <span>{closed}</span>
@@ -486,9 +536,9 @@ export function Chat({ denID, channelID, navigate }) {
                         {channel ? (
                             <>
                                 <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} elsewhere={elsewhere}
-                                    online={dm && online.has(dm.id)} membersOpen={membersOpen}
+                                    online={dm && online.has(dm.id)} membersOpen={!at && membersOpen}
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
-                                    onChannels={() => setListOpen(true)} onMembers={toggleMembers}
+                                    onChannels={() => toPane('list')} onMembers={toggleMembers}
                                     onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                                 <MessagePane
                                     key={`${denID}:${channel.id}`}
@@ -511,24 +561,25 @@ export function Chat({ denID, channelID, navigate }) {
                                     onTyping={() => sendTyping(denID, channel.id)}
                                 />
                             </>
-                        ) : channelID === NO_DM ? (
+                        ) : noDM ? (
                             <div class="flex flex-col items-start p-6">
-                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Direct messages</button>
+                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Direct messages</button>
                             </div>
                         ) : (
                             <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
-                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => setListOpen(true)}>Channels</button>
+                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Channels</button>
                                 <p>{staff ? 'This den has no text channels yet. Create one to start talking.' : 'This den has no text channels yet.'}</p>
                             </div>
                         )}
+                        {at && at !== 'chan' && <div class="pointer-events-none absolute inset-0 z-30 bg-black/40"></div>}
                     </section>
                     {/* Beside a DM, the member list's place shows the other member's
                         profile (M11); with no DM open, it shows nothing. */}
-                    {membersOpen && channelID !== NO_DM && (
-                        <aside class="fixed inset-0 z-40 flex flex-col overflow-y-auto bg-base-200 md:static md:z-auto md:w-60 md:shrink-0">
+                    {hasSide && (at || membersOpen) && (
+                        <aside data-pane="side" inert={!!at && at !== 'side'} class="flex w-[85%] shrink-0 snap-end flex-col overflow-y-auto bg-base-200 md:w-60">
                             <div class="flex items-center justify-between border-b border-base-300 p-3">
                                 <span class="font-semibold">{channel?.kind === 'dm' ? 'Profile' : 'Members'}</span>
-                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={toggleMembers}
+                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('chan')}
                                     aria-label={channel?.kind === 'dm' ? 'Close the profile' : 'Close the member list'}>✕</button>
                             </div>
                             {channel?.kind === 'dm' ? (
@@ -538,24 +589,24 @@ export function Chat({ denID, channelID, navigate }) {
                             )}
                         </aside>
                     )}
-                    {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
-                    {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}
-                    {dialog?.kind === 'profile' && (
-                        <ProfileCard
-                            denID={denID}
-                            member={members.get(dialog.member.id) || dialog.member}
-                            me={view.me}
-                            role={gone ? 'member' : view.role}
-                            online={online.has(dialog.member.id)}
-                            onClose={() => setDialog(null)}
-                            onMessage={message}
-                            onEdit={() => setDialog({ kind: 'edit' })}
-                            onRemove={(m) => setDialog({ kind: 'remove', member: m })}
-                        />
-                    )}
-                    {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} onClose={() => setDialog(null)} />}
-                    {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
                 </div>
+                {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'profile' && (
+                    <ProfileCard
+                        denID={denID}
+                        member={members.get(dialog.member.id) || dialog.member}
+                        me={view.me}
+                        role={gone ? 'member' : view.role}
+                        online={online.has(dialog.member.id)}
+                        onClose={() => setDialog(null)}
+                        onMessage={message}
+                        onEdit={() => setDialog({ kind: 'edit' })}
+                        onRemove={(m) => setDialog({ kind: 'remove', member: m })}
+                    />
+                )}
+                {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
             </LinkContext.Provider>
         </DenContext.Provider>
     );
@@ -609,6 +660,83 @@ function UserPanel({ me, online, onEdit }) {
             </button>
         </div>
     );
+}
+
+// snapLeft is where the phone layout's row scrolls to show a pane: a side
+// pane at its edge, the channel whole.
+function snapLeft(row, pane) {
+    const el = row.querySelector(`:scope > [data-pane="${pane}"]`);
+    if (!el) return 0;
+    return pane === 'side' ? el.offsetLeft + el.offsetWidth - row.clientWidth : el.offsetLeft;
+}
+
+// usePaneRow keeps the phone layout's row of panes at the pane at, which
+// the history shows, sliding there once it's placed; and hears where a
+// swipe settles, as the browser snaps it to a pane, through onSwipe. ready
+// says the row is up.
+function usePaneRow(at, ready, onSwipe) {
+    const row = useRef(null);
+    const placed = useRef(false);
+    // heading is the pane the page is scrolling the row to: until it gets
+    // there, or the member takes over, the row settling elsewhere is the
+    // page's own doing, as a snap after it settles late, not a swipe.
+    const heading = useRef('');
+    const swiped = useRef(onSwipe);
+    swiped.current = onSwipe;
+    useLayoutEffect(() => {
+        const r = row.current;
+        if (!r || !at) {
+            placed.current = false;
+            return;
+        }
+        const left = snapLeft(r, at);
+        if (Math.abs(r.scrollLeft - left) >= 2) {
+            heading.current = at;
+            r.scrollTo({ left, behavior: placed.current ? 'smooth' : 'instant' });
+        }
+        placed.current = true;
+    }, [at, ready]);
+    useEffect(() => {
+        const r = row.current;
+        if (!r || !at) return undefined;
+        // Midway, as when a swipe lets go between panes, isn't settled.
+        const settle = () => {
+            const near = ['list', 'chan', 'side'].find((p) => r.querySelector(`:scope > [data-pane="${p}"]`) && Math.abs(r.scrollLeft - snapLeft(r, p)) < 2);
+            if (heading.current) {
+                if (near === heading.current) heading.current = '';
+            } else if (near) {
+                swiped.current(near);
+            }
+        };
+        // WebViews before 114 have no scrollend: a pause in scrolling stands
+        // in for it.
+        let timer = 0;
+        const later = () => {
+            clearTimeout(timer);
+            timer = setTimeout(settle, 150);
+        };
+        const event = 'onscrollend' in r ? 'scrollend' : 'scroll';
+        const heard = event === 'scrollend' ? settle : later;
+        const takeOver = () => {
+            heading.current = '';
+        };
+        r.addEventListener(event, heard);
+        for (const input of ['pointerdown', 'touchstart', 'wheel']) r.addEventListener(input, takeOver, { passive: true });
+        return () => {
+            clearTimeout(timer);
+            r.removeEventListener(event, heard);
+            for (const input of ['pointerdown', 'touchstart', 'wheel']) r.removeEventListener(input, takeOver);
+        };
+    }, [!!at, ready]);
+    return row;
+}
+
+// Marks says on a button what waits behind it: how many mentions, or a dot
+// for unread messages.
+function Marks({ mentions, unread }) {
+    if (mentions > 0) return <span class="badge badge-error badge-xs absolute -right-1 -top-1">{mentions}</span>;
+    if (unread) return <span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-base-content"></span>;
+    return null;
 }
 
 // ChevronIcon points down beside an unfolded group, and right beside a
@@ -819,11 +947,7 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted,
                     <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                         <path d="M2 4h12M2 8h12M2 12h12" />
                     </svg>
-                    {elsewhere.mentions > 0 ? (
-                        <span class="badge badge-error badge-xs absolute -right-1 -top-1">{elsewhere.mentions}</span>
-                    ) : elsewhere.unread ? (
-                        <span class="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-base-content"></span>
-                    ) : null}
+                    <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
                 </button>
                 {dm !== null && channel.kind === 'dm' ? (
                     <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>

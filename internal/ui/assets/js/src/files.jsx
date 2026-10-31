@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { APIError, pageHeaders, reloadIfStale } from './api.js';
 import { useBackdrop } from './components.jsx';
+import { useLayer } from './nav.js';
 import { canCopy, followUpload } from './copier.js';
 
 // Previews fit these boxes in the message list; one image gets more room
@@ -437,8 +438,9 @@ export function step(index, count, delta) {
 // one at index of a message's images, files. The preview shows at once
 // and the original replaces it as it loads. With several images, ‹ and ›
 // at its sides, and the ← and → keys, move between them (M5), and onIndex
-// hears where to.
+// hears where to. Back closes it (M13.1).
 export function Viewer({ denID, files, index, onIndex, onClose }) {
+    useLayer(onClose);
     const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
     const close = useRef(null);
     const at = useRef(index);

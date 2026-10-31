@@ -165,9 +165,11 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (a?.bottom) {
             box.scrollTop = box.scrollHeight;
         } else if (a) {
+            // The list scrolls itself, not what holds it: scrollIntoView
+            // can move the phone layout's row of panes too, in Firefox.
             const el = box.querySelector(`[data-id="${a.id || a.jump}"]`);
-            if (el && a.jump) el.scrollIntoView({ block: 'center' });
-            else if (el) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - a.offset;
+            const centered = el && a.jump ? (box.clientHeight - el.offsetHeight) / 2 : a.offset;
+            if (el) box.scrollTop += el.getBoundingClientRect().top - box.getBoundingClientRect().top - centered;
         }
         // A list too short to scroll gets no scroll events.
         checkEdges();
@@ -990,11 +992,18 @@ function Fold({ onToggle, children }) {
     const [over, setOver] = useState(false);
     const [open, setOpen] = useState(false);
     // Folding back from the end of a long message would leave the view far
-    // below it, so the message comes back into view before the next frame.
+    // below it, so the message comes back into view before the next frame,
+    // its list scrolling alone, as a jump to a message does.
     useLayoutEffect(() => {
         if (!folding.current) return;
         folding.current = false;
-        box.current?.scrollIntoView({ block: 'nearest' });
+        const el = box.current;
+        const list = el?.closest('[data-scroller]');
+        if (!list) return;
+        const r = el.getBoundingClientRect();
+        const view = list.getBoundingClientRect();
+        if (r.top < view.top) list.scrollTop += r.top - view.top;
+        else if (r.bottom > view.bottom) list.scrollTop += Math.min(r.bottom - view.bottom, r.top - view.top);
     }, [open]);
     useLayoutEffect(() => {
         const el = content.current;
