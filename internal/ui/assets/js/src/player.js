@@ -1,7 +1,8 @@
 // The geometry of the player shares play in (M4.2), apart from its
 // component so the tests can check it: where it sits and how large it is,
 // which the browser keeps, kept inside the window; resizing from a corner;
-// and how its shares lay out.
+// and how its shares lay out. From M13.4, which share the phone layout's
+// docked player shows.
 
 // The smallest the player gets, its margin from the window's edges where
 // it starts, and the room it leaves below for the message bar.
@@ -67,4 +68,19 @@ export function tileLayout(n, width, height) {
     if (n === 2) return wide ? { cols: 2, rows: 1 } : { cols: 1, rows: 2 };
     if (n <= 4) return { cols: 2, rows: 2 };
     return wide ? { cols: 3, rows: 2 } : { cols: 2, rows: 3 };
+}
+
+// dockedShown is the share the phone layout's docked player shows
+// (M13.4), of keys, the shares it holds, in order: one that's new since
+// it held known, the newest of them, as the member just began to watch
+// it; otherwise shown, while it's there, or else the first.
+export function dockedShown(keys, known, shown) {
+    const fresh = keys.filter((k) => !known.includes(k));
+    if (fresh.length) return fresh[fresh.length - 1];
+    return keys.includes(shown) ? shown : keys[0] || '';
+}
+
+// nextShown is the share after shown, and after the last, the first.
+export function nextShown(keys, shown) {
+    return keys.length ? keys[(keys.indexOf(shown) + 1) % keys.length] : '';
 }

@@ -313,16 +313,40 @@ export function useLayer(onBack) {
     }, []);
 }
 
-// useNarrow says whether the window has the phone layout, kept current.
+// The layout holds while something of the page's plays full screen, from
+// the moment it asks (M13.4): the window takes the screen's size, as a
+// phone turned sideways does, and the layout changing under what plays
+// would take it away, the share docked on the phone layout among them.
+// The window may take its new size before the browser says what's full
+// screen, so the page says as it asks, through holdLayout, and the hold
+// ends as nothing is full screen.
+let layoutHeld = false;
+const layoutWatchers = new Set();
+
+export function holdLayout(on) {
+    layoutHeld = on;
+    if (!on) layoutWatchers.forEach((fn) => fn());
+}
+
+globalThis.document?.addEventListener?.('fullscreenchange', () => {
+    if (layoutHeld && !document.fullscreenElement) holdLayout(false);
+});
+
+// useNarrow says whether the window has the phone layout, kept current,
+// but while the layout holds.
 export function useNarrow() {
     const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && !window.matchMedia?.(WIDE).matches);
     useEffect(() => {
         const q = window.matchMedia?.(WIDE);
         if (!q) return undefined;
-        const change = () => setNarrow(!q.matches);
+        const change = () => !layoutHeld && setNarrow(!q.matches);
         change();
         q.addEventListener('change', change);
-        return () => q.removeEventListener('change', change);
+        layoutWatchers.add(change);
+        return () => {
+            q.removeEventListener('change', change);
+            layoutWatchers.delete(change);
+        };
     }, []);
     return narrow;
 }

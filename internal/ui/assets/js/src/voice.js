@@ -28,6 +28,9 @@
 // audio contexts once the microphone is open, and plays the members' voices
 // through one of them, which Android then plays as a call's: under the
 // call's volume, and on the route the app's shell sets.
+//
+// From M13.4 a touch screen's call's button presses the actions the keys
+// do, as its role says, which sets how the member sends there.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
@@ -608,7 +611,14 @@ async function reopenMic() {
 // level in dBFS, or while they push to talk ("ptt"), which the browser
 // keeps. Their keys for push to talk, toggle mute and push to mute live in
 // the service from M7, so its helper can read them in other programs.
-export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50 };
+//
+// From M13.4 the call's button, on a touch screen, has a role, one of
+// those three actions, which sets how the member sends there: push to talk
+// sends while it's held, and toggle mute, the default, and push to mute by
+// voice activity. The role and the mode never disagree: settings kept from
+// before the button had a role follow their mode, so a member who sent by
+// push to talk still does.
+export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute' };
 const KEYS = ['ptt', 'toggleMute', 'pushMute'];
 
 // readVoice reads the voice settings the browser kept, falling back to
@@ -621,10 +631,15 @@ export function readVoice(text) {
         kept = {};
     }
     if (!kept || typeof kept !== 'object') kept = {};
+    const mode = kept.mode === 'ptt' ? 'ptt' : 'voice';
+    let button = KEYS.includes(kept.button) ? kept.button : VOICE_DEFAULTS.button;
+    if (mode === 'ptt') button = 'ptt';
+    else if (button === 'ptt') button = VOICE_DEFAULTS.button;
     return {
-        mode: kept.mode === 'ptt' ? 'ptt' : 'voice',
+        mode,
         auto: typeof kept.auto === 'boolean' ? kept.auto : VOICE_DEFAULTS.auto,
         threshold: Number.isFinite(kept.threshold) ? Math.min(0, Math.max(-100, Math.round(kept.threshold))) : VOICE_DEFAULTS.threshold,
+        button,
     };
 }
 
@@ -699,9 +714,11 @@ export function onKeys(fn) {
 }
 
 // setVoice changes how the member sends, which takes hold at once, in a
-// call and in the settings' microphone test.
+// call and in the settings' microphone test. A role for the call's button
+// sets the mode with it (M13.4).
 export function setVoice(changes) {
-    voice = readVoice(JSON.stringify({ ...voice, ...changes }));
+    const mode = 'button' in changes ? { mode: changes.button === 'ptt' ? 'ptt' : 'voice' } : {};
+    voice = readVoice(JSON.stringify({ ...voice, ...changes, ...mode }));
     store(VOICE, JSON.stringify(voice));
     pttHeld = pushMuted = false;
     applySending();
@@ -912,29 +929,54 @@ function covered(action, status = keyStatus) {
     return status.helper && status.covers.includes(action);
 }
 
+// pressed is how the member sends after a press of an action, from how
+// they sent before it: held, whether push to talk is held; pushed, whether
+// push to mute muted them; and muted. Toggle mute toggles at each press,
+// and push to mute does nothing to a member muted already.
+export function pressed(action, s) {
+    if (action === 'ptt') return { ...s, held: true };
+    if (action === 'toggleMute') return { ...s, muted: !s.muted };
+    if (action === 'pushMute' && !s.pushed && !s.muted) return { ...s, pushed: true, muted: true };
+    return s;
+}
+
+// released is how the member sends once an action's press lets go.
+export function released(action, s) {
+    if (action === 'ptt') return { ...s, held: false };
+    if (action === 'pushMute' && s.pushed) return { ...s, pushed: false, muted: false };
+    return s;
+}
+
 function pressAction(action) {
-    if (action === 'ptt') {
-        if (!pttHeld) {
-            pttHeld = true;
-            applySending();
-        }
-    } else if (action === 'toggleMute') {
-        setMuted(!isMuted());
-    } else if (action === 'pushMute' && !pushMuted && !isMuted()) {
-        pushMuted = true;
-        setMuted(true);
-    }
+    sendAs(pressed(action, sending()));
 }
 
 function releaseAction(action) {
-    if (action === 'ptt' && pttHeld) {
-        pttHeld = false;
-        applySending();
-    }
-    if (action === 'pushMute' && pushMuted) {
-        pushMuted = false;
-        setMuted(false);
-    }
+    sendAs(released(action, sending()));
+}
+
+function sending() {
+    return { held: pttHeld, pushed: pushMuted, muted: isMuted() };
+}
+
+// sendAs puts a press's or a release's way of sending in place.
+function sendAs(s) {
+    const held = s.held !== pttHeld;
+    pttHeld = s.held;
+    pushMuted = s.pushed;
+    if (s.muted !== isMuted()) setMuted(s.muted);
+    else if (held) applySending();
+}
+
+// pressButton and releaseButton are the call's button's press and its
+// letting go (M13.4): one more source of presses for the actions the keys
+// and the helper drive, its role's.
+export function pressButton() {
+    if (call) pressAction(voice.button);
+}
+
+export function releaseButton() {
+    releaseAction(voice.button);
 }
 
 // listenIn has another window of the page's, as a share's own (M11), take

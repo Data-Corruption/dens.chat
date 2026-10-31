@@ -1,6 +1,8 @@
+import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HOME, createNav, denTrail, paneOf, pathOf, plan, readTrail, trailFor } from '../assets/js/src/nav.js';
+import { h, render as mount } from 'preact';
+import { HOME, createNav, denTrail, holdLayout, paneOf, pathOf, plan, readTrail, trailFor, useNarrow } from '../assets/js/src/nav.js';
 
 const list = (den) => ({ k: 'list', den });
 const chan = (den, ch) => ({ k: 'chan', den, ch });
@@ -314,4 +316,41 @@ test('an entry from before the page kept trails shows its address', async () => 
     await settle();
     assert.deepEqual(nav.trail, [HOME, list('a'), chan('a', '1')]);
     assert.deepEqual(readTrail(win.entries[0].state), nav.trail, 'and keeps its trail from then on');
+});
+
+// Something the page plays full screen takes the screen's size, as a phone
+// turned sideways does, and the layout holds under it (M13.4), so the
+// share docked on the phone layout isn't taken away as it goes full
+// screen.
+test('the layout follows the window, but holds while the page plays something full screen', async () => {
+    let wide = false;
+    const changes = new Set();
+    globalThis.window = { matchMedia: () => ({ get matches() { return wide; }, addEventListener: (_, fn) => changes.add(fn), removeEventListener: (_, fn) => changes.delete(fn) }) };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+    const resize = async (to) => {
+        wide = to;
+        changes.forEach((fn) => fn());
+        await settle();
+    };
+    let narrow = null;
+    function Layout() {
+        narrow = useNarrow();
+        return null;
+    }
+    mount(h(Layout), document.createElement('div'));
+    await settle();
+    assert.equal(narrow, true);
+    await resize(true);
+    assert.equal(narrow, false, 'a wider window');
+    await resize(false);
+    assert.equal(narrow, true);
+    holdLayout(true);
+    await resize(true);
+    assert.equal(narrow, true, 'held, as full screen widens the window');
+    holdLayout(false);
+    await settle();
+    assert.equal(narrow, false, 'back from full screen, the layout fits the window it finds');
+    await resize(false);
+    assert.equal(narrow, true);
+    delete globalThis.window;
 });

@@ -549,8 +549,15 @@ export function DMKey({ den, onSeal }) {
 }
 
 // keyDivider draws where a DM's keys changed.
+// DaisyUI's divider keeps its words on one line, which a key's change has
+// too many of for a phone, so they wrap, within most of the width, and the
+// lines beside them take the rest (M13.4).
 export function KeyDivider({ text }) {
-    return <div class="divider divider-warning my-1 cursor-default select-none text-xs text-warning">{text}</div>;
+    return (
+        <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs text-warning">
+            <span class="max-w-[80%] shrink-0 whitespace-normal text-center">{text}</span>
+        </div>
+    );
 }
 
 // checkedOn says when two members last compared a DM's codes, for its

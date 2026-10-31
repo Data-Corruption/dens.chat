@@ -15,10 +15,10 @@ import { ManageDialog } from './manageden.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
 import { openAt } from './messages.jsx';
-import { chatRoute, nav, paneOf, pathOf, useTrail } from './nav.js';
+import { chatRoute, nav, paneOf, pathOf, useNarrow, useTrail } from './nav.js';
 import { startNotifications } from './notify.js';
-import { SharePlayer } from './player.jsx';
-import { CallBar, CogIcon } from './voice.jsx';
+import { DockedPlayer, SharePlayer } from './player.jsx';
+import { CallBox, CallButton, CogIcon } from './voice.jsx';
 
 // dens open opens the page with a one-time token in the URL fragment,
 // which never reaches the server in the request line, and a notification's
@@ -57,6 +57,7 @@ export function App({ instance, version, pair, pairLink }) {
     // Read before the history starts, which useTrail does.
     const [first] = useState(readFragment);
     const trail = useTrail();
+    const narrow = useNarrow();
     const [live, setLive] = useState(true);
     const [manage, setManage] = useState(null);
     useEffect(() => onOpenSettings(setSettings), []);
@@ -196,7 +197,10 @@ export function App({ instance, version, pair, pairLink }) {
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">
                     <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6 pb-20">
-                        {open && <CallBar />}
+                        {open && <CallBox />}
+                        {/* The phone layout docks the shares the member
+                            watches under the call's box (M13.4). */}
+                        {open && narrow && <div class="overflow-hidden rounded-box empty:hidden"><DockedPlayer /></div>}
                         {page}
                     </div>
                     {open && (
@@ -208,8 +212,10 @@ export function App({ instance, version, pair, pairLink }) {
                     )}
                 </main>
             )}
-            {/* The shares this member watches play over every page (M4.2). */}
+            {/* The shares this member watches play over every page (M4.2), and
+                the call's button floats over them on a touch screen (M13.4). */}
             {open && <SharePlayer />}
+            {open && <CallButton />}
             {open && settings !== null && (
                 <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} instance={instance} version={version}
                     pair={pair} />

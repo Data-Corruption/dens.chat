@@ -27,6 +27,7 @@ import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
+import { useHoldsButton } from './touch.js';
 import {
     callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
     keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise, setShareSettings, setVoice,
@@ -290,9 +291,12 @@ function NotificationSettings() {
 // voice processor hears and whether it sends it: in the call while there
 // is one, and otherwise in a test the member starts. What the page can't
 // use leaves it, as on a phone (M13.3): the shortcuts where the service
-// says there are no keys, and sharing where the browser can't share.
+// says there are no keys, and sharing where the browser can't share. Where
+// the page has the call's button, its role takes the place of how the
+// member sends (M13.4).
 function VoiceSettings() {
     const [v, setV] = useState(voiceSettings);
+    const holds = useHoldsButton();
     const [loud, setLoud] = useState(callVolume);
     const [suppression, setSuppression] = useState(noiseSuppression);
     const [list, setList] = useState(null);
@@ -386,8 +390,7 @@ function VoiceSettings() {
     const auto = v.mode === 'voice' && v.auto && suppressing;
     const desktopHolds = (name) => elsewhere.confirms && elsewhere.covers.includes(name);
     let talk = 'Set a push-to-talk shortcut below.';
-    if (!hasKeys()) talk = "Hold the call's button to talk.";
-    else if (desktopHolds('ptt')) talk = 'Hold the push-to-talk shortcut your desktop runs to talk.';
+    if (desktopHolds('ptt')) talk = 'Hold the push-to-talk shortcut your desktop runs to talk.';
     else if (v.keys.ptt) talk = `Hold ${keyLabel(v.keys.ptt)} to talk.`;
     return (
         <>
@@ -431,17 +434,29 @@ function VoiceSettings() {
                     </p>
                 ) : suppression.failed && <p class="text-sm text-warning">Noise suppression couldn't start here, so the built-in one is on.</p>}
             </Card>
-            <Card title="Sending your voice">
-                <div role="radiogroup" aria-label="Sending your voice" class="flex flex-wrap gap-4">
-                    <label class="label gap-2">
-                        <input type="radio" class="radio radio-sm" name="sending" checked={v.mode === 'voice'} onChange={() => change({ mode: 'voice' })} />
-                        Voice activity
-                    </label>
-                    <label class="label gap-2">
-                        <input type="radio" class="radio radio-sm" name="sending" checked={v.mode === 'ptt'} onChange={() => change({ mode: 'ptt' })} />
-                        Push to talk
-                    </label>
-                </div>
+            <Card title={holds ? "The call's button" : 'Sending your voice'}>
+                {holds ? (
+                    <div role="radiogroup" aria-label="The call's button" class="flex flex-wrap gap-4">
+                        {ROLES.map(([role, title]) => (
+                            <label key={role} class="label gap-2">
+                                <input type="radio" class="radio radio-sm" name="button" value={role} checked={v.button === role}
+                                    onChange={() => change({ button: role })} />
+                                {title}
+                            </label>
+                        ))}
+                    </div>
+                ) : (
+                    <div role="radiogroup" aria-label="Sending your voice" class="flex flex-wrap gap-4">
+                        <label class="label gap-2">
+                            <input type="radio" class="radio radio-sm" name="sending" checked={v.mode === 'voice'} onChange={() => change({ mode: 'voice' })} />
+                            Voice activity
+                        </label>
+                        <label class="label gap-2">
+                            <input type="radio" class="radio radio-sm" name="sending" checked={v.mode === 'ptt'} onChange={() => change({ mode: 'ptt' })} />
+                            Push to talk
+                        </label>
+                    </div>
+                )}
                 {v.mode === 'voice' ? (
                     <div class="flex flex-col gap-3 rounded-box bg-base-100 p-3 max-md:bg-base-200">
                         <Toggle id="auto-sensitivity" label="Automatic sensitivity" checked={auto} disabled={!suppressing}
@@ -455,7 +470,7 @@ function VoiceSettings() {
                             </label>
                         )}
                     </div>
-                ) : (
+                ) : !holds && (
                     <p class="text-sm text-base-content/70">{talk}</p>
                 )}
                 <div class="flex items-center gap-3">
@@ -513,6 +528,13 @@ const KEYS = [
     ['ptt', 'Push to talk'],
     ['toggleMute', 'Toggle mute'],
     ['pushMute', 'Push to mute'],
+];
+
+// ROLES are what the call's button may do (M13.4), its default first.
+const ROLES = [
+    ['toggleMute', 'Toggle mute'],
+    ['pushMute', 'Push to mute'],
+    ['ptt', 'Push to talk'],
 ];
 
 // WorksElsewhere marks a shortcut the helper reads in other apps during a

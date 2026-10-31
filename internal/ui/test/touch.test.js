@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LONG_PRESS, SLOP, coarse, createPress, dismisses, tipShift } from '../assets/js/src/touch.js';
+import { LONG_PRESS, SLOP, coarse, createHold, createPress, dismisses, tipShift } from '../assets/js/src/touch.js';
 
 // clock is setTimeout and clearTimeout on a time the test moves on.
 function clock() {
@@ -128,4 +128,102 @@ test("the pointer is coarse as the window's media say", () => {
     assert.equal(coarse(win(true)), true);
     assert.equal(coarse(win(false)), false);
     assert.equal(coarse({}), false, 'no media to ask');
+});
+
+// The call's button (M13.4) holds the microphone while it's held: every way
+// a press can end lets it go, so the microphone never stays open.
+function holding() {
+    const timers = clock();
+    const said = [];
+    const captured = [];
+    const hold = createHold({ onPress: () => said.push('press'), onRelease: () => said.push('release'), timers });
+    const button = { setPointerCapture: (id) => captured.push(id) };
+    const down = (more = {}) => hold.down({ ...at(370, 700), currentTarget: button, preventDefault() {}, ...more });
+    return { hold, said, captured, down, timers };
+}
+
+test("a held press holds until it's lifted, keeping the finger however far it strays", () => {
+    const { hold, said, captured, down } = holding();
+    down();
+    assert.deepEqual(said, ['press']);
+    assert.equal(hold.held, true);
+    assert.deepEqual(captured, [1], 'the button keeps the pointer');
+    // Another finger, or the same one pressing again, changes nothing.
+    down({ pointerId: 2, isPrimary: false });
+    down();
+    hold.up({ pointerId: 2 });
+    assert.deepEqual(said, ['press']);
+    hold.up({ pointerId: 1 });
+    assert.deepEqual(said, ['press', 'release']);
+    assert.equal(hold.held, false);
+    // The capture's loss after the lift is no second release.
+    hold.up({ pointerId: 1 });
+    assert.deepEqual(said, ['press', 'release']);
+});
+
+test('a press lets go however it ends: taken by the system, its capture lost, or the page hidden or out of focus', () => {
+    // pointercancel, as Android's back gesture or its notification shade
+    // takes the press, and lostpointercapture come to up as pointerup does.
+    for (const end of ['pointercancel', 'lostpointercapture', 'away']) {
+        const { hold, said, down } = holding();
+        down();
+        if (end === 'away') hold.away();
+        else hold.up({ type: end, pointerId: 1 });
+        assert.deepEqual(said, ['press', 'release'], end);
+        assert.equal(hold.held, false, end);
+        hold.away();
+        assert.deepEqual(said, ['press', 'release'], `${end}, then away: let go once`);
+    }
+    const { hold, said } = holding();
+    hold.away();
+    assert.deepEqual(said, [], 'nothing held, nothing to let go');
+});
+
+test("only a primary button's press holds, and a pointer that's gone ends as it's heard", () => {
+    const { hold, said, down } = holding();
+    down({ button: 2 });
+    down({ isPrimary: false });
+    assert.deepEqual(said, []);
+    down({ currentTarget: { setPointerCapture() { throw new Error('no active pointer'); } } });
+    assert.deepEqual(said, ['press'], 'held all the same');
+    hold.up({ pointerId: 1 });
+    assert.deepEqual(said, ['press', 'release']);
+});
+
+test("a press's own click goes no further, and a click with no press presses and lets go at once", () => {
+    const { hold, said, down, timers } = holding();
+    down();
+    hold.up({ pointerId: 1 });
+    hold.click();
+    assert.deepEqual(said, ['press', 'release'], "the press's click");
+    // A screen reader's, or Enter's.
+    hold.click();
+    assert.deepEqual(said, ['press', 'release', 'press', 'release']);
+    // A press that sends no click, as one the system took, leaves nothing to
+    // swallow the next click once a moment has passed.
+    said.length = 0;
+    down();
+    hold.up({ type: 'pointercancel', pointerId: 1 });
+    timers.pass(1000);
+    hold.click();
+    assert.deepEqual(said, ['press', 'release', 'press', 'release']);
+});
+
+test('Space held on the button holds it, once, and a key the page took for a shortcut does nothing more', () => {
+    const { hold, said } = holding();
+    const key = (type, more = {}) => {
+        const e = { key: ' ', repeat: false, defaultPrevented: false, prevented: false, preventDefault() { this.prevented = true; }, ...more };
+        hold[type](e);
+        return e;
+    };
+    assert.equal(key('keydown').prevented, true, 'its click, as Space lets go, goes nowhere');
+    key('keydown', { repeat: true });
+    assert.deepEqual(said, ['press']);
+    key('keyup', { key: 'Enter' });
+    assert.deepEqual(said, ['press']);
+    key('keyup');
+    assert.deepEqual(said, ['press', 'release']);
+    key('keydown', { defaultPrevented: true });
+    key('keydown', { key: 'a' });
+    assert.deepEqual(said, ['press', 'release']);
 });
