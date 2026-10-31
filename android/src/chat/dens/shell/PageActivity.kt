@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
@@ -47,7 +48,8 @@ import java.net.URL
 // down to Home, its root, then leaves the page (M13.1). The status and
 // navigation bars take the page's background, with icons to match, so
 // they follow its theme, the phone's light or dark or one the member
-// picks (M13.3).
+// picks (M13.3). What the page plays full screen turns with the phone
+// (M13.4).
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
@@ -393,6 +395,9 @@ class PageActivity : Activity() {
                 }
             }
 
+            // Full screen, as a video or a share docked above a channel
+            // plays (M13.4), turns with the phone, whatever its rotation is
+            // locked to, as video apps' do.
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                 fullScreen?.let { root.removeView(it) }
                 fullScreen = view
@@ -402,6 +407,8 @@ class PageActivity : Activity() {
                     systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                     hide(WindowInsets.Type.systemBars())
                 }
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                Dens.log(this@PageActivity, "page: full screen")
             }
 
             override fun onHideCustomView() {
@@ -409,6 +416,8 @@ class PageActivity : Activity() {
                 fullScreen = null
                 fullScreenDone = null
                 window.insetsController?.show(WindowInsets.Type.systemBars())
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                Dens.log(this@PageActivity, "page: out of full screen")
             }
 
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
