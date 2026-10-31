@@ -30,8 +30,9 @@ import java.util.concurrent.TimeUnit
 // Dens with its data key, starts it again when it ends, but for a start
 // Dens refuses, and keeps the shell's stream with it, which says where the
 // page is, and carries the member's notifications, which the shell posts
-// (M12.3), and the updates Dens readies, which it hands to Android's
-// installer (M12.4). A foreground service of the specialUse type holds the dens'
+// (M12.3), the updates Dens readies, which it hands to Android's
+// installer (M12.4), and the page's background, which the bars take
+// (M13.3). A foreground service of the specialUse type holds the dens'
 // connections while the app isn't on screen, and of the microphone's type
 // too while the page has the microphone, as in a call, whose sound it
 // routes.
@@ -80,6 +81,12 @@ class DensService : Service() {
 
         @Volatile
         private var front = false
+
+        // bars is the page's background, which the activity paints the
+        // status and navigation bars with, once Dens has said it (M13.3).
+        @Volatile
+        var bars: Int? = null
+            private set
 
         // isFront is whether the page's activity shows, which Android needs
         // of an app that starts its installer's confirmation (M12.4).
@@ -458,6 +465,12 @@ class DensService : Service() {
                         }
                         "notifying" -> {
                             notifying = d?.optBoolean("on") == true
+                            changed()
+                        }
+                        // Dens checked it's #rrggbb; anything else leaves
+                        // the bars as they are.
+                        "bars" -> d?.optString("color")?.takeIf { Regex("#[0-9a-f]{6}").matches(it) }?.let {
+                            bars = 0xFF000000.toInt() or it.substring(1).toInt(16)
                             changed()
                         }
                         // An update Dens downloaded and checked (M12.4), and
