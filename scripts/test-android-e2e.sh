@@ -2,10 +2,14 @@
 
 # Android e2e (M12.1): the Android app's development APK, built from this
 # tree, in Android's emulator, joining a den behind Caddy in the browser
-# checks' container, as a member's phone does. In Android 17's emulator the
-# app installs, makes its data key in the Keystore, starts Dens and pairs
-# its page without a token; the page takes a local password and joins the
-# den; a message goes each way from the composer; a phone photo goes as a
+# checks' container, as a member's phone does. In Android 17's emulator,
+# its screen 390 CSS pixels wide (M13), the app installs, makes its data
+# key in the Keystore, starts Dens and pairs its page without a token; the
+# page takes a local password and joins the den through its forms, typed
+# into by Android's keyboard (M13.3), with a picture and an audit of each
+# screen, and the den lists the phone by the name the emulator has, with
+# its model under it; a message goes each way from the composer; a phone
+# photo goes as a
 # smaller copy, and saved from the viewer it reaches Downloads with no GPS
 # or camera left in it. A call with the den's owner goes on through two
 # and a half minutes off screen (M12.2), most of them silent, as the app
@@ -27,7 +31,13 @@
 # tap and closes on the next. Then every member's screen is walked for its
 # picture and the audit of its layout, which fails on a control under 24
 # pixels, a list's row under 44 or a control only a hover shows
-# (scripts/test/android/walk.mjs). The host package's tests, which
+# (scripts/test/android/walk.mjs). The settings and Manage open as lists
+# of pages, which Back walks out of, and the phone's settings hold no
+# keyboard shortcuts or screen share; the viewer, on a message's two
+# photos, moves to the second by a swipe, zooms by a double tap, and Back
+# closes it; and a dialog, a sheet, closes by a swipe down (M13.3). Then
+# the screens are walked again with Android's font scale at 1.3, as a
+# member with larger text has it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
 # updates itself (M12.4): its updater refuses a newer release whose
@@ -141,11 +151,12 @@ finish() {
   done
   stop_releases_host
   # The emulator keeps a density it was given across restarts, and its
-  # keyboard's setting.
+  # keyboard's setting and font scale.
   serial=$NEW
   if incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb devices | grep -q "^${serial}[[:space:]]*device"; then
     adb shell wm density reset || :
     adb shell settings put secure show_ime_with_hard_keyboard 0 || :
+    adb shell settings put system font_scale 1.0 || :
   fi
   incus exec "$CONTAINER" -- /root/box.sh halt 5554 || :
   incus exec "$CONTAINER" -- /root/box.sh halt 5556 || :
@@ -190,10 +201,21 @@ echo ">> Starting the den"
 den up | tee -a "$RUN_LOG_DIR/den.log"
 general=$(den general)
 
+incus file push -q scripts/test/browser/screens.mjs scripts/test/android/walk.mjs scripts/test/android/drive.mjs "$CONTAINER/root/"
+walk() { incus exec "$CONTAINER" --env WALK_PREFIX="${WALK_PREFIX:-phone-}" -- /root/node /root/walk.mjs "$serial" /root/walk /root/walk-ctx.json "$@" | tee -a "$RUN_LOG_DIR/walk-$serial.log"; }
+incus exec "$CONTAINER" -- rm -rf /root/walk
+
 echo ">> Android 17"
 serial=$NEW
 incus exec "$CONTAINER" -- /root/box.sh boot a17 5554
 adb uninstall "$APP" >/dev/null 2>&1 || :
+# The phone layout (M13), at 390 CSS pixels, its 1080-pixel screen at 443
+# dpi, from the first screen on; and a name of the phone's own, as a
+# phone's owner gives it in Android's settings, which dens list it by
+# beside its model (M13.3).
+adb shell wm density 443
+adb shell settings put system font_scale 1.0
+adb shell "settings put global device_name 'Dens e2e phone'"
 phone install amd64 >/dev/null
 # The app's first start makes its key and pairs its page; trusting the
 # den's authority needs the app's files, so Dens starts again with it.
@@ -209,10 +231,16 @@ waitfor 60 "the page again" check paired
 shell_log | grep -q 'keys: made the data key' || fail "no data key made"
 ok "installed: the shell made the data key in the Keystore, started Dens, and paired the page without a token"
 
-phone drive api POST /api/password '{"password":"phone local password"}' | grep -q '^200' || fail "setting the local password"
-# The den keeps the members runs before made: each run's is new.
+# The den keeps the members runs before made: each run's is new. The page
+# takes the local password and joins through its forms, with the keyboard
+# shown beside the emulator's own.
 member=android_$(date +%s)
-[[ $(phone join "$member") == 200 ]] || fail "joining the den as $member"
+printf '{"invite":"%s","member":"%s","name":"%s","password":"%s den password","local":"phone local password","device":"Dens e2e phone","model":"%s"}\n' \
+  "$(den invite)" "$member" "${member^}" "$member" "$(adb shell getprop ro.product.model | tr -d '\r')" | incus exec "$CONTAINER" -- sh -c 'cat > /root/walk-ctx.json'
+adb shell settings put secure show_ime_with_hard_keyboard 1
+walk first || fail "setting the local password and joining the den through the page's forms"
+adb shell settings put secure show_ime_with_hard_keyboard 0
+ok "the page took the local password and joined the den through its forms, by Android's taps and keyboard, and the den lists the phone by its name, with its model under it"
 phone drive go "$(phone drive eval 'location.origin' | tr -d '"')/" >/dev/null
 check general
 check say "hello from the phone"
@@ -363,20 +391,18 @@ adb shell input keyevent KEYCODE_BACK
 waitfor 5 "Back to leave the page at its first address" behind
 ok "a link opened outside the page, and Back left it"
 
-# The phone layout (M13), at 390 CSS pixels, its 1080-pixel screen at 443
-# dpi, in a page opened afresh, whose history begins at Home.
+# The phone layout (M13), in a page opened afresh, whose history begins at
+# Home. Desk sends a message of two photos, for the viewer's swipe.
 echo ">> Getting around, at 390 pixels"
 random=$(den channel random)
 den api PATCH "/api/dens/$den_id/channels/$general" '{"description":"Anything goes here: say hi, and **be kind**.\nA second line, which shows once the description is opened."}' >/dev/null
-adb shell wm density 443
+photos="\"$(den upload photos/pixel-2.jpg one.jpg)\",\"$(den upload photos/iphone-5.jpg two.jpg)\""
+den say "$general" "two photos from desk" "$photos" >/dev/null
 phone start
 waitfor 20 "the page in front" front
 waitfor 30 "the page" check paired
-incus file push -q scripts/test/browser/screens.mjs scripts/test/android/walk.mjs scripts/test/android/drive.mjs "$CONTAINER/root/"
 printf '{"den":"%s","general":"%s","random":"%s","dm":"%s"}\n' "$den_id" "$general" "$random" "$dm" |
   incus exec "$CONTAINER" -- sh -c 'cat > /root/walk-ctx.json'
-walk() { incus exec "$CONTAINER" -- /root/node /root/walk.mjs "$serial" /root/walk /root/walk-ctx.json "$@" | tee -a "$RUN_LOG_DIR/walk-$serial.log"; }
-incus exec "$CONTAINER" -- rm -rf /root/walk
 walk around || fail "getting around the phone layout"
 ok "from Home, by Android's own taps and swipes, the member got to a channel, the list and the members and back, and Back closed the settings, went up to Home, and left the app"
 # The emulator has a keyboard of its own, which keeps Android's from
@@ -389,11 +415,25 @@ adb shell settings put secure show_ime_with_hard_keyboard 0
 ok "by Android's own touch, a long press opened a message's actions in a sheet, which a swipe down and Back closed; with the keyboard up, the composer and the newest message stayed in sight, and three lines went by the send button; and a tip opened on a tap"
 phone start
 waitfor 20 "the page in front" front
+walk pages || fail "dialogs, the settings and the viewer at 390 pixels"
+ok "the settings and Manage opened as lists of pages, which Back walked out of, and the phone's settings held no keyboard shortcuts or screen share; the viewer moved to a message's second photo by a swipe, zoomed by a double tap, and Back closed it; and a dialog, a sheet, closed by a swipe down"
+phone start
+waitfor 20 "the page in front" front
 walk screens || fail "the screens at 390 pixels"
+ok "every member's screen at 390 pixels fits a finger, its picture and its audit in the logs"
+# Larger text (M13.3): Android's font scale at 1.3, which the WebView's
+# text follows, as a member with larger text has it. A new font scale
+# makes the activity, and its page, anew.
+adb shell settings put system font_scale 1.3
+phone start
+waitfor 20 "the page in front" front
+waitfor 30 "the page" check paired
+WALK_PREFIX=large- walk screens || fail "the screens at 390 pixels, with larger text"
+adb shell settings put system font_scale 1.0
 mkdir -p "$RUN_LOG_DIR/walk-$serial"
 incus exec "$CONTAINER" -- tar -C /root/walk -cf - . | tar -C "$RUN_LOG_DIR/walk-$serial" -xf -
 adb shell wm density reset
-ok "every member's screen at 390 pixels fits a finger, its picture and its audit in the logs"
+ok "with Android's font scale at 1.3, every member's screen at 390 pixels still fits, its picture and its audit in the logs"
 
 incus file push -q "$RUN_LOG_DIR/host.test" "$CONTAINER/root/host.test"
 adb push /root/host.test /data/local/tmp/host.test >/dev/null 2>&1

@@ -24,6 +24,8 @@
 //   (M9, M10)                unpaired, setting the local password, joining a den,
 //                            the recovery codes
 //   (M13.2)                  a message's sheet, three lines sent, a tip opened by a tap
+//   (M13.3)                  the settings' and Manage's lists of sections, the viewer
+//                            swiped and zoomed, a dialog as a sheet swiped down
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 
@@ -114,10 +116,16 @@ export const AUDIT = `(() => {
         if (!hits(e, cx, cy)) {
             // What covers its middle is a dialog over it, or what it
             // scrolled under, unless it's another control's room for a
-            // finger, reaching past that control's own box.
-            const over = document.elementFromPoint(cx, cy)?.closest(TARGETS);
+            // finger, reaching past that control's own box; a control
+            // that's a dialog's, over this one, covers it as the dialog.
+            const top = document.elementFromPoint(cx, cy);
+            const layer = top?.closest('[role=dialog]');
+            if (layer && !layer.contains(e)) continue;
+            const over = top?.closest(TARGETS);
             const o = over?.getBoundingClientRect();
-            if (over && !over.contains(e) && !e.contains(over) && !(cx >= o.left && cx <= o.right && cy >= o.top && cy <= o.bottom)) {
+            // A point within a pixel of its box is in it, as hit testing
+            // rounds a point onto the box's edge.
+            if (over && !over.contains(e) && !e.contains(over) && !(cx >= o.left - 1 && cx <= o.right + 1 && cy >= o.top - 1 && cy <= o.bottom + 1)) {
                 covered.push(desc(e) + ' under ' + desc(over) + "'s room");
             }
             continue;
@@ -139,10 +147,11 @@ export const AUDIT = `(() => {
 
 // audits reports the audits' findings, screen by screen, for the browser
 // or phone mode names, a touch screen's where touch says. On every screen
-// nothing is under 24 pixels, nor under another control (M13.2); on a
-// touch screen no list's row is under 44, and nothing shows only on hover;
-// and nothing makes the page itself scroll sideways on a den's panes
-// (M13.1). The rest is noted, for M13.3 to make fail.
+// nothing is under 24 pixels, nor under another control (M13.2), nor past
+// the right edge outside a scroller of its own (M13.3); on a touch screen
+// no list's row is under 44, and nothing shows only on hover; and nothing
+// makes the page itself scroll sideways on a den's panes (M13.1). The rest
+// is noted.
 export function audits(mode, log, report, touch) {
     for (const shot of log) {
         if (shot.failed) {
@@ -154,12 +163,12 @@ export function audits(mode, log, report, touch) {
         const bad = [];
         if (a.small.length) bad.push(`under 24: ${a.small.join('; ')}`);
         if (a.covered?.length) bad.push(`covered: ${a.covered.join('; ')}`);
+        if (a.over.length) bad.push(`past the edge: ${a.over.slice(0, 3).join('; ')}`);
         if (touch && a.rows.length) bad.push(`rows under 44: ${a.rows.join('; ')}`);
         if (touch && a.hoverOnly.length) bad.push(`on hover only: ${a.hoverOnly.join('; ')}`);
         const panes = /^(\d+-)?(den-list|channel|members|dm|description|video|around|touch)/.test(shot.name);
         if (panes && a.sideways) bad.push('the page scrolls sideways');
         const notes = [];
-        if (a.over.length) notes.push(`past the edge: ${a.over.slice(0, 3).join('; ')}`);
         if (!panes && a.sideways) notes.push('the page scrolls sideways');
         if (!touch && a.rows.length) notes.push(`${a.rows.length} rows under 44`);
         if (a.tight) notes.push(`${a.tight} reaching under 44`);
@@ -234,9 +243,14 @@ export function helpers(b, origin, out, prefix = '') {
 }
 
 const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
-const PANEL = `document.querySelector('[role=dialog][aria-label="App settings"] [role=tabpanel]')`;
+const PANEL = `document.querySelector('[role=dialog][aria-label="App settings"] [data-panel]')`;
 const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
-const MANAGE_PANEL = `document.querySelector('[role=dialog][aria-label^="Manage "] .overflow-y-auto:not(nav)')`;
+const MANAGE_PANEL = `document.querySelector('[role=dialog][aria-label^="Manage "] [data-panel]')`;
+// A section of the settings or Manage by its name: its tab in a wide
+// window, or its button in the column or the list of them (M13.3).
+const section = (frame, name) => `[...document.querySelectorAll(${JSON.stringify(`${frame} [role=tab], ${frame} nav button`)})].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
+const SETTINGS_FRAME = '[role=dialog][aria-label="App settings"]';
+const MANAGE_FRAME = '[role=dialog][aria-label^="Manage "]';
 const SCROLLER = `document.querySelector('[data-scroller]')`;
 const COMPOSER = `document.querySelector('textarea[placeholder^="Message "]')`;
 const HOME = `[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`;
@@ -247,10 +261,23 @@ async function openSettings(h) {
     await h.wait(SETTINGS, 'the settings');
 }
 
+// settingsTab opens a section of the settings by its name: its tab, or on
+// the phone layout its page, from the list (M13.3).
 async function settingsTab(h, name) {
     await openSettings(h);
-    await h.click(`[...document.querySelectorAll('[role=dialog][aria-label="App settings"] [role=tab]')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`, `the ${name} tab`);
+    await openSection(h, SETTINGS_FRAME, name);
 }
+
+// openSection opens a section of the settings or Manage, framed by frame,
+// by its name, going back to the list first from another section's page.
+async function openSection(h, frame, name) {
+    const back = `document.querySelector(${JSON.stringify(`${frame} [data-back]`)})`;
+    if (!(await h.has(section(frame, name))) && (await h.has(back))) await h.click(back, 'back to the list');
+    await h.click(section(frame, name), `the ${name} section`);
+}
+
+// sections names the sections a frame lists, or tabs, or a column holds.
+const sections = (h, frame) => h.ev(`[...document.querySelectorAll(${JSON.stringify(`${frame} [role=tab], ${frame} nav button`)})].map((b) => b.textContent.trim())`);
 
 // memberScreens are the screens every member reaches, in a den with
 // general (text, with a description and every kind of message), a DM
@@ -269,6 +296,8 @@ export async function memberScreens(h, ctx) {
     await h.step('settings', async () => {
         await h.go('/');
         await openSettings(h);
+        if (await h.has(`document.querySelector('${SETTINGS_FRAME} [data-section]')`)) await h.snap('settings-list');
+        await settingsTab(h, 'Appearance');
         await h.snap('settings-appearance', { scroll: PANEL });
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
@@ -282,15 +311,19 @@ export async function memberScreens(h, ctx) {
         await h.go('/');
         await h.click(h.byText('button', 'Manage'));
         await h.wait(MANAGE, 'Manage');
-        const sections = await h.ev(`[...document.querySelectorAll('[role=dialog] nav button')].map((b) => b.textContent.trim())`);
-        for (const s of sections) {
-            await h.click(h.byText('[role=dialog] nav button', s));
+        if (await h.has(`document.querySelector('${MANAGE_FRAME} [data-section]')`)) await h.snap('manage-list');
+        for (const s of await sections(h, MANAGE_FRAME)) {
+            await openSection(h, MANAGE_FRAME, s);
             await sleep(500);
             await h.snap(`manage-${s.toLowerCase().replace(/[^a-z]+/g, '-')}`, { scroll: MANAGE_PANEL, max: 3 });
         }
     });
     await h.step('den-list', async () => {
         await h.go(`/den/${den}`);
+        // A den reopens at the tab last open in it, which a DM's is after
+        // a walk that ended in one.
+        await h.wait(h.byText('[role=tab]', 'Den'), "the list's tabs");
+        if (!(await h.has(`document.querySelector('nav[aria-label=Channels]')`))) await h.click(h.byText('[role=tab]', 'Den'));
         await h.wait(`document.querySelector('nav[aria-label=Channels]')`, 'the channel list');
         await h.snap('den-list');
     });
@@ -343,7 +376,7 @@ export async function memberScreens(h, ctx) {
     await h.step('guide', async () => {
         await h.go(`/den/${den}/${general}`);
         await h.click(h.label('How to write a message'));
-        await h.snap('guide', { scroll: `[...document.querySelectorAll('[role=dialog] *')].find((e) => e.scrollHeight > e.clientHeight + 4 && getComputedStyle(e).overflowY !== 'visible')`, max: 4 });
+        await h.snap('guide', { scroll: `document.querySelector('[role=dialog]')`, max: 4 });
         await h.escape();
     });
     if (ctx.photo) {
@@ -434,10 +467,11 @@ export async function ownerScreens(h, ctx) {
     await h.step('owner-manage', async () => {
         await h.go('/');
         await h.click(h.byText('button', 'Manage'));
-        const sections = await h.ev(`[...document.querySelectorAll('[role=dialog] nav button')].map((b) => b.textContent.trim())`);
-        for (const s of sections) {
+        await h.wait(MANAGE, 'Manage');
+        if (await h.has(`document.querySelector('${MANAGE_FRAME} [data-section]')`)) await h.snap('manage-list');
+        for (const s of await sections(h, MANAGE_FRAME)) {
             if (s === 'Leave den') continue;
-            await h.click(h.byText('[role=dialog] nav button', s));
+            await openSection(h, MANAGE_FRAME, s);
             await sleep(500);
             await h.snap(`manage-${s.toLowerCase().replace(/[^a-z]+/g, '-')}`, { scroll: MANAGE_PANEL, max: 4 });
         }
@@ -705,4 +739,126 @@ export async function touching(h, ctx, d, report) {
     const shut = await waitFor(async () => !(await shows()), 'the tip closed', 3000).then(() => true, () => false);
     did(tip && tip.left >= 0 && tip.right <= tip.vw && shut, `a tap on an i opens its tip within the screen (${JSON.stringify(tip)}), and the next tap closes it (${shut})`);
     await d.back();
+}
+
+// VIEWER is the viewer, as the walk reads it: which picture of how many it
+// shows, the stage's width and the shown picture's, whether it's zoomed
+// past that, and the address under it.
+const VIEWER = `(() => {
+    const v = [...document.querySelectorAll('[role=dialog]')].find((d) => d.querySelector('[data-stage]'));
+    if (!v) return null;
+    const stage = v.querySelector('[data-stage]').getBoundingClientRect();
+    const shown = v.querySelector('[data-shown]').getBoundingClientRect();
+    const count = [...v.querySelectorAll('span')].map((e) => e.textContent.trim()).find((t) => /^\\d+ of \\d+$/.test(t)) || '';
+    return { count, stage: [Math.round(stage.left), Math.round(stage.top), Math.round(stage.width), Math.round(stage.height)],
+        shown: [Math.round(shown.left), Math.round(shown.top), Math.round(shown.width), Math.round(shown.height)], path: location.pathname };
+})()`;
+
+// pages walks M13.3's done-when on the phone layout, by what the driver's
+// d does as a member would; d.tap, d.back and d.drag are gettingAround's
+// and touching's, d.double(x) taps twice quickly, or clicks, on what x
+// names, d.pinch(at, from, to), where given, spreads two fingers about the
+// point at from a gap of from to to, and d.wheel(at, dy), where given,
+// turns the wheel there. The settings open as a list of their sections,
+// each a page, which Back leaves for the list, and Back leaves the list,
+// closing them; where d.phone says, Voice & video holds no keyboard
+// shortcuts or screen share, which a browser's hold. Manage goes the same
+// way. The viewer, on a message's two photos, moves to the second by a
+// swipe, zooms by a double tap, and by two fingers or the wheel, and Back
+// closes it; and a dialog, as a sheet, closes by a swipe down its top.
+export async function pages(h, ctx, d, report) {
+    const { den, general } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const frame = (f) => `document.querySelector(${JSON.stringify(f)})`;
+    const state = (f) => h.ev(`(() => { const s = ${frame(f)}; if (!s) return { open: false, path: location.pathname };
+        return { open: true, path: location.pathname, title: s.querySelector('h2')?.textContent.trim(), rows: [...s.querySelectorAll('[data-section]')].map((b) => b.textContent.trim()),
+            page: !!s.querySelector('[data-panel]'), cards: [...s.querySelectorAll('[data-panel] .card-title')].map((t) => t.textContent.trim()) }; })()`);
+    const until = (f, test, what) => waitFor(async () => { const s = await state(f); return test(s) && s; }, what, 6000).catch(() => null);
+    // walk opens each section of a list from it, and Back from each.
+    const walk = async (f, name, title, check) => {
+        const list = await until(f, (s) => s.open && s.rows.length, `${name}'s list`);
+        did(!!list && !list.page, `${name}, opened, list their sections: ${JSON.stringify(list?.rows)}`);
+        for (const row of list?.rows || []) {
+            await d.tap(`[...document.querySelectorAll('${f} [data-section]')].find((b) => b.textContent.trim() === ${JSON.stringify(row)})`);
+            const page = await until(f, (s) => s.page, `${row}'s page`);
+            did(!!page && (title === null || page.title === (title || row)), `${row} opens as a page with ← back (${page?.title})`);
+            if (page) await check?.(row, page);
+            await d.back();
+            const back = await until(f, (s) => s.open && !s.page && s.rows.length, 'the list again');
+            did(!!back, `Back goes from ${row} to the list`);
+        }
+        await d.back();
+        const closed = await until(f, (s) => !s.open, `${name} closed`);
+        did(!!closed && closed.path === '/', `Back from the list closes ${name} (${closed?.path})`);
+    };
+
+    await h.go('/');
+    await h.wait(HOME, 'home');
+    await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
+    await walk(SETTINGS_FRAME, 'the settings', '', async (row, page) => {
+        if (row !== 'Voice & video') return;
+        const keys = page.cards.includes('Keyboard shortcuts');
+        const share = page.cards.includes('Screen share');
+        did(d.phone ? !keys && !share : keys && share, d.phone
+            ? `the phone's Voice & video holds no keyboard shortcuts or screen share (${page.cards.join(', ')})`
+            : `a browser's Voice & video holds the keyboard shortcuts and screen share (${page.cards.join(', ')})`);
+    });
+    await d.tap(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Manage')`);
+    // A den's sections are headed by the den's name.
+    await walk(MANAGE_FRAME, 'Manage', null);
+
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    await sleep(1200);
+    const photos = `[...document.querySelectorAll('[data-scroller] [data-id]')].reverse().find((m) => m.querySelectorAll('button[aria-label^="Open "]').length >= 2)`;
+    await d.tap(`${photos}.querySelector('button[aria-label^="Open "]')`);
+    let v = await waitFor(() => h.ev(VIEWER), 'the viewer', 6000).catch(() => null);
+    did(v?.count === '1 of 2' && v.shown[2] <= v.stage[2] + 1 && v.stage[2] >= 389, `the viewer opens full screen on the message's first photo, its width the screen's: ${JSON.stringify(v)}`);
+    await h.snap('pages-viewer');
+    if (v) {
+        const y = v.stage[1] + v.stage[3] / 2;
+        await d.drag([330, y], [60, y]);
+        v = await waitFor(async () => { const n = await h.ev(VIEWER); return n?.count === '2 of 2' && n; }, 'the second photo', 4000).catch(async () => h.ev(VIEWER));
+        did(v?.count === '2 of 2', `a swipe to the left moves to the second photo (${v?.count})`);
+        const fit = v.shown[2];
+        const middle = `[${v.shown[0] + v.shown[2] / 2}, ${v.shown[1] + v.shown[3] / 2}]`;
+        const zoomed = async (what) => {
+            const z = await waitFor(async () => { const n = await h.ev(VIEWER); return n && n.shown[2] > fit * 1.5 && n; }, what, 3000).catch(async () => h.ev(VIEWER));
+            return { ok: !!z && z.shown[2] > fit * 1.5, z };
+        };
+        await d.double(JSON.parse(middle));
+        let z = await zoomed('a double tap\'s zoom');
+        did(z.ok, `${d.touch ? 'a double tap' : 'a double click'} zooms it: ${fit} pixels wide to ${z.z?.shown[2]}`);
+        await h.snap('pages-zoomed');
+        await d.double(JSON.parse(middle));
+        const out = await waitFor(async () => { const n = await h.ev(VIEWER); return n && Math.abs(n.shown[2] - fit) < 2 && n; }, 'fitted again', 3000).catch(() => null);
+        did(!!out, `and another fits it again (${out?.shown[2]})`);
+        if (d.pinch) {
+            await d.pinch(JSON.parse(middle), 60, 240);
+            z = await zoomed('a pinch\'s zoom');
+            did(z.ok, `two fingers spread zoom it: ${fit} pixels wide to ${z.z?.shown[2]}`);
+        } else if (d.wheel) {
+            // A turn zooms at most half again, however far it goes.
+            await d.wheel(JSON.parse(middle), -400);
+            await d.wheel(JSON.parse(middle), -400);
+            z = await zoomed('the wheel\'s zoom');
+            did(z.ok, `the wheel zooms it: ${fit} pixels wide to ${z.z?.shown[2]}`);
+        }
+        await d.back();
+        const gone = await waitFor(async () => !(await h.ev(VIEWER)), 'the viewer closed', 4000).then(() => true, () => false);
+        const path = await h.ev('location.pathname');
+        did(gone && path === `/den/${den}/${general}`, `Back closes the viewer, and the channel stays (${path})`);
+    }
+
+    // The writing guide, a dialog, is a sheet, which a swipe down its top
+    // closes.
+    await d.tap(`document.querySelector('[aria-label="How to write a message"]')`);
+    const sheet = await waitFor(() => h.ev(`(() => { const s = document.querySelector('[role=dialog][aria-label="Writing a message"]'); if (!s) return null;
+        const r = s.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.bottom), innerHeight]; })()`), 'the guide', 4000).catch(() => null);
+    did(!!sheet && sheet[0] === 0 && sheet[2] >= 389 && sheet[3] >= sheet[4] - 1, `the writing guide opens as a sheet from the screen's foot: ${JSON.stringify(sheet)}`);
+    if (sheet) {
+        await d.drag([sheet[2] / 2, sheet[1] + 14], [sheet[2] / 2, sheet[1] + 14 + 0.6 * (sheet[3] - sheet[1])]);
+        const shut = await waitFor(async () => !(await h.has(`document.querySelector('[role=dialog][aria-label="Writing a message"]')`)), 'the guide closed', 4000).then(() => true, () => false);
+        did(shut, 'a swipe down its top closes it');
+    }
 }

@@ -1589,7 +1589,7 @@ function WritingGuide({ touch, onClose }) {
                     <h3 class="font-semibold">With the + button</h3>
                     <p>
                         Attach files: up to {MAX_ATTACHMENTS} to a message, also by pasting them or dropping them on the messages. Photos lose
-                        their location and camera details before they leave this computer.
+                        their location and camera details before they leave this device.
                     </p>
                     <p>Let others edit: up to {MAX_EDITORS} people who can see the channel can edit the message too, but not delete it.</p>
                 </section>

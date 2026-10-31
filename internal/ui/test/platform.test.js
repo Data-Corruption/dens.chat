@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { browserOf, canCall, canPopOut, canShare, systemOf } from '../assets/js/src/platform.js';
+import { browserOf, canCall, canPopOut, canShare, hasKeys, inApp, systemOf } from '../assets/js/src/platform.js';
 
 const AGENTS = {
     chromeWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -56,4 +56,22 @@ test("a share opens in a window of its own where the browser opens one that move
     assert.equal(canPopOut(desktop), true);
     assert.equal(canPopOut(webView), false, "Android's WebView");
     assert.equal(canPopOut({ ...desktop, open: undefined }), false);
+});
+
+// The page's document, as far as it holds what the service says of its
+// form, on the app's element.
+const page = (dataset) => ({ getElementById: (id) => (id === 'app' && dataset ? { dataset } : null) });
+
+// What the service says of its form decides what a phone's settings show
+// (M13.3): the Android app's page is in Dens's own app, with no keys for
+// its shortcuts; a browser's has keys, and its permissions are the
+// browser's.
+test("the page has keys, and a browser's permissions, unless the service says it's in Dens's app", () => {
+    const android = page({ inApp: 'true', keys: 'false' });
+    const desktop = page({ inApp: 'false', keys: 'true' });
+    assert.deepEqual([inApp(android), hasKeys(android)], [true, false]);
+    assert.deepEqual([inApp(desktop), hasKeys(desktop)], [false, true]);
+    // A page that says nothing is a browser's, with keys.
+    assert.deepEqual([inApp(page({})), hasKeys(page({}))], [false, true]);
+    assert.deepEqual([inApp(page(null)), hasKeys(page(null))], [false, true]);
 });

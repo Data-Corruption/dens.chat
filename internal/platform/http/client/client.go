@@ -208,6 +208,8 @@ func (rt *router) pageData(title string) map[string]any {
 	data["Instance"] = rt.a.Layout.Instance
 	data["Pair"], data["PairLink"] = rt.pairCommands()
 	data["Autoplay"] = rt.autoplays()
+	data["InApp"] = rt.inApp()
+	data["Keys"] = !rt.inApp()
 	return data
 }
 
@@ -216,6 +218,14 @@ func (rt *router) pageData(title string) map[string]any {
 // audio once the microphone is open, which Android plays as a call's
 // (M12). A browser's page waits for a click as its browser may.
 func (rt *router) autoplays() bool {
+	return rt.a.Layout.Form == layout.Android
+}
+
+// inApp reports whether the page shows in Dens's own app, the Android
+// app's WebView, rather than a browser (M13.3): the app holds the page's
+// permissions, as for the microphone, and pairs it, and the phone has no
+// keys the page's shortcuts may take, so its settings leave them out.
+func (rt *router) inApp() bool {
 	return rt.a.Layout.Form == layout.Android
 }
 

@@ -57,3 +57,21 @@ export function BellIcon({ off, size = 'h-4 w-4' }) {
         </svg>
     );
 }
+
+// BackIcon is ←, a page's way back to the one it opened from (M13.3).
+export function BackIcon({ size = 'h-5 w-5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M13 8H3M7.5 3.5 3 8l4.5 4.5" />
+        </svg>
+    );
+}
+
+// OnwardIcon is ›, where a row opens a page of its own (M13.3).
+export function OnwardIcon({ size = 'h-4 w-4' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M6 3.5 10.5 8 6 12.5" />
+        </svg>
+    );
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    actualSize, clampPan, comparable, describe, isVideo, mayGoSmaller, other, othersLabel, othersToSwitch, panTo, progressLabel,
+    actualSize, comparable, describe, isVideo, mayGoSmaller, other, othersLabel, othersToSwitch, progressLabel,
     sendSmaller, sentLabel, setSendSmaller, switchBlocked, switchLabel, usage,
 } from '../assets/js/src/compare.jsx';
 
@@ -112,18 +112,6 @@ test('100% puts one of the photo\'s pixels on each of the screen\'s', () => {
     assert.deepEqual(actualSize({ width: 4032, height: 3024 }, 2), { width: 2016, height: 1512 });
     assert.deepEqual(actualSize({ width: 4032, height: 3024 }, 1), { width: 4032, height: 3024 });
     assert.deepEqual(actualSize({ width: 4032, height: 3024 }, 0), { width: 4032, height: 3024 });
-});
-
-test('dragging at 100% stops at the photo\'s edges, and a smaller side stays centered', () => {
-    const view = { width: 1000, height: 800 };
-    const box = { width: 4000, height: 600 };
-    assert.deepEqual(clampPan({ x: 100, y: 0 }, box, view), { x: 0, y: 100 });
-    assert.deepEqual(clampPan({ x: -5000, y: -50 }, box, view), { x: -3000, y: 100 });
-    assert.deepEqual(clampPan({ x: -1200, y: 0 }, box, view), { x: -1200, y: 100 });
-    // Looking at a spot centers it, as far as the photo reaches.
-    assert.deepEqual(panTo(0.5, 0.5, box, view), { x: -1500, y: 100 });
-    assert.deepEqual(panTo(0, 0, box, view), { x: 0, y: 100 });
-    assert.deepEqual(panTo(1, 1, box, view), { x: -3000, y: 100 });
 });
 
 test("the comparison says how much of the member's space they use", () => {

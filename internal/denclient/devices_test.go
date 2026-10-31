@@ -2,6 +2,8 @@ package denclient_test
 
 import (
 	"context"
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -565,5 +567,79 @@ func TestStrandedMemberGivesTheNewAddress(t *testing.T) {
 	waitFor(t, member, "ivy connected at the new address", connected)
 	if took := time.Since(start); took > time.Second {
 		t.Fatalf("reconnecting took %v", took)
+	}
+}
+
+//go:embed testdata/labels.json
+var labelCases []byte
+
+// A device's label is its name and what it is, as the page shows them, the
+// one under the other, and as a den takes a label: what a name can't show
+// comes out, a long one is cut to fit, and one with nothing to show is
+// Dens (M13.3).
+func TestDeviceLabels(t *testing.T) {
+	var shared struct {
+		Cases []struct {
+			Name, Detail, Label string
+			Page                bool
+		}
+	}
+	if err := json.Unmarshal(labelCases, &shared); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, detail, want string }{
+		{"  SM-S928U1\n", "Android", "SM-S928U1 (Android)"},
+		{"Pixel\u202e 9", "Android", "Pixel 9 (Android)"},
+		{"", "Android", "Dens (Android)"},
+		{"\u200b\u3164", "Linux", "Dens (Linux)"},
+		{"", "", "Dens"},
+		{strings.Repeat("a", 100), "Android", strings.Repeat("a", denproto.MaxLabelRunes-len(" (Android)")) + " (Android)"},
+		{"Pearl", strings.Repeat("b", 50), "Pearl (" + strings.Repeat("b", 32) + ")"},
+	}
+	for _, c := range shared.Cases {
+		if !c.Page {
+			cases = append(cases, struct{ name, detail, want string }{c.Name, c.Detail, c.Label})
+		}
+	}
+	for _, c := range cases {
+		got := denclient.DeviceLabel(c.name, c.detail)
+		if got != c.want {
+			t.Errorf("DeviceLabel(%q, %q) = %q, want %q", c.name, c.detail, got, c.want)
+		}
+		if clean, err := denproto.CleanName(got, denproto.MaxLabelRunes); err != nil || clean != got {
+			t.Errorf("a den won't take %q as it is: %q, %v", got, clean, err)
+		}
+	}
+}
+
+// A phone is the name its owner knows it by, with its model, or where it
+// has no name of its own, or one that's its model, its model on Android.
+func TestPhoneLabels(t *testing.T) {
+	for _, c := range []struct{ name, model, want string }{
+		{"Galaxy S24 Ultra", "SM-S928U1", "Galaxy S24 Ultra (SM-S928U1)"},
+		{"Matt's phone (work)", "SM-S928U1", "Matt's phone (work) (SM-S928U1)"},
+		{"Pixel 9 Pro", "Pixel 9 Pro", "Pixel 9 Pro (Android)"},
+		{"pixel 9 pro", "Pixel 9 Pro", "pixel 9 pro (Android)"},
+		{"", "SM-S928U1", "SM-S928U1 (Android)"},
+		{" \u200b", "SM-S928U1", "SM-S928U1 (Android)"},
+		{"Galaxy S24 Ultra", "", "Galaxy S24 Ultra (Android)"},
+		{"", "", "Dens (Android)"},
+	} {
+		if got := denclient.PhoneLabel(c.name, c.model); got != c.want {
+			t.Errorf("PhoneLabel(%q, %q) = %q, want %q", c.name, c.model, got, c.want)
+		}
+	}
+}
+
+// A phone joins a den as the Android app names it, by its name and its
+// model, and the den lists it so among the member's devices (M13.3).
+func TestAPhoneJoinsByItsNameAndModel(t *testing.T) {
+	h, owner, _, denID, _ := chatDen(t)
+	phone := h.client(t, noOwnDen)
+	phone.Label = denclient.PhoneLabel("Fern's phone", "Pixel 9 Pro")
+	joinWithCodes(t, owner, phone, denID, "fern")
+	list, err := phone.Devices(context.Background(), denID)
+	if err != nil || len(list.Devices) != 1 || list.Devices[0].Label != "Fern's phone (Pixel 9 Pro)" || !list.Devices[0].Current {
+		t.Fatalf("the phone's devices: %+v %v", list, err)
 	}
 }

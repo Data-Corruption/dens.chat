@@ -319,7 +319,7 @@ func (m *Manager) waitForApproval(ctx context.Context, a *api, denID denproto.By
 	}
 	var pending denproto.PendingSignIn
 	err = a.call(ctx, http.MethodPost, "/api/auth/password", nil, denproto.PasswordLoginRequest{
-		Username: username, Verifier: verifier, PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label,
+		Username: username, Verifier: verifier, PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.Label,
 		Nonce: nonce, Proof: proof, Offer: offer,
 	}, &pending)
 	if denproto.IsCode(err, denproto.CodeNoOtherDevice) {

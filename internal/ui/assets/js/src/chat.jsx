@@ -489,7 +489,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 )}
                                 {!(live && view.state === 'connected') && (
                                     <Tip id={`state-${denID}`} label="The den's connection" trigger={<span class="badge badge-xs badge-warning"></span>}>
-                                        {live ? view.error || STATE_WORDS[view.state] || view.state : 'Not in touch with Dens on this computer.'}
+                                        {live ? view.error || STATE_WORDS[view.state] || view.state : 'Not in touch with Dens on this device.'}
                                     </Tip>
                                 )}
                             </div>
@@ -522,7 +522,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 {view.state === 'revoked' && (
                                     <button type="button" class="btn btn-primary btn-sm" onClick={() => navigate('/')}>Sign in again</button>
                                 )}
-                                <button type="button" class="btn btn-sm" onClick={forget}>Remove from this computer</button>
+                                <button type="button" class="btn btn-sm" onClick={forget}>Remove from this device</button>
                             </div>
                         )}
                         {status && !gone && <div class="mx-2"><SignInRequests den={status} /></div>}
@@ -660,7 +660,7 @@ function UserPanel({ me, online, onEdit }) {
                     <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
                 </span>
             </button>
-            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="App settings" title="App settings" onClick={() => openSettings('appearance')}>
+            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="App settings" title="App settings" onClick={() => openSettings()}>
                 <CogIcon />
             </button>
         </div>

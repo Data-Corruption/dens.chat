@@ -29,9 +29,12 @@ if ! incus info "$CONTAINER" >/dev/null 2>&1; then
     sleep 1
   done
 fi
-incus info "$CONTAINER" | grep -q '^Status: RUNNING' || incus start "$CONTAINER"
+# Each check reads incus's answer whole: grep -q quits at its match, which
+# can leave incus writing to a closed pipe, and pipefail counts that as
+# the check failing.
+grep -q '^Status: RUNNING' <<<"$(incus info "$CONTAINER")" || incus start "$CONTAINER"
 # The emulator runs as root in the container, which opens the device.
-incus config device show "$CONTAINER" | grep -q '^kvm:' ||
+grep -q '^kvm:' <<<"$(incus config device show "$CONTAINER")" ||
   incus config device add "$CONTAINER" kvm unix-char source=/dev/kvm path=/dev/kvm uid=0 gid=0 mode=0666 >/dev/null
 
 packages=(unzip curl ca-certificates python3 procps file

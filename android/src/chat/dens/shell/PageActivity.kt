@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -43,7 +44,10 @@ import java.net.URL
 // The page gets the microphone for its calls, and while it has it, the
 // activity holds it as shown, whatever the screen does. A notification's
 // tap opens the page at its message (M12.3). Back walks the page's history
-// down to Home, its root, then leaves the page (M13.1).
+// down to Home, its root, then leaves the page (M13.1). The status and
+// navigation bars take the page's background, with icons to match, so
+// they follow its theme, the phone's light or dark or one the member
+// picks (M13.3).
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
@@ -80,6 +84,7 @@ class PageActivity : Activity() {
                 show()
                 hold()
                 askToNotify()
+                paintBars()
             }
         }
     }
@@ -106,7 +111,19 @@ class PageActivity : Activity() {
         DensService.watch(watcher)
         DensService.start(this)
         show()
+        paintBars()
         installTapped(intent)
+    }
+
+    // paintBars paints the bars, which show the root behind them, with the
+    // page's background, once Dens has said it, and has their icons dark
+    // on a light one. Until then they're the window's, light or dark as
+    // the phone is.
+    private fun paintBars() {
+        val color = DensService.bars ?: return
+        root.setBackgroundColor(color)
+        val light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(if (Color.luminance(color) > 0.5f) light else 0, light)
     }
 
     // installTapped installs the update a notification's tap names (M12.4),

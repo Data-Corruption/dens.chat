@@ -2,6 +2,8 @@ package chat.dens.shell
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.os.Build
+import android.provider.Settings
 import android.system.Os
 import android.util.Log
 import java.io.File
@@ -66,13 +68,18 @@ object Dens {
 
     // env is what the service runs with beyond the app's own environment:
     // the app's files as its home and its data, where Go on Android would
-    // otherwise take /sdcard for home; the cache for temporary files; and
-    // the phone's time zone, which Go reads from TZ alone there.
+    // otherwise take /sdcard for home; the cache for temporary files; the
+    // phone's time zone, which Go reads from TZ alone there; and the
+    // phone's name, as its owner knows it from Android's settings, and its
+    // model, which dens list it by among the member's devices (M13.3),
+    // where its hostname says only localhost.
     fun env(ctx: Context): Map<String, String> = mapOf(
         "HOME" to ctx.filesDir.path,
         "XDG_DATA_HOME" to ctx.filesDir.path,
         "TMPDIR" to private(File(ctx.cacheDir, "tmp")).path,
         "TZ" to TimeZone.getDefault().id,
+        "DENS_DEVICE_NAME" to (Settings.Global.getString(ctx.contentResolver, Settings.Global.DEVICE_NAME) ?: ""),
+        "DENS_DEVICE_MODEL" to Build.MODEL,
     ) + developmentEnv(ctx)
 
     // A development build takes more from shell/env, a KEY=VALUE a line,

@@ -12,17 +12,21 @@
 // members, the channel, the list and Home; and touch (M13.2): a message's
 // actions by a long press, or the ⋯ with a mouse, in a sheet closed by a
 // swipe down and by Back, three lines written and sent, by the send button
-// with a finger, and a tip opened and closed by taps.
+// with a finger, and a tip opened and closed by taps; and pages (M13.3):
+// the settings and Manage as lists of sections, each a page Back leaves,
+// the viewer swiped to a message's second photo, zoomed by a double tap,
+// and by two fingers or the wheel, and closed by Back, and a dialog as a
+// sheet, swiped down.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
-// The parts are member, around, touch, call, owner and before; all by
-// default.
+// The parts are member, around, touch, pages, call, owner and before; all
+// by default.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, token } from './browsers.mjs';
-import { audits, callScreens, gettingAround, helpers, memberScreens, ownerScreens, touching, waitFor } from './screens.mjs';
+import { audits, callScreens, gettingAround, helpers, memberScreens, ownerScreens, pages, touching, waitFor } from './screens.mjs';
 
 const args = process.argv.slice(2);
 const cut = args.indexOf('--');
@@ -104,6 +108,23 @@ function driver(mode, b, h) {
             },
             type: (text) => b.type(text),
             enter: () => b.key('Enter'),
+            async double([x, y]) {
+                await b.tap(x, y);
+                await sleep(80);
+                await b.tap(x, y);
+                await settle();
+            },
+            // Two fingers, about the point at, from gap apart to gap to.
+            async pinch([cx, cy], from, to) {
+                const at = (gap) => [{ x: cx - gap / 2, y: cy, id: 0 }, { x: cx + gap / 2, y: cy, id: 1 }];
+                await b.cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(from) });
+                for (let i = 1; i <= 10; i++) {
+                    await b.cdp('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(from + ((to - from) * i) / 10) });
+                    await sleep(16);
+                }
+                await b.cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+                await settle();
+            },
         };
     }
     const traverse = async () => {
@@ -158,6 +179,19 @@ function driver(mode, b, h) {
             },
             type: (text) => b.type(text),
             enter: () => b.key('Enter'),
+            async double([x, y]) {
+                await b.tap(x, y);
+                await sleep(80);
+                await b.tap(x, y);
+                await settle();
+            },
+            async pinch([cx, cy], from, to) {
+                await b.bidi('input.performActions', { context: b.context, actions: [-1, 1].map((side, i) => ({ type: 'pointer', id: `finger${i}`,
+                    parameters: { pointerType: 'touch' }, actions: [{ type: 'pointerMove', x: Math.round(cx + (side * from) / 2), y: Math.round(cy) },
+                        { type: 'pointerDown', button: 0 }, { type: 'pointerMove', x: Math.round(cx + (side * to) / 2), y: Math.round(cy), duration: 300 },
+                        { type: 'pointerUp', button: 0 }] })) });
+                await settle();
+            },
         };
     }
     return {
@@ -182,6 +216,17 @@ function driver(mode, b, h) {
         type: (text) => b.type(text),
         enter: () => b.key('Enter'),
         shiftEnter: () => b.chord(['Shift'], 'Enter'),
+        async double([x, y]) {
+            await b.click(x, y);
+            await sleep(80);
+            await b.click(x, y);
+            await settle();
+        },
+        async wheel([x, y], dy) {
+            await b.bidi('input.performActions', { context: b.context, actions: [{ type: 'wheel', id: 'wheel',
+                actions: [{ type: 'scroll', x: Math.round(x), y: Math.round(y), deltaX: 0, deltaY: dy }] }] });
+            await settle();
+        },
     };
 }
 
@@ -192,7 +237,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
     fs.rmSync(out, { recursive: true, force: true });
     fs.mkdirSync(out, { recursive: true });
     const log = [];
-    if (want('member') || want('around') || want('touch') || want('call')) {
+    if (want('member') || want('around') || want('touch') || want('pages') || want('call')) {
         const b = await browser(mode, port++, { media: mode === 'chromium' ? true : 'pulse' });
         try {
             await pair(b, BOB);
@@ -200,6 +245,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             if (want('member')) await memberScreens(h, ctx);
             if (want('around')) await gettingAround(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('touch')) await touching(h, ctx, driver(mode, b, h), report).catch(fail);
+            if (want('pages')) await pages(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('call') && mode === 'chromium') {
                 // Carol, the voice probe, hears bob and shares, for the player.
                 const jar = fs.readFileSync(`${HOME}/jar-${CAROL.instance}`, 'utf8').split('\n').map((l) => l.split('\t'));

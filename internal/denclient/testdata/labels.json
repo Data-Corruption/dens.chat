@@ -1,0 +1,12 @@
+{
+  "about": "Device labels: a device's name, and in parentheses at the end what it is, a computer's system or a phone's model, as denclient.DeviceLabel makes them and the page shows them, the name above and what's in the parentheses under it. Labels Dens didn't make, as from older versions, show whole when they end in no parentheses. The Go and page tests both read this file.",
+  "cases": [
+    {"name": "Pearl", "detail": "Windows", "label": "Pearl (Windows)"},
+    {"name": "Galaxy S24 Ultra", "detail": "SM-S928U1", "label": "Galaxy S24 Ultra (SM-S928U1)"},
+    {"name": "Pixel 9 Pro", "detail": "Android", "label": "Pixel 9 Pro (Android)"},
+    {"name": "Matt's phone (work)", "detail": "SM-S928U1", "label": "Matt's phone (work) (SM-S928U1)"},
+    {"name": "localhost", "detail": "android", "label": "localhost (android)", "page": true},
+    {"name": "a device", "detail": "", "label": "a device", "page": true},
+    {"name": "Phone (", "detail": "", "label": "Phone (", "page": true}
+  ]
+}

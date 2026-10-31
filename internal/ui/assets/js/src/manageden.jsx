@@ -13,9 +13,10 @@ import {
 } from './components.jsx';
 import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } from './dendraft.js';
 import { onEvent } from './events.js';
-import { useLayer } from './nav.js';
+import { useLayer, useNarrow } from './nav.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
+import { PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { leaveOffer } from './offline.js';
 import { rank } from './people.jsx';
 import { DMKey, RecoveryCodes } from './private.jsx';
@@ -35,7 +36,8 @@ export function sectionsFor(den) {
 
 // ManageDialog manages one den, at a section. It closes with its ✕,
 // Escape, a click outside it, or Back (M13.1), asking first when edits
-// aren't saved.
+// aren't saved. On the phone layout it takes the screen, its sections a
+// list of pages, and Back and Escape go from a page to the list (M13.3).
 export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
     const [den, setDen] = useState(null);
     const [view, setView] = useState(null);
@@ -45,6 +47,7 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
     const [leaving, setLeaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const save = useAction();
+    const narrow = useNarrow();
 
     // The den's status on this computer comes with every change to the
     // list; its state, which the owner's settings and the files need,
@@ -77,8 +80,13 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         if (dirty) setLeaving(true);
         else onClose();
     }
+    // toList goes from a section's page to the list of them.
+    function toList() {
+        setShown(null);
+        onSection('');
+    }
     useEffect(() => {
-        const escape = (e) => e.key === 'Escape' && close();
+        const escape = (e) => e.key === 'Escape' && (narrow && section ? toList() : close());
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     });
@@ -88,6 +96,7 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         setLeaving(true);
         return false;
     });
+    useSectionPage(narrow && !!section, toList);
 
     function edit(changes) {
         setSaved(false);
@@ -119,13 +128,16 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
 
     if (!den) {
         return (
-            <Frame title="Manage" onClose={onClose}>
+            <Frame title="Manage" narrow={narrow} onClose={onClose}>
                 <div class="p-4"><span class="loading loading-spinner"></span></div>
             </Frame>
         );
     }
     const sections = sectionsFor(den);
-    const at = sections.find(([id]) => id === section) ? section : section === 'leave' && !den.own ? 'leave' : 'general';
+    let at = 'general';
+    if (sections.find(([id]) => id === section)) at = section;
+    else if (section === 'leave' && !den.own) at = 'leave';
+    else if (narrow && !section) at = '';
     const showCodes = (codes) => setShown({ codes, seal: '', sealNew: false });
     const showKey = (seal) => setShown({ codes: [], seal, sealNew: true });
     let panel;
@@ -154,6 +166,44 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
     } else {
         panel = <General den={den} draft={owner ? draft : null} base={base} onEdit={edit} />;
     }
+    const bar = owner && (dirty || saved || leaving) && (
+        <div role="status" class="flex flex-wrap items-center gap-2 border-t border-base-300 bg-base-200 px-4 py-2 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+            {leaving ? (
+                <>
+                    <span class="min-w-0 flex-1 text-sm">Discard your unsaved changes?</span>
+                    <button type="button" class="btn btn-ghost btn-sm" onClick={() => setLeaving(false)}>Keep editing</button>
+                    <button type="button" class="btn btn-error btn-sm" onClick={onClose}>Discard</button>
+                </>
+            ) : dirty ? (
+                <>
+                    <span class="min-w-0 flex-1 text-sm">{save.error ? <span class="text-error">{save.error}</span> : 'You have unsaved changes.'}</span>
+                    <button type="button" class="btn btn-ghost btn-sm" disabled={save.busy} onClick={discard}>Discard</button>
+                    <button type="button" class="btn btn-primary btn-sm" disabled={save.busy} onClick={saveAll}>
+                        {save.busy && <span class="loading loading-spinner loading-sm"></span>}
+                        Save changes
+                    </button>
+                </>
+            ) : (
+                <span class="text-sm text-success">Saved.</span>
+            )}
+        </div>
+    );
+    const yours = sections.filter(([, , part]) => part === 'you');
+    if (narrow) {
+        const rows = (part) => sections.filter(([, , p]) => p === part).map(([id, label]) => [id, label]);
+        const groups = [['This den', rows('den')], ['You in this den', rows('you')]];
+        if (!den.own) groups.push(['', [['leave', 'Leave den', true]]]);
+        return (
+            <Frame title={den.name} narrow onClose={at ? toList : close} back={!!at}>
+                {at ? (
+                    <div data-panel class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
+                ) : (
+                    <SectionList label="Sections" groups={groups} onPick={onSection} />
+                )}
+                {bar}
+            </Frame>
+        );
+    }
     const item = ([id, label]) => (
         <button key={id} type="button" aria-current={at === id ? 'page' : undefined}
             class={`btn btn-ghost btn-sm shrink-0 justify-start font-normal ${at === id ? 'btn-active' : ''}`}
@@ -164,55 +214,44 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
             {label}
         </button>
     );
-    const group = (name) => <p class="hidden px-3 pt-2 text-xs font-semibold uppercase text-base-content/60 md:block">{name}</p>;
-    const yours = sections.filter(([, , part]) => part === 'you');
+    const group = (name) => <p class="px-3 pt-2 text-xs font-semibold uppercase text-base-content/60">{name}</p>;
     return (
         <Frame title={den.name} onClose={close}>
-            <div class="flex min-h-0 flex-1 flex-col md:flex-row">
-                <nav aria-label="Sections" class="flex shrink-0 gap-1 overflow-x-auto border-b border-base-300 p-2 md:w-52 md:flex-col md:border-b-0 md:border-r">
+            <div class="flex min-h-0 flex-1 flex-row">
+                <nav aria-label="Sections" class="flex w-52 shrink-0 flex-col gap-1 border-r border-base-300 p-2">
                     {group('This den')}
                     {sections.filter(([, , part]) => part === 'den').map(item)}
                     {yours.length > 0 && group('You in this den')}
                     {yours.map(item)}
                     {!den.own && (
-                        <button type="button" class={`btn btn-ghost btn-sm shrink-0 justify-start font-normal text-error md:mt-auto ${at === 'leave' ? 'btn-active' : ''}`}
+                        <button type="button" class={`btn btn-ghost btn-sm mt-auto shrink-0 justify-start font-normal text-error ${at === 'leave' ? 'btn-active' : ''}`}
                             onClick={() => onSection('leave')}>
                             Leave den
                         </button>
                     )}
                 </nav>
                 <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-                    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
-                    {owner && (dirty || saved || leaving) && (
-                        <div role="status" class="flex flex-wrap items-center gap-2 border-t border-base-300 bg-base-200 px-4 py-2">
-                            {leaving ? (
-                                <>
-                                    <span class="min-w-0 flex-1 text-sm">Discard your unsaved changes?</span>
-                                    <button type="button" class="btn btn-ghost btn-sm" onClick={() => setLeaving(false)}>Keep editing</button>
-                                    <button type="button" class="btn btn-error btn-sm" onClick={onClose}>Discard</button>
-                                </>
-                            ) : dirty ? (
-                                <>
-                                    <span class="min-w-0 flex-1 text-sm">{save.error ? <span class="text-error">{save.error}</span> : 'You have unsaved changes.'}</span>
-                                    <button type="button" class="btn btn-ghost btn-sm" disabled={save.busy} onClick={discard}>Discard</button>
-                                    <button type="button" class="btn btn-primary btn-sm" disabled={save.busy} onClick={saveAll}>
-                                        {save.busy && <span class="loading loading-spinner loading-sm"></span>}
-                                        Save changes
-                                    </button>
-                                </>
-                            ) : (
-                                <span class="text-sm text-success">Saved.</span>
-                            )}
-                        </div>
-                    )}
+                    <div data-panel class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
+                    {bar}
                 </div>
             </div>
         </Frame>
     );
 }
 
-function Frame({ title, onClose, children }) {
+// Frame frames Manage: a card over the page, or on the phone layout the
+// whole screen, headed by title with ✕, or ← where back says it goes back
+// to the list.
+function Frame({ title, narrow, back, onClose, children }) {
     const backdrop = useBackdrop(onClose);
+    if (narrow) {
+        return (
+            <div role="dialog" aria-modal="true" aria-label={`Manage ${title}`} class="fixed inset-0 z-50 flex flex-col bg-base-100">
+                <PageHeader title={title} onBack={back ? onClose : undefined} onClose={back ? undefined : onClose} />
+                {children}
+            </div>
+        );
+    }
     return (
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
             <div role="dialog" aria-modal="true" aria-label={`Manage ${title}`} class="card flex h-full max-h-[48rem] w-full max-w-3xl flex-col bg-base-100 shadow-xl">
@@ -274,7 +313,7 @@ function General({ den, draft, base, onEdit }) {
                             </button>
                         </div>
                     </Field>
-                    {reached && <p class="text-sm text-success">This computer reached the den at {den.url}, and it proved its identity there.</p>}
+                    {reached && <p class="text-sm text-success">This device reached the den at {den.url}, and it proved its identity there.</p>}
                     {check.error && (
                         <>
                             <ErrorText message={check.error} />
@@ -524,7 +563,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
             </section>
             <section class="flex flex-col gap-2 border-t border-base-300 pt-3">
                 <h4 class="font-medium">Calls</h4>
-                <p class="text-sm text-base-content/70">Calls and screen shares pass through this computer's network. Lower these if calls stutter.</p>
+                <p class="text-sm text-base-content/70">Calls and screen shares pass through the network of the computer hosting the den. Lower these if calls stutter.</p>
                 <div role="radiogroup" aria-label="Call limits" class="flex flex-wrap gap-4">
                     {Object.entries(CALL_PRESETS).map(([name, limits]) => (
                         <label key={name} class="label gap-2">
@@ -586,8 +625,18 @@ function Limits({ denID, view, draft, base, onEdit }) {
     );
 }
 
-// Devices lists this member's devices in the den and signs any of them
-// out, after saying what that does.
+// labelParts splits a device's label into its name and, from the
+// parentheses at its end, what it is: a computer's system or a phone's
+// model, which shows under the name (M13.3). A label with none is all
+// name.
+export function labelParts(label) {
+    const m = /^(.*\S)\s*\(([^()]+)\)$/.exec(label || '');
+    return m ? { name: m[1], detail: m[2] } : { name: label || '', detail: '' };
+}
+
+// Devices lists this member's devices in the den, each by its name with
+// what it is under it, and signs any of them out, after saying what that
+// does.
 function Devices({ den }) {
     const [list, setList] = useState(null);
     const [confirm, setConfirm] = useState('');
@@ -614,38 +663,42 @@ function Devices({ den }) {
                 slow && <span class="loading loading-dots loading-sm"></span>
             ) : (
                 <ul class="flex flex-col divide-y divide-base-300">
-                    {list.devices.map((d) => (
-                        <li key={d.key_id} class="flex flex-col gap-2 py-2 text-sm">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="min-w-0 flex-1">
-                                    <span class="font-medium">{d.label}</span>
-                                    {d.current && <span class="badge badge-soft badge-success badge-sm ml-2">This device</span>}
-                                    <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
-                                </span>
-                                {confirm !== d.key_id && (
-                                    <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirm(d.key_id)}>Sign out</button>
-                                )}
-                            </div>
-                            {confirm === d.key_id && (
-                                <div class="flex flex-col gap-2 rounded-box bg-base-200 p-3">
-                                    <p>
-                                        {d.current ? 'Sign this device out?' : `Sign out ${d.label}?`} It loses access at once. Signing in again takes your
-                                        den password and approval from another of your devices.
-                                    </p>
-                                    {list.devices.length === 1 && (
-                                        <p class="text-warning">
-                                            It's your only device here, so signing in again takes a recovery code, and your DM recovery key to read
-                                            your direct messages.
-                                        </p>
+                    {list.devices.map((d) => {
+                        const { name, detail } = labelParts(d.label);
+                        return (
+                            <li key={d.key_id} class="flex flex-col gap-2 py-2 text-sm">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span class="min-w-0 flex-1">
+                                        <span class="font-medium">{name}</span>
+                                        {d.current && <span class="badge badge-soft badge-success badge-sm ml-2">This device</span>}
+                                        {detail && <span class="block text-base-content/70">{detail}</span>}
+                                        <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
+                                    </span>
+                                    {confirm !== d.key_id && (
+                                        <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirm(d.key_id)}>Sign out</button>
                                     )}
-                                    <div class="flex gap-2">
-                                        <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => signOut(d)}>Sign out</button>
-                                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirm('')}>Cancel</button>
-                                    </div>
                                 </div>
-                            )}
-                        </li>
-                    ))}
+                                {confirm === d.key_id && (
+                                    <div class="flex flex-col gap-2 rounded-box bg-base-200 p-3">
+                                        <p>
+                                            {d.current ? 'Sign this device out?' : `Sign out ${name}?`} It loses access at once. Signing in again takes your
+                                            den password and approval from another of your devices.
+                                        </p>
+                                        {list.devices.length === 1 && (
+                                            <p class="text-warning">
+                                                It's your only device here, so signing in again takes a recovery code, and your DM recovery key to read
+                                                your direct messages.
+                                            </p>
+                                        )}
+                                        <div class="flex gap-2">
+                                            <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => signOut(d)}>Sign out</button>
+                                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirm('')}>Cancel</button>
+                                        </div>
+                                    </div>
+                                )}
+                            </li>
+                        );
+                    })}
                 </ul>
             )}
         </>
@@ -987,11 +1040,11 @@ function Leave({ den, onLeft }) {
                 <Heading>Leave {den.name}</Heading>
                 <p>
                     {offer === 'unreachable'
-                        ? "Dens can't reach this den right now, so it can't take you out of it. If it's gone for good, remove it from this computer instead."
+                        ? "Dens can't reach this den right now, so it can't take you out of it. If it's gone for good, remove it from this device instead."
                         : den.error || 'This den no longer accepts this device.'}
                 </p>
                 <p>
-                    That deletes your keys for the den on this computer, and the messages and files it kept.
+                    That deletes your keys for the den on this device, and the messages and files it kept.
                     {offer === 'unreachable' && ' Your account stays in the den, so if it comes back, you can sign in again from Add a den.'}
                 </p>
                 <ErrorText message={act.error} />
@@ -1000,7 +1053,7 @@ function Leave({ den, onLeft }) {
                         await api.del(`/api/dens/${den.den_id}`);
                         onLeft();
                     })}>
-                        Remove from this computer
+                        Remove from this device
                     </button>
                 </div>
             </>

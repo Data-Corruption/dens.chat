@@ -107,6 +107,8 @@ type App struct {
 	updateCheckMu sync.Mutex
 	// apk is the Android app's updater's (M12).
 	apk apkUpdate
+	// bars is the page's background, for the shell's bars (M13.3).
+	bars barsState
 	// Argon2id makes each password check expensive; the limiter keeps a
 	// local caller from turning that into a denial of service.
 	passwordMu      sync.Mutex
@@ -155,6 +157,15 @@ func (e *PortError) Error() string {
 }
 
 func (e *PortError) Unwrap() error { return e.Err }
+
+// DeviceNameEnv and DeviceModelEnv are where the Android app's shell gives
+// Dens the phone's name, as its owner knows it from Android's settings,
+// and its model, Build.MODEL, which dens list the phone by among the
+// member's devices, where its hostname would say only localhost (M13.3).
+const (
+	DeviceNameEnv  = "DENS_DEVICE_NAME"
+	DeviceModelEnv = "DENS_DEVICE_MODEL"
+)
 
 // ErrCantHost is turning hosting on in a form that hosts no den.
 var ErrCantHost = errors.New("hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in")
@@ -408,6 +419,9 @@ func (a *App) unlock(key []byte) error {
 		return err
 	}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
+	if l.Form == layout.Android {
+		a.Dens.Label = denclient.PhoneLabel(os.Getenv(DeviceNameEnv), os.Getenv(DeviceModelEnv))
+	}
 	a.Shortcuts = shortcuts.NewHub(a.buildInfo.Version, guard.PageOrigin(a.Instance.ClientPort), cfg.VoiceKeys, a.Log)
 	a.Shortcuts.UseDesktop(cfg.DesktopKeys, func(on bool) {
 		if _, err := config.Update(a.DB, func(c *types.Configuration) error {
