@@ -4,7 +4,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 ## Big
 
-- Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app, and M13 and M14 hold the rest; more in [android.md](android.md).
+- Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app and M13 its phone layout, and M14 holds the rest; more in [android.md](android.md).
 - End-to-end encrypted group DMs, then end-to-end encrypted calls with SFrame, one to one and in groups, piggybacking off the keys used for DMs? A call button in that person's or group's DM channel? Beside a group DM, the panel that shows a DM's other member (M11) would list the group's members.
 
 ## Medium
@@ -32,8 +32,11 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 ## Small
 
 - One member on Fedora KDE with Waterfox leaves and rejoins calls without doing anything: flickering in and out, dropping out for a few seconds every 30 to 60 seconds (the timing may be off). M11's logs say which connection breaks first, once the member and the den's owner set them to debug and send them after the next drop (see design.md's What's logged); the fix waits for them.
-- In the profile edit dialog, let members pick their name's color, including start-to-end gradients. It waits for custom themes, after the phone layout, so both cover it.
+- In the profile edit dialog, let members pick their name's color, including start-to-end gradients. It waits for custom themes, so both cover it.
 - On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
+- A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
+- Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
+- The Android e2e's den, made once, goes on running the build it started with, since `den.sh up` starts it only where it isn't running: it could start again once `setup.sh` has pushed a newer build, so desk's page is the tree's.
 
 ## Probably not doing
 
