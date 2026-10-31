@@ -11,6 +11,7 @@ import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import { CopyButton, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater } from './components.jsx';
 import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } from './dendraft.js';
 import { onEvent } from './events.js';
+import { useLayer } from './nav.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
 import { openAt } from './messages.jsx';
 import { leaveOffer } from './offline.js';
@@ -31,7 +32,8 @@ export function sectionsFor(den) {
 }
 
 // ManageDialog manages one den, at a section. It closes with its ✕,
-// Escape or a click outside it, asking first when edits aren't saved.
+// Escape, a click outside it, or Back (M13.1), asking first when edits
+// aren't saved.
 export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
     const [den, setDen] = useState(null);
     const [view, setView] = useState(null);
@@ -77,6 +79,12 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         const escape = (e) => e.key === 'Escape' && close();
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
+    });
+    // Back with changes unsaved asks, as the ✕ does, and the dialog stays.
+    useLayer(() => {
+        if (!dirty) return onClose();
+        setLeaving(true);
+        return false;
     });
 
     function edit(changes) {

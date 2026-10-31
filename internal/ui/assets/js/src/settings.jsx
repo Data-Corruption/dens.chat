@@ -19,6 +19,7 @@ import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
+import { useLayer } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
 import { NO_CALLS, NO_SHARING, canCall, canShare, here } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
@@ -51,8 +52,9 @@ const SECTIONS = [
 ];
 
 // SettingsDialog shows a tab of the settings. It closes with its ✕,
-// Escape or a click outside it.
+// Escape, a click outside it, or Back (M13.1).
 export function SettingsDialog({ section, onSection, onClose, instance, version, pair }) {
+    useLayer(onClose);
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && onClose();
         document.addEventListener('keydown', escape);

@@ -12,10 +12,16 @@
 # holds its page as shown, and lets the page and the microphone go once
 # the call ends. A DM from the den's owner while the app is behind the
 # others posts its notification (M12.3), whose tap opens the page at the
-# message, and reading it takes the next back. Dens killed under the shell
+# message, in place on the page that shows (M13.1), and reading it takes
+# the next back. Dens killed under the shell
 # starts again, and the
 # app force-stopped and opened again keeps its page's session; Back leaves
-# the page, and a link opens outside it. The host package's tests, which
+# the page, and a link opens outside it. At 390 CSS pixels (M13.1), by
+# Android's own taps and swipes, the member gets around the phone layout's
+# panes, from Home to a channel, the list and the members, and Back walks
+# up them to Home, closing the settings on the way, and out of the app;
+# then every member's screen is walked for its picture and the audit of its
+# layout (scripts/test/android/walk.mjs). The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
 # updates itself (M12.4): its updater refuses a newer release whose
@@ -128,6 +134,9 @@ finish() {
     fi
   done
   stop_releases_host
+  # The emulator keeps a density it was given across restarts.
+  serial=$NEW
+  incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb devices | grep -q "^${serial}[[:space:]]*device" && adb shell wm density reset || :
   incus exec "$CONTAINER" -- /root/box.sh halt 5554 || :
   incus exec "$CONTAINER" -- /root/box.sh halt 5556 || :
   if $passed; then
@@ -296,6 +305,9 @@ first=$(den say "$dm" "a DM for the phone")
 waitfor 20 "the DM's notification" shows "a DM for the phone"
 [[ $(notifications) == *"pkg=$APP"*"channel=messages"* ]] || fail "the notification isn't the app's, in its Messages channel"
 ! shell_log | grep -q 'asking Android for POST_NOTIFICATIONS' || fail "Android was asked for notifications again"
+# The page, which still shows behind the others, takes the tap in place
+# (M13.1), as a call on it needs: what it holds now is there after.
+phone drive eval 'window.heldOver = true' >/dev/null
 adb shell cmd statusbar expand-notifications
 sleep 2
 bounds=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE 'text="a DM for the phone"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' |
@@ -306,7 +318,8 @@ adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
 waitfor 20 "the page in front" front
 check at "$den_id/$dm/$first" >/dev/null || fail "the tap didn't open the page at the DM's message"
 shell_log | grep -q "page: opening a notification's message" || fail "the shell didn't open the message"
-ok "a DM posted its notification while the app was behind the others, and its tap opened the page at the message"
+[[ $(phone drive eval 'window.heldOver === true') == true ]] || fail "the tap loaded the page again rather than opening the message on it"
+ok "a DM posted its notification while the app was behind the others, and its tap opened the page at the message, in place"
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 second=$(den say "$dm" "another DM for the phone")
@@ -339,6 +352,30 @@ waitfor 10 "the page in front again" front
 adb shell input keyevent KEYCODE_BACK
 waitfor 5 "Back to leave the page at its first address" behind
 ok "a link opened outside the page, and Back left it"
+
+# The phone layout (M13), at 390 CSS pixels, its 1080-pixel screen at 443
+# dpi, in a page opened afresh, whose history begins at Home.
+echo ">> Getting around, at 390 pixels"
+random=$(den channel random)
+den api PATCH "/api/dens/$den_id/channels/$general" '{"description":"Anything goes here: say hi, and **be kind**.\nA second line, which shows once the description is opened."}' >/dev/null
+adb shell wm density 443
+phone start
+waitfor 20 "the page in front" front
+waitfor 30 "the page" check paired
+incus file push -q scripts/test/browser/screens.mjs scripts/test/android/walk.mjs scripts/test/android/drive.mjs "$CONTAINER/root/"
+printf '{"den":"%s","general":"%s","random":"%s","dm":"%s"}\n' "$den_id" "$general" "$random" "$dm" |
+  incus exec "$CONTAINER" -- sh -c 'cat > /root/walk-ctx.json'
+walk() { incus exec "$CONTAINER" -- /root/node /root/walk.mjs "$serial" /root/walk /root/walk-ctx.json "$@" | tee -a "$RUN_LOG_DIR/walk-$serial.log"; }
+incus exec "$CONTAINER" -- rm -rf /root/walk
+walk around || fail "getting around the phone layout"
+ok "from Home, by Android's own taps and swipes, the member got to a channel, the list and the members and back, and Back closed the settings, went up to Home, and left the app"
+phone start
+waitfor 20 "the page in front" front
+walk screens || fail "the screens at 390 pixels"
+mkdir -p "$RUN_LOG_DIR/walk-$serial"
+incus exec "$CONTAINER" -- tar -C /root/walk -cf - . | tar -C "$RUN_LOG_DIR/walk-$serial" -xf -
+adb shell wm density reset
+ok "every member's screen at 390 pixels, its picture and its audit in the logs"
 
 incus file push -q "$RUN_LOG_DIR/host.test" "$CONTAINER/root/host.test"
 adb push /root/host.test /data/local/tmp/host.test >/dev/null 2>&1

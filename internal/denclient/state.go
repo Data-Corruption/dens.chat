@@ -639,6 +639,29 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 	return out, err == nil, err
 }
 
+// marks are a den's channels and DMs with messages unread, and the
+// mentions waiting in them (M13.1).
+type marks struct {
+	unread, mentions int
+}
+
+// marks counts what the member hasn't read, as the page's list marks it:
+// text channels and DMs, the DMs they closed aside.
+func (s *denState) marks() marks {
+	var m marks
+	for id, r := range s.reads {
+		kind := s.channels[id].Kind
+		if (kind != denproto.KindText && kind != denproto.KindDM) || r.Closed {
+			continue
+		}
+		if compareIDs(r.LastMessage, r.ReadPosition) > 0 {
+			m.unread++
+		}
+		m.mentions += r.MentionCount
+	}
+	return m
+}
+
 // pageKey is a DM key as the page sees it: without its sealed copy or
 // exchange, which are for this service alone.
 func pageKey(k denproto.DMKey) denproto.DMKey {

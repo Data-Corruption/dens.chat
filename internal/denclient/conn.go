@@ -52,6 +52,11 @@ type Status struct {
 	// Retention is the days the den keeps a message, as last heard, or 0
 	// for ever (M5).
 	Retention int `json:"retention,omitempty"`
+	// Unread counts the channels and DMs with messages the member hasn't
+	// read, and Mentions the mentions waiting in them, every message in a
+	// DM among them, which the home page marks the den with (M13.1).
+	Unread   int `json:"unread,omitempty"`
+	Mentions int `json:"mentions,omitempty"`
 }
 
 var errDialUnauthorized = errors.New("the den no longer accepts this session")
@@ -82,6 +87,10 @@ type conn struct {
 	// follows holds the checks of the den's new addresses to one a
 	// minute (M8).
 	follows followGate
+
+	// marked is the unread channels and mentions the den's status last
+	// said, so a change to them updates the pages' dens list (M13.1).
+	marked marks
 
 	stop context.CancelFunc // ends run, when the den is forgotten
 	done chan struct{}      // closed when run has returned
@@ -142,8 +151,22 @@ func (c *conn) status() Status {
 	}
 	if c.den != nil {
 		s.Retention = c.den.retention
+		m := c.den.marks()
+		s.Unread, s.Mentions = m.unread, m.mentions
 	}
 	return s
+}
+
+// remarkLocked notes the den's marks as they are now, and reports whether
+// they changed since its status last said. c.mu is held.
+func (c *conn) remarkLocked() bool {
+	if c.den == nil {
+		return false
+	}
+	m := c.den.marks()
+	changed := m != c.marked
+	c.marked = m
+	return changed
 }
 
 func (c *conn) setState(state State, msg string) {
@@ -537,13 +560,18 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			c.send(ws, denproto.EventFocus, denproto.Focus{Channels: append([]string{}, focus...)})
 		}
 		var reads []denproto.ReadState
+		remarked := false
 		c.mu.Lock()
 		if c.den != nil {
 			reads = c.den.takeTouched()
+			remarked = len(reads) > 0 && c.remarkLocked()
 		}
 		c.mu.Unlock()
 		if len(forward) > 0 || len(reads) > 0 {
 			c.m.publish(PageEvent{DenID: c.j.denID.String(), Events: forward, Reads: reads})
+		}
+		if remarked {
+			c.m.notify()
 		}
 	}
 }
@@ -583,6 +611,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.mu.Lock()
 		c.den = state
+		c.remarkLocked()
 		c.members = &membersCursor{epoch: r.Sync.Epoch, version: r.Sync.Version}
 		c.stateDirty, c.membersDirty = true, true
 		c.markDueLocked(c.dueKeysLocked()...)

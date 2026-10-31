@@ -154,11 +154,11 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
 }
 
 // DenRow is one den in the launcher: a dot for its state, named in words
-// when it isn't connected, who the member is there, and Open and Manage,
-// or, for a den that let this device or its member go, signing in again or
-// forgetting it. The den this computer hosts, with hosting off, says so,
-// with note, and leads to the switch (M9.1), or to Hosting once it's
-// exported (M10).
+// when it isn't connected, what waits there (M13.1), who the member is
+// there, and Open and Manage, or, for a den that let this device or its
+// member go, signing in again or forgetting it. The den this computer
+// hosts, with hosting off, says so, with note, and leads to the switch
+// (M9.1), or to Hosting once it's exported (M10).
 function DenRow({ den, note, navigate, onChanged, onSignIn }) {
     const [dot, label] = note ? ['bg-base-content/40', note.label] : STATES[den.state] || ['bg-base-content/40', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';
@@ -170,6 +170,7 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
                 <div class="flex items-center gap-2">
                     <span role="img" aria-label={label} title={label} class={`h-2.5 w-2.5 shrink-0 rounded-full ${dot}`}></span>
                     <span class="truncate text-lg font-semibold">{den.name}</span>
+                    <DenMarks den={den} />
                     {den.state !== 'connected' && <span class="shrink-0 text-sm text-base-content/60">{label}</span>}
                 </div>
                 <p class="truncate text-sm text-base-content/70">
@@ -202,6 +203,17 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
             )}
         </li>
     );
+}
+
+// DenMarks marks a den's row with its mentions, counted, or a dot for its
+// unread messages, as its channel list marks a channel.
+function DenMarks({ den }) {
+    if (den.mentions > 0) {
+        const words = den.mentions === 1 ? '1 mention' : `${den.mentions} mentions`;
+        return <span class="badge badge-error badge-sm shrink-0" aria-label={words} title={words}>{den.mentions}</span>;
+    }
+    if (den.unread > 0) return <span role="img" class="h-2 w-2 shrink-0 rounded-full bg-base-content" aria-label="Unread" title="Unread"></span>;
+    return null;
 }
 
 function useForm(initial) {

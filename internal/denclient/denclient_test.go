@@ -669,6 +669,56 @@ func TestChatEditsAndMentions(t *testing.T) {
 	_ = h
 }
 
+// The dens list marks each den with its channels unread and the mentions
+// waiting in them (M13.1), and the pages hear as messages and reading move
+// them.
+func TestStatusMarksWhatWaits(t *testing.T) {
+	_, owner, member, denID, channelID := chatDen(t)
+	marks := func() (unread, mentions int) {
+		for _, s := range member.Statuses() {
+			if s.DenID == denID {
+				return s.Unread, s.Mentions
+			}
+		}
+		return -1, -1
+	}
+	watch, stop := member.Watch()
+	defer stop()
+	// waitMarks waits for the marks, waking only as the pages would be
+	// told, so a change they aren't told of fails.
+	waitMarks := func(unread, mentions int, what string) {
+		t.Helper()
+		deadline := time.After(5 * time.Second)
+		for {
+			if u, m := marks(); u == unread && m == mentions {
+				return
+			}
+			select {
+			case <-watch:
+			case <-deadline:
+				if u, m := marks(); u != unread || m != mentions {
+					t.Fatalf("%s: %d unread and %d mentions, not %d and %d", what, u, m, unread, mentions)
+				}
+				t.Fatalf("%s: the marks changed, but the pages weren't told", what)
+			}
+		}
+	}
+	waitMarks(0, 0, "before anything was said")
+	send(t, owner, denID, channelID, "nobody in particular")
+	waitMarks(1, 0, "a message")
+	send(t, owner, denID, channelID, "hey @bob")
+	waitMarks(1, 1, "a mention")
+	send(t, member, denID, channelID, "my own reply")
+	waitMarks(0, 0, "the member's own message, which reads the channel")
+	first := send(t, owner, denID, channelID, "hey again @bob")
+	send(t, owner, denID, channelID, "and once more @bob")
+	waitMarks(1, 2, "two more mentions")
+	if err := member.MarkRead(context.Background(), denID, channelID, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitMarks(1, 1, "read up to the first of them")
+}
+
 // A den restart resyncs: the page is told to reload, and history still
 // pages from the den.
 func TestChatResetAfterRestart(t *testing.T) {

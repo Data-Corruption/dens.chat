@@ -10,6 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { useBackdrop } from './components.jsx';
+import { useLayer } from './nav.js';
 import { fitBox, formatSize, step } from './files.jsx';
 
 const SMALLER = 'DENS_SEND_SMALLER';
@@ -185,6 +186,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const players = useRef({});
     const at = useRef(index);
     const backdrop = useBackdrop(onClose);
+    useLayer(onClose);
     at.current = index;
 
     // The stage's size is known before the first paint, so the photo

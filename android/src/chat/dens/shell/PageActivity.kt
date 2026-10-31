@@ -42,7 +42,8 @@ import java.net.URL
 // address opens in the phone's browser, but YouTube's player in its frame.
 // The page gets the microphone for its calls, and while it has it, the
 // activity holds it as shown, whatever the screen does. A notification's
-// tap opens the page at its message (M12.3).
+// tap opens the page at its message (M12.3). Back walks the page's history
+// down to Home, its root, then leaves the page (M13.1).
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
@@ -66,6 +67,9 @@ class PageActivity : Activity() {
     private var target: String? = null
     private var started = false
     private var failed = false
+    // loadedAt is the index in the WebView's history where the page's
+    // latest load began, as Home: what's below it is a page that's gone.
+    private var loadedAt = 0
     private var toldOld = false
     private var files: ValueCallback<Array<Uri>>? = null
     private var fullScreen: View? = null
@@ -152,22 +156,44 @@ class PageActivity : Activity() {
     // open loads the page in the WebView: as it is, or at a notification's
     // message, while the WebView's session still opens it, or else at a
     // pairing link Dens gives the shell, as dens open gives a desktop's
-    // browser.
-    private fun open(page: Uri) {
+    // browser. A page that shows, at the address shown, takes the message
+    // in place instead, as a link on it would, so a call on it goes on and
+    // its history keeps its root (M13.1).
+    private fun open(page: Uri, shown: String? = null) {
         val w = webView()
         origin = page
         val path = target
         target = null
         if (path != null) Dens.log(this, "page: opening a notification's message")
         Thread {
-            val url = try {
-                if (paired(page)) addressAt(page, path) else pairingLink(path)
+            val (url, fresh) = try {
+                when {
+                    !paired(page) -> pairingLink(path) to true
+                    path != null && shown != null -> inPlace(shown, path) to false
+                    else -> addressAt(page, path) to true
+                }
             } catch (e: Exception) {
                 Dens.log(this, "page: couldn't check the page's session: ${e.javaClass.simpleName}")
-                addressAt(page, path)
+                addressAt(page, path) to true
             }
-            runOnUiThread { if (!isDestroyed) w.loadUrl(url) }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                if (fresh) load(w, url) else w.loadUrl(url)
+            }
         }.start()
+    }
+
+    // load loads the page anew, which begins its history again.
+    private fun load(w: WebView, url: String) {
+        loadedAt = w.copyBackForwardList().currentIndex + 1
+        w.loadUrl(url)
+    }
+
+    // inPlace is the address shown with a fragment that says where to open,
+    // and the message: the page reads it, and goes there.
+    private fun inPlace(shown: String, path: String): String {
+        val rest = path.substringAfter('#', "")
+        return shown.substringBefore('#') + "#open=" + path.substringBefore('#') + if (rest.isEmpty()) "" else "&$rest"
     }
 
     // addressAt is the page's address at path, which a notification's tap
@@ -210,7 +236,7 @@ class PageActivity : Activity() {
             try {
                 if (!paired(page)) {
                     val link = pairingLink()
-                    runOnUiThread { if (!isDestroyed) w.loadUrl(link) }
+                    runOnUiThread { if (!isDestroyed) load(w, link) }
                 }
             } catch (e: Exception) {
                 Dens.log(this, "page: couldn't check the page's session: ${e.javaClass.simpleName}")
@@ -225,7 +251,7 @@ class PageActivity : Activity() {
         if (at == null) return repair()
         // The page loads at the message once Dens says where the page is.
         target = at
-        open(origin ?: return)
+        open(origin ?: return, web?.url?.takeIf { !failed && onPage(Uri.parse(it)) })
     }
 
     override fun onStart() {
@@ -497,14 +523,15 @@ class PageActivity : Activity() {
         }
     }
 
-    // back walks the page's history, then leaves the page, as in a
-    // browser; full screen goes first. A page in a call goes behind the
-    // phone's other apps instead, as Home sends it, and its call goes on.
+    // back walks the page's history down to its root, Home, then leaves
+    // the page, as in a browser; full screen goes first. A page in a call
+    // goes behind the phone's other apps instead, as Home sends it, and its
+    // call goes on.
     private fun back() {
         val w = web
         when {
             fullScreen != null -> fullScreenDone?.onCustomViewHidden()
-            w != null && w.canGoBack() -> w.goBack()
+            w != null && w.copyBackForwardList().currentIndex > loadedAt -> w.goBack()
             DensService.calling -> moveTaskToBack(true)
             else -> finish()
         }

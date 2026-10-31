@@ -11,6 +11,7 @@
 #        scripts/test/android/den.sh root     print Caddy's root certificate
 #        scripts/test/android/den.sh down     stop both
 #        scripts/test/android/den.sh general  print the den's general channel's ID
+#        scripts/test/android/den.sh channel NAME  print a text channel's ID, made if it isn't there
 #        scripts/test/android/den.sh api METHOD PATH [JSON]   desk's page API
 #        scripts/test/android/den.sh say CHANNEL TEXT [IDS]   a message from desk, with uploads by ID
 #        scripts/test/android/den.sh upload FILE NAME         an upload from desk, in its home
@@ -110,6 +111,18 @@ case $1 in
   api) shift; api "$@" ;;
   den) den ;;
   general) api GET "/api/dens/$(den)/state" | json "next(c['id'] for c in d['channels'] if c['name'] == 'general')" ;;
+  channel)
+    name=$2
+    named() { api GET "/api/dens/$(den)/state" | json "next((c['id'] for c in d['channels'] if c['name'] == '$name'), '')"; }
+    [[ -n $(named) ]] || api POST "/api/dens/$(den)/channels" "{\"name\":\"$name\",\"kind\":\"text\"}" >/dev/null
+    for _ in $(seq 40); do
+      id=$(named)
+      [[ -n $id ]] && { echo "$id"; exit 0; }
+      sleep 0.25
+    done
+    echo "no channel $name" >&2
+    exit 1
+    ;;
   say) api POST "/api/dens/$(den)/channels/$2/messages" "{\"nonce\":\"$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')\",\"text\":$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "$3"),\"attachments\":[${4:-}]}" | json 'd["id"]' ;;
   upload) curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: http://127.0.0.1:$PORT" -H "Content-Type: application/octet-stream" \
       -H "Dens-Filename: $3" --data-binary "@$2" "http://127.0.0.1:$PORT/api/dens/$(den)/uploads" | json 'd["id"]' ;;
@@ -135,12 +148,12 @@ case ${1:-} in
     guest
     as_tester ./android-den.sh up
     ;;
-  invite | root | down | api | den | general | say | upload | dm)
+  invite | root | down | api | den | general | channel | say | upload | dm)
     guest
     as_tester ./android-den.sh "$@"
     ;;
   *)
-    sed -n '9,17p' "$0" >&2
+    sed -n '9,18p' "$0" >&2
     exit 2
     ;;
 esac

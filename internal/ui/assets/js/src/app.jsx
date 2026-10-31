@@ -2,7 +2,8 @@
 // (M9.3), and the pages (home and a den's), chosen from what /api/status
 // says about this browser, with the app's settings and a den's Manage
 // dialog over them (M8.3). A den's page reaches home and the settings from
-// its channel list; home has a button of its own for the settings.
+// its channel list; home has a button of its own for the settings. Which
+// page shows, and which of a den's panes, is the page's history's (M13.1).
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -14,35 +15,30 @@ import { ManageDialog } from './manageden.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
 import { openAt } from './messages.jsx';
+import { chatRoute, nav, paneOf, pathOf, useTrail } from './nav.js';
 import { startNotifications } from './notify.js';
 import { SharePlayer } from './player.jsx';
 import { CallBar, CogIcon } from './voice.jsx';
 
-// chatRoute reads /den/<den>[/<channel>] from a path, where the channel
-// may be dms, the Direct messages tab with no DM open (M11).
-function chatRoute(path) {
-    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms))?\/?$/);
-    return m ? { denID: m[1], channelID: m[2] || '' } : null;
-}
-
 // dens open opens the page with a one-time token in the URL fragment,
 // which never reaches the server in the request line, and a notification's
-// click with the message to open there too (M12.3). The page takes them,
-// removes them from the address bar and history, and redeems the token
-// once.
-function takeFragment(loc = window.location, hist = history) {
-    if (!loc.hash.startsWith('#')) return { token: '', message: '' };
+// click with the message to open there too (M12.3), and the Android app's
+// shell, on a page that shows, where to open it (M13.1). The page reads
+// them before its history starts, which takes them out of the address.
+function readFragment(loc = window.location) {
+    if (!loc.hash.startsWith('#')) return { token: '', message: '', open: '' };
     const params = new URLSearchParams(loc.hash.slice(1));
-    const token = params.get('token') || '';
     const message = /^[0-9]+$/.test(params.get('message') || '') ? params.get('message') : '';
-    if (token || params.has('message')) hist.replaceState(null, '', loc.pathname);
-    return { token, message };
+    const open = chatRoute(params.get('open') || '') ? params.get('open') : '';
+    return { token: params.get('token') || '', message, open };
 }
 
-// openHere opens a message in the channel the page's address names, as a
-// notification's link asks.
-function openHere(message) {
-    const at = chatRoute(window.location.pathname);
+// openThere opens a fragment's message: in the channel it names, or the
+// channel the address names, which it opens.
+function openThere({ message, open }) {
+    const to = open || window.location.pathname;
+    if (open) nav().open(open);
+    const at = chatRoute(to);
     if (message && at?.channelID && at.channelID !== 'dms') openAt(at.denID, at.channelID, message);
 }
 
@@ -57,7 +53,9 @@ function takeSettingsPath() {
 export function App({ instance, version, pair, pairLink }) {
     const [state, setState] = useState({ phase: 'loading' });
     const [settings, setSettings] = useState(takeSettingsPath);
-    const [path, setPath] = useState(window.location.pathname);
+    // Read before the history starts, which useTrail does.
+    const [first] = useState(readFragment);
+    const trail = useTrail();
     const [live, setLive] = useState(true);
     const [manage, setManage] = useState(null);
     useEffect(() => onOpenSettings(setSettings), []);
@@ -75,8 +73,8 @@ export function App({ instance, version, pair, pairLink }) {
     }
 
     useEffect(() => {
-        const { token, message } = takeFragment();
-        openHere(message);
+        const { token } = first;
+        openThere(first);
         (async () => {
             if (token) {
                 try {
@@ -88,16 +86,17 @@ export function App({ instance, version, pair, pairLink }) {
             }
             await load();
         })();
-        const onPop = () => setPath(window.location.pathname);
-        window.addEventListener('popstate', onPop);
         // A pairing link pasted into a tab already on this page changes only
         // the fragment, which doesn't load the page again, as does the
-        // Android app's shell opening a notification's message in the
-        // channel the page shows.
+        // Android app's shell opening a notification's message on the page
+        // it shows.
         const onHash = async () => {
-            const { token: next, message: at } = takeFragment();
-            openHere(at);
+            const fragment = readFragment();
+            const next = fragment.token;
+            if (fragment.open || fragment.message) openThere(fragment);
             if (!next) return;
+            // A token works once: the reload mustn't find it again.
+            history.replaceState(history.state, '', window.location.pathname);
             try {
                 await api.post('/api/pair', { token: next });
                 window.location.reload();
@@ -108,17 +107,13 @@ export function App({ instance, version, pair, pairLink }) {
         window.addEventListener('hashchange', onHash);
         const stopUnpaired = onUnpaired(() => setState({ phase: 'unpaired' }));
         return () => {
-            window.removeEventListener('popstate', onPop);
             window.removeEventListener('hashchange', onHash);
             stopUnpaired();
         };
     }, []);
 
-    function navigate(to) {
-        if (to === window.location.pathname) return;
-        history.pushState(null, '', to);
-        setPath(to);
-    }
+    // navigate goes to the screen an address names, as a link to it does.
+    const navigate = (to) => nav().open(to);
 
     const ready = state.phase === 'ready';
     const locked = ready && state.status.locked;
@@ -126,7 +121,7 @@ export function App({ instance, version, pair, pairLink }) {
     // first screens needs.
     const passwordSet = ready && state.status.passwordSet;
     const open = passwordSet && !locked;
-    const chat = open ? chatRoute(path) : null;
+    const chat = open ? chatRoute(pathOf(trail)) : null;
     // The event stream needs a paired browser, so it starts only then, and
     // with it the notifications this page shows (M12.3), whose click opens
     // their message.
@@ -195,7 +190,7 @@ export function App({ instance, version, pair, pairLink }) {
             )}
             {chat ? (
                 <div class="min-h-0 flex-1">
-                    <Chat key={chat.denID} denID={chat.denID} channelID={chat.channelID} navigate={navigate} />
+                    <Chat key={chat.denID} denID={chat.denID} channelID={chat.channelID} pane={paneOf(trail)} navigate={navigate} />
                 </div>
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">

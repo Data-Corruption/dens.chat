@@ -4,8 +4,12 @@
 import { useState } from 'preact/hooks';
 import { api } from './api.js';
 import { ErrorText, Field, SubmitButton, TextInput, useAction, useBackdrop } from './components.jsx';
+import { useLayer } from './nav.js';
 
+// Dialog frames a dialog over the page, which Back closes, as do its ✕ and
+// a click outside it (M13.1).
 export function Dialog({ title, onClose, children }) {
+    useLayer(onClose);
     const backdrop = useBackdrop(onClose);
     return (
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>

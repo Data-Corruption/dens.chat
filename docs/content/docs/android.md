@@ -73,6 +73,23 @@ to one you're in already, as another device.
 
 {{% /steps %}}
 
+## Getting around
+
+A den on your phone is three screens side by side: its channel list, the
+channel you're reading, and its members. Swipe sideways to move between them.
+Start a swipe a little in from the edge of the screen: from the very edge,
+Android takes it for Back. The buttons at the top of the channel go there
+too: ☰ for the list, and the people button for the members.
+
+Back closes what's open, like the settings or a photo, and otherwise goes up
+a step: from the members to the channel, from the channel to the list, and
+from the list to Dens's home, which lists your dens. Back at home leaves
+Dens, which keeps running: your messages and notifications still arrive, and
+a call goes on.
+
+Dens's home shows what's waiting in each den: a red number for mentions of
+you and messages in your DMs, and a dot for anything else unread.
+
 ## Keeping it connected
 
 Dens keeps your dens connected while it isn't on screen, which is what brings

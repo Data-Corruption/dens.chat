@@ -15,7 +15,6 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - Emojis and reactions (images and GIFs).
 - Search (a different algorithm than Discord's. Exact match + fuzzy? Future AI metadata generation?)
 - Custom themes, image backgrounds, etc.
-- Zoom when viewing images and GIFs.
 - Avatar GIFs, with a setting to only play them on hover, off by default?
 - Sound effects on call actions (join, leave, push to talk, push to talk release, etc.). Allow setting custom sounds for the actions. This and the soundboard will share a lot of backend, I'm guessing.
 - Marking uploaded media as a spoiler.
