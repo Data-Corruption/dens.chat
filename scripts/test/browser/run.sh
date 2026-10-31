@@ -35,12 +35,17 @@
 #   notify BROWSER              M12.3: a DM's notification from a tab in the background, its click,
 #                               taken back once read, none on screen or muted; and with no tab open,
 #                               the helper's through the desktop's notifications, and its click
+#   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
+#                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
+#                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
+#                               given); and getting around the panes by swipes, taps and Back (M13.1).
+#                               PART is member, around, call, owner or before; all unless given
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,39p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,44p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
