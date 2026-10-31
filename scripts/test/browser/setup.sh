@@ -49,7 +49,9 @@ if ! incus info "$CONTAINER" >/dev/null 2>&1; then
         sleep 1
     done
 fi
-incus info "$CONTAINER" | grep -q '^Status: RUNNING' || incus start "$CONTAINER"
+# Whole, since grep -q leaves incus writing to a closed pipe, which
+# pipefail counts as failing.
+grep -q '^Status: RUNNING' <<<"$(incus info "$CONTAINER")" || incus start "$CONTAINER"
 
 # What the container needs, which each run sees to.
 packages=(chromium firefox-esr xvfb xauth pulseaudio pulseaudio-utils dbus-user-session python3 curl ca-certificates
