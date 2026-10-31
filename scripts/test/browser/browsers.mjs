@@ -284,6 +284,12 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
             await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         },
+        // press holds a finger there for ms, a long press (M13.2).
+        async press(x, y, ms = 800) {
+            await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+            await sleep(ms);
+            await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        },
         async drag(x1, y1, x2, y2) {
             await mouse('mouseMoved', x1, y1);
             await mouse('mousePressed', x1, y1, { button: 'left', clickCount: 1 });
@@ -464,6 +470,9 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
         // a coarse pointer that can't hover.
         tap: (x, y) => bidi.send('input.performActions', { context, actions: [{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' },
             actions: [{ type: 'pointerMove', x: Math.round(x), y: Math.round(y) }, { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 }] }] }),
+        press: (x, y, ms = 800) => bidi.send('input.performActions', { context, actions: [{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' },
+            actions: [{ type: 'pointerMove', x: Math.round(x), y: Math.round(y) }, { type: 'pointerDown', button: 0 }, { type: 'pause', duration: ms },
+                { type: 'pointerUp', button: 0 }] }] }),
         drag: (x1, y1, x2, y2) =>
             pointer([{ type: 'pointerMove', x: Math.round(x1), y: Math.round(y1) }, { type: 'pointerDown', button: 0 },
                 { type: 'pointerMove', x: Math.round(x2), y: Math.round(y2), duration: 200 }, { type: 'pointerUp', button: 0 }]),

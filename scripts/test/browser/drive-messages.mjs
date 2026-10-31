@@ -1,7 +1,8 @@
 // The M11.2 check of each message's ⋯ menu and links to messages, as bob
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
 // keyboard, Reply, Copy text and Copy link, Edit, and Delete through its
-// dialog; the menu by touch; the chips of links to messages, opening one
+// dialog; the menu by touch, through a long press, a touch screen having
+// no ⋯ (M13.2); the chips of links to messages, opening one
 // in its channel, in another channel, from another den and at an address
 // its den left, and saying why one can't open: out of sight, gone, or in
 // a den bob hasn't joined, even at his den's address; the
@@ -208,7 +209,7 @@ try {
     c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Copy text', 'Copy link', 'Delete']) && whose.includes("This is Bob's message, @bob. It goes for everyone"),
         `bob's message offers alice ${JSON.stringify(hers)}, and its dialog says ${JSON.stringify(whose)}`);
 
-    step('the menu by touch');
+    step('the menu by a long press');
     let t = b;
     if (which === 'chromium') await b.touch(true);
     else t = await launch('firefox', 9535, { prefs: { 'ui.primaryPointerCapabilities': 1, 'ui.allPointerCapabilities': 1 } });
@@ -217,15 +218,21 @@ try {
         await open(t, t === b ? ALICE : BOB, den, general);
         const coarse = await t.eval(`matchMedia('(pointer: coarse)').matches && matchMedia('(hover: none)').matches`);
         await t.eval(`document.activeElement?.blur(), true`);
-        const always = (await shown(t, "Alice's first")) === '1';
-        const p = await waitFor(() => at(t, DOTS("Alice's first")), "alice's ⋯");
+        // A touch screen's messages have no ⋯: a long press opens the menu,
+        // which a wide window keeps beside the message (M13.2).
+        const none = await t.eval(`getComputedStyle(${DOTS("Alice's first")}).display === 'none'`);
+        const p = await waitFor(() => at(t, `${ROW("Alice's first")}.querySelector('.wrap-break-word')`), "alice's first");
         await t.tap(p[0], p[1]);
-        const menu = await may(waitFor(async () => (await items(t)).includes('Copy text'), 'the menu, tapped', 5000));
+        await sleep(800);
+        const tapped = !(await t.eval(`!!${MENU}`));
+        await t.press(p[0], p[1]);
+        const menu = await may(waitFor(async () => (await items(t)).includes('Copy text'), 'the menu, by a long press', 5000));
         await shot('touch', t);
         const item = await at(t, `[...${MENU}.querySelectorAll('[role=menuitem]')].find((x) => x.textContent.trim() === 'Copy text')`);
         await t.tap(item[0], item[1]);
         const took = await may(waitFor(async () => (await copied(t))?.includes("Alice's first"), 'the text copied by touch', 5000));
-        c.report(coarse && always && menu && took, `on a touch screen (${coarse}) the ⋯ always shows (${always}), a tap opens its menu (${menu}), and a tap on Copy text copies (${took})`);
+        c.report(coarse && none && tapped && menu && took,
+            `on a touch screen (${coarse}) no message shows its ⋯ (${none}), a tap opens nothing (${tapped}), a long press opens the menu (${menu}), and a tap on Copy text copies (${took})`);
     } finally {
         if (t === b) await b.touch(false);
         else await Promise.race([t.close(), sleep(5000)]);

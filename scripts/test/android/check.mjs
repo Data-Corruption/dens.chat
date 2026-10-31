@@ -4,7 +4,7 @@
 //
 //   node check.mjs SERIAL paired          the page shows, paired: its API answers it
 //   node check.mjs SERIAL general         opens the den's general channel
-//   node check.mjs SERIAL say TEXT        says TEXT there, typed into the composer and sent with Enter
+//   node check.mjs SERIAL say TEXT        says TEXT there, typed into the composer and sent by its button
 //   node check.mjs SERIAL heard TEXT      waits for a message saying TEXT there
 //   node check.mjs SERIAL photo FILE      sends the photo at FILE, a path the app reads, as its smaller copy
 //   node check.mjs SERIAL download        saves the newest photo there, from the viewer's Download
@@ -36,10 +36,16 @@ const newest = `[...document.querySelectorAll('[data-id]')].at(-1)?.dataset.id ?
 const chips = `[...document.querySelectorAll('ul[aria-label="Files to send"] li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim())`;
 const composer = `document.querySelector('textarea[placeholder^="Message #"]')`;
 
-async function enter() {
-    for (const type of ['keyDown', 'keyUp']) {
-        await b.cdp('Input.dispatchKeyEvent', { type, key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...(type === 'keyDown' ? { text: '\r' } : {}) });
-    }
+// send sends what the composer holds with its button, as a finger does:
+// a touch screen's ↵ starts a line (M13.2).
+async function send() {
+    const at = await waitFor(() => b.eval(`(() => {
+        const button = document.querySelector('button[aria-label="Send"]');
+        if (!button || button.disabled) return null;
+        const r = button.getBoundingClientRect();
+        return [r.left + r.width / 2, r.top + r.height / 2];
+    })()`), 'the send button');
+    await b.tap(at[0], at[1]);
 }
 
 try {
@@ -63,7 +69,7 @@ try {
         case 'say': {
             await b.eval(`${composer}.focus(), true`);
             await b.type(arg);
-            await enter();
+            await send();
             await waitFor(async () => (await b.eval(messages)).some((m) => m.includes(arg)), `"${arg}" in the channel`);
             console.log(`say: "${arg}" went`);
             break;
@@ -83,7 +89,7 @@ try {
                 return c.length === 1 && c[0].includes('· smaller') ? c[0] : null;
             }, 'the photo to settle on its smaller copy', 60000);
             await b.eval(`${composer}.focus(), true`);
-            await enter();
+            await send();
             await waitFor(async () => (await b.eval(chips)).length === 0 && (await b.eval(newest)) !== before, 'the photo to go');
             const shown = await waitFor(() => b.eval(`[...document.querySelectorAll('[data-id]')].at(-1)?.querySelector('img')?.complete`), 'the photo in the channel');
             console.log(`photo: went as "${chip}", shown ${shown}`);

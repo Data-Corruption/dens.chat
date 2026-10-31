@@ -19,9 +19,15 @@
 # the page, and a link opens outside it. At 390 CSS pixels (M13.1), by
 # Android's own taps and swipes, the member gets around the phone layout's
 # panes, from Home to a channel, the list and the members, and Back walks
-# up them to Home, closing the settings on the way, and out of the app;
-# then every member's screen is walked for its picture and the audit of its
-# layout (scripts/test/android/walk.mjs). The host package's tests, which
+# up them to Home, closing the settings on the way, and out of the app.
+# By touch (M13.2), a long press opens a message's actions in a sheet,
+# which a swipe down closes, and Back too; the keyboard comes up, shown
+# beside the emulator's own, leaving the composer and the newest message
+# in sight, and three lines go by the send button; and a tip opens on a
+# tap and closes on the next. Then every member's screen is walked for its
+# picture and the audit of its layout, which fails on a control under 24
+# pixels, a list's row under 44 or a control only a hover shows
+# (scripts/test/android/walk.mjs). The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
 # updates itself (M12.4): its updater refuses a newer release whose
@@ -134,9 +140,13 @@ finish() {
     fi
   done
   stop_releases_host
-  # The emulator keeps a density it was given across restarts.
+  # The emulator keeps a density it was given across restarts, and its
+  # keyboard's setting.
   serial=$NEW
-  incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb devices | grep -q "^${serial}[[:space:]]*device" && adb shell wm density reset || :
+  if incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb devices | grep -q "^${serial}[[:space:]]*device"; then
+    adb shell wm density reset || :
+    adb shell settings put secure show_ime_with_hard_keyboard 0 || :
+  fi
   incus exec "$CONTAINER" -- /root/box.sh halt 5554 || :
   incus exec "$CONTAINER" -- /root/box.sh halt 5556 || :
   if $passed; then
@@ -369,13 +379,21 @@ walk() { incus exec "$CONTAINER" -- /root/node /root/walk.mjs "$serial" /root/wa
 incus exec "$CONTAINER" -- rm -rf /root/walk
 walk around || fail "getting around the phone layout"
 ok "from Home, by Android's own taps and swipes, the member got to a channel, the list and the members and back, and Back closed the settings, went up to Home, and left the app"
+# The emulator has a keyboard of its own, which keeps Android's from
+# showing unless told to.
+adb shell settings put secure show_ime_with_hard_keyboard 1
+phone start
+waitfor 20 "the page in front" front
+walk touch || fail "touch at 390 pixels"
+adb shell settings put secure show_ime_with_hard_keyboard 0
+ok "by Android's own touch, a long press opened a message's actions in a sheet, which a swipe down and Back closed; with the keyboard up, the composer and the newest message stayed in sight, and three lines went by the send button; and a tip opened on a tap"
 phone start
 waitfor 20 "the page in front" front
 walk screens || fail "the screens at 390 pixels"
 mkdir -p "$RUN_LOG_DIR/walk-$serial"
 incus exec "$CONTAINER" -- tar -C /root/walk -cf - . | tar -C "$RUN_LOG_DIR/walk-$serial" -xf -
 adb shell wm density reset
-ok "every member's screen at 390 pixels, its picture and its audit in the logs"
+ok "every member's screen at 390 pixels fits a finger, its picture and its audit in the logs"
 
 incus file push -q "$RUN_LOG_DIR/host.test" "$CONTAINER/root/host.test"
 adb push /root/host.test /data/local/tmp/host.test >/dev/null 2>&1

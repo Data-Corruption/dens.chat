@@ -3,8 +3,8 @@
 // walk.mjs) share: each step brings the page to a screen, and snap takes
 // its picture with an audit of its layout beside it. Steps reach screens by
 // script, as the browser checks do, so a screen shows whatever covers its
-// buttons; what a finger can do is getting around's, below, through the
-// driver's own swipes and Back.
+// buttons; what a finger can do is getting around's and touching's, below,
+// through the driver's own swipes, presses, keys and Back.
 //
 // The screens, by the check that reaches each, so the walk keeps to every
 // screen the browser checks cover; a check that adds a screen adds it here:
@@ -23,6 +23,7 @@
 //                            removing a member, a channel's and a group's settings
 //   (M9, M10)                unpaired, setting the local password, joining a den,
 //                            the recovery codes
+//   (M13.2)                  a message's sheet, three lines sent, a tip opened by a tap
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 
@@ -43,9 +44,15 @@ export async function waitFor(fn, what, ms = 15000) {
 
 // AUDIT measures the screen as a phone would meet it: whether the page
 // scrolls sideways, what sticks out past the right edge outside a scroller
-// of its own, the controls smaller than 24 pixels, the least a finger
-// should be given, or 44, a comfortable one, and the controls hidden until
-// a hover. Panes off screen are inert, and left out.
+// of its own, and of the controls a finger can reach, those under 24
+// pixels each way, WCAG 2.2's minimum (small), a list's rows under 44
+// pixels tall (rows), those whose room for a finger reaches less than 44
+// each way (tight), and those hidden until a hover (hoverOnly); and the
+// controls whose middle another control's room for a finger covers
+// (covered). Panes off screen are inert, and left out, as are
+// controls under a dialog, a link within a line of text, which WCAG leaves
+// to the text's size, and a disabled control's hiding. A list's row is a
+// menu's item, or a control across most of its list item or its list.
 export const AUDIT = `(() => {
     const vw = document.documentElement.clientWidth, vh = innerHeight;
     const shown = (e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0; };
@@ -67,27 +74,98 @@ export const AUDIT = `(() => {
         if (r.width === 0 || r.right <= vw + 1 || r.left >= vw) continue;
         if (!held(e) && !over.some((o) => o.el.contains(e))) over.push({ el: e, what: desc(e) + ' → ' + Math.round(r.right) });
     }
-    const small = [], tight = [], hoverOnly = [];
-    const targets = document.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea, [role=tab], [role=menuitem], summary, label:has(input)');
+    const faded = (e) => { for (let p = e; p; p = p.parentElement) if (getComputedStyle(p).opacity === '0') return true; return false; };
+    const disabled = (e) => e.disabled || e.getAttribute('aria-disabled') === 'true' || !!e.closest('fieldset:disabled');
+    const hits = (e, x, y) => { const at = document.elementFromPoint(x, y); return !!at && (at === e || e.contains(at)); };
+    // Words that are a link or a button, as a line of text has them, or
+    // a box of them in a line of other words.
+    const inline = (e) => {
+        const display = getComputedStyle(e).display;
+        if (!(e.textContent || '').trim() || !display.startsWith('inline')) return false;
+        if (display === 'inline') return true;
+        let block = e.parentElement;
+        while (block && getComputedStyle(block).display.startsWith('inline')) block = block.parentElement;
+        return !!block && block.textContent.trim().length > e.textContent.trim().length;
+    };
+    // A sheet or a dialog opened from a list's item isn't its row.
+    const across = (e, r) => {
+        if (/^(menuitem|option)/.test(e.getAttribute('role') || '')) return true;
+        const layer = e.closest('[role=dialog]');
+        for (const sel of ['li', 'nav']) {
+            const box = e.parentElement?.closest(sel);
+            if (box && !(layer && box.contains(layer)) && r.width >= 0.8 * box.getBoundingClientRect().width) return true;
+        }
+        return false;
+    };
+    const small = [], rows = [], tight = [], hoverOnly = [], covered = [];
+    const TARGETS = 'button, a[href], input:not([type=hidden]), select, textarea, [role=tab], [role=menuitem], [role=button], summary, label:has(input)';
+    const targets = document.querySelectorAll(TARGETS);
     for (const e of targets) {
         if (!shown(e) || e.closest('[aria-hidden=true], [inert]')) continue;
         const r = e.getBoundingClientRect();
         if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue;
         const s = getComputedStyle(e);
-        if (s.opacity === '0' || s.pointerEvents === 'none') { hoverOnly.push(desc(e)); continue; }
+        if (faded(e) || s.pointerEvents === 'none') {
+            if (!disabled(e)) hoverOnly.push(desc(e));
+            continue;
+        }
         if (e.tagName === 'INPUT' && ['checkbox', 'radio'].includes(e.type) && e.closest('label')) continue;
-        const min = Math.min(r.width, r.height);
-        if (min < 24) small.push(desc(e) + ' ' + Math.round(r.width) + '×' + Math.round(r.height));
-        else if (min < 44) tight.push(desc(e));
+        const cx = Math.min(Math.max(r.left + r.width / 2, 0), vw - 1), cy = Math.min(Math.max(r.top + r.height / 2, 0), vh - 1);
+        if (!hits(e, cx, cy)) {
+            // What covers its middle is a dialog over it, or what it
+            // scrolled under, unless it's another control's room for a
+            // finger, reaching past that control's own box.
+            const over = document.elementFromPoint(cx, cy)?.closest(TARGETS);
+            const o = over?.getBoundingClientRect();
+            if (over && !over.contains(e) && !e.contains(over) && !(cx >= o.left && cx <= o.right && cy >= o.top && cy <= o.bottom)) {
+                covered.push(desc(e) + ' under ' + desc(over) + "'s room");
+            }
+            continue;
+        }
+        if (inline(e)) continue;
+        const size = Math.round(r.width) + '×' + Math.round(r.height);
+        if (Math.min(r.width, r.height) < 23.5) small.push(desc(e) + ' ' + size);
+        else if (across(e, r) && r.height < 43.5) rows.push(desc(e) + ' ' + size);
+        else if (![[cx - 21, cy], [cx + 21, cy], [cx, cy - 21], [cx, cy + 21]].every(([x, y]) => hits(e, x, y))) tight.push(desc(e));
     }
     for (const e of document.querySelectorAll('button')) {
-        if (e.getClientRects().length && getComputedStyle(e).visibility === 'hidden' && !e.closest('[aria-hidden=true], [inert]')) hoverOnly.push(desc(e));
+        if (e.getClientRects().length && getComputedStyle(e).visibility === 'hidden' && !disabled(e) && !e.closest('[aria-hidden=true], [inert]')) hoverOnly.push(desc(e));
     }
     return {
         vw, vh, sideways: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > vw + 1,
-        over: over.map((o) => o.what), small, tight: tight.length, hoverOnly,
+        over: over.map((o) => o.what), small, rows, tight: tight.length, hoverOnly, covered,
     };
 })()`;
+
+// audits reports the audits' findings, screen by screen, for the browser
+// or phone mode names, a touch screen's where touch says. On every screen
+// nothing is under 24 pixels, nor under another control (M13.2); on a
+// touch screen no list's row is under 44, and nothing shows only on hover;
+// and nothing makes the page itself scroll sideways on a den's panes
+// (M13.1). The rest is noted, for M13.3 to make fail.
+export function audits(mode, log, report, touch) {
+    for (const shot of log) {
+        if (shot.failed) {
+            report(false, `${mode}: ${shot.name} wasn't reached: ${shot.failed}`);
+            continue;
+        }
+        const a = shot.audit;
+        if (!a || a.error) continue;
+        const bad = [];
+        if (a.small.length) bad.push(`under 24: ${a.small.join('; ')}`);
+        if (a.covered?.length) bad.push(`covered: ${a.covered.join('; ')}`);
+        if (touch && a.rows.length) bad.push(`rows under 44: ${a.rows.join('; ')}`);
+        if (touch && a.hoverOnly.length) bad.push(`on hover only: ${a.hoverOnly.join('; ')}`);
+        const panes = /^(\d+-)?(den-list|channel|members|dm|description|video|around|touch)/.test(shot.name);
+        if (panes && a.sideways) bad.push('the page scrolls sideways');
+        const notes = [];
+        if (a.over.length) notes.push(`past the edge: ${a.over.slice(0, 3).join('; ')}`);
+        if (!panes && a.sideways) notes.push('the page scrolls sideways');
+        if (!touch && a.rows.length) notes.push(`${a.rows.length} rows under 44`);
+        if (a.tight) notes.push(`${a.tight} reaching under 44`);
+        report(!bad.length, `${mode}: ${shot.name}: ${bad.length ? bad.join('; ') : 'fits a finger'}${notes.length ? `; noted: ${notes.join(', ')}` : ''}`);
+    }
+}
 
 // helpers works a page through the driver b, which has eval, go and shot,
 // as browsers.mjs's browsers and drive.mjs's WebView do.
@@ -507,4 +585,124 @@ export async function gettingAround(h, ctx, d, report) {
     await d.back();
     await settles({ home: true, path: '/' }, 'Back goes from the list to Home');
     if (d.out) await d.out();
+}
+
+const SHEET = `document.querySelector('[role=dialog][data-sheet]')`;
+const NEWEST = `[...document.querySelectorAll('[data-scroller] [data-id]')].at(-1)`;
+const SEND = `document.querySelector('button[aria-label="Send"]')`;
+
+// touching walks M13.2's done-when, by what the driver's d does as a
+// member would, on the phone layout of ctx's den at general. With a
+// finger, d.touch, d.press(x) holds a finger on what the expression x
+// names, a long press; d.drag(from, to) drags between two of the page's
+// points, a finger or the mouse; d.type(text) types, d.enter() presses
+// the keyboard's ↵, and with a mouse d.hover(x) hovers and d.shiftEnter()
+// presses Shift and Enter. d.tap and d.back are gettingAround's.
+// d.keyboard(text), where given, waits for a phone's keyboard to come up,
+// and says whether the composer and the newest message, holding text if
+// given, show above it. It opens a message's actions by a long press, or
+// the ⋯ with a mouse, and closes their sheet by a swipe down, and by Back;
+// writes three lines and sends them; and opens a tip with a tap, which the
+// next closes.
+export async function touching(h, ctx, d, report) {
+    const { den, general } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const sheet = () => h.ev(`(() => { const s = ${SHEET}; if (!s) return null;
+        return { label: s.getAttribute('aria-label'), rows: [...s.querySelectorAll('[role=menuitem]')].map((r) => r.textContent.trim()),
+            title: s.querySelector('[data-sheet-top]')?.innerText.trim() || '', layers: document.querySelectorAll('[role=dialog]').length }; })()`);
+    // A mouse finds the ⋯ by hovering its message first.
+    const open = async () => {
+        if (d.touch) {
+            await d.press(NEWEST);
+        } else {
+            await d.hover(NEWEST);
+            await d.tap(`${NEWEST}.querySelector('button[aria-label="Message actions"]')`);
+        }
+        return waitFor(sheet, 'the sheet', 5000).catch(() => null);
+    };
+    const closed = () => waitFor(async () => !(await sheet()), 'the sheet gone', 5000).then(() => true, () => false);
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    await sleep(1500);
+    // A finger has no ⋯ on a message, and a mouse has one on each.
+    const dots = await h.ev(`[...document.querySelectorAll('[data-scroller] button[aria-label="Message actions"]')].filter((b) => getComputedStyle(b).display !== 'none').length`);
+    did(d.touch ? dots === 0 : dots > 0, d.touch ? 'no message shows a ⋯' : 'each message has its ⋯');
+    let s = await open();
+    did(s?.label === 'Message actions' && s.rows.includes('Reply') && s.rows.includes('Copy link') && s.title && s.layers === 1,
+        `${d.touch ? 'a long press' : 'the ⋯'} opens the message's actions as a sheet, headed by its author and time: ${JSON.stringify(s)}`);
+    await h.snap('touch-sheet');
+    if (s) {
+        const top = await h.ev(`(() => { const r = ${SHEET}.getBoundingClientRect(); return [r.left + r.width / 2, r.top + 12]; })()`);
+        await d.drag(top, [top[0], top[1] + 260]);
+        did(await closed(), 'a swipe down closes it');
+    }
+    s = await open();
+    if (s) {
+        await d.back();
+        const gone = await closed();
+        const path = await h.ev('location.pathname');
+        did(gone && path === `/den/${den}/${general}`, `Back closes it, and the channel stays (${path})`);
+    } else {
+        did(false, "the sheet didn't open again");
+    }
+
+    // Each line starts with a digit, which a phone's keyboard doesn't
+    // capitalize at a line's start, as it does a word.
+    const stamp = Date.now().toString(36);
+    const lines = [`1 ${stamp}`, '2 two', '3 three'];
+    const newest = () => h.ev(`fetch('/api/dens/${den}/channels/${general}/messages?limit=1').then((r) => r.json()).then((p) => p.messages.at(-1)?.text || '')`);
+    const before = await newest();
+    await d.tap(COMPOSER);
+    if (d.keyboard) {
+        const k = await d.keyboard();
+        did(k.ok, `the keyboard comes up, and leaves the composer and the newest message in sight: ${k.said}`);
+    }
+    if (d.touch) {
+        await d.type(lines[0]);
+        await d.enter();
+        await d.type(lines[1]);
+        await d.enter();
+        await d.type(lines[2]);
+        await sleep(500);
+        const box = await h.ev(`${COMPOSER}.value`);
+        const kept = (await newest()) === before;
+        const button = await h.has(SEND);
+        did(box === lines.join('\n') && kept && button, `↵ starts a line: the box holds ${JSON.stringify(box)}, nothing sent (${kept}), and the send button shows (${button})`);
+        await d.tap(SEND);
+    } else {
+        await d.type(lines[0]);
+        await d.shiftEnter();
+        await d.type(lines[1]);
+        await d.shiftEnter();
+        await d.type(lines[2]);
+        const button = await h.has(SEND);
+        did(!button, `a mouse has no send button (${!button}), and Shift+Enter starts a line`);
+        await d.enter();
+    }
+    const sent = await waitFor(async () => (await newest()) === lines.join('\n'), 'the three lines sent', 10000).then(() => true, () => false);
+    const after = await h.ev(`({ box: ${COMPOSER}.value, focused: document.activeElement === ${COMPOSER} })`);
+    did(sent && after.box === '' && (!d.touch || after.focused),
+        `${d.touch ? 'the send button' : 'Enter'} sends the three lines (${sent}), leaving the box empty${d.touch ? `, with the keyboard's focus (${after.focused})` : ''}`);
+    if (d.keyboard) {
+        const k = await d.keyboard(lines[2]);
+        did(k.ok, `with the keyboard up, the message sent shows above the composer: ${k.said}`);
+    }
+    await h.snap('touch-sent');
+    // The keyboard goes, since Back would take it before the page.
+    await h.ev('document.activeElement?.blur(), true');
+    await sleep(800);
+
+    // A tip opens on a tap within the screen, and the next tap closes it.
+    await openSettings(h);
+    await settingsTab(h, 'Chat & media');
+    const TIP = `document.querySelector('[role=dialog][aria-label="App settings"] button[aria-label="More about this"]')`;
+    const shows = () => h.ev(`(() => { const t = document.getElementById(${TIP}.getAttribute('aria-describedby'));
+        if (!t || t.hidden) return null; const r = t.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), vw: document.documentElement.clientWidth }; })()`);
+    await d.tap(TIP);
+    const tip = await waitFor(shows, 'the tip', 3000).catch(() => null);
+    await h.snap('touch-tip');
+    await d.tap(`[...document.querySelectorAll('[role=dialog][aria-label="App settings"] h2')].at(-1)`);
+    const shut = await waitFor(async () => !(await shows()), 'the tip closed', 3000).then(() => true, () => false);
+    did(tip && tip.left >= 0 && tip.right <= tip.vw && shut, `a tap on an i opens its tip within the screen (${JSON.stringify(tip)}), and the next tap closes it (${shut})`);
+    await d.back();
 }
