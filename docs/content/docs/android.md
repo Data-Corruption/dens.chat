@@ -90,6 +90,11 @@ a call goes on.
 Dens's home shows what's waiting in each den: a red number for mentions of
 you and messages in your DMs, and a dot for anything else unread.
 
+Hold your finger on a message to reply to it, edit it, copy it or delete it.
+In the message box, ↵ starts a new line, and the paper plane beside the box
+sends. Where you see an ⓘ, or a small mark you're not sure of, tap it to see
+what it means, and tap anywhere to put it away.
+
 ## Keeping it connected
 
 Dens keeps your dens connected while it isn't on screen, which is what brings
