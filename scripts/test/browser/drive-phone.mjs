@@ -16,7 +16,12 @@
 // the settings and Manage as lists of sections, each a page Back leaves,
 // the viewer swiped to a message's second photo, zoomed by a double tap,
 // and by two fingers or the wheel, and closed by Back, and a dialog as a
-// sheet, swiped down.
+// sheet, swiped down; and the call (M13.4): its bar across the top of the
+// channel's pane, the call's button held and tapped on a touch screen, as
+// its role in the settings says, and absent with a mouse, a member's
+// volume dragged in a sheet, a share docked above the channel, full
+// screen and back, and the call left from its bar; and staff's long press
+// on a channel's or a group's row for its settings, on a touch screen.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
@@ -26,7 +31,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, token } from './browsers.mjs';
-import { audits, callScreens, gettingAround, helpers, memberScreens, ownerScreens, pages, touching, waitFor } from './screens.mjs';
+import { audits, callScreens, gettingAround, helpers, memberScreens, ownerScreens, pages, staffPress, touching, waitFor } from './screens.mjs';
 
 const args = process.argv.slice(2);
 const cut = args.indexOf('--');
@@ -114,6 +119,11 @@ function driver(mode, b, h) {
                 await b.tap(x, y);
                 await settle();
             },
+            // A finger put down and held, then lifted, or its touch
+            // cancelled, as the browser cancels one it takes over.
+            down: ([x, y]) => b.cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }),
+            up: () => b.cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
+            cancel: () => b.cdp('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] }),
             // Two fingers, about the point at, from gap apart to gap to.
             async pinch([cx, cy], from, to) {
                 const at = (gap) => [{ x: cx - gap / 2, y: cy, id: 0 }, { x: cx + gap / 2, y: cy, id: 1 }];
@@ -185,6 +195,12 @@ function driver(mode, b, h) {
                 await b.tap(x, y);
                 await settle();
             },
+            // BiDi keeps a finger down between its actions; it has no way
+            // to cancel one.
+            down: ([x, y]) => b.bidi('input.performActions', { context: b.context, actions: [{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' },
+                actions: [{ type: 'pointerMove', x: Math.round(x), y: Math.round(y) }, { type: 'pointerDown', button: 0 }] }] }),
+            up: () => b.bidi('input.performActions', { context: b.context, actions: [{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' },
+                actions: [{ type: 'pointerUp', button: 0 }] }] }),
             async pinch([cx, cy], from, to) {
                 await b.bidi('input.performActions', { context: b.context, actions: [-1, 1].map((side, i) => ({ type: 'pointer', id: `finger${i}`,
                     parameters: { pointerType: 'touch' }, actions: [{ type: 'pointerMove', x: Math.round(cx + (side * from) / 2), y: Math.round(cy) },
@@ -238,7 +254,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
     fs.mkdirSync(out, { recursive: true });
     const log = [];
     if (want('member') || want('around') || want('touch') || want('pages') || want('call')) {
-        const b = await browser(mode, port++, { media: mode === 'chromium' ? true : 'pulse' });
+        const b = await browser(mode, port++, { media: mode === 'chromium' ? true : 'pulse', screen: mode === 'chromium' });
         try {
             await pair(b, BOB);
             const h = helpers(b, `http://localhost:${BOB.port}`, out, 'bob-');
@@ -246,7 +262,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             if (want('around')) await gettingAround(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('touch')) await touching(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('pages')) await pages(h, ctx, driver(mode, b, h), report).catch(fail);
-            if (want('call') && mode === 'chromium') {
+            if (want('call')) {
                 // Carol, the voice probe, hears bob and shares, for the player.
                 const jar = fs.readFileSync(`${HOME}/jar-${CAROL.instance}`, 'utf8').split('\n').map((l) => l.split('\t'));
                 const cookie = jar.find((f) => f[5]?.startsWith('dens_session_'));
@@ -255,7 +271,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
                     DENS_VOICE_PROBE: `http://127.0.0.1:${CAROL.port}`, DENS_PROBE_COOKIE: `${cookie[5]}=${cookie[6]}`, DENS_PROBE_DEN: den,
                     DENS_PROBE_CHANNEL: lounge, DENS_PROBE_HEAR: bobID, DENS_PROBE_NETWORK: 'udp', DENS_PROBE_THEN: 'share', DENS_PROBE_STAY: '90' } });
                 try {
-                    await callScreens(h, ctx, { share: true });
+                    await callScreens(h, ctx, driver(mode, b, h), report, { share: true, own: mode === 'chromium' });
                 } finally {
                     probe.kill();
                 }
@@ -273,6 +289,8 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             await pair(b, ALICE);
             const h = helpers(b, `http://localhost:${ALICE.port}`, out, 'alice-');
             await ownerScreens(h, ctx);
+            const d = driver(mode, b, h);
+            if (d.touch) await staffPress(h, ctx, d, report).catch(fail);
             log.push(...h.log);
         } catch (e) {
             fail(e);

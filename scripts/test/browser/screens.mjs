@@ -26,6 +26,8 @@
 //   (M13.2)                  a message's sheet, three lines sent, a tip opened by a tap
 //   (M13.3)                  the settings' and Manage's lists of sections, the viewer
 //                            swiped and zoomed, a dialog as a sheet swiped down
+//   (M13.4)                  the call's bar, the call's button muted, its role, held,
+//                            a member's sheet, a share docked and full screen
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 
@@ -51,7 +53,8 @@ export async function waitFor(fn, what, ms = 15000) {
 // pixels tall (rows), those whose room for a finger reaches less than 44
 // each way (tight), and those hidden until a hover (hoverOnly); and the
 // controls whose middle another control's room for a finger covers
-// (covered). Panes off screen are inert, and left out, as are
+// (covered); and whether a channel's message list scrolls sideways
+// (listSideways). Panes off screen are inert, and left out, as are
 // controls under a dialog, a link within a line of text, which WCAG leaves
 // to the text's size, and a disabled control's hiding. A list's row is a
 // menu's item, or a control across most of its list item or its list.
@@ -76,6 +79,9 @@ export const AUDIT = `(() => {
         if (r.width === 0 || r.right <= vw + 1 || r.left >= vw) continue;
         if (!held(e) && !over.some((o) => o.el.contains(e))) over.push({ el: e, what: desc(e) + ' → ' + Math.round(r.right) });
     }
+    // A channel's message list holds whatever scrolls sideways in a scroller
+    // of its own, as code does, so it never scrolls sideways itself (M13.4).
+    const listSideways = [...document.querySelectorAll('[data-scroller]')].some((l) => shown(l) && !l.closest('[inert]') && l.scrollWidth > l.clientWidth + 1);
     const faded = (e) => { for (let p = e; p; p = p.parentElement) if (getComputedStyle(p).opacity === '0') return true; return false; };
     const disabled = (e) => e.disabled || e.getAttribute('aria-disabled') === 'true' || !!e.closest('fieldset:disabled');
     const hits = (e, x, y) => { const at = document.elementFromPoint(x, y); return !!at && (at === e || e.contains(at)); };
@@ -140,7 +146,7 @@ export const AUDIT = `(() => {
         if (e.getClientRects().length && getComputedStyle(e).visibility === 'hidden' && !disabled(e) && !e.closest('[aria-hidden=true], [inert]')) hoverOnly.push(desc(e));
     }
     return {
-        vw, vh, sideways: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > vw + 1,
+        vw, vh, sideways: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > vw + 1, listSideways,
         over: over.map((o) => o.what), small, rows, tight: tight.length, hoverOnly, covered,
     };
 })()`;
@@ -148,7 +154,8 @@ export const AUDIT = `(() => {
 // audits reports the audits' findings, screen by screen, for the browser
 // or phone mode names, a touch screen's where touch says. On every screen
 // nothing is under 24 pixels, nor under another control (M13.2), nor past
-// the right edge outside a scroller of its own (M13.3); on a touch screen
+// the right edge outside a scroller of its own (M13.3), and a channel's
+// message list never scrolls sideways (M13.4); on a touch screen
 // no list's row is under 44, and nothing shows only on hover; and nothing
 // makes the page itself scroll sideways on a den's panes (M13.1). The rest
 // is noted.
@@ -164,6 +171,7 @@ export function audits(mode, log, report, touch) {
         if (a.small.length) bad.push(`under 24: ${a.small.join('; ')}`);
         if (a.covered?.length) bad.push(`covered: ${a.covered.join('; ')}`);
         if (a.over.length) bad.push(`past the edge: ${a.over.slice(0, 3).join('; ')}`);
+        if (a.listSideways) bad.push('the message list scrolls sideways');
         if (touch && a.rows.length) bad.push(`rows under 44: ${a.rows.join('; ')}`);
         if (touch && a.hoverOnly.length) bad.push(`on hover only: ${a.hoverOnly.join('; ')}`);
         const panes = /^(\d+-)?(den-list|channel|members|dm|description|video|around|touch)/.test(shot.name);
@@ -493,29 +501,176 @@ export async function ownerScreens(h, ctx) {
     });
 }
 
+// CALL is what a page shows of its call on the phone layout (M13.4): the
+// call's bar, under the channel's header; the call's button, its role, how
+// it's pressed and what it says, its size and place, above the pane's foot
+// with the composer; and the player docked under the bar, with the share's
+// size, and whether it plays full screen.
+export const CALL = `(() => {
+    const box = (e) => { if (!e) return null; const r = e.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width), h: Math.round(r.height) }; };
+    const pane = document.querySelector('[data-pane=chan]');
+    const row = pane?.parentElement;
+    const button = document.querySelector('[data-call-button]');
+    const video = document.querySelector('section[data-docked] video');
+    return {
+        vw: document.documentElement.clientWidth, vh: innerHeight,
+        rowScrolls: !!row && row.scrollHeight > row.clientHeight + 1, pageScrolls: document.scrollingElement.scrollHeight > innerHeight + 1,
+        header: box(pane?.querySelector('header')), bar: box(document.querySelector('[data-call-bar]')),
+        bar_text: document.querySelector('[data-call-bar] [role=status]')?.textContent || '',
+        button: button && { ...box(button), role: button.dataset.callButton, label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed'),
+            talking: button.className.includes('bg-success'), struck: !!button.querySelector('path[d="M2 2l12 12"]') },
+        composer: box(document.querySelector('textarea[placeholder^="Message "]')?.closest('.border-t')),
+        docked: box(document.querySelector('section[data-docked]')),
+        video: video && { w: video.videoWidth, h: video.videoHeight, playing: !video.paused },
+        full: !!document.fullscreenElement,
+    };
+})()`;
+
+// LIST_END scrolls the channel's message list to its end, and says how far
+// above the list's foot its newest message ends: its own room at its end,
+// 24 pixels, as the call's button floats over the list rather than making
+// it longer (M13.4).
+export const LIST_END = `(async () => {
+    const s = document.querySelector('[data-pane=chan] [data-scroller]');
+    if (!s) return null;
+    s.scrollTop = s.scrollHeight;
+    await new Promise((r) => setTimeout(r, 300));
+    const last = [...s.querySelectorAll('[data-id]')].at(-1);
+    return last ? Math.round(s.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom) : null;
+})()`;
+
+// listEnds says whether the list ends at its newest message, from LIST_END,
+// and in a call nothing else on the page scrolls, from CALL.
+export const listEnds = (end, c) => end !== null && end <= 30 && !c.rowScrolls && !c.pageScrolls;
+
+// barPlaced and buttonPlaced say whether CALL found the call's bar across
+// the channel's pane under its header, 40 pixels tall, and the call's
+// button 64 pixels round, 16 from the right and at least 16 above the
+// composer.
+export const barPlaced = (c) => !!c.bar && !!c.header && Math.abs(c.bar.top - c.header.bottom) <= 1 && c.bar.h === 40 && c.bar.w === c.vw;
+export const buttonPlaced = (c) => !!c.button && c.button.w === 64 && c.button.h === 64 && c.vw - c.button.right === 16 && !!c.composer &&
+    c.button.bottom <= c.composer.top - 16;
+
+// dockedPlaced says whether CALL found the share docked under the call's
+// bar at the screen's width and the share's shape, or half the screen's
+// height where the share's taller, and playing.
+export const dockedPlaced = (c) => !!c.docked && !!c.bar && !!c.video?.w && c.video.playing && c.docked.top === c.bar.bottom && c.docked.w === c.vw &&
+    Math.abs(c.docked.h - Math.min(c.vw * c.video.h / c.video.w, c.vh / 2)) <= 1.5;
+
+// selfRings says whether a page's own member rings in its call's list.
+const selfRings = (den) => `fetch('/api/dens/${den}/state').then((r) => r.json()).then((v) => [...document.querySelectorAll('ul[aria-label="In the call"] li')]
+    .some((li) => li.textContent.includes(v.me.display_name) && li.textContent.includes('speaking')))`;
+const IN_LIST = (name) => `[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
+const BUTTON = `document.querySelector('[data-call-button]')`;
+
 // callScreens joins the den's voice channel from its list, and looks at
-// the call on the list, in a channel and at Home, and at a share.
-export async function callScreens(h, ctx, { share } = {}) {
-    const { den, general } = ctx;
+// the call on the list, a member's sheet, in a channel and at Home, and at
+// a share, each screen with its picture and its audit. On the phone layout
+// (M13.4), through the driver's d, as gettingAround and touching have it,
+// the call's bar shows across the top of the channel's pane; where the
+// page has the call's button, a touch screen's, d.down(x) and d.up() hold
+// it, as Settings' Voice & video sets its role, toggling mute with a tap,
+// as the default, then talking while it's held, and letting go of a press
+// the browser cancels, by d.cancel(), or the page's losing focus; with a
+// mouse, there's none, and Sending your voice keeps its place; a member's
+// volume is a slider in a sheet, which a finger drags; the share docks
+// above the channel, plays full screen by a tap on it and back, and where
+// own says the browser shares its fake screen, that share docks at its
+// shape, and a tap goes on to the other; and the call ends from the bar.
+export async function callScreens(h, ctx, d, report, { share, own } = {}) {
+    const { den } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const call = () => h.ev(CALL);
     await h.step('call', async () => {
         await h.go(`/den/${den}`);
         await h.click(h.byText('[role=tab]', 'Den'));
-        await h.click(`[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === 'Lounge')`, 'Lounge');
+        await h.click(IN_LIST('Lounge'), 'Lounge');
         await waitFor(() => h.ev(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), 'connected', 30000);
         await sleep(1500);
         await h.snap('call-list');
+        const share = await h.has(`[...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Share your screen')`);
+        const can = await h.ev(`typeof navigator.mediaDevices?.getDisplayMedia === 'function'`);
+        did(share === can, `the call's block shows a share button only where the browser can share: ${share}`);
     });
     await h.step('call-menu', async () => {
         await h.click(`document.querySelector('button[data-call-menu]')`, "a member's ⋯ in the call");
+        const slider = `document.querySelector('[role=dialog][data-sheet] input[type=range]')`;
+        await h.wait(slider, "the member's sheet");
         await h.snap('call-member-menu');
-        await h.escape();
+        const tall = await h.ev(`Math.round(${slider}.getBoundingClientRect().height)`);
+        did(tall >= 32, `a member's volume is a slider ${tall} pixels tall in a sheet`);
+        if (d.touch) {
+            const [x1, x2, y] = await h.ev(`(() => { const r = ${slider}.getBoundingClientRect(); return [r.right - 8, r.left + r.width * 0.4, r.top + r.height / 2]; })()`);
+            await d.drag([x1, y], [x2, y]);
+            const value = Number(await h.ev(`${slider}.value`));
+            did(value < 100, `a finger drags it, from 100% to ${value}%, and the sheet stays: ${await h.has(slider)}`);
+        }
+        await d.back();
+        await waitFor(async () => !(await h.has(slider)), 'the sheet to close', 5000);
     });
     // The page moves within itself, by its own buttons, which keeps the call.
     await h.step('call-channel', async () => {
-        await h.click(`[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === 'general')`, 'general');
+        await h.click(IN_LIST('general'), 'general');
         await h.wait(COMPOSER, 'the composer');
+        await sleep(600);
         await h.snap('call-in-channel');
+        const c = await call();
+        did(barPlaced(c) && c.bar_text.includes('Lounge'), `the call's bar shows across the channel's pane, under its header: ${JSON.stringify({ bar: c.bar, header: c.header?.bottom, text: c.bar_text })}`);
+        if (d.touch) did(buttonPlaced(c) && c.button.role === 'toggleMute', `the call's button, 64 pixels at the screen's foot on the right, above the composer: ${JSON.stringify({ button: c.button, composer: c.composer?.top })}`);
+        else did(!c.button, "with a mouse there's no call's button");
+        const end = await h.ev(LIST_END);
+        did(listEnds(end, c), `the list ends at its newest message, ${end} pixels above its foot, and nothing else scrolls: ${JSON.stringify({ row: c.rowScrolls, page: c.pageScrolls })}`);
     });
+    if (d.touch) {
+        await h.step('call-button', async () => {
+            // Toggle mute, the default: a tap mutes, and another unmutes.
+            await d.tap(BUTTON);
+            let c = await call();
+            const blockMuted = await h.has(`document.querySelector('[data-pane=list] button[aria-label="Unmute"]')`);
+            did(c.button.pressed === 'true' && c.button.label === 'Unmute' && c.button.struck && blockMuted, `a tap on the call's button mutes, struck through: ${JSON.stringify(c.button)}`);
+            await h.snap('call-button-muted');
+            await d.tap(BUTTON);
+            c = await call();
+            did(c.button.pressed === 'false' && c.button.label === 'Mute' && !c.button.struck, `another unmutes: ${JSON.stringify(c.button)}`);
+            // Push to talk, from the settings, where the button's role takes
+            // Sending your voice's place.
+            await h.click(`document.querySelector('[data-pane=list] button[aria-label="App settings"]')`, 'the settings');
+            await settingsTab(h, 'Voice & video');
+            const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
+            const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => [l.textContent.trim(), l.querySelector('input').checked])`);
+            const sending = await h.has(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"]')`);
+            did(JSON.stringify(roles) === JSON.stringify([['Toggle mute', true], ['Push to mute', false], ['Push to talk', false]]) && !sending,
+                `the button's role takes Sending your voice's place, Toggle mute by default: ${JSON.stringify(roles)}`);
+            await d.tap(`[...${group}.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Push to talk')`);
+            await h.snap('call-button-role');
+            await d.back();
+            await d.back();
+            await waitFor(async () => !(await h.has(SETTINGS)), 'the settings to close', 5000);
+            await waitFor(async () => (await call()).button?.role === 'ptt', 'the button to push to talk', 5000);
+            await waitFor(async () => !(await h.ev(selfRings(den))), 'quiet until held', 5000);
+            const [x, y] = await h.ev(`(() => { const r = ${BUTTON}.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+            await d.down([x, y]);
+            const rang = await waitFor(() => h.ev(selfRings(den)), 'the member to ring while held', 5000).catch(() => false);
+            await sleep(1200);
+            c = await call();
+            const still = await h.ev(selfRings(den));
+            await h.snap('call-button-held');
+            did(rang && still && c.button.pressed === 'true' && c.button.talking, `held, past a long press, the call's button talks, in the ring's color, and the member rings: ${JSON.stringify(c.button)}`);
+            await d.up();
+            const quiet = await waitFor(async () => !(await h.ev(selfRings(den))) && (await call()).button.pressed === 'false', 'quiet once let go', 5000).catch(() => false);
+            did(quiet, 'let go, the member stops ringing');
+            // A press the browser takes over lets go, as one the page loses
+            // focus during does.
+            await d.down([x, y]);
+            await waitFor(async () => (await call()).button.pressed === 'true', 'held again', 5000);
+            if (d.cancel) await d.cancel();
+            else await h.ev(`window.dispatchEvent(new Event('blur')), true`);
+            const gone = await waitFor(async () => (await call()).button.pressed === 'false' && !(await h.ev(selfRings(den))), 'let go', 5000).catch(() => false);
+            did(gone, `a press ${d.cancel ? 'the browser cancels' : 'held as the page loses focus'} lets go, and the member stops ringing`);
+            if (!d.cancel) await d.up();
+        });
+    }
     await h.step('call-home', async () => {
         await h.click(`document.querySelector('button[aria-label^="Channels"]')`, 'the channels button');
         await h.click(`document.querySelector('a[aria-label^="Home"]')`, 'Home');
@@ -527,13 +682,79 @@ export async function callScreens(h, ctx, { share } = {}) {
             await h.click(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Open')`, "the den's Open");
             await waitFor(() => h.has(`[...document.querySelectorAll('ul[aria-label="In the call"] button')].find((b) => b.textContent.trim() === 'LIVE')`), 'a LIVE mark', 60000);
             await h.click(`[...document.querySelectorAll('ul[aria-label="In the call"] button')].find((b) => b.textContent.trim() === 'LIVE')`, 'LIVE');
-            await sleep(2500);
-            await h.snap('share-player');
+            await h.click(IN_LIST('general'), 'general');
+            // The probe's share is Pion's packets, which show no picture, so
+            // the player keeps 16:9 until a share it shows says its size.
+            let c = await waitFor(async () => (await call()).docked && call(), 'the share docked', 20000).catch(call);
+            did(!!c.docked && c.docked.top === c.bar?.bottom && c.docked.w === c.vw && Math.abs(c.docked.h - (c.vw * 9) / 16) <= 1.5,
+                `carol's share docks above the channel, under the call's bar, at the screen's width, 16:9 until it shows a picture: ${JSON.stringify({ docked: c.docked, bar: c.bar?.bottom })}`);
+            if (own) {
+                // The member shares their own fake screen too, and shows it,
+                // which the docked player shows at its shape, as the share
+                // just begun, the second of two.
+                await h.click(`document.querySelector('[data-pane=list] button[aria-label="Share your screen"]')`, 'share');
+                await h.click(`document.querySelector('[data-pane=list] button[aria-label="Show your screen in the player"]')`, 'the preview');
+                c = await waitFor(async () => {
+                    const x = await call();
+                    return x.video?.w > 0 && x;
+                }, 'their own screen docked', 20000).catch(call);
+                const place = await h.ev(`document.querySelector('section[data-docked] button[aria-label^="The next share"]')?.textContent.trim() || ''`);
+                await h.snap('share-docked');
+                did(dockedPlaced(c) && place.startsWith('2/2'), `the share just begun docks at the screen's width and its shape, the second of two: ${JSON.stringify({ docked: c.docked, video: c.video, place })}`);
+                await d.tap(`document.querySelector('section[data-docked] button[aria-label^="The next share"]')`);
+                const next = await h.ev(`document.querySelector('section[data-docked] button[aria-label^="The next share"]')?.textContent.trim() || ''`);
+                did(next.startsWith('1/2'), `a tap goes on to the next: ${next}`);
+                await d.tap(`document.querySelector('section[data-docked] button[aria-label^="The next share"]')`);
+            } else {
+                await h.snap('share-docked');
+            }
+            await d.tap(`document.querySelector('section[data-docked] video')`);
+            const full = await waitFor(async () => (await call()).full, 'full screen', 5000).catch(() => false);
+            await h.snap('share-full');
+            await d.tap(`document.querySelector('section[data-docked] video')`);
+            const back = await waitFor(async () => !(await call()).full && (await call()).docked, 'docked again', 5000).catch(() => false);
+            did(full && back, `a tap on it plays it full screen (${full}), and another docks it again (${!!back})`);
+            if (own) await h.click(`[...document.querySelectorAll('[data-pane=list] button')].find((b) => b.textContent.trim() === 'Stop')`, 'stop sharing');
         });
     }
     await h.step('leave', async () => {
-        await h.click(`document.querySelector('button[aria-label="Leave the call"], button[aria-label^="Leave"]')`, 'leave');
+        if (!(await h.has(`document.querySelector('[data-call-bar]')`))) {
+            await h.click(IN_LIST('general'), 'general');
+        }
+        await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Leave the call"]')`);
+        const left = await waitFor(async () => !(await h.has(`document.querySelector('[data-call-bar]')`)) && !(await h.has(BUTTON)), 'the call to end', 10000)
+            .catch(() => false);
+        did(left, 'the call ends from its bar, and its bar and button go');
     });
+}
+
+// staffPress walks staff's long press on a touch screen (M13.4): a
+// channel's row opens its settings, and a group's the group's, where a
+// touch screen shows no ⋯ for them, and a tap on a row still opens its
+// channel.
+export async function staffPress(h, ctx, d, report) {
+    const { den, random } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const dialog = () => h.ev(`document.querySelector('[role=dialog]')?.getAttribute('aria-label') || ''`);
+    await h.go(`/den/${den}`);
+    if (!(await h.has(IN_LIST('general')))) await h.click(h.byText('[role=tab]', 'Den'));
+    await h.wait(IN_LIST('general'), 'the channel list');
+    const dots = await h.ev(`[...document.querySelectorAll('nav[aria-label=Channels] button[aria-label^="Settings for"]')].filter((b) => getComputedStyle(b).display !== 'none').length`);
+    did(dots === 0, `staff's channels and groups show no ⋯ on a touch screen (${dots} show)`);
+    await d.press(IN_LIST('general'));
+    const channel = await waitFor(dialog, "general's settings", 5000).catch(() => '');
+    await h.snap('staff-press-channel');
+    did(channel === '#general', `a long press on a channel's row opens its settings: ${channel || 'nothing'}`);
+    await d.back();
+    await waitFor(async () => !(await dialog()), 'the settings to close', 5000);
+    await d.press(`[...document.querySelectorAll('nav[aria-label=Channels] button[aria-expanded]')].find((b) => b.textContent.trim().toLowerCase() === 'projects')`);
+    const group = await waitFor(dialog, "Projects' settings", 5000).catch(() => '');
+    did(group === 'Projects', `and a long press on a group's row opens the group's: ${group || 'nothing'}`);
+    await d.back();
+    await waitFor(async () => !(await dialog()), 'the settings to close', 5000);
+    await d.tap(IN_LIST('random'));
+    const opened = await waitFor(async () => (await h.ev('location.pathname')) === `/den/${den}/${random}` && !(await dialog()), 'random', 5000).catch(() => false);
+    did(opened, 'a tap on a row still opens its channel');
 }
 
 // PANE is what the page shows of a den: the pane on screen, by the panes
