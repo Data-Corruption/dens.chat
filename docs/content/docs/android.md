@@ -95,6 +95,14 @@ In the message box, ↵ starts a new line, and the paper plane beside the box
 sends. Where you see an ⓘ, or a small mark you're not sure of, tap it to see
 what it means, and tap anywhere to put it away.
 
+Tap a photo to see it full screen. Swipe sideways for the message's other
+photos, and down to close it. Spread two fingers, or tap twice, to zoom in,
+and drag to look around; tap twice again to see it whole.
+
+The settings, and each den's Manage, list their sections: tap one to open
+it, and Back goes back to the list. Smaller panels, like a channel's
+settings, slide up from the bottom of the screen; swipe one down to close it.
+
 ## Keeping it connected
 
 Dens keeps your dens connected while it isn't on screen, which is what brings
