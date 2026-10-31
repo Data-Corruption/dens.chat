@@ -5,6 +5,7 @@
 package denclient
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"database/sql"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -57,7 +59,11 @@ type Manager struct {
 	log   *xlog.Logger
 	own   OwnDen
 	agent string
-	label string
+
+	// Label names this device among the member's on the dens it joins or
+	// signs in to: the computer, by its name, unless the app names it
+	// otherwise, as the Android app does by the phone's model (M13.3).
+	Label string
 
 	// HTTP reaches dens; it trusts the system's certificate authorities.
 	HTTP *http.Client
@@ -188,7 +194,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	// itself at, which the protocol's moves go through.
 	stay := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Manager{
-		db: db, v: v, log: log, own: own, agent: userAgent, label: deviceLabel(), epoch: denproto.Random(8).String(),
+		db: db, v: v, log: log, own: own, agent: userAgent, Label: computerLabel(), epoch: denproto.Random(8).String(),
 		HTTP:          &http.Client{Timeout: requestTimeout, Transport: transport, CheckRedirect: stay},
 		Transfer:      &http.Client{Transport: transport, CheckRedirect: stay},
 		files:         newFileCache(),
@@ -210,21 +216,73 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	}
 }
 
-// deviceLabel names this device on dens, such as "Pearl (Windows)".
-func deviceLabel() string {
+// computerLabel names this computer on dens by its hostname, such as
+// "Pearl (Windows)".
+func computerLabel() string {
 	host, err := os.Hostname()
-	if err != nil || host == "" {
-		host = "Dens"
+	if err != nil {
+		host = ""
 	}
-	system := map[string]string{"linux": "Linux", "windows": "Windows"}[runtime.GOOS]
+	system := map[string]string{"linux": "Linux", "windows": "Windows", "android": "Android"}[runtime.GOOS]
 	if system == "" {
 		system = runtime.GOOS
 	}
-	label, err := denproto.CleanName(host+" ("+system+")", denproto.MaxLabelRunes)
-	if err != nil {
-		return system
+	return DeviceLabel(host, system)
+}
+
+// DeviceLabel names a device on dens by its name and, in parentheses at
+// the end, what it is, which the page shows under the name: a computer's
+// system, as "Pearl (Windows)", or a phone's model, as "Galaxy S24 Ultra
+// (SM-S928U1)" (M13.3). It's made as dens take a label: what a name can't
+// show taken out, and a long name, or what it is, cut to fit. A device
+// with no name to show is "Dens".
+func DeviceLabel(name, detail string) string {
+	what, _ := denproto.CleanName(detail, len(detail))
+	what = cut(what, maxDetailRunes)
+	suffix := " (" + what + ")"
+	room := max(1, denproto.MaxLabelRunes-utf8.RuneCountInString(suffix))
+	clean, err := denproto.CleanName(name, len(name))
+	clean = cut(clean, room)
+	if err != nil || clean == "" {
+		clean = "Dens"
 	}
-	return label
+	if what == "" {
+		suffix = ""
+	}
+	if label, err := denproto.CleanName(clean+suffix, denproto.MaxLabelRunes); err == nil {
+		return label
+	}
+	return "Dens"
+}
+
+// PhoneLabel names a phone on dens by the name its owner knows it by,
+// Android's device name, and its model (M13.3). A phone with no name of
+// its own, or one that's its model, as a Pixel's is, is its model on
+// Android, as "Pixel 9 Pro (Android)".
+func PhoneLabel(name, model string) string {
+	n, _ := denproto.CleanName(name, len(name))
+	m, _ := denproto.CleanName(model, len(model))
+	switch {
+	case n == "" && m == "":
+		return DeviceLabel("", "Android")
+	case n == "" || strings.EqualFold(n, m):
+		return DeviceLabel(cmp.Or(n, m), "Android")
+	case m == "":
+		return DeviceLabel(n, "Android")
+	}
+	return DeviceLabel(n, m)
+}
+
+// maxDetailRunes is the most of a label what a device is takes, which
+// leaves its name room.
+const maxDetailRunes = 32
+
+// cut is s cut to at most n runes, without the space it may then end in.
+func cut(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return strings.TrimSpace(string(r[:n]))
+	}
+	return s
 }
 
 // Run connects every joined den and keeps them connected until ctx ends.
@@ -587,7 +645,7 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 	err = a.call(ctx, http.MethodPost, "/api/join", nil, denproto.JoinRequest{
 		Invite: code, Username: username, DisplayName: displayName,
 		Verifier:  denproto.Verifier(req.Password, denID, username),
-		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label,
+		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.Label,
 		Nonce: nonce, Proof: key.Sign(denproto.ProofMessage(denID, keyID, nonce)), SealCheck: sealCheck,
 	}, &resp)
 	if err != nil {

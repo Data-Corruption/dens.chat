@@ -241,3 +241,73 @@ func TestTheShellPostsNotifications(t *testing.T) {
 		t.Fatalf("after the DM was read: %s %s, want it taken back", msg.T, msg.D)
 	}
 }
+
+// The phone's name and its model, which the shell gives Dens, name its
+// device on the dens it joins, where its hostname would say only
+// localhost (M13.3).
+func TestThePhonesNameAndModelAreItsDevicesLabel(t *testing.T) {
+	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
+	t.Setenv(app.DeviceNameEnv, "Galaxy S24 Ultra")
+	t.Setenv(app.DeviceModelEnv, "SM-S928U1")
+	a, _, _, err := runAndroid(t, androidBuild("v1.6.0"), freePort(t))
+	if err != nil {
+		t.Fatalf("the service didn't start: %v", err)
+	}
+	if a.Dens.Label != "Galaxy S24 Ultra (SM-S928U1)" {
+		t.Fatalf("the device's label is %q, want the phone's name and model", a.Dens.Label)
+	}
+}
+
+// The shell paints its bars with the page's background, which the page
+// says over its stream as its theme changes, and the shell hears over its
+// own: at each change, in the order the page said them, and as it
+// connects, where the page has said one. A color that isn't one goes
+// nowhere (M13.3).
+func TestTheShellPaintsTheBarsWithThePagesTheme(t *testing.T) {
+	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
+	a, client, _, err := runAndroid(t, androidBuild("v1.6.0"), freePort(t))
+	if err != nil {
+		t.Fatalf("the service didn't start: %v", err)
+	}
+	page := pair(t, a, client).stream()
+	page.next("dens")
+	shell := func() *control.Stream {
+		s, err := client.Open(control.Request{Op: control.OpShell})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"hello", "notifying"} {
+			if msg := next(t, s); msg.T != want {
+				t.Fatalf("got %s, want %s", msg.T, want)
+			}
+		}
+		return s
+	}
+	bars := func(s *control.Stream, want string) {
+		t.Helper()
+		if msg := next(t, s); msg.T != "bars" || string(msg.D) != `{"color":"`+want+`"}` {
+			t.Fatalf("got %s %s, want bars %s", msg.T, msg.D, want)
+		}
+	}
+
+	first := shell()
+	page.send("bars", map[string]string{"color": "#1D232A"})
+	bars(first, "#1d232a")
+	_ = first.Close()
+
+	again := shell()
+	defer again.Close()
+	bars(again, "#1d232a")
+	for _, color := range []string{"#FFFFFF", "#ffffff", "red", "#fff", "#12345g", "", "#00FF7F"} {
+		page.send("bars", map[string]string{"color": color})
+	}
+	bars(again, "#ffffff")
+	bars(again, "#00ff7f")
+	if err := a.SetBars("blue"); !errors.Is(err, app.ErrBarsColor) {
+		t.Fatalf("a color that isn't one: %v", err)
+	}
+	if err := a.SetBars("#123456"); err != nil {
+		t.Fatal(err)
+	}
+	bars(again, "#123456")
+}

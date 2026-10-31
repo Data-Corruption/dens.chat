@@ -133,7 +133,7 @@ func (m *Manager) SignIn(ctx context.Context, req SignInRequest) (SignedIn, erro
 	var resp denproto.SignInResponse
 	err = a.call(ctx, http.MethodPost, "/api/auth/recover", nil, denproto.RecoverRequest{
 		Username: username, RecoveryCode: denproto.FormatRecoveryCode(code), NewVerifier: verifier,
-		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.label, Nonce: nonce, Proof: proof,
+		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.Label, Nonce: nonce, Proof: proof,
 	}, &resp)
 	if err != nil {
 		key.Close()

@@ -54,6 +54,9 @@ func (rt *router) mountDens(r chi.Router) {
 // how far its setup went, and when it was exported, if it hasn't been
 // hosted here since (M10).
 type hosting struct {
+	// CanHost is false where the form hosts no den, which Add a den then
+	// doesn't offer (M13.3).
+	CanHost bool   `json:"can_host"`
 	Enabled bool   `json:"enabled"`
 	Serving bool   `json:"serving"`
 	Problem string `json:"problem,omitempty"`
@@ -80,7 +83,7 @@ type densView struct {
 
 func (rt *router) densView(ctx context.Context) (densView, error) {
 	state := rt.a.Hosting.State()
-	v := densView{Hosting: hosting{Enabled: state.On, Serving: state.Serving, Problem: state.Problem}}
+	v := densView{Hosting: hosting{CanHost: rt.a.CanHost(), Enabled: state.On, Serving: state.Serving, Problem: state.Problem}}
 	// The version comes first, so the statuses are at least that new.
 	v.Epoch, v.Version = rt.a.Dens.Version()
 	v.Dens = rt.a.Dens.Statuses()
@@ -380,6 +383,7 @@ type pageMessage struct {
 		Note     *denclient.CallNote `json:"note"`
 		Visible  bool                `json:"visible"`
 		Allowed  bool                `json:"allowed"`
+		Color    string              `json:"color"`
 	} `json:"d"`
 }
 
@@ -391,6 +395,10 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 		rt.a.Notify.Focus(page, msg.D.Den, msg.D.Channel)
 	case "page":
 		rt.a.Notify.SetPage(page, msg.D.Visible, msg.D.Allowed)
+	case "bars":
+		// The page's background, for the Android app's bars (M13.3); a
+		// color that isn't one goes nowhere.
+		_ = rt.a.SetBars(msg.D.Color)
 	case "typing":
 		_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 	case "voice.join":

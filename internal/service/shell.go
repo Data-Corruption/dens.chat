@@ -21,9 +21,11 @@ import (
 // post. From M12.4 it sends update, a newer release's APK the updater
 // checked, which the shell posts is ready, and install, the member asking
 // the page to install it, which the shell hands to Android's installer.
-// The shell sends front as the app comes in front and leaves it, and
-// notifies, whether Android lets it post notifications, as the stream
-// opens and as that changes.
+// From M13.3 it sends bars, the page's background, which the shell paints
+// its status and navigation bars with, as the stream opens, where the page
+// has said one, and as it changes. The shell sends front as the app comes
+// in front and leaves it, and notifies, whether Android lets it post
+// notifications, as the stream opens and as that changes.
 const (
 	msgShellHello     = "hello"
 	msgShellNotify    = "notify"
@@ -31,6 +33,7 @@ const (
 	msgShellNotifying = "notifying"
 	msgShellUpdate    = "update"
 	msgShellInstall   = "install"
+	msgShellBars      = "bars"
 	msgShellFront     = "front"
 	msgShellNotifies  = "notifies"
 )
@@ -45,6 +48,11 @@ type shellHello struct {
 // shellSwitch is a line that turns something on or off.
 type shellSwitch struct {
 	On bool `json:"on"`
+}
+
+// shellBars is the color the shell paints its bars with, as #rrggbb.
+type shellBars struct {
+	Color string `json:"color"`
 }
 
 // shellUnnotify names the notifications to take back, by their keys.
@@ -69,6 +77,9 @@ func (p shellPlace) Settings(s types.Notifications) {
 func (p shellPlace) UpdateReady(u app.UpdateReady)   { _ = p.s.Send(msgShellUpdate, u) }
 func (p shellPlace) InstallUpdate(u app.UpdateReady) { _ = p.s.Send(msgShellInstall, u) }
 
+// The shell, as it paints its bars with the page's background (M13.3).
+func (p shellPlace) Bars(color string) { _ = p.s.Send(msgShellBars, shellBars{Color: color}) }
+
 // shellStream serves the shell's stream until either side closes it, or
 // the service stops.
 func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error {
@@ -86,6 +97,8 @@ func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error 
 		defer a.Notify.DropShell(place)
 		a.SetUpdateShell(place)
 		defer a.DropUpdateShell(place)
+		a.SetBarsShell(place)
+		defer a.DropBarsShell(place)
 		go s.KeepAlive(ctx)
 		for {
 			// A newer shell's lines this service doesn't know, it ignores.
