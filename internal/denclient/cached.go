@@ -558,8 +558,11 @@ func (c *conn) restoreKept() {
 		c.cacheErr(cs.DropDen(den))
 		return
 	}
+	// A connection restores this as it's made, before the dens list holds
+	// it, so its marks need no telling.
 	c.mu.Lock()
 	c.den = s
+	c.remarkLocked()
 	if withMembers {
 		c.members = &membersCursor{epoch: kept.Epoch, version: kept.Version}
 	}
