@@ -137,7 +137,7 @@ try {
     // the list shows the level, and the browser keeps it.
     const aliceID = await A.b.eval(`(async () => (await (await fetch('/api/dens/${den}/state')).json()).me.id)()`);
     const VOLUME = (id) => `(() => { const a = window.__audios.filter((x) => x.srcObject && x.srcObject.id === ${JSON.stringify(aliceID)}).at(-1); return a ? a.volume : -1; })()`;
-    const ROW = `(() => { const li = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes('Alice')); const mark = li && li.querySelector('span[title^="Plays at"], span[title="Muted for you"]'); return mark ? mark.title + ': ' + mark.textContent : ''; })()`;
+    const ROW = `(() => { const li = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes('Alice')); const mark = li && li.querySelector('button[aria-label^="Plays at"], button[aria-label="Muted for you"]'); return mark ? mark.getAttribute('aria-label') + ': ' + mark.textContent : ''; })()`;
     const KEPT = `localStorage.getItem('DENS_VOLUMES')`;
     const slide = (pct) => B.b.eval(`(() => {
         if (!document.querySelector('input[aria-label="Volume for Alice"]')) document.querySelector('button[aria-label="Options for Alice in the call"]').click();
@@ -438,7 +438,7 @@ try {
     const BLOCK = `document.querySelector('button[aria-label="Leave the call"]').closest('.bg-bar')`;
     const row = JSON.parse(await B.b.eval(`(() => {
         const block = ${BLOCK};
-        const buttons = [...block.querySelectorAll('button')];
+        const buttons = [...block.querySelectorAll('button')].filter((x) => !x.closest('.tooltip'));
         const panel = document.querySelector('button[aria-label="Edit your profile"]').parentElement;
         const composer = document.querySelector('textarea').closest('.border-t');
         const bg = (e) => getComputedStyle(e).backgroundColor;
@@ -461,24 +461,23 @@ try {
             lighter: light(bg(composer)) - light(getComputedStyle(document.documentElement).backgroundColor),
         });
     })()`));
-    // Headless browsers say their pointer can't hover, so hover styles never
-    // apply there: the stylesheet must show the tip on hover, and shown by
-    // hand it must fit inside the channel list.
-    const tip = JSON.parse(await B.b.eval(`(() => {
-        const tip = ${BLOCK}.querySelector('[role=status]').nextElementSibling;
-        const hidden = getComputedStyle(tip).display;
-        tip.style.display = 'block';
+    // The speaker's tip names where the call is, hidden until the mouse
+    // hovers the speaker, or a finger taps it (M13.2), and it fits inside the
+    // channel list.
+    const TIP = `${BLOCK}.querySelector('[role=tooltip]')`;
+    const hidden = await B.b.eval(`${TIP}.hidden`);
+    const speaker = JSON.parse(await B.b.eval(`(() => { const r = ${BLOCK}.querySelector('.tooltip button').getBoundingClientRect();
+        return JSON.stringify([r.left + r.width / 2, r.top + r.height / 2]); })()`));
+    await B.b.move(speaker[0], speaker[1]);
+    const tip = JSON.parse(await waitFor(() => B.b.eval(`(() => {
+        const tip = ${TIP};
+        if (tip.hidden) return '';
         const r = tip.getBoundingClientRect();
         const aside = tip.closest('aside').getBoundingClientRect();
-        const rules = [];
-        // Tailwind's rules sit in layers, and its hover rules in a media rule.
-        const walk = (list, media) => { for (const rule of list) { if (rule.selectorText) rules.push({ media, rule }); else if (rule.cssRules) walk(rule.cssRules, rule.conditionText ?? media); } };
-        for (const sheet of document.styleSheets) walk(sheet.cssRules, '');
-        const onHover = rules.some(({ media, rule }) => media.replaceAll(' ', '') === '(hover:hover)' && rule.selectorText.includes('group-hover') && rule.selectorText.includes(':hover') && rule.style.display === 'block' && tip.matches(rule.selectorText.replace(/:is\(.*\)$/, '')));
-        return JSON.stringify({ text: tip.textContent, hidden, onHover, inside: r.left >= aside.left && r.right <= aside.right && r.top >= aside.top && r.bottom <= aside.bottom });
-    })()`));
+        return JSON.stringify({ text: tip.textContent, inside: r.left >= aside.left && r.right <= aside.right && r.top >= aside.top && r.bottom <= aside.bottom });
+    })()`), `${B.browser}'s speaker tip on hover`, 3000).catch(() => '{}'));
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-panel.png`).catch((e) => console.log('shot', e.message));
-    await B.b.eval(`(${BLOCK}.querySelector('[role=status]').nextElementSibling.style.display = '', true)`);
+    await B.b.move(5, 5);
     await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').click(), true)`);
     const EDIT = `document.querySelector('[role=dialog][aria-label="Your profile in this den"]')`;
     const edit = await waitFor(() => B.b.eval(`!!${EDIT}`), `${B.browser} edits the profile`, 3000).catch(() => false);
@@ -496,7 +495,7 @@ try {
     report(outOfCall.panel === outOfCall.bar && inCall.panel === inCall.bar && inCall.avatar === outOfCall.avatar && outOfCall.avatar >= 32
         && row.labels === 'Share your screen|Mute|Deafen|Voice settings|Leave the call' && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
         && row.status === lounge && row.shade && row.standsOut >= 15
-        && tip.text === lounge && tip.hidden === 'none' && tip.onHover && tip.inside && edit === true && cog === 'Appearance'
+        && tip.text === lounge && hidden && tip.inside && edit === true && cog === 'Appearance'
         && head.home && !head.dot && !head.header,
         `${B.browser} panel and bar line up: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, its tip ${JSON.stringify(tip)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
 

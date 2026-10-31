@@ -12,6 +12,7 @@ import { api } from './api.js';
 import { useBackdrop } from './components.jsx';
 import { useLayer } from './nav.js';
 import { fitBox, formatSize, step } from './files.jsx';
+import { useCoarse } from './touch.js';
 
 const SMALLER = 'DENS_SEND_SMALLER';
 let smaller = null;
@@ -152,12 +153,17 @@ function formatTime(seconds) {
 // How far a press may move and still count as a click, not a drag.
 const CLICK_SLOP = 4;
 
+// How long a finger rests on the picture before it shows the other
+// version, until it's lifted, as Space held does (M13.2); a quicker tap
+// looks closer, as a click does.
+const HOLD = 250;
+
 // Compare shows a photo or video waiting to be sent in its two versions, so
 // the member picks one: fitted to the window, as the viewer shows everyone,
 // or at 100%, where they drag to look around, with the smaller copy scaled
 // up to match, as someone who downloads it would see it. The switch flips
-// between them in place, and holding Space shows the other one while it's
-// held. A video's two play in place, kept at the same moment, so a flip
+// between them in place, and holding Space, or a finger on the picture,
+// shows the other one while it's held. A video's two play in place, kept at the same moment, so a flip
 // shows the same frame; a version the browser can't play, such as a
 // full size in HEVC in Firefox, leaves the other alone, and says why. files
 // are the message's files with two versions, and ← and → move between
@@ -186,8 +192,10 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const players = useRef({});
     const at = useRef(index);
     const backdrop = useBackdrop(onClose);
+    const touch = useCoarse();
     useLayer(onClose);
     at.current = index;
+    useEffect(() => () => clearTimeout(drag.current?.timer), []);
 
     // The stage's size is known before the first paint, so the photo
     // never shows at a guess.
@@ -300,20 +308,35 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     function down(e) {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { x: e.clientX, y: e.clientY, pan: offset, moved: false };
+        const d = { x: e.clientX, y: e.clientY, pan: offset, moved: false, holding: false, timer: 0 };
+        if (e.pointerType !== 'mouse') {
+            d.timer = setTimeout(() => {
+                d.holding = true;
+                setHeld(true);
+            }, HOLD);
+        }
+        drag.current = d;
     }
     function move(e) {
         const d = drag.current;
-        if (!d) return;
+        if (!d || d.holding) return;
         const dx = e.clientX - d.x;
         const dy = e.clientY - d.y;
         d.moved = d.moved || Math.abs(dx) > CLICK_SLOP || Math.abs(dy) > CLICK_SLOP;
+        if (d.moved) clearTimeout(d.timer);
         if (actual && d.moved) setPan(clampPan({ x: d.pan.x + dx, y: d.pan.y + dy }, box, view));
     }
-    function up(e) {
+    // let go ends a press: one that held shows the version shown again.
+    function letGo() {
         const d = drag.current;
         drag.current = null;
-        if (!d || d.moved) return;
+        clearTimeout(d?.timer);
+        if (d?.holding) setHeld(false);
+        return d;
+    }
+    function up(e) {
+        const d = letGo();
+        if (!d || d.moved || d.holding) return;
         // A click on the fitted file looks at that spot at 100%, and one at
         // 100% fits it again. One beside it closes, as in the viewer.
         if (actual) {
@@ -346,8 +369,9 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     return (
         <div role="dialog" aria-modal="true" aria-label={`Compare the two versions of ${entry.result.name}`}
             class="fixed inset-0 z-50 flex flex-col gap-3 bg-black/85 p-4" {...backdrop}>
-            <div ref={stage} class={`relative min-h-0 flex-1 overflow-hidden ${actual ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; }}>
+            <div ref={stage} class={`relative min-h-0 flex-1 touch-none overflow-hidden ${actual ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={letGo}
+                onContextMenu={(e) => touch && e.preventDefault()}>
                 <div key={entry.result.id} class={`absolute select-none overflow-hidden rounded ${actual ? '' : 'cursor-zoom-in'}`}
                     style={{ left: `${offset.x}px`, top: `${offset.y}px`, width: `${box.width}px`, height: `${box.height}px` }}>
                     {['smaller', 'full'].map((which) => (video ? (
@@ -391,7 +415,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                                 <svg viewBox="0 0 16 16" class="h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
                             )}
                         </button>
-                        <input type="range" class="range range-xs flex-1" min="0" max={length || 0} step="any" value={time}
+                        <input type="range" class="range range-md flex-1" min="0" max={length || 0} step="any" value={time}
                             aria-label="Where in the video" onInput={(e) => seek(Number(e.currentTarget.value))} />
                         <span class="shrink-0 cursor-default select-none tabular-nums text-white/60">{formatTime(time)} / {formatTime(length)}</span>
                     </div>
@@ -419,7 +443,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                         {broken.full && broken.smaller ? "This browser can't play either version."
                             : broken.full ? "This browser can't play the full size, so only the smaller copy shows."
                                 : broken.smaller ? "This browser can't play the smaller copy, which is AV1, so only the full size shows."
-                                    : 'Hold Space to see the other one.'}{' '}
+                                    : touch ? 'Hold a finger on the picture to see the other one.' : 'Hold Space to see the other one.'}{' '}
                         {usage(storage, limits)}
                     </span>
                     <button type="button" class="btn btn-primary btn-sm" disabled={!!blocked || entry.switching}

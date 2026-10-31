@@ -16,7 +16,7 @@ import { api } from './api.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { copyText } from './clipboard.js';
-import { ErrorText, useAction } from './components.jsx';
+import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
@@ -28,9 +28,12 @@ import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, rep
 import { keptFor } from './retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
+import { useNarrow } from './nav.js';
 import { isStaff, rank } from './people.jsx';
 import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
+import { Sheet, SheetRow } from './sheet.jsx';
+import { createPress, useCoarse } from './touch.js';
 import { Videos } from './youtube.jsx';
 
 const EDGE = 600; // px from an end at which the next page loads
@@ -114,6 +117,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const [comparing, setComparing] = useState(null);
     const [dragging, setDragging] = useState(false);
     const [divider] = useState(() => dividerAt(readPosition, lastMessage));
+    // A finger works the messages by long presses, and on the phone
+    // layout their actions open as a sheet (M13.2).
+    const narrow = useNarrow();
+    const touch = useCoarse();
     const scroller = useRef(null);
     const content = useRef(null);
     const anchor = useRef(null);
@@ -592,6 +599,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 canDelete={m.author_id === me.id || (channel.kind !== 'dm' && rank(role) > rank(members.get(m.author_id)?.role))}
                 link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
                 menuOpen={menu === m.id}
+                narrow={narrow}
+                touch={touch}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
                 candidates={candidates}
                 onUpdated={(u) => setList((cur) => withUpdate(cur, u))}
@@ -704,6 +713,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     onSend={(text) => send(text)}
                     onEditLast={editLast}
                     onTyping={onTyping}
+                    narrow={narrow}
+                    touch={touch}
                 />
             )}
             {viewing && (
@@ -748,13 +759,22 @@ function Quoted({ text, locked, me }) {
 }
 
 // MessageRow is a message in the list, with its ⋯ menu of what the member
-// may do with it: link is the link to it, for Copy link (M11).
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, editorNames, candidates, onUpdated, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+// may do with it: link is the link to it, for Copy link (M11). A finger's
+// long press opens the menu in the ⋯'s place, which a touch screen has
+// none of, and on the phone layout, narrow, it's a sheet (M13.2).
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, onUpdated, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
     const copiedTimer = useRef(null);
-    useEffect(() => () => clearTimeout(copiedTimer.current), []);
+    const opening = useRef(onMenu);
+    opening.current = onMenu;
+    const press = useRef(null);
+    press.current ||= createPress({ onLong: () => opening.current(true) });
+    useEffect(() => () => {
+        clearTimeout(copiedTimer.current);
+        press.current.cancel();
+    }, []);
     async function copy(what, done) {
         setError('');
         try {
@@ -785,11 +805,26 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
             throw e;
         }
     }
-    // On a touch screen, where the ⋯ always shows, the text keeps clear of it.
+    // The long press takes the place of the browser's own selection and
+    // menu on a message, and a click it's followed by goes nowhere.
+    const pressing = touch && !editing && actions.length > 0;
+    const presses = pressing ? {
+        onPointerDown: (e) => press.current.down(e),
+        onPointerMove: (e) => press.current.move(e),
+        onPointerUp: () => press.current.up(),
+        onPointerCancel: () => press.current.cancel(),
+        onContextMenu: (e) => e.preventDefault(),
+    } : {};
     return (
         <div
             data-id={m.id}
-            class={`group relative rounded px-2 pointer-coarse:pr-10 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'}`}
+            class={`group relative rounded px-2 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'} ${pressing ? 'select-none' : ''}`}
+            {...presses}
+            onClickCapture={(e) => {
+                if (!press.current.click()) return;
+                e.preventDefault();
+                e.stopPropagation();
+            }}
         >
             {m.reply_to && replied && (
                 <button type="button" class="flex w-full min-w-0 items-center gap-1 pl-2 text-left text-xs text-base-content/60 hover:text-base-content" onClick={() => onJump(m.reply_to)}>
@@ -809,7 +844,8 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                 <div class="relative w-9 shrink-0">
                     {compact ? (
                         // Out of the flow, so the time never makes a row taller.
-                        <span class="invisible absolute -inset-x-1 top-1 cursor-default select-none whitespace-nowrap text-center text-[10px] text-base-content/50 group-hover:visible">
+                        // A touch screen has it in the long press's sheet.
+                        <span class="invisible absolute -inset-x-1 top-1 cursor-default select-none whitespace-nowrap text-center text-[10px] text-base-content/50 group-hover:visible pointer-coarse:hidden">
                             {clock(m.created_at)}
                         </span>
                     ) : (
@@ -828,7 +864,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     {m.locked ? (
                         <p class="cursor-default select-none text-sm italic text-base-content/60">{LOCKED[m.locked] || LOCKED.broken}</p>
                     ) : editing ? (
-                        <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} onDone={onEditDone} />
+                        <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} touch={touch} onDone={onEditDone} />
                     ) : (
                         (m.text.trim() || m.edited_at) && (
                             <Fold onToggle={onToggle}>
@@ -847,39 +883,64 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     {error && <p class="text-xs text-error">{error}</p>}
                 </div>
             </div>
-            {!editing && actions.length > 0 && <MessageMenu open={menuOpen} onOpen={onMenu} actions={actions} copied={copied} />}
+            {!editing && actions.length > 0 && <MessageMenu open={menuOpen} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} />}
+            {!editing && menuOpen && narrow && actions.length > 0 && (
+                <Sheet label="Message actions" title={<MessageHeading m={m} author={author} editorNames={editorNames} />} onClose={() => onMenu(false)}>
+                    {actions.map((a) => (
+                        <SheetRow key={a.label} danger={a.danger} onClick={() => {
+                            onMenu(false);
+                            a.run();
+                        }}>
+                            {a.label}
+                        </SheetRow>
+                    ))}
+                </Sheet>
+            )}
         </div>
     );
 }
 
-// A menu's row is about this tall, in px, for deciding where it opens.
-const MENU_ROW = 36;
+// MessageHeading heads a message's sheet with what a hover shows of it
+// elsewhere: its author and time in full, when it was edited, and who
+// else can edit it.
+function MessageHeading({ m, author, editorNames }) {
+    return (
+        <>
+            <p class="truncate"><span class="font-semibold">{name(author)}</span> <span class="text-base-content/60">{dayTime(m.created_at)}</span></p>
+            {m.edited_at ? <p class="text-xs text-base-content/60">Edited {dayTime(m.edited_at)}</p> : null}
+            {editorNames.length > 0 && <p class="text-xs text-base-content/60">{joinNames(editorNames)} can edit this too</p>}
+        </>
+    );
+}
 
-// MessageMenu is a message's ⋯, which shows on hover or focus, and always
-// on a touch screen, which has no hover, as the ⋯ beside a channel does;
-// and the menu it opens of what the member may do with the message (M11).
-// The menu opens toward whichever side of the list has room for it. Arrow
-// keys move through it, and Escape, Tab or a press elsewhere closes it.
-// copied says what the member just copied.
-function MessageMenu({ open, onOpen, actions, copied }) {
+// MessageMenu is a message's ⋯, which shows on hover or focus, for a mouse
+// and the keyboard, and the menu of what the member may do with the
+// message (M11), which a touch screen's long press opens without it
+// (M13.2). The menu opens toward whichever side of the list has room for
+// it. Arrow keys move through it, and Escape, Tab or a press elsewhere
+// closes it. On the phone layout, narrow, the ⋯ opens the message's sheet
+// instead. copied says what the member just copied.
+function MessageMenu({ open, narrow, onOpen, actions, copied }) {
     const box = useRef(null);
     const button = useRef(null);
     const list = useRef(null);
     const [up, setUp] = useState(false);
+    const dropdown = open && !narrow;
+    useLayoutEffect(() => {
+        if (!dropdown || !list.current) return;
+        const view = box.current.closest('[data-scroller]')?.getBoundingClientRect();
+        const at = box.current.getBoundingClientRect();
+        const below = view ? view.bottom - at.bottom : Infinity;
+        setUp(below < list.current.offsetHeight + 8 && at.top - view.top > below);
+    }, [dropdown]);
     useEffect(() => {
-        if (!open) return undefined;
+        if (!dropdown) return undefined;
         list.current?.querySelector('[role="menuitem"]')?.focus();
         const away = (e) => !box.current?.contains(e.target) && onOpen(false);
         document.addEventListener('pointerdown', away);
         return () => document.removeEventListener('pointerdown', away);
-    }, [open]);
+    }, [dropdown]);
     function toggle() {
-        if (!open) {
-            const view = button.current.closest('[data-scroller]')?.getBoundingClientRect();
-            const at = button.current.getBoundingClientRect();
-            const below = view ? view.bottom - at.bottom : Infinity;
-            setUp(below < actions.length * MENU_ROW + 16 && at.top - view.top > below);
-        }
         onOpen(!open);
     }
     // close gives the focus back to the ⋯, unless what was picked takes it.
@@ -902,13 +963,12 @@ function MessageMenu({ open, onOpen, actions, copied }) {
             onOpen(false);
         }
     }
-    const hidden = 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:opacity-100 ' +
-        'pointer-coarse:pointer-events-auto pointer-coarse:opacity-100';
+    const hidden = 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:opacity-100';
     // An open menu stands over the rows below it, and their ⋯.
     return (
-        <div ref={box} class={`absolute -top-3 right-2 flex items-center gap-1 pointer-coarse:right-1 pointer-coarse:top-0 ${open ? 'z-20' : 'z-10'} ${open || copied ? '' : hidden}`}>
+        <div ref={box} class={`absolute -top-3 right-2 flex items-center gap-1 ${dropdown ? 'z-20' : 'z-10'} ${dropdown || copied ? '' : hidden}`}>
             {copied && <span role="status" class="cursor-default select-none rounded bg-base-100 px-1.5 py-0.5 text-xs shadow">{copied}</span>}
-            <button ref={button} type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:bg-transparent pointer-coarse:shadow-none"
+            <button ref={button} type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:hidden"
                 aria-label="Message actions" title="More" aria-haspopup="menu" aria-expanded={open} onClick={toggle}
                 onKeyDown={(e) => {
                     if (e.key !== 'ArrowDown' || open) return;
@@ -917,12 +977,12 @@ function MessageMenu({ open, onOpen, actions, copied }) {
                 }}>
                 ⋯
             </button>
-            {open && (
+            {dropdown && (
                 <ul ref={list} role="menu" aria-label="Message actions" onKeyDown={keys}
                     class={`menu absolute right-0 z-20 w-44 rounded-box bg-base-100 p-1 shadow ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
                     {actions.map((a) => (
                         <li key={a.label} role="none">
-                            <button type="button" role="menuitem" tabIndex={-1} class={a.danger ? 'text-error' : ''}
+                            <button type="button" role="menuitem" tabIndex={-1} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
                                 onClick={() => {
                                     close();
                                     a.run();
@@ -1093,8 +1153,9 @@ function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
 
 // EditBox edits a message against the revision it started from. If the
 // message changed meanwhile, it shows the newer text and keeps the draft.
-// Its author also changes who else may edit it.
-function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
+// Its author also changes who else may edit it. With a finger, touch, ↵
+// starts a line, and Save saves (M13.2).
+function EditBox({ m, denID, channelID, mine, candidates, touch, onDone }) {
     const [text, setText] = useState(m.text);
     const [editors, setEditors] = useState(m.editors || []);
     const [sharing, setSharing] = useState(false);
@@ -1144,11 +1205,12 @@ function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
                 ref={box}
                 class="textarea focus-border w-full"
                 rows={Math.min(8, text.split('\n').length + 1)}
+                enterkeyhint={touch ? 'enter' : 'done'}
                 value={text}
                 onInput={(e) => setText(e.currentTarget.value)}
                 onKeyDown={(e) => {
                     if (e.key === 'Escape') onDone();
-                    if (sends(e)) {
+                    if (sends(e, touch)) {
                         e.preventDefault();
                         save();
                     }
@@ -1162,14 +1224,14 @@ function EditBox({ m, denID, channelID, mine, candidates, onDone }) {
             ) : (
                 <div class="flex items-center gap-2 text-xs text-base-content/70">
                     <span>{editors.length ? `${joinNames(names)} can edit this too.` : 'Only you can edit this.'}</span>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setSharing(true)}>Change</button>
+                    <button type="button" class="btn btn-ghost btn-xs pointer-coarse:btn-sm" onClick={() => setSharing(true)}>Change</button>
                 </div>
             ))}
             {error && <p class="text-xs text-error">{error}</p>}
             <div class="flex gap-2 text-xs">
-                <button type="button" class="btn btn-primary btn-xs" onClick={save} disabled={busy}>Save</button>
-                <button type="button" class="btn btn-ghost btn-xs" onClick={onDone}>Cancel</button>
-                <span class="cursor-default select-none self-center text-base-content/50">Enter to save, Escape to cancel</span>
+                <button type="button" class="btn btn-primary btn-xs pointer-coarse:btn-sm" onClick={save} disabled={busy}>Save</button>
+                <button type="button" class="btn btn-ghost btn-xs pointer-coarse:btn-sm" onClick={onDone}>Cancel</button>
+                {!touch && <span class="cursor-default select-none self-center text-base-content/50">Enter to save, Escape to cancel</span>}
             </div>
         </div>
     );
@@ -1201,15 +1263,15 @@ function EditorList({ candidates, selected, onChange }) {
     return (
         <div class="flex flex-col gap-1">
             {candidates.length > 8 && (
-                <input class="input input-sm w-full" placeholder="Find someone" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
+                <input class="input input-sm w-full" placeholder="Find someone" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} {...PLAIN} />
             )}
             <ul class="flex max-h-32 flex-wrap gap-x-4 gap-y-1 overflow-y-auto" aria-label="Members who can edit">
                 {shown.map((c) => {
                     const on = selected.includes(c.id);
                     return (
                         <li key={c.id}>
-                            <label class="flex cursor-pointer items-center gap-1.5 text-sm">
-                                <input type="checkbox" class="checkbox checkbox-xs" checked={on} disabled={!on && full}
+                            <label class="flex min-h-6 cursor-pointer items-center gap-1.5 text-sm pointer-coarse:min-h-11 pointer-coarse:gap-2">
+                                <input type="checkbox" class="checkbox checkbox-xs pointer-coarse:checkbox-sm" checked={on} disabled={!on && full}
                                     onChange={() => onChange(on ? selected.filter((id) => id !== c.id) : [...selected, c.id])} />
                                 {c.display_name}
                             </label>
@@ -1222,14 +1284,17 @@ function EditorList({ candidates, selected, onChange }) {
     );
 }
 
-function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping }) {
+function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
     const [sharing, setSharing] = useState(false);
     // The + menu, and the guide to writing a message (M3.3).
     const [adding, setAdding] = useState(false);
     const [guide, setGuide] = useState(false);
+    // focused says the box has the focus, which on a touch screen brings
+    // its keyboard up.
+    const [focused, setFocused] = useState(false);
     useEffect(() => {
-        if (!adding) return undefined;
+        if (!adding || narrow) return undefined;
         const away = (e) => {
             if (!e.target.closest?.('[data-compose-menu]')) setAdding(false);
         };
@@ -1242,7 +1307,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
             document.removeEventListener('pointerdown', away);
             document.removeEventListener('keydown', escape);
         };
-    }, [adding]);
+    }, [adding, narrow]);
     const box = useRef(null);
     const picker = useRef(null);
     const lastTyping = useRef(0);
@@ -1257,8 +1322,9 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     const length = [...text].length;
     const uploading = files.some((f) => (!f.result && !f.error) || f.switching);
     const failed = files.some((f) => f.error);
+    const something = !!text.trim() || files.length > 0;
     function submit() {
-        if ((!text.trim() && files.length === 0) || length > MAX_TEXT || uploading || failed) return;
+        if (!something || length > MAX_TEXT || uploading || failed) return;
         onSend(text);
         setText('');
         setSharing(false);
@@ -1272,7 +1338,18 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
             onTyping();
         }
     }
+    function attach() {
+        setAdding(false);
+        picker.current?.click();
+    }
+    function share() {
+        setAdding(false);
+        setSharing(true);
+    }
     const typers = typingLine(typing.map((m) => m.display_name));
+    // While a touch screen's keyboard is up, the box stops growing sooner,
+    // so the list keeps room above it.
+    const lines = Math.min(touch && focused ? 5 : 8, text.split('\n').length);
     // At 73px, a single line's composer lines up with the member's panel
     // beside it, at the foot of the channel list.
     return (
@@ -1292,35 +1369,39 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                 )}
                 {length > MAX_TEXT - 500 && <span class={`rounded bg-base-100 px-1 ${length > MAX_TEXT ? 'text-error' : ''}`}>{length} / {MAX_TEXT}</span>}
             </div>
-            {replyTo && (
-                <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
-                    <span class="min-w-0 truncate">
-                        Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} locked={replyTo.locked} />
-                    </span>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={onCancelReply} aria-label="Cancel reply">✕</button>
-                </div>
-            )}
-            {files.length > 0 && (
-                <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
-                    {files.map((f) => (
-                        <FileChip key={f.key} denID={denID} f={f} limits={limits} onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
-                    ))}
-                </ul>
-            )}
-            {sharing ? (
-                <div class="mb-2 flex flex-col gap-1 rounded border border-base-300 p-2">
-                    <div class="flex items-center justify-between gap-2 text-xs text-base-content/70">
-                        <span>Who else can edit this message? They can also tick its boxes: lines that start with [ ].</span>
-                        <button type="button" class="btn btn-ghost btn-xs" onClick={() => setSharing(false)}>Done</button>
+            {/* What stands above the box scrolls within a cap on a touch
+                screen, so its keyboard leaves the list room. */}
+            <div class="pointer-coarse:max-h-[30vh] pointer-coarse:overflow-y-auto">
+                {replyTo && (
+                    <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
+                        <span class="min-w-0 truncate">
+                            Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} locked={replyTo.locked} />
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={onCancelReply} aria-label="Cancel reply">✕</button>
                     </div>
-                    <EditorList candidates={candidates} selected={editors} onChange={onEditors} />
-                </div>
-            ) : editors.length > 0 && (
-                <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
-                    <span class="min-w-0 truncate">{joinNames(editors.map((id) => name(candidates.find((c) => c.id === id))))} can edit this too</span>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => setSharing(true)}>Change</button>
-                </div>
-            )}
+                )}
+                {files.length > 0 && (
+                    <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
+                        {files.map((f) => (
+                            <FileChip key={f.key} denID={denID} f={f} limits={limits} onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
+                        ))}
+                    </ul>
+                )}
+                {sharing ? (
+                    <div class="mb-2 flex flex-col gap-1 rounded border border-base-300 p-2">
+                        <div class="flex items-center justify-between gap-2 text-xs text-base-content/70">
+                            <span>Who else can edit this message? They can also tick its boxes: lines that start with [ ].</span>
+                            <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={() => setSharing(false)}>Done</button>
+                        </div>
+                        <EditorList candidates={candidates} selected={editors} onChange={onEditors} />
+                    </div>
+                ) : editors.length > 0 && (
+                    <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
+                        <span class="min-w-0 truncate">{joinNames(editors.map((id) => name(candidates.find((c) => c.id === id))))} can edit this too</span>
+                        <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={() => setSharing(true)}>Change</button>
+                    </div>
+                )}
+            </div>
             <div class="flex items-end gap-2">
                 <div class="relative" data-compose-menu>
                     <button type="button" class={`btn btn-ghost btn-field btn-square h-12 w-12 ${adding ? 'btn-active' : ''}`} aria-label="Add to this message"
@@ -1329,32 +1410,35 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                             <path d="M8 3v10M3 8h10" />
                         </svg>
                     </button>
-                    {adding && (
+                    {adding && !narrow && (
                         <ul role="menu" class="menu absolute bottom-full left-0 z-20 mb-1 w-56 rounded-box bg-base-100 p-1 shadow">
                             <li role="none">
-                                <button type="button" role="menuitem" disabled={files.length >= MAX_ATTACHMENTS}
-                                    onClick={() => { setAdding(false); picker.current?.click(); }}>
-                                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                                        <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
-                                    </svg>
+                                <button type="button" role="menuitem" class="pointer-coarse:min-h-11" disabled={files.length >= MAX_ATTACHMENTS} onClick={attach}>
+                                    <AttachIcon />
                                     Attach files
                                 </button>
                             </li>
                             <li role="none">
-                                <button type="button" role="menuitem" class={editors.length ? 'text-primary' : ''}
-                                    onClick={() => { setAdding(false); setSharing(true); }}>
-                                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                                        <circle cx="6" cy="5" r="2.5" />
-                                        <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
-                                        <circle cx="11.5" cy="5.5" r="2" />
-                                        <path d="M11 9.6c2 .2 3.5 1.9 3.5 4" />
-                                    </svg>
+                                <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${editors.length ? 'text-primary' : ''}`} onClick={share}>
+                                    <EditorsIcon />
                                     Let others edit
                                 </button>
                             </li>
                         </ul>
                     )}
                 </div>
+                {adding && narrow && (
+                    <Sheet label="Add to this message" onClose={() => setAdding(false)}>
+                        <SheetRow disabled={files.length >= MAX_ATTACHMENTS} onClick={attach}>
+                            <AttachIcon />
+                            Attach files
+                        </SheetRow>
+                        <SheetRow onClick={share}>
+                            <EditorsIcon />
+                            <span class={editors.length ? 'text-primary' : ''}>Let others edit</span>
+                        </SheetRow>
+                    </Sheet>
+                )}
                 <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {
                     onAddFiles(e.currentTarget.files);
                     e.currentTarget.value = '';
@@ -1363,9 +1447,12 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                     <textarea
                         ref={box}
                         class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-10"
-                        rows={Math.min(8, text.split('\n').length)}
+                        rows={lines}
                         placeholder={placeholder}
+                        enterkeyhint={touch ? 'enter' : 'send'}
                         value={text}
+                        onFocus={() => setFocused(true)}
+                        onBlur={() => setFocused(false)}
                         onPaste={(e) => {
                             if (e.clipboardData?.files?.length) {
                                 e.preventDefault();
@@ -1374,7 +1461,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                         }}
                         onInput={(e) => input(e.currentTarget.value)}
                         onKeyDown={(e) => {
-                            if (sends(e)) {
+                            if (sends(e, touch)) {
                                 e.preventDefault();
                                 submit();
                             } else if (e.key === 'Escape' && replyTo) {
@@ -1387,21 +1474,61 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                     ></textarea>
                     {/* The guide to writing sits in the box's corner, by the last line. */}
                     <button type="button"
-                        class="absolute bottom-4 right-3 flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px] leading-none text-base-content/50 hover:text-base-content"
+                        class="absolute bottom-3 right-2 flex h-6 w-6 items-center justify-center rounded-full text-base-content/50 hover:text-base-content touch-room"
                         aria-label="How to write a message" title="How to write a message" onClick={() => setGuide(true)}>
-                        ?
+                        <span class="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px] leading-none" aria-hidden="true">?</span>
                     </button>
                 </div>
+                {/* A touch screen's keyboard has no Shift, so ↵ starts a line
+                    and this sends; pressing it leaves the keyboard up. */}
+                {touch && something && (
+                    <button type="button" class="btn btn-primary btn-square h-12 w-12" aria-label="Send"
+                        disabled={length > MAX_TEXT || uploading || failed}
+                        onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={submit}>
+                        <SendIcon />
+                    </button>
+                )}
             </div>
-            {guide && <WritingGuide onClose={() => setGuide(false)} />}
+            {guide && <WritingGuide touch={touch} onClose={() => setGuide(false)} />}
         </div>
+    );
+}
+
+function AttachIcon() {
+    return (
+        <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
+        </svg>
+    );
+}
+
+function EditorsIcon() {
+    return (
+        <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="6" cy="5" r="2.5" />
+            <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
+            <circle cx="11.5" cy="5.5" r="2" />
+            <path d="M11 9.6c2 .2 3.5 1.9 3.5 4" />
+        </svg>
+    );
+}
+
+// SendIcon is a paper plane, flying right.
+function SendIcon() {
+    return (
+        <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+            <path d="M2 2.5l12 5.5-12 5.5 2-5.5z" />
+            <path d="M4 8h5" stroke-linecap="round" />
+        </svg>
     );
 }
 
 // WritingGuide explains how a message is written: sending, the markdown
 // subset with each example rendered as the list shows it, mentions, links
-// and links to messages, task lines, editing together and files.
-function WritingGuide({ onClose }) {
+// and links to messages, task lines, editing together and files. A touch
+// screen gets its own words for sending, and for the menu its long press
+// opens (M13.2).
+function WritingGuide({ touch, onClose }) {
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && onClose();
         document.addEventListener('keydown', escape);
@@ -1413,11 +1540,17 @@ function WritingGuide({ onClose }) {
             <div class="flex flex-col gap-4 text-sm">
                 <section class="flex flex-col gap-1">
                     <h3 class="font-semibold">Sending</h3>
-                    <p>
-                        {kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line, as {kbd('Enter')} does inside a code block,
-                        and {kbd('Ctrl')}+{kbd('Enter')} sends from anywhere.
-                    </p>
-                    <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
+                    {touch ? (
+                        <p>The button beside the box sends, once there's something to send, and ↵ on the keyboard starts a new line.</p>
+                    ) : (
+                        <>
+                            <p>
+                                {kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line, as {kbd('Enter')} does inside a code block,
+                                and {kbd('Ctrl')}+{kbd('Enter')} sends from anywhere.
+                            </p>
+                            <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
+                        </>
+                    )}
                     <p>A message holds up to 4,000 characters. One taller than about 16 lines shows folded, and readers open the rest.</p>
                 </section>
                 <section class="flex flex-col gap-1">
@@ -1441,8 +1574,8 @@ function WritingGuide({ onClose }) {
                         out, and writes YouTube, Reddit, X and Amazon links in a short form.
                     </p>
                     <p>
-                        Copy link, in a message's ⋯ menu, copies a link to that message. Pasted in a message, in this den or another, it shows
-                        the channel it's in, and opens the message for anyone who can see it.
+                        Copy link, in {touch ? 'the menu a long press on a message opens' : "a message's ⋯ menu"}, copies a link to that message.
+                        Pasted in a message, in this den or another, it shows the channel it's in, and opens the message for anyone who can see it.
                     </p>
                 </section>
                 <section class="flex flex-col gap-1">
@@ -1476,21 +1609,18 @@ const GUIDE_FORMATS = [
 ];
 
 // MetadataRemoved marks a file whose metadata came out before it left this
-// computer, and says what that can be on hover or focus.
+// computer, and says what that can be on hover, focus or a tap.
 function MetadataRemoved({ id }) {
     return (
-        <span class="tooltip">
-            <span id={id} role="tooltip" class="tooltip-content rounded-lg px-3 py-2 text-left">
-                Metadata was removed from this file. That can include where and when it was made, and the phone or camera that made it.
-            </span>
-            <span tabIndex={0} role="img" aria-label="Metadata removed" aria-describedby={id} class="flex cursor-help text-success">
-                <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-                    stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="8" cy="8" r="6.5" />
-                    <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
-                </svg>
-            </span>
-        </span>
+        <Tip id={id} label="Metadata removed" trigger={
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-success" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.5" />
+                <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
+            </svg>
+        }>
+            Metadata was removed from this file. That can include where and when it was made, and the phone or camera that made it.
+        </Tip>
     );
 }
 
@@ -1540,7 +1670,7 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
                     <>
                         <p class="flex items-center gap-1 text-base-content/60">
                             {versions ? (
-                                <button type="button" class="link link-hover cursor-pointer whitespace-nowrap" onClick={onCompare}
+                                <button type="button" class="link link-hover inline-flex min-h-6 cursor-pointer items-center whitespace-nowrap" onClick={onCompare}
                                     title={`Compare it with the ${versions.sent === 'smaller' ? 'full size' : 'smaller copy'}`}>
                                     {formatSize(f.result.size)} · {sentLabel(versions)}
                                 </button>
@@ -1561,7 +1691,7 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
                         <p class="truncate text-base-content/60">{counting}</p>
                         <progress class="progress progress-primary h-1.5 w-full" value={Math.round(following.done * 100)} max="100"></progress>
                         {following.stage === 'copying' && fullFits && !askedFull && (
-                            <button type="button" class="link link-hover cursor-pointer text-base-content/60" onClick={sendFull}>
+                            <button type="button" class="link link-hover min-h-6 cursor-pointer text-base-content/60" onClick={sendFull}>
                                 Send full size instead
                             </button>
                         )}
@@ -1573,7 +1703,7 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
                     <progress class="progress progress-primary h-1.5 w-full" value={Math.round(f.progress * 100)} max="100"></progress>
                 )}
             </div>
-            <button type="button" class="btn btn-ghost btn-xs btn-square" onClick={onRemove} aria-label={`Remove ${f.name}`}>✕</button>
+            <button type="button" class="btn btn-ghost btn-xs btn-square relative touch-room" onClick={onRemove} aria-label={`Remove ${f.name}`}>✕</button>
         </li>
     );
 }

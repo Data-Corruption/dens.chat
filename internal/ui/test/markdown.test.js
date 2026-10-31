@@ -279,3 +279,14 @@ test('Enter sends outside a code block, Shift+Enter never does, and Ctrl+Enter a
     assert.equal(key('hi|', { isComposing: true }), false, 'an input method composing keeps Enter');
     assert.equal(sends({ key: 'a', currentTarget: { value: '', selectionStart: 0 } }), false);
 });
+
+test("with a finger, whose keyboard has no Shift, ↵ starts a line, and only Ctrl+Enter sends", () => {
+    const key = (marked, mods = {}) => {
+        const value = marked.replace('|', '');
+        return sends({ key: 'Enter', isComposing: false, currentTarget: { value, selectionStart: marked.indexOf('|') }, ...mods }, true);
+    };
+    assert.equal(key('hi|'), false);
+    assert.equal(key('```\ncode\n```|'), false);
+    assert.equal(key('hi|', { ctrlKey: true }), true, "a tablet's keyboard");
+    assert.equal(key('hi|', { metaKey: true }), true);
+});

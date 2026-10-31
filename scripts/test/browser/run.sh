@@ -26,8 +26,9 @@
 #                               and removing it from this one once its server is gone
 #   fixes BROWSER               M11.1: the small fixes: dialogs, a key's capture, the two tabs,
 #                               the New divider, the message box, folding groups, a late-sound video
-#   messages BROWSER            M11.2: each message's ⋯ menu by keyboard and touch, its delete
-#                               dialog, and links to messages, in a den and from another
+#   messages BROWSER            M11.2: each message's ⋯ menu by keyboard, and by touch through a long
+#                               press (M13.2), its delete dialog, and links to messages, in a den and
+#                               from another
 #   talk BROWSER                M11.3: push to talk ringing in silence for the call, a watched share
 #                               in a window of its own and back, and the logs downloaded
 #   callaudio BROWSER BROWSER   M12.2: a call played as Android's app plays it, through a context
@@ -38,14 +39,17 @@
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
-#                               given); and getting around the panes by swipes, taps and Back (M13.1).
-#                               PART is member, around, call, owner or before; all unless given
+#                               given), failing on a control under 24 pixels, and with a finger a list's
+#                               row under 44 or a control only a hover shows; getting around the panes by
+#                               swipes, taps and Back (M13.1); and touch, a long press, a sheet's swipe
+#                               down, three lines sent and a tip's tap (M13.2). PART is member, around,
+#                               touch, call, owner or before; all unless given
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,44p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,48p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

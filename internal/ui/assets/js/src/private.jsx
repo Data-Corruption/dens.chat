@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { CopyButton, DocsTip, ErrorText, Field, SubmitButton, TextInput, clock, day, useAction } from './components.jsx';
+import { CopyButton, DocsTip, ErrorText, Field, PLAIN, SubmitButton, TextInput, clock, day, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { sameDigits } from './private.js';
 
@@ -30,7 +30,7 @@ function DigitsInput({ value, onInput, label }) {
 function WhereToCompare({ name }) {
     return (
         <details class="text-sm">
-            <summary class="cursor-pointer select-none text-base-content/70">Where should we compare?</summary>
+            <summary class="min-h-6 cursor-pointer select-none py-0.5 text-base-content/70">Where should we compare?</summary>
             <div class="mt-1 flex flex-col gap-1 text-base-content/70">
                 <p>Best first:</p>
                 <ol class="list-decimal pl-6">
@@ -449,7 +449,7 @@ export function KeyNeeded({ den, onSeal }) {
                     });
                 }}>
                     <Field label="DM recovery key" hint="The one you saved when you joined, in groups of four. Case doesn't matter.">
-                        <textarea class="textarea w-full font-mono" rows="2" value={seal} onInput={(e) => setSeal(e.currentTarget.value)} required></textarea>
+                        <textarea class="textarea w-full font-mono" rows="2" value={seal} onInput={(e) => setSeal(e.currentTarget.value)} required {...PLAIN}></textarea>
                     </Field>
                     <ErrorText message={act.error} />
                     <div class="flex gap-2">

@@ -8,11 +8,14 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
+import { Tip } from './components.jsx';
 import { ICON, SpeakerIcon } from './icons.jsx';
+import { useNarrow } from './nav.js';
 import { rank } from './people.jsx';
 import { NO_SHARING, canShare } from './platform.js';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
+import { Sheet, SheetRow } from './sheet.jsx';
 import {
     byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, rings, setDeafened, setMuted, setPreview, setVolume,
     startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
@@ -120,20 +123,23 @@ function ShareRow({ call, share, den }) {
     const soundless = share.wanted
         ? "This share has no sound: this browser didn't share any. Chromium-based browsers share a tab's sound, and on Windows the whole system's."
         : 'This share has no sound: sharing sound is off in the Voice settings.';
-    // The sidebar is narrow, so who watches is a count, with their names on
-    // hover.
+    // The sidebar is narrow, so who watches is a count, with their names in
+    // its tip.
     const watching = viewers.length ? `Watching: ${viewers.join(', ')}` : 'Nobody is watching yet';
     return (
         <div class="flex h-8 items-center gap-2 pl-2 pr-1 text-sm">
             <span class="badge badge-error badge-sm shrink-0 font-semibold">LIVE</span>
-            <span class="flex items-center gap-1 text-base-content/70" title={watching} role="status" aria-label={watching}>
-                <EyeIcon />
-                <span class="tabular-nums">{viewers.length}</span>
-            </span>
+            <span role="status" class="sr-only">{watching}</span>
+            <Tip id="share-watching" label={watching} trigger={
+                <span class="flex items-center gap-1 text-base-content/70">
+                    <EyeIcon />
+                    <span class="tabular-nums">{viewers.length}</span>
+                </span>
+            }>
+                {watching}
+            </Tip>
             <span class="flex-1"></span>
-            {!share.sound && (
-                <span class="shrink-0 text-base-content/60" title={soundless} aria-label="no sound"><SoundOffIcon /></span>
-            )}
+            {!share.sound && <Tip id="share-sound" label="no sound" trigger={<SoundOffIcon />}>{soundless}</Tip>}
             <button type="button" class={`btn btn-ghost btn-xs btn-square shrink-0 ${share.preview ? 'text-success' : ''}`} aria-pressed={share.preview}
                 title={share.preview ? 'Hide your screen from the player' : 'Show your screen in the player'}
                 aria-label={share.preview ? 'Hide your screen from the player' : 'Show your screen in the player'}
@@ -177,7 +183,7 @@ function ShareButton({ call, share, den }) {
 }
 
 // CallControls are the call, in this den or another, in a row: a speaker
-// for whether it's connected, which says where on hover, and the buttons to
+// for whether it's connected, whose tip says where, and the buttons to
 // mute, deafen, open the voice settings and leave, spread evenly. labeled
 // spells out where beside the speaker, for pages with room for it.
 function CallControls({ denID, call, share, den, labeled }) {
@@ -215,12 +221,9 @@ function CallControls({ denID, call, share, den, labeled }) {
     }
     return (
         <div class="flex items-center justify-between">
-            <span class={`group relative flex h-8 w-8 shrink-0 items-center justify-center ${color}`}>
-                <SpeakerIcon />
+            <span class={`flex h-8 w-8 shrink-0 items-center justify-center ${color}`}>
                 <span role="status" class="sr-only">{said}</span>
-                <span aria-hidden="true" class="pointer-events-none absolute bottom-full left-0 z-20 mb-2 hidden w-max max-w-52 rounded-lg bg-neutral px-2 py-1 text-xs text-neutral-content shadow group-hover:block">
-                    {said}
-                </span>
+                <Tip id="call-status" side="top" label={said} trigger={<span class={color}><SpeakerIcon /></span>}>{said}</Tip>
             </span>
             <ShareButton call={call} share={share} den={den} />
             {buttons}
@@ -228,22 +231,31 @@ function CallControls({ denID, call, share, den, labeled }) {
     );
 }
 
-// LiveMark marks a member who shares their screen, with who watches it on
-// hover. In the page's own call it watches the share, or stops watching it;
-// elsewhere it joins the call and watches. The member's own mark shows
-// their screen in the player, or hides it, while this page shares it;
-// previewing says whether it shows.
+// LiveMark marks a member who shares their screen, with who watches it in
+// its title, or in its tip where it does nothing else. In the page's own
+// call it watches the share, or stops watching it; elsewhere it joins the
+// call and watches. The member's own mark shows their screen in the
+// player, or hides it, while this page shares it; previewing says whether
+// it shows.
 function LiveMark({ denID, call, member, name, mine, inCall, label, watching, members, previewing }) {
     const viewers = watchersOf(call, member.id).map((id) => members.get(id)?.display_name || 'Someone');
     const seen = viewers.length ? ` Watching: ${viewers.join(', ')}.` : '';
     const style = `badge badge-xs shrink-0 font-semibold ${watching || (mine && previewing) ? 'badge-error' : 'badge-error badge-outline'}`;
-    if (mine && !inCall) return <span class={style} title={`You're sharing your screen.${seen}`}>LIVE</span>;
+    // The mark is small, and its button reaches 24 pixels round it.
+    const mark = 'relative inline-flex min-h-6 shrink-0 cursor-pointer items-center touch-room';
+    if (mine && !inCall) {
+        return (
+            <Tip id={`live-${member.id}`} label="You're sharing your screen" trigger={<span class={style}>LIVE</span>}>
+                You're sharing your screen.{seen}
+            </Tip>
+        );
+    }
     if (mine) {
         const what = previewing ? 'Hide your screen from the player' : 'Show your screen in the player';
         return (
-            <button type="button" class={`${style} cursor-pointer`} title={`You're sharing your screen. ${what}.${seen}`} aria-label={what}
+            <button type="button" class={mark} title={`You're sharing your screen. ${what}.${seen}`} aria-label={what}
                 aria-pressed={previewing} onClick={() => setPreview(!previewing)}>
-                LIVE
+                <span class={style}>LIVE</span>
             </button>
         );
     }
@@ -254,10 +266,18 @@ function LiveMark({ denID, call, member, name, mine, inCall, label, watching, me
         else watchShare(member.id, name);
     }
     return (
-        <button type="button" class={`${style} cursor-pointer`} title={`${what}.${seen}`} aria-label={what} aria-pressed={inCall ? watching : undefined}
+        <button type="button" class={mark} title={`${what}.${seen}`} aria-label={what} aria-pressed={inCall ? watching : undefined}
             onClick={act}>
-            LIVE
+            <span class={style}>LIVE</span>
         </button>
+    );
+}
+
+// CallMenuRow is an action in the menu of a member in the call, in a wider
+// window; the phone layout's sheet has SheetRows.
+function CallMenuRow({ danger, onClick, children }) {
+    return (
+        <button type="button" class={`btn btn-ghost btn-xs justify-start pointer-coarse:btn-sm ${danger ? 'text-error' : ''}`} onClick={onClick}>{children}</button>
     );
 }
 
@@ -365,9 +385,11 @@ function LeaveIcon() {
 export function CallMembers({ denID, call, members, me, speaking, volumes, onProfile, inCall, label, watched, previewing }) {
     const [menu, setMenu] = useState('');
     const [error, setError] = useState('');
-    // An open menu closes on a click anywhere else, or on Escape.
+    const narrow = useNarrow();
+    // An open menu closes on a click anywhere else, or on Escape; on the
+    // phone layout it's a sheet, which closes itself (M13.2).
     useEffect(() => {
-        if (!menu) return undefined;
+        if (!menu || narrow) return undefined;
         const away = (e) => {
             if (!e.target.closest?.('[data-call-menu]')) setMenu('');
         };
@@ -380,7 +402,7 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
             document.removeEventListener('pointerdown', away);
             document.removeEventListener('keydown', escape);
         };
-    }, [menu]);
+    }, [menu, narrow]);
     if (!call?.members?.length) return null;
     async function act(id, what, body) {
         setError('');
@@ -391,10 +413,34 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
             setError(e.message);
         }
     }
+    // options are what the menu of a member other than this one holds: how
+    // loud they play here, and for staff who outrank them, muting them for
+    // everyone and disconnecting them.
+    function options(m, name, pct, moderate, Row) {
+        return (
+            <>
+                <label class={`flex items-center gap-2 ${narrow ? 'h-12 px-4 text-sm' : 'min-h-6 text-xs'}`} title="How loud they play for you">
+                    <span>Volume</span>
+                    <input type="range" class="range range-md min-w-0 flex-1" min="0" max="100" step="5" value={pct}
+                        aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
+                        onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
+                    <span class="w-9 text-right tabular-nums">{pct}%</span>
+                </label>
+                {moderate && (
+                    <>
+                        <Row onClick={() => act(m.id, 'voice-mute', { muted: !m.staff_muted })}>
+                            {m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone'}
+                        </Row>
+                        <Row danger onClick={() => act(m.id, 'disconnect')}>Disconnect from the call</Row>
+                    </>
+                )}
+            </>
+        );
+    }
     return (
         <>
             {/* Rings stand 3px out from each avatar, so rows keep 8px apart. */}
-            <ul class="mb-2 ml-8 mt-1 flex flex-col gap-2" aria-label="In the call">
+            <ul class="mb-2 ml-8 mt-1 flex flex-col gap-2 pointer-coarse:gap-0" aria-label="In the call">
                 {byName(call.members, members).map((m) => {
                     const member = members.get(m.id);
                     const name = member?.display_name || 'Unknown member';
@@ -405,8 +451,8 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                     const moderate = me && member && rank(me.role) > rank(member.role);
                     const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
                     return (
-                        <li key={m.id} class="group relative flex min-w-0 items-center gap-1.5 text-sm text-base-content/80">
-                            <button type="button" class="flex min-w-0 items-center gap-1.5 rounded pr-1 text-left hover:text-base-content disabled:cursor-default"
+                        <li key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11">
+                            <button type="button" class="flex min-w-0 flex-1 items-center gap-1.5 self-stretch rounded pr-1 text-left hover:text-base-content disabled:cursor-default"
                                 disabled={!member} onClick={() => onProfile?.(member)}>
                                 {/* A block of the avatar's own size, so the ring is round. */}
                                 <span class={`inline-flex shrink-0 rounded-full ring-2 ring-offset-1 ring-offset-base-200 ${talking ? 'ring-success' : 'ring-transparent'}`}>
@@ -415,52 +461,47 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                                 <span class="truncate">{name}</span>
                             </button>
                             {talking && <span class="sr-only">speaking</span>}
-                            {/* Deafening mutes too, so it shows both (M11). */}
+                            {/* Deafening mutes too, so it shows both (M11). Each mark's
+                                tip says what it means (M13.2). */}
                             {(m.muted || m.deafened) && (
-                                <span class="text-base-content/60" title="Muted" aria-label="muted"><MicIcon off size="h-3.5 w-3.5" /></span>
+                                <Tip id={`muted-${m.id}`} label="muted" trigger={<MicIcon off size="h-3.5 w-3.5" />}>Muted</Tip>
                             )}
                             {m.deafened && (
-                                <span class="text-base-content/60" title="Deafened: hears nothing of the call" aria-label="deafened"><HeadphonesIcon off size="h-3.5 w-3.5" /></span>
+                                <Tip id={`deafened-${m.id}`} label="deafened" trigger={<HeadphonesIcon off size="h-3.5 w-3.5" />}>
+                                    Deafened: hears nothing of the call
+                                </Tip>
                             )}
                             {m.staff_muted && (
-                                <span class="flex items-center gap-0.5 text-xs text-warning" title="Muted by staff: nobody hears them" aria-label="muted by staff">
-                                    <MicIcon off size="h-3.5 w-3.5" />
-                                    staff
-                                </span>
+                                <Tip id={`staff-muted-${m.id}`} label="muted by staff" trigger={
+                                    <span class="flex items-center gap-0.5 text-xs text-warning"><MicIcon off size="h-3.5 w-3.5" />staff</span>
+                                }>
+                                    Muted by staff: nobody hears them
+                                </Tip>
                             )}
                             {m.sharing && (
                                 <LiveMark denID={denID} call={call} member={m} name={name} mine={m.id === me?.id} inCall={inCall} label={label}
                                     watching={!!watched?.has(m.id)} members={members} previewing={previewing} />
                             )}
                             {other && pct < 100 && (
-                                <span class="text-xs text-base-content/50" title={pct === 0 ? 'Muted for you' : `Plays at ${pct}% for you`}>{pct}%</span>
+                                <Tip id={`volume-${m.id}`} label={pct === 0 ? 'Muted for you' : `Plays at ${pct}% for you`}
+                                    trigger={<span class="text-xs text-base-content/50">{pct}%</span>}>
+                                    {pct === 0 ? 'Muted for you' : `Plays at ${pct}% for you`}
+                                </Tip>
                             )}
                             {other && (
-                                <button type="button" class="btn btn-ghost btn-xs ml-auto opacity-0 focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" data-call-menu
-                                    aria-label={`Options for ${name} in the call`} aria-expanded={menu === m.id}
+                                <button type="button" class="btn btn-ghost btn-xs relative opacity-0 touch-room focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" data-call-menu
+                                    aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={menu === m.id}
                                     onClick={() => setMenu(menu === m.id ? '' : m.id)}>⋯</button>
                             )}
-                            {other && menu === m.id && (
+                            {other && menu === m.id && !narrow && (
                                 <div class="absolute right-0 top-full z-10 flex w-52 flex-col gap-1 rounded-box bg-base-100 p-2 shadow" data-call-menu>
-                                    <label class="flex items-center gap-2 text-xs" title="How loud they play for you">
-                                        <span>Volume</span>
-                                        <input type="range" class="range range-xs min-w-0 flex-1" min="0" max="100" step="5" value={pct}
-                                            aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
-                                            onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
-                                        <span class="w-9 text-right tabular-nums">{pct}%</span>
-                                    </label>
-                                    {moderate && (
-                                        <>
-                                            <button type="button" class="btn btn-ghost btn-xs justify-start"
-                                                onClick={() => act(m.id, 'voice-mute', { muted: !m.staff_muted })}>
-                                                {m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone'}
-                                            </button>
-                                            <button type="button" class="btn btn-ghost btn-xs justify-start text-error" onClick={() => act(m.id, 'disconnect')}>
-                                                Disconnect from the call
-                                            </button>
-                                        </>
-                                    )}
+                                    {options(m, name, pct, moderate, CallMenuRow)}
                                 </div>
+                            )}
+                            {other && menu === m.id && narrow && (
+                                <Sheet label={`Options for ${name} in the call`} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu('')}>
+                                    {options(m, name, pct, moderate, SheetRow)}
+                                </Sheet>
                             )}
                         </li>
                     );

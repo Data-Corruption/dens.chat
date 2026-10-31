@@ -304,7 +304,7 @@ function VideoTile({ denID, file, box }) {
                         {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
                     </button>
                     <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
-                    <input type="range" class="range range-xs min-w-0 flex-1" min="0" max={duration || 0} step="any" value={time}
+                    <input type="range" class="range range-md min-w-0 flex-1" min="0" max={duration || 0} step="any" value={time}
                         onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
                     {/* The volume shows above the mute button on hover or
                         keyboard focus, at any width (M3.3). */}
@@ -314,7 +314,7 @@ function VideoTile({ denID, file, box }) {
                         </button>
                         <div class="absolute bottom-full left-1/2 hidden -translate-x-1/2 pb-1 group-focus-within/volume:flex group-hover/volume:flex">
                             <div class="flex rounded bg-black/70 px-1 py-2">
-                                <input type="range" class="h-16 w-4 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
+                                <input type="range" class="h-16 w-6 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
                                     step="0.05" value={silent ? 0 : volume} onInput={setLevel} aria-label="Volume" aria-orientation="vertical"
                                     aria-valuetext={`${Math.round((silent ? 0 : volume) * 100)}%`} />
                             </div>

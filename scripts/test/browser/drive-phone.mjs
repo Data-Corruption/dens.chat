@@ -4,19 +4,25 @@
 // and in Firefox with a mouse, as a narrow desktop window; Firefox's
 // viewport goes to 390 through BiDi, since it keeps a window at least 500
 // wide. Each screen's picture and its layout's audit land in
-// ~/shot-phone/<browser>; the walk prints what each audit found. Then, as
-// a member would, getting around (M13.1): swipes between the panes, by
-// touch drags or a touchpad's sideways scroll, taps, and the browser's
-// Back, through the settings, the members, the channel, the list and Home.
+// ~/shot-phone/<browser>, and the check fails on a control under 24
+// pixels, and on a touch screen on a list's row under 44 or a control only
+// a hover shows (M13.2). Then, as a member would, getting around (M13.1):
+// swipes between the panes, by touch drags or a touchpad's sideways
+// scroll, taps, and the browser's Back, through the settings, the
+// members, the channel, the list and Home; and touch (M13.2): a message's
+// actions by a long press, or the ⋯ with a mouse, in a sheet closed by a
+// swipe down and by Back, three lines written and sent, by the send button
+// with a finger, and a tip opened and closed by taps.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
-// The parts are member, around, call, owner and before; all by default.
+// The parts are member, around, touch, call, owner and before; all by
+// default.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, token } from './browsers.mjs';
-import { callScreens, gettingAround, helpers, memberScreens, ownerScreens, waitFor } from './screens.mjs';
+import { audits, callScreens, gettingAround, helpers, memberScreens, ownerScreens, touching, waitFor } from './screens.mjs';
 
 const args = process.argv.slice(2);
 const cut = args.indexOf('--');
@@ -81,6 +87,23 @@ function driver(mode, b, h) {
                 await b.cdp('Page.navigateToHistoryEntry', { entryId: entries[currentIndex - 1].id });
                 await settle();
             },
+            touch: true,
+            async press(x) {
+                const [cx, cy] = await center(x);
+                await b.press(cx, cy);
+                await settle();
+            },
+            async drag([x1, y1], [x2, y2]) {
+                await b.cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y: y1 }] });
+                for (let i = 1; i <= 10; i++) {
+                    await b.cdp('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 + ((x2 - x1) * i) / 10, y: y1 + ((y2 - y1) * i) / 10 }] });
+                    await sleep(16);
+                }
+                await b.cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+                await settle();
+            },
+            type: (text) => b.type(text),
+            enter: () => b.key('Enter'),
         };
     }
     const traverse = async () => {
@@ -121,6 +144,20 @@ function driver(mode, b, h) {
                 await settle();
             },
             back: traverse,
+            touch: true,
+            async press(x) {
+                const [cx, cy] = await center(x);
+                await b.press(cx, cy);
+                await settle();
+            },
+            async drag([x1, y1], [x2, y2]) {
+                await b.bidi('input.performActions', { context: b.context, actions: [{ type: 'pointer', id: 'finger', parameters: { pointerType: 'touch' },
+                    actions: [{ type: 'pointerMove', x: Math.round(x1), y: Math.round(y1) }, { type: 'pointerDown', button: 0 },
+                        { type: 'pointerMove', x: Math.round(x2), y: Math.round(y2), duration: 250 }, { type: 'pointerUp', button: 0 }] }] });
+                await settle();
+            },
+            type: (text) => b.type(text),
+            enter: () => b.key('Enter'),
         };
     }
     return {
@@ -132,29 +169,20 @@ function driver(mode, b, h) {
             await settle();
         },
         back: traverse,
+        touch: false,
+        async hover(x) {
+            const [cx, cy] = await center(x);
+            await b.move(cx, cy);
+            await sleep(300);
+        },
+        async drag([x1, y1], [x2, y2]) {
+            await b.drag(x1, y1, x2, y2);
+            await settle();
+        },
+        type: (text) => b.type(text),
+        enter: () => b.key('Enter'),
+        shiftEnter: () => b.chord(['Shift'], 'Enter'),
     };
-}
-
-// The audits' findings, by screen. Nothing makes the page itself scroll
-// sideways on a den's panes (M13.1); the rest waits for M13.2 and M13.3,
-// which add theirs to what fails.
-function audits(mode, log) {
-    for (const shot of log) {
-        if (shot.failed) {
-            report(false, `${mode}: ${shot.name} wasn't reached: ${shot.failed}`);
-            continue;
-        }
-        const a = shot.audit;
-        if (!a || a.error) continue;
-        const notes = [];
-        if (a.over.length) notes.push(`past the edge: ${a.over.slice(0, 3).join('; ')}`);
-        if (a.small.length) notes.push(`${a.small.length} under 24`);
-        if (a.tight) notes.push(`${a.tight} under 44`);
-        if (a.hoverOnly.length) notes.push(`${a.hoverOnly.length} on hover only`);
-        const panes = /^(\d+-)?(den-list|channel|members|dm|description|video|around)/.test(shot.name);
-        if (panes) report(!a.sideways, `${mode}: ${shot.name}: the page doesn't scroll sideways${notes.length ? `; noted: ${notes.join(', ')}` : ''}`);
-        else console.log(`     ${mode}: ${shot.name}: ${a.sideways ? 'the page scrolls sideways; ' : ''}${notes.join(', ') || 'nothing'}`);
-    }
 }
 
 const ctx = { den, general, random, dm, dm2, lounge, photo: `${HOME}/photos/pixel-2.jpg` };
@@ -164,13 +192,14 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
     fs.rmSync(out, { recursive: true, force: true });
     fs.mkdirSync(out, { recursive: true });
     const log = [];
-    if (want('member') || want('around') || want('call')) {
+    if (want('member') || want('around') || want('touch') || want('call')) {
         const b = await browser(mode, port++, { media: mode === 'chromium' ? true : 'pulse' });
         try {
             await pair(b, BOB);
             const h = helpers(b, `http://localhost:${BOB.port}`, out, 'bob-');
             if (want('member')) await memberScreens(h, ctx);
             if (want('around')) await gettingAround(h, ctx, driver(mode, b, h), report).catch(fail);
+            if (want('touch')) await touching(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('call') && mode === 'chromium') {
                 // Carol, the voice probe, hears bob and shares, for the player.
                 const jar = fs.readFileSync(`${HOME}/jar-${CAROL.instance}`, 'utf8').split('\n').map((l) => l.split('\t'));
@@ -259,6 +288,6 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
         }
     }
     fs.writeFileSync(`${out}/audits.json`, JSON.stringify(log, null, 1));
-    audits(mode, log);
+    audits(mode, log, report, mode !== 'firefox-mouse');
 }
 finish();

@@ -94,7 +94,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                 {kind === 'voice' && (
                     <Field label={`Voice quality: ${bitrate / 1000} kbps`}
                         hint="The most each voice in the call sends. Higher sounds better, and costs more of the den's upload: each member who talks sends it to everyone else in the call. A change reaches a call in progress at once.">
-                        <input type="range" class="range range-sm w-full" min={BITRATE.min} max={BITRATE.max} step={BITRATE.step} value={bitrate}
+                        <input type="range" class="range range-md w-full" min={BITRATE.min} max={BITRATE.max} step={BITRATE.step} value={bitrate}
                             onInput={(e) => setBitrate(Number(e.currentTarget.value))} aria-label="Voice quality" aria-valuetext={`${bitrate / 1000} kbps`} />
                     </Field>
                 )}

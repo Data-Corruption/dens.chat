@@ -8,7 +8,9 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
-import { CopyButton, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater } from './components.jsx';
+import {
+    CopyButton, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater,
+} from './components.jsx';
 import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } from './dendraft.js';
 import { onEvent } from './events.js';
 import { useLayer } from './nav.js';
@@ -265,7 +267,7 @@ function General({ den, draft, base, onEdit }) {
                             ? 'Keep the old address pointing at the den for a while: members who were offline, and invites already sent, find the new one through it.'
                             : 'The address members use to connect.'}>
                         <div class="flex gap-2">
-                            <TextInput type="url" value={draft.url} onInput={(v) => onEdit({ url: v })} required />
+                            <TextInput type="url" value={draft.url} onInput={(v) => onEdit({ url: v })} required {...PLAIN} />
                             <button type="button" class="btn" onClick={test} disabled={check.busy || moved} title={moved ? 'Save the new address first' : undefined}>
                                 {check.busy && <span class="loading loading-spinner loading-sm"></span>}
                                 Test
@@ -316,7 +318,7 @@ function NewAddress({ den }) {
             <p class="font-medium">Den moved?</p>
             <p class="text-sm text-base-content/70">If the owner gave {den.name} a new address, enter it. Dens only uses it if the den there proves it's the same one.</p>
             <div class="flex gap-2">
-                <TextInput value={url} onInput={setURL} placeholder="https://den.example.com" autocomplete="off" required />
+                <TextInput type="url" value={url} onInput={setURL} placeholder="https://den.example.com" autocomplete="off" required {...PLAIN} />
                 <SubmitButton busy={act.busy}>Use it</SubmitButton>
             </div>
             <ErrorText message={act.error} />
@@ -364,7 +366,7 @@ function Invites({ denID }) {
                     </select>
                 </Field>
                 <Field label="Max uses">
-                    <input class="input w-24" type="number" min="1" max="100" step="1" value={maxUses} onInput={(e) => setMaxUses(e.currentTarget.value)}
+                    <input class="input w-24" type="number" inputmode="numeric" min="1" max="100" step="1" value={maxUses} onInput={(e) => setMaxUses(e.currentTarget.value)}
                         required />
                 </Field>
                 <SubmitButton busy={create.busy}>Create invite</SubmitButton>
@@ -449,11 +451,13 @@ function Bans({ denID, role }) {
     );
 }
 
-// Unit is a number field with its unit inside it.
+// Unit is a number field with its unit inside it, which asks a phone's
+// keyboard for digits, and a point where its step has a fraction.
 function Unit({ unit, value, onInput, ...rest }) {
     return (
         <label class="input w-full">
-            <input type="number" class="grow" value={value} onInput={(e) => onInput(e.currentTarget.value)} {...rest} />
+            <input type="number" inputmode={Number.isInteger(Number(rest.step)) ? 'numeric' : 'decimal'} class="grow" value={value}
+                onInput={(e) => onInput(e.currentTarget.value)} {...rest} />
             <span class="label">{unit}</span>
         </label>
     );
@@ -511,7 +515,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
                 <div class="flex flex-wrap items-center gap-2">
                     <input id="auto-delete" type="checkbox" class="toggle" checked={draft.retain} onChange={(e) => onEdit({ retain: e.currentTarget.checked })} />
                     <label for="auto-delete" class="cursor-pointer">Auto-delete messages after</label>
-                    <input type="number" class="input input-sm w-20" min="1" max={String(MAX_RETENTION)} step="1" value={draft.days}
+                    <input type="number" inputmode="numeric" class="input input-sm w-20" min="1" max={String(MAX_RETENTION)} step="1" value={draft.days}
                         disabled={!draft.retain} aria-label="Days to keep messages" onInput={(e) => onEdit({ days: e.currentTarget.value })} />
                     <span>days</span>
                 </div>
@@ -743,7 +747,7 @@ function ChangePassword({ den, onDone }) {
             <p class="text-sm text-base-content/70">Signs out your other devices.</p>
             {withCode ? (
                 <Field label="Recovery code" hint="One of the codes you saved. It works once.">
-                    <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" />
+                    <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" {...PLAIN} />
                 </Field>
             ) : (
                 <Field label="Current password">

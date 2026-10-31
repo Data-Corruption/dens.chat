@@ -44,7 +44,7 @@ export function MemberList({ members, online, onProfile }) {
                         <li key={m.id}>
                             <button
                                 type="button"
-                                class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-300/60 ${dim ? 'opacity-60' : ''}`}
+                                class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11 ${dim ? 'opacity-60' : ''}`}
                                 onClick={() => onProfile(m)}
                             >
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />

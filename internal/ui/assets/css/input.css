@@ -40,6 +40,28 @@
     box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
 }
 
+/* Room around a small control for a finger (M13.2): on a coarse pointer
+   its target reaches at least 44 pixels each way, centered on it, without
+   growing to the eye. The control is positioned, relative or absolute, to
+   hold the room, and stands clear of other controls. */
+@utility touch-room {
+    @media (pointer: coarse) {
+        &::after {
+            content: "";
+            position: absolute;
+            inset: min(0px, calc((100% - 2.75rem) / 2));
+        }
+    }
+}
+
+/* A label that holds its checkbox or radio is what a finger or a mouse
+   aims at, so it's at least 24 pixels tall, WCAG 2.2's minimum (M13.2). */
+@layer base {
+    label.label:has(input) {
+        min-height: 1.5rem;
+    }
+}
+
 /* A role's badge, with a badge's color (badge-warning, badge-info): its
    text in the page's own text color, legible in every theme as many
    themes' role colors aren't, on a tint of the role's color, which a dot

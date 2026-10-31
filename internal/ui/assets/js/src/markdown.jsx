@@ -298,7 +298,7 @@ function Task({ n, checked, text, onTask, children }) {
         <div class="flex items-start gap-2">
             <input
                 type="checkbox"
-                class="checkbox checkbox-sm mt-0.5"
+                class="checkbox checkbox-md"
                 checked={shown}
                 disabled={!onTask}
                 aria-label={text || 'Task'}
@@ -344,11 +344,12 @@ export function inCodeBlock(text, at) {
 
 // sends says whether Enter, as a keydown, sends a message or saves an
 // edit, rather than starting a new line: anywhere with Ctrl, and without
-// Shift outside a code block (M11).
-export function sends(e) {
+// Shift outside a code block (M11). With a finger, touch, whose keyboard
+// has no Shift, ↵ always starts a line, and a button sends (M13.2).
+export function sends(e, touch = false) {
     if (e.key !== 'Enter' || e.isComposing) return false;
     if (e.ctrlKey || e.metaKey) return true;
-    return !e.shiftKey && !inCodeBlock(e.currentTarget.value, e.currentTarget.selectionStart);
+    return !touch && !e.shiftKey && !inCodeBlock(e.currentTarget.value, e.currentTarget.selectionStart);
 }
 
 // firstLine is a text's first non-empty line, for previews.
