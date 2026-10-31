@@ -4,13 +4,15 @@
 // where it was and its size. It holds every share side by side; clicking
 // one makes it fill the player, while the others go on out of sight, and
 // clicking it again puts it back. From M11 a share they watch can play in
-// a window of its own, while the player keeps its place.
+// a window of its own, while the player keeps its place. From M13.4 the
+// phone layout docks it instead, across the top of the channel's pane.
 
 import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { FullIcon, SoundIcon } from './files.jsx';
+import { holdLayout, useNarrow } from './nav.js';
 import { canPopOut } from './platform.js';
-import { clampBox, defaultBox, readPlayer, resizeBox, tileLayout } from './player.js';
+import { clampBox, defaultBox, dockedShown, nextShown, readPlayer, resizeBox, tileLayout } from './player.js';
 import { onPopOut, popIn, popOut, poppedOut } from './popout.js';
 import { closePlayer, setPreview, setShareVolume, speakerID, unwatchShare } from './voice.js';
 import { useCall } from './voice.jsx';
@@ -44,8 +46,20 @@ function keepBox(box) {
 // SELF is the key of the member's own screen among the player's tiles.
 const SELF = 'self';
 
+// tilesOf are the shares the player shows: those the member watches, and
+// their own screen while they share it and show it. Their own plays from
+// the capture, always silent, since they hear its sound already.
+function tilesOf(watched, share) {
+    const own = share?.preview && share.stream ? [{ member: SELF, label: 'Your screen', stream: share.stream, volume: 0, self: true }] : [];
+    return [...watched, ...own];
+}
+
+// SharePlayer is the floating player, over every page in a wider window.
+// It stays on the phone layout, showing nothing, for the shares' own
+// windows, which it closes as their shares stop, and with the page.
 export function SharePlayer() {
     const { call, watched, share } = useCall();
+    const narrow = useNarrow();
     const [box, setBox] = useState(keptBox);
     const [focus, setFocus] = useState('');
     const [windows, setWindows] = useState(poppedOut);
@@ -62,11 +76,9 @@ export function SharePlayer() {
         for (const member of windows.keys()) if (!watched.some((w) => w.member === member)) popIn(member);
     });
     useEffect(() => () => [...poppedOut().keys()].forEach(popIn), []);
-    // The member's own screen plays from the capture, always silent, since
-    // they hear its sound already.
-    const own = share?.preview && share.stream ? [{ member: SELF, label: 'Your screen', stream: share.stream, volume: 0, self: true }] : [];
-    const tiles = [...watched, ...own];
-    if (!tiles.length) return null;
+    const tiles = tilesOf(watched, share);
+    const own = tiles.filter((w) => w.self);
+    if (narrow || !tiles.length) return null;
     const focused = tiles.some((w) => w.member === focus) ? focus : '';
     const shown = focused ? tiles.filter((w) => w.member === focused) : tiles;
     const { cols, rows } = tileLayout(shown.length, box.w, box.h - BAR);
@@ -131,6 +143,44 @@ export function SharePlayer() {
     );
 }
 
+// DockedPlayer is the player on the phone layout (M13.4): across the top of
+// the channel's pane, under the call's bar, or under Home's call box, at
+// the screen's width and the share's shape, up to half the screen's
+// height. It shows one share at a time, the one the member last began to
+// watch, with a button to the next; a tap on its picture plays it full
+// screen, which the Android app's shell shows (onShowCustomView), and its
+// ✕ stops watching it. A share in a window of its own holds its place, as
+// in the floating player, which keeps the windows.
+export function DockedPlayer() {
+    const { call, watched, share } = useCall();
+    const [shown, setShown] = useState('');
+    const [sizes, setSizes] = useState({});
+    const [windows, setWindows] = useState(poppedOut);
+    const known = useRef([]);
+    useEffect(() => onPopOut(() => setWindows(poppedOut())), []);
+    const tiles = tilesOf(watched, share);
+    const keys = tiles.map((w) => w.member);
+    const at = dockedShown(keys, known.current, shown);
+    useEffect(() => {
+        known.current = keys;
+        if (at !== shown) setShown(at);
+    }, [keys.join(' ')]);
+    const w = tiles.find((t) => t.member === at);
+    if (!w) return null;
+    const [width, height] = sizes[w.member] || [16, 9];
+    const place = tiles.length > 1 ? `${keys.indexOf(at) + 1}/${tiles.length}` : '';
+    return (
+        <section aria-label="Screen shares" data-docked class="w-full shrink-0 bg-black" style={{ aspectRatio: `${width} / ${height}`, maxHeight: '50vh' }}>
+            {windows.has(w.member) ? (
+                <Away key={w.member} w={w} win={windows.get(w.member)} deafened={!!call?.deafened} />
+            ) : (
+                <Tile key={w.member} w={w} deafened={!!call?.deafened} docked place={place} onNext={() => setShown(nextShown(keys, at))}
+                    onSize={(x, y) => x > 0 && y > 0 && setSizes((s) => ({ ...s, [w.member]: [x, y] }))} />
+            )}
+        </section>
+    );
+}
+
 // Away holds the place of a share that plays in a window of its own (M11),
 // saying so, with a button that brings it back, and fills that window from
 // the page's own render: Preact makes the window's elements, which its
@@ -152,7 +202,7 @@ function Away({ w, win, deafened, hidden }) {
         }
     }, [win]);
     return (
-        <div class={`flex min-h-0 min-w-0 flex-col items-center justify-center gap-2 bg-black p-2 text-center text-xs text-white/70 ${hidden ? 'hidden' : ''}`}>
+        <div class={`flex h-full min-h-0 min-w-0 flex-col items-center justify-center gap-2 bg-black p-2 text-center text-xs text-white/70 ${hidden ? 'hidden' : ''}`}>
             <span>{w.label}'s screen is in a window of its own</span>
             <button type="button" class="btn btn-xs" onClick={() => popIn(w.member)}>Bring it back</button>
         </div>
@@ -163,8 +213,11 @@ function Away({ w, win, deafened, hidden }) {
 // and controls of the page's own that show on hover or focus. The member's
 // own share shows without sound, and its ✕ hides it, while they go on
 // sharing. doc is the document the tile shows in: the page's, or a share's
-// own window's, where alone has it fill the window (M11).
-function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alone }) {
+// own window's, where alone has it fill the window (M11). docked has it
+// fill the docked player, where a tap on the picture plays it full screen
+// and, of several, place says which it is, with a button to the next; and
+// it says its share's size through onSize (M13.4).
+function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alone, docked, place, onNext, onSize }) {
     const frame = useRef(null);
     const video = useRef(null);
     const [playing, setPlaying] = useState(false);
@@ -196,9 +249,14 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
         const t = setTimeout(() => setPopped(''), 6000);
         return () => clearTimeout(t);
     }, [popped]);
+    // The page's layout holds while its share plays full screen (M13.4).
     function toggleFull() {
-        if (doc.fullscreenElement) doc.exitFullscreen().catch(() => {});
-        else frame.current.requestFullscreen().catch(() => {});
+        if (doc.fullscreenElement) {
+            doc.exitFullscreen().catch(() => {});
+            return;
+        }
+        if (doc === document) holdLayout(true);
+        frame.current.requestFullscreen().catch(() => doc === document && holdLayout(false));
     }
     function own() {
         if (!popOut(w.member, w.label)) setPopped("This browser didn't open the window: allow pop-ups for Dens, and try again.");
@@ -208,12 +266,14 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
     }
     const silent = deafened || w.volume === 0;
     const button = 'flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-white/20';
+    const sized = (e) => onSize?.(e.currentTarget.videoWidth, e.currentTarget.videoHeight);
     return (
-        <div ref={frame} class={`group relative min-h-0 min-w-0 bg-black ${hidden ? 'hidden' : ''} ${focused ? 'col-span-full row-span-full' : ''} ${alone ? 'h-screen w-screen' : ''}`}>
+        <div ref={frame} class={`group relative min-h-0 min-w-0 bg-black ${hidden ? 'hidden' : ''} ${focused ? 'col-span-full row-span-full' : ''} ${alone ? 'h-screen w-screen' : ''} ${docked ? 'h-full w-full' : ''}`}>
             {/* A click makes one share of several fill the player, and
-                another puts it back. */}
-            <video ref={video} class={`h-full w-full object-contain ${many ? 'cursor-pointer' : ''}`} autoplay playsinline muted={w.self}
-                aria-label={w.self ? w.label : `${w.label}'s screen`} onPlaying={() => setPlaying(true)} onClick={() => many && onFocus()} />
+                another puts it back; docked, it plays it full screen. */}
+            <video ref={video} class={`h-full w-full object-contain ${many || docked ? 'cursor-pointer' : ''}`} autoplay playsinline muted={w.self}
+                aria-label={w.self ? w.label : `${w.label}'s screen`} onPlaying={() => setPlaying(true)} onLoadedMetadata={sized} onResize={sized}
+                onClick={() => (docked ? toggleFull() : many && onFocus())} />
             {!playing && !blocked && (
                 <span class="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 p-2 text-center text-xs text-white/70">
                     <span class="loading loading-spinner loading-xs"></span>
@@ -246,6 +306,12 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
                     <button type="button" class={button} onClick={own} title="Open in a window of its own"
                         aria-label={`Open ${w.label}'s screen in a window of its own`}>
                         <WindowIcon />
+                    </button>
+                )}
+                {place && (
+                    <button type="button" class={`${button} w-auto gap-0.5 px-1.5 text-xs tabular-nums`} onClick={onNext}
+                        aria-label={`The next share: this is ${place.replace('/', ' of ')}`}>
+                        {place} <span aria-hidden="true">›</span>
                     </button>
                 )}
                 {doc.fullscreenEnabled && (

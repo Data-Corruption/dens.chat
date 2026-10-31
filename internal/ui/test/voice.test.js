@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     actionFor, answerFor, applyCalls, behindBy, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, playAgain,
-    readCallVolume, readKeyStatus, readKeys, readVoice, readVolumes, ringing, rings, rmsDb, rnnoiseChosen, sendRate, speakingNow, summarize, talking,
-    typesInto, volumeIn, withVolume,
+    pressed, readCallVolume, readKeyStatus, readKeys, readVoice, readVolumes, released, ringing, rings, rmsDb, rnnoiseChosen, sendRate, setVoice,
+    speakingNow, summarize, talking, typesInto, voiceSettings, volumeIn, withVolume,
 } from '../assets/js/src/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
@@ -110,13 +110,13 @@ test('RNNoise runs unless the member turned it off', () => {
 });
 
 test('voice settings fall back to their defaults, piece by piece', () => {
-    const defaults = { mode: 'voice', auto: true, threshold: -50 };
+    const defaults = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute' };
     assert.deepEqual(readVoice(''), defaults);
     assert.deepEqual(readVoice('not json'), defaults);
     assert.deepEqual(readVoice('[1]'), { ...defaults });
     // Keys the browser kept before the service kept them are left behind.
     const v = readVoice(JSON.stringify({ mode: 'ptt', auto: false, threshold: -63.4, keys: { ptt: { code: 'KeyV', label: 'V' } } }));
-    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63 });
+    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63, button: 'ptt' });
     assert.equal(readVoice('{"threshold": 20}').threshold, 0);
     assert.equal(readVoice('{"threshold": -500}').threshold, -100);
     assert.equal(readVoice('{"mode": "shout", "auto": "yes"}').mode, 'voice');
@@ -210,6 +210,62 @@ test("a call's members show by name, whatever order they joined in", () => {
     const joined = ['4', '2', '3', '99', '10'].map((id) => ({ id, muted: false }));
     assert.deepEqual(byName(joined, members).map((m) => m.id), ['99', '10', '3', '2', '4']);
     assert.deepEqual(joined.map((m) => m.id), ['4', '2', '3', '99', '10'], 'the den\'s order is left as it was');
+});
+
+// The call's button's role (M13.4) sets how the member sends where the
+// button is, and the role and the way of sending never disagree.
+test("the call's button's role sets how the member sends", () => {
+    const read = (kept) => readVoice(JSON.stringify(kept));
+    assert.equal(read({}).button, 'toggleMute', 'toggle mute by default');
+    assert.equal(read({ button: 'pushMute' }).button, 'pushMute');
+    assert.equal(read({ button: 'shout' }).button, 'toggleMute');
+    // Settings from before the button follow their way of sending, so a
+    // member who sent by push to talk still does, on the button.
+    assert.deepEqual([read({ mode: 'ptt' }).button, read({ mode: 'ptt', button: 'pushMute' }).button], ['ptt', 'ptt']);
+    assert.deepEqual(read({ mode: 'voice', button: 'ptt' }), { ...read({}), button: 'toggleMute' }, 'the way of sending wins');
+
+    setVoice({ button: 'ptt' });
+    let v = voiceSettings();
+    assert.deepEqual([v.mode, v.button], ['ptt', 'ptt']);
+    assert.deepEqual(gateFor(v, true, false), { mode: 'closed' }, 'silent until held');
+    assert.deepEqual(gateFor(v, true, true), { mode: 'open' });
+    setVoice({ button: 'pushMute' });
+    v = voiceSettings();
+    assert.deepEqual([v.mode, v.button], ['voice', 'pushMute']);
+    assert.deepEqual(gateFor(v, true, false), { mode: 'auto' }, 'by voice activity');
+    setVoice({ button: 'toggleMute' });
+    assert.deepEqual([voiceSettings().mode, voiceSettings().button], ['voice', 'toggleMute']);
+    // Choosing how to send, where the button isn't, keeps the two together.
+    setVoice({ mode: 'ptt' });
+    assert.equal(voiceSettings().button, 'ptt');
+    setVoice({ mode: 'voice' });
+    assert.equal(voiceSettings().button, 'toggleMute');
+});
+
+// Each role's press and release, as the call's button drives them, the
+// keys and the helper too.
+test("each role's press and its letting go", () => {
+    const at = { held: false, pushed: false, muted: false };
+    // Toggle mute: each press toggles, and letting go does nothing.
+    let s = pressed('toggleMute', at);
+    assert.equal(s.muted, true);
+    assert.deepEqual(released('toggleMute', s), s);
+    assert.equal(pressed('toggleMute', s).muted, false);
+    // Push to mute: muted while held, and only a member who wasn't muted.
+    s = pressed('pushMute', at);
+    assert.deepEqual(s, { held: false, pushed: true, muted: true });
+    assert.deepEqual(released('pushMute', s), at);
+    const muted = { ...at, muted: true };
+    assert.deepEqual(pressed('pushMute', muted), muted, 'muted already');
+    assert.deepEqual(released('pushMute', muted), muted, 'and still muted after');
+    // Push to talk: held while held, whatever else.
+    s = pressed('ptt', at);
+    assert.deepEqual(s, { ...at, held: true });
+    assert.deepEqual(released('ptt', s), at);
+    assert.deepEqual(released('ptt', at), at, 'let go twice');
+    const ptt = readVoice(JSON.stringify({ mode: 'ptt' }));
+    assert.equal(talking(ptt, pressed('ptt', at).held, false), true, 'rings while held');
+    assert.equal(talking(ptt, pressed('ptt', muted).held, true), false, 'never while muted');
 });
 
 // Push to talk lights its ring for everyone in the call (M11): the den

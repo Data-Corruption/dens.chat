@@ -35,9 +35,15 @@
 # of pages, which Back walks out of, and the phone's settings hold no
 # keyboard shortcuts or screen share; the viewer, on a message's two
 # photos, moves to the second by a swipe, zooms by a double tap, and Back
-# closes it; and a dialog, a sheet, closes by a swipe down (M13.3). Then
-# the screens are walked again with Android's font scale at 1.3, as a
-# member with larger text has it. The host package's tests, which
+# closes it; and a dialog, a sheet, closes by a swipe down (M13.3). In a
+# call with the den's owner, from a text channel and never back to the
+# list, the member finds the call's bar and its button, watches the
+# owner's share docked above the channel, full screen and back, mutes and
+# unmutes with the button, holds it to talk through Android's own touch,
+# ringing for the owner only while it's held, has it let go as the
+# notification shade comes down mid-press, and leaves from the bar
+# (M13.4). Then the screens are walked again with Android's font scale at
+# 1.3, as a member with larger text has it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
 # updates itself (M12.4): its updater refuses a newer release whose
@@ -78,6 +84,8 @@ APP=chat.dens.Dens.dev
 # forwards to the container's (M12.4).
 RELEASE_APP=chat.dens.Dens
 RELEASES_PORT=18480
+# Where desk answers the walk's call (M13.4), in dens-browsers.
+DESK_PORT=18590
 # The development build empties out/, so the run's logs wait for the
 # builds in a directory of their own.
 RUN_LOG_DIR=$(mktemp -d)
@@ -150,13 +158,15 @@ finish() {
     fi
   done
   stop_releases_host
+  incus exec dens-browsers -- curl -s -m 3 -X POST "http://127.0.0.1:$DESK_PORT/quit" >/dev/null 2>&1 || :
   # The emulator keeps a density it was given across restarts, and its
-  # keyboard's setting and font scale.
+  # keyboard's setting, font scale and full screen's notice.
   serial=$NEW
   if incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb devices | grep -q "^${serial}[[:space:]]*device"; then
     adb shell wm density reset || :
     adb shell settings put secure show_ime_with_hard_keyboard 0 || :
     adb shell settings put system font_scale 1.0 || :
+    adb shell settings delete secure immersive_mode_confirmations || :
   fi
   incus exec "$CONTAINER" -- /root/box.sh halt 5554 || :
   incus exec "$CONTAINER" -- /root/box.sh halt 5556 || :
@@ -216,6 +226,10 @@ adb uninstall "$APP" >/dev/null 2>&1 || :
 adb shell wm density 443
 adb shell settings put system font_scale 1.0
 adb shell "settings put global device_name 'Dens e2e phone'"
+# Android says once, as an app first hides the bars, how to leave full
+# screen, and its notice takes the Back that should leave it (M13.4): a
+# phone's member reads it once, and the walk has read it.
+adb shell settings put secure immersive_mode_confirmations confirmed
 phone install amd64 >/dev/null
 # The app's first start makes its key and pairs its page; trusting the
 # den's authority needs the app's files, so Dens starts again with it.
@@ -417,6 +431,29 @@ phone start
 waitfor 20 "the page in front" front
 walk pages || fail "dialogs, the settings and the viewer at 390 pixels"
 ok "the settings and Manage opened as lists of pages, which Back walked out of, and the phone's settings held no keyboard shortcuts or screen share; the viewer moved to a message's second photo by a swipe, zoomed by a double tap, and Back closed it; and a dialog, a sheet, closed by a swipe down"
+# Calls on a phone (M13.4): desk, the den's owner in Chromium in
+# dens-browsers, shares its screen in Lounge and answers the walk over
+# HTTP with what its page shows of the call. The member joins from the
+# list, and from general, never going back to the list, watches desk's
+# share docked there, full screen and back, mutes and unmutes with the
+# call's button, holds it to talk through Android's own touch, which desk
+# sees ring only while it's held, holds it again as the notification shade
+# comes down, which lets it go, and leaves from the bar.
+echo ">> A call by the call's button, at 390 pixels"
+incus file push -q --uid 1000 --gid 1000 scripts/test/android/desk.mjs dens-browsers/home/tester/browser/desk.mjs
+incus exec dens-browsers --user 1000 --group 1000 --cwd /home/tester/browser --env HOME=/home/tester --env XDG_RUNTIME_DIR=/run/user/1000 -- \
+  /home/tester/node desk.mjs "$DESK_PORT" 600 >"$RUN_LOG_DIR/desk.log" 2>&1 &
+desk=$!
+answering() { grep -q 'answering' "$RUN_LOG_DIR/desk.log"; }
+waitfor 90 "desk in the call" answering
+browsers_ip=$(incus exec dens-browsers -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1)
+printf '{"den":"%s","general":"%s","random":"%s","dm":"%s","desk":"http://%s:%s","name":"%s"}\n' \
+  "$den_id" "$general" "$random" "$dm" "$browsers_ip" "$DESK_PORT" "${member^}" | incus exec "$CONTAINER" -- sh -c 'cat > /root/walk-ctx.json'
+phone start
+waitfor 20 "the page in front" front
+walk call || fail "a call by the call's button"
+wait "$desk" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/desk.log")"
+ok "in a call with desk, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, and the call left from the bar"
 phone start
 waitfor 20 "the page in front" front
 walk screens || fail "the screens at 390 pixels"

@@ -21,14 +21,21 @@
 // walks out of, the phone's settings without keyboard shortcuts or screen
 // share, the viewer swiped through a message's photos, zoomed by a double
 // tap and closed by Back, a dialog swiped down, and the system bars
-// taking the page's background as its theme changes; or screens, every
-// member's screen with its picture and its audit, which fails as the
-// phone check's does on a touch screen. around unless given.
+// taking the page's background as its theme changes; call, M13.4's: in
+// a call with desk, whose desk.mjs answers at CTX's desk, from a text
+// channel and without going to the list, the call's bar and button, desk's
+// share docked above the channel, full screen and back, a tap on the
+// button muting and unmuting, then, with its role push to talk, held
+// through Android's own touch while desk sees the member ring, with no
+// long press's buzz, and let go as the notification shade comes down
+// mid-press, and the call left from its bar; or screens, every member's screen with its picture and its
+// audit, which fails as the phone check's does on a touch screen. around
+// unless given.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { webview } from './drive.mjs';
-import { audits, gettingAround, helpers, memberScreens, pages, touching, waitFor } from './screens.mjs';
+import { CALL, LIST_END, audits, barPlaced, buttonPlaced, dockedPlaced, gettingAround, helpers, listEnds, memberScreens, pages, touching, waitFor } from './screens.mjs';
 
 const ADB = '/opt/android/sdk/platform-tools/adb';
 const APP = process.env.ANDROID_APP || 'chat.dens.Dens.dev';
@@ -178,6 +185,138 @@ async function bars(h, d) {
     await d.back();
 }
 
+// callWalk walks M13.4's done-when, in a call with desk, the den's owner,
+// whose desk.mjs answers at c.desk with what its page shows of the call,
+// and c.name the member's name there: the member joins Lounge from the
+// list, as desk shares, taps desk's LIVE there and goes to general, and
+// from there on, never back to the list, finds the call's bar under its
+// header, desk's share docked under the bar and the call's button above
+// the composer; plays the share full screen with a tap, which the shell
+// shows, and Back docks it again; mutes and unmutes with a tap on the
+// button, which desk sees; sets its role to push to talk in the settings;
+// holds it through Android's own touch, past a long press, while desk
+// sees the member ring, and not before or after; holds it again as the
+// notification shade comes down, which lets it go; and leaves from the
+// bar.
+async function callWalk(h, d, c) {
+    const desk = async (path, method = 'GET') => (await fetch(c.desk + path, { method })).json();
+    const onDesk = async () => (await desk('/call')).members.find((m) => m.name === c.name);
+    const BUTTON = `document.querySelector('[data-call-button]')`;
+    const inList = (name) => `[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
+    const LIVE = `[...document.querySelectorAll('ul[aria-label="In the call"] button')].find((b) => b.textContent.trim() === 'LIVE')`;
+    const call = () => h.ev(CALL);
+    const step = async (name, fn) => {
+        try {
+            await fn();
+        } catch (e) {
+            report(false, `${name}: ${e.message}`);
+            await h.snap(`${name}-failed`).catch(() => {});
+        }
+    };
+    const said = (line) => d.shellLog().split('\n').filter((l) => l.includes(line)).length;
+    await step('call-join', async () => {
+        report((await desk('/share', 'POST')).share === 'clicked', 'desk shares its screen in Lounge');
+        await h.go('/');
+        await h.wait(`[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`, 'Home');
+        await d.tap(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Open')`);
+        if (!(await h.has(inList('Lounge')))) await d.tap(`[...document.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Den')`);
+        await d.tap(inList('Lounge'));
+        await h.wait(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`, 'the call', 30000);
+        await waitFor(onDesk, 'desk to see the member in the call', 15000);
+        report(!(await h.has(`document.querySelector('button[aria-label="Share your screen"]')`)), "the WebView's call has no share button");
+        await h.snap('call-list');
+    });
+    await step('call-docked', async () => {
+        await h.wait(LIVE, "desk's share", 30000);
+        await d.tap(LIVE);
+        await d.tap(inList('general'));
+        const at = await waitFor(async () => {
+            const x = await call();
+            return x.video?.w > 0 && x.video.playing && x;
+        }, "desk's share docked and playing", 20000).catch(call);
+        await h.snap('call-docked');
+        report(barPlaced(at) && at.bar_text === 'Connected to Lounge', `from general, the call's bar shows under its header: ${JSON.stringify({ bar: at.bar, header: at.header?.bottom, text: at.bar_text })}`);
+        report(buttonPlaced(at) && at.button.role === 'toggleMute' && at.button.label === 'Mute',
+            `the call's button, 64 pixels at the screen's foot on the right, above the composer, toggles mute, unmuted: ${JSON.stringify({ button: at.button, composer: at.composer?.top })}`);
+        report(dockedPlaced(at), `desk's share docks above the channel, under the bar, at the screen's width and the share's shape: ${JSON.stringify({ docked: at.docked, video: at.video })}`);
+        const end = await h.ev(LIST_END);
+        report(listEnds(end, at), `the list ends at its newest message, ${end} pixels above its foot, and nothing else scrolls: ${JSON.stringify({ row: at.rowScrolls, page: at.pageScrolls })}`);
+    });
+    await step('call-full', async () => {
+        const [shown, hidden] = [said('page: full screen'), said('page: out of full screen')];
+        await d.tap(`document.querySelector('section[data-docked] video')`);
+        const full = await waitFor(async () => (await call()).full && said('page: full screen') > shown, 'full screen through the shell', 8000).catch(() => false);
+        await h.snap('call-full');
+        await d.back();
+        const back = await waitFor(async () => {
+            const x = await call();
+            return !x.full && dockedPlaced(x) && said('page: out of full screen') > hidden && x;
+        }, 'docked again', 8000).catch(() => false);
+        report(full && back, `a tap plays the share full screen, which the shell shows (${!!full}), and Back docks it again (${!!back})`);
+    });
+    await step('call-mute', async () => {
+        await d.tap(BUTTON);
+        const muted = await waitFor(async () => (await onDesk())?.muted, 'desk to see the member muted', 8000).catch(() => false);
+        const at = await call();
+        await h.snap('call-muted');
+        report(muted && at.button.label === 'Unmute' && at.button.struck, `a tap on the call's button mutes, struck through, and desk sees it: ${JSON.stringify(at.button)}`);
+        await d.tap(BUTTON);
+        const unmuted = await waitFor(async () => (await onDesk())?.muted === false, 'desk to see the member unmuted', 8000).catch(() => false);
+        report(unmuted && (await call()).button.label === 'Mute', 'another unmutes, which desk sees');
+    });
+    await step('call-role', async () => {
+        // The settings open by script, from the list that stays off screen.
+        await h.click(`document.querySelector('[data-pane=list] button[aria-label="App settings"]')`, 'the settings');
+        await d.tap(`document.querySelector('[role=dialog] [data-section=voice]')`);
+        const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
+        const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => l.textContent.trim() + (l.querySelector('input').checked ? ' (chosen)' : ''))`);
+        const sending = await h.has(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"]')`);
+        report(roles.join(', ') === 'Toggle mute (chosen), Push to mute, Push to talk' && !sending, `the button's role takes Sending your voice's place: ${roles.join(', ')}`);
+        await d.tap(`[...${group}.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Push to talk')`);
+        await h.snap('call-role');
+        await d.back();
+        await d.back();
+        const ptt = await waitFor(async () => (await call()).button?.role === 'ptt' && !(await h.has(`document.querySelector('[role=dialog]')`)), 'push to talk', 8000).catch(() => false);
+        report(ptt, 'the call\'s button now pushes to talk, and Back left the settings for general');
+    });
+    await step('call-hold', async () => {
+        const before = await waitFor(async () => (await onDesk())?.rings === false && (await onDesk()), 'the member quiet on desk', 8000).catch(() => null);
+        const buzzed = d.buzzes();
+        await d.down(BUTTON);
+        const rang = await waitFor(async () => (await onDesk())?.rings, 'desk to see the member ring', 8000).catch(() => false);
+        await sleep(2000);
+        const still = (await onDesk())?.rings;
+        const at = await call();
+        await h.snap('call-held');
+        await d.up();
+        const quiet = await waitFor(async () => (await onDesk())?.rings === false, 'desk to see the member let go', 8000).catch(() => false);
+        report(!!before && rang && still && quiet && at.button.pressed === 'true' && at.button.talking,
+            `held through Android's own touch, past a long press, the call's button talks, in the ring's color, and desk sees the member ring only while it's held: ${JSON.stringify({ before: before?.rings, rang, still, quiet, button: at.button })}`);
+        const buzzes = d.buzzes() - buzzed;
+        report(buzzes === 0, `and the phone buzzes for no long press as it's held, the browser making no gesture of it: ${buzzes} buzzes`);
+    });
+    await step('call-shade', async () => {
+        await d.down(BUTTON);
+        const rang = await waitFor(async () => (await onDesk())?.rings, 'desk to see the member ring', 8000).catch(() => false);
+        d.shade(true);
+        const quiet = await waitFor(async () => (await onDesk())?.rings === false, 'desk to see the member let go', 8000).catch(() => false);
+        const at = await call();
+        await h.snap('call-shade');
+        d.shade(false);
+        await sleep(800);
+        await d.up();
+        report(rang && quiet && at.button.pressed === 'false', `held as the notification shade comes down, the call's button lets go, which desk sees: ${JSON.stringify({ rang, quiet, button: at.button })}`);
+    });
+    await step('call-leave', async () => {
+        await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Leave the call"]')`);
+        const ended = await waitFor(async () => !(await h.has(`document.querySelector('[data-call-bar]')`)) && !(await h.has(BUTTON)), 'the call to end', 10000)
+            .catch(() => false);
+        const gone = await waitFor(async () => !(await onDesk()), "desk to see the member go", 10000).catch(() => false);
+        await h.snap('call-left');
+        report(ended && gone, 'the bar\'s leave ends the call, its bar and button go, and desk sees the member leave');
+    });
+}
+
 const b = await webview(serial);
 // The page's own screenshots go through the DevTools protocol; Android's,
 // of the whole screen, show what the member sees.
@@ -192,6 +331,7 @@ try {
     const toScreen = (x, y) => [Math.round(view.left + x * dpr), Math.round(view.top + y * dpr)];
     // A swipe starts a little in from the screen's edges, which Android's
     // gesture navigation takes for Back, across the panes' headers.
+    let finger = [0, 0];
     const d = {
         name: 'the WebView, by Android\'s input',
         fromHome: true,
@@ -248,6 +388,27 @@ try {
             adb('shell', `cmd input tap ${tx} ${ty}; cmd input tap ${tx} ${ty}`);
             await sleep(900);
         },
+        // A finger put down and held through Android's own touch, at the
+        // middle of what x names, then lifted where it went down (M13.4).
+        async down(x) {
+            finger = toScreen(...(await spot(x)));
+            adb('shell', 'input', 'motionevent', 'DOWN', String(finger[0]), String(finger[1]));
+            await sleep(300);
+        },
+        async up() {
+            adb('shell', 'input', 'motionevent', 'UP', String(finger[0]), String(finger[1]));
+            await sleep(300);
+        },
+        // Android's notification shade, pulled down or put back.
+        shade(on) {
+            adb('shell', 'cmd', 'statusbar', on ? 'expand-notifications' : 'collapse');
+        },
+        // The shell's log, which says what the app's shell did.
+        shellLog: () => adb('shell', 'run-as', APP, 'cat', 'files/shell/shell.log'),
+        // buzzes counts the long presses Android has buzzed for the app, as
+        // its vibrator's recent vibrations list them.
+        buzzes: () => adb('shell', 'dumpsys', 'vibrator_manager').split('\n')
+            .filter((l) => l.includes(APP) && l.includes('performHapticFeedback(constant=0)')).length,
         phone: true,
         // bars is the color Android draws the status bar and the navigation
         // bar in, a pixel of each from its own picture of the screen: the
@@ -306,6 +467,13 @@ try {
     if (want('pages')) {
         await pages(h, ctx, d, report).catch((e) => report(false, e.message));
         await bars(h, d).catch((e) => report(false, e.message));
+    }
+    if (want('call')) {
+        try {
+            await callWalk(h, d, ctx);
+        } finally {
+            await fetch(`${ctx.desk}/quit`, { method: 'POST' }).catch(() => {});
+        }
     }
     if (want('screens')) {
         // The member's own message, newest, whose menu holds everything.

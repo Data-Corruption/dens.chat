@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PLAYER_MIN, clampBox, defaultBox, readPlayer, resizeBox, tileLayout } from '../assets/js/src/player.js';
+import { PLAYER_MIN, clampBox, defaultBox, dockedShown, nextShown, readPlayer, resizeBox, tileLayout } from '../assets/js/src/player.js';
 
 const view = { w: 1600, h: 900 };
 
@@ -45,4 +45,18 @@ test('shares lay out side by side in a wide player, and above each other in a ta
     // Four watched and the member's own preview.
     assert.deepEqual(tileLayout(5, 900, 500), { cols: 3, rows: 2 });
     assert.deepEqual(tileLayout(5, 400, 700), { cols: 2, rows: 3 });
+});
+
+// The phone layout's docked player shows one share at a time (M13.4).
+test('the docked player shows the share last begun, keeps the one shown, and taps on to the next', () => {
+    assert.equal(dockedShown(['a'], [], ''), 'a');
+    assert.equal(dockedShown(['a', 'b'], ['a'], 'a'), 'b', 'one the member just began to watch');
+    assert.equal(dockedShown(['a', 'b', 'self'], ['a', 'b'], 'b'), 'self', 'their own screen, just shown');
+    assert.equal(dockedShown(['a', 'b'], ['a', 'b'], 'a'), 'a', 'the one shown stays');
+    assert.equal(dockedShown(['b'], ['a', 'b'], 'a'), 'b', 'the one shown ended');
+    assert.equal(dockedShown([], ['a'], 'a'), '');
+    assert.equal(nextShown(['a', 'b', 'c'], 'a'), 'b');
+    assert.equal(nextShown(['a', 'b', 'c'], 'c'), 'a', 'around to the first');
+    assert.equal(nextShown(['a'], 'a'), 'a');
+    assert.equal(nextShown([], ''), '');
 });

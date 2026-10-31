@@ -34,6 +34,7 @@ import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
+import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
 
 const EDGE = 600; // px from an end at which the next page loads
@@ -121,6 +122,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // layout their actions open as a sheet (M13.2).
     const narrow = useNarrow();
     const touch = useCoarse();
+    // The call's button floats above the pane's foot, where the composer is
+    // (M13.4).
+    const foot = useRef(null);
     const scroller = useRef(null);
     const content = useRef(null);
     const anchor = useRef(null);
@@ -357,6 +361,19 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         observer.observe(box);
         observer.observe(content.current);
         return () => observer.disconnect();
+    }, []);
+
+    // The pane's foot says how tall it is, for the call's button above it.
+    useLayoutEffect(() => {
+        const el = foot.current;
+        if (!el || typeof ResizeObserver === 'undefined') return undefined;
+        const observer = new ResizeObserver(() => setFoot(el.offsetHeight));
+        observer.observe(el);
+        setFoot(el.offsetHeight);
+        return () => {
+            observer.disconnect();
+            setFoot(0);
+        };
     }, []);
 
     useEffect(() => {
@@ -678,45 +695,49 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     {list.hasNewer && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                 </div>
             </div>
-            {(list.hasNewer || newCount > 0) && (
-                <div class="flex cursor-default select-none items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
-                    <span>
-                        {newCount > 0 ? `${newCount} new message${newCount === 1 ? '' : 's'}` : "You're viewing older messages"}
-                    </span>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={() => (list.hasNewer ? loadNewest() : jumpToBottom())}>
-                        Jump to present
-                    </button>
-                </div>
-            )}
-            {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
-            {!closed && channel.kind === 'dm' && (
-                <CheckPanel denID={denID} channel={channel} dm={dm} keyID={live?.id || ''} />
-            )}
-            {closed ? (
-                <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
-            ) : !canSend ? null : (
-                <Composer
-                    denID={denID}
-                    limits={limits}
-                    placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
-                    replyTo={replyTo}
-                    replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
-                    typing={typing}
-                    files={files}
-                    onAddFiles={addFiles}
-                    onRemoveFile={removeFile}
-                    onCompare={setComparing}
-                    onCancelReply={() => setReplyTo(null)}
-                    candidates={candidates}
-                    editors={editors}
-                    onEditors={setEditors}
-                    onSend={(text) => send(text)}
-                    onEditLast={editLast}
-                    onTyping={onTyping}
-                    narrow={narrow}
-                    touch={touch}
-                />
-            )}
+            {/* The pane's foot, the composer among it, which the call's button
+                floats above (M13.4). */}
+            <div ref={foot}>
+                {(list.hasNewer || newCount > 0) && (
+                    <div class="flex cursor-default select-none items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
+                        <span>
+                            {newCount > 0 ? `${newCount} new message${newCount === 1 ? '' : 's'}` : "You're viewing older messages"}
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-xs" onClick={() => (list.hasNewer ? loadNewest() : jumpToBottom())}>
+                            Jump to present
+                        </button>
+                    </div>
+                )}
+                {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
+                {!closed && channel.kind === 'dm' && (
+                    <CheckPanel denID={denID} channel={channel} dm={dm} keyID={live?.id || ''} />
+                )}
+                {closed ? (
+                    <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
+                ) : !canSend ? null : (
+                    <Composer
+                        denID={denID}
+                        limits={limits}
+                        placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
+                        replyTo={replyTo}
+                        replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
+                        typing={typing}
+                        files={files}
+                        onAddFiles={addFiles}
+                        onRemoveFile={removeFile}
+                        onCompare={setComparing}
+                        onCancelReply={() => setReplyTo(null)}
+                        candidates={candidates}
+                        editors={editors}
+                        onEditors={setEditors}
+                        onSend={(text) => send(text)}
+                        onEditLast={editLast}
+                        onTyping={onTyping}
+                        narrow={narrow}
+                        touch={touch}
+                    />
+                )}
+            </div>
             {viewing && (
                 <Viewer denID={denID} files={viewing.files} index={viewing.index} onClose={() => setViewing(null)}
                     onIndex={(index) => setViewing((v) => v && { ...v, index })} />

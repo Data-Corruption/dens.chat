@@ -45,14 +45,16 @@
 #                               long press, a sheet's swipe down, three lines sent and a tip's tap
 #                               (M13.2); and pages, the settings and Manage as lists of pages Back walks
 #                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down
-#                               (M13.3). PART is member, around, touch, pages, call, owner or before;
-#                               all unless given
+#                               (M13.3); and the call, its bar, the call's button held and tapped by its
+#                               role, a member's volume in a sheet, a share docked, full screen and back,
+#                               and leaving from the bar (M13.4). PART is member, around, touch, pages,
+#                               call, owner or before; all unless given
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,51p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,53p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

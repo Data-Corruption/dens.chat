@@ -4,8 +4,8 @@
 # screens before a den. general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
-# only. Alice and bob share a checked DM, and bob has started one with
-# carol that waits for its check.
+# only. Alice and bob share a checked DM, checked again after alice started
+# over, and bob has started one with carol that waits for its check.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 stop m2d
@@ -20,6 +20,10 @@ channel the-longest-name-a-channel-takes text "$projects" >/dev/null
 channel Standup voice "$projects" >/dev/null
 api alice POST "/api/dens/$DEN/channels" '{"name":"staff","kind":"text","staff_only":true}' >/dev/null
 api alice PATCH "/api/dens/$DEN/channels/$general" '{"description":"Anything goes here: say hi, share what you are up to, and **be kind**. The rules are in #design-notes.\nA second line, which only shows once the description is opened.\nAnd a third, with a link: https://dens.chat/docs/"}' >/dev/null
+# Two may share at once, so the call's member shares beside the probe
+# (M13.4).
+limits=$(api alice GET "/api/dens/$DEN/state" | python3 -c 'import json, sys; d = json.load(sys.stdin)["call_limits"]; d["shares"] = 2; print(json.dumps({"call_limits": d}))')
+api alice POST "/api/dens/$DEN/settings" "$limits" >/dev/null
 
 say() { send "$@" >/dev/null; }
 printf 'A file to attach.\n' >note.txt
@@ -46,6 +50,11 @@ for i in 1 2 3; do say alice "$random" "random $i"; done
 dm=$(checked_dm alice bob)
 say alice "$dm" "a DM for bob, end to end"
 say bob "$dm" "and one back"
+# Alice starts over, as on a new phone, and the two check their codes
+# again, so the DM shows where its keys changed (M13.4).
+api alice POST "/api/dens/$DEN/seal/start-over" '{"password":"den password"}' >/dev/null
+checked_dm alice bob >/dev/null
+say alice "$dm" "and one after starting over"
 carol_id=$(api carol GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
 dm2=$(api bob POST "/api/dens/$DEN/dms" "{\"member_id\":\"$carol_id\"}" | json 'd["id"]')
 api bob POST "/api/dens/$DEN/dms/$dm2/key" '{}' >/dev/null

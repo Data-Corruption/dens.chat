@@ -23,9 +23,11 @@ import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isSta
 import { NO_CALLS, canCall } from './platform.js';
 import { needsCheck } from './private.js';
 import { SignInRequests } from './private.jsx';
+import { createPress, useCoarse } from './touch.js';
+import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
 import { applyCalls, joinCall } from './voice.js';
-import { CallBlock, CallMembers, CogIcon, useCall } from './voice.jsx';
+import { CallBar, CallBlock, CallMembers, CogIcon, useCall, useCallButton } from './voice.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -212,6 +214,9 @@ export function Chat({ denID, channelID, pane, navigate }) {
     const [visible, setVisible] = useState(document.visibilityState === 'visible');
     const [live, setLive] = useState(true);
     const { call: myCall } = useCall();
+    // The call's button floats in the screen's corner (M13.4), where the
+    // phone layout's list keeps clear of it.
+    const button = useCallButton() && narrow;
     // What the member muted here, which the bells show once they turned
     // notifications on (M12.3).
     const notifications = useNotifications();
@@ -452,6 +457,15 @@ export function Chat({ denID, channelID, pane, navigate }) {
             navigate(`/den/${den}/${channelID}`);
         },
     };
+    // On the phone layout the call shows across the top of the channel's
+    // pane, under its header, with the shares the member watches docked
+    // under it (M13.4); a wider window has them beside the channel.
+    const callTop = narrow && (
+        <>
+            <CallBar denID={denID} />
+            <DockedPlayer />
+        </>
+    );
     // What waits in the other dens, for the list's Home button.
     const away = { mentions: 0, unread: false };
     for (const d of dens) {
@@ -504,13 +518,16 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 muted={bells ? muted.channels : null} onOpen={openChannel} onDialog={setDialog} />
                         )}
                         <div class="mt-auto">
+                            {/* Room for the call's button over the list's end, so
+                                the last row clears it. */}
+                            {button && <div class="h-11" aria-hidden="true"></div>}
                             {staff && !gone && (
                                 <div class="flex gap-1 px-2 pb-1">
                                     <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
                                     <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
                                 </div>
                             )}
-                            <CallBlock denID={denID} staffMuted={staffMuted(view, myCall)} />
+                            <CallBlock denID={denID} staffMuted={staffMuted(view, myCall)} roomy={button} />
                             <UserPanel me={view.me} online={live && view.state === 'connected'} onEdit={() => setDialog({ kind: 'edit' })} />
                         </div>
                     </aside>
@@ -545,6 +562,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
                                     onChannels={() => toPane('list')} onMembers={toggleMembers}
                                     onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                                {callTop}
                                 <MessagePane
                                     key={`${denID}:${channel.id}`}
                                     denID={denID}
@@ -567,14 +585,20 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 />
                             </>
                         ) : noDM ? (
-                            <div class="flex flex-col items-start p-6">
-                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Direct messages</button>
-                            </div>
+                            <>
+                                {callTop}
+                                <div class="flex flex-col items-start p-6">
+                                    <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Direct messages</button>
+                                </div>
+                            </>
                         ) : (
-                            <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
-                                <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Channels</button>
-                                <p>{staff ? 'This den has no text channels yet. Create one to start talking.' : 'This den has no text channels yet.'}</p>
-                            </div>
+                            <>
+                                {callTop}
+                                <div class="flex flex-col items-start gap-2 p-6 text-base-content/70">
+                                    <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Channels</button>
+                                    <p>{staff ? 'This den has no text channels yet. Create one to start talking.' : 'This den has no text channels yet.'}</p>
+                                </div>
+                            </>
                         )}
                         {at && at !== 'chan' && <div class="pointer-events-none absolute inset-0 z-30 bg-black/40"></div>}
                     </section>
@@ -803,10 +827,42 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     const { call, speaking, volumes, watched, share } = useCall();
     const watching = new Set(watched.map((w) => w.member));
     // Staff reach each channel's and group's settings from a ⋯ beside it
-    // (M4.2), which shows on hover or focus, and always on touch screens,
-    // which have no hover. It shows once its row has the focus, since Tab
-    // passes over what's hidden (M11).
-    const settings = 'btn btn-ghost btn-xs btn-square invisible group-hover:visible group-focus-within:visible pointer-coarse:visible touch-room';
+    // (M4.2), which shows on hover or focus. It shows once its row has the
+    // focus, since Tab passes over what's hidden (M11). A touch screen has
+    // no ⋯ there: a long press on the row opens its settings, as one on a
+    // message opens its actions (M13.4).
+    const settings = 'btn btn-ghost btn-xs btn-square invisible group-hover:visible group-focus-within:visible pointer-coarse:hidden touch-room';
+    const touch = useCoarse();
+    const pressed = useRef(null);
+    const press = useRef(null);
+    press.current ||= createPress({ onLong: () => pressed.current && onDialog(pressed.current) });
+    // The click a long press may be followed by goes nowhere: not to the
+    // row, nor to the settings it opened under the finger, which aren't
+    // the row's, and whose backdrop would take it for a tap outside.
+    useEffect(() => {
+        const swallow = (e) => {
+            if (!press.current.click()) return;
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        document.addEventListener('click', swallow, true);
+        return () => {
+            document.removeEventListener('click', swallow, true);
+            press.current.cancel();
+        };
+    }, []);
+    // presses has a row's long press open what dialog says, in place of the
+    // browser's own selection and menu.
+    const presses = (dialog) => (touch && staff && !gone ? {
+        onPointerDown: (e) => {
+            pressed.current = dialog;
+            press.current.down(e);
+        },
+        onPointerMove: (e) => press.current.move(e),
+        onPointerUp: () => press.current.up(),
+        onPointerCancel: () => press.current.cancel(),
+        onContextMenu: (e) => e.preventDefault(),
+    } : {});
     const item = (c) => {
         const r = reads.get(c.id);
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
@@ -820,7 +876,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
             <li key={c.id}>
                 {/* The row's button reaches across it, under its marks, whose
                     tips say on a tap what they mean (M13.2). */}
-                <div class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11 ${managed ? 'pr-8' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}>
+                <div class={`group relative flex min-h-8 select-none items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11 ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
+                    {...presses({ kind: 'channel', channel: c })}>
                     <button
                         type="button"
                         class="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded"
@@ -861,7 +918,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 const marks = isFolded ? hiddenMarks(channels.filter((c) => !shown.includes(c)), reads) : null;
                 return (
                     <div key={g.id}>
-                        <div class="group flex min-h-6 select-none items-center justify-between gap-1 px-2 text-xs font-semibold uppercase text-base-content/60 pointer-coarse:min-h-11">
+                        <div class="group flex min-h-6 select-none items-center justify-between gap-1 px-2 text-xs font-semibold uppercase text-base-content/60 pointer-coarse:min-h-11"
+                            {...presses({ kind: 'group', group: g })}>
                             <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch text-left uppercase hover:text-base-content"
                                 aria-expanded={!isFolded} onClick={() => fold(g.id)}>
                                 <ChevronIcon folded={isFolded} />

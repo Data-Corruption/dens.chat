@@ -91,6 +91,8 @@ Dens's home shows what's waiting in each den: a red number for mentions of
 you and messages in your DMs, and a dot for anything else unread.
 
 Hold your finger on a message to reply to it, edit it, copy it or delete it.
+If you're a moderator or the owner, hold your finger on a channel, or a
+group, for its settings.
 In the message box, ↵ starts a new line, and the paper plane beside the box
 sends. Where you see an ⓘ, or a small mark you're not sure of, tap it to see
 what it means, and tap anywhere to put it away.
@@ -102,6 +104,27 @@ and drag to look around; tap twice again to see it whole.
 The settings, and each den's Manage, list their sections: tap one to open
 it, and Back goes back to the list. Smaller panels, like a channel's
 settings, slide up from the bottom of the screen; swipe one down to close it.
+
+## Calls
+
+Tap a voice channel in a den's list to join its call. While you're in one, a
+bar across the top of the channel shows it: the headphones stop you hearing
+the call, the red phone leaves it, and a tap on the rest of the bar goes to
+the channel list, where the call's other buttons and the people in it are.
+
+A round button at the bottom right, by your thumb, holds your microphone.
+Tap it to mute, and again to unmute: it's struck through in red while you're
+muted, and green while you're talking. To hold it to talk instead, or to hold
+it to mute, pick **Push to talk** or **Push to mute** under **The call's
+button** in Dens's settings, **Voice & video**. With push to talk nobody hears
+you unless you're holding it, so with the screen off they hear nothing.
+
+When someone shares their screen, tap **LIVE** beside their name in the
+channel list to watch. Their screen shows across the top of the channel,
+under the call's bar. Tap it to watch full screen, and turn the phone
+sideways for more room; Back, or another tap, ends full screen. The ✕ stops
+watching. If you watch more than one, the count on it, like **1/2**, goes to
+the next. Dens on a phone can't share its own screen.
 
 ## Keeping it connected
 
