@@ -4,12 +4,14 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 ## Big
 
-- Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app and M13 its phone layout, and M14 holds the rest; more in [android.md](android.md).
+- Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app and M13 its phone layout; staying connected while the phone sleeps is under Medium; more in [android.md](android.md).
 - End-to-end encrypted group DMs, then end-to-end encrypted calls with SFrame, one to one and in groups, piggybacking off the keys used for DMs? A call button in that person's or group's DM channel? Beside a group DM, the panel that shows a DM's other member (M11) would list the group's members.
+- Post quantum double ratchet for forward secrecy? Maybe kinda copy Signal but force the side channel check? I need to learn more about this first.
 
 ## Medium
 
-- Bookmarks, per member and per den, so a den's bookmarks always resolve against that den.
+- Android, staying connected while the phone sleeps (android.md's *A phone sleeps* and *Staying connected*). Go's timers stop while a phone sleeps, so the session's renewal comes late, its token lapses, and the den closes the connection once an hour; and while the phone sleeps, Dens reconnects only once something else wakes it, 4 to 6 minutes later on a desk in the spike, so a notification in that gap shows late. The fixes: the renewal checked against the wall clock each time the den's ping wakes the phone; a dropped connection reconnecting under the shell's wake lock, with an alarm behind it; the app saying so when Android restricts its battery, as Restricted and Samsung's deep sleep stop it; and the install guide's steps, which it has already. Done when a member's phone shows a DM within seconds, eight hours after they last opened Dens, which takes a night of the S24 asleep to test. The renewal goes in M14, whatever else M14 holds: it's small, it ends the hourly drop that makes most of the gaps, and a phone left asleep a little over an hour checks it.
+- Bookmarks, per member and per den, so a den's bookmarks always resolve against that den. Maybe bookmarks bypass the cache limit cause opening them and missing could result in non contiguous random reads across a channels.
 - Soundboard.
 - Events, a calendar above the channels. Each has a name, description, optional banner image, time, length, place (a voice channel), etc. You can link it in a channel, and others can click "Interested" and get a notification when it starts. Maybe even the option to make each a badge event: attending gets you a badge on your den account. The badge could just be a little image uploaded when the event is created, like uploading custom emojis.
 - Emojis and reactions (images and GIFs).
@@ -37,6 +39,8 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
 - The Android e2e's den, made once, goes on running the build it started with, since `den.sh up` starts it only where it isn't running: it could start again once `setup.sh` has pushed a newer build, so desk's page is the tree's.
+- Change links soi they are only underlined on hover.
+- For the YouTube embed, make the video name and uploader underlined on hover and go to the video and uploader channel on click (if the uploader is included in the oEmbed response)
 
 ## Probably not doing
 

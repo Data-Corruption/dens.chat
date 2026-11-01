@@ -2,7 +2,7 @@
 
 How Dens runs on Android phones. [design.md](design.md) has what every form shares.
 
-An Android app joins dens from a phone. It hosts none, shares no screen and picks no speaker, and pushes to talk on the call's button rather than a key. M12 to M14 build it: M12.1 built the app around the page, M12.2 its calls, M12.3 its notifications and M12.4 its releases and updates; M13 built the phone layout, and M14 builds what's left of the design below: staying connected while the phone sleeps.
+An Android app joins dens from a phone. It hosts none, shares no screen and picks no speaker, and pushes to talk on the call's button rather than a key. M12 and M13 built it: M12.1 the app around the page, M12.2 its calls, M12.3 its notifications, M12.4 its releases and updates, and M13 the phone layout. What's left of the design below, staying connected while the phone sleeps, waits in loose-ideas.md, but for the session's renewal by the wall clock, which M14 takes.
 
 ## Design
 
