@@ -20,6 +20,11 @@ var notices string
 // includes.
 func Notices() string { return notices }
 
+// DevVersion is the version every development build carries, as
+// scripts/build.sh gives it: a prerelease of v0.0.0, which every release
+// sorts after, and the same for every tree it's built from.
+const DevVersion = "v0.0.0-dev"
+
 // set by build.sh
 var (
 	name            string

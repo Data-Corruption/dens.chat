@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 )
@@ -101,7 +102,8 @@ func devLayout(t *testing.T) layout.Layout {
 // A session form decides how to start from the state it finds (M9.3): a
 // development instance migrates whichever way its version moves, and the
 // Flatpak only forward, keeping a snapshot as it updates, refusing a
-// rollback, and taking over only a transition to its version or older.
+// rollback, and taking over only a transition to its version or older; a
+// development build migrates data its own version left (M14.2).
 func TestSessionStart(t *testing.T) {
 	type want struct {
 		mode     StartMode
@@ -152,6 +154,17 @@ func TestSessionStart(t *testing.T) {
 		}
 		if err != nil || plan.Mode != c.want.mode || published != c.want.publish || plan.Snapshot != c.want.snapshot {
 			t.Errorf("%s from %+v: mode %v, publish %q, snapshot %v, %v; want %+v", c.form, c.state, plan.Mode, published, plan.Snapshot, err, c.want)
+		}
+	}
+	// Every development build is build.DevVersion, so data its version
+	// left may be another tree's, a schema behind: it migrates, the Android
+	// app's development APK too (M14.2).
+	for _, form := range []layout.Form{layout.Development, layout.Android} {
+		plan, err := SessionStart(form, NewState(PhaseReady, build.DevVersion, ""), true, build.DevVersion)
+		want := fmt.Sprintf("updating %s>%s", build.DevVersion, build.DevVersion)
+		if err != nil || plan.Mode != StartMigrate || plan.Publish == nil || plan.Snapshot ||
+			fmt.Sprintf("%s %s>%s", plan.Publish.Phase, plan.Publish.Version, plan.Publish.TargetVersion) != want || plan.Publish.Validate() != nil {
+			t.Errorf("a development build of the %s, from data its version left: %+v, %v; want migrating, publishing %s", form, plan, err, want)
 		}
 	}
 	var rolled *RolledBackError
