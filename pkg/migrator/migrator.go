@@ -55,6 +55,13 @@ func (m *Migrator) Version() int {
 	return len(m.steps)
 }
 
+// Upto returns a migrator with this one's first n steps, which takes a
+// database to schema version n and no further, as a test of a later step
+// starts from a database a release left.
+func (m *Migrator) Upto(n int) *Migrator {
+	return &Migrator{steps: m.steps[:min(n, len(m.steps))]}
+}
+
 // Run executes all pending migrations based on the current PRAGMA user_version
 // and updates it to the final version. It returns the schema version the
 // database ends up at.

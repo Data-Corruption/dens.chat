@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
@@ -50,6 +52,9 @@ type router struct {
 	pageOrigin string
 	youTube    *youtube.Lookup
 	backups    backups
+	// sounds are the page's own sounds' addresses, by name, as JSON
+	// (M14.2).
+	sounds string
 }
 
 // New returns the client listener's handler.
@@ -60,6 +65,7 @@ func New(a *app.App) http.Handler {
 		pageOrigin: guard.PageOrigin(a.Instance.ClientPort),
 		youTube:    youtube.New(),
 		backups:    backups{links: map[string]backupLink{}},
+		sounds:     soundAssets(a.UI),
 	}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
@@ -100,6 +106,7 @@ func New(a *app.App) http.Handler {
 			rt.mountFlatpak(r)
 			rt.mountDens(r)
 			rt.mountYouTube(r)
+			rt.mountSounds(r)
 		})
 	})
 	return r
@@ -210,6 +217,7 @@ func (rt *router) pageData(title string) map[string]any {
 	data["Autoplay"] = rt.autoplays()
 	data["InApp"] = rt.inApp()
 	data["Keys"] = !rt.inApp()
+	data["Sounds"] = rt.sounds
 	return data
 }
 
@@ -582,12 +590,32 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			Mentions *bool `json:"mentions"`
 			HideText *bool `json:"hideText"`
 		} `json:"notifications"`
+		// Sounds turns each of the page's sounds off or on, and sets its
+		// volume in percent, as given (M14.2).
+		Sounds map[string]struct {
+			Off    *bool `json:"off"`
+			Volume *int  `json:"volume"`
+		} `json:"sounds"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if n := body.Notifications; n != nil {
 		if err := rt.a.Notify.SetKinds(n.DMs, n.Mentions, n.HideText); err != nil {
+			xhttp.Error(r.Context(), w, err)
+			return
+		}
+	}
+	if len(body.Sounds) > 0 {
+		changes := map[string]notify.SoundChange{}
+		for name, s := range body.Sounds {
+			if !slices.Contains(types.SoundNames, name) || (s.Volume != nil && (*s.Volume < 0 || *s.Volume > 100)) {
+				http.Error(w, "a sound the page has, at a volume of 0 to 100", http.StatusBadRequest)
+				return
+			}
+			changes[name] = notify.SoundChange{Off: s.Off, Volume: s.Volume}
+		}
+		if err := rt.a.Notify.SetSounds(changes); err != nil {
 			xhttp.Error(r.Context(), w, err)
 			return
 		}

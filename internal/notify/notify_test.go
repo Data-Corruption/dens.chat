@@ -425,3 +425,176 @@ func TestAPageThatFallsBehindIsDropped(t *testing.T) {
 		t.Fatalf("the page was sent %d events before its stream closed", n)
 	}
 }
+
+// sounds drains what a page has been sent: the messages whose sound it
+// plays alone, and those it shows, whose sound it plays with them.
+func sounds(ch <-chan Event) (alone, shown []string) {
+	for e := range drain(ch) {
+		if e.Sound != nil {
+			alone = append(alone, e.Sound.Message)
+		}
+		if e.Show != nil {
+			shown = append(shown, e.Show.Message)
+		}
+	}
+	return alone, shown
+}
+
+// A message makes one sound (M14.2): with the page's notification, which
+// plays it; with the helper's, the desktop's own, so no page plays one;
+// and where nothing shows it, as with its kind off, alone, to the page on
+// screen most lately.
+func TestWhereAMessagesSoundPlays(t *testing.T) {
+	helper := &place{can: true}
+	h, _ := newHub(t, types.Notifications{DMs: true}, helper, false)
+	a, stopA := h.Watch("a")
+	defer stopA()
+	b, stopB := h.Watch("b")
+	defer stopB()
+	h.SetPage("a", false, true)
+	h.SetPage("b", true, false)
+	h.SetPage("b", false, false)
+	sounds(a)
+	sounds(b)
+
+	// A page shows the DM through the browser, and plays its sound with it.
+	h.Message(dm("10"))
+	if alone, shown := sounds(a); len(alone) != 0 || !slices.Equal(shown, []string{"10"}) {
+		t.Fatalf("the page that shows it was sent %v alone and %v shown, want 10 shown", alone, shown)
+	}
+	if alone, _ := sounds(b); len(alone) != 0 {
+		t.Fatalf("another page played %v", alone)
+	}
+
+	// No page may notify: the helper shows it, with the desktop's sound.
+	h.SetPage("a", false, false)
+	h.Message(dm("11"))
+	if got := helper.messages(); !slices.Equal(got, []string{"11"}) {
+		t.Fatalf("the helper showed %v, want 11", got)
+	}
+	if alone, _ := sounds(a); len(alone) != 0 {
+		t.Fatalf("with the helper's notification, page a played %v", alone)
+	}
+	if alone, _ := sounds(b); len(alone) != 0 {
+		t.Fatalf("with the helper's notification, page b played %v", alone)
+	}
+
+	// Nothing can show it: the page on screen most lately plays it alone.
+	helper.mu.Lock()
+	helper.can = false
+	helper.mu.Unlock()
+	h.Message(dm("12"))
+	if alone, _ := sounds(b); !slices.Equal(alone, []string{"12"}) {
+		t.Fatalf("with nothing to show it, page b, on screen most lately, played %v, want 12", alone)
+	}
+	if alone, _ := sounds(a); len(alone) != 0 {
+		t.Fatalf("page a played %v too", alone)
+	}
+
+	// DMs off: the page on screen now plays it, once, though the den sends
+	// it again.
+	if err := h.SetKinds(ptr(false), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.SetPage("a", true, true)
+	h.Message(dm("13"))
+	h.Message(dm("13"))
+	h.Message(mention("14"))
+	if alone, shown := sounds(a); !slices.Equal(alone, []string{"13", "14"}) || len(shown) != 0 {
+		t.Fatalf("with DMs and mentions off, page a, on screen, played %v and showed %v, want 13 and 14 played", alone, shown)
+	}
+
+	// Muted, on screen, or neither a DM nor a mention: no sound.
+	if err := h.Mute("d1", "7", true); err != nil {
+		t.Fatal(err)
+	}
+	h.Message(dm("15"))
+	if err := h.Mute("d1", "7", false); err != nil {
+		t.Fatal(err)
+	}
+	h.Focus("a", "d1", "7")
+	h.Message(dm("16"))
+	h.Message(Message{Den: "d1", Channel: "5", ID: "17", Author: "Bob", Text: "hello all"})
+	if alone, shown := sounds(a); len(alone) != 0 || len(shown) != 0 {
+		t.Fatalf("muted, on screen, or neither a DM nor a mention, page a played %v and showed %v", alone, shown)
+	}
+	if alone, _ := sounds(b); len(alone) != 0 {
+		t.Fatalf("page b played %v", alone)
+	}
+
+	// With no page open, nothing plays it.
+	stopA()
+	stopB()
+	h.Message(dm("18"))
+	if got := helper.messages(); len(got) != 1 {
+		t.Fatalf("the helper showed %v", got)
+	}
+}
+
+// On Android the page plays a message's sound alone only while the app is
+// in front: the shell holds it as shown through a call, and a page behind
+// may be frozen, to play what it missed as it thaws.
+func TestAndroidsPageSoundsInFront(t *testing.T) {
+	h, _ := newHub(t, types.Notifications{}, &place{}, true)
+	p, stop := h.Watch("webview")
+	defer stop()
+	h.SetPage("webview", true, false)
+	h.Message(dm("10"))
+	if alone, _ := sounds(p); len(alone) != 0 {
+		t.Fatalf("the app behind, its page played %v", alone)
+	}
+	h.SetFront(true)
+	h.Message(dm("10"))
+	h.Message(dm("11"))
+	if alone, _ := sounds(p); !slices.Equal(alone, []string{"10", "11"}) {
+		t.Fatalf("the app in front, its page played %v, want 10 and 11", alone)
+	}
+}
+
+// The member's choices for the page's sounds are kept with the
+// notifications', and every page hears them, with the sounds they
+// replaced with files of their own (M14.2).
+func TestSoundSettings(t *testing.T) {
+	h, kept := newHub(t, types.Notifications{}, &place{}, false)
+	p, stop := h.Watch("a")
+	defer stop()
+	events(p)
+	if err := h.SetSounds(map[string]SoundChange{"joined": {Off: ptr(true)}, "micOn": {Volume: ptr(40)}}); err != nil {
+		t.Fatal(err)
+	}
+	s := h.Settings().Sounds
+	if !s["joined"].Off || s["joined"].Volume != nil || s["micOn"].Off || *s["micOn"].Volume != 40 || len(s) != 2 {
+		t.Fatalf("the sounds are %+v", s)
+	}
+	if len(*kept) != 1 || !(*kept)[0].Sounds["joined"].Off {
+		t.Fatalf("kept %+v", *kept)
+	}
+	// What the hub hands out is a copy.
+	*h.Settings().Sounds["micOn"].Volume = 90
+	if v := *h.Settings().Sounds["micOn"].Volume; v != 40 {
+		t.Fatalf("a copy's change reached the hub: %d", v)
+	}
+	// Back on at the default, a sound leaves the settings.
+	if err := h.SetSounds(map[string]SoundChange{"joined": {Off: ptr(false)}}); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.Settings().Sounds; len(s) != 1 || s["micOn"].Volume == nil {
+		t.Fatalf("with joined back on, the sounds are %+v", s)
+	}
+
+	h.SetOwn("left", 1700000000000)
+	h.SetOwn("message", 1700000000001)
+	h.SetOwn("message", 0)
+	var last *Status
+	for e := range drain(p) {
+		if e.Status != nil {
+			last = e.Status
+		}
+	}
+	if last == nil || len(last.Own) != 1 || last.Own["left"] != 1700000000000 || last.Sounds["micOn"].Volume == nil {
+		t.Fatalf("the page last heard %+v", last)
+	}
+	if st := h.Status(); len(st.Own) != 1 {
+		t.Fatalf("the status says %+v", st.Own)
+	}
+}

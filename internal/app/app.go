@@ -34,6 +34,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/platform/database/sounds"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/vaultstore"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
@@ -439,6 +440,15 @@ func (a *App) unlock(key []byte) error {
 		})
 		return err
 	}, a.Shortcuts, l.Form == layout.Android)
+	// The sounds the member replaced with files of their own (M14.2), which
+	// the pages hear of with the notifications' status.
+	own, err := sounds.List(context.Background(), a.DB)
+	if err != nil {
+		return err
+	}
+	for name, version := range own {
+		a.Notify.SetOwn(name, version)
+	}
 	a.Dens.Notices = a.Notify
 	a.Dens.TempDir = l.Temp
 	a.Dens.Media = a.Media

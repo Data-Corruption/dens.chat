@@ -117,3 +117,49 @@ func TestUpdateValidatesVoiceKeys(t *testing.T) {
 		}
 	}
 }
+
+// The page's sounds are kept by name, each off or at a volume of its own,
+// from 0 to 100 percent (M14.2).
+func TestUpdateValidatesSounds(t *testing.T) {
+	tmp := t.TempDir()
+	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{DefaultLogLevel: "warn"}, database.ApplyPendingMigrations)
+	if err != nil {
+		logger.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		logger.Close()
+	})
+	set := func(sounds map[string]types.Sound) error {
+		_, err := Update(db, func(cfg *types.Configuration) error {
+			cfg.Notifications.Sounds = sounds
+			return nil
+		})
+		return err
+	}
+	volume := func(v int) *int { return &v }
+	if err := set(map[string]types.Sound{"message": {Off: true}, "micOff": {Volume: volume(0)}, "joined": {Volume: volume(100)}}); err != nil {
+		t.Fatalf("valid sounds refused: %v", err)
+	}
+	cfg, err := View(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := cfg.Notifications.Sounds; !s["message"].Off || *s["micOff"].Volume != 0 || *s["joined"].Volume != 100 {
+		t.Fatalf("sounds kept = %+v", s)
+	}
+	for name, sounds := range map[string]map[string]types.Sound{
+		"an unknown sound":  {"bell": {Off: true}},
+		"a volume below 0":  {"left": {Volume: volume(-1)}},
+		"a volume over 100": {"left": {Volume: volume(101)}},
+	} {
+		if err := set(sounds); err == nil {
+			t.Errorf("sounds with %s were accepted", name)
+		}
+	}
+}

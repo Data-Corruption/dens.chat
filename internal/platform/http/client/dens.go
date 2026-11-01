@@ -200,8 +200,9 @@ const closeHeard = 200 * time.Millisecond
 // pageServer is what a page's stream carries: the dens view, sent at first
 // and whenever changes says it changed; the events of the call the page
 // holds; the dens' events; the voice keys' status and the helper's presses
-// (M7); and the notifications' status, and those the page shows through
-// the browser (M12.3). handle takes each of the page's own messages.
+// (M7); and the notifications' status, those the page shows through the
+// browser (M12.3), and the messages whose sound it plays alone (M14.2).
+// handle takes each of the page's own messages.
 type pageServer struct {
 	view    func(context.Context) (densView, error)
 	changes <-chan struct{}
@@ -312,6 +313,8 @@ func (p pageServer) serve(ctx context.Context, c *websocket.Conn) string {
 				why = write("notify", e.Show)
 			case e.Withdraw != nil:
 				why = write("unnotify", map[string][]string{"keys": e.Withdraw})
+			case e.Sound != nil:
+				why = write("sound", e.Sound)
 			case e.Status != nil:
 				why = write("notifications", e.Status)
 			}

@@ -7,6 +7,14 @@
 // shows it through the browser; with none, the desktop's helper; and on
 // Android, the app's shell. Reading the channel takes it back wherever it
 // shows.
+//
+// From M14.2 it places the message's sound too, so a message makes one
+// sound: with the page's notification, which the page plays, the browser's
+// own made silent; with the helper's or the shell's, the desktop's or
+// Android's own; and where none shows, as with the kind turned off, alone,
+// to the page on screen most lately. It keeps the member's choices for the
+// page's sounds beside their notifications', and knows which sounds they
+// replaced with files of their own, which the pages hear with the status.
 package notify
 
 import (
@@ -98,20 +106,34 @@ type Place interface {
 	Settings(s types.Notifications)
 }
 
-// Event goes to a page: the status, at first and as it changes, or a
-// notification to show or take back through the browser.
+// Event goes to a page: the status, at first and as it changes; a
+// notification to show through the browser, whose sound the page plays
+// with it, or to take back; or a message's sound alone (M14.2).
 type Event struct {
 	Status   *Status
 	Show     *Notification
 	Withdraw []string
+	Sound    *Sounded
+}
+
+// Sounded is a message whose sound a page plays alone (M14.2), by its den,
+// channel and ID.
+type Sounded struct {
+	Den     string `json:"den"`
+	Channel string `json:"channel"`
+	Message string `json:"message"`
 }
 
 // Status is what a page learns of notifications: the member's settings,
-// and on Android, whether Android lets the app post notifications, as its
-// shell last said, which the settings show.
+// the page's sounds among them; the sounds they replaced with files of
+// their own (M14.2); and on Android, whether Android lets the app post
+// notifications, as its shell last said, which the settings show.
 type Status struct {
 	types.Notifications
-	Shell *ShellStatus `json:"shell,omitempty"`
+	// Own is each sound the member replaced, by name, with its file's
+	// version, which the page asks for the file by.
+	Own   map[string]int64 `json:"own,omitempty"`
+	Shell *ShellStatus     `json:"shell,omitempty"`
 }
 
 // ShellStatus is the Android app's shell's say on notifications.
@@ -140,7 +162,11 @@ type Hub struct {
 	// allowed is whether Android lets the app post notifications, as its
 	// shell says.
 	allowed bool
-	// shown is each channel's notification, by key, oldest first in order.
+	// own is each sound the member replaced with a file of their own, by
+	// name, with its file's version (M14.2).
+	own map[string]int64
+	// shown is each channel's notification, by key, oldest first in order,
+	// or its message whose sound played alone.
 	shown map[string]shown
 	order []string
 	// seen counts pages coming on screen, which orders them.
@@ -160,7 +186,7 @@ type page struct {
 
 // shown is a notification out: its message, whether it's for a DM, and
 // where it shows, a page's ID, or the helper or the shell, or "" for a page
-// that's gone.
+// that's gone, or a message whose sound played alone, which shows nowhere.
 type shown struct {
 	den, channel, message string
 	dm                    bool
@@ -176,7 +202,7 @@ const (
 // change, and the desktop's helper.
 func New(log *xlog.Logger, settings types.Notifications, keep func(types.Notifications) error, helper Place, android bool) *Hub {
 	return &Hub{log: log, settings: clone(settings), keep: keep, helper: helper, android: android,
-		pages: map[string]*page{}, shown: map[string]shown{}}
+		pages: map[string]*page{}, own: map[string]int64{}, shown: map[string]shown{}}
 }
 
 func clone(s types.Notifications) types.Notifications {
@@ -184,6 +210,13 @@ func clone(s types.Notifications) types.Notifications {
 	for den, m := range s.Muted {
 		m.Channels = slices.Clone(m.Channels)
 		s.Muted[den] = m
+	}
+	s.Sounds = maps.Clone(s.Sounds)
+	for name, snd := range s.Sounds {
+		if snd.Volume != nil {
+			snd.Volume = ptr(*snd.Volume)
+			s.Sounds[name] = snd
+		}
 	}
 	return s
 }
@@ -204,6 +237,9 @@ func (h *Hub) Status() Status {
 
 func (h *Hub) statusLocked() Status {
 	st := Status{Notifications: clone(h.settings)}
+	if len(h.own) > 0 {
+		st.Own = maps.Clone(h.own)
+	}
 	if h.android {
 		st.Shell = &ShellStatus{Allowed: h.allowed}
 	}
@@ -241,6 +277,56 @@ func (h *Hub) SetKinds(dms, mentions, hideText *bool) error {
 			s.HideText = *hideText
 		}
 	})
+}
+
+// SoundChange changes one of the page's sounds (M14.2): off or on, and its
+// volume in percent; nil leaves either as it is.
+type SoundChange struct {
+	Off    *bool
+	Volume *int
+}
+
+// SetSounds changes the page's sounds, by name, as changes say (M14.2). A
+// sound back on at its default volume leaves the settings, as it was before
+// the member touched it.
+func (h *Hub) SetSounds(changes map[string]SoundChange) error {
+	return h.change(func(s *types.Notifications) {
+		for name, c := range changes {
+			snd := s.Sounds[name]
+			if c.Off != nil {
+				snd.Off = *c.Off
+			}
+			if c.Volume != nil {
+				snd.Volume = ptr(*c.Volume)
+			}
+			if !snd.Off && snd.Volume == nil {
+				delete(s.Sounds, name)
+				continue
+			}
+			if s.Sounds == nil {
+				s.Sounds = map[string]types.Sound{}
+			}
+			s.Sounds[name] = snd
+		}
+		if len(s.Sounds) == 0 {
+			s.Sounds = nil
+		}
+	})
+}
+
+// SetOwn records that the member replaced a sound with a file of their own,
+// by its version, or with version 0 that they put its default back, and
+// tells the pages (M14.2). The database keeps the files; the hub, which
+// ones there are.
+func (h *Hub) SetOwn(name string, version int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if version == 0 {
+		delete(h.own, name)
+	} else {
+		h.own[name] = version
+	}
+	h.broadcastLocked()
 }
 
 // Mute mutes a den, or with channel one of its channels, or unmutes it,
@@ -311,8 +397,13 @@ func (h *Hub) notifiesLocked(den, channel string, dm, mention bool) bool {
 	if !(dm && s.DMs) && !(mention && !dm && s.Mentions) {
 		return false
 	}
-	m := s.Muted[den]
-	return !m.Den && !slices.Contains(m.Channels, channel)
+	return !h.mutedLocked(den, channel)
+}
+
+// mutedLocked is whether the member muted a den, or its channel.
+func (h *Hub) mutedLocked(den, channel string) bool {
+	m := h.settings.Muted[den]
+	return m.Den || slices.Contains(m.Channels, channel)
 }
 
 func (h *Hub) placesLocked() []Place {
@@ -444,11 +535,15 @@ func (h *Hub) onScreenLocked(den, channel string) bool {
 
 // pageLocked is the page a notification shows in: of those the browser
 // lets notify, the one on screen now or most lately.
-func (h *Hub) pageLocked() (string, *page) {
+func (h *Hub) pageLocked() (string, *page) { return h.latestLocked(true) }
+
+// latestLocked is the page on screen now or most lately, of those the
+// browser lets notify where allowed says so.
+func (h *Hub) latestLocked(allowed bool) (string, *page) {
 	var id string
 	var best *page
 	for pid, p := range h.pages {
-		if !p.allowed {
+		if allowed && !p.allowed {
 			continue
 		}
 		if best == nil || (p.visible && !best.visible) || (p.visible == best.visible && p.seen > best.seen) {
@@ -458,23 +553,54 @@ func (h *Hub) pageLocked() (string, *page) {
 	return id, best
 }
 
-// Message notifies the member of a message, where it should.
+// soundLocked sends a message's sound alone to the page on screen most
+// lately, and reports whether there was one to play it (M14.2). On Android
+// the page plays it only while the app is in front: behind, the shell may
+// hold it as shown through a call, or it may be frozen, to play what it
+// missed as it thaws.
+func (h *Hub) soundLocked(rec shown) bool {
+	_, p := h.latestLocked(false)
+	if p == nil || (h.android && !h.front) {
+		return false
+	}
+	h.sendLocked(p, Event{Sound: &Sounded{Den: rec.den, Channel: rec.channel, Message: rec.message}})
+	return true
+}
+
+// Message notifies the member of a message where it should, and places its
+// sound (M14.2): a DM, or a message that mentions them, in a den and
+// channel they haven't muted and no page shows on screen, makes one sound.
+// The page showing its notification plays it; the helper's or the shell's
+// notification has the desktop's or Android's own; and where nothing
+// shows one, as with its kind turned off, the page on screen most lately
+// plays it alone, while a page is open.
 func (h *Hub) Message(m Message) {
 	key := m.Den + "/" + m.Channel
 	h.mu.Lock()
-	if !h.notifiesLocked(m.Den, m.Channel, m.DM, m.Mention) || h.onScreenLocked(m.Den, m.Channel) {
+	if !(m.DM || m.Mention) || h.mutedLocked(m.Den, m.Channel) || h.onScreenLocked(m.Den, m.Channel) {
 		h.mu.Unlock()
 		return
 	}
-	// A message notifies once, though the den may send it again after the
-	// connection drops.
+	// A message notifies, or sounds, once, though the den may send it again
+	// after the connection drops.
 	last, had := h.shown[key]
 	if had && compareIDs(m.ID, last.message) <= 0 {
 		h.mu.Unlock()
 		return
 	}
-	n := compose(m, h.settings.HideText)
 	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM}
+	if !h.notifiesLocked(m.Den, m.Channel, m.DM, m.Mention) {
+		sounded := h.soundLocked(rec)
+		if sounded {
+			h.rememberLocked(key, rec)
+		}
+		h.mu.Unlock()
+		if sounded {
+			h.log.Debugf("Sounded message %s in den %s's channel %s through a page, which doesn't notify of it", m.ID, m.Den, m.Channel)
+		}
+		return
+	}
+	n := compose(m, h.settings.HideText)
 	if id, p := h.pageLocked(); p != nil {
 		rec.at = id
 		h.rememberLocked(key, rec)
@@ -499,18 +625,28 @@ func (h *Hub) Message(m Message) {
 	if had && last.at != rec.at {
 		h.withdraw([]shown{last})
 	}
+	// With nothing to show it, its sound goes alone to the page on screen
+	// most lately.
 	h.mu.Lock()
-	if rec.at == "" {
-		h.forgetLocked(key)
-	} else {
+	sounded := false
+	switch {
+	case rec.at != "":
 		h.rememberLocked(key, rec)
+	case h.soundLocked(rec):
+		sounded = true
+		h.rememberLocked(key, rec)
+	default:
+		h.forgetLocked(key)
 	}
 	h.mu.Unlock()
-	if rec.at == "" {
+	switch {
+	case sounded:
+		h.log.Debugf("Nothing here shows a notification for message %s in den %s's channel %s; a page sounded it", m.ID, m.Den, m.Channel)
+	case rec.at == "":
 		h.log.Debugf("Nothing here shows a notification for message %s in den %s's channel %s", m.ID, m.Den, m.Channel)
-		return
+	default:
+		h.log.Debugf("Notified the member of message %s in den %s's channel %s, through the %s", m.ID, m.Den, m.Channel, rec.at)
 	}
-	h.log.Debugf("Notified the member of message %s in den %s's channel %s, through the %s", m.ID, m.Den, m.Channel, rec.at)
 }
 
 // placeOf is the place named at, or one that does nothing.
