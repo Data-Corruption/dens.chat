@@ -83,12 +83,13 @@ Be wary of "I'm @them over there, let's compare there": compare where you know
 who you're talking to. If the digits don't match, someone may be in the middle,
 so start the DM again.
 
-## Notifications
+## Notifications and sounds
 
 Dens can tell you about a DM, or a message that mentions you by your username.
-Nothing notifies you until you turn it on: open **Settings**, then **Chat &
-media**, and turn on **Direct messages**, **Mentions**, or both. The settings
-live in Dens on your computer, so every browser you use it with shares them.
+Nothing notifies you until you turn it on: open **Settings**, then
+**Notifications & sounds**, and turn on **Direct messages**, **Mentions**, or
+both. The settings live in Dens on your computer, so every browser you use it
+with shares them.
 
 Where they show depends on what's open:
 
@@ -115,6 +116,31 @@ at the top of a channel or DM mutes just that one.
 A notification shows the start of the message, a DM's too, to anyone who can
 see your screen, or your phone's lock screen. Turn off **Show the message** and
 it says only who sent one. Spoilers never show.
+
+### Sounds
+
+Dens plays a short sound for a DM or a mention, and in a call as someone joins
+or leaves, you included, as someone starts or stops sharing their screen, and
+as your microphone turns on and off, whether you mute, push to talk, deafen, or
+a moderator mutes you. Each is on until you turn it off, under **Sounds** in the
+same settings, where ▶ plays it and the slider sets how loud it is.
+
+- **A message makes one sound.** With a notification in your browser, Dens's
+  sound plays and the browser's own stays quiet. With **Direct messages** or
+  **Mentions** off, a DM or a mention still plays its sound, in the Dens tab you
+  used last, unless that tab shows the channel or you muted it. With no Dens
+  tab open, the notification your desktop shows plays your desktop's sound.
+- **On Android**, a notification plays Android's own sound, which you change
+  in Android's settings for Dens's notifications. The rest play through the
+  call, on the earpiece, the speaker or Bluetooth, wherever you hear it.
+- **Deafened**, you hear only your microphone's sounds.
+- A browser lets a page play sound only once you've clicked in it, so a Dens tab
+  you haven't touched since it opened plays none.
+
+**Replace…** swaps a sound for a file of your own: audio that plays in your
+browser, such as an MP3, Ogg or WAV file, of at most 1 MiB and 10 seconds.
+**Reset** brings back Dens's. Your file stays in Dens on your computer, for
+every browser you use it with; it never goes to a den, and a backup holds it.
 
 ## Leaving
 
