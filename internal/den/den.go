@@ -101,6 +101,10 @@ type Den struct {
 	// CallHold is how long a call whose socket closed waits for its device
 	// to take it back (M3); tests shorten it.
 	CallHold time.Duration
+	// PingInterval is how often the den pings each socket. Each ping wakes
+	// a sleeping phone, whose client checks its session's renewal then
+	// (M14.1); tests shorten it.
+	PingInterval time.Duration
 }
 
 // Session is an authenticated session.
@@ -134,6 +138,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		presence:      newPresence(),
 		calls:         newCallRegistry(),
 		PresenceDelay: defaultPresenceDelay,
+		PingInterval:  defaultPingInterval,
 	}
 	d.limits.challenge = newLimiter(30, 2*time.Second, 100_000)
 	d.limits.join = newLimiter(10, 6*time.Minute, 100_000)
