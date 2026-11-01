@@ -88,7 +88,7 @@ try {
     if (which === 'chromium') await b.cdp('Browser.grantPermissions', { permissions: ['notifications'], origin: 'http://localhost:18484' }, null);
     await b.go(`http://localhost:18484/den/${den}/${general}`);
     await waitFor(() => b.eval(`!!document.querySelector('textarea')`), 'general');
-    await openSettings(b, 'Chat & media');
+    await openSettings(b, 'Notifications & sounds');
     await waitFor(() => b.eval(`!!document.getElementById('notify-dms')`), 'the notifications card');
     await b.eval(`document.getElementById('notify-dms').click(), true`, true);
     await waitFor(() => settings().dms, 'DMs on, kept by the service');
@@ -149,7 +149,7 @@ try {
         env: { ...BUS, PATH: `${HOME}/notify-bin:${process.env.PATH}` },
         stdio: ['ignore', 'ignore', fs.openSync(`${HOME}/helper.log`, 'w')],
     });
-    await openSettings(b, 'Chat & media');
+    await openSettings(b, 'Notifications & sounds');
     const desktop = await may(waitFor(() => has('With no Dens tab open, your desktop shows them.'), 'the helper showing notifications', 20000));
     const said = await b.eval(`[...document.querySelectorAll('p')].find((p) => p.textContent.includes('With no Dens tab open'))?.textContent || ''`);
     await shot('helper-settings');

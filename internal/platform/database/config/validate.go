@@ -16,7 +16,24 @@ func validate(cfg *types.Configuration) error {
 	if _, err := xlog.NormalizeLevel(cfg.LogLevel); err != nil {
 		return err
 	}
-	return validateVoiceKeys(cfg.VoiceKeys)
+	if err := validateVoiceKeys(cfg.VoiceKeys); err != nil {
+		return err
+	}
+	return validateSounds(cfg.Notifications.Sounds)
+}
+
+// validateSounds checks the member's choices for the page's sounds: sounds
+// the page has, at volumes from 0 to 100 percent.
+func validateSounds(sounds map[string]types.Sound) error {
+	for name, s := range sounds {
+		if !slices.Contains(types.SoundNames, name) {
+			return fmt.Errorf("no sound %q", name)
+		}
+		if s.Volume != nil && (*s.Volume < 0 || *s.Volume > 100) {
+			return fmt.Errorf("the %s sound's volume is %d, not 0 to 100", name, *s.Volume)
+		}
+	}
+	return nil
 }
 
 // validateVoiceKeys checks keys as the page sends them: known actions, a

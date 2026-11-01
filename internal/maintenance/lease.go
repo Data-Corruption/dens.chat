@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/pkg/xsyscall"
@@ -169,7 +170,11 @@ func (e *RolledBackError) Error() string {
 // starts against the lifecycle state it found under the lock (none, unless
 // found), as an installer decides for an installed one. A development
 // instance migrates whichever way its version moves, since its data is
-// disposable. The Flatpak's versions move only forward (M9.3), as the
+// disposable; and every development build, of any form, migrates data the
+// same version left, since all of them are build.DevVersion, so the
+// version can't say whether another tree's build left it (M14.2): the
+// migrations run what the data lacks, and refuse a schema newer than the
+// build's. The Flatpak's versions move only forward (M9.3), as the
 // Android app's do (M12): data an older version left is an update, which
 // the plan says to keep a snapshot of first; data a newer one wrote, a
 // rollback, which it refuses; and a transition another build began, it
@@ -183,6 +188,9 @@ func SessionStart(form layout.Form, state State, found bool, version string) (Se
 	switch {
 	case !found:
 		next := NewState(PhaseInstalling, "", version)
+		return SessionPlan{Mode: StartMigrate, Publish: &next}, nil
+	case state.Phase == PhaseReady && state.Version == version && version == build.DevVersion:
+		next := retarget(state, version)
 		return SessionPlan{Mode: StartMigrate, Publish: &next}, nil
 	case state.Phase == PhaseReady && state.Version == version:
 		return SessionPlan{Mode: StartNormal}, nil

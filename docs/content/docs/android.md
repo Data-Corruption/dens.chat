@@ -144,7 +144,7 @@ Two settings stop it:
   **Background usage limits**.
 
 For notifications of DMs and mentions, turn them on in Dens's settings
-([Notifications](../join/#notifications)).
+([Notifications and sounds](../join/#notifications-and-sounds)).
 
 ## Updating
 

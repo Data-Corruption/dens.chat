@@ -107,6 +107,11 @@ generate() {
   section "Preact ${DEFAULT_PREACT_VERSION}, in the page" "$TEXTS/preact.txt" "https://preactjs.com"
   section "Tailwind CSS ${DEFAULT_TAILWIND_VERSION#v}, in the page's styles" "$TEXTS/tailwindcss.txt" "https://tailwindcss.com"
   section "daisyUI ${DEFAULT_DAISYUI_VERSION#v}, in the page's styles" "$TEXTS/daisyui.txt" "https://daisyui.com"
+  section "Kenney's Interface Sounds, the page's sounds" "$TEXTS/cc0.txt" "https://kenney.nl/assets/interface-sounds" \
+    "Made by Kenney (www.kenney.nl), and dedicated to the public domain under CC0 1.0, which asks" \
+    "no credit; Dens gives it all the same. message.ogg is Drop 4, joined.ogg Confirmation 1, left.ogg" \
+    "Question 2, shareStarted.ogg Maximize 6, shareEnded.ogg Minimize 6, micOn.ogg Drop 3, and" \
+    "micOff.ogg Bong 1."
   local kotlin
   kotlin=$(printf '%s\n' "${ANDROID_TOOLS[@]}" | sed -n 's/^kotlin-compiler-\([0-9.]*\)\.zip .*/\1/p')
   section "Kotlin's standard library ${kotlin}, in the Android app's shell" "$TEXTS/kotlin.txt" "https://kotlinlang.org" \

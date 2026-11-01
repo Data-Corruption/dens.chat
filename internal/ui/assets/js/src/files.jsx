@@ -9,6 +9,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { APIError, pageHeaders, reloadIfStale } from './api.js';
 import { useBackdrop } from './components.jsx';
+import { PlayIcon } from './icons.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { canCopy, followUpload } from './copier.js';
 import { dismisses } from './touch.js';
@@ -331,14 +332,6 @@ function VideoTile({ denID, file, box }) {
                 </div>
             )}
         </div>
-    );
-}
-
-function PlayIcon({ size }) {
-    return (
-        <svg viewBox="0 0 16 16" class={size} fill="currentColor" aria-hidden="true">
-            <path d="M4.5 2.8v10.4L13 8z" />
-        </svg>
     );
 }
 

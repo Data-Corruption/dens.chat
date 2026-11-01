@@ -7,8 +7,15 @@
 // service takes a notification back, as when the member reads its
 // channel, wherever it shows. Android's WebView has no notifications: the
 // app's shell posts them there.
+//
+// From M14.2 the service places the message's sound too, so a message
+// makes one: a page plays it with the notification it shows, which it asks
+// the browser to show silently, and alone where the service says, as when
+// the member turned the kind off. It also carries the sounds' settings in
+// the status, which the page's sounds play by.
 
 import { onEvent, setPageState } from './events.js';
+import { heardSounds, playSound } from './sounds.js';
 
 // The latest status the service sent: the member's settings, and on
 // Android, the shell's word on whether Android lets the app post them.
@@ -47,15 +54,17 @@ export function heading(n) {
 
 // show shows a notification through the browser, replacing its channel's;
 // a click on it brings the page forward and opens the message, through
-// open. It returns the browser's notification, or null where the browser
-// won't show it.
+// open. It shows silently, since the page plays the message's sound
+// (M14.2): Chromium and, from 132, Firefox keep the system's own quiet. It
+// returns the browser's notification, or null where the browser won't
+// show it.
 export function show(n, open, win = globalThis) {
     const N = win.Notification;
     if (permission(win) !== 'granted') return null;
     shown.get(n.key)?.close();
     let note;
     try {
-        note = new N(heading(n), { body: n.text, tag: n.key });
+        note = new N(heading(n), { body: n.text, tag: n.key, silent: true });
     } catch {
         // Chromium on a phone shows them only through a service worker.
         return null;
@@ -98,9 +107,14 @@ export function startNotifications(open) {
     onEvent((msg) => {
         if (msg.t === 'notifications') {
             status = msg.d;
+            heardSounds(status);
             listeners.forEach((fn) => fn(status));
         } else if (msg.t === 'notify') {
+            // The sound plays whether or not the browser shows it.
             show(msg.d, open);
+            playSound('message');
+        } else if (msg.t === 'sound') {
+            playSound('message');
         } else if (msg.t === 'unnotify') {
             withdraw(msg.d.keys || []);
         }

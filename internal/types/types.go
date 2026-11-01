@@ -64,6 +64,23 @@ type Notifications struct {
 	HideText bool `json:"hideText,omitempty"`
 	// Muted holds what the member muted, by den ID.
 	Muted map[string]Muted `json:"muted,omitempty"`
+	// Sounds are the member's choices for the page's sounds (M14.2), by
+	// name: each plays at its default volume, which the page holds, until
+	// they turn it off or set its volume. They're kept beside what
+	// notifies the member, as one tab of the settings holds both.
+	Sounds map[string]Sound `json:"sounds,omitempty"`
+}
+
+// SoundNames are the page's sounds (M14.2): a message, a member joining and
+// leaving the call, a share starting and ending, and the member's
+// microphone opening and closing.
+var SoundNames = []string{"message", "joined", "left", "shareStarted", "shareEnded", "micOn", "micOff"}
+
+// Sound is the member's choice for one of the page's sounds: off, and its
+// volume in percent, nil for its default.
+type Sound struct {
+	Off    bool `json:"off,omitempty"`
+	Volume *int `json:"volume,omitempty"`
 }
 
 // Muted is what a member muted in one den: the whole den, and channels of

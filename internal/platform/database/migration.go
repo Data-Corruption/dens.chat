@@ -342,6 +342,22 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M14.2: the member's own sounds, each a file of theirs in place of one
+	// of the page's sounds, by the sound's name, sealed with the data key,
+	// and when it was set, which names the file's version for the page.
+	m.Add("Own sounds", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE sounds (
+				name   TEXT PRIMARY KEY,
+				file   BLOB NOT NULL,
+				set_at INTEGER NOT NULL -- unix milliseconds
+			) STRICT;
+		`); err != nil {
+			return fmt.Errorf("create sounds: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

@@ -26,6 +26,7 @@ function browser(permission, answer = permission) {
             this.title = title;
             this.body = opts.body;
             this.tag = opts.tag;
+            this.silent = opts.silent;
             this.closed = false;
             shown.push(this);
         }
@@ -71,6 +72,7 @@ test('a notification shows with its den, replaces its channel\'s, and a click op
     assert.equal(first.title, 'Alice · Den');
     assert.equal(first.body, 'hello');
     assert.equal(first.tag, 'd1/7');
+    assert.equal(first.silent, true, 'silent, since the page plays the message\'s sound (M14.2)');
     const newer = show({ ...DM, message: '11', text: 'again' }, open, b.win);
     assert.ok(first.closed, "a channel's newer notification replaces its last");
     let prevented = false;

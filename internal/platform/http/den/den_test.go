@@ -200,6 +200,25 @@ func TestRootSaysWhatItIs(t *testing.T) {
 	wantError(t, resp, http.StatusNotFound, denproto.CodeNotFound)
 }
 
+// A member's own sounds stay on their install (M14.2): the client's router
+// serves them, and the den's, which Caddy puts on the internet, knows none
+// of their routes, for an owner's own sounds either.
+func TestOwnSoundsAreNotTheDens(t *testing.T) {
+	f := newFixture(t)
+	token, _ := f.owner()
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodDelete} {
+		req, _ := http.NewRequest(method, f.srv.URL+"/api/sounds/joined", strings.NewReader("RIFF\x24\x00\x00\x00WAVE"))
+		req.Header.Set(denproto.HeaderVersion, "1")
+		req.Header.Set("Authorization", "Bearer "+token.String())
+		req.Header.Set("Content-Type", "application/octet-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantError(t, resp, http.StatusNotFound, denproto.CodeNotFound)
+	}
+}
+
 func TestClientIP(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.RemoteAddr = "127.0.0.1:5000"

@@ -309,7 +309,7 @@ export async function memberScreens(h, ctx) {
         await h.snap('settings-appearance', { scroll: PANEL });
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
-        for (const [tab, name] of [['Chat & media', 'chat'], ['Voice & video', 'voice'], ['System', 'system']]) {
+        for (const [tab, name] of [['Chat & media', 'chat'], ['Notifications & sounds', 'notifications'], ['Voice & video', 'voice'], ['System', 'system']]) {
             await settingsTab(h, tab);
             await sleep(600);
             await h.snap(`settings-${name}`, { scroll: PANEL, max: 6 });
@@ -982,7 +982,8 @@ const VIEWER = `(() => {
 // point at from a gap of from to to, and d.wheel(at, dy), where given,
 // turns the wheel there. The settings open as a list of their sections,
 // each a page, which Back leaves for the list, and Back leaves the list,
-// closing them; where d.phone says, Voice & video holds no keyboard
+// closing them; Notifications & sounds holds the notifications and the
+// sounds (M14.2); where d.phone says, Voice & video holds no keyboard
 // shortcuts or screen share, which a browser's hold. Manage goes the same
 // way. The viewer, on a message's two photos, moves to the second by a
 // swipe, zooms by a double tap, and by two fingers or the wheel, and Back
@@ -1017,6 +1018,11 @@ export async function pages(h, ctx, d, report) {
     await h.wait(HOME, 'home');
     await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
     await walk(SETTINGS_FRAME, 'the settings', '', async (row, page) => {
+        if (row === 'Notifications & sounds') {
+            const shown = await until(SETTINGS_FRAME, (s) => s.cards.includes('Sounds'), 'the sounds card');
+            did(shown?.cards.join() === 'Notifications,Sounds', `Notifications & sounds holds the notifications and the sounds (${shown?.cards.join(', ')})`);
+            return;
+        }
         if (row !== 'Voice & video') return;
         const keys = page.cards.includes('Keyboard shortcuts');
         const share = page.cards.includes('Screen share');
