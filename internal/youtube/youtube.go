@@ -1,7 +1,8 @@
 // Package youtube fetches what the covers of YouTube's players show (M4.1):
-// a linked video's title and channel, from YouTube's oEmbed endpoint, and
-// its picture, from i.ytimg.com. The page shows both from its own origin,
-// so nothing on it contacts YouTube until a member plays a video.
+// a linked video's title and channel, with the channel's address (M14.1),
+// from YouTube's oEmbed endpoint, and its picture, from i.ytimg.com. The
+// page shows both from its own origin, so nothing on it contacts YouTube
+// until a member plays a video or opens one of its links.
 //
 // It asks only at addresses it builds from a checked video ID, follows no
 // redirects, caps what it reads, and keeps what it found in memory. It
@@ -53,6 +54,9 @@ const (
 
 	maxTitle   = 200
 	maxChannel = 100
+	// A channel's address is its handle or ID on YouTube, well short of
+	// this; a longer one isn't a channel's.
+	maxChannelURL = 200
 )
 
 var (
@@ -68,6 +72,9 @@ var (
 type Video struct {
 	Title   string `json:"title,omitempty"`
 	Channel string `json:"channel,omitempty"`
+	// ChannelURL is the channel's address, which the cover links its name
+	// to (M14.1): only an https address on www.youtube.com.
+	ChannelURL string `json:"channel_url,omitempty"`
 	// Playable is false for a video whose owner turned off embedding, or
 	// that's private, which oEmbed refuses to describe.
 	Playable bool `json:"playable"`
@@ -248,15 +255,35 @@ func (l *Lookup) fetchVideo(ctx context.Context, id string) (any, int, error) {
 	// The answer also offers a ready-made player, as HTML; nothing but
 	// these fields is read.
 	var answer struct {
-		Type   string `json:"type"`
-		Title  string `json:"title"`
-		Author string `json:"author_name"`
+		Type      string `json:"type"`
+		Title     string `json:"title"`
+		Author    string `json:"author_name"`
+		AuthorURL string `json:"author_url"`
 	}
 	if err := json.Unmarshal(body, &answer); err != nil || answer.Type != "video" {
 		return nil, 0, fmt.Errorf("%w: oEmbed's answer doesn't describe a video", ErrUnavailable)
 	}
 	v := Video{Title: clean(answer.Title, maxTitle), Channel: clean(answer.Author, maxChannel), Playable: true}
-	return v, len(v.Title) + len(v.Channel), nil
+	if v.Channel != "" {
+		v.ChannelURL = channelURL(answer.AuthorURL)
+	}
+	return v, len(v.Title) + len(v.Channel) + len(v.ChannelURL), nil
+}
+
+// channelURL returns a channel's address from oEmbed's answer as the page
+// may link to it, or "" for anything but an https address on
+// www.youtube.com: the link opens in a member's browser, so it goes to
+// YouTube or nowhere. It's written out again from its parts, so the page
+// gets it in one plain form.
+func channelURL(s string) string {
+	if len(s) > maxChannelURL {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "https" || u.Host != "www.youtube.com" || u.User != nil || u.Opaque != "" {
+		return ""
+	}
+	return u.String()
 }
 
 func (l *Lookup) fetchPicture(ctx context.Context, id string) (any, int, error) {

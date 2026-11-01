@@ -84,6 +84,10 @@ type Manager struct {
 	RenewRetry   time.Duration
 	PingInterval time.Duration
 	PingTimeout  time.Duration
+	// Now reads the wall clock, which a session's expiry and how long a
+	// connection lasted go by (M14.1); tests move it ahead, as a phone's
+	// goes ahead of its monotonic clock while it sleeps.
+	Now func() time.Time
 
 	joinMu sync.Mutex
 
@@ -203,6 +207,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		RenewRetry:    30 * time.Second,
 		PingInterval:  20 * time.Second,
 		PingTimeout:   10 * time.Second,
+		Now:           time.Now,
 		watches:       map[chan struct{}]struct{}{},
 		streams:       map[chan PageEvent]struct{}{},
 		focus:         map[string]map[string]string{},

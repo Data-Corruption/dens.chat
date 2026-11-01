@@ -3,6 +3,7 @@ package youtube
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
@@ -130,6 +131,49 @@ func TestACoverShowsTheTitleAndChannelAsNames(t *testing.T) {
 	}
 	if n := len([]rune(v.Channel)); n > maxChannel || n < maxChannel-1 || !strings.HasPrefix(v.Channel, "Rick Astley ab ab") || !strings.HasSuffix(v.Channel, "…") {
 		t.Errorf("channel of %d characters: %q", n, v.Channel)
+	}
+}
+
+// The cover links a channel's name to its address (M14.1), which opens in
+// the member's browser, so it's kept only on YouTube's own site.
+func TestAChannelsAddressIsKeptOnlyOnYouTube(t *testing.T) {
+	for _, c := range []struct{ name, address, want string }{
+		{"a handle", "https://www.youtube.com/@RickAstleyYT", "https://www.youtube.com/@RickAstleyYT"},
+		{"an ID", "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw", "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw"},
+		{"a handle in other letters", "https://www.youtube.com/@ゆーちゅーぶ", "https://www.youtube.com/@%E3%82%86%E3%83%BC%E3%81%A1%E3%82%85%E3%83%BC%E3%81%B6"},
+		{"none", "", ""},
+		{"plain http", "http://www.youtube.com/@RickAstleyYT", ""},
+		{"another host of YouTube's", "https://m.youtube.com/@RickAstleyYT", ""},
+		{"without www", "https://youtube.com/@RickAstleyYT", ""},
+		{"in capitals", "https://WWW.YOUTUBE.COM/@RickAstleyYT", ""},
+		{"a host that starts the same", "https://www.youtube.com.example.org/@RickAstleyYT", ""},
+		{"with a port", "https://www.youtube.com:8443/@RickAstleyYT", ""},
+		{"with a user", "https://someone@www.youtube.com/@RickAstleyYT", ""},
+		{"elsewhere behind a user", "https://www.youtube.com@example.org/@RickAstleyYT", ""},
+		{"a script", "javascript:alert(1)", ""},
+		{"without a scheme", "//www.youtube.com/@RickAstleyYT", ""},
+		{"a path alone", "/@RickAstleyYT", ""},
+		{"opaque", "https:www.youtube.com/@RickAstleyYT", ""},
+		{"too long", "https://www.youtube.com/@" + strings.Repeat("x", maxChannelURL), ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			address, _ := json.Marshal(c.address)
+			y := newYouTube(t)
+			y.answer("/oembed", oEmbed(t, `{"type":"video","title":"Never","author_name":"Rick Astley","author_url":`+string(address)+`}`))
+			v, err := y.lookup().Video(context.Background(), id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if v.ChannelURL != c.want || v.Channel != "Rick Astley" {
+				t.Errorf("channel %q at %q, want it at %q", v.Channel, v.ChannelURL, c.want)
+			}
+		})
+	}
+	// A channel with no name to show has no address either.
+	y := newYouTube(t)
+	y.answer("/oembed", oEmbed(t, `{"type":"video","title":"Never","author_name":"​","author_url":"https://www.youtube.com/@RickAstleyYT"}`))
+	if v, err := y.lookup().Video(context.Background(), id); err != nil || v.Channel != "" || v.ChannelURL != "" {
+		t.Errorf("a nameless channel: %+v, %v", v, err)
 	}
 }
 

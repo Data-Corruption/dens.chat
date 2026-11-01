@@ -205,14 +205,15 @@ func (c *conn) run(ctx context.Context) {
 			return
 		}
 		// Why the connection closed goes to the log at info, with how long
-		// it was up (M11). One that never came up goes at debug, since a
-		// den that's down fails every half minute.
+		// it was up (M11), by the wall clock (M14.1). One that never came up
+		// goes at debug, since a den that's down fails every half minute.
+		up := c.m.wall().Sub(connectedAt)
 		if connectedAt.IsZero() {
 			c.logf(false, "couldn't connect: %s", why)
 		} else {
-			c.logf(true, "its connection closed after %s: %s", time.Since(connectedAt).Round(time.Second), why)
+			c.logf(true, "its connection closed after %s: %s", up.Round(time.Second), why)
 		}
-		if !connectedAt.IsZero() && time.Since(connectedAt) >= time.Minute {
+		if !connectedAt.IsZero() && up >= time.Minute {
 			b.reset()
 		}
 		var wait time.Duration
@@ -335,13 +336,20 @@ func describe(err error) string {
 	return Explain(err)
 }
 
+// wall reads the wall clock without Go's monotonic reading: Go measures
+// between two times by their monotonic readings when both hold one, and
+// the monotonic clock stops while a phone sleeps (android.md's A phone
+// sleeps). A session's expiry, and how long a connection lasted, go by the
+// wall clock alone (M14.1).
+func (m *Manager) wall() time.Time { return m.Now().Round(0) }
+
 // session returns a token that is valid for at least a minute, signing in
 // again when needed. Page requests and the socket share it.
 func (c *conn) session(ctx context.Context) (denproto.Bytes, error) {
 	valid := func() denproto.Bytes {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		if c.token != nil && time.Until(c.expires) > c.m.MinTokenLife {
+		if c.token != nil && c.expires.Sub(c.m.wall()) > c.m.MinTokenLife {
 			return c.token
 		}
 		return nil
@@ -469,8 +477,18 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	h := http.Header{}
 	a.headers(h, token)
 	c.setState(StateConnecting, "")
+	// Each of the den's pings has renew look at the time (M14.1). The
+	// socket hears pings as it reads, so this mustn't block.
+	pinged := make(chan struct{}, 1)
 	ws, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: a.client, HTTPHeader: h,
-		CompressionMode: websocket.CompressionNoContextTakeover})
+		CompressionMode: websocket.CompressionNoContextTakeover,
+		OnPingReceived: func(context.Context, []byte) bool {
+			select {
+			case pinged <- struct{}{}:
+			default:
+			}
+			return true
+		}})
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return time.Time{}, -1, "it no longer accepts the session", errDialUnauthorized
@@ -511,7 +529,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	}()
 	go func() {
 		defer helpers.Done()
-		c.renew(sctx, ws)
+		c.renew(sctx, ws, pinged)
 	}()
 	for {
 		_, data, err := ws.Read(sctx)
@@ -545,7 +563,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			}
 			if e.T == denproto.EventReady || e.T == denproto.EventResumed {
 				if connectedAt.IsZero() {
-					connectedAt = time.Now()
+					connectedAt = c.m.wall()
 					c.logf(false, "its connection is up")
 				}
 				c.setState(StateConnected, "")
@@ -659,11 +677,16 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	case denproto.EventAuthRenewed:
 		var r denproto.Renewed
 		if json.Unmarshal(e.D, &r) == nil {
+			until := time.UnixMilli(r.ExpiresAt)
 			c.mu.Lock()
-			if until := time.UnixMilli(r.ExpiresAt); until.After(c.expires) {
+			later := until.After(c.expires)
+			if later {
 				c.expires = until
 			}
 			c.mu.Unlock()
+			if later {
+				c.logf(false, "its session was renewed, with %s left", until.Sub(c.m.wall()).Round(time.Second))
+			}
 		}
 		return e, false, nil
 	}
@@ -922,15 +945,32 @@ func (c *conn) ping(ctx context.Context, ws *websocket.Conn) bool {
 // renew extends the session on the open socket before it expires. If the
 // den doesn't confirm, it tries again; if the token runs out anyway, the den
 // closes the socket with 4001 and run signs in again.
-func (c *conn) renew(ctx context.Context, ws *websocket.Conn) {
+//
+// It goes by the wall clock, as the token's expiry does, and looks at it as
+// its timer fires and as each of the den's pings arrives (M14.1): Go's
+// timers run on the monotonic clock, which stops while a phone sleeps, so
+// there the timer fires late, by hours on a desk, while the den's ping,
+// every 30 seconds, wakes a sleeping phone anyway.
+func (c *conn) renew(ctx context.Context, ws *websocket.Conn, pinged <-chan struct{}) {
+	var tried time.Time
 	for {
-		wait := time.Until(c.expiry().Add(-c.m.RenewLead))
-		if wait > 0 {
-			if !sleep(ctx, wait) {
+		due := c.expiry().Add(-c.m.RenewLead)
+		if retry := tried.Add(c.m.RenewRetry); retry.After(due) {
+			due = retry
+		}
+		if now := c.m.wall(); now.Before(due) {
+			t := time.NewTimer(due.Sub(now))
+			select {
+			case <-ctx.Done():
+				t.Stop()
 				return
+			case <-t.C:
+			case <-pinged:
+				t.Stop()
 			}
 			continue
 		}
+		tried = c.m.wall()
 		if _, nonce, err := c.challenge(ctx); err == nil {
 			keyID := denproto.ID(c.j.key.Public())
 			e, _ := denproto.NewEvent(denproto.EventAuthRenew, 0, denproto.Renew{
@@ -939,9 +979,6 @@ func (c *conn) renew(ctx context.Context, ws *websocket.Conn) {
 			if frame, err := denproto.EncodeFrame(e); err == nil {
 				_ = ws.Write(ctx, websocket.MessageText, frame)
 			}
-		}
-		if !sleep(ctx, c.m.RenewRetry) {
-			return
 		}
 	}
 }

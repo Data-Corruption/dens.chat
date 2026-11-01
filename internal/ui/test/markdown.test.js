@@ -3,6 +3,7 @@
 
 import './dom.js';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { h, options, render as mount } from 'preact';
 import { Markdown, firstLine, inCodeBlock, parse, preview, sends } from '../assets/js/src/markdown.jsx';
@@ -129,6 +130,31 @@ test('links are bare http(s) addresses that show where they go and open safely',
         assert.equal(a.props.target, '_blank');
         assert.deepEqual(a.props.rel.split(' ').sort(), ['nofollow', 'noopener', 'noreferrer']);
     }
+});
+
+// The links' rule (M14.1): a link is set apart by its color, and underlined
+// only under a pointer that hovers, or with the keyboard's focus. One rule
+// in input.css gives every element with DaisyUI's link that underline, so
+// each has a color of its own too, without which it would read as text:
+// a message's links, a cover's and the page's own.
+test('every link has a color, and is underlined only on hover and keyboard focus', () => {
+    const css = readFileSync('internal/ui/assets/css/input.css', 'utf8').replace(/\s+/g, ' ');
+    assert.ok(css.includes('@layer utilities { .link { text-decoration-line: none; &:focus-visible { text-decoration-line: underline; } ' +
+        '@media (hover: hover) { &:hover { text-decoration-line: underline; } } } }'), "input.css's rule for links");
+    const COLOR = /^(link-(primary|secondary|accent|neutral|info|success|warning|error)|text-(primary|secondary|accent|neutral|info|success|warning|error|white|base-content)(\/\d+)?)$/;
+    const SRC = 'internal/ui/assets/js/src';
+    let links = 0;
+    for (const file of readdirSync(SRC).filter((f) => f.endsWith('.jsx'))) {
+        for (const [, plain, template] of readFileSync(`${SRC}/${file}`, 'utf8').matchAll(/class=(?:"([^"]*)"|\{`([^`]*)`\})/g)) {
+            const classes = (plain ?? template).split(/\s+/);
+            if (!classes.includes('link')) continue;
+            links++;
+            assert.ok(classes.some((c) => COLOR.test(c)), `a link in ${file} has no color of its own: ${plain ?? template}`);
+        }
+    }
+    assert.ok(links >= 12, `only ${links} links in the page's sources`);
+    const [link] = nodes(render('see https://example.com/a')).filter((n) => n.type === 'a');
+    assert.deepEqual(link.props.class.split(' ').filter((c) => c === 'link' || COLOR.test(c)), ['link', 'link-primary']);
 });
 
 test("a link to a message is a chip, and only where it's one", () => {

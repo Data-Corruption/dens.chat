@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The M11.2 check's dens. Alice's install hosts hers: general, where bob
-# and alice have written, a message of bob's deleted since, and bob's
-# links to messages, one at an address the den left and one to a den
-# bob hasn't joined at the den's address; random, with a message of
-# alice's; and staff, a staff-only channel bob can't see, with another.
+# and alice have written, a link of alice's among it (M14.1), a message of
+# bob's deleted since, and bob's links to messages, one at an address the
+# den left and one to a den bob hasn't joined at the den's address;
+# random, with a message of alice's; and staff, a staff-only channel bob
+# can't see, with another.
 # Carol's install hosts Second Den, which bob joins too, with a link in
 # its lobby to a message in alice's.
 # shellcheck source=scripts/test/browser/lib.sh
@@ -19,6 +20,7 @@ for _ in $(seq 80); do
 done
 bob1=$(send bob "$general" "Bob's first")
 send alice "$general" "Alice's first" >/dev/null
+send alice "$general" "Alice's link https://example.com/a/page" >/dev/null
 bob2=$(send bob "$general" "Bob's second")
 gone=$(send bob "$general" "Bob's mistake")
 api bob DELETE "/api/dens/$DEN/messages/$gone" >/dev/null

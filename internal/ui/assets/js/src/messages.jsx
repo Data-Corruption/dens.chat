@@ -1691,7 +1691,7 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
                     <>
                         <p class="flex items-center gap-1 text-base-content/60">
                             {versions ? (
-                                <button type="button" class="link link-hover inline-flex min-h-6 cursor-pointer items-center whitespace-nowrap" onClick={onCompare}
+                                <button type="button" class="link inline-flex min-h-6 cursor-pointer items-center whitespace-nowrap text-base-content/60" onClick={onCompare}
                                     title={`Compare it with the ${versions.sent === 'smaller' ? 'full size' : 'smaller copy'}`}>
                                     {formatSize(f.result.size)} · {sentLabel(versions)}
                                 </button>
@@ -1712,7 +1712,7 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
                         <p class="truncate text-base-content/60">{counting}</p>
                         <progress class="progress progress-primary h-1.5 w-full" value={Math.round(following.done * 100)} max="100"></progress>
                         {following.stage === 'copying' && fullFits && !askedFull && (
-                            <button type="button" class="link link-hover min-h-6 cursor-pointer text-base-content/60" onClick={sendFull}>
+                            <button type="button" class="link min-h-6 cursor-pointer text-base-content/60" onClick={sendFull}>
                                 Send full size instead
                             </button>
                         )}

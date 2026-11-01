@@ -2,7 +2,8 @@
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
 // keyboard, Reply, Copy text and Copy link, Edit, and Delete through its
 // dialog; the menu by touch, through a long press, a touch screen having
-// no ⋯ (M13.2); the chips of links to messages, opening one
+// no ⋯ (M13.2); a message's link in its color, underlined only on hover
+// and keyboard focus (M14.1); the chips of links to messages, opening one
 // in its channel, in another channel, from another den and at an address
 // its den left, and saying why one can't open: out of sight, gone, or in
 // a den bob hasn't joined, even at his den's address; the
@@ -149,6 +150,28 @@ try {
     await press('Escape');
     c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Copy text', 'Copy link']) && inside,
         `alice's message offers bob ${JSON.stringify(theirs)}, and the last message's menu stays inside the list (${inside})`);
+
+    step("a message's link, underlined only on hover and keyboard focus");
+    const LINK = `${ROW("Alice's link")}?.querySelector('a[href="https://example.com/a/page"]')`;
+    const decoration = () => b.eval(`getComputedStyle(${LINK}).textDecorationLine`);
+    const rest = await decoration();
+    const colored = await b.eval(`getComputedStyle(${LINK}).color !== getComputedStyle(${LINK}.parentElement).color`);
+    const spot = await at(b, LINK);
+    await b.move(spot[0], spot[1]);
+    await sleep(200);
+    const onHover = await decoration();
+    await b.move(5, 5);
+    await sleep(200);
+    const left = await decoration();
+    // The keyboard reaches it from the ⋯ of the message before it.
+    await b.eval(`${DOTS("Alice's first")}.focus(), true`);
+    for (let i = 0; i < 6 && !(await b.eval(`document.activeElement === ${LINK}`)); i++) await press('Tab');
+    const reached = await b.eval(`document.activeElement === ${LINK}`);
+    const focusLine = await decoration();
+    await shot('link');
+    await b.eval(`document.activeElement?.blur(), true`);
+    c.report(rest === 'none' && colored && onHover === 'underline' && left === 'none' && reached && focusLine === 'underline',
+        `a message's link is set apart by its color (${colored}) and not underlined (${rest}), but on hover (${onHover}, then ${left} once the pointer left) and with the keyboard's focus (${focusLine}, reached: ${reached})`);
 
     step('links to messages');
     // Bob's message of links: here, there, staff, gone, away, moved and

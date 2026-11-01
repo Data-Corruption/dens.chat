@@ -6,11 +6,32 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_VIDEOS, parse, videosIn } from '../assets/js/src/markdown.jsx';
 import { onYouTubePlayers, setYouTubePlayers, startSeconds, videoOf, youTubePlayers } from '../assets/js/src/links.js';
-import { embedURL, watchURL } from '../assets/js/src/youtube.jsx';
+import { Cover, embedURL, watchURL } from '../assets/js/src/youtube.jsx';
 import linkCases from '../../denproto/testdata/links.json';
 
 const ID = 'dQw4w9WgXcQ';
 const watch = (id = ID, t) => `https://www.youtube.com/watch?v=${id}${t === undefined ? '' : `&t=${t}`}`;
+
+// nodes lists every element in a tree, depth first, and text is what one
+// reads as, as markdown.test.js has them.
+function nodes(tree) {
+    const out = [];
+    const walk = (n) => {
+        if (n == null || typeof n !== 'object') return;
+        if (Array.isArray(n)) return n.forEach(walk);
+        out.push(n);
+        walk(n.props?.children);
+    };
+    walk(tree);
+    return out;
+}
+
+function text(tree) {
+    if (tree == null || typeof tree === 'boolean') return '';
+    if (typeof tree !== 'object') return String(tree);
+    if (Array.isArray(tree)) return tree.map(text).join('');
+    return text(tree.props?.children);
+}
 
 // linksIn lists the links the renderer makes of a text, in order.
 function linksIn(text) {
@@ -133,4 +154,47 @@ test('players stay off until the member turns them on, and the page hears when t
     setYouTubePlayers(true);
     setYouTubePlayers(false);
     assert.deepEqual(heard, [true, false]);
+});
+
+// A cover's title and channel (M14.1).
+const RICK = { found: true, playable: true, title: 'Never Gonna Give You Up', channel: 'Rick Astley', channel_url: 'https://www.youtube.com/@RickAstleyYT' };
+
+test("a cover's title links to the video and its channel's name to the channel, laid over the button that plays it", () => {
+    let played = 0;
+    const tree = Cover({ video: { id: ID, start: 42 }, about: RICK, onPlay: () => played++ });
+    const all = nodes(tree);
+    const links = all.filter((n) => n.type === 'a');
+    assert.deepEqual(links.map((a) => [a.props.href, text(a)]), [[watch(ID, 42), RICK.title], [RICK.channel_url, RICK.channel]]);
+    for (const a of links) {
+        assert.equal(a.props.target, '_blank', a.props.href);
+        assert.equal(a.props.rel, 'noopener noreferrer nofollow', a.props.href);
+        assert.ok(a.props.class.split(' ').includes('pointer-events-auto'), `${a.props.href} takes the pointer`);
+    }
+    // A link in the button would play the video as it opened: the words
+    // lie beside it, in a layer the pointer passes through but for them.
+    const button = all.find((n) => n.type === 'button');
+    assert.equal(nodes(button).filter((n) => n.type === 'a').length, 0);
+    const layer = all.find((n) => n.type === 'div');
+    assert.ok(layer.props.class.split(' ').includes('pointer-events-none'));
+    assert.equal(button.props['aria-label'], `Play ${RICK.title}`);
+    button.props.onClick();
+    assert.equal(played, 1);
+    // The play button lights under the pointer alone, not with the hover of
+    // the message's row, which is a group of its own.
+    const classes = all.flatMap((n) => (typeof n.props?.class === 'string' ? n.props.class.split(' ') : []));
+    assert.ok(classes.includes('group/play') && classes.includes('group-hover/play:bg-[#f00]'));
+    assert.deepEqual(classes.filter((c) => c === 'group' || /^group-[a-z-]+:/.test(c)), []);
+});
+
+test("a channel's name stays text unless its address is on YouTube's own site", () => {
+    for (const channel_url of [undefined, '', 'https://example.org/@RickAstleyYT', 'javascript:alert(1)', 'http://www.youtube.com/@RickAstleyYT',
+        'https://www.youtube.com.example.org/@RickAstleyYT', 'https://www.youtube.com@example.org/', 'https://m.youtube.com/@RickAstleyYT', 42]) {
+        const all = nodes(Cover({ video: { id: ID, start: 0 }, about: { ...RICK, channel_url }, onPlay() {} }));
+        assert.deepEqual(all.filter((n) => n.type === 'a').map((a) => a.props.href), [watch()], String(channel_url));
+        assert.ok(all.some((n) => n.type === 'span' && text(n) === RICK.channel), String(channel_url));
+    }
+    // Without a title, there's nothing to lay over the picture.
+    const untitled = nodes(Cover({ video: { id: ID, start: 0 }, about: { ...RICK, title: '' }, onPlay() {} }));
+    assert.equal(untitled.filter((n) => n.type === 'a').length, 0);
+    assert.equal(text(untitled.find((n) => n.type === 'button')), '');
 });

@@ -311,7 +311,7 @@ export function SignInSteps({ p, onRecover, onDone }) {
                     </p>
                     {onRecover && (
                         <div>
-                            <button type="button" class="link text-sm" disabled={act.busy} onClick={() => act.run(async () => {
+                            <button type="button" class="link link-primary text-sm" disabled={act.busy} onClick={() => act.run(async () => {
                                 await api.del(`/api/dens/signin/${p.id}`);
                                 onRecover(p);
                             })}>

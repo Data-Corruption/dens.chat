@@ -1,7 +1,9 @@
 // The M4.1 check: Alice posts YouTube links; Bob turns players on, plays
 // them, and checks what the page does, in Chromium and Firefox, with each
-// browser's own autoplay rules. YouTube is on the internet, so this check
-// needs it.
+// browser's own autoplay rules; and from M14.1, a cover's title and channel
+// as links to YouTube, underlined only on hover and keyboard focus, which
+// open their tabs without playing it. YouTube is on the internet, so this
+// check needs it.
 //
 //   run.sh youtube chromium|firefox chromium|firefox   (alice's, then bob's)
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -80,10 +82,13 @@ async function setPlayers(s, on) {
     await s.b.eval(`${SETTINGS}.querySelector('button[aria-label=Close]').click(), true`);
 }
 
-// playCover clicks a cover as a member would, and waits for the player.
-async function playCover(s, label, id) {
-    const at = JSON.parse(await s.b.eval(`(() => { const b = ${COVER(label, id)}.querySelector('button'); b.scrollIntoView({ block: 'center' });
-        const r = b.getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
+// playCover clicks a cover as a member would, in its middle, or with
+// beside, just right of its channel's name, in the band its title and name
+// lie in (M14.1), and waits for the player.
+async function playCover(s, label, id, beside = false) {
+    const at = JSON.parse(await s.b.eval(`(() => { const c = ${COVER(label, id)}, b = c.querySelector('button'); b.scrollIntoView({ block: 'center' });
+        const r = b.getBoundingClientRect(), name = c.querySelectorAll('a')[1]?.getBoundingClientRect();
+        return JSON.stringify(${beside} && name ? { x: name.right + 40, y: name.top + name.height / 2 } : { x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
     await sleep(300);
     await s.b.click(at.x, at.y);
     return JSON.parse(await waitFor(() => s.b.eval(`(() => { const f = ${COVER(label, id)}?.querySelector('iframe'); return f ? JSON.stringify({ src: f.src,
@@ -101,7 +106,7 @@ async function playing(s, id, from) {
 
 try {
     for (const s of sides) {
-        s.b = await launch(s.browser, s.debug, { autoplay: 'gesture', preload: PRELOAD, size: [1280, 900] });
+        s.b = await launch(s.browser, s.debug, { autoplay: 'gesture', preload: PRELOAD, size: [1280, 900], hover: true });
         opened.push(s.b);
         // An old link at 127.0.0.1 ends at localhost, paired by its token.
         await s.b.go(`http://127.0.0.1:${s.port}/#token=${token(s.instance)}`);
@@ -134,7 +139,67 @@ try {
     await B.b.eval(`${COVER(rick, RICK)}.scrollIntoView({ block: 'center' }), true`);
     await B.b.shot(`${HOME}/shot-youtube-${B.browser}-cover.png`);
 
-    const frame = await playCover(B, rick, RICK);
+    // The cover's title links to the video and its channel's name to the
+    // channel (M14.1), each opening a tab of its own, outside the button
+    // that plays it, and underlined only on hover and keyboard focus.
+    const LINKS = `[...${COVER(rick, RICK)}.querySelectorAll('a')]`;
+    const caption = JSON.parse(await B.b.eval(`JSON.stringify({ links: ${LINKS}.map((a) => ({ href: a.href, text: a.textContent.trim(), target: a.target, rel: a.rel })),
+        inButton: !!${COVER(rick, RICK)}.querySelector('button a') })`));
+    const [titleLink, channelLink] = caption.links;
+    report(caption.links.length === 2 && !caption.inButton && titleLink.href === `https://www.youtube.com/watch?v=${RICK}&t=42` && cover.includes(titleLink.text.slice(0, 20)) &&
+        /^https:\/\/www\.youtube\.com\/.+/.test(channelLink.href) && channelLink.text === 'Rick Astley' &&
+        caption.links.every((a) => a.target === '_blank' && a.rel === 'noopener noreferrer nofollow'),
+    `${B.browser}: the cover's title links to the video and its channel's name to the channel: ${JSON.stringify(caption)}`);
+    const lines = () => B.b.eval(`${LINKS}.map((a) => getComputedStyle(a).textDecorationLine).join(' ')`);
+    const middle = async (i) => JSON.parse(await B.b.eval(`(() => { const r = ${LINKS}[${i}].getBoundingClientRect();
+        return JSON.stringify([r.left + Math.min(r.width / 2, 40), r.top + r.height / 2]); })()`));
+    // What's under a point: one of the links, or the play button, red under
+    // the pointer.
+    const under = (x, y) => B.b.eval(`(() => { const at = document.elementFromPoint(${x}, ${y}), c = ${COVER(rick, RICK)};
+        const a = at?.closest('a'), red = getComputedStyle(c.querySelector('button span')).backgroundColor === 'rgb(255, 0, 0)';
+        return a ? (a.textContent.trim() === 'Rick Astley' ? 'channel' : 'title') + (red ? ', the button red' : '') : at?.closest('button') === c.querySelector('button') ? (red ? 'the button, red' : 'the button') : String(at?.tagName); })()`);
+    const seen = { rest: await lines() };
+    for (const [i, name] of [[0, 'title'], [1, 'channel']]) {
+        const [x, y] = await middle(i);
+        await B.b.move(x, y);
+        await sleep(200);
+        seen[`${name} hovered`] = `${await lines()} (${await under(x, y)})`;
+    }
+    const beside = await B.b.eval(`(() => { const r = ${LINKS}[1].getBoundingClientRect(); return JSON.stringify([r.right + 40, r.top + r.height / 2]); })()`).then(JSON.parse);
+    await B.b.move(beside[0], beside[1]);
+    await sleep(200);
+    seen['beside the name'] = `${await lines()} (${await under(beside[0], beside[1])})`;
+    await B.b.move(5, 5);
+    await sleep(200);
+    seen.away = await lines();
+    // The keyboard reaches them from the play button, in turn.
+    await B.b.eval(`${COVER(rick, RICK)}.querySelector('button').focus(), true`);
+    for (const name of ['title', 'channel']) {
+        await B.b.key('Tab');
+        await sleep(150);
+        seen[`${name} focused`] = `${await lines()} (${await B.b.eval(`document.activeElement === ${LINKS}[${name === 'title' ? 0 : 1}]`)})`;
+    }
+    await B.b.eval(`document.activeElement.blur(), true`);
+    report(JSON.stringify(seen) === JSON.stringify({ rest: 'none none', 'title hovered': 'underline none (title)', 'channel hovered': 'none underline (channel)',
+        'beside the name': 'none none (the button, red)', away: 'none none', 'title focused': 'underline none (true)', 'channel focused': 'none underline (true)' }),
+    `${B.browser}: the cover's links are underlined only on hover and keyboard focus, and beside them is the play button: ${JSON.stringify(seen)}`);
+    await B.b.shot(`${HOME}/shot-youtube-${B.browser}-caption.png`);
+    // A click on either opens it in a tab of its own, and plays nothing.
+    for (const [i, want] of [[0, RICK], [1, new URL(channelLink.href).pathname.slice(1)]]) {
+        const before = await B.b.windows();
+        const [x, y] = await middle(i);
+        await B.b.click(x, y);
+        const opened = await waitFor(async () => {
+            if ((await B.b.windows()) <= before) return false;
+            const href = await B.b.windowEval('location.href').catch(() => '');
+            return href && decodeURIComponent(href).includes(want) ? href : false;
+        }, `${B.browser} a tab for ${want}`, 15000).catch((e) => e.message);
+        await B.b.closeWindow();
+        const still = await B.b.eval(`!${COVER(rick, RICK)}.querySelector('iframe') && !!${COVER(rick, RICK)}.querySelector('button')`);
+        report(opened.startsWith('https://') && still, `${B.browser}: the cover's ${i ? "channel's name" : 'title'} opened ${opened} in a tab, and the cover stayed one (${still})`);
+    }
+
+    const frame = await playCover(B, rick, RICK, true);
     report(frame.src === `https://www.youtube-nocookie.com/embed/${RICK}?autoplay=1&start=42` && frame.referrer === 'strict-origin-when-cross-origin' &&
         frame.sandbox === 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox' &&
         frame.allow === 'autoplay; encrypted-media; picture-in-picture; fullscreen', `${B.browser} player: ${JSON.stringify(frame)}`);

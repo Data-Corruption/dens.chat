@@ -19,12 +19,12 @@ import (
 )
 
 const (
-	pingInterval  = 30 * time.Second
-	pingTimeout   = 15 * time.Second
-	writeTimeout  = 10 * time.Second
-	closeHeard    = 200 * time.Millisecond // a failed write waits this long to hear why the socket closed
-	eventsPerSend = 256
-	replayChunk   = 500
+	defaultPingInterval = 30 * time.Second
+	pingTimeout         = 15 * time.Second
+	writeTimeout        = 10 * time.Second
+	closeHeard          = 200 * time.Millisecond // a failed write waits this long to hear why the socket closed
+	eventsPerSend       = 256
+	replayChunk         = 500
 	// frameBudget bounds a frame's events as JSON, below the 1 MiB a client
 	// reads, with room for the array around them.
 	frameBudget = denproto.MaxBody - 64<<10
@@ -336,7 +336,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	ephemeral := make(chan denproto.Event, 8)
 	go d.readClient(ctx, cancel, c, s, sock, sub, &expires, ephemeral, ended)
 	go func() {
-		t := time.NewTicker(pingInterval)
+		t := time.NewTicker(d.PingInterval)
 		defer t.Stop()
 		for {
 			select {

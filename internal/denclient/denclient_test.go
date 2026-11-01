@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -406,6 +407,93 @@ func TestRenewalKeepsTheSocket(t *testing.T) {
 	now := m.Statuses()[0]
 	if !connected(now) || now.Since != first.Since {
 		t.Fatalf("the socket didn't survive renewal: %+v, first connected %+v", now, first)
+	}
+}
+
+// A sleeping phone's monotonic clock stops, and Go's timers with it, while
+// its wall clock goes on (M14.1). With the renewal's timer held, set for 50
+// minutes on the monotonic clock, the session is renewed at the den's next
+// ping once the wall clock passes the renewal's time, and not before; and
+// the connection's log says how long it lasted by the wall clock.
+func TestRenewalByTheWallClock(t *testing.T) {
+	h := startDen(t, newStore(t), time.Hour)
+	h.d.PingInterval = 100 * time.Millisecond
+	code, err := h.d.Create(context.Background(), "Asleep", "https://example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newStore(t)
+	if err := s.log.SetLevel("info"); err != nil {
+		t.Fatal(err)
+	}
+	// ahead is how far the client's wall clock has gone past its monotonic
+	// clock, as a phone's does while it sleeps.
+	var ahead atomic.Int64
+	m, _ := h.clientVia(t, s, h.own(), h.public.Listener.Addr().String(), func(m *denclient.Manager) {
+		m.MinTokenLife, m.RenewLead, m.RenewRetry = time.Minute, 10*time.Minute, 30*time.Second
+		m.Now = func() time.Time { return time.Now().Add(time.Duration(ahead.Load())) }
+	})
+	for range 100 {
+		_, err = m.JoinOwn(context.Background(), code, denclient.JoinRequest{Username: "alice", DisplayName: "Alice", Password: "correct horse"})
+		if err != denclient.ErrNotStarted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := waitFor(t, m, "connected", connected)
+	expires := func() int64 {
+		t.Helper()
+		var at int64
+		if err := h.s.db.QueryRow(`SELECT MAX(expires_at) FROM den_sessions`).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	signedIn := expires()
+
+	// Ten pings come while the renewal's time is 50 minutes off.
+	time.Sleep(time.Second)
+	if expires() != signedIn {
+		t.Fatal("the session was renewed ahead of its time")
+	}
+
+	ahead.Store(int64(55 * time.Minute))
+	passed := time.Now()
+	for expires() == signedIn {
+		if time.Since(passed) > 5*time.Second {
+			t.Fatal("the den's pings didn't renew the session once the wall clock passed its time")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if took := time.Since(passed); took > 2*time.Second {
+		t.Errorf("the session was renewed %v after the wall clock passed its time, with the den pinging every 100 ms", took)
+	}
+	if now := m.Statuses()[0]; !connected(now) || now.Since != first.Since {
+		t.Fatalf("the socket didn't stay up: %+v, first connected %+v", now, first)
+	}
+
+	// The connection lasted a second or two by the monotonic clock, and 55
+	// minutes by the wall clock, which the log says.
+	h.restart()
+	closed := regexp.MustCompile(`its connection closed after (\S+): the den closed it with 1012`)
+	var lasted string
+	for deadline := time.Now().Add(10 * time.Second); lasted == ""; {
+		logs, err := s.log.Newest(1 << 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := closed.FindSubmatch(logs); got != nil {
+			lasted = string(got[1])
+		} else if time.Now().After(deadline) {
+			t.Fatalf("no line about the connection closing in the log:\n%s", logs)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if d, err := time.ParseDuration(lasted); err != nil || d < 55*time.Minute || d > 56*time.Minute {
+		t.Errorf("the log says the connection lasted %s, not 55 minutes", lasted)
 	}
 }
 

@@ -159,7 +159,9 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// fill the disk with them: two a second, after the 64 a page keeps
 	// while its stream is down and sends once it's back.
 	notes := rate.NewLimiter(2, 64)
-	opened := time.Now()
+	// How long the stream was open goes by the wall clock, without the
+	// monotonic reading, which stops while a phone sleeps (M14.1).
+	opened := time.Now().Round(0)
 	rt.a.Log.Debugf("Page %s's stream opened", page)
 	why := pageServer{
 		view: func(ctx context.Context) (densView, error) {

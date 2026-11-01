@@ -7,7 +7,7 @@
 # Usage: scripts/test/browser/run.sh CHECK [ARGS...]
 # The checks, by milestone, and the arguments their drivers take:
 #   calls BROWSER BROWSER       M2, M3: two members in a call
-#   youtube BROWSER BROWSER     M4.1: YouTube's players
+#   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1)
 #   share                       M4.2: screen shares, Chromium and Firefox
 #   two-shares                  M4.2: two shares in a player, one the probe's
 #   retention                   M5.1: retention, Chromium and Firefox
@@ -28,7 +28,7 @@
 #                               the New divider, the message box, folding groups, a late-sound video
 #   messages BROWSER            M11.2: each message's ⋯ menu by keyboard, and by touch through a long
 #                               press (M13.2), its delete dialog, and links to messages, in a den and
-#                               from another
+#                               from another; a link underlined only on hover and focus (M14.1)
 #   talk BROWSER                M11.3: push to talk ringing in silence for the call, a watched share
 #                               in a window of its own and back, and the logs downloaded
 #   callaudio BROWSER BROWSER   M12.2: a call played as Android's app plays it, through a context
