@@ -764,11 +764,11 @@ function SystemSettings({ instance, version, pair }) {
                 </p>
                 <p class="text-sm">
                     Guides to installing, joining and hosting:{' '}
-                    <a class="link" href={DOCS} target="_blank" rel="noopener noreferrer">dens.chat/docs</a>
+                    <a class="link link-primary" href={DOCS} target="_blank" rel="noopener noreferrer">dens.chat/docs</a>
                 </p>
                 <p class="text-sm text-base-content/70">
                     Dens includes software from other projects, under their own licenses.{' '}
-                    <a class="link" href="/licenses" target="_blank" rel="noopener noreferrer">Read them</a>
+                    <a class="link link-primary" href="/licenses" target="_blank" rel="noopener noreferrer">Read them</a>
                 </p>
             </Card>
         </>

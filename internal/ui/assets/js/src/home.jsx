@@ -182,7 +182,7 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
                 {note ? (
                     <p class="text-sm text-base-content/70">
                         {note.text}{' '}
-                        <button type="button" class="link" onClick={() => openSettings('system')}>{note.action}</button>
+                        <button type="button" class="link link-primary" onClick={() => openSettings('system')}>{note.action}</button>
                     </p>
                 ) : den.error && <p class="text-sm text-warning">{den.error}</p>}
                 <ErrorText message={forget.error} />
@@ -330,7 +330,7 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
                 {offerHosting && (
                     <p class="mt-2 text-sm text-base-content/70">
                         Want a den of your own?{' '}
-                        <button type="button" class="link" onClick={() => {
+                        <button type="button" class="link link-primary" onClick={() => {
                             onClose();
                             openSettings('system');
                         }}>
@@ -385,7 +385,7 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
                     </Field>
                 )}
                 <div>
-                    <button type="button" class="link text-sm" onClick={() => {
+                    <button type="button" class="link link-primary text-sm" onClick={() => {
                         setRecovering(!recovering);
                         act.setError('');
                     }}>

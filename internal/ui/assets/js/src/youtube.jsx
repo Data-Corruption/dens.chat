@@ -1,7 +1,8 @@
 // YouTube's players (M4.1). With them on, a message's YouTube links get
 // covers under it: each video's picture, title and channel, which the local
-// service fetched, and a play button that swaps in YouTube's own player,
-// in the same box. One plays at a time.
+// service fetched, the title and channel linking to them on YouTube
+// (M14.1), and a play button that swaps in YouTube's own player, in the
+// same box. One plays at a time.
 //
 // The player is a frame from youtube-nocookie.com, sandboxed: it can't
 // navigate the page, its popups can't reach it, and the page listens to
@@ -124,27 +125,59 @@ function Player({ video }) {
             </>
         );
     } else {
-        inside = (
-            <button type="button" class="group absolute inset-0 size-full cursor-pointer" onClick={() => play(self.current)} aria-label={`Play ${about?.title || 'the YouTube video'}`}>
-                {about?.found && <Picture id={video.id} />}
-                {about?.title && (
-                    <span class="absolute inset-x-0 top-0 flex flex-col bg-linear-to-b from-black/80 via-black/50 to-transparent px-3 pb-6 pt-2 text-left text-white">
-                        <span class="truncate text-sm font-semibold">{about.title}</span>
-                        {about.channel && <span class="truncate text-xs text-white/80">{about.channel}</span>}
-                    </span>
-                )}
-                <span class="absolute left-1/2 top-1/2 flex h-12 w-17 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-black/70 transition-colors group-hover:bg-[#f00] group-focus-visible:bg-[#f00]">
-                    <svg viewBox="0 0 24 24" class="size-7 fill-white" aria-hidden="true">
-                        <path d="M8 5.5v13l11-6.5z" />
-                    </svg>
-                </span>
-            </button>
-        );
+        inside = <Cover video={video} about={about} onPlay={() => play(self.current)} />;
     }
     return (
         <div ref={box} data-video={video.id} class="relative aspect-video w-[400px] max-w-full overflow-hidden rounded bg-black">
             {inside}
         </div>
+    );
+}
+
+// channelURL is the address a cover links its channel's name to, which
+// the service keeps only on YouTube's own site; the page takes no other
+// either (M14.1).
+export function channelURL(about) {
+    const url = about?.channel_url;
+    return typeof url === 'string' && url.startsWith('https://www.youtube.com/') ? url : null;
+}
+
+// Cover is what a video shows until it plays: its picture under a play
+// button that fills the box, and its title and channel laid over that, as
+// links to the video and the channel on YouTube, each opening a new tab as
+// a message's links do (M14.1). A link can't sit in a button, so the words
+// lie over it, taking the pointer only where they are, and a click
+// anywhere else on the cover plays the video. Each takes 24 pixels of
+// height, a finger's least. The button's group is named, since the
+// message's row is a group too, whose hover would light the play button
+// under the words.
+export function Cover({ video, about, onPlay }) {
+    const channel = channelURL(about);
+    return (
+        <>
+            <button type="button" class="group/play absolute inset-0 size-full cursor-pointer" onClick={onPlay} aria-label={`Play ${about?.title || 'the YouTube video'}`}>
+                {about?.found && <Picture id={video.id} />}
+                <span class="absolute left-1/2 top-1/2 flex h-12 w-17 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-black/70 transition-colors group-hover/play:bg-[#f00] group-focus-visible/play:bg-[#f00]">
+                    <svg viewBox="0 0 24 24" class="size-7 fill-white" aria-hidden="true">
+                        <path d="M8 5.5v13l11-6.5z" />
+                    </svg>
+                </span>
+            </button>
+            {about?.title && (
+                <div class="pointer-events-none absolute inset-x-0 top-0 flex flex-col items-start bg-linear-to-b from-black/80 via-black/50 to-transparent px-3 pb-6 pt-2 text-white">
+                    <a href={watchURL(video)} target="_blank" rel="noopener noreferrer nofollow" class="link pointer-events-auto max-w-full truncate text-sm font-semibold leading-6 text-white">
+                        {about.title}
+                    </a>
+                    {about.channel && (channel ? (
+                        <a href={channel} target="_blank" rel="noopener noreferrer nofollow" class="link pointer-events-auto max-w-full truncate text-xs leading-6 text-white/80">
+                            {about.channel}
+                        </a>
+                    ) : (
+                        <span class="max-w-full truncate text-xs leading-6 text-white/80">{about.channel}</span>
+                    ))}
+                </div>
+            )}
+        </>
     );
 }
 
