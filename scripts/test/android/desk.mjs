@@ -3,15 +3,17 @@
 // answering the walk in the Android container over HTTP, on PORT at this
 // container's address, with what desk's page shows of the call:
 //
-//   GET  /call   who is in it, by name, and whether each rings or is muted
-//   POST /share  shares desk's screen, its fake capture
-//   POST /quit   hangs up, and ends
+//   GET  /call    who is in it, by name, and whether each rings or is muted
+//   POST /share   shares desk's screen, its fake capture
+//   POST /rejoin  leaves the call and joins it again, for its sounds (M14.2)
+//   POST /quit    hangs up, and ends
 //
 //   node desk.mjs PORT [SECONDS]
 //
 // in dens-browsers' browser directory, beside browsers.mjs. It ends by
 // itself after SECONDS, 600 unless given.
 import http from 'node:http';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { launch, token, waitFor } from './browsers.mjs';
 
 const [, , portArg, secondsArg] = process.argv;
@@ -33,11 +35,16 @@ try {
         return true;
     })()`);
     await waitFor(() => page.eval(`!!document.querySelector('button[title^="Join the call"]')`), "desk's Lounge");
-    await page.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
-    await waitFor(() => page.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), 'desk in the call', 30000);
+    await join();
 } catch (e) {
     console.error(e.message);
     await quit(1);
+}
+
+// join joins Lounge's call, from a click of desk's own.
+async function join() {
+    await page.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
+    await waitFor(() => page.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), 'desk in the call', 30000);
 }
 
 // CALL is the call as desk's list shows it: each member's name, whether
@@ -66,6 +73,14 @@ http.createServer(async (req, res) => {
         if (req.method === 'POST' && req.url === '/share') {
             await waitFor(() => page.eval(SHAREABLE), "desk's share button", 15000).catch(() => {});
             return answer(200, { share: await page.eval(SHARE, true) });
+        }
+        if (req.method === 'POST' && req.url === '/rejoin') {
+            const LEAVE = `document.querySelector('button[aria-label="Leave the call"]')`;
+            await page.eval(`${LEAVE}.click(), true`);
+            await waitFor(async () => !(await page.eval(`!!${LEAVE}`)), 'desk out of the call', 10000);
+            await sleep(1500);
+            await join();
+            return answer(200, { rejoined: true });
         }
         if (req.method === 'POST' && req.url === '/quit') {
             answer(200, { left: await page.eval(`(() => { const b = document.querySelector('button[aria-label="Leave the call"]'); b?.click(); return !!b; })()`) });

@@ -607,7 +607,7 @@ try {
     await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
     const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('[role=tab]')].map((t) => t.textContent.trim()).join('|')`);
     await closeSettings(B, 'close');
-    report(tabs === 'Appearance|Chat & media|Voice & video|System', `${B.browser} settings tabs: ${tabs}`);
+    report(tabs === 'Appearance|Chat & media|Notifications & sounds|Voice & video|System', `${B.browser} settings tabs: ${tabs}`);
 
     // A join that waits on the microphone, as while the browser asks for
     // it, says so; the voice processor's context comes from the click.

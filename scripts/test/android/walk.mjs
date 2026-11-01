@@ -28,7 +28,9 @@
 // button muting and unmuting, then, with its role push to talk, held
 // through Android's own touch while desk sees the member ring, with no
 // long press's buzz, and let go as the notification shade comes down
-// mid-press, and the call left from its bar; or screens, every member's screen with its picture and its
+// mid-press, desk leaving and joining again, whose sounds the page plays
+// through the call's context (M14.2), and the call left from its bar; or
+// screens, every member's screen with its picture and its
 // audit, which fails as the phone check's does on a touch screen. around
 // unless given.
 import { execFileSync } from 'node:child_process';
@@ -196,7 +198,9 @@ async function bars(h, d) {
 // button, which desk sees; sets its role to push to talk in the settings;
 // holds it through Android's own touch, past a long press, while desk
 // sees the member ring, and not before or after; holds it again as the
-// notification shade comes down, which lets it go; and leaves from the
+// notification shade comes down, which lets it go; hears desk leave and
+// join again through the call's context, as Android plays the call's
+// voices, which a hook in the page counts (M14.2); and leaves from the
 // bar.
 async function callWalk(h, d, c) {
     const desk = async (path, method = 'GET') => (await fetch(c.desk + path, { method })).json();
@@ -306,6 +310,49 @@ async function callWalk(h, d, c) {
         await sleep(800);
         await d.up();
         report(rang && quiet && at.button.pressed === 'false', `held as the notification shade comes down, the call's button lets go, which desk sees: ${JSON.stringify({ rang, quiet, button: at.button })}`);
+    });
+    await step('call-sound', async () => {
+        // What the page plays, by what each sound lasts: the call's context
+        // plays a decoded sound, and an element a file. Each lasts what this
+        // WebView decodes it to at the call's rate, the device's, 44.1 or 48
+        // kHz, a few milliseconds past what desktop Chromium does: as 0.338 s
+        // for Left and 0.295 for Joined.
+        const lasts = await h.ev(`(async () => {
+            const sounds = JSON.parse(document.getElementById('app').dataset.sounds);
+            const out = { left: [], joined: [] };
+            for (const name of Object.keys(out)) {
+                const data = await (await fetch(sounds[name])).arrayBuffer();
+                for (const rate of [44100, 48000]) {
+                    out[name].push(Math.round((await new OfflineAudioContext(1, 1, rate).decodeAudioData(data.slice(0))).duration * 1000));
+                }
+            }
+            return out;
+        })()`);
+        await h.ev(`(() => {
+            if (window.__played) return true;
+            window.__played = { context: [], element: [] };
+            const start = AudioBufferSourceNode.prototype.start;
+            AudioBufferSourceNode.prototype.start = function (...a) {
+                window.__played.context.push(Math.round((this.buffer?.duration || 0) * 1000));
+                return start.apply(this, a);
+            };
+            const play = HTMLMediaElement.prototype.play;
+            HTMLMediaElement.prototype.play = function () {
+                if (this.src.includes('/sounds/')) window.__played.element.push(new URL(this.src).pathname);
+                return play.call(this);
+            };
+            return true;
+        })()`);
+        const before = await h.ev('window.__played.context.length');
+        const rejoined = (await desk('/rejoin', 'POST')).rejoined;
+        const near = (ms, want) => want.some((w) => Math.abs(ms - w) <= 1);
+        const played = await waitFor(async () => {
+            const p = await h.ev('window.__played');
+            return p.context.length >= before + 2 && p;
+        }, "desk's sounds", 15000).catch(() => h.ev('window.__played'));
+        const [left, joined] = played.context.slice(before);
+        report(rejoined && near(left, lasts.left) && near(joined, lasts.joined) && played.element.length === 0,
+            `desk leaving and joining again play Left and Joined through the call's context, and no element plays them: ${JSON.stringify({ played, lasts })}`);
     });
     await step('call-leave', async () => {
         await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Leave the call"]')`);

@@ -42,7 +42,8 @@
 # unmutes with the button, holds it to talk through Android's own touch,
 # ringing for the owner only while it's held, has it let go as the
 # notification shade comes down mid-press, and leaves from the bar
-# (M13.4). Then the screens are walked again with Android's font scale at
+# (M13.4); before leaving, it hears the owner leave and join again, the
+# page playing their sounds through the call's context (M14.2). Then the screens are walked again with Android's font scale at
 # 1.3, as a member with larger text has it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
@@ -282,6 +283,9 @@ written=$(shell_log | sed -n 's/.*download: saved \([0-9]*\) bytes.*/\1/p' | tai
 exiftool=$(./scripts/vendor.sh exiftool 2>/dev/null | sed -n 's/^exiftool=//p')
 left=$("$exiftool" -s -s -s -GPS:all -Make -Model -DateTimeOriginal "$RUN_LOG_DIR/saved.jpg")
 [[ -z "$left" ]] || fail "the saved photo kept: $left"
+# Checked, it goes, since MediaStore numbers a name only 32 times: runs that
+# each left theirs filled Downloads, and the 33rd's couldn't be saved.
+adb shell rm "'/sdcard/Download/$name'"
 ok "a phone photo went as its smaller copy, and saved from the viewer it reached Downloads, its GPS and camera gone"
 
 # A call with desk, whose fake microphone speaks but for most of the two

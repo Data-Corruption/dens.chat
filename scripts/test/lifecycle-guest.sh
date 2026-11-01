@@ -101,7 +101,8 @@ expect_uninstalled() {
 
 # first_release hosts a den with Dens's first release, as its installer's
 # den option did, and updates to this one, which still hosts it: the switch
-# takes the den role it had (M9.1). Then it uninstalls, for the fresh
+# takes the den role it had (M9.1); and which migrated its database, as a
+# member's own sound shows (M14.2). Then it uninstalls, for the fresh
 # install after it.
 first_release() {
     first=$(cat /release/first/version)
@@ -128,6 +129,15 @@ first_release() {
     den_answers 8485 || fail "the den listener doesn't answer after the update"
     api GET /api/hosting | grep -q '"enabled":true,"serving":true' || fail "hosting after the update: $(api GET /api/hosting)"
     api GET /api/dens | grep -q '"name":"First Den"' || fail "the den is gone after the update: $(api GET /api/dens)"
+    # The update migrated the first release's database: a sound replaced
+    # with a file of the member's own keeps it, in the table M14.2's
+    # migration, the first since v1.0.0, made. The file is a WAV's header.
+    own=/root/own-sound.wav
+    printf 'RIFF\044\000\000\000WAVEfmt \020\000\000\000\001\000\001\000\100\037\000\000\200\076\000\000\002\000\020\000data\000\000\000\000' >"$own"
+    curl -sS --fail-with-body -o /dev/null -b "$JAR" -c "$JAR" -X POST -H "Origin: $CLIENT" -H "Content-Type: application/octet-stream" \
+        --data-binary "@$own" "$CLIENT/api/sounds/joined" || fail "the member's own sound wasn't kept after the update"
+    [ "$(curl -sS --fail -b "$JAR" "$CLIENT/api/sounds/joined" | sha256sum)" = "$(sha256sum <"$own")" ] ||
+        fail "the member's own sound didn't come back as it went after the update"
     wait_own_connected
     dens uninstall --yes
     expect_uninstalled
