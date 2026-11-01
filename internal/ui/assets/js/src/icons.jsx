@@ -75,3 +75,13 @@ export function OnwardIcon({ size = 'h-4 w-4' }) {
         </svg>
     );
 }
+
+// PlayIcon is ▶, filled as a player's is: a video's, and a sound's in the
+// settings (M14.2).
+export function PlayIcon({ size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg viewBox="0 0 16 16" class={`${size} shrink-0`} fill="currentColor" aria-hidden="true">
+            <path d="M4.5 2.8v10.4L13 8z" />
+        </svg>
+    );
+}

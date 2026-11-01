@@ -1,14 +1,15 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
-// a call stay in view (M3.3), in four tabs (M8.3), or on the phone layout
-// a list of the four, each a page (M13.3). Appearance holds the
-// theme; Chat & media what notifies the member (M12.3), whether photos and
-// videos go compressed (M5), what happens to links, and whether YouTube
-// videos play in Dens (M4.1); Voice &
-// video the microphone and speaker, noise suppression, how the member
-// sends their voice, their shortcuts (M7) and how they share their screen
-// (M4.2); System hosting a den (M9.1) and moving it to another computer
-// (M10), the cache of other dens' files (M6), update checks, the local
-// password, logging, signing this browser out, and the version.
+// a call stay in view (M3.3), in five tabs (M8.3, M14.2), or on the phone
+// layout a list of the five, each a page (M13.3). Appearance holds the
+// theme; Chat & media whether photos and videos go compressed (M5), what
+// happens to links, and whether YouTube videos play in Dens (M4.1);
+// Notifications & sounds what notifies the member (M12.3) and the page's
+// sounds (M14.2); Voice & video the microphone and speaker, noise
+// suppression, how the member sends their voice, their shortcuts (M7) and
+// how they share their screen (M4.2); System hosting a den (M9.1) and
+// moving it to another computer (M10), the cache of other dens' files
+// (M6), update checks, the local password, logging, signing this browser
+// out, and the version.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -20,10 +21,12 @@ import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
+import { PlayIcon } from './icons.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
 import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
+import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './sounds.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
@@ -36,9 +39,9 @@ import {
 
 const openers = new Set();
 
-// openSettings opens the settings at a tab, "appearance", "chat", "voice"
-// or "system", from anywhere on the page; with none, at the first, or on
-// the phone layout at the list of them.
+// openSettings opens the settings at a tab, "appearance", "chat",
+// "notifications", "voice" or "system", from anywhere on the page; with
+// none, at the first, or on the phone layout at the list of them.
 export function openSettings(section = '') {
     openers.forEach((fn) => fn(section));
 }
@@ -51,6 +54,7 @@ export function onOpenSettings(fn) {
 const SECTIONS = [
     ['appearance', 'Appearance'],
     ['chat', 'Chat & media'],
+    ['notifications', 'Notifications & sounds'],
     ['voice', 'Voice & video'],
     ['system', 'System'],
 ];
@@ -71,6 +75,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     }, [onClose, narrow, section]);
     let panel;
     if (at === 'chat') panel = <ChatSettings />;
+    else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <ThemePicker />;
@@ -211,7 +216,6 @@ function ChatSettings() {
     const [players, setPlayers] = useState(youTubePlayers);
     return (
         <>
-            <NotificationSettings />
             <Card title="Photos and videos">
                 <Toggle id="compress" label="Compress photos and videos" checked={compress}
                     hint="Sends faster and saves space. You can still choose the original before sending."
@@ -282,6 +286,108 @@ function NotificationSettings() {
             <p class="text-sm text-base-content/70">Mute a den or a channel from the bell beside its name.</p>
             <ErrorText message={act.error} />
         </Card>
+    );
+}
+
+// SoundSettings holds the page's sounds (M14.2), grouped Messages and
+// Calls: each with its switch, ▶ to hear it, its volume, and Replace…, for
+// a file of the member's own, or once replaced, Reset, which brings its
+// default back. The service keeps them, so every browser paired with it
+// shares them, as it does the notifications'. A file must play here, for
+// at most 10 seconds, which the page checks before sending it.
+function SoundSettings() {
+    const status = useNotifications();
+    const act = useAction();
+    // sliding holds a slider's volume while it moves, until the service
+    // has it.
+    const [sliding, setSliding] = useState({});
+    useEffect(() => {
+        setSliding((m) => {
+            const next = Object.fromEntries(Object.entries(m).filter(([name, v]) => soundSettings(status, name).volume !== v));
+            return Object.keys(next).length === Object.keys(m).length ? m : next;
+        });
+    }, [status]);
+    if (!status) return null;
+    const keep = (name, changes) => api.post('/api/settings', { sounds: { [name]: changes } }).catch((e) => act.setError(e.message));
+    function replace(name, label, file) {
+        act.run(async () => {
+            const why = await checkSound(file);
+            if (why) throw new Error(`${label}: ${why}`);
+            await uploadSound(name, file);
+        });
+    }
+    const message = status.shell
+        ? "A DM or a mention plays it once while Dens is open, unless you're reading that channel or muted it. With a notification, Android plays its own sound instead, which you change in Android's settings for Dens's notifications."
+        : "A DM or a mention plays it once, in the Dens tab you used last, unless you're reading that channel or muted it. With a notification your desktop shows, its own sound plays instead.";
+    return (
+        <Card title="Sounds">
+            {GROUPS.map(([group, names]) => (
+                <div key={group} role="group" aria-label={group} class="flex flex-col gap-3">
+                    <h3 class="text-sm font-semibold">{group}</h3>
+                    {names.map((name) => {
+                        const label = SOUNDS.find(([n]) => n === name)[1];
+                        const s = soundSettings(status, name);
+                        return (
+                            <SoundRow key={name} name={name} label={label} s={s} volume={sliding[name] ?? s.volume} busy={act.busy}
+                                onOn={(on) => keep(name, { off: !on })}
+                                onMove={(volume) => setSliding((m) => ({ ...m, [name]: volume }))}
+                                onVolume={(volume) => {
+                                    keep(name, { volume });
+                                    playSound(name, { preview: true, volume });
+                                }}
+                                onReplace={(file) => replace(name, label, file)}
+                                onReset={() => act.run(() => api.del(`/api/sounds/${name}`))} />
+                        );
+                    })}
+                    <p class="text-sm text-base-content/70">{group === 'Messages' ? message : "Deafened, you hear only your microphone's."}</p>
+                </div>
+            ))}
+            <ErrorText message={act.error} />
+        </Card>
+    );
+}
+
+// SoundRow is one of the page's sounds in the settings: its switch, its
+// name, ▶, Replace… or Reset, and under them its volume.
+function SoundRow({ name, label, s, volume, busy, onOn, onMove, onVolume, onReplace, onReset }) {
+    const file = useRef(null);
+    const id = `sound-${name}`;
+    return (
+        <div class="flex flex-col gap-1" data-sound={name}>
+            <div class="flex items-center gap-3">
+                <input id={id} type="checkbox" class="toggle shrink-0" checked={s.on} onChange={(e) => onOn(e.currentTarget.checked)} />
+                <label for={id} class="min-w-0 flex-1 cursor-pointer">
+                    {label}
+                    {s.own > 0 && <span class="text-sm text-base-content/60"> · your file</span>}
+                </label>
+                <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label={`Play ${label}`} title={`Play ${label}`}
+                    onClick={() => playSound(name, { preview: true, volume })}>
+                    <PlayIcon />
+                </button>
+                {s.own > 0 ? (
+                    <button type="button" class="btn btn-ghost btn-sm min-w-24" aria-label={`Reset ${label} to Dens's sound`} disabled={busy} onClick={onReset}>
+                        Reset
+                    </button>
+                ) : (
+                    <button type="button" class="btn btn-ghost btn-sm min-w-24" aria-label={`Replace ${label} with a file of yours`} disabled={busy}
+                        onClick={() => file.current?.click()}>
+                        Replace…
+                    </button>
+                )}
+                <input ref={file} type="file" accept="audio/*" class="hidden" onChange={(e) => {
+                    const picked = e.currentTarget.files?.[0];
+                    e.currentTarget.value = '';
+                    if (picked) onReplace(picked);
+                }} />
+            </div>
+            {/* Under the name: the switch is 40 pixels, and its gap 12. */}
+            <div class="flex items-center gap-3 pl-13">
+                <input type="range" class="range range-md min-w-0 flex-1" min="0" max="100" step="5" value={volume} disabled={!s.on}
+                    aria-label={`${label} volume`} aria-valuetext={`${volume}%`}
+                    onInput={(e) => onMove(Number(e.currentTarget.value))} onChange={(e) => onVolume(Number(e.currentTarget.value))} />
+                <span class="w-10 text-right text-sm tabular-nums">{volume}%</span>
+            </div>
+        </div>
     );
 }
 

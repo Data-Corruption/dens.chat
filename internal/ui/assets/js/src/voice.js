@@ -31,11 +31,17 @@
 //
 // From M13.4 a touch screen's call's button presses the actions the keys
 // do, as its role says, which sets how the member sends there.
+//
+// From M14.2 the call sounds as it changes: as members join and leave it,
+// the member too, as shares start and end, and as the member's microphone
+// opens and closes, whatever moves it. Its sounds play as its voices do,
+// through the call's context where that plays them.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
 import { NO_CALLS, NO_SHARING, autoplays, canCall, canShare, inApp } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
+import { callSounds, playSound, setSoundRoute, warmSounds } from './sounds.js';
 
 const MIC = 'DENS_MIC';
 const SPEAKER = 'DENS_SPEAKER';
@@ -159,6 +165,11 @@ const watched = new Map();
 // denView is what the page knows of the call's den: this member's ID, the
 // den's limits, its calls the member can see, and members' names.
 let denView = null;
+
+// The page's sounds play as the call's voices do (M14.2): through the
+// call's context where that plays them, and otherwise on the speaker the
+// member chose.
+setSoundRoute(() => ({ context: autoplays() && callContext?.state !== 'closed' ? callContext : null, speaker: stored(SPEAKER) }));
 
 function start() {
     if (started) return;
@@ -755,6 +766,7 @@ function applySending() {
     if (sent) sent.enabled = !isMuted() && (chain || voice.mode !== 'ptt' || pttHeld);
     tellTalking();
     ring();
+    sound();
 }
 
 // Push to talk's ring (M11) ---------------------------------------------------
@@ -1525,7 +1537,11 @@ function closePeer() {
 }
 
 // finish ends the call for good, and says why when there's a reason to.
+// The member leaving plays its sound, however the call ended, as when staff
+// disconnect them, once the call's audio has gone, since its context goes
+// with it (M14.2).
 function finish(why) {
+    const left = !!call?.heard?.in && !call.deafened;
     clearTimeout(rejoinTimer);
     rejoinTimer = null;
     if (call) clearTimers(call);
@@ -1546,6 +1562,7 @@ function finish(why) {
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
     notify();
+    if (left) playSound('left');
 }
 
 // Notes for the log (M11) -----------------------------------------------------
@@ -1725,7 +1742,30 @@ function followDen() {
             if (!found.members.some((m) => m.id === member && m.sharing)) watched.delete(member);
         }
     }
+    sound();
     notify();
+}
+
+// Sounds (M14.2) ------------------------------------------------------------
+
+// micOpen says whether the member's microphone is open in their call:
+// unless they or staff muted them, and by push to talk while they hold it.
+function micOpen(me) {
+    return !call.muted && !me.staff_muted && (voice.mode !== 'ptt' || pttHeld);
+}
+
+// sound plays what the call's last change sounds like, by what the page
+// heard of it before (see callSounds): the den's word on who is in it and
+// shares, and the member's microphone as it is here, whatever moved it,
+// the keys, the helper, the call's button or its controls, deafening, or
+// staff.
+function sound() {
+    const c = call;
+    if (!c || denView?.den !== c.den) return;
+    const { found, me } = myCall();
+    const now = { in: !!me, members: new Map((found?.members || []).map((m) => [m.id, !!m.sharing])), mic: !!me && micOpen(me) };
+    for (const name of callSounds(c.heard || null, now, isDeafened())) playSound(name);
+    c.heard = now;
 }
 
 // shareSettings is how the member shares, as the browser kept it.
@@ -1956,6 +1996,9 @@ function startMeters() {
         return;
     }
     meterTimer = setInterval(measure, METER_MS);
+    // Where the call's context plays its sounds, they're decoded for it
+    // now, so the first of each plays without waiting (M14.2).
+    if (autoplays()) warmSounds(callContext);
 }
 
 function stopMeters() {
