@@ -1,6 +1,7 @@
 package denclient_test
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"net/http"
@@ -35,16 +36,17 @@ func (h *denHost) startCalls() {
 // page stands in for a page that holds a call: a test caller is its
 // browser, and it answers the offers its install relays, as the page does.
 type page struct {
-	t       *testing.T
-	m       *denclient.Manager
-	id      string
-	caller  *sfutest.Caller
-	events  chan denclient.CallEvent
-	ended   chan string
-	resumed chan struct{}
-	refused chan denclient.CallRefusal
-	talking chan []string
-	stop    chan struct{}
+	t        *testing.T
+	m        *denclient.Manager
+	id       string
+	caller   *sfutest.Caller
+	events   chan denclient.CallEvent
+	ended    chan string
+	resumed  chan struct{}
+	refused  chan denclient.CallRefusal
+	talking  chan []string
+	sounding chan string
+	stop     chan struct{}
 	// The last offer answered, and its answer, which goes again if the den
 	// sends that offer again after a resume, as the page does.
 	version int
@@ -59,7 +61,7 @@ func newPage(t *testing.T, m *denclient.Manager, id string) *page {
 	}
 	p := &page{t: t, m: m, id: id, caller: caller, events: make(chan denclient.CallEvent, 16),
 		ended: make(chan string, 16), resumed: make(chan struct{}, 16), refused: make(chan denclient.CallRefusal, 16),
-		talking: make(chan []string, 16), stop: make(chan struct{})}
+		talking: make(chan []string, 16), sounding: make(chan string, 16), stop: make(chan struct{})}
 	t.Cleanup(func() {
 		close(p.stop)
 		_ = caller.Close()
@@ -92,6 +94,8 @@ func (p *page) run() {
 				p.refused <- *e.Refused
 			case e.Talking != nil:
 				p.talking <- *e.Talking
+			case e.Sounding != nil:
+				p.sounding <- *e.Sounding
 			case e.Offer != nil:
 				if e.Offer.Version != p.version {
 					answer, err := p.caller.Answer(e.Offer.SDP)
@@ -429,4 +433,105 @@ func TestPushToTalkThroughTheClient(t *testing.T) {
 	a.waitTalking(alice, bob)
 	member.TalkCall("page-b", denID, false)
 	a.waitTalking(alice)
+}
+
+// waitSounding waits for word that a member's sound plays, or with "" that
+// none does.
+func (p *page) waitSounding(want string) {
+	p.t.Helper()
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case got := <-p.sounding:
+			if got == want {
+				return
+			}
+		case <-timeout:
+			p.t.Fatalf("page %s didn't hear that %q's sound plays", p.id, want)
+		}
+	}
+}
+
+// TestTheSoundboardThroughTheClient checks the soundboard through both
+// installs (M14.3): staff add a sound from an upload their page prepared,
+// rename it and delete it, which every page's view follows, with the den's
+// limits for it; a member plays it in a call, every page holding the call
+// hears whose sound plays and receives it, and a refusal reaches the page
+// that asked.
+func TestTheSoundboardThroughTheClient(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.startCalls()
+	ctx := context.Background()
+	name := "Lounge"
+	if err := owner.Manage(ctx, denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+		t.Fatal(err)
+	}
+	var lounge string
+	v := viewOf(t, member, denID, "the voice channel", func(v denclient.View) bool {
+		for _, c := range v.Channels {
+			if c.Name == name {
+				lounge = c.ID
+			}
+		}
+		return lounge != ""
+	})
+	if v.SoundLimits != denproto.DefaultSoundLimits || len(v.Sounds) != 0 {
+		t.Fatalf("the page's view has the soundboard %+v, %+v", v.SoundLimits, v.Sounds)
+	}
+	limits := denproto.SoundLimits{Sounds: 5, Longest: 10, Wait: 0}
+	if err := owner.UpdateDen(ctx, denID, denproto.DenUpdateRequest{SoundLimits: &limits}); err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, member, denID, "the soundboard's limits", func(v denclient.View) bool { return v.SoundLimits == limits })
+
+	file := sfutest.Sound(sfutest.SoundPackets(100, 160))
+	up, err := owner.Upload(ctx, denID, "", "horn.ogg", int64(len(file)), bytes.NewReader(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.AddSound(ctx, denID, "Mine", up.ID); !denproto.IsCode(err, denproto.CodeForbidden) {
+		t.Errorf("a member adding a sound: %v", err)
+	}
+	horn, err := owner.AddSound(ctx, denID, "Horn", up.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, member, denID, "the sound", func(v denclient.View) bool { return slices.Contains(v.Sounds, horn) })
+
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	a, b := newPage(t, owner, "page-a"), newPage(t, member, "page-b")
+	a.join(denID, lounge)
+	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
+	b.join(denID, lounge)
+	a.hears(bob)
+	member.PlaySound("page-b", denID, horn.ID)
+	a.waitSounding(bob)
+	b.waitSounding(bob)
+	if err := a.caller.WaitBoard(20, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	owner.PlaySound("page-a", denID, horn.ID)
+	select {
+	case r := <-a.refused:
+		if r.What != denproto.RefusedSound || r.SoundID != horn.ID || r.Reason != denproto.RefusedPlaying {
+			t.Errorf("the refusal reached the page as %+v", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the refusal didn't reach the page")
+	}
+	a.waitSounding("")
+	got := a.caller.Board()
+	if len(got) < 90 || sfutest.PlaceOf(got[0].Payload) != 0 {
+		t.Errorf("alice's page received %d packets of the sound's 100", len(got))
+	}
+
+	renamed, err := owner.RenameSound(ctx, denID, horn.ID, "Big horn")
+	if err != nil || renamed.Name != "Big horn" {
+		t.Fatalf("renamed: %+v, %v", renamed, err)
+	}
+	viewOf(t, member, denID, "the sound renamed", func(v denclient.View) bool { return slices.Contains(v.Sounds, renamed) })
+	if err := owner.DeleteSound(ctx, denID, horn.ID); err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, member, denID, "the sound deleted", func(v denclient.View) bool { return len(v.Sounds) == 0 })
 }

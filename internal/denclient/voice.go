@@ -26,23 +26,25 @@ const CallDisconnected = "disconnected"
 // CallEvent goes to the page that holds the install's call: an offer to
 // answer, carrying the den's candidates; that the den took the call back
 // after its connection dropped (M3); that it refused a share or a watch
-// (M4.2); who in the call holds push to talk (M11); or the call's end and
-// why.
+// (M4.2), or a sound (M14.3); who in the call holds push to talk (M11);
+// whose sound plays in it, "" for none (M14.3); or the call's end and why.
 type CallEvent struct {
-	DenID   string       `json:"den"`
-	Channel string       `json:"channel"`
-	Offer   *CallOffer   `json:"offer,omitempty"`
-	Resumed bool         `json:"resumed,omitempty"`
-	Refused *CallRefusal `json:"refused,omitempty"`
-	Talking *[]string    `json:"talking,omitempty"`
-	Ended   string       `json:"ended,omitempty"`
+	DenID    string       `json:"den"`
+	Channel  string       `json:"channel"`
+	Offer    *CallOffer   `json:"offer,omitempty"`
+	Resumed  bool         `json:"resumed,omitempty"`
+	Refused  *CallRefusal `json:"refused,omitempty"`
+	Talking  *[]string    `json:"talking,omitempty"`
+	Sounding *string      `json:"sounding,omitempty"`
+	Ended    string       `json:"ended,omitempty"`
 }
 
-// CallRefusal is the den refusing the page's share, or its watch of a
-// member's share, and why.
+// CallRefusal is the den refusing the page's share, its watch of a
+// member's share, or a sound it asked for (M14.3), and why.
 type CallRefusal struct {
 	What     string `json:"what"`
 	MemberID string `json:"member_id,omitempty"`
+	SoundID  string `json:"sound_id,omitempty"`
 	Reason   string `json:"reason"`
 }
 
@@ -210,6 +212,16 @@ func (m *Manager) TalkCall(page, denID string, on bool) {
 	}
 	if c, err := m.find(denID); err == nil {
 		_ = c.sendFrame(denproto.EventVoiceTalk, denproto.VoiceTalk{On: on})
+	}
+}
+
+// PlaySound plays one of the den's sounds in the page's call (M14.3).
+func (m *Manager) PlaySound(page, denID, sound string) {
+	if m.currentCall(page, denID) == nil || !validID(sound) {
+		return
+	}
+	if c, err := m.find(denID); err == nil {
+		_ = c.sendFrame(denproto.EventVoiceSound, denproto.VoiceSound{SoundID: sound})
 	}
 }
 
@@ -399,6 +411,18 @@ func (c *conn) callEvent(e denproto.Event) error {
 			talking := append([]string{}, x.Members...)
 			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Talking: &talking})
 		}
+	case denproto.EventVoiceSounding:
+		var x denproto.VoiceSounding
+		if json.Unmarshal(e.D, &x) != nil || (x.MemberID != "" && !validID(x.MemberID)) {
+			return errMalformed
+		}
+		m.callMu.Lock()
+		call := m.call
+		m.callMu.Unlock()
+		if call != nil && call.den == denID && call.channel == x.ChannelID {
+			member := x.MemberID
+			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Sounding: &member})
+		}
 	case denproto.EventVoiceEnded:
 		var x denproto.VoiceEnded
 		if json.Unmarshal(e.D, &x) != nil {
@@ -414,18 +438,23 @@ func (c *conn) callEvent(e denproto.Event) error {
 	return nil
 }
 
-// cleanRefusal checks a den's refusal of a share or a watch, and passes on
-// a reason the page knows, calling any other a failure.
+// cleanRefusal checks a den's refusal of a share, a watch or a sound, and
+// passes on a reason the page knows, calling any other a failure.
 func cleanRefusal(x denproto.VoiceRefused) (CallRefusal, bool) {
-	r := CallRefusal{What: x.What, MemberID: x.MemberID, Reason: x.Reason}
+	r := CallRefusal{What: x.What, MemberID: x.MemberID, SoundID: x.SoundID, Reason: x.Reason}
 	switch {
-	case x.What == denproto.RefusedShare && x.MemberID == "":
-	case x.What == denproto.RefusedWatch && validID(x.MemberID):
+	case x.What == denproto.RefusedShare && x.MemberID == "" && x.SoundID == "":
+	case x.What == denproto.RefusedWatch && validID(x.MemberID) && x.SoundID == "":
+	case x.What == denproto.RefusedSound && x.MemberID == "" && validID(x.SoundID):
 	default:
 		return r, false
 	}
 	switch x.Reason {
 	case denproto.RefusedOff, denproto.RefusedFull, denproto.RefusedStaffMuted, denproto.RefusedNotSharing, denproto.VoiceRateLimited:
+	case denproto.RefusedPlaying, denproto.RefusedWait, denproto.VoiceNotFound:
+		if x.What != denproto.RefusedSound {
+			r.Reason = denproto.VoiceFailed
+		}
 	default:
 		r.Reason = denproto.VoiceFailed
 	}

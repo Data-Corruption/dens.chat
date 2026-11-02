@@ -39,6 +39,10 @@ type denState struct {
 	sealCheck denproto.Bytes
 	// calls are who is in each voice channel's call (M2).
 	calls map[string]denproto.Call
+	// sounds are the den's soundboard's, by ID, and soundLimits its limits
+	// for them, none from a den older than the soundboard (M14.3).
+	sounds      map[string]denproto.Sound
+	soundLimits denproto.SoundLimits
 }
 
 // View is a joined den as the page sees it.
@@ -57,13 +61,17 @@ type View struct {
 	DMKeys []denproto.DMKey `json:"dm_keys"`
 	// Calls are the calls with someone in them.
 	Calls []denproto.Call `json:"calls"`
+	// Sounds are the den's soundboard's, by name, and SoundLimits its
+	// limits for them (M14.3).
+	Sounds      []denproto.Sound     `json:"sounds"`
+	SoundLimits denproto.SoundLimits `json:"sound_limits"`
 }
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
-		calls: map[string]denproto.Call{}}
+		calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -82,7 +90,7 @@ func (s *denState) takeTouched() []denproto.ReadState {
 func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
-		CallLimits: s.callLimits, Retention: s.retention}
+		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -115,6 +123,19 @@ func (s *denState) view(status Status, me denproto.Member) View {
 	slices.SortFunc(v.Channels, func(a, b denproto.Channel) int { return cmp.Or(a.Position-b.Position, compareIDs(a.ID, b.ID)) })
 	slices.SortFunc(v.ReadStates, func(a, b denproto.ReadState) int { return compareIDs(a.ChannelID, b.ChannelID) })
 	return v
+}
+
+// sortedSounds lists the den's sounds by name, in any case, as the den
+// lists them.
+func sortedSounds(sounds map[string]denproto.Sound) []denproto.Sound {
+	out := slices.Collect(maps.Values(sounds))
+	slices.SortFunc(out, func(a, b denproto.Sound) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), compareIDs(a.ID, b.ID))
+	})
+	if out == nil {
+		out = []denproto.Sound{}
+	}
+	return out
 }
 
 func compareIDs(a, b string) int {
@@ -180,12 +201,30 @@ func cleanRead(r denproto.ReadState) (denproto.ReadState, bool) {
 	return r, ok
 }
 
-// cleanLimits checks a den's upload limits, its limits for calls and its
-// retention period. The den checked them when they were set, so any that
-// don't check are the den misbehaving.
+// cleanLimits checks a den's upload limits, its limits for calls, its
+// retention period and its soundboard's limits, which a den older than the
+// soundboard doesn't send (M14.3). The den checked them when they were
+// set, so any that don't check are the den misbehaving.
 func cleanLimits(d denproto.Den) bool {
 	return denproto.CheckLimits(d.Limits) == nil && denproto.CheckCallLimits(d.CallLimits) == nil &&
-		denproto.CheckRetention(d.Retention) == nil
+		denproto.CheckRetention(d.Retention) == nil &&
+		(d.SoundLimits == denproto.SoundLimits{} || denproto.CheckSoundLimits(d.SoundLimits) == nil)
+}
+
+// cleanSounds checks a den's sounds, as many as a den keeps at most, each
+// once and by a name of its own.
+func cleanSounds(list []denproto.Sound) (map[string]denproto.Sound, bool) {
+	if len(list) > denproto.MaxSounds {
+		return nil, false
+	}
+	out := map[string]denproto.Sound{}
+	for _, s := range list {
+		if denproto.CheckSound(s) != nil || out[s.ID] != (denproto.Sound{}) {
+			return nil, false
+		}
+		out[s.ID] = s
+	}
+	return out, true
 }
 
 // load replaces the state with a snapshot. Anything malformed in it is a
@@ -203,7 +242,12 @@ func (s *denState) load(r denproto.Ready, prev map[string]denproto.Member) error
 		}
 		maps.Copy(next.members, prev)
 	}
-	next.limits, next.callLimits, next.retention = r.Den.Limits, r.Den.CallLimits, r.Den.Retention
+	next.limits, next.callLimits, next.retention, next.soundLimits = r.Den.Limits, r.Den.CallLimits, r.Den.Retention, r.Den.SoundLimits
+	sounds, ok := cleanSounds(r.Sounds)
+	if !ok {
+		return errMalformed
+	}
+	next.sounds = sounds
 	for _, m := range r.Members {
 		m, ok := cleanMember(m)
 		if !ok || !validID(m.ID) {
@@ -293,13 +337,15 @@ type keptState struct {
 	Reads     []denproto.ReadState `json:"reads"`
 	Keys      []denproto.DMKey     `json:"keys"`
 	SealCheck denproto.Bytes       `json:"seal_check"`
+	Sounds    []denproto.Sound     `json:"sounds,omitempty"` // M14.3
 }
 
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
-	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention},
+	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
-		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck}
+		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
+		Sounds: slices.Collect(maps.Values(s.sounds))}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -311,6 +357,12 @@ func restore(k keptState, members []denproto.Member) (*denState, error) {
 		return nil, errMalformed
 	}
 	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
+	s.soundLimits = k.Den.SoundLimits
+	sounds, ok := cleanSounds(k.Sounds)
+	if !ok {
+		return nil, errMalformed
+	}
+	s.sounds = sounds
 	for _, m := range members {
 		m, ok := cleanMember(m)
 		if !ok {
@@ -617,6 +669,23 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		}
 		delete(s.requests, end.ID.String())
 		return e, false, nil
+	case denproto.EventSoundCreated, denproto.EventSoundUpdated:
+		var sound denproto.Sound
+		if json.Unmarshal(e.D, &sound) != nil || denproto.CheckSound(sound) != nil {
+			return e, false, errMalformed
+		}
+		if _, ok := s.sounds[sound.ID]; !ok && len(s.sounds) >= denproto.MaxSounds {
+			return e, false, errMalformed
+		}
+		s.sounds[sound.ID] = sound
+		data = sound
+	case denproto.EventSoundDeleted:
+		var d denproto.SoundDeleted
+		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) {
+			return e, false, errMalformed
+		}
+		delete(s.sounds, d.ID)
+		data = d
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState
 		if json.Unmarshal(e.D, &r) != nil {

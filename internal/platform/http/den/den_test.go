@@ -23,12 +23,22 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	dens "github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 
 	"github.com/coder/websocket"
 )
+
+// The test binary is its own media worker, as ffmpeg.TestWorkerEnv says:
+// the soundboard's sounds are audio, which the den strips (M14.3).
+func TestMain(m *testing.M) {
+	if os.Getenv(ffmpeg.TestWorkerEnv) == "1" {
+		os.Exit(ffmpeg.Work(os.Stdin, os.Stdout))
+	}
+	os.Exit(m.Run())
+}
 
 type fixture struct {
 	t   *testing.T
@@ -52,7 +62,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	storage := dens.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp")}
+	storage := dens.Storage{Dir: filepath.Join(dir, "uploads"), Temp: filepath.Join(dir, "tmp"), Media: ffmpeg.TestRunner(nil)}
 	for _, d := range []string{storage.Dir, storage.Temp} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)

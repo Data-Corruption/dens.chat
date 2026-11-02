@@ -47,6 +47,7 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountMembers(r)
 	rt.mountFiles(r)
 	rt.mountDevices(r)
+	rt.mountSoundboard(r)
 }
 
 // hosting describes the den this install holds: whether hosting is on
@@ -369,9 +370,9 @@ func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *webs
 // shows in a den ("focus", with an empty channel for none), typing, and
 // its call: joining or resuming it, answering the den's offers, asking for
 // an ICE restart, muting, sharing its screen and watching others' (M4.2),
-// holding push to talk and its notes for the log (M11), and leaving; and
-// from M12.3 "page", whether it's on screen and whether the browser lets
-// it notify.
+// holding push to talk and its notes for the log (M11), playing one of the
+// den's sounds (M14.3), and leaving; and from M12.3 "page", whether it's on
+// screen and whether the browser lets it notify.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
@@ -385,6 +386,7 @@ type pageMessage struct {
 		On       bool                `json:"on"`
 		Sound    bool                `json:"sound"`
 		MemberID string              `json:"member_id"`
+		SoundID  string              `json:"sound_id"`
 		Note     *denclient.CallNote `json:"note"`
 		Visible  bool                `json:"visible"`
 		Allowed  bool                `json:"allowed"`
@@ -423,6 +425,8 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 		rt.a.Dens.WatchCall(page, msg.D.Den, msg.D.MemberID, msg.D.On)
 	case "voice.talk":
 		rt.a.Dens.TalkCall(page, msg.D.Den, msg.D.On)
+	case "voice.sound":
+		rt.a.Dens.PlaySound(page, msg.D.Den, msg.D.SoundID)
 	case "voice.note":
 		if msg.D.Note != nil {
 			rt.a.Dens.NoteCall(page, msg.D.Den, msg.D.Channel, *msg.D.Note)
@@ -684,6 +688,8 @@ func denMessage(e *denproto.Error) string {
 		return "This invite has expired, was revoked, or was already used. Ask for a new one."
 	case denproto.CodeUsernameTaken:
 		return "That username is taken on this den."
+	case denproto.CodeSoundNameTaken:
+		return "Another sound in this den has that name."
 	case denproto.CodeRateLimited:
 		return "The den asked us to slow down. Try again in a minute."
 	case denproto.CodeProtocolUnsupported:

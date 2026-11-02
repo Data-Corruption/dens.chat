@@ -23,7 +23,8 @@ const ownFilesBudget = 600 << 10
 
 // OwnFiles lists a page of the member's files, largest first by the space
 // each takes, previews included, with what uses each. after is the cursor
-// the page before gave, or empty for the first.
+// the page before gave, or empty for the first. A named file's file is
+// the den's (M14.3), so it isn't among them.
 func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.OwnFiles, error) {
 	page := denproto.OwnFiles{Files: []denproto.OwnFile{}}
 	space, last := int64(math.MaxInt64), int64(math.MaxInt64)
@@ -41,7 +42,8 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 		m.channel_id, CASE WHEN EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id) THEN 'avatar'
 			WHEN EXISTS (SELECT 1 FROM den_members WHERE banner_id = f.id) THEN 'banner' ELSE '' END
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id
-		WHERE f.uploader_id = ? AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?, ?)
+		WHERE f.uploader_id = ? AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
+			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?, ?)
 		ORDER BY space DESC, f.id DESC LIMIT ?`, s.MemberID, space, last, denproto.OwnFilesPage+1)
 	if err != nil {
 		return page, err
@@ -211,8 +213,7 @@ func setAttachments(ctx context.Context, tx *sql.Tx, message, author int64, file
 		}
 		var replaces sql.NullInt64
 		err := tx.QueryRowContext(ctx, `SELECT replaces FROM den_files
-			WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND created_at > ? AND sealed = ?
-			AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)`,
+			WHERE id = ? AND uploader_id = ? AND created_at > ? AND sealed = ? AND `+unused,
 			id, author, now.Add(-uploadExpiry).UnixMilli(), sealed).Scan(&replaces)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false, nil, invalid("attachments: no such upload waiting to be sent")

@@ -262,11 +262,13 @@ func tooLarge(l denproto.Limits) error {
 	return denproto.Errorf(http.StatusRequestEntityTooLarge, denproto.CodeTooLarge, "files are at most %d bytes on this den", l.FileSize)
 }
 
-// usage is how much space a member's files take, and everyone's.
+// usage is how much space a member's files take, and everyone's. A named
+// file's file is the den's, not its uploader's (M14.3), so it counts
+// toward the den's space alone.
 func usage(ctx context.Context, q querier, member int64) (denproto.Storage, error) {
 	var st denproto.Storage
 	err := q.QueryRowContext(ctx, `SELECT
-		coalesce(sum(size + coalesce(thumb_size, 0)) FILTER (WHERE uploader_id = ?), 0),
+		coalesce(sum(size + coalesce(thumb_size, 0)) FILTER (WHERE uploader_id = ? AND NOT `+named+`), 0),
 		coalesce(sum(size + coalesce(thumb_size, 0)), 0) FROM den_files`, member).Scan(&st.Used, &st.DenUsed)
 	return st, err
 }
@@ -487,14 +489,15 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 
 // replacedSpace is the space the file an upload replaces takes, which the
 // upload counts against: one of the member's files, in use on a message or
-// their profile, sealed or not as the upload is. Without one it's 0.
+// their profile, sealed or not as the upload is. A named file's is the
+// den's, which no upload replaces (M14.3). Without one it's 0.
 func replacedSpace(ctx context.Context, q querier, member int64, replaced sql.NullInt64, sealed bool) (int64, error) {
 	if !replaced.Valid {
 		return 0, nil
 	}
 	var space int64
 	err := q.QueryRowContext(ctx, `SELECT size + coalesce(thumb_size, 0) FROM den_files
-		WHERE id = ? AND uploader_id = ? AND sealed = ? AND NOT (`+unused+`)`, replaced.Int64, member, sealed).Scan(&space)
+		WHERE id = ? AND uploader_id = ? AND sealed = ? AND NOT (`+unused+`) AND NOT `+named, replaced.Int64, member, sealed).Scan(&space)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, invalid("%s: no such file of yours in use", denproto.HeaderReplaces)
 	}
@@ -562,7 +565,8 @@ func (d *Den) preview(ctx context.Context, orig *part, blob []byte, kind media.K
 
 // OpenFile opens a file, or its preview, for a member who may see it:
 // anyone who can see the message it's on, anyone in the den for a picture
-// on a profile, and only its uploader while it waits to be used.
+// on a profile, staff alone for a named file's (M14.3), since only the den
+// plays a sound, and only its uploader while it waits to be used.
 func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (StoredFile, error) {
 	none := StoredFile{}
 	fid, err := denproto.ParseID(id)
@@ -572,11 +576,12 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	var blob []byte
 	var size, uploader int64
 	var thumbSize, channel sql.NullInt64
-	var profile bool
+	var profile, isNamed bool
 	err = d.db.QueryRowContext(ctx, `SELECT f.blob, f.size, f.thumb_size, f.uploader_id, m.channel_id,
-		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id)
+		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id),
+		EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?`, fid).
-		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile)
+		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &isNamed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return none, errFileNotFound
 	}
@@ -584,6 +589,10 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 		return none, err
 	}
 	switch {
+	case isNamed:
+		if !IsStaff(s.Role) {
+			return none, errFileNotFound
+		}
 	case channel.Valid:
 		c, err := d.channel(ctx, d.db, channel.Int64)
 		if err != nil || !visible(c, s.MemberID, IsStaff(s.Role)) {
@@ -670,8 +679,7 @@ func (d *Den) attachments(ctx context.Context, q querier, ids []int64) (map[int6
 func attach(ctx context.Context, tx *sql.Tx, message, author int64, files []int64, sealed bool, now time.Time) error {
 	for i, id := range files {
 		res, err := tx.ExecContext(ctx, `UPDATE den_files SET message_id = ?, position = ?
-			WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND created_at > ? AND sealed = ? AND replaces IS NULL
-			AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)`,
+			WHERE id = ? AND uploader_id = ? AND created_at > ? AND sealed = ? AND replaces IS NULL AND `+unused,
 			message, i, id, author, now.Add(-uploadExpiry).UnixMilli(), sealed)
 		if err != nil {
 			return err
@@ -746,8 +754,12 @@ func deleteFiles(ctx context.Context, q querier, where string, args ...any) ([][
 	return blobs, rows.Err()
 }
 
-// unused selects files no message or profile uses.
-const unused = `message_id IS NULL AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)`
+// unused selects files no message, profile or name uses.
+const unused = `message_id IS NULL AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)
+	AND NOT ` + named
+
+// named selects files one of the den's names uses, as a sound (M14.3).
+const named = `EXISTS (SELECT 1 FROM den_named_files WHERE file_id = den_files.id)`
 
 // scheduleSweep makes sure pending uploads are swept by at.
 func (s *fileStore) scheduleSweep(d *Den, at time.Time) {

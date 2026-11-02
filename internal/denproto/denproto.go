@@ -74,6 +74,7 @@ var codes = map[string]bool{
 	CodeEditConflict: true, CodeInviteInvalid: true, CodeTooLarge: true, CodeProtocolUnsupported: true,
 	CodeRateLimited: true, CodeDenNotCreated: true, CodeWrongPassword: true, CodeUnsupportedType: true,
 	CodeQuotaExceeded: true, CodeDenFull: true, CodeKeyExists: true, CodeNoOtherDevice: true, CodeChangesGone: true,
+	CodeSoundNameTaken: true,
 }
 
 // KnownCode reports whether code is one of the protocol's error codes. A
@@ -267,12 +268,14 @@ type Den struct {
 	ID   Bytes  `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
-	// Limits, CallLimits and Retention come to members, in ready and
-	// den.updated, and not in a join preview. CallLimits are from M4.2,
-	// and Retention, the days a message is kept, 0 for ever, from M5.
-	Limits     Limits     `json:"limits,omitzero"`
-	CallLimits CallLimits `json:"call_limits,omitzero"`
-	Retention  int        `json:"retention,omitempty"`
+	// Limits, CallLimits, Retention and SoundLimits come to members, in
+	// ready and den.updated, and not in a join preview. CallLimits are from
+	// M4.2, Retention, the days a message is kept, 0 for ever, from M5, and
+	// SoundLimits, the soundboard's, from M14.3.
+	Limits      Limits      `json:"limits,omitzero"`
+	CallLimits  CallLimits  `json:"call_limits,omitzero"`
+	Retention   int         `json:"retention,omitempty"`
+	SoundLimits SoundLimits `json:"sound_limits,omitzero"`
 }
 
 // Roles.
@@ -377,7 +380,8 @@ type DenUpdateRequest struct {
 	Limits     *Limits     `json:"limits,omitempty"`
 	CallLimits *CallLimits `json:"call_limits,omitempty"`
 	// Retention is the days a message is kept, or 0 to keep them all (M5).
-	Retention *int `json:"retention,omitempty"`
+	Retention   *int         `json:"retention,omitempty"`
+	SoundLimits *SoundLimits `json:"sound_limits,omitempty"` // M14.3
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's
@@ -402,6 +406,8 @@ type Ready struct {
 	// M6: where the den's changes stand, for a client to check what it
 	// cached against.
 	Sync Sync `json:"sync"`
+	// M14.3: the den's sounds, by name.
+	Sounds []Sound `json:"sounds"`
 }
 
 type Renew struct {
