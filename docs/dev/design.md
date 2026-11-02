@@ -1003,7 +1003,7 @@ All OS-specific runtime code lives in one package (`internal/platform/host`). Ea
 | Control endpoint | Unix socket, `SO_PEERCRED` | Named pipe on `x/sys/windows` (no third-party module), client SID by identification-level impersonation, server PID check |
 | Private directory check | Owner and mode 0700 | Owner and a protected DACL naming only the allowed SIDs |
 | Locked key memory | `mlock` | `VirtualLock` |
-| Low-priority child process | nice 19 and `SCHED_IDLE` on the forking thread | `IDLE_PRIORITY_CLASS` |
+| Low-priority child process | nice 19 and, where the sandbox allows it, `SCHED_IDLE` on the forking thread, set with `sched_setscheduler`, whose policy systemd's `RestrictRealtime=` can read, since it refuses `sched_setattr` | `IDLE_PRIORITY_CLASS` |
 | Open a URL | `xdg-open` | `ShellExecute` |
 | Keys for the helper (M7) | The global shortcuts portal under Wayland, `XQueryKeymap` under X11 | `GetAsyncKeyState` |
 | Notifications for the helper (M12.3) | The freedesktop notification service, or from the Flatpak, the Notification portal | Toasts, through Windows Runtime |

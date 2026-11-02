@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -14,6 +15,13 @@ import (
 // child's PID afterwards would miss threads it had already started. The
 // forking thread can't raise its own priority back without CAP_SYS_NICE, so
 // it stays locked and the runtime discards it when the goroutine exits.
+//
+// The policy goes through sched_setscheduler, not sched_setattr: systemd's
+// RestrictRealtime=, in the service's unit, reads sched_setscheduler's
+// policy and lets SCHED_IDLE through, but can't read sched_setattr's, which
+// is in a struct, and systemd 262.1 refuses that call whole. Idle scheduling
+// is a courtesy to the rest of the computer, not a guard, so where it's
+// refused anyway the job runs at nice 19 alone, rather than not at all.
 func StartLowPriority(cmd *exec.Cmd) error {
 	done := make(chan error, 1)
 	go func() {
@@ -22,12 +30,17 @@ func StartLowPriority(cmd *exec.Cmd) error {
 			done <- fmt.Errorf("lower thread priority: %w", err)
 			return
 		}
-		attr := unix.SchedAttr{Size: unix.SizeofSchedAttr, Policy: unix.SCHED_IDLE}
-		if err := unix.SchedSetAttr(0, &attr, 0); err != nil {
-			done <- fmt.Errorf("set idle scheduling: %w", err)
-			return
-		}
+		_ = idle()
 		done <- cmd.Start()
 	}()
 	return <-done
+}
+
+// idle puts the calling thread under SCHED_IDLE.
+func idle() error {
+	var param struct{ priority int32 }
+	if _, _, errno := unix.RawSyscall(unix.SYS_SCHED_SETSCHEDULER, 0, unix.SCHED_IDLE, uintptr(unsafe.Pointer(&param))); errno != 0 {
+		return errno
+	}
+	return nil
 }
