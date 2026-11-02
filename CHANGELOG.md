@@ -20,6 +20,7 @@
 - A phone asleep for over an hour dropped its connection to each den and signed in again, since Dens renewed its session by a clock that stops while the phone sleeps. It renews in time now.
 - A thin video, like two phone videos side by side in one message, hid its full screen button. The button always shows now, and full screen has the rest of the controls.
 - The note on a small mark, like a muted DM's bell, could be cut off at the edge of the channel list. It stays inside the list now.
+- On Linux with a recent systemd, as Arch Linux has now, sending a video, an audio file, or a photo that goes as a smaller copy or in another format failed, saying the den couldn't be reached, and a den hosted there turned videos and audio away. The sandbox Dens runs in refused how it lowered its media worker's priority; it asks in a way the sandbox allows now.
 
 ## [v1.6.0] - 2026-10-31
 
