@@ -148,7 +148,8 @@ tunnel or CDN service that carries your den's website can't carry its calls.
 
 ## Running the den
 
-Everything here is in the den's **Manage**, under **This den**.
+Everything here is in the den's **Manage**, under **This den**: click the den's
+name at the top of its channel list, or **Manage** on your home page.
 
 - **Roles.** Members read and post, DM, call and upload. **Moderators** also
   make invites, remove and ban members, delete members' messages, manage
@@ -163,6 +164,20 @@ Everything here is in the den's **Manage**, under **This den**.
 - **Limits** cap file sizes and storage, and how big calls and screen shares
   get. The calls section shows the upload they need when full; lower them if
   calls stutter.
+- **Soundboard.** Moderators and you add sounds anyone in a call can play for
+  everyone in it. Pick a file, any audio your browser plays, like an MP3 or a
+  WAV, or a video for its sound, and give it a name. Your browser gets it
+  ready before it goes to the den: every sound comes out about as loud as the
+  others, in a small file, about 8 KB a second. Here you can also hear,
+  rename and delete each sound. Chrome, Edge and Firefox 130 or later can add
+  sounds.
+- **Soundboard limits**, in **Limits**: how many sounds the den keeps, 50 at
+  first, or 0 to turn the soundboard off and keep them; how long each may be,
+  10 seconds at first and up to 5 minutes; and how long someone waits after
+  their sound before playing another, 5 seconds at first. Lowering them
+  leaves the sounds already added. A sound goes from your den to everyone in
+  the call while it plays, about 64 kbps each, which the upload for calls
+  counts.
 - **Auto-delete**, off unless you turn it on, deletes messages older than a
   number of days, in channels and DMs. Members see the setting. A
   [backup](../backups/) keeps what it held until you delete the backup.

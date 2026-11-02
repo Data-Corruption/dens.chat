@@ -36,7 +36,6 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
-- The Android e2e's den, made once, goes on running the build it started with, since `den.sh up` starts it only where it isn't running: it could start again once `setup.sh` has pushed a newer build, so desk's page is the tree's.
 
 ## Probably not doing
 

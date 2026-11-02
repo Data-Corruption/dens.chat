@@ -15,6 +15,7 @@ protect you from.
 | Messages and files in a channel | Members who can see the channel, and the den |
 | Staff-only channels | Moderators, the owner, and the den |
 | Calls and screen shares | Everyone in the call. The den could listen in or watch, since calls pass through it |
+| Who plays which sound on the soundboard | Everyone in the call hears it and sees who played it, and the den knows who played which, as it knows who's in a call |
 | DMs, and the photos and files in them | Only the two of you: they're end-to-end encrypted |
 | Who DMs whom, when, and how much | The den |
 | Your IP address | Each den you're connected to, while you're connected. Other members never see it, even in calls |
