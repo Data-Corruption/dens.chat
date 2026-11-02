@@ -442,8 +442,8 @@ func sounds(ch <-chan Event) (alone, shown []string) {
 
 // A message makes one sound (M14.2): with the page's notification, which
 // plays it; with the helper's, the desktop's own, so no page plays one;
-// and where nothing shows it, as with its kind off, alone, to the page on
-// screen most lately.
+// and where nothing can show it, alone, to the page on screen most lately.
+// A kind turned off makes none.
 func TestWhereAMessagesSoundPlays(t *testing.T) {
 	helper := &place{can: true}
 	h, _ := newHub(t, types.Notifications{DMs: true}, helper, false)
@@ -479,42 +479,52 @@ func TestWhereAMessagesSoundPlays(t *testing.T) {
 		t.Fatalf("with the helper's notification, page b played %v", alone)
 	}
 
-	// Nothing can show it: the page on screen most lately plays it alone.
+	// Nothing can show it: the page on screen most lately plays it alone,
+	// once, though the den sends it again.
 	helper.mu.Lock()
 	helper.can = false
 	helper.mu.Unlock()
 	h.Message(dm("12"))
+	h.Message(dm("12"))
 	if alone, _ := sounds(b); !slices.Equal(alone, []string{"12"}) {
-		t.Fatalf("with nothing to show it, page b, on screen most lately, played %v, want 12", alone)
+		t.Fatalf("with nothing to show it, page b, on screen most lately, played %v, want 12 once", alone)
 	}
 	if alone, _ := sounds(a); len(alone) != 0 {
 		t.Fatalf("page a played %v too", alone)
 	}
 
-	// DMs off: the page on screen now plays it, once, though the den sends
-	// it again.
+	// DMs and mentions off: no sound either, on the page on screen now or
+	// any other, whether a page could show it or nothing could.
 	if err := h.SetKinds(ptr(false), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	h.SetPage("a", true, true)
 	h.Message(dm("13"))
-	h.Message(dm("13"))
 	h.Message(mention("14"))
-	if alone, shown := sounds(a); !slices.Equal(alone, []string{"13", "14"}) || len(shown) != 0 {
-		t.Fatalf("with DMs and mentions off, page a, on screen, played %v and showed %v, want 13 and 14 played", alone, shown)
+	h.SetPage("a", true, false)
+	h.Message(dm("15"))
+	if alone, shown := sounds(a); len(alone) != 0 || len(shown) != 0 {
+		t.Fatalf("with DMs and mentions off, page a, on screen, played %v and showed %v", alone, shown)
 	}
+	if alone, shown := sounds(b); len(alone) != 0 || len(shown) != 0 {
+		t.Fatalf("with DMs and mentions off, page b played %v and showed %v", alone, shown)
+	}
+	if err := h.SetKinds(ptr(true), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.SetPage("a", true, true)
 
 	// Muted, on screen, or neither a DM nor a mention: no sound.
 	if err := h.Mute("d1", "7", true); err != nil {
 		t.Fatal(err)
 	}
-	h.Message(dm("15"))
+	h.Message(dm("16"))
 	if err := h.Mute("d1", "7", false); err != nil {
 		t.Fatal(err)
 	}
 	h.Focus("a", "d1", "7")
-	h.Message(dm("16"))
-	h.Message(Message{Den: "d1", Channel: "5", ID: "17", Author: "Bob", Text: "hello all"})
+	h.Message(dm("17"))
+	h.Message(Message{Den: "d1", Channel: "5", ID: "18", Author: "Bob", Text: "hello all"})
 	if alone, shown := sounds(a); len(alone) != 0 || len(shown) != 0 {
 		t.Fatalf("muted, on screen, or neither a DM nor a mention, page a played %v and showed %v", alone, shown)
 	}
@@ -525,7 +535,7 @@ func TestWhereAMessagesSoundPlays(t *testing.T) {
 	// With no page open, nothing plays it.
 	stopA()
 	stopB()
-	h.Message(dm("18"))
+	h.Message(dm("19"))
 	if got := helper.messages(); len(got) != 1 {
 		t.Fatalf("the helper showed %v", got)
 	}
@@ -535,7 +545,8 @@ func TestWhereAMessagesSoundPlays(t *testing.T) {
 // in front: the shell holds it as shown through a call, and a page behind
 // may be frozen, to play what it missed as it thaws.
 func TestAndroidsPageSoundsInFront(t *testing.T) {
-	h, _ := newHub(t, types.Notifications{}, &place{}, true)
+	// DMs are on, but Android doesn't let the shell show them.
+	h, _ := newHub(t, types.Notifications{DMs: true}, &place{}, true)
 	p, stop := h.Watch("webview")
 	defer stop()
 	h.SetPage("webview", true, false)
