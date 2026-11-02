@@ -62,6 +62,25 @@ password: whoever asked has it.
 code** when signing in. You'll set a new password, and your other devices are
 signed out.
 
+## Your profile
+
+Each den has your profile in it: your display name, a few lines about you, a
+picture and a banner. Open it from your name at the foot of the den's channel
+list. Drag a picture around its frame and zoom it to choose what shows; what
+the file carries besides its pixels, such as where a photo was taken, stays on
+your computer.
+
+A GIF or a WebP that moves keeps moving. Dens on your computer makes it into a
+GIF of at most 256 × 256 pixels for a picture, or 600 × 200 for a banner. All
+of the animation goes in, so a long one can come out over the limit, 2 MB for a
+picture and 4 MB for a banner, and Dens says so; a shorter clip fits.
+
+**Animations**, under **Appearance** in the settings, chooses when moving
+pictures play: **Always**, or **On hover**, only while your pointer is over
+someone's message or name, and in a profile you open. It starts at On hover if
+your system asks for less motion. On a phone, On hover plays them only in
+profiles.
+
 ## Direct messages
 
 DMs are end-to-end encrypted: only you and the other person can read them, not
