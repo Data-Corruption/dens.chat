@@ -27,9 +27,15 @@ JAR=/root/cookies
 step() { printf '\n== %s\n' "$*"; }
 fail() {
     printf 'FAIL: %s\n' "$*" >&2
-    for unit in dens@main dens@second; do
-        systemctl status "$unit" --no-pager 2>/dev/null | head -n 15 >&2 || :
-        journalctl -u "$unit" -b --no-pager -o cat 2>/dev/null | tail -n 30 >&2 || :
+    for instance in main second; do
+        systemctl status "dens@$instance" --no-pager 2>/dev/null | head -n 15 >&2 || :
+        journalctl -u "dens@$instance" -b --no-pager -o cat 2>/dev/null | tail -n 30 >&2 || :
+        # Dens keeps its own log, which says why, where the journal has
+        # only systemd's lines.
+        if [ -f "/var/lib/dens/$instance/data/logs/latest.log" ]; then
+            printf -- '-- dens@%s log\n' "$instance" >&2
+            tail -n 40 "/var/lib/dens/$instance/data/logs/latest.log" >&2 || :
+        fi
     done
     exit 1
 }
@@ -147,9 +153,11 @@ first_release() {
         fail "the den has no soundboard after the update: $(api GET "/api/dens/$den_id/state" | head -c 300)"
     sound=/root/sound.ogg
     printf 'OggS\000\002\000\000\000\000\000\000\000\000Dens\000\000\000\000!7\245\351\001\023OpusHead\001\0018\001\200\273\000\000\000\000\000OggS\000\000\000\000\000\000\000\000\000\000Dens\001\000\000\000\377\211\367K\001\024OpusTags\004\000\000\000Dens\000\000\000\000OggS\000\004\300\003\000\000\000\000\000\000Dens\002\000\000\000\207~\033s\001\003\370\377\376' >"$sound"
-    upload=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $CLIENT" -H "Content-Type: application/octet-stream" \
-        -H "Dens-Filename: first.ogg" --data-binary "@$sound" "$CLIENT/api/dens/$den_id/uploads" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')
-    [ -n "$upload" ] || fail "the sound's upload failed after the update"
+    answer=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $CLIENT" -H "Content-Type: application/octet-stream" \
+        -H "Dens-Filename: first.ogg" --data-binary "@$sound" "$CLIENT/api/dens/$den_id/uploads") ||
+        fail "the sound's upload failed after the update: $answer"
+    upload=$(printf '%s' "$answer" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')
+    [ -n "$upload" ] || fail "the sound's upload answered no file: $answer"
     api POST "/api/dens/$den_id/soundboard" "{\"name\":\"First\",\"upload\":\"$upload\"}" | grep -q '"name":"First"' ||
         fail "the den took no sound after the update"
     api GET "/api/dens/$den_id/state" | grep -q '"sounds":\[{"id":"[0-9]*","name":"First"' || fail "the den's soundboard doesn't hold the sound"
