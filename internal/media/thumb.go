@@ -2,7 +2,6 @@ package media
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"image"
@@ -139,44 +138,16 @@ func decodeWebP(r io.Reader, res Result) (image.Image, error) {
 		if c.id != "ANMF" {
 			continue
 		}
-		if len(c.data) < 16 {
-			return nil, errors.New("a short animation frame")
-		}
-		d := c.data
-		x := 2 * (int(d[0]) | int(d[1])<<8 | int(d[2])<<16)
-		y := 2 * (int(d[3]) | int(d[4])<<8 | int(d[5])<<16)
-		fw := 1 + (int(d[6]) | int(d[7])<<8 | int(d[8])<<16)
-		fh := 1 + (int(d[9]) | int(d[10])<<8 | int(d[11])<<16)
-		inner, err := riffChunks(d[16:])
+		f, err := webpFrame(c.data, res.Width, res.Height)
 		if err != nil {
 			return nil, err
 		}
-		still := []byte("WEBP")
-		alpha := false
-		for _, fc := range inner {
-			alpha = alpha || fc.id == "ALPH"
-		}
-		if alpha {
-			vp8x := make([]byte, 10)
-			vp8x[0] = webpAlpha
-			put24(vp8x[4:], fw-1)
-			put24(vp8x[7:], fh-1)
-			still = appendChunk(still, riffChunk{id: "VP8X", data: vp8x})
-		}
-		for _, fc := range inner {
-			still = appendChunk(still, fc)
-		}
-		file := binary.LittleEndian.AppendUint32([]byte("RIFF"), uint32(len(still)))
-		frame, err := webp.Decode(bytes.NewReader(append(file, still...)))
+		frame, err := f.webpImage()
 		if err != nil {
 			return nil, err
-		}
-		b := frame.Bounds()
-		if b.Dx() != fw || b.Dy() != fh {
-			return nil, errors.New("a frame's size doesn't match its header")
 		}
 		out := image.NewRGBA(image.Rect(0, 0, res.Width, res.Height))
-		draw.Draw(out, image.Rect(x, y, x+fw, y+fh), frame, b.Min, draw.Src)
+		draw.Draw(out, f.rect, frame, frame.Bounds().Min, draw.Src)
 		return out, nil
 	}
 	return nil, errors.New("no animation frame")
