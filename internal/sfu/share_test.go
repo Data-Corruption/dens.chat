@@ -196,7 +196,7 @@ func TestShareEnds(t *testing.T) {
 	bob.sees(alice)
 	alice.peer.Close()
 	bob.waitOffer("retiring alice's voice and share", func(sdp string) bool {
-		return count(sdp, "video", "sendonly") == 0 && count(sdp, "audio", "sendonly") == 0
+		return count(sdp, "video", "sendonly") == 0 && count(withoutBoard(sdp), "audio", "sendonly") == 0
 	})
 }
 
@@ -316,7 +316,7 @@ func TestVoiceBitrate(t *testing.T) {
 	alice.hears(bob)
 	alice.peer.SetVoiceBitrate(48000)
 	o := alice.waitOffer("at 48 kbps", func(sdp string) bool { return strings.Contains(sdp, "maxaveragebitrate=48000") })
-	if n, m := strings.Count(o.sdp, "a=fmtp:111 "+voiceParams(48000)), strings.Count(o.sdp, "m=audio"); n != m {
+	if n, m := strings.Count(o.sdp, "a=fmtp:111 "+voiceParams(48000)), strings.Count(withoutBoard(o.sdp), "m=audio"); n != m {
 		t.Errorf("%d of %d sections ask for the new bitrate:\n%s", n, m, o.sdp)
 	}
 	alice.hears(bob)
