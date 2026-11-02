@@ -72,10 +72,12 @@ try {
         await s.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
     }
     for (const s of [A, B]) await waitFor(async () => (await s.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`)) && (await s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`)), `${s.name} in the call`, 30000);
-    // The share button sits in the call's row, between the speaker and mute.
-    const row = await A.b.eval(`(() => { const b = document.querySelector('button[aria-label="Share your screen"]'); const all = [...b.parentElement.children].map((x) => x.getAttribute('aria-label') || x.querySelector('[role=status]')?.textContent || x.tagName); return JSON.stringify(all); })()`);
+    // The share button sits in the call's row, just before mute, after the
+    // soundboard where the member has one (M14.3).
+    const row = await A.b.eval(`(() => { const b = document.querySelector('button[aria-label="Share your screen"]'); const all = [...b.parentElement.children].map((x) => x.getAttribute('aria-label') || x.querySelector('button')?.getAttribute('aria-label') || x.tagName); return JSON.stringify(all); })()`);
     const order = JSON.parse(row);
-    report(order.indexOf('Share your screen') === 1 && order[2] === 'Mute', `both in the call; the share button sits between the speaker and mute: ${row}`);
+    const at = order.indexOf('Share your screen');
+    report(at > 0 && order[at + 1] === 'Mute', `both in the call; the share button sits just before mute: ${row}`);
 
     // The channel list: a ⋯ for each channel and group, for the owner, and no cog in the header.
     await waitFor(() => A.b.eval(`!!document.querySelector('button[aria-label="Settings for general"]')`), 'the text channel', 5000).catch(() => {});

@@ -6,6 +6,9 @@
 //   GET  /call    who is in it, by name, and whether each rings or is muted
 //   POST /share   shares desk's screen, its fake capture
 //   POST /rejoin  leaves the call and joins it again, for its sounds (M14.2)
+//   POST /mute    mutes desk, so its ring lights for its sound alone (M14.3)
+//   POST /sound?name=NAME  plays one of the den's sounds from desk's soundboard
+//   GET  /board   what desk's page receives on the call's soundboard
 //   POST /quit    hangs up, and ends
 //
 //   node desk.mjs PORT [SECONDS]
@@ -18,7 +21,18 @@ import { launch, token, waitFor } from './browsers.mjs';
 
 const [, , portArg, secondsArg] = process.argv;
 const port = Number(portArg);
-const page = await launch('chromium', 9446, { media: true, screen: true });
+// Each peer connection's tracks, by the stream they come in (M14.3).
+const RECORD = `() => {
+    window.__tracks = [];
+    const Orig = window.RTCPeerConnection;
+    window.RTCPeerConnection = class extends Orig {
+        constructor(...args) {
+            super(...args);
+            this.addEventListener('track', (e) => window.__tracks.push({ pc: this, stream: e.streams[0]?.id, track: e.track }));
+        }
+    };
+}`;
+const page = await launch('chromium', 9446, { media: true, screen: true, preload: RECORD });
 const quit = async (status) => {
     await page.close();
     process.exit(status);
@@ -58,6 +72,13 @@ const CALL = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].
 }))`;
 const SHARE = `(() => { const b = document.querySelector('button[aria-label="Share your screen"]'); if (!b) return 'missing';
     if (b.disabled) return 'disabled: ' + b.title; b.click(); return 'clicked'; })()`;
+// BOARD is what desk's page receives on the call's soundboard: its packets.
+const BOARD = `(async () => {
+    const t = window.__tracks.filter((x) => x.stream === 'soundboard' && x.pc.connectionState !== 'closed').at(-1);
+    if (!t) return { packets: 0 };
+    const stats = [...(await t.pc.getStats(t.track)).values()].find((x) => x.type === 'inbound-rtp') || {};
+    return { packets: stats.packetsReceived || 0 };
+})()`;
 // SHAREABLE is desk's share button allowing a share, as it doesn't until
 // desk's page knows the den's limits; the click itself goes as from a
 // click of desk's own, which the browser's picker needs.
@@ -82,6 +103,22 @@ http.createServer(async (req, res) => {
             await join();
             return answer(200, { rejoined: true });
         }
+        if (req.method === 'POST' && req.url === '/mute') {
+            const MUTE = `document.querySelector('button[aria-label="Mute"]')`;
+            await page.eval(`(${MUTE}?.click(), true)`);
+            await waitFor(() => page.eval(`!!document.querySelector('button[aria-label="Unmute"]')`), 'desk muted', 5000);
+            return answer(200, { muted: true });
+        }
+        if (req.method === 'POST' && req.url.startsWith('/sound?')) {
+            const name = new URL(req.url, 'http://desk').searchParams.get('name');
+            await page.eval(`document.querySelector('[data-soundboard-button=block]').click(), true`);
+            const TILE = `[...document.querySelectorAll('[data-soundboard] [data-sound-tile]')].find((t) => t.querySelector('span').textContent === ${JSON.stringify(name)})`;
+            await waitFor(() => page.eval(`!!${TILE}`), `desk's tile ${name}`, 5000);
+            await page.eval(`(${TILE}.click(), true)`, true);
+            await page.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+            return answer(200, { played: name });
+        }
+        if (req.method === 'GET' && req.url === '/board') return answer(200, await page.eval(BOARD));
         if (req.method === 'POST' && req.url === '/quit') {
             answer(200, { left: await page.eval(`(() => { const b = document.querySelector('button[aria-label="Leave the call"]'); b?.click(); return !!b; })()`) });
             return setTimeout(() => quit(0), 500);

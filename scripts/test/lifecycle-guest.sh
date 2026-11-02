@@ -102,8 +102,8 @@ expect_uninstalled() {
 # first_release hosts a den with Dens's first release, as its installer's
 # den option did, and updates to this one, which still hosts it: the switch
 # takes the den role it had (M9.1); and which migrated its database, as a
-# member's own sound shows (M14.2). Then it uninstalls, for the fresh
-# install after it.
+# member's own sound shows (M14.2), and the den's soundboard (M14.3). Then
+# it uninstalls, for the fresh install after it.
 first_release() {
     first=$(cat /release/first/version)
     case $(uname -m) in
@@ -139,6 +139,20 @@ first_release() {
     [ "$(curl -sS --fail -b "$JAR" "$CLIENT/api/sounds/joined" | sha256sum)" = "$(sha256sum <"$own")" ] ||
         fail "the member's own sound didn't come back as it went after the update"
     wait_own_connected
+    # And M14.3's: the den has its soundboard's limits, its new columns'
+    # defaults, and takes a sound, in the den's named files' table. The
+    # sound is Opus's silence in Ogg, a packet of it, as a page writes one.
+    den_id=$(api GET /api/dens | sed -n 's/.*"den_id":"\([^"]*\)".*/\1/p')
+    api GET "/api/dens/$den_id/state" | grep -q '"sound_limits":{"sounds":50,"longest":10,"wait":5}' ||
+        fail "the den has no soundboard after the update: $(api GET "/api/dens/$den_id/state" | head -c 300)"
+    sound=/root/sound.ogg
+    printf 'OggS\000\002\000\000\000\000\000\000\000\000Dens\000\000\000\000!7\245\351\001\023OpusHead\001\0018\001\200\273\000\000\000\000\000OggS\000\000\000\000\000\000\000\000\000\000Dens\001\000\000\000\377\211\367K\001\024OpusTags\004\000\000\000Dens\000\000\000\000OggS\000\004\300\003\000\000\000\000\000\000Dens\002\000\000\000\207~\033s\001\003\370\377\376' >"$sound"
+    upload=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $CLIENT" -H "Content-Type: application/octet-stream" \
+        -H "Dens-Filename: first.ogg" --data-binary "@$sound" "$CLIENT/api/dens/$den_id/uploads" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')
+    [ -n "$upload" ] || fail "the sound's upload failed after the update"
+    api POST "/api/dens/$den_id/soundboard" "{\"name\":\"First\",\"upload\":\"$upload\"}" | grep -q '"name":"First"' ||
+        fail "the den took no sound after the update"
+    api GET "/api/dens/$den_id/state" | grep -q '"sounds":\[{"id":"[0-9]*","name":"First"' || fail "the den's soundboard doesn't hold the sound"
     dens uninstall --yes
     expect_uninstalled
     rm -f "$JAR"

@@ -104,10 +104,13 @@ try {
     }
 
     // Every member's encoder runs at 96 kbps: the first to join too, whose
-    // re-offer Pion would build from their browser's answer.
+    // re-offer Pion would build from their browser's answer. The
+    // soundboard's section (M14.3) carries what the den sends, as a share's
+    // sound does, so it's left out.
     const ENC = `(async () => {
         const pc = window.__pcs.at(-1);
-        const fmtps = (pc.remoteDescription?.sdp || '').split('\\r\\n').filter((l) => l.startsWith('a=fmtp:111'));
+        const voices = (pc.remoteDescription?.sdp || '').split('\\r\\nm=').slice(1).filter((m) => m.startsWith('audio') && !m.includes('a=msid:soundboard '));
+        const fmtps = voices.map((m) => m.split('\\r\\n').find((l) => l.startsWith('a=fmtp:111')) || '');
         let target = 0;
         (await pc.getStats()).forEach((s) => { if (s.type === 'outbound-rtp' && s.kind === 'audio') target = s.targetBitrate || target; });
         return JSON.stringify({ sections: fmtps.length, asks: fmtps.length > 0 && fmtps.every((l) => l.includes('maxaveragebitrate=96000')), target });
@@ -434,7 +437,8 @@ try {
     await waitFor(async () => (await B.b.eval(STATS)).includes('Connected'), `${B.browser} back in the call`, 30000);
     await sleep(500);
     const inCall = JSON.parse(await B.b.eval(LINE_UP));
-    const lounge = 'Connected to ' + await B.b.eval(`(async () => ((await (await fetch('/api/dens/${den}/state')).json()).channels.find((c) => c.kind === 'voice') || {}).name)()`);
+    const loungeName = await B.b.eval(`(async () => ((await (await fetch('/api/dens/${den}/state')).json()).channels.find((c) => c.kind === 'voice') || {}).name)()`);
+    const lounge = 'Connected to ' + loungeName;
     const BLOCK = `document.querySelector('button[aria-label="Leave the call"]').closest('.bg-bar')`;
     const row = JSON.parse(await B.b.eval(`(() => {
         const block = ${BLOCK};
@@ -445,9 +449,12 @@ try {
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
         const light = (c) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data; return r + g + b; };
         const b = block.getBoundingClientRect();
-        // The speaker and the four buttons are spread evenly.
-        const items = [block.querySelector('[role=status]').parentElement, ...buttons].map((x) => x.getBoundingClientRect());
+        // The buttons are spread evenly; how the call stands is said to a
+        // screen reader alone while it's connected here, and shows on the
+        // channel's row (M14.3).
+        const items = buttons.map((x) => x.getBoundingClientRect());
         const gaps = items.slice(1).map((r, i) => Math.round(r.left - items[i].right));
+        const status = block.querySelector('[role=status]');
         return JSON.stringify({
             labels: buttons.map((x) => x.getAttribute('aria-label')).join('|'),
             gaps: gaps.join(','),
@@ -455,27 +462,20 @@ try {
             lines: new Set(buttons.map((x) => Math.round(x.getBoundingClientRect().top))).size,
             height: Math.round(b.height),
             above: Math.round(panel.getBoundingClientRect().top - b.bottom),
-            status: block.querySelector('[role=status]').textContent,
+            status: status.textContent,
+            said: status.classList.contains('sr-only'),
+            line: !!block.querySelector('[data-call-status]'),
             shade: bg(block) === bg(composer) && bg(panel) === 'rgba(0, 0, 0, 0)',
             standsOut: light(bg(block)) - light(bg(panel.closest('aside'))),
             lighter: light(bg(composer)) - light(getComputedStyle(document.documentElement).backgroundColor),
         });
     })()`));
-    // The speaker's tip names where the call is, hidden until the mouse
-    // hovers the speaker, or a finger taps it (M13.2), and it fits inside the
-    // channel list.
-    const TIP = `${BLOCK}.querySelector('[role=tooltip]')`;
-    const hidden = await B.b.eval(`${TIP}.hidden`);
-    const speaker = JSON.parse(await B.b.eval(`(() => { const r = ${BLOCK}.querySelector('.tooltip button').getBoundingClientRect();
-        return JSON.stringify([r.left + r.width / 2, r.top + r.height / 2]); })()`));
-    await B.b.move(speaker[0], speaker[1]);
-    const tip = JSON.parse(await waitFor(() => B.b.eval(`(() => {
-        const tip = ${TIP};
-        if (tip.hidden) return '';
-        const r = tip.getBoundingClientRect();
-        const aside = tip.closest('aside').getBoundingClientRect();
-        return JSON.stringify({ text: tip.textContent, inside: r.left >= aside.left && r.right <= aside.right && r.top >= aside.top && r.bottom <= aside.bottom });
-    })()`), `${B.browser}'s speaker tip on hover`, 3000).catch(() => '{}'));
+    // The channel's row shows how the call stands on its speaker, green once
+    // connected, and says so in its label (M14.3).
+    const speaker = JSON.parse(await B.b.eval(`(() => {
+        const s = document.querySelector('[data-call-state]');
+        return JSON.stringify({ state: s?.dataset.callState, green: !!s?.classList.contains('text-success'), label: s?.closest('button')?.getAttribute('aria-label') });
+    })()`));
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-panel.png`).catch((e) => console.log('shot', e.message));
     await B.b.move(5, 5);
     await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').click(), true)`);
@@ -494,10 +494,10 @@ try {
     })()`));
     report(outOfCall.panel === outOfCall.bar && inCall.panel === inCall.bar && inCall.avatar === outOfCall.avatar && outOfCall.avatar >= 32
         && row.labels === 'Share your screen|Mute|Deafen|Voice settings|Leave the call' && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
-        && row.status === lounge && row.shade && row.standsOut >= 15
-        && tip.text === lounge && hidden && tip.inside && edit === true && cog === 'Appearance'
+        && row.status === lounge && row.said && !row.line && row.shade && row.standsOut >= 15
+        && speaker.state === 'connected' && speaker.green && speaker.label === `${loungeName}, connected` && edit === true && cog === 'Appearance'
         && head.home && !head.dot && !head.header,
-        `${B.browser} panel and bar line up: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, its tip ${JSON.stringify(tip)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
+        `${B.browser} panel and bar line up: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, the channel's speaker ${JSON.stringify(speaker)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
 
     // Every theme, with its colors, in the settings' Appearance tab: System,
     // Light and Dark, and the rest under More themes; a pick takes hold at

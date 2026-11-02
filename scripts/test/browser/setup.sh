@@ -83,7 +83,7 @@ echo "Pushing to $CONTAINER ..."
 push out/linux-amd64 dens-dev 0755
 push out/browser/voice-probe voice-probe 0755
 push "$node" node 0755
-as_tester mkdir -p photos videos browser
+as_tester mkdir -p photos videos sounds browser
 for file in iphone-5.jpg pixel-2.jpg; do push "$media/$file" "photos/$file"; done
 push internal/media/ffmpeg/testdata/rotated.heic photos/iphone-xr.heic
 for file in iphone-x-h264.mov iphone-12-pro-hevc.mov; do push "$media/$file" "videos/$file"; done
@@ -91,6 +91,7 @@ push internal/media/ffmpeg/testdata/grain-60fps.mp4 videos/grain-60fps.mp4
 push internal/media/ffmpeg/testdata/vp9.webm videos/vp9.webm
 push internal/media/ffmpeg/testdata/late-sound.mp4 videos/late-sound.mp4
 push internal/media/ffmpeg/testdata/with-gps.mp4 clip.mp4
+push internal/media/ffmpeg/testdata/tone.mp3 sounds/tone.mp3
 for file in scripts/test/browser/*; do push "$file" "browser/$(basename "$file")" 0755; done
 
 # Speech for the fake microphones, about a minute of it, and a photo that

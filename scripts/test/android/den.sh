@@ -16,6 +16,7 @@
 #        scripts/test/android/den.sh say CHANNEL TEXT [IDS]   a message from desk, with uploads by ID
 #        scripts/test/android/den.sh upload FILE NAME         an upload from desk, in its home
 #        scripts/test/android/den.sh dm MEMBER                desk's DM with a member by ID, its key started
+#        scripts/test/android/den.sh sound NAME               a sound on the den's soundboard, added if it isn't there
 #
 # The app's Dens trusts the root through SSL_CERT_FILE, which phone.sh trust
 # gives a development build.
@@ -82,6 +83,11 @@ EOF
     echo $! >android-den/caddy.pid
   fi
   for _ in $(seq 50); do [[ -s $ROOT_CRT ]] && break; sleep 0.2; done
+  # A den made once runs on as the binary setup.sh pushed changes, so
+  # one older than the binary starts again.
+  if running sden && [[ ./dens-dev -nt android-den/sden.pid ]]; then
+    stop sden
+  fi
   if ! running sden; then
     SSL_CERT_FILE=$ROOT_CRT nohup ./dens-dev -i sden service run --port $PORT --den-port 18585 \
       --media-udp-port 17981 --media-tcp-port 17982 >android-den/sden.log 2>&1 &
@@ -134,6 +140,17 @@ case $1 in
     fi
     echo "$dm"
     ;;
+  sound)
+    name=$2
+    named() { api GET "/api/dens/$(den)/state" | json "next((s['id'] for s in d.get('sounds', []) if s['name'] == '$name'), '')"; }
+    if [[ -z $(named) ]]; then
+      ./node browser/make-sound.mjs android-den/sound.ogg 1
+      upload=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: http://127.0.0.1:$PORT" -H "Content-Type: application/octet-stream" \
+        -H "Dens-Filename: sound.ogg" --data-binary @android-den/sound.ogg "http://127.0.0.1:$PORT/api/dens/$(den)/uploads" | json 'd["id"]')
+      api POST "/api/dens/$(den)/soundboard" "{\"name\":\"$name\",\"upload\":\"$upload\"}" >/dev/null
+    fi
+    named
+    ;;
   root) cat "$ROOT_CRT" ;;
   down) stop sden; stop caddy ;;
 esac
@@ -148,12 +165,12 @@ case ${1:-} in
     guest
     as_tester ./android-den.sh up
     ;;
-  invite | root | down | api | den | general | channel | say | upload | dm)
+  invite | root | down | api | den | general | channel | say | upload | dm | sound)
     guest
     as_tester ./android-den.sh "$@"
     ;;
   *)
-    sed -n '9,18p' "$0" >&2
+    sed -n '9,19p' "$0" >&2
     exit 2
     ;;
 esac

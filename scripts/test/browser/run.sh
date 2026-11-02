@@ -25,7 +25,8 @@
 #   move BROWSER                M10: moving the den to another computer from the settings,
 #                               and removing it from this one once its server is gone
 #   fixes BROWSER               M11.1: the small fixes: dialogs, a key's capture, the two tabs,
-#                               the New divider, the message box, folding groups, a late-sound video
+#                               the New divider, the message box, folding groups, a late-sound video,
+#                               and a thin video's full screen button (M14.3)
 #   messages BROWSER            M11.2: each message's ⋯ menu by keyboard, and by touch through a long
 #                               press (M13.2), its delete dialog, and links to messages, in a den and
 #                               from another; a link underlined only on hover and focus (M14.1)
@@ -39,6 +40,10 @@
 #   sounds BROWSER              M14.2: the page's sounds in a call, as each change plays them, from
 #                               a file of the member's own, quieted and off, and a DM's sound, once
 #                               with the browser's popup, alone with DMs off, none muted or on screen
+#   soundboard BROWSER          M14.3: sounds staff add from Manage, opened from the den's name, each
+#                               prepared by the page, played in a call from the call's block, Home's box
+#                               and the phone's bar, received by the other page, one at a time, its
+#                               player's ring lit, the rest heard by who joins partway, 0 muting it
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
@@ -57,7 +62,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,56p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,61p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

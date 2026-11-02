@@ -472,6 +472,16 @@ export async function ownerScreens(h, ctx) {
     await h.step('owner-list', async () => {
         await h.snap('owner-list', { scroll: `document.querySelector('aside')`, max: 2 });
     });
+    // The den's name opens its Manage, on the phone layout at the list of
+    // its sections (M14.3).
+    await h.step('owner-den-manage', async () => {
+        await h.go(`/den/${den}`);
+        await h.click(`document.querySelector('[data-den-manage]')`, "the den's name");
+        await h.wait(`document.querySelector('${MANAGE_FRAME} [data-section]')`, "Manage's sections, from the den's name", 5000);
+        await h.snap('manage-from-den');
+        await h.escape();
+        await waitFor(async () => !(await h.has(MANAGE)), 'Manage to close', 5000);
+    });
     await h.step('owner-manage', async () => {
         await h.go('/');
         await h.click(h.byText('button', 'Manage'));
@@ -621,6 +631,26 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         else did(!c.button, "with a mouse there's no call's button");
         const end = await h.ev(LIST_END);
         did(listEnds(end, c), `the list ends at its newest message, ${end} pixels above its foot, and nothing else scrolls: ${JSON.stringify({ row: c.rowScrolls, page: c.pageScrolls })}`);
+    });
+    // The bar holds the soundboard and mute (M14.3), which a narrow window
+    // with a mouse has no call's button for; the soundboard opens as a sheet
+    // from the screen's foot.
+    await h.step('call-soundboard', async () => {
+        const labels = await h.ev(`[...document.querySelectorAll('[data-call-bar] button')].map((b) => b.getAttribute('aria-label')).filter(Boolean).join('|')`);
+        did(labels === 'Soundboard|Mute|Deafen|Leave the call', `the call's bar holds the soundboard, mute, deafen and leave: ${labels}`);
+        await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Mute"]')`);
+        const muted = await waitFor(() => h.has(`document.querySelector('[data-call-bar] button[aria-label="Unmute"][aria-pressed="true"]')`), 'muted from the bar', 5000).catch(() => false);
+        await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Unmute"]')`);
+        const unmuted = await waitFor(() => h.has(`document.querySelector('[data-call-bar] button[aria-label="Mute"][aria-pressed="false"]')`), 'unmuted from the bar', 5000).catch(() => false);
+        did(muted && unmuted, `the bar's mute mutes (${muted}) and unmutes (${unmuted})`);
+        await d.tap(`document.querySelector('[data-call-bar] [data-soundboard-button=bar]')`);
+        const sheet = `document.querySelector('[role=dialog][data-sheet] [data-board]')`;
+        await h.wait(sheet, "the soundboard's sheet", 5000);
+        await h.snap('call-soundboard');
+        const tiles = await h.ev(`[...document.querySelectorAll('[data-sheet] [data-sound-tile]')].map((t) => t.querySelector('span').textContent).join('|')`);
+        did(tiles === 'Ping', `the soundboard opens as a sheet from the screen's foot, with the den's sounds: ${tiles}`);
+        await d.back();
+        await waitFor(async () => !(await h.has(sheet)), 'the sheet to close', 5000);
     });
     if (d.touch) {
         await h.step('call-button', async () => {

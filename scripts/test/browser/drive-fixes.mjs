@@ -5,7 +5,8 @@
 // with its member's profile beside it, or none; the New divider only for
 // what was unread when a channel opened; the message box's focus; Enter in
 // a code block; the composer's + bordered as its box is; folding a channel
-// group; and a video whose sound starts late playing it in time.
+// group; a video whose sound starts late playing it in time; and a thin
+// video keeping its full screen button as the rest give way (M14.3).
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -208,6 +209,35 @@ try {
     })()`, true));
     c.report(timing.duration < 1.2 && timing.onset !== null && timing.onset < 0.3,
         `the clip lasts ${timing.duration.toFixed(2)} s and its sound starts ${timing.onset?.toFixed(2)} s in`);
+
+    step('a thin video keeps its full screen button, the rest of its controls giving way');
+    // The player's controls go by its own width, so narrowing it shows
+    // what a thin video, as two portrait clips in a message are, keeps.
+    const controls = async (width) => JSON.parse(await b.eval(`(async () => {
+        const frame = (${clip}).parentElement;
+        frame.style.width = '${width}px';
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const f = frame.getBoundingClientRect();
+        const shows = (sel) => [...frame.querySelectorAll(sel)].some((el) => {
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.left >= f.left - 1 && r.right <= f.right + 1;
+        });
+        return JSON.stringify({
+            play: shows('button[aria-label=Play], button[aria-label=Pause]'),
+            seek: shows('input[aria-label=Seek]'),
+            mute: shows('button[aria-label=Mute], button[aria-label=Unmute]'),
+            full: shows('button[aria-label="Full screen"]'),
+        });
+    })()`));
+    const widths = {};
+    for (const w of [300, 120, 80, 56]) widths[w] = await controls(w);
+    const want = {
+        300: { play: true, seek: true, mute: true, full: true },
+        120: { play: true, seek: true, mute: false, full: true },
+        80: { play: true, seek: false, mute: false, full: true },
+        56: { play: false, seek: false, mute: false, full: true },
+    };
+    c.report(JSON.stringify(widths) === JSON.stringify(want), `the full screen button stays at every width, the rest giving way: ${JSON.stringify(widths)}`);
     await shot('done');
 } catch (e) {
     c.fail(e);
