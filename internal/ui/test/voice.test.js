@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    actionFor, answerFor, applyCalls, behindBy, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem, playAgain,
-    pressed, readCallVolume, readKeyStatus, readKeys, readVoice, readVolumes, released, ringing, rings, rmsDb, rnnoiseChosen, sendRate, setVoice,
-    speakingNow, summarize, talking, typesInto, voiceSettings, volumeIn, withVolume,
+    actionFor, answerFor, applyCalls, applySounds, behindBy, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem,
+    playAgain, pressed, readCallVolume, readKeyStatus, readKeys, readSoundLimits, readVoice, readVolumes, released, ringing, rings, rmsDb, rnnoiseChosen,
+    sendRate, setVoice, speakingNow, summarize, talking, typesInto, voiceSettings, volumeIn, withVolume,
 } from '../assets/js/src/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
@@ -361,4 +361,40 @@ test("a call plays at full volume unless chosen, and the kept volume makes sense
     assert.equal(readCallVolume('0.33'), 0.35, 'in steps of 5%');
     assert.equal(readCallVolume('7'), 1, 'never past full');
     assert.equal(readCallVolume('loud'), 1);
+});
+
+// A member playing a sound is often muted, and their ring lights all the
+// same, by the den's word (M14.3).
+test("a muted member's ring lights while their sound plays", () => {
+    const quiet = new Set();
+    assert.equal(rings({ id: '2', muted: true }, '1', quiet, '2'), true);
+    assert.equal(rings({ id: '2', muted: true }, '1', quiet, '3'), false);
+    assert.equal(rings({ id: '1', muted: true }, '1', quiet, '1'), true, "the member's own");
+    assert.equal(rings({ id: '2' }, '1', quiet, ''), false);
+});
+
+// A deafened member hears nothing of the call, so nobody rings for them:
+// not by the meters, push to talk, or a sound, their own neither.
+test('nobody rings for a deafened member', () => {
+    const loud = new Set(['2', 'self']);
+    assert.equal(rings({ id: '2' }, '1', loud, '', false), true, 'heard, while not deafened');
+    assert.equal(rings({ id: '2' }, '1', loud, '', true), false, 'by the meters or push to talk');
+    assert.equal(rings({ id: '3', muted: true }, '1', new Set(), '3', true), false, 'by a sound');
+    assert.equal(rings({ id: '1' }, '1', loud, '1', true), false, "the member's own");
+});
+
+test("a den's soundboard limits read as they are, and a den older than it has none", () => {
+    assert.deepEqual(readSoundLimits({ sounds: 50, longest: 10, wait: 5 }), { sounds: 50, longest: 10, wait: 5 });
+    assert.deepEqual(readSoundLimits({ sounds: 0, longest: 10, wait: 5 }), { sounds: 0, longest: 10, wait: 5 }, 'off');
+    assert.equal(readSoundLimits(undefined), null);
+    assert.equal(readSoundLimits({ sounds: 0, longest: 0, wait: 0 }), null);
+});
+
+test("a den's sounds follow its events: added, renamed and deleted", () => {
+    const horn = { id: '1', name: 'Horn' };
+    let sounds = applySounds([], { t: 'sound.created', d: horn });
+    sounds = applySounds(sounds, { t: 'sound.created', d: { id: '2', name: 'Bell' } });
+    sounds = applySounds(sounds, { t: 'sound.updated', d: { id: '1', name: 'Big horn' } });
+    assert.deepEqual(sounds, [{ id: '2', name: 'Bell' }, { id: '1', name: 'Big horn' }]);
+    assert.deepEqual(applySounds(sounds, { t: 'sound.deleted', d: { id: '2' } }), [{ id: '1', name: 'Big horn' }]);
 });

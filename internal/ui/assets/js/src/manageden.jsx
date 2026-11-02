@@ -1,6 +1,7 @@
 // A den's Manage dialog (M8.3), in two parts by who they're for. This den:
 // its address and Den ID, which everyone sees, and the name and address
-// its owner changes; invites and bans, for staff; and the owner's limits.
+// its owner changes; invites, bans and the soundboard (M14.3), for staff;
+// and the owner's limits.
 // You in this den: the member's devices, their den password, recovery
 // codes and DM recovery key, and their files. The owner's edits gather in
 // one draft, saved from one bar.
@@ -11,7 +12,7 @@ import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import {
     CopyButton, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater,
 } from './components.jsx';
-import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf } from './dendraft.js';
+import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf, hasBoard } from './dendraft.js';
 import { onEvent } from './events.js';
 import { useLayer, useNarrow } from './nav.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
@@ -22,13 +23,14 @@ import { rank } from './people.jsx';
 import { DMKey, RecoveryCodes } from './private.jsx';
 import { deletesNow, keptFor } from './retention.js';
 import { CALL_PRESETS, HEIGHTS, mbps, presetOf, uploadNeeded } from './share.js';
+import { ManageSoundboard } from './soundboard.jsx';
 
 // sectionsFor lists the sections a member sees for a den, each with the
 // part it's in: everything but General needs the den connected.
 export function sectionsFor(den) {
     const list = [['general', 'General', 'den']];
     if (den.state !== 'connected') return list;
-    if (rank(den.role) > 0) list.push(['invites', 'Invites', 'den'], ['bans', 'Bans', 'den']);
+    if (rank(den.role) > 0) list.push(['invites', 'Invites', 'den'], ['bans', 'Bans', 'den'], ['soundboard', 'Soundboard', 'den']);
     if (den.role === 'owner') list.push(['limits', 'Limits', 'den']);
     list.push(['devices', 'Devices', 'you'], ['password', 'Password and recovery', 'you'], ['files', 'Your files', 'you']);
     return list;
@@ -147,6 +149,8 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         panel = <Invites denID={denID} />;
     } else if (at === 'bans') {
         panel = <Bans denID={denID} role={den.role} />;
+    } else if (at === 'soundboard') {
+        panel = <ManageSoundboard denID={denID} owner={owner} onLimits={() => onSection('limits')} />;
     } else if (at === 'limits') {
         panel = draft && view ? <Limits denID={denID} view={view} draft={draft} base={base} onEdit={edit} /> : <span class="loading loading-spinner"></span>;
     } else if (at === 'devices') {
@@ -505,8 +509,9 @@ function Unit({ unit, value, onInput, ...rest }) {
 const PRESET_NAMES = { small: 'Small group', large: 'Large group' };
 
 // Limits sets how large a file may be and how much space files take, how
-// long the den keeps messages, and its limits for calls, from a preset or
-// field by field, with the upload they need as they change.
+// long the den keeps messages, its limits for calls, from a preset or field
+// by field, with the upload they need as they change, and from M14.3 for
+// its soundboard.
 function Limits({ denID, view, draft, base, onEdit }) {
     const [custom, setCustom] = useState(() => presetOf(callLimitsOf(draft)) === 'custom');
     const [preview, setPreview] = useState(null);
@@ -532,6 +537,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
     }, [draft.retain, draft.days]);
     const field = (key) => (value) => onEdit({ [key]: value });
     const sharing = Number(draft.shares) > 0;
+    const board = hasBoard(draft) && Number(draft.sounds) > 0;
     return (
         <>
             <Heading>Limits</Heading>
@@ -571,7 +577,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
                                 setCustom(false);
                                 onEdit(callFields(limits));
                             }} />
-                            {PRESET_NAMES[name]} (about {mbps(uploadNeeded(limits, voice))})
+                            {PRESET_NAMES[name]} (about {mbps(uploadNeeded(limits, voice, board))})
                         </label>
                     ))}
                     <label class="label gap-2">
@@ -618,9 +624,37 @@ function Limits({ denID, view, draft, base, onEdit }) {
                     </div>
                 )}
                 {Object.values(calls).every(Number.isFinite) && (
-                    <p class="text-sm">Upload needed at full load: about {mbps(uploadNeeded(calls, voice))}</p>
+                    <p class="text-sm">Upload needed at full load: about {mbps(uploadNeeded(calls, voice, board))}</p>
                 )}
             </section>
+            {hasBoard(draft) && (
+                <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-soundboard>
+                    <h4 class="font-medium">Soundboard</h4>
+                    <p class="text-sm text-base-content/70">
+                        Sounds staff add, which anyone in a call plays for everyone in it. The den streams each to the whole call, so a long one
+                        costs its upload as long as it plays.
+                    </p>
+                    <label class="label gap-2">
+                        <input type="checkbox" class="toggle toggle-sm" checked={board}
+                            onChange={(e) => onEdit({ sounds: e.currentTarget.checked ? String(Number(base.sounds) || 50) : '0' })} />
+                        Allow the soundboard
+                    </label>
+                    {board && (
+                        <div class="grid gap-x-3 sm:grid-cols-3">
+                            <Field label="Max sounds">
+                                <Unit unit="sounds" min="1" max="500" step="1" value={draft.sounds} onInput={field('sounds')} required />
+                            </Field>
+                            <Field label="Longest sound">
+                                <Unit unit="seconds" min="1" max="300" step="1" value={draft.longest} onInput={field('longest')} required />
+                            </Field>
+                            <Field label="Wait between a member's sounds">
+                                <Unit unit="seconds" min="0" max="600" step="1" value={draft.wait} onInput={field('wait')} required />
+                            </Field>
+                        </div>
+                    )}
+                    <p class="text-sm text-base-content/70">Lowering these leaves the sounds already added.</p>
+                </section>
+            )}
         </>
     );
 }

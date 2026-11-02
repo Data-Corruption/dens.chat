@@ -173,10 +173,12 @@ export function dismisses(dy, height, speed) {
 }
 
 // tipShift is how far a tip whose box is rect moves sideways to stay
-// within a window vw wide, margin from each edge; one wider than the room
-// starts at the left margin.
-export function tipShift(rect, vw, margin = 8) {
-    if (rect.left < margin || rect.width > vw - 2 * margin) return margin - rect.left;
-    if (rect.right > vw - margin) return vw - margin - rect.right;
+// within bounds, the window's or a list's around it, margin from each
+// edge; one wider than the room starts at the left margin.
+export function tipShift(rect, bounds, margin = 8) {
+    const left = bounds.left + margin;
+    const right = bounds.right - margin;
+    if (rect.left < left || rect.width > right - left) return left - rect.left;
+    if (rect.right > right) return right - rect.right;
     return 0;
 }

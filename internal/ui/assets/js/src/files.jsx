@@ -200,7 +200,9 @@ function setVideoVolume(v) {
 // the video is paused, so it shows where it stopped and how long it is,
 // and while it plays they hide once the pointer rests or leaves. Keyboard
 // focus inside keeps them up too, but not focus a click gave, as Firefox
-// gives the video itself.
+// gives the video itself. A thin video keeps its full screen button, where
+// every control shows, as the rest give way to the width: the time first,
+// then the mute, the seek bar, and play, which a click on the video does.
 function VideoTile({ denID, file, box }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
     const frame = useRef(null);
@@ -303,15 +305,15 @@ function VideoTile({ denID, file, box }) {
             )}
             {!failed && (
                 <div class={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white transition-opacity ${fade}`}>
-                    <button type="button" class={button} onClick={toggle} title={paused ? 'Play' : 'Pause'} aria-label={paused ? 'Play' : 'Pause'}>
+                    <button type="button" class={`${button} hidden @min-[4rem]:flex`} onClick={toggle} title={paused ? 'Play' : 'Pause'} aria-label={paused ? 'Play' : 'Pause'}>
                         {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
                     </button>
                     <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
-                    <input type="range" class="range range-md min-w-0 flex-1" min="0" max={duration || 0} step="any" value={time}
+                    <input type="range" class="range range-md hidden min-w-0 flex-1 @min-[6rem]:block" min="0" max={duration || 0} step="any" value={time}
                         onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
                     {/* The volume shows above the mute button on hover or
-                        keyboard focus, at any width (M3.3). */}
-                    <div class="group/volume relative flex shrink-0">
+                        keyboard focus (M3.3), wherever the mute fits. */}
+                    <div class="group/volume relative hidden shrink-0 @min-[9rem]:flex">
                         <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
                             <SoundIcon muted={silent} />
                         </button>
@@ -324,7 +326,7 @@ function VideoTile({ denID, file, box }) {
                         </div>
                     </div>
                     {document.fullscreenEnabled && (
-                        <button type="button" class={`${button} hidden @min-[9rem]:flex`} onClick={toggleFull}
+                        <button type="button" class={`${button} ml-auto`} onClick={toggleFull}
                             title={full ? 'Exit full screen' : 'Full screen'} aria-label={full ? 'Exit full screen' : 'Full screen'}>
                             <FullIcon full={full} />
                         </button>

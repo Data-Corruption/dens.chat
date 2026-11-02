@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { day, dayTime } from '../assets/js/src/components.jsx';
-import { callFields, changed, changesOf, draftOf } from '../assets/js/src/dendraft.js';
+import { callFields, changed, changesOf, draftOf, hasBoard } from '../assets/js/src/dendraft.js';
 import { CALL_PRESETS } from '../assets/js/src/share.js';
 
 const MB = 1 << 20;
@@ -48,6 +48,23 @@ test('a field out of range stops the save with what to fix', () => {
     assert.equal(problem({ bitrate: '0.1' }), 'Max bitrate is 0.25 to 50 Mbps.');
     assert.equal(problem({ height: '900' }), 'Max resolution is 720p, 1080p, 1440p or 4K.');
     assert.equal(changed({ ...base, file: '2000' }, base), true);
+});
+
+// A den's soundboard has its limits among the draft's fields (M14.3); a
+// den older than it has none, as the first test's.
+test("the soundboard's limits are the draft's too, where the den has a soundboard", () => {
+    assert.equal(hasBoard(draftOf(den, view)), false);
+    const base = draftOf(den, { ...view, sound_limits: { sounds: 50, longest: 10, wait: 5 } });
+    assert.equal(hasBoard(base), true);
+    assert.deepEqual([base.sounds, base.longest, base.wait], ['50', '10', '5']);
+    assert.equal(changed(base, base), false);
+    assert.deepEqual(changesOf({ ...base, longest: '120', wait: '0' }, base).body, { sound_limits: { sounds: 50, longest: 120, wait: 0 } });
+    assert.deepEqual(changesOf({ ...base, sounds: '0' }, base).body, { sound_limits: { sounds: 0, longest: 10, wait: 5 } }, 'off');
+    const problem = (changes) => changesOf({ ...base, ...changes }, base).problem;
+    assert.equal(problem({ sounds: '501' }), 'Max sounds is 1 to 500.');
+    assert.equal(problem({ longest: '0' }), 'The longest sound is 1 to 300 seconds.');
+    assert.equal(problem({ longest: '301' }), 'The longest sound is 1 to 300 seconds.');
+    assert.equal(problem({ wait: '601' }), "The wait between a member's sounds is 0 to 600 seconds.");
 });
 
 test('dates take one form, with the time where it matters', () => {

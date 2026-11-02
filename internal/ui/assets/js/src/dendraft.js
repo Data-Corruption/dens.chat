@@ -1,7 +1,7 @@
 // The owner's edits to a den in its Manage dialog (M8.3): its name and
-// address, its upload limits, how long it keeps messages, and its limits
-// for calls. They gather in one draft, kept as the fields' text, and go to
-// the den as one update of what changed.
+// address, its upload limits, how long it keeps messages, its limits for
+// calls, and from M14.3 for its soundboard. They gather in one draft, kept
+// as the fields' text, and go to the den as one update of what changed.
 
 import { HEIGHTS } from './share.js';
 
@@ -23,7 +23,26 @@ export function draftOf(den, view) {
         retain: view.retention > 0,
         days: String(view.retention > 0 ? view.retention : 90),
         ...callFields(view.call_limits),
+        ...soundFields(view.sound_limits),
     };
+}
+
+// soundFields are a den's limits for its soundboard as a draft's fields,
+// or none for a den older than the soundboard, which has no limits for it.
+export function soundFields(l) {
+    if (!l?.longest) return {};
+    return { sounds: String(l.sounds), longest: String(l.longest), wait: String(l.wait) };
+}
+
+// hasBoard says whether a draft has the soundboard's limits.
+export function hasBoard(d) {
+    return 'longest' in d;
+}
+
+// soundLimitsOf reads a draft's limits for the soundboard as the den
+// takes them.
+export function soundLimitsOf(d) {
+    return { sounds: Number(d.sounds), longest: Number(d.longest), wait: Number(d.wait) };
 }
 
 // callFields are call limits as a draft's fields.
@@ -87,6 +106,17 @@ export function changesOf(draft, base) {
         if (!HEIGHTS.includes(calls.share_height)) return refuse('Max resolution is 720p, 1080p, 1440p or 4K.');
         if (!whole(calls.share_fps, 5, 60)) return refuse('Max frame rate is 5 to 60 fps.');
         body.call_limits = calls;
+    }
+
+    if (hasBoard(draft)) {
+        const sounds = soundLimitsOf(draft);
+        const was = soundLimitsOf(base);
+        if (Object.keys(sounds).some((k) => sounds[k] !== was[k])) {
+            if (!whole(sounds.sounds, 0, 500)) return refuse('Max sounds is 1 to 500.');
+            if (!whole(sounds.longest, 1, 300)) return refuse('The longest sound is 1 to 300 seconds.');
+            if (!whole(sounds.wait, 0, 600)) return refuse("The wait between a member's sounds is 0 to 600 seconds.");
+            body.sound_limits = sounds;
+        }
     }
     return { body, problem: '' };
 }
