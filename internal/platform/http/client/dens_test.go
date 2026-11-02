@@ -1,7 +1,15 @@
 package client
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -19,5 +27,30 @@ func TestADensRefusalIsSaidInThePagesWords(t *testing.T) {
 		if got := denMessage(e); got != want {
 			t.Errorf("%s: %q, want %q", code, got, want)
 		}
+	}
+}
+
+// A failure on this computer that wraps an errno, as the media worker not
+// starting does, isn't a den out of reach, though syscall.Errno has
+// net.Error's methods; a dial the den refused still is, and so is a
+// deadline waiting on the den.
+func TestALocalFailureIsntADenOutOfReach(t *testing.T) {
+	rt := &router{}
+	answer := func(err error) (int, string) {
+		w := httptest.NewRecorder()
+		rt.denError(w, httptest.NewRequest(http.MethodPost, "/api/dens/x/uploads", nil), err)
+		return w.Code, w.Body.String()
+	}
+	local := fmt.Errorf("start the media worker: set idle scheduling: %w", syscall.EPERM)
+	if code, body := answer(local); code != http.StatusInternalServerError || strings.Contains(body, "reach the den") {
+		t.Errorf("a local failure answered %d %q", code, body)
+	}
+	refused := &url.Error{Op: "Post", URL: "http://127.0.0.1:1/api/uploads", Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("refused")}}
+	if code, body := answer(refused); code != http.StatusBadGateway {
+		t.Errorf("a refused dial answered %d %q", code, body)
+	}
+	waited := fmt.Errorf("wait for the den: %w", context.DeadlineExceeded)
+	if code, body := answer(waited); code != http.StatusBadGateway || !strings.Contains(body, "in time") {
+		t.Errorf("a deadline waiting on the den answered %d %q", code, body)
 	}
 }

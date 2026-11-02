@@ -652,7 +652,13 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 	var input *denclient.InputError
 	var moved *denclient.MovedError
 	var perr *denproto.Error
-	var netErr net.Error
+	// A network failure is one of net's own errors, or the HTTP client's,
+	// or a deadline waiting on the den, never just anything with
+	// net.Error's methods: a syscall.Errno has them, and wrapped in a
+	// failure on this computer, as the media worker not starting, it isn't
+	// a den out of reach.
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
 	var urlErr *url.Error
 	switch {
 	case errors.As(err, &input):
@@ -675,7 +681,7 @@ func (rt *router) denError(w http.ResponseWriter, r *http.Request, err error) {
 			"Don't join it; ask whoever sent the invite.")
 	case errors.As(err, &perr):
 		jsonError(w, http.StatusBadGateway, denMessage(perr))
-	case errors.As(err, &netErr), errors.As(err, &urlErr):
+	case errors.As(err, &urlErr), errors.As(err, &opErr), errors.As(err, &dnsErr), errors.Is(err, context.DeadlineExceeded):
 		jsonError(w, http.StatusBadGateway, denclient.Explain(err))
 	default:
 		xhttp.Error(r.Context(), w, err)
