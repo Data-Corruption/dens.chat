@@ -12,14 +12,11 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 - Android, staying connected while the phone sleeps (android.md's *A phone sleeps* and *Staying connected*). Go's timers stop while a phone sleeps, so after a drop Dens reconnects only once something else wakes the phone, 4 to 6 minutes later on a desk in the spike, and a notification in that gap shows late. M14.1 checks the session's renewal against the wall clock each time the den's ping wakes the phone, which ends the hourly drop that made most of the gaps. The fixes left: a dropped connection reconnecting under the shell's wake lock, with an alarm behind it; the app saying so when Android restricts its battery, as Restricted and Samsung's deep sleep stop it; and the install guide's steps, which it has already. Done when a member's phone shows a DM within seconds, eight hours after they last opened Dens, which takes a night of the S24 asleep to test.
 - Bookmarks, per member and per den, so a den's bookmarks always resolve against that den. Maybe bookmarks bypass the cache limit cause opening them and missing could result in non contiguous random reads across a channels.
-- Events, a calendar above the channels. Each has a name, description, optional banner image, time, length, place (a voice channel), etc. You can link it in a channel, and others can click "Interested" and get a notification when it starts. Maybe even the option to make each a badge event: attending gets you a badge on your den account. The badge could just be a little image uploaded when the event is created, like uploading custom emojis.
-- Emojis and reactions (images and GIFs), kept as the den's named files, which M14.3 makes for the soundboard.
 - Search (a different algorithm than Discord's. Exact match + fuzzy? Future AI metadata generation?)
 - Custom themes, image backgrounds, etc.
-- Avatar GIFs, with a setting to only play them on hover, off by default?
 - Marking uploaded media as a spoiler.
 - Onboarding in the page's own first steps, with simple, careful explanations tried on people who haven't seen Dens.
-- Polls from the composer's + menu.
+- x.com and reddit embeds
 - TPM binding for the Windows data key.
 - Optional TOTP on the password fallback.
 - An optional idle lock.
