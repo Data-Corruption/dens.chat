@@ -3,13 +3,16 @@ package den
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"hash/crc32"
 	"image"
-	"image/color"
+	"image/color/palette"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -43,6 +46,37 @@ func testPNG(t *testing.T, w, h int) []byte {
 		t.Fatal(err)
 	}
 	return b.Bytes()
+}
+
+// testGIF is an animated GIF of frames, of noise when they should be large.
+func testGIF(t *testing.T, w, h, frames int, noise bool) []byte {
+	t.Helper()
+	g := &gif.GIF{}
+	for i := range frames {
+		img := image.NewPaletted(image.Rect(0, 0, w, h), palette.Plan9)
+		for j := range img.Pix {
+			img.Pix[j] = byte(i)
+			if noise {
+				img.Pix[j] = byte(rand.IntN(256))
+			}
+		}
+		g.Image, g.Delay = append(g.Image, img), append(g.Delay, 5)
+	}
+	var b bytes.Buffer
+	if err := gif.EncodeAll(&b, g); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// animatedPNG makes a PNG an animated one by its header, which says two
+// frames.
+func animatedPNG(p []byte) []byte {
+	data := []byte{0, 0, 0, 2, 0, 0, 0, 0}
+	chunk := binary.BigEndian.AppendUint32(nil, uint32(len(data)))
+	chunk = append(append(chunk, "acTL"...), data...)
+	chunk = binary.BigEndian.AppendUint32(chunk, crc32.ChecksumIEEE(chunk[4:]))
+	return append(append(append([]byte{}, p[:33]...), chunk...), p[33:]...)
 }
 
 // withComment gives a JPEG metadata a client should have stripped.
@@ -390,14 +424,6 @@ func TestProfilePictures(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	var anim bytes.Buffer
-	pal := color.Palette{color.Black, color.White}
-	frames := []*image.Paletted{image.NewPaletted(image.Rect(0, 0, 64, 64), pal), image.NewPaletted(image.Rect(0, 0, 64, 64), pal)}
-	gif.EncodeAll(&anim, &gif.GIF{Image: frames, Delay: []int{5, 5}})
-	up := f.mustUpload(member, "anim.gif", anim.Bytes())
-	if _, err := f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Avatar: &up.ID}); !denproto.IsCode(err, denproto.CodeInvalidField) {
-		t.Errorf("an animated avatar: %v", err)
-	}
 	theirs := f.mustUpload(owner, "theirs.png", testPNG(t, 128, 128))
 	if _, err := f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Avatar: &theirs.ID}); !denproto.IsCode(err, denproto.CodeInvalidField) {
 		t.Errorf("someone else's upload: %v", err)
@@ -425,6 +451,38 @@ func TestProfilePictures(t *testing.T) {
 	}
 	if _, err := f.read(member, banner.ID, false); !denproto.IsCode(err, denproto.CodeNotFound) {
 		t.Fatalf("the cleared banner: %v", err)
+	}
+
+	// An animated picture is a GIF of half a still's sides at most, and a
+	// size of its own (M15.1).
+	anim := f.mustUpload(member, "anim.gif", testGIF(t, 64, 64, 2, false))
+	wide := f.mustUpload(member, "wide.gif", testGIF(t, 600, 200, 3, false))
+	m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Avatar: &anim.ID, Banner: &wide.ID})
+	if err != nil || m.Avatar != (denproto.Image{ID: anim.ID, Width: 64, Height: 64, Animated: true}) ||
+		m.Banner != (denproto.Image{ID: wide.ID, Width: 600, Height: 200, Animated: true}) {
+		t.Fatalf("animated pictures: %+v %v", m, err)
+	}
+	if got, err := f.d.Member(ctx, member.MemberID); err != nil || got.Avatar != m.Avatar || got.Banner != m.Banner {
+		t.Fatalf("the member as the den sends them: %+v %v", got, err)
+	}
+	for name, c := range map[string]struct {
+		data   []byte
+		banner bool
+	}{
+		"an animated avatar past its sides": {testGIF(t, 320, 320, 2, false), false},
+		"an animated avatar past its size":  {testGIF(t, 256, 256, 40, true), false},
+		"an animated banner past its sides": {testGIF(t, 900, 300, 2, false), true},
+		"an animated banner past its size":  {testGIF(t, 600, 200, 40, true), true},
+		"an animated PNG":                   {animatedPNG(testPNG(t, 128, 128)), false},
+	} {
+		up := f.mustUpload(member, "x", c.data)
+		req := denproto.ProfileRequest{Avatar: &up.ID}
+		if c.banner {
+			req = denproto.ProfileRequest{Banner: &up.ID}
+		}
+		if _, err := f.d.UpdateProfile(ctx, member, req); !denproto.IsCode(err, denproto.CodeInvalidField) {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
 
 	// Leaving takes the pictures and anything unsent with it.

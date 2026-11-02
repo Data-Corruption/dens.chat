@@ -22,27 +22,31 @@ func forbidden(format string, args ...any) error {
 func bioAD(id int64) []byte { return []byte("den_members.bio:" + strconv.FormatInt(id, 10)) }
 
 // memberColumns selects a member from den_members, with the size of the
-// pictures on their profile.
+// pictures on their profile, and whether each is animated (M15.1).
 const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	avatar_id, (SELECT width FROM den_files WHERE den_files.id = den_members.avatar_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.avatar_id),
+	(SELECT animated FROM den_files WHERE den_files.id = den_members.avatar_id),
 	banner_id, (SELECT width FROM den_files WHERE den_files.id = den_members.banner_id),
-	(SELECT height FROM den_files WHERE den_files.id = den_members.banner_id)`
+	(SELECT height FROM den_files WHERE den_files.id = den_members.banner_id),
+	(SELECT animated FROM den_files WHERE den_files.id = den_members.banner_id)`
 
 func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) {
 	var m denproto.Member
 	var id int64
 	var left, avatar, aw, ah, banner, bw, bh sql.NullInt64
-	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &banner, &bw, &bh}, extra...)...)
+	var aa, ba sql.NullBool
+	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &aa, &banner, &bw, &bh, &ba},
+		extra...)...)
 	m.ID = denproto.FormatID(id)
 	if left.Valid {
 		m.LeftAt = left.Int64
 	}
 	if avatar.Valid {
-		m.Avatar = denproto.Image{ID: denproto.FormatID(avatar.Int64), Width: int(aw.Int64), Height: int(ah.Int64)}
+		m.Avatar = denproto.Image{ID: denproto.FormatID(avatar.Int64), Width: int(aw.Int64), Height: int(ah.Int64), Animated: aa.Bool}
 	}
 	if banner.Valid {
-		m.Banner = denproto.Image{ID: denproto.FormatID(banner.Int64), Width: int(bw.Int64), Height: int(bh.Int64)}
+		m.Banner = denproto.Image{ID: denproto.FormatID(banner.Int64), Width: int(bw.Int64), Height: int(bh.Int64), Animated: ba.Bool}
 	}
 	return m, err
 }

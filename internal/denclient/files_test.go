@@ -7,6 +7,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"image"
+	"image/color"
+	"image/color/palette"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -228,6 +231,114 @@ func TestAvatar(t *testing.T) {
 	if _, _, err := fetch(t, owner, denID, up.ID, false); err == nil {
 		t.Fatal("the old avatar is still served")
 	}
+}
+
+// animatedGIF is an animation of a square crossing a plain ground.
+func animatedGIF(t *testing.T, w, h, frames int) []byte {
+	t.Helper()
+	g := &gif.GIF{LoopCount: 0}
+	for i := range frames {
+		img := image.NewPaletted(image.Rect(0, 0, w, h), color.Palette{color.RGBA{0x20, 0x40, 0x80, 0xFF}, color.White})
+		for y := h / 3; y < h/3+h/4; y++ {
+			for x := i * w / frames; x < i*w/frames+w/4 && x < w; x++ {
+				img.SetColorIndex(x, y, 1)
+			}
+		}
+		g.Image, g.Delay = append(g.Image, img), append(g.Delay, 8)
+	}
+	var b bytes.Buffer
+	if err := gif.EncodeAll(&b, g); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// An animated GIF or WebP becomes a picture as a GIF this service makes, of
+// the part framed, at its size within a picture's, and the den and the
+// other members see it as animated (M15.1).
+func TestAnimatedPicture(t *testing.T) {
+	_, owner, member, denID, _ := chatDen(t)
+	ctx := context.Background()
+	send := func(picture string, crop image.Rectangle, data []byte, replaces string) (denclient.Uploaded, error) {
+		return member.UploadAnimated(ctx, denID, picture, crop, picture+".gif", int64(len(data)), bytes.NewReader(data), replaces)
+	}
+	anim := animatedGIF(t, 400, 400, 4)
+	up, err := send(denproto.ProfileAvatar, image.Rect(20, 20, 380, 380), anim, "")
+	if err != nil || up.Type != "image/gif" || up.Width != 256 || up.Height != 256 || !up.Animated || up.Thumb == nil {
+		t.Fatalf("%+v %v", up, err)
+	}
+	m, err := member.UpdateProfile(ctx, denID, denproto.ProfileRequest{Avatar: &up.ID})
+	if err != nil || m.Avatar != (denproto.Image{ID: up.ID, Width: 256, Height: 256, Animated: true}) {
+		t.Fatalf("%+v %v", m, err)
+	}
+	viewOf(t, owner, denID, "bob's animated avatar", func(v denclient.View) bool {
+		bob, ok := memberIn(v, m.ID)
+		return ok && bob.Avatar.ID == up.ID && bob.Avatar.Animated
+	})
+	data, kind, err := fetch(t, owner, denID, up.ID, false)
+	if err != nil || kind != media.GIF {
+		t.Fatalf("the owner fetching it: %v %s", err, kind)
+	}
+	if g, err := gif.DecodeAll(bytes.NewReader(data)); err != nil || len(g.Image) != 4 || g.LoopCount != 0 {
+		t.Fatalf("the picture's frames: %v", err)
+	}
+	if _, kind, err := fetch(t, owner, denID, up.ID, true); err != nil || !kind.Image() {
+		t.Fatalf("its still preview: %v %s", err, kind)
+	}
+
+	// A banner, in place of none; a small part, raised to a picture's
+	// least; and one in place of the picture before.
+	wide, err := send(denproto.ProfileBanner, image.Rect(0, 0, 900, 300), animatedGIF(t, 900, 300, 3), "")
+	if err != nil || wide.Width != 600 || wide.Height != 200 || !wide.Animated {
+		t.Fatalf("the banner: %+v %v", wide, err)
+	}
+	small, err := send(denproto.ProfileAvatar, image.Rect(0, 0, 40, 40), animatedGIF(t, 40, 40, 2), up.ID)
+	if err != nil || small.Width != 64 || !small.Animated {
+		t.Fatalf("a small one: %+v %v", small, err)
+	}
+	if m, err = member.UpdateProfile(ctx, denID, denproto.ProfileRequest{Avatar: &small.ID, Banner: &wide.ID}); err != nil ||
+		!m.Avatar.Animated || m.Banner != (denproto.Image{ID: wide.ID, Width: 600, Height: 200, Animated: true}) {
+		t.Fatalf("%+v %v", m, err)
+	}
+
+	var still bytes.Buffer
+	png.Encode(&still, image.NewNRGBA(image.Rect(0, 0, 64, 64)))
+	var input *denclient.InputError
+	for name, c := range map[string]struct {
+		picture string
+		crop    image.Rectangle
+		data    []byte
+	}{
+		"not square":    {denproto.ProfileAvatar, image.Rect(0, 0, 300, 200), anim},
+		"not a banner":  {denproto.ProfileBanner, image.Rect(0, 0, 300, 300), anim},
+		"off the image": {denproto.ProfileAvatar, image.Rect(300, 300, 500, 500), anim},
+		"not a picture": {"photo", image.Rect(0, 0, 100, 100), anim},
+		"a PNG":         {denproto.ProfileAvatar, image.Rect(0, 0, 64, 64), still.Bytes()},
+		"damaged":       {denproto.ProfileAvatar, image.Rect(0, 0, 64, 64), anim[:20]},
+		"past its 2 MB": {denproto.ProfileAvatar, image.Rect(0, 0, 256, 256), noisyGIF(t, 256, 256, 40)},
+	} {
+		if _, err := send(c.picture, c.crop, c.data, ""); !errors.As(err, &input) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// noisyGIF is an animation of noise, which a GIF can't make smaller.
+func noisyGIF(t *testing.T, w, h, frames int) []byte {
+	t.Helper()
+	g := &gif.GIF{}
+	for i := range frames {
+		img := image.NewPaletted(image.Rect(0, 0, w, h), palette.Plan9)
+		for j := range img.Pix {
+			img.Pix[j] = byte((j*j*7 + i*131 + j/w*17) >> 3)
+		}
+		g.Image, g.Delay = append(g.Image, img), append(g.Delay, 5)
+	}
+	var b bytes.Buffer
+	if err := gif.EncodeAll(&b, g); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
 }
 
 // A failed upload leaves the rest of its body to the caller, which drains

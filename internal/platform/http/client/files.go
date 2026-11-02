@@ -2,10 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
+	"image"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
@@ -37,7 +41,10 @@ func (rt *router) mountFiles(r chi.Router) {
 // the file it replaces, if any (M5). A file for a message says which
 // version of a photo or video it sends, smaller or full, and it then goes
 // with both kept for the page to compare (M5), and names the key the page
-// follows its progress by while a video's copy is made (M5.4).
+// follows its progress by while a video's copy is made (M5.4). An animated
+// GIF or WebP for a profile names its picture, and comes as it is, with
+// the part of it the member framed, which this service makes into a GIF of
+// the picture's size (M15.1).
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {
@@ -52,6 +59,11 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	den, channel, replaces, send := chi.URLParam(r, "den"), q.Get("channel"), q.Get("replaces"), q.Get("send")
 	var up denclient.Uploaded
 	switch {
+	case q.Has("picture"):
+		var crop image.Rectangle
+		if crop, err = parseCrop(q.Get("crop")); err == nil {
+			up, err = rt.a.Dens.UploadAnimated(r.Context(), den, q.Get("picture"), crop, name, r.ContentLength, r.Body, replaces)
+		}
 	case send != "":
 		up, err = rt.a.Dens.UploadVersions(r.Context(), den, channel, name, r.ContentLength, r.Body, denclient.UploadOptions{
 			Send: denclient.Send(send), Replaces: replaces, Progress: q.Get("progress"), PageCopies: q.Get("copier") == "page"})
@@ -75,6 +87,24 @@ func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, up)
+}
+
+// parseCrop reads the part of an image a member framed, as
+// "x,y,width,height" in its pixels.
+func parseCrop(s string) (image.Rectangle, error) {
+	parts := strings.Split(s, ",")
+	var v []int
+	for _, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 || n > 1<<16 {
+			break
+		}
+		v = append(v, n)
+	}
+	if len(parts) != 4 || len(v) != 4 {
+		return image.Rectangle{}, &denclient.InputError{Err: errors.New("The part of the picture to keep couldn't be read.")}
+	}
+	return image.Rect(v[0], v[1], v[0]+v[2], v[1]+v[3]), nil
 }
 
 // handleSetThumb passes the preview the page drew for a video it uploaded,

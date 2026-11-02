@@ -127,6 +127,9 @@ type Manager struct {
 	// follows are uploads the page follows, by its keys (M5.4).
 	followMu sync.Mutex
 	follows  map[string]*following
+	// animating holds an animated picture being made (M15.1), one at a
+	// time, since each takes a core for as long as it lasts.
+	animating chan struct{}
 	// PageOfferWait is how long the page has to answer an offer of a
 	// video's copy, and PageQuiet how long it may go quiet while it makes
 	// one, before the module makes it instead (M5.5).
@@ -213,6 +216,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		focus:         map[string]map[string]string{},
 		signIns:       map[string]*pendingSignIn{},
 		follows:       map[string]*following{},
+		animating:     make(chan struct{}, 1),
 		PageOfferWait: pageOfferWait,
 		PageQuiet:     pageQuiet,
 		LookupHost:    lookupHost,
