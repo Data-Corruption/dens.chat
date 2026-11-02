@@ -6,6 +6,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { HoverRow } from './animations.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
@@ -683,14 +684,14 @@ function ListTabs({ tab, onTab, view, reads, open }) {
 function UserPanel({ me, online, onEdit }) {
     return (
         <div class="flex h-[73px] items-center gap-1 border-t border-base-300 px-2">
-            <button type="button" class="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-1 text-left hover:bg-base-300/60" onClick={onEdit}
-                aria-label="Edit your profile" title="Edit your profile">
+            <HoverRow as="button" type="button" class="flex min-w-0 flex-1 items-center gap-3 rounded px-1 py-1 text-left hover:bg-base-300/60"
+                onClick={onEdit} aria-label="Edit your profile" title="Edit your profile">
                 <Avatar member={me} size="md" online={online} />
                 <span class="min-w-0 leading-tight">
                     <span class="block truncate text-sm font-medium">{me.display_name}</span>
                     <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
                 </span>
-            </button>
+            </HoverRow>
             <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="App settings" title="App settings" onClick={() => openSettings()}>
                 <CogIcon />
             </button>
@@ -980,7 +981,7 @@ function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, on
                     const mentions = c.id !== open ? r?.mention_count || 0 : 0;
                     const who = other ? other.display_name : 'Unknown member';
                     return (
-                        <li key={c.id} class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-8 pointer-coarse:min-h-11 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}>
+                        <HoverRow as="li" key={c.id} class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-8 pointer-coarse:min-h-11 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}>
                             <button
                                 type="button"
                                 class={`flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded ${other?.left_at ? 'opacity-60' : ''}`}
@@ -1007,7 +1008,7 @@ function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, on
                             >
                                 ✕
                             </button>
-                        </li>
+                        </HoverRow>
                     );
                 })}
             </ul>
@@ -1050,7 +1051,7 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted,
                     <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
                 </button>
                 {dm !== null && channel.kind === 'dm' ? (
-                    <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
+                    <HoverRow as="button" type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
                         <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
                         <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
                         {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
@@ -1058,7 +1059,7 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted,
                             <LockIcon size="h-3 w-3" />
                             Encrypted
                         </span>
-                    </button>
+                    </HoverRow>
                 ) : (
                     <span class="flex shrink-0 items-center gap-1 font-semibold">
                         <span class="text-base-content/50"><HashIcon /></span>

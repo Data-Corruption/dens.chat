@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
 import { Tip } from './components.jsx';
 import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
@@ -616,7 +617,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                     const moderate = me && member && rank(me.role) > rank(member.role);
                     const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
                     return (
-                        <li key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11">
+                        <HoverRow as="li" key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11">
                             <button type="button" class="flex min-w-0 flex-1 items-center gap-1.5 self-stretch rounded pr-1 text-left hover:text-base-content disabled:cursor-default"
                                 disabled={!member} onClick={() => onProfile?.(member)}>
                                 {/* A block of the avatar's own size, so the ring is round. */}
@@ -668,7 +669,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                     {options(m, name, pct, moderate, SheetRow)}
                                 </Sheet>
                             )}
-                        </li>
+                        </HoverRow>
                     );
                 })}
             </ul>

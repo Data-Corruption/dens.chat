@@ -3,10 +3,11 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { HoverRow, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
 import { ErrorText, Field, SubmitButton, TextInput, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
-import { fileURL, formatSize, upload } from './files.jsx';
+import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
 
@@ -42,7 +43,8 @@ export function MemberList({ members, online, onProfile }) {
                 <ul>
                     {list.map((m) => (
                         <li key={m.id}>
-                            <button
+                            <HoverRow
+                                as="button"
                                 type="button"
                                 class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11 ${dim ? 'opacity-60' : ''}`}
                                 onClick={() => onProfile(m)}
@@ -50,7 +52,7 @@ export function MemberList({ members, online, onProfile }) {
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />
                                 <span class="min-w-0 flex-1 truncate">{m.display_name}</span>
                                 <RoleBadge role={m.role} size="badge-xs" />
-                            </button>
+                            </HoverRow>
                         </li>
                     ))}
                 </ul>
@@ -66,7 +68,8 @@ export function MemberList({ members, online, onProfile }) {
 
 // Profile shows a member: their banner and picture, their names and role,
 // how long they've been in the den, and their bio. In a panel the bio runs
-// its full length, which the panel scrolls.
+// its full length, which the panel scrolls. Its pictures play while it
+// shows, since the member opened it (M15.1).
 function Profile({ denID, member, me, online, panel = false }) {
     const [bio, setBio] = useState(null);
     const [error, setError] = useState('');
@@ -77,7 +80,7 @@ function Profile({ denID, member, me, online, panel = false }) {
     }, [member.id, member.display_name]);
     const left = !!member.left_at;
     return (
-        <>
+        <Shown>
             {member.banner?.id && <Banner denID={denID} image={member.banner} />}
             <div class="flex items-center gap-4">
                 <Avatar member={member} size="lg" online={left ? undefined : online} />
@@ -95,7 +98,7 @@ function Profile({ denID, member, me, online, panel = false }) {
                 </div>
             )}
             <ErrorText message={error} />
-        </>
+        </Shown>
     );
 }
 
@@ -144,11 +147,15 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
 }
 
 // Banner shows the wide picture on a profile, three times as wide as it
-// is high, at its final size before it loads.
+// is high, at its final size before it loads. An animated one plays as an
+// avatar does (M15.1), which in a profile is while it shows.
 function Banner({ denID, image }) {
+    const how = usePicture(!!image.animated);
+    const cover = 'h-full w-full select-none object-cover';
     return (
-        <div class="aspect-[3/1] w-full overflow-hidden rounded bg-base-300">
-            <img src={fileURL(denID, image.id)} alt="" draggable={false} class="h-full w-full select-none object-cover" />
+        <div class="relative aspect-[3/1] w-full overflow-hidden rounded bg-base-300">
+            <img src={how === 'file' ? fileURL(denID, image.id) : thumbURL(denID, image.id)} alt="" draggable={false} class={cover} />
+            {how === 'hover' && <img src={fileURL(denID, image.id)} alt="" draggable={false} class={`absolute inset-0 ${cover}`} />}
         </div>
     );
 }
@@ -183,12 +190,15 @@ export function EditProfile({ denID, me, limits, onClose }) {
 
     // savePicture uploads a cropped picture and puts it on the profile; the
     // den deletes the one it replaces, which the upload names, so a member
-    // at their limit can still change it (M5).
-    function savePicture(blob) {
+    // at their limit can still change it (M5). An animated one goes as it
+    // is, with the part framed, for the local service to make (M15.1).
+    function savePicture(blob, rect) {
         const { shape } = cropping;
         picture.run(async () => {
             const name = `${shape}.${blob.type === 'image/webp' ? 'webp' : 'png'}`;
-            const up = await upload(denID, '', blob, name, undefined, me[shape]?.id).done;
+            const up = rect
+                ? await uploadAnimated(denID, shape, blob, rect, me[shape]?.id)
+                : await upload(denID, '', blob, name, undefined, me[shape]?.id).done;
             await api.patch(`/api/dens/${denID}/me`, { [shape]: up.id });
             setCropping(null);
         });
@@ -208,58 +218,60 @@ export function EditProfile({ denID, me, limits, onClose }) {
 
     return (
         <Dialog title="Your profile in this den" onClose={onClose}>
-            <p class="text-sm text-base-content/70">Each den has its own profile.</p>
-            <form class="flex flex-col gap-2" onSubmit={submit}>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Picture</legend>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <Avatar member={me} size="lg" />
-                        <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickAvatar.current?.click()}>
-                            {me.avatar?.id ? 'Change' : 'Add a picture'}
-                        </button>
-                        {me.avatar?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('avatar')}>Remove</button>}
+            <Shown>
+                <p class="text-sm text-base-content/70">Each den has its own profile.</p>
+                <form class="flex flex-col gap-2" onSubmit={submit}>
+                    <fieldset class="fieldset">
+                        <legend class="fieldset-legend">Picture</legend>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <Avatar member={me} size="lg" />
+                            <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickAvatar.current?.click()}>
+                                {me.avatar?.id ? 'Change' : 'Add a picture'}
+                            </button>
+                            {me.avatar?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('avatar')}>Remove</button>}
+                        </div>
+                    </fieldset>
+                    <fieldset class="fieldset">
+                        <legend class="fieldset-legend">Banner</legend>
+                        {me.banner?.id ? <Banner denID={denID} image={me.banner} /> : <p class="label whitespace-normal">A wide picture across the top of your profile.</p>}
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickBanner.current?.click()}>
+                                {me.banner?.id ? 'Change' : 'Add a banner'}
+                            </button>
+                            {me.banner?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('banner')}>Remove</button>}
+                        </div>
+                        <input ref={pickAvatar} type="file" accept="image/*" class="hidden" data-picture="avatar" onChange={pick('avatar')} />
+                        <input ref={pickBanner} type="file" accept="image/*" class="hidden" data-picture="banner" onChange={pick('banner')} />
+                        {!cropping && <ErrorText message={picture.error} />}
+                    </fieldset>
+                    <Field label="Display name">
+                        <TextInput value={name} onInput={setName} required maxlength="32" />
+                    </Field>
+                    <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
+                        {/* The form shows at once; only the bio waits for the den. */}
+                        <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
+                            placeholder={bio === null ? 'Loading…' : ''} onInput={(e) => setBio(e.currentTarget.value)}></textarea>
+                    </Field>
+                    {length > MAX_BIO - 50 && (
+                        <p class={`cursor-default select-none text-right text-xs ${length > MAX_BIO ? 'text-error' : 'text-base-content/60'}`}>
+                            {length} / {MAX_BIO}
+                        </p>
+                    )}
+                    <ErrorText message={save.error} />
+                    <div>
+                        <SubmitButton busy={save.busy}>Save</SubmitButton>
                     </div>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Banner</legend>
-                    {me.banner?.id ? <Banner denID={denID} image={me.banner} /> : <p class="label whitespace-normal">A wide picture across the top of your profile.</p>}
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickBanner.current?.click()}>
-                            {me.banner?.id ? 'Change' : 'Add a banner'}
-                        </button>
-                        {me.banner?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('banner')}>Remove</button>}
-                    </div>
-                    <input ref={pickAvatar} type="file" accept="image/*" class="hidden" onChange={pick('avatar')} />
-                    <input ref={pickBanner} type="file" accept="image/*" class="hidden" onChange={pick('banner')} />
-                    {!cropping && <ErrorText message={picture.error} />}
-                </fieldset>
-                <Field label="Display name">
-                    <TextInput value={name} onInput={setName} required maxlength="32" />
-                </Field>
-                <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
-                    {/* The form shows at once; only the bio waits for the den. */}
-                    <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
-                        placeholder={bio === null ? 'Loading…' : ''} onInput={(e) => setBio(e.currentTarget.value)}></textarea>
-                </Field>
-                {length > MAX_BIO - 50 && (
-                    <p class={`cursor-default select-none text-right text-xs ${length > MAX_BIO ? 'text-error' : 'text-base-content/60'}`}>
-                        {length} / {MAX_BIO}
-                    </p>
+                    {storage && limits?.member_storage > 0 && (
+                        <p class="cursor-default select-none text-xs text-base-content/60">
+                            Your files here take {formatSize(storage.used)} of the {formatSize(limits.member_storage)} each member can use.
+                        </p>
+                    )}
+                </form>
+                {cropping && (
+                    <CropDialog file={cropping.file} shape={cropping.shape} busy={picture.busy} error={picture.error}
+                        onCrop={savePicture} onClose={() => setCropping(null)} />
                 )}
-                <ErrorText message={save.error} />
-                <div>
-                    <SubmitButton busy={save.busy}>Save</SubmitButton>
-                </div>
-                {storage && limits?.member_storage > 0 && (
-                    <p class="cursor-default select-none text-xs text-base-content/60">
-                        Your files here take {formatSize(storage.used)} of the {formatSize(limits.member_storage)} each member can use.
-                    </p>
-                )}
-            </form>
-            {cropping && (
-                <CropDialog file={cropping.file} shape={cropping.shape} busy={picture.busy} error={picture.error}
-                    onCrop={savePicture} onClose={() => setCropping(null)} />
-            )}
+            </Shown>
         </Dialog>
     );
 }

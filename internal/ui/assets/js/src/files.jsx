@@ -109,6 +109,31 @@ export function upload(denID, channelID, file, name, onProgress, replaces, send,
     return { done, abort: () => xhr.abort() };
 }
 
+// uploadAnimated sends an animated GIF or WebP as it is, to be a profile's
+// picture or banner, with the part of it the member framed, in its pixels,
+// which the local service makes into a GIF of the picture's size before it
+// goes to the den (M15.1); replaces is the picture it takes the place of,
+// if any. Making it takes a moment, and its answer is the upload.
+export async function uploadAnimated(denID, picture, file, rect, replaces) {
+    const query = new URLSearchParams({ picture, crop: [rect.x, rect.y, rect.w, rect.h].join(',') });
+    if (replaces) query.set('replaces', replaces);
+    const res = await fetch(`/api/dens/${denID}/uploads?${query}`, {
+        method: 'POST',
+        headers: pageHeaders({ 'Content-Type': 'application/octet-stream', 'Dens-Filename': encodeURIComponent(`${picture}.gif`) }),
+        body: file,
+        credentials: 'same-origin',
+    });
+    if (reloadIfStale(res)) return new Promise(() => {});
+    let data = null;
+    try {
+        data = await res.json();
+    } catch {
+        // An answer that isn't JSON says only its status, below.
+    }
+    if (!res.ok) throw new APIError(data?.error || `The picture wasn't made (HTTP ${res.status}).`, res.status);
+    return data;
+}
+
 // fileWhere says what uses one of a member's files, as their list of them
 // shows it (M5): a channel or a DM, a picture on their profile, or nothing
 // while it waits to be sent. view is the den as the page has it.

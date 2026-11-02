@@ -13,6 +13,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { HoverRow } from './animations.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { copyText } from './clipboard.js';
@@ -836,8 +837,10 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
         onPointerCancel: () => press.current.cancel(),
         onContextMenu: (e) => e.preventDefault(),
     } : {};
+    // Its pictures, and that of the message it replies to, play under the
+    // pointer (M15.1).
     return (
-        <div
+        <HoverRow
             data-id={m.id}
             class={`group relative rounded px-2 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'} ${pressing ? 'select-none' : ''}`}
             {...presses}
@@ -917,7 +920,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     ))}
                 </Sheet>
             )}
-        </div>
+        </HoverRow>
     );
 }
 
@@ -1044,11 +1047,11 @@ function DeleteDialog({ denID, m, author, me, onClose }) {
     }
     return (
         <Dialog title="Delete this message?" onClose={onClose}>
-            <div class="flex min-w-0 cursor-default select-none items-center gap-2 rounded-box border border-base-300 p-2 text-sm">
+            <HoverRow class="flex min-w-0 cursor-default select-none items-center gap-2 rounded-box border border-base-300 p-2 text-sm">
                 <Avatar member={author} size="sm" />
                 <span class="shrink-0 font-medium">{name(author)}</span>
                 <span class="min-w-0 truncate text-base-content/70"><Quoted text={m.text} locked={m.locked} me={me} /></span>
-            </div>
+            </HoverRow>
             <p class="text-sm">{whose}It goes for everyone{files}, and can't be brought back.</p>
             <ErrorText message={act.error} />
             <div class="flex gap-2">
@@ -1141,7 +1144,7 @@ function Spine() {
 
 function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
     return (
-        <div class="mt-2 flex gap-3 rounded px-2 py-0.5 opacity-60">
+        <HoverRow class="mt-2 flex gap-3 rounded px-2 py-0.5 opacity-60">
             <div class="w-9 shrink-0">
                 <Avatar member={me} />
             </div>
@@ -1168,7 +1171,7 @@ function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
                     </div>
                 )}
             </div>
-        </div>
+        </HoverRow>
     );
 }
 
