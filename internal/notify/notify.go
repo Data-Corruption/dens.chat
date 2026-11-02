@@ -568,12 +568,13 @@ func (h *Hub) soundLocked(rec shown) bool {
 }
 
 // Message notifies the member of a message where it should, and places its
-// sound (M14.2): a DM, or a message that mentions them, in a den and
-// channel they haven't muted and no page shows on screen, makes one sound.
-// The page showing its notification plays it; the helper's or the shell's
-// notification has the desktop's or Android's own; and where nothing
-// shows one, as with its kind turned off, the page on screen most lately
-// plays it alone, while a page is open.
+// sound (M14.2): a DM, or a message that mentions them, of a kind they
+// turned on, in a den and channel they haven't muted and no page shows on
+// screen, makes one sound. The page showing its notification plays it;
+// the helper's or the shell's notification has the desktop's or Android's
+// own; and where nothing can show one, as when the browser won't let a
+// page notify and no helper runs, the page on screen most lately plays it
+// alone, while a page is open. A kind turned off makes no sound either.
 func (h *Hub) Message(m Message) {
 	key := m.Den + "/" + m.Channel
 	h.mu.Lock()
@@ -588,18 +589,11 @@ func (h *Hub) Message(m Message) {
 		h.mu.Unlock()
 		return
 	}
-	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM}
 	if !h.notifiesLocked(m.Den, m.Channel, m.DM, m.Mention) {
-		sounded := h.soundLocked(rec)
-		if sounded {
-			h.rememberLocked(key, rec)
-		}
 		h.mu.Unlock()
-		if sounded {
-			h.log.Debugf("Sounded message %s in den %s's channel %s through a page, which doesn't notify of it", m.ID, m.Den, m.Channel)
-		}
 		return
 	}
+	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM}
 	n := compose(m, h.settings.HideText)
 	if id, p := h.pageLocked(); p != nil {
 		rec.at = id

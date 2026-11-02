@@ -789,6 +789,11 @@ func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenU
 			return inputError(err)
 		}
 	}
+	if req.SoundLimits != nil {
+		if err := denproto.CheckSoundLimits(*req.SoundLimits); err != nil {
+			return inputError(err)
+		}
+	}
 	var info denproto.Den
 	return c.call(ctx, http.MethodPatch, "/api/den", req, &info)
 }

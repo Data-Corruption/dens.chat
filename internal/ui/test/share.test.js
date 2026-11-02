@@ -137,6 +137,13 @@ test('the upload calls need at full load is their video and voice together', () 
     assert.equal(uploadNeeded({ ...limits, shares: 0 }, 96000), shareCost(limits, 96000).voice);
 });
 
+// The soundboard streams a sound to everyone in a call at 64 kbps (M14.3).
+test("with a soundboard, the upload counts a sound to everyone in a full call", () => {
+    assert.equal(shareCost(limits, 96000).sounds, 0);
+    assert.equal(Math.round(shareCost(limits, 96000, true).sounds), Math.round(15 * 64000 * 1.2));
+    assert.equal(Math.round(uploadNeeded(limits, 96000, true) - uploadNeeded(limits, 96000)), Math.round(15 * 64000 * 1.2));
+});
+
 test('share audio is described for the browser and system the page is in', () => {
     assert.deepEqual(shareAudio('firefox', 'windows'), { supported: false, text: "Firefox can't share audio." });
     assert.deepEqual(shareAudio('firefox', 'linux'), { supported: false, text: "Firefox can't share audio." });

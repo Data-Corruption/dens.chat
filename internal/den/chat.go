@@ -163,7 +163,8 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 		return r, err
 	}
 	r.DeviceRequests = d.memberRequests(member)
-	return r, nil
+	r.Sounds, err = d.sounds(ctx, d.db)
+	return r, err
 }
 
 // lastMessages returns the newest message in each channel and DM a member

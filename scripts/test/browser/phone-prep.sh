@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The phone check's den (M13): alice's install hosts it; bob and carol
 # join; dave's, which the driver starts new for each browser, shows the
-# screens before a den. general
+# screens before a den. Its soundboard holds a sound (M14.3). general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
 # only. Alice and bob share a checked DM, checked again after alice started
@@ -24,6 +24,8 @@ api alice PATCH "/api/dens/$DEN/channels/$general" '{"description":"Anything goe
 # (M13.4).
 limits=$(api alice GET "/api/dens/$DEN/state" | python3 -c 'import json, sys; d = json.load(sys.stdin)["call_limits"]; d["shares"] = 2; print(json.dumps({"call_limits": d}))')
 api alice POST "/api/dens/$DEN/settings" "$limits" >/dev/null
+./node browser/make-sound.mjs ping.ogg 1
+api alice POST "/api/dens/$DEN/soundboard" "{\"name\":\"Ping\",\"upload\":\"$(upload alice ping.ogg ping.ogg)\"}" >/dev/null
 
 say() { send "$@" >/dev/null; }
 printf 'A file to attach.\n' >note.txt

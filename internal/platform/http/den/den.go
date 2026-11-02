@@ -110,6 +110,9 @@ func New(a *app.App) http.Handler {
 			r.Post("/me/recovery-codes", h.newRecoveryCodes)
 			r.Get("/me/devices", h.devices)
 			r.Delete("/me/devices/{key}", h.revokeDevice)
+			r.Post("/soundboard", h.addSound)
+			r.Patch("/soundboard/{id}", h.renameSound)
+			r.Delete("/soundboard/{id}", h.deleteSound)
 		})
 	})
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {

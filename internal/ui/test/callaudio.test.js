@@ -103,6 +103,7 @@ class AudioNode {
 }
 
 const contexts = [];
+const analysers = [];
 globalThis.AudioContext = class {
     constructor(opts = {}) {
         this.sampleRate = opts.sampleRate || 44100;
@@ -123,7 +124,9 @@ globalThis.AudioContext = class {
         return Object.assign(new AudioNode(), { stream });
     }
     createAnalyser() {
-        return Object.assign(new AudioNode(), { fftSize: 2048, getFloatTimeDomainData: (b) => b.fill(0) });
+        const a = Object.assign(new AudioNode(), { fftSize: 2048, getFloatTimeDomainData: (b) => b.fill(0) });
+        analysers.push(a);
+        return a;
     }
     createGain() {
         const g = Object.assign(new AudioNode(), { gain: { value: 1 } });
@@ -170,7 +173,7 @@ globalThis.Audio = class {
     }
 };
 
-const { joinCall, leaveCall, setCallVolume, setDeafened, setVolume } = await import('../assets/js/src/voice.js');
+const { boardVolume, joinCall, leaveCall, setBoardVolume, setCallVolume, setDeafened, setVolume } = await import('../assets/js/src/voice.js');
 
 // joined joins a call, as the service's form says, and has the den send a
 // member's audio; it returns what the call made of it.
@@ -301,3 +304,39 @@ test("where audio may start without a click, a call joined soon after the last p
         delete performance.now;
     }
 });
+
+// The den's soundboard comes on a track of the call's own, named so, which
+// the page plays as it plays a member, at the member's soundboard volume,
+// 0 muting it, kept by the browser as a member's volume is, and silent
+// while they're deafened; its level rings for nobody (M14.3).
+for (const autoplay of [false, true]) {
+    test(`the soundboard plays at its own volume, ${autoplay ? "through the call's context" : 'in its element'}`, async () => {
+        await joined(autoplay);
+        const metered = analysers.length;
+        const board = new Stream([new Track()], 'soundboard');
+        peers.at(-1).ontrack({ streams: [board] });
+        assert.equal(analysers.length, metered, 'its level measures nobody speaking');
+        const element = elements.at(-1);
+        assert.equal(element.srcObject, board);
+        assert.equal(element.paused, false);
+        const call = contexts[1];
+        const played = () => (autoplay ? call.gains.at(-1).gain.value : element.muted ? 0 : element.volume);
+        assert.equal(boardVolume(), 1);
+        assert.equal(played(), 1);
+        setBoardVolume(0.4);
+        assert.equal(played(), 0.4);
+        assert.equal(boardVolume(), 0.4);
+        assert.match(kept.get('DENS_VOLUMES'), /"den1:soundboard":0.4/);
+        setCallVolume(0.5);
+        assert.equal(played(), 0.2, "the call's volume, under the soundboard's");
+        setCallVolume(1);
+        setBoardVolume(0);
+        assert.equal(played(), 0, '0 mutes it');
+        setBoardVolume(1);
+        setDeafened(true);
+        assert.equal(played(), 0, 'deafened');
+        setDeafened(false);
+        assert.equal(played(), 1);
+        leaveCall();
+    });
+}

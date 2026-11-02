@@ -19,11 +19,11 @@ import (
 
 // A call joins one member's browser to the den's SFU, in a voice channel
 // (M2). The den decides who may be in which call, and who may share their
-// screen and watch others' (M4.2), and tells members who is; the SFU
-// carries the media and makes the offers. A call belongs to the socket
-// that joined it. When that socket closes, the den holds the call for its
-// device to take back on another (M3), unless the den closed the socket
-// for good.
+// screen and watch others' (M4.2), and what sound of its soundboard plays
+// in a call (M14.3), and tells members who is; the SFU carries the media
+// and makes the offers. A call belongs to the socket that joined it. When
+// that socket closes, the den holds the call for its device to take back
+// on another (M3), unless the den closed the socket for good.
 
 type call struct {
 	member  int64
@@ -47,10 +47,19 @@ type call struct {
 	talking bool
 }
 
-// callRoom is a voice channel's call.
+// callRoom is a voice channel's call, and the sound that plays in it, if
+// any (M14.3).
 type callRoom struct {
 	staffOnly bool
 	members   []*call // in the order they joined
+	sound     *sounding
+}
+
+// sounding is a sound of the soundboard's playing in a call: the member
+// who played it, and what ends it early.
+type sounding struct {
+	member int64
+	stop   func()
 }
 
 // endedCall is why a held call ended, for its device's resume.
@@ -74,11 +83,14 @@ type callRegistry struct {
 	staffMuted map[int64]bool
 	// ended remembers, by device, why a held call ended.
 	ended map[string]endedCall
+	// waits holds, by member, when they may next play a sound, once their
+	// last ended (M14.3), across calls.
+	waits map[int64]time.Time
 }
 
 func newCallRegistry() callRegistry {
 	return callRegistry{byMember: map[int64]*call{}, rooms: map[int64]*callRoom{},
-		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}}
+		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}, waits: map[int64]time.Time{}}
 }
 
 // StartCalls runs calls on the den's media ports. The SFU's notes on each
@@ -117,6 +129,7 @@ func (d *Den) StopCalls() error {
 	clear(r.rooms)
 	clear(r.staffMuted)
 	clear(r.ended)
+	clear(r.waits)
 	r.mu.Unlock()
 	if s == nil {
 		return nil
@@ -231,6 +244,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	room.members = append(room.members, nc)
 	d.publishCallsLocked(changed...)
 	d.publishTalkingLocked(cid, sock)
+	d.publishSoundingLocked(cid, sock)
 	d.log.Infof("Member %d joined the call in channel %d", s.MemberID, cid)
 }
 
@@ -251,8 +265,10 @@ func (d *Den) resumeCall(sock *socket, cid int64, channel string) {
 		// Queued before the offer the peer may send again, which follows.
 		sock.voice(denproto.EventVoiceResumed, denproto.VoiceResumed{ChannelID: channel})
 		c.peer.Resume()
-		// Who held push to talk may have changed while the socket was away.
+		// Who held push to talk, and what sound plays, may have changed
+		// while the socket was away.
 		d.publishTalkingLocked(c.channel, sock)
+		d.publishSoundingLocked(c.channel, sock)
 		d.log.Infof("The call of member %d in channel %d resumed", c.member, c.channel)
 		return
 	}
@@ -444,8 +460,9 @@ func (d *Den) endCallLocked(c *call, reason string) {
 }
 
 // dropCallLocked takes a call out and hangs up its peer, which retires
-// its sections in the others' calls, its share's among them. The caller
-// holds the registry's lock, and publishes the change.
+// its sections in the others' calls, its share's among them. A sound the
+// member played ends as they leave (M14.3). The caller holds the
+// registry's lock, and publishes the change.
 func (d *Den) dropCallLocked(c *call) {
 	r := &d.calls
 	delete(r.byMember, c.member)
@@ -453,6 +470,9 @@ func (d *Den) dropCallLocked(c *call) {
 		room.members = slices.DeleteFunc(room.members, func(x *call) bool { return x == c })
 		if c.sharing {
 			unwatchedLocked(room, c.member)
+		}
+		if room.sound != nil && room.sound.member == c.member {
+			d.endSoundLocked(c.channel, room)
 		}
 	}
 	d.stopTalkingLocked(c)
@@ -609,6 +629,155 @@ func (r *callRegistry) viewersLocked(sharer *call) int {
 		}
 	}
 	return n
+}
+
+// soundCall plays one of the den's sounds in the call this socket holds
+// (M14.3), or tells the socket why not: the soundboard is off, staff muted
+// the member, a sound plays in the call, or the member's wait after their
+// last hasn't passed. One sound plays in a call at a time, since mixing
+// two would take re-encoding, and plays to its end, unless its player
+// leaves the call, or staff mute or disconnect them, so a long one can't
+// be used to wear a call down.
+func (d *Den) soundCall(ctx context.Context, s *Session, sock *socket, req denproto.VoiceSound) {
+	limited := d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) != nil
+	c := d.socketCall(sock)
+	if c == nil {
+		return
+	}
+	refuse := func(reason string) {
+		sock.voice(denproto.EventVoiceRefused, denproto.VoiceRefused{ChannelID: denproto.FormatID(c.channel),
+			What: denproto.RefusedSound, SoundID: req.SoundID, Reason: reason})
+	}
+	if limited {
+		refuse(denproto.VoiceRateLimited)
+		return
+	}
+	// The file opens before the registry's lock is taken, so a slow disk
+	// holds up no other call; what it checks is checked again after.
+	if reason := d.soundRefusal(c); reason != "" {
+		refuse(reason)
+		return
+	}
+	sound, err := d.openSound(ctx, req.SoundID)
+	if errors.Is(err, errSoundNotFound) {
+		refuse(denproto.VoiceNotFound)
+		return
+	}
+	if err != nil {
+		d.log.Errorf("play a sound: %v", err)
+		refuse(denproto.VoiceFailed)
+		return
+	}
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	reason := d.soundRefusalLocked(c)
+	if r.byMember[c.member] != c || c.sock.Load() != sock || r.sfu == nil {
+		reason = denproto.VoiceFailed
+	}
+	if reason != "" {
+		sound.Close()
+		refuse(reason)
+		return
+	}
+	room := r.rooms[c.channel]
+	playing := &sounding{member: c.member}
+	cid := c.channel
+	stop, err := r.sfu.Play(denproto.FormatID(cid), sound, func() { d.soundEnded(cid, playing) })
+	if err != nil {
+		d.log.Errorf("play a sound: %v", err)
+		refuse(denproto.VoiceFailed)
+		return
+	}
+	playing.stop = stop
+	room.sound = playing
+	d.publishSoundingLocked(cid, nil)
+	d.log.Infof("Member %d played sound %s in channel %d", c.member, req.SoundID, cid)
+}
+
+// soundRefusal says why a member's call can't play a sound now, or "".
+func (d *Den) soundRefusal(c *call) string {
+	d.calls.mu.Lock()
+	defer d.calls.mu.Unlock()
+	return d.soundRefusalLocked(c)
+}
+
+// soundRefusalLocked is soundRefusal with the registry's lock held.
+func (d *Den) soundRefusalLocked(c *call) string {
+	r := &d.calls
+	info, _ := d.Info()
+	room := r.rooms[c.channel]
+	switch {
+	case info.SoundLimits.Sounds == 0:
+		return denproto.RefusedOff
+	case r.staffMuted[c.member]:
+		return denproto.RefusedStaffMuted
+	case room == nil:
+		return denproto.VoiceFailed
+	case room.sound != nil:
+		return denproto.RefusedPlaying
+	case d.now().Before(r.waits[c.member]):
+		return denproto.RefusedWait
+	}
+	return ""
+}
+
+// soundEnded hears from the SFU that a sound is over, played to its end or
+// stopped, and ends it in its call, unless the den has already.
+func (d *Den) soundEnded(cid int64, playing *sounding) {
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if room := r.rooms[cid]; room != nil && room.sound == playing {
+		d.endSoundLocked(cid, room)
+	}
+}
+
+// endSoundLocked ends the sound that plays in a call, which starts its
+// player's wait, and tells the call. The caller holds the registry's lock.
+func (d *Den) endSoundLocked(cid int64, room *callRoom) {
+	r := &d.calls
+	playing := room.sound
+	room.sound = nil
+	playing.stop()
+	now := d.now()
+	for member, until := range r.waits {
+		if !now.Before(until) {
+			delete(r.waits, member)
+		}
+	}
+	info, _ := d.Info()
+	if wait := time.Duration(info.SoundLimits.Wait) * time.Second; wait > 0 {
+		r.waits[playing.member] = now.Add(wait)
+	}
+	d.publishSoundingLocked(cid, nil)
+}
+
+// publishSoundingLocked tells the members of a channel's call whose sound
+// plays in it, or that none does (M14.3): on every socket that holds a call
+// in it, or only on to, as publishTalkingLocked does. The caller holds the
+// registry's lock.
+func (d *Den) publishSoundingLocked(cid int64, to *socket) {
+	room := d.calls.rooms[cid]
+	if room == nil {
+		return
+	}
+	e := denproto.VoiceSounding{ChannelID: denproto.FormatID(cid)}
+	if room.sound != nil {
+		e.MemberID = denproto.FormatID(room.sound.member)
+	}
+	subs := map[*Sub]bool{}
+	for _, x := range room.members {
+		if sock := x.sock.Load(); sock != nil && (to == nil || sock == to) {
+			subs[sock.sub] = true
+		}
+	}
+	if len(subs) == 0 {
+		return
+	}
+	if err := d.Hub.Ephemeral(denproto.EventVoiceSounding, e, func(sub *Sub) bool { return subs[sub] }); err != nil {
+		d.log.Errorf("announce a sound: %v", err)
+	}
 }
 
 // callBitrateChanged has the call in a voice channel go at the channel's
@@ -791,9 +960,13 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 		c.peer.SetMuted(muted)
 		if muted {
 			// The den forwards nothing from a muted member, their screen
-			// included, so their share ends rather than freezing (M4.2).
+			// included, so their share ends rather than freezing (M4.2),
+			// and so does a sound they played (M14.3).
 			d.endShareLocked(c)
 			d.stopTalkingLocked(c)
+			if room := r.rooms[c.channel]; room != nil && room.sound != nil && room.sound.member == mid {
+				d.endSoundLocked(c.channel, room)
+			}
 		}
 		d.publishCallsLocked(c.channel)
 	}

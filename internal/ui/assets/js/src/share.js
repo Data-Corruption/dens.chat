@@ -150,14 +150,19 @@ export function refusalText(what, reason, limits) {
     return "The den couldn't show you that share.";
 }
 
+// SOUND_BITRATE is the bitrate of a den's soundboard's sounds (M14.3).
+export const SOUND_BITRATE = 64000;
+
 // shareCost is what a den's limits cost its upload at most, in bits a
-// second: video, every share at its bitrate to every viewer it may have,
-// and voice, a full call at bitrate while two members talk, with about a
+// second: video, every share at its bitrate to every viewer it may have;
+// voice, a full call at bitrate while two members talk; and with a
+// soundboard (M14.3), a sound to everyone in that call; with about a
 // fifth more for the packets' headers.
-export function shareCost(limits, voiceBitrate) {
+export function shareCost(limits, voiceBitrate, soundboard = false) {
     const video = limits.shares * limits.share_viewers * limits.share_bitrate * 1.05;
     const voice = 2 * Math.max(0, limits.members - 1) * voiceBitrate * 1.2;
-    return { video, voice };
+    const sounds = soundboard ? limits.members * SOUND_BITRATE * 1.2 : 0;
+    return { video, voice, sounds };
 }
 
 // mbps writes bits a second as megabits, to one place under 10.
@@ -167,11 +172,11 @@ export function mbps(bits) {
 }
 
 // uploadNeeded is the upload a den's calls take at full load, video and
-// voice together, which the owner's settings show as the limits change
-// (M8.3).
-export function uploadNeeded(limits, voiceBitrate) {
-    const cost = shareCost(limits, voiceBitrate);
-    return cost.video + cost.voice;
+// voice together, and from M14.3 the soundboard's sounds, which the
+// owner's settings show as the limits change (M8.3).
+export function uploadNeeded(limits, voiceBitrate, soundboard = false) {
+    const cost = shareCost(limits, voiceBitrate, soundboard);
+    return cost.video + cost.voice + cost.sounds;
 }
 
 // CALL_PRESETS are the call limits an owner chooses from before setting

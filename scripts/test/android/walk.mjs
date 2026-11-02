@@ -200,8 +200,11 @@ async function bars(h, d) {
 // sees the member ring, and not before or after; holds it again as the
 // notification shade comes down, which lets it go; hears desk leave and
 // join again through the call's context, as Android plays the call's
-// voices, which a hook in the page counts (M14.2); and leaves from the
-// bar.
+// voices, which a hook in the page counts (M14.2); hears desk, muted, play
+// a sound of the den's soundboard, which the page plays from the call's
+// track through the call's context, desk's ring lit while it plays, and
+// plays one from the bar's soundboard, its sheet, which desk receives
+// (M14.3); and leaves from the bar.
 async function callWalk(h, d, c) {
     const desk = async (path, method = 'GET') => (await fetch(c.desk + path, { method })).json();
     const onDesk = async () => (await desk('/call')).members.find((m) => m.name === c.name);
@@ -354,6 +357,32 @@ async function callWalk(h, d, c) {
         report(rejoined && near(left, lasts.left) && near(joined, lasts.joined) && played.element.length === 0,
             `desk leaving and joining again play Left and Joined through the call's context, and no element plays them: ${JSON.stringify({ played, lasts })}`);
     });
+    await step('call-soundboard', async () => {
+        report((await desk('/mute', 'POST')).muted, 'desk mutes, so its ring lights for its sound alone');
+        const deskRings = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes('Desk') && li.textContent.includes('speaking'))`;
+        await waitFor(async () => !(await h.ev(deskRings)), "desk's ring out", 10000);
+        let before = await board(h.b);
+        report((await desk('/sound?name=Ping', 'POST')).played === 'Ping', "desk plays Ping from its soundboard");
+        const lit = await waitFor(() => h.ev(deskRings), "desk's ring for its sound", 8000).catch(() => false);
+        const got = await waitFor(async () => {
+            const now = await board(h.b);
+            return now.packets >= before.packets + 25 && now;
+        }, 'the soundboard on the phone', 10000).catch(() => board(h.b));
+        report(lit && got.packets >= before.packets + 25 && got.context, `the phone's page plays desk's sound from the call's track, through the call's context, and lights desk's ring: ${JSON.stringify({ before, got, lit })}`);
+        await waitFor(async () => !(await h.ev(deskRings)), "desk's ring out after its sound", 10000);
+        await d.tap(`document.querySelector('[data-call-bar] [data-soundboard-button=bar]')`);
+        const tile = `[...document.querySelectorAll('[data-sheet] [data-sound-tile]')].find((t) => t.querySelector('span').textContent === 'Ping')`;
+        await h.wait(tile, "the bar's soundboard sheet");
+        await h.snap('call-soundboard');
+        before = await desk('/board');
+        await d.tap(tile);
+        const heard = await waitFor(async () => {
+            const now = await desk('/board');
+            return now.packets >= before.packets + 25 && now;
+        }, 'desk receiving the phone\'s sound', 10000).catch(() => desk('/board'));
+        report(heard.packets >= before.packets + 25, `the phone plays Ping from the bar's soundboard, and desk receives it: ${JSON.stringify({ before, heard })}`);
+        if (await h.has(`document.querySelector('[data-sheet]')`)) await d.back();
+    });
     await step('call-leave', async () => {
         await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Leave the call"]')`);
         const ended = await waitFor(async () => !(await h.has(`document.querySelector('[data-call-bar]')`)) && !(await h.has(BUTTON)), 'the call to end', 10000)
@@ -362,6 +391,36 @@ async function callWalk(h, d, c) {
         await h.snap('call-left');
         report(ended && gone, 'the bar\'s leave ends the call, its bar and button go, and desk sees the member leave');
     });
+}
+
+// board is what the page's call receives on the soundboard (M14.3), found
+// in its heap, as call.mjs finds its peer: the packets, and whether the
+// call's context plays it, its element muted and playing.
+async function board(b) {
+    const group = 'board';
+    const over = async (proto, fn) => {
+        const { result } = await b.cdp('Runtime.evaluate', { expression: `${proto}.prototype`, objectGroup: group });
+        const { objects } = await b.cdp('Runtime.queryObjects', { prototypeObjectId: result.objectId, objectGroup: group });
+        const r = await b.cdp('Runtime.callFunctionOn', { objectId: objects.objectId, functionDeclaration: fn, awaitPromise: true, returnByValue: true });
+        if (r.exceptionDetails) throw new Error(`${proto}: ${r.exceptionDetails.exception?.description || r.exceptionDetails.text}`);
+        return r.result.value;
+    };
+    try {
+        const packets = await over('RTCPeerConnection', `async function () {
+            const pc = this.find((p) => p.connectionState !== 'closed' && p.remoteDescription);
+            if (!pc) return 0;
+            const mid = pc.remoteDescription.sdp.split('\\r\\nm=').slice(1).map((s) => [/a=mid:(\\S+)/.exec(s)?.[1], s.includes('a=msid:soundboard ')]).find(([, on]) => on)?.[0];
+            const t = pc.getTransceivers().find((x) => x.mid === mid);
+            if (!t) return 0;
+            return [...(await pc.getStats(t.receiver.track)).values()].find((x) => x.type === 'inbound-rtp')?.packetsReceived || 0;
+        }`);
+        const context = await over('HTMLMediaElement', `function () {
+            return this.filter((e) => { try { return e.srcObject?.id === 'soundboard'; } catch { return false; } }).some((e) => e.muted && !e.paused);
+        }`);
+        return { packets, context };
+    } finally {
+        await b.cdp('Runtime.releaseObjectGroup', { objectGroup: group }).catch(() => {});
+    }
 }
 
 const b = await webview(serial);

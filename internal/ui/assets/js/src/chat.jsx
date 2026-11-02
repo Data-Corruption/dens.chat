@@ -10,7 +10,7 @@ import { Avatar, DenContext } from './avatar.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
 import { Tip, useNotifications } from './components.jsx';
-import { BellIcon, HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
+import { BellIcon, CogIcon, HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane, openAt } from './messages.jsx';
@@ -27,7 +27,7 @@ import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
 import { applyCalls, joinCall } from './voice.js';
-import { CallBar, CallBlock, CallMembers, CogIcon, useCall, useCallButton } from './voice.jsx';
+import { CallBar, CallBlock, CallMembers, callState, useCall, useCallButton } from './voice.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -492,7 +492,14 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     <HomeIcon />
                                     <Marks mentions={away.mentions} unread={away.unread} />
                                 </a>
-                                <span class="min-w-0 flex-1 truncate font-semibold">{view.name}</span>
+                                {/* The den's name opens its Manage, as a server's name
+                                    opens its menu elsewhere; on the phone layout, at
+                                    the list of its sections (M14.3). */}
+                                <button type="button" class="-my-1 flex min-h-8 min-w-0 flex-1 items-center gap-1 rounded px-1 text-left font-semibold hover:bg-base-300/60"
+                                    aria-label={`Manage ${view.name}`} title="Manage this den" data-den-manage onClick={() => openManage(denID)}>
+                                    <span class="truncate">{view.name}</span>
+                                    <ChevronIcon folded={false} />
+                                </button>
                                 {bells && (
                                     <button type="button" class="btn btn-ghost btn-xs btn-square relative -my-1 touch-room" aria-pressed={muted.den}
                                         aria-label={muted.den ? `Unmute ${view.name}` : `Mute ${view.name}`}
@@ -824,7 +831,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         store(FOLDED + denID, JSON.stringify([...next]));
         setFolded(next);
     }
-    const { call, speaking, volumes, watched, share } = useCall();
+    const { call, speaking, sounding, volumes, watched, share } = useCall();
     const watching = new Set(watched.map((w) => w.member));
     // Staff reach each channel's and group's settings from a ⋯ beside it
     // (M4.2), which shows on hover or focus. It shows once its row has the
@@ -868,6 +875,9 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
         const voice = c.kind === 'voice';
         const inCall = voice && call?.den === denID && call.channel === c.id;
+        // The page's call shows how it stands on its channel's speaker:
+        // green once connected, and yellow until then (M14.3).
+        const state = inCall ? callState(call.status) : '';
         const label = { den: view.name, channel: c.name };
         const managed = staff && !gone;
         const isMuted = !!muted?.has(c.id);
@@ -884,9 +894,11 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                         onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
                         title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
-                        aria-label={rowLabel(c.name, c.staff_only && 'staff only', isMuted && 'muted', mentions && `${mentions} mentions`)}
+                        aria-label={rowLabel(c.name, state, c.staff_only && 'staff only', isMuted && 'muted', mentions && `${mentions} mentions`)}
                     >
-                        <span class={inCall ? 'text-success' : 'text-base-content/50'}>{voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}</span>
+                        <span class={!inCall ? 'text-base-content/50' : state === 'connected' ? 'text-success' : 'text-warning'} data-call-state={state || undefined}>
+                            {voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}
+                        </span>
                         <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
                     </button>
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
@@ -901,7 +913,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 </div>
                 {voice && (
                     <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
-                        volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} inCall={inCall} label={label}
+                        sounding={inCall ? sounding : ''} deafened={inCall && !!call?.deafened} volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} inCall={inCall} label={label}
                         watched={watching} previewing={!!share?.preview} />
                 )}
             </li>

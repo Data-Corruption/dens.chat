@@ -159,11 +159,16 @@ func TestOwnSounds(t *testing.T) {
 		t.Fatalf("after Reset the database opens it with %v", err)
 	}
 
-	// With every kind off, a DM's sound plays alone, on the page on screen.
+	// With every kind off, a DM makes no sound (M14's manual pass); with
+	// DMs on, and nothing to show its notification, as the browser won't
+	// let the page notify and no helper runs, its sound plays alone, on the
+	// page on screen.
 	page.send("page", map[string]bool{"visible": true, "allowed": false})
 	page.send("focus", map[string]string{"den": "d1", "channel": "5"})
 	// The service reads the page's lines in their own time.
 	time.Sleep(200 * time.Millisecond)
+	a.Notify.Message(notify.Message{Den: "d1", DenName: "Den", Channel: "7", DM: true, ID: "9", Author: "Alice", Text: "hi"})
+	b.expect(http.StatusOK, "turn DMs on", "POST", "/api/settings", map[string]any{"notifications": map[string]bool{"dms": true}})
 	a.Notify.Message(notify.Message{Den: "d1", DenName: "Den", Channel: "7", DM: true, ID: "10", Author: "Alice", Text: "hi"})
 	if got := string(page.next("sound")); got != `{"den":"d1","channel":"7","message":"10"}` {
 		t.Fatalf("the page was sent %s", got)

@@ -358,6 +358,33 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M14.3: the den's named files, each a file of the den's with a name
+	// unique among those of its kind, sounds for its soundboard first; and
+	// the den's limits for them: how many sounds it keeps, 0 turning the
+	// soundboard off, the longest a sound may be, and how long a member
+	// waits between sounds, both in seconds. A named file's file is the
+	// den's, not its uploader's, and stays until staff delete the name.
+	m.Add("Soundboard", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_named_files (
+				id       INTEGER PRIMARY KEY AUTOINCREMENT,
+				kind     TEXT NOT NULL,
+				name     TEXT NOT NULL,
+				file_id  INTEGER NOT NULL UNIQUE REFERENCES den_files (id),
+				added_by INTEGER NOT NULL REFERENCES den_members (id),
+				added_at INTEGER NOT NULL, -- unix milliseconds
+				UNIQUE (kind, name COLLATE NOCASE)
+			) STRICT;
+
+			ALTER TABLE den ADD COLUMN sounds INTEGER NOT NULL DEFAULT 50;
+			ALTER TABLE den ADD COLUMN sound_longest INTEGER NOT NULL DEFAULT 10;
+			ALTER TABLE den ADD COLUMN sound_wait INTEGER NOT NULL DEFAULT 5;
+		`); err != nil {
+			return fmt.Errorf("create the soundboard: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

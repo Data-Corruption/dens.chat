@@ -11,6 +11,7 @@ import { onConnection, onUnpaired } from './events.js';
 import { Card, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
 import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
+import { CogIcon } from './icons.jsx';
 import { ManageDialog } from './manageden.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
@@ -18,7 +19,7 @@ import { openAt } from './messages.jsx';
 import { chatRoute, nav, paneOf, pathOf, useNarrow, useTrail } from './nav.js';
 import { startNotifications } from './notify.js';
 import { DockedPlayer, SharePlayer } from './player.jsx';
-import { CallBox, CallButton, CogIcon } from './voice.jsx';
+import { CallBox, CallButton } from './voice.jsx';
 
 // dens open opens the page with a one-time token in the URL fragment,
 // which never reaches the server in the request line, and a notification's

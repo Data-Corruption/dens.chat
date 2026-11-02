@@ -9,8 +9,9 @@
 // ▶, replaced with a file of bob's, a file too long refused, one quieted,
 // one off and one reset, each as the call next plays it; and bob leaving.
 // Then a DM from alice: its sound once with the browser's popup, which
-// shows silently; alone with DMs off; and none muted, or with the DM on
-// screen.
+// shows silently; none with DMs off; alone with DMs on but the browser not
+// letting the page notify, and no helper to show it; and none muted, or
+// with the DM on screen.
 //
 //   run.sh sounds chromium|firefox
 import fs from 'node:fs';
@@ -27,7 +28,8 @@ const B = BOB;
 
 // The page's sounds as it plays them, by name, whether from the member's
 // own file, how loud in percent, and whether the browser played it; and
-// its notifications, with whether each was asked to be silent.
+// its notifications, with whether each was asked to be silent; and
+// window.__denyNotes, which has the page find notifications not allowed.
 const RECORD = `() => {
     window.__sounds = [];
     window.__notes = [];
@@ -54,6 +56,9 @@ const RECORD = `() => {
             constructor(title, opts) {
                 super(title, opts);
                 window.__notes.push({ title, silent: !!opts?.silent });
+            }
+            static get permission() {
+                return window.__denyNotes ? 'denied' : Real.permission;
             }
         };
     }
@@ -273,13 +278,45 @@ try {
     await sleep(500);
     b = await mark(B);
     lib('send', 'alice', dm, 'another, with DMs off');
-    await expect(B, b, ['message'], 'with DMs off, a DM plays Message alone');
+    await expect(B, b, [], 'with DMs off, a DM plays nothing');
     report((await notes()).length === 1, 'and shows no popup');
+
+    // DMs on, but the browser doesn't let the page notify, as the page
+    // tells the service when it comes on screen, and no helper runs here:
+    // nothing can show the DM, so its sound plays alone.
+    await soundsTab();
+    await B.b.eval(`document.getElementById('notify-dms').click(), true`);
+    await waitFor(() => settings().dms, 'DMs on again');
+    await B.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    await B.b.eval(`window.__denyNotes = true, document.dispatchEvent(new Event('visibilitychange')), true`);
+    await sleep(500);
+    b = await mark(B);
+    lib('send', 'alice', dm, 'one with nothing to show it');
+    await expect(B, b, ['message'], "with nothing to show the DM, as the browser won't let the page notify, it plays Message alone");
+    report((await notes()).length === 1, 'and shows no popup');
+    await B.b.eval(`window.__denyNotes = false, document.dispatchEvent(new Event('visibilitychange')), true`);
 
     lib('api', 'bob', 'POST', `/api/dens/${den}/notifications`, JSON.stringify({ channel: dm, muted: true }));
     b = await mark(B);
     lib('send', 'alice', dm, 'while muted');
     await expect(B, b, [], 'the DM muted, it plays nothing');
+    // The muted bell's tip stays within the DM list, which scrolls, and
+    // would cut off what ran past its edge (M14.3).
+    await B.b.go(`http://localhost:18486/den/${den}/dms`);
+    const bell = `document.querySelector('[data-pane=list] button[aria-label=Muted]')`;
+    await waitFor(() => B.b.eval(`!!${bell}`), "the DM's muted bell", 10000);
+    const at = JSON.parse(await B.b.eval(`JSON.stringify(${bell}.getBoundingClientRect())`));
+    await B.b.move(at.x + at.width / 2, at.y + at.height / 2);
+    const tip = await waitFor(() => B.b.eval(`(() => {
+        const t = [...document.querySelectorAll('[data-pane=list] [role=tooltip]')].find((x) => !x.hidden);
+        if (!t) return false;
+        const l = document.querySelector('[data-pane=list]').getBoundingClientRect();
+        const r = t.getBoundingClientRect();
+        return JSON.stringify({ list: [Math.round(l.left), Math.round(l.right)], tip: [Math.round(r.left), Math.round(r.right)] });
+    })()`), "the muted bell's tip", 5000).catch(() => '');
+    const inside = tip && JSON.parse(tip);
+    report(inside && inside.tip[0] >= inside.list[0] && inside.tip[1] <= inside.list[1], `the muted bell's tip stays within the DM list: ${tip}`);
+    await B.b.move(700, 450);
     lib('api', 'bob', 'POST', `/api/dens/${den}/notifications`, JSON.stringify({ channel: dm, muted: false }));
 
     await B.b.go(`http://localhost:18486/den/${den}/${dm}`);

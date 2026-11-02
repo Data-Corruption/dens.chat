@@ -37,7 +37,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
 | 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code), `no_other_device` (a password sign-in with no other device to approve it) |
 | 404 | `not_found` |
-| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step) |
+| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3) |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed), `changes_gone` (a version the den no longer has the changes since; M6) |
 | 413 | `too_large` |
 | 415 | `unsupported_type` |
@@ -61,15 +61,15 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 ## Objects
 
 ```
-den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5)}
+den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), and `retention` its retention period in days, when it has one (see [Retention](#retention-m5)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), and `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
 
 ```
-PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?}   200 den        (owner only)
+PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?}   200 den        (owner only)
 ```
 
 A change reaches every member as a `den.updated {den}` event.
@@ -233,7 +233,7 @@ From M6, client and den negotiate permessage-deflate without context takeover: e
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); and from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)).
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)); and from M14.3, `sounds`, the den's soundboard's, by name (see [The soundboard](#the-soundboard-m143)).
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
@@ -721,7 +721,7 @@ call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_mu
                                    "sharing"? (M4.2), "sound"? (M4.2), "watching"? (M4.2)}, …]}
 ```
 
-Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voice.watch` from M4.2, and `voice.talk` from M11:
+Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voice.watch` from M4.2, `voice.talk` from M11, and `voice.sound` from M14.3:
 
 ```json
 [{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false}}]
@@ -732,16 +732,18 @@ Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voi
 [{"t": "voice.share", "d": {"on": true, "sound": true}}]
 [{"t": "voice.watch", "d": {"member_id": "7", "on": true}}]
 [{"t": "voice.talk", "d": {"on": true}}]
+[{"t": "voice.sound", "d": {"sound_id": "3"}}]
 [{"t": "voice.leave", "d": {}}]
 ```
 
-Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2 and `voice.talking` from M11:
+Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2, `voice.talking` from M11 and `voice.sounding` from M14.3:
 
 ```json
 {"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
 {"t": "voice.resumed", "d": {"channel_id": "41"}}
 {"t": "voice.refused", "d": {"channel_id": "41", "what": "watch", "member_id": "7", "reason": "full"}}
 {"t": "voice.talking", "d": {"channel_id": "41", "members": ["7"]}}
+{"t": "voice.sounding", "d": {"channel_id": "41", "member_id": "7"}}
 {"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
 {"t": "voice.state", "d": {"calls": [call, …]}}
 ```
@@ -755,8 +757,8 @@ Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4
 
 ### Offers and answers
 
-- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle, Opus for audio and, from M4.2, VP9 for video. The den receives on up to three sections (`recvonly` at the den): the first, the member's microphone; from the member's first share in the call, a video section for their screen; and from their first share with sound, an audio section for that sound. Those two stay for the rest of the call, for later shares. Each other section sends the member something (`sendonly`): another member's audio, with that member's ID as its stream ID (`msid`), or a share they watch (M4.2), its video and, if it has sound, its sound, both with `screen-<member ID>` as their stream ID.
-- Every Opus format in a voice section carries `a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=<the channel's bitrate>`, which asks the browser to send at up to the voice channel's `bitrate` (M3, M4.2) with in-band error correction, and to send almost nothing while there's nothing to hear (discontinuous transmission, M3.3). A share's sound carries `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=128000` instead (M4.2). A re-offer carries them too, whatever the answer said.
+- The den makes every offer, and the client only answers. An offer is `a=ice-lite`, one bundle, Opus for audio and, from M4.2, VP9 for video. The den receives on up to three sections (`recvonly` at the den): the first, the member's microphone; from the member's first share in the call, a video section for their screen; and from their first share with sound, an audio section for that sound. Those two stay for the rest of the call, for later shares. Each other section sends the member something (`sendonly`): another member's audio, with that member's ID as its stream ID (`msid`); a share they watch (M4.2), its video and, if it has sound, its sound, both with `screen-<member ID>` as their stream ID; and from M14.3, from the first offer of every call, the call's soundboard, an audio section with `soundboard` as its stream ID, which the den plays its sounds on (see [The soundboard](#the-soundboard-m143)).
+- Every Opus format in a voice section carries `a=fmtp:111 minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=<the channel's bitrate>`, which asks the browser to send at up to the voice channel's `bitrate` (M3, M4.2) with in-band error correction, and to send almost nothing while there's nothing to hear (discontinuous transmission, M3.3). A share's sound carries `minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=128000` instead (M4.2), and so does the soundboard (M14.3). A re-offer carries them too, whatever the answer said.
 - The screen section asks for no more than the den's `share_bitrate` (M4.2), as `b=AS` in kilobits and `b=TIAS` in bits a second, since browsers honor one or the other.
 - An offer carries no candidates. The client writes the den's: each address the den's name resolves to, or for a den on its own machine, the machine's addresses on its other interfaces, each with `udp_port` over UDP and `tcp_port` over TCP (`tcptype passive`). The den answers connectivity checks from any address, so it needs no candidates from the client, and the client sends none.
 - `voice.answer` answers the offer with that `version`, which counts up from 1 in each call. The den keeps one offer outstanding per call, and sends the next only after its answer. An answer to any other version is ignored.
@@ -830,6 +832,30 @@ call_limits = {"members", "callers", "shares", "share_viewers", "share_bitrate",
 - The owner changes them with `PATCH /api/den`, all together. A lower limit applies to what starts afterwards: nobody leaves a call or a share for it.
 - Clients check `call_limits` as they arrive, as they check `limits`, and refuse a den whose limits are out of range.
 
+### The soundboard (M14.3)
+
+Staff add sounds to the den's soundboard, and a member in a call plays one for everyone in it, on the call's soundboard track (see the design doc's The soundboard).
+
+```
+sound        = {"id", "name", "file_id", "duration_ms", "added_by", "added_at"}
+sound_limits = {"sounds", "longest", "wait"}
+
+POST   /api/soundboard        {"name", "file_id"}   201 sound        (staff only)
+PATCH  /api/soundboard/{id}   {"name"}              200 sound        (staff only)
+DELETE /api/soundboard/{id}                         204              (staff only)
+```
+
+- A sound is one of the den's named files: its name, 1 to 32 characters cleaned as display names are and unique in the den in any case; its file, an upload; its length in milliseconds, as it plays; and who added it and when. `ready` carries every sound, by name, and each change reaches every member as `sound.created {sound}`, `sound.updated {sound}` or `sound.deleted {"id"}`. A sound's file opens with `GET /api/files/{id}` for staff alone, and anyone else gets `404 not_found`; members never need it, since the den plays it.
+- `POST /api/soundboard` takes an upload of the staff member's own, waiting to be used, and makes it the sound's file, which then counts toward the den's space, not theirs, isn't among their files, and stays until staff delete the sound: retention, the sweep of waiting uploads and the uploader leaving don't remove it, and no message, picture or replacement takes it. The upload must be Opus in Ogg (`audio/ogg`), one stream in mono or stereo, no longer than `longest` seconds, give or take its last packet, and no larger than its length at 64 kbps makes, with a quarter more and 4 KiB; the den reads every page of it to check. A name another sound has, any other upload, or a soundboard holding `sounds` sounds already gets `400 invalid_field`, as does a soundboard that's off; anyone but staff gets `403 forbidden`.
+- `PATCH` renames a sound, under the same rule for names; `DELETE` deletes it with its file. A sound that's playing plays to its end.
+- `voice.sound` plays `sound_id` in the call this socket holds. The den checks that the soundboard is on, the member isn't staff muted, no sound plays in the call, and the member's wait has passed, `wait` seconds from the end of their last sound; then it sends the sound's Opus packets, as its file holds them, on the call's soundboard section, at their pace, by each packet's table of contents. One plays in a call at a time. A frame from a socket that holds no call is ignored.
+- A sound is refused with `voice.refused`, `"what": "sound"`, the `sound_id`, and a reason: `off` when the den's `sounds` is 0, `staff_muted` while staff mute the member, `playing` while a sound plays in the call, `wait` before the member's wait has passed, `not_found` for a sound the den doesn't have, `rate_limited`, or `failed`. A client passes a sound's reasons on only for a sound, and calls any other a failure.
+- A sound ends at its end, or early as its player leaves the call or moves to another, as their call ends, and as staff mute them; nothing else stops it.
+- `voice.sounding` names the member whose sound plays in the call, or with no `member_id` none, and goes to the sockets that hold the call's members' calls alone. Each replaces the last. A socket gets it as a sound starts and ends, as its call starts and as it takes a held call back.
+- `sound_limits`: `sounds` is how many sounds the den keeps, 0 to 500, where 0 turns the soundboard off and keeps its sounds; `longest` is the longest a sound may be, 1 to 300 seconds; and `wait` how long a member waits after their sound ends before playing another, 0 to 600 seconds. A new den allows 50, 10 and 5. The owner changes them with `PATCH /api/den`, all together. A lower limit applies to sounds added afterwards: the sounds already added stay.
+- An older den sends no `sound_limits`, no `sounds` and no soundboard section, and clients show no soundboard for it; clients check `sound_limits` as they arrive, as they check `call_limits`, and refuse a den whose limits are out of range. An older client plays the soundboard's section as it would a member's voice.
+- Playing a sound, and adding, renaming and deleting one, count toward the member's other writes.
+
 ## Rate limits
 
 The den limits per IP, taken from `X-Forwarded-For` only on connections from loopback, and per member. Limits live in memory only. Starting values, to tune with real use:
@@ -847,6 +873,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, and staff disconnecting and muting | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, and from M14.3 playing a sound and adding, renaming and deleting one | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

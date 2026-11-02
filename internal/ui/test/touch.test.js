@@ -115,12 +115,18 @@ test('a sheet dragged down closes past a third of its height, or flicked, and ot
     assert.equal(dismisses(80, 300, 0), false, 'held still before letting go');
 });
 
-test('a tip moves in from the edge it would run past, and one wider than the window starts at its margin', () => {
+test('a tip moves in from the edge it would run past, and one wider than the room starts at its margin', () => {
     const box = (left, width) => ({ left, right: left + width, width });
-    assert.equal(tipShift(box(100, 200), 390), 0);
-    assert.equal(tipShift(box(250, 200), 390), -68, 'past the right edge');
-    assert.equal(tipShift(box(-40, 200), 390), 48, 'past the left');
-    assert.equal(tipShift(box(20, 380), 390), -12, 'wider than the room');
+    const phone = { left: 0, right: 390 };
+    assert.equal(tipShift(box(100, 200), phone), 0);
+    assert.equal(tipShift(box(250, 200), phone), -68, 'past the right edge');
+    assert.equal(tipShift(box(-40, 200), phone), 48, 'past the left');
+    assert.equal(tipShift(box(20, 380), phone), -12, 'wider than the room');
+    // A list that scrolls clips a tip as the window's edge would: a DM's
+    // muted mark near its right edge opens its tip to the left.
+    const list = { left: 72, right: 328 };
+    assert.equal(tipShift(box(200, 200), list), -80, "past the list's right edge, in a wider window");
+    assert.equal(tipShift(box(40, 120), list), 40, "past the list's left edge");
 });
 
 test("the pointer is coarse as the window's media say", () => {

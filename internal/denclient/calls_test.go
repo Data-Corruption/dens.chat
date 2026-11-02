@@ -1,6 +1,7 @@
 package denclient
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -59,13 +60,34 @@ func TestDenCallsAreChecked(t *testing.T) {
 		t.Error("a den with no call limits checked")
 	}
 
+	// A den older than the soundboard sends none of its limits (M14.3).
+	den.CallLimits = denproto.DefaultCallLimits
+	for name, l := range map[string]denproto.SoundLimits{"none": {}, "a new den's": denproto.DefaultSoundLimits} {
+		den.SoundLimits = l
+		if !cleanLimits(den) {
+			t.Errorf("%s soundboard limits didn't check", name)
+		}
+	}
+	den.SoundLimits = denproto.SoundLimits{Sounds: 1}
+	if cleanLimits(den) {
+		t.Error("soundboard limits out of range checked")
+	}
+
 	for _, x := range []denproto.VoiceRefused{
 		{What: denproto.RefusedShare, Reason: denproto.RefusedFull},
 		{What: denproto.RefusedWatch, MemberID: "7", Reason: denproto.RefusedNotSharing},
+		{What: denproto.RefusedSound, SoundID: "9", Reason: denproto.RefusedPlaying},
+		{What: denproto.RefusedSound, SoundID: "9", Reason: denproto.RefusedWait},
+		{What: denproto.RefusedSound, SoundID: "9", Reason: denproto.RefusedOff},
+		{What: denproto.RefusedSound, SoundID: "9", Reason: denproto.VoiceNotFound},
 	} {
-		if r, ok := cleanRefusal(x); !ok || r.Reason != x.Reason {
+		if r, ok := cleanRefusal(x); !ok || r.Reason != x.Reason || r.SoundID != x.SoundID {
 			t.Errorf("%+v became %+v, %t", x, r, ok)
 		}
+	}
+	// A sound's reasons are a sound's alone.
+	if r, ok := cleanRefusal(denproto.VoiceRefused{What: denproto.RefusedShare, Reason: denproto.RefusedWait}); !ok || r.Reason != denproto.VoiceFailed {
+		t.Errorf("a share refused for a sound's reason became %q, %t", r.Reason, ok)
 	}
 	if r, ok := cleanRefusal(denproto.VoiceRefused{What: denproto.RefusedShare, Reason: "<b>no</b>"}); !ok || r.Reason != denproto.VoiceFailed {
 		t.Errorf("an unknown reason became %q, %t", r.Reason, ok)
@@ -74,9 +96,64 @@ func TestDenCallsAreChecked(t *testing.T) {
 		{What: "dance", Reason: denproto.RefusedFull},
 		{What: denproto.RefusedWatch, Reason: denproto.RefusedFull},
 		{What: denproto.RefusedShare, MemberID: "7", Reason: denproto.RefusedFull},
+		{What: denproto.RefusedSound, Reason: denproto.RefusedPlaying},
+		{What: denproto.RefusedSound, SoundID: "9", MemberID: "7", Reason: denproto.RefusedPlaying},
 	} {
 		if _, ok := cleanRefusal(x); ok {
 			t.Errorf("%+v checked", x)
 		}
+	}
+}
+
+// TestDenSoundsAreChecked checks a den's sounds before they're kept or
+// reach the page (M14.3): each checks out, once, and no more than a den
+// keeps.
+func TestDenSoundsAreChecked(t *testing.T) {
+	sound := func(id, name string) denproto.Sound {
+		return denproto.Sound{ID: id, Name: name, FileID: "5", Duration: 1000, AddedBy: "1", AddedAt: 1}
+	}
+	if got, ok := cleanSounds([]denproto.Sound{sound("1", "Horn"), sound("2", "Bell")}); !ok || len(got) != 2 {
+		t.Errorf("two sounds came out as %v, %t", got, ok)
+	}
+	many := make([]denproto.Sound, denproto.MaxSounds+1)
+	for i := range many {
+		many[i] = sound(strconv.Itoa(i+1), "Sound "+strconv.Itoa(i))
+	}
+	for name, list := range map[string][]denproto.Sound{
+		"one twice":             {sound("1", "Horn"), sound("1", "Horn")},
+		"a bad name":            {sound("1", " Horn")},
+		"a bad ID":              {sound("01", "Horn")},
+		"more than a den keeps": many,
+	} {
+		if _, ok := cleanSounds(list); ok {
+			t.Errorf("%s: checked", name)
+		}
+	}
+	s := newState()
+	s.limits = denproto.Limits{FileSize: denproto.DefaultFileSize, MemberStorage: denproto.DefaultMemberStorage, DenStorage: denproto.DefaultDenStorage}
+	s.callLimits, s.soundLimits = denproto.DefaultCallLimits, denproto.DefaultSoundLimits
+	for _, e := range []struct {
+		t    string
+		data any
+		ok   bool
+	}{
+		{denproto.EventSoundCreated, sound("1", "Horn"), true},
+		{denproto.EventSoundUpdated, sound("1", "Big horn"), true},
+		{denproto.EventSoundCreated, sound("2", ""), false},
+		{denproto.EventSoundDeleted, denproto.SoundDeleted{ID: "x"}, false},
+		{denproto.EventSoundCreated, sound("3", "Bell"), true},
+		{denproto.EventSoundDeleted, denproto.SoundDeleted{ID: "1"}, true},
+	} {
+		ev, _ := denproto.NewEvent(e.t, 1, e.data)
+		if _, _, err := s.applyEvent(ev, denproto.Member{ID: "1"}); (err == nil) != e.ok {
+			t.Errorf("%s %+v: %v", e.t, e.data, err)
+		}
+	}
+	if v := s.view(Status{}, denproto.Member{}); len(v.Sounds) != 1 || v.Sounds[0].Name != "Bell" {
+		t.Errorf("the view's sounds are %+v", v.Sounds)
+	}
+	k, _ := s.kept()
+	if back, err := restore(k, nil); err != nil || len(back.sounds) != 1 || back.soundLimits != denproto.DefaultSoundLimits {
+		t.Errorf("the kept state came back as %v, %v", back, err)
 	}
 }

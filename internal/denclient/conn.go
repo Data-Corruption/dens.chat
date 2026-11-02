@@ -657,7 +657,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		retained := false
 		if c.den != nil {
 			retained = c.den.retention != d.Retention
-			c.den.limits, c.den.callLimits, c.den.retention = d.Limits, d.CallLimits, d.Retention
+			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -669,9 +669,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// The page shows the den's name, limits and retention; the address
 		// is this install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
-			CallLimits: d.CallLimits, Retention: d.Retention})
+			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits})
 		return out, err == nil, err
-	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking:
+	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking,
+		denproto.EventVoiceSounding:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(e)
 	case denproto.EventAuthRenewed:

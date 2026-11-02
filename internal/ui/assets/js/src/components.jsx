@@ -22,18 +22,40 @@ export function Card({ title, children, class: extra = '' }) {
 // centered on the i, unless the i sits near a panel's left edge, which
 // would cut a centered tip off: then to its right, from the i's top down,
 // so one by a panel's top edge isn't cut off either. One that would still
-// run past the window's edge moves in from it, and one with no room below
-// opens above.
+// run past the window's edge, or a list's around it, moves in from it, and
+// one with no room below opens above.
 const SIDES = {
     bottom: 'tooltip-bottom',
     right: 'tooltip-right [--tt-inset:0_auto] [--tt-trans:0]',
     top: 'tooltip-top',
 };
 
+// clipOf is the part of the window that the boxes around el leave showing:
+// the window, less any box around it that clips what runs past its edges,
+// as a list that scrolls does, which would cut a tip in it off.
+function clipOf(el) {
+    const out = { left: 0, top: 0, right: document.documentElement.clientWidth, bottom: innerHeight };
+    for (let p = el.parentElement; p; p = p.parentElement) {
+        const s = getComputedStyle(p);
+        if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+        const r = p.getBoundingClientRect();
+        if (s.overflowX !== 'visible') {
+            out.left = Math.max(out.left, r.left);
+            out.right = Math.min(out.right, r.right);
+        }
+        if (s.overflowY !== 'visible') {
+            out.top = Math.max(out.top, r.top);
+            out.bottom = Math.min(out.bottom, r.bottom);
+        }
+    }
+    return out;
+}
+
 // useTip opens a tip on hover by a mouse, on keyboard focus, and on a tap,
 // which a touch screen has instead of hover (M13.2): a tap's tip stays
 // until the next tap, on it or anywhere else, or Escape. side is where it
-// opens if there's room; its place moves to stay within the window.
+// opens if there's room; its place moves to stay within the window, and
+// within a list around it that would clip it, which it wraps to fit.
 function useTip(side) {
     const wrap = useRef(null);
     const content = useRef(null);
@@ -64,15 +86,16 @@ function useTip(side) {
         const el = content.current;
         const at = wrap.current?.getBoundingClientRect();
         if (!el || !at) return;
-        const w = el.offsetWidth;
+        const bounds = clipOf(wrap.current);
+        const room = Math.max(0, Math.round(bounds.right - bounds.left - 16));
+        const w = Math.min(el.offsetWidth, room);
         const h = el.offsetHeight;
-        const vw = document.documentElement.clientWidth;
         let next = place.side;
-        if (next === 'right' && at.right + 8 + w > vw - 8) next = 'bottom';
-        if (next === 'bottom' && at.bottom + 8 + h > innerHeight - 8 && at.top - 8 - h > 8) next = 'top';
+        if (next === 'right' && at.right + 8 + w > bounds.right - 8) next = 'bottom';
+        if (next === 'bottom' && at.bottom + 8 + h > bounds.bottom - 8 && at.top - 8 - h > bounds.top + 8) next = 'top';
         const left = at.left + at.width / 2 - w / 2;
-        const shift = next === 'right' ? 0 : Math.round(tipShift({ left, right: left + w, width: w }, vw));
-        if (next !== place.side || shift !== place.shift) setPlace({ side: next, shift });
+        const shift = next === 'right' ? 0 : Math.round(tipShift({ left, right: left + w, width: w }, bounds));
+        if (next !== place.side || shift !== place.shift || room !== place.room) setPlace({ side: next, shift, room });
     }, [open, place]);
     return {
         open,
@@ -87,7 +110,10 @@ function useTip(side) {
         contentProps: {
             ref: content,
             hidden: !open,
-            style: place.shift ? { '--tt-trans': `calc(-50% + ${Math.round(place.shift)}px)` } : undefined,
+            style: {
+                ...(place.shift ? { '--tt-trans': `calc(-50% + ${Math.round(place.shift)}px)` } : {}),
+                ...(place.room ? { maxWidth: `min(18rem, ${place.room}px)` } : {}),
+            },
         },
         triggerProps: {
             onFocus: (e) => setFocus(e.currentTarget.matches?.(':focus-visible') ?? false),

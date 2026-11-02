@@ -36,12 +36,19 @@
 // the member too, as shares start and end, and as the member's microphone
 // opens and closes, whatever moves it. Its sounds play as its voices do,
 // through the call's context where that plays them.
+//
+// From M14.3 the den streams its soundboard's sounds into the call on a
+// track of the call's own, which the page plays as it plays a member, at
+// the member's soundboard volume, and silent while they're deafened. The
+// member plays a sound for the call through the den, which says whose
+// sound plays, and that player's ring lights as it does.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
 import { NO_CALLS, NO_SHARING, autoplays, canCall, canShare, inApp } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
 import { callSounds, playSound, setSoundRoute, warmSounds } from './sounds.js';
+import { soundRefusal } from './soundboard.js';
 
 const MIC = 'DENS_MIC';
 const SPEAKER = 'DENS_SPEAKER';
@@ -163,8 +170,20 @@ let shareNotice = null;
 // stream once it comes, and how loud its sound plays.
 const watched = new Map();
 // denView is what the page knows of the call's den: this member's ID, the
-// den's limits, its calls the member can see, and members' names.
+// den's limits, its calls the member can see, and members' names; and from
+// M14.3 the member's role, the den's sounds and its limits for them.
 let denView = null;
+// sounding is the member whose sound plays in the call, by the den's word,
+// or '' (M14.3); board is the member's soundboard: when their wait after
+// their last sound passes, by this page's clock, and why the den refused
+// the last sound they asked for.
+let sounding = '';
+let board = { waitUntil: 0, notice: '' };
+
+// SOUNDBOARD is the key the soundboard's stream plays under, among the
+// members': the stream the den names it, which no member's ID can be, and
+// the volume the browser keeps for it, by den.
+export const SOUNDBOARD = 'soundboard';
 
 // The page's sounds play as the call's voices do (M14.2): through the
 // call's context where that plays them, and otherwise on the speaker the
@@ -216,6 +235,8 @@ function snapshot() {
         shareNotice,
         watched: [...watched.values()].map((w) => ({ ...w })),
         den: denView,
+        sounding,
+        board,
     };
 }
 
@@ -268,6 +289,8 @@ export async function joinCall(den, channel, label) {
     call = { den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false };
     audible = new Set();
     talkers = new Set();
+    sounding = '';
+    board = { ...board, notice: '' };
     unsent.length = 0;
     loadDen(call);
     // The click that joins lets audio start, so the call's context starts
@@ -808,8 +831,13 @@ export function ringing(heardNow, talkersNow, me, self) {
 
 // rings says whether a member of a call rings, from who rings in it, by
 // their ID or "self" for this page's member, me: never while they're
-// muted, by themselves or by staff, whatever the den or the meters say.
-export function rings(m, me, ringingNow) {
+// muted, by themselves or by staff, whatever the den or the meters say,
+// but while their sound plays, by the den's word, soundingNow (M14.3),
+// since a member playing a sound is often muted. Nobody rings for a page
+// whose member is deafened, deafened, who hears none of it.
+export function rings(m, me, ringingNow, soundingNow = '', deafened = false) {
+    if (deafened) return false;
+    if (soundingNow && m.id === soundingNow) return true;
     return !m.muted && !m.staff_muted && !!ringingNow?.has(m.id === me ? 'self' : m.id);
 }
 
@@ -1212,6 +1240,7 @@ function handle(msg) {
     else if (e.resumed) resumed();
     else if (e.refused) refused(e.refused);
     else if (e.talking) talked(e.talking);
+    else if (typeof e.sounding === 'string') sounded(e.sounding);
     else if (e.ended) ended(e.ended);
 }
 
@@ -1284,6 +1313,8 @@ function play(e) {
         }
         return;
     }
+    // The soundboard plays as a member does, under its own key, but rings
+    // for nobody: the den says whose sound it is (M14.3).
     const member = stream.id;
     let audio = audios.get(member);
     if (!audio) {
@@ -1301,7 +1332,7 @@ function play(e) {
     audio.srcObject = stream;
     audio.play().catch(() => {});
     if (autoplays()) replaySoon();
-    meter(member, stream);
+    if (member !== SOUNDBOARD) meter(member, stream);
     // A member who leaves takes their track with them.
     stream.onremovetrack = () => {
         if (stream.getTracks().length === 0 && audio.srcObject === stream) {
@@ -1414,8 +1445,10 @@ function hold() {
     c.resuming = false;
     clearTimeout(c.restartBy);
     c.restartBy = null;
-    // The den's word on push to talk waits for the resume (M11).
+    // The den's word on push to talk, and on whose sound plays, waits for
+    // the resume (M11, M14.3).
     talkers = new Set();
+    sounding = '';
     ring();
     if (c.status !== 'reconnecting') {
         c.status = 'reconnecting';
@@ -1494,6 +1527,7 @@ function dropped(reason, why) {
     c.held = false;
     c.resuming = false;
     talkers = new Set();
+    sounding = '';
     ring();
     if (c.status !== 'reconnecting') {
         c.status = 'reconnecting';
@@ -1559,6 +1593,8 @@ function finish(why) {
     stopMeters();
     audible = new Set();
     talkers = new Set();
+    sounding = '';
+    board = { waitUntil: 0, notice: '' };
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
     notify();
@@ -1690,9 +1726,12 @@ async function loadDen(c) {
         denView = {
             den: c.den,
             me: v.me.id,
+            role: v.me.role,
             limits: v.call_limits,
             calls: v.calls || [],
             names: new Map((v.members || []).map((m) => [m.id, m.display_name])),
+            sounds: v.sounds || [],
+            soundLimits: readSoundLimits(v.sound_limits),
         };
         followDen();
     } catch {
@@ -1705,12 +1744,27 @@ function denEvents(events) {
     if (!denView) return;
     for (const e of events) {
         if (e.t === 'voice.state') denView = { ...denView, calls: applyCalls(denView.calls, e.d) };
-        else if (e.t === 'den.updated' && e.d.call_limits) denView = { ...denView, limits: e.d.call_limits };
-        else if (e.t === 'member.joined' || e.t === 'member.updated') {
+        else if (e.t === 'den.updated') {
+            denView = { ...denView, limits: e.d.call_limits || denView.limits, soundLimits: readSoundLimits(e.d.sound_limits) };
+        } else if (e.t === 'member.joined' || e.t === 'member.updated') {
             denView = { ...denView, names: new Map(denView.names).set(e.d.id, e.d.display_name) };
-        }
+            if (e.d.id === denView.me) denView.role = e.d.role;
+        } else if (e.t.startsWith('sound.')) denView = { ...denView, sounds: applySounds(denView.sounds, e) };
     }
     followDen();
+}
+
+// readSoundLimits reads a den's limits for its soundboard, or null for a
+// den older than it, which has none (M14.3).
+export function readSoundLimits(l) {
+    return l && Number.isInteger(l.longest) && l.longest > 0 ? { sounds: l.sounds, longest: l.longest, wait: l.wait } : null;
+}
+
+// applySounds brings a den's sounds up to date with one of its events: one
+// added or renamed, or deleted (M14.3).
+export function applySounds(sounds, e) {
+    const rest = (sounds || []).filter((s) => s.id !== e.d.id);
+    return e.t === 'sound.deleted' ? rest : [...rest, e.d];
 }
 
 // myCall is the den's word on the page's call, and me this member in it.
@@ -1967,9 +2021,17 @@ export function speakerID() {
     return stored(SPEAKER);
 }
 
-// refused is the den refusing the page's share, or its watch of one.
+// refused is the den refusing the page's share, its watch of one, or a
+// sound it asked to play (M14.3), whose wait the page takes as starting
+// now where it didn't know of it.
 function refused(r) {
     const limits = denView?.limits;
+    if (r.what === 'sound') {
+        board = { ...board, notice: soundRefusal(r.reason, denView?.soundLimits) };
+        if (r.reason === 'wait' && board.waitUntil <= Date.now()) board.waitUntil = Date.now() + (denView?.soundLimits?.wait || 0) * 1000;
+        notify();
+        return;
+    }
     if (r.what === 'share') {
         endShare(refusalText('share', r.reason, limits));
         return;
@@ -1982,6 +2044,42 @@ function refused(r) {
 export function clearShareNotice() {
     shareNotice = null;
     notify();
+}
+
+// Soundboard (M14.3) ---------------------------------------------------------
+
+// sounded is the den's word on whose sound plays in the call: the member's
+// own ending starts their wait.
+function sounded(member) {
+    if (sounding && sounding === denView?.me && member !== sounding) {
+        board = { ...board, waitUntil: Date.now() + (denView?.soundLimits?.wait || 0) * 1000 };
+    }
+    sounding = member;
+    notify();
+}
+
+// playBoardSound asks the den to play one of its sounds in the call.
+export function playBoardSound(id) {
+    if (!call) return;
+    board = { ...board, notice: '' };
+    sendCall('voice.sound', { den: call.den, sound_id: id });
+    notify();
+}
+
+export function clearBoardNotice() {
+    board = { ...board, notice: '' };
+    notify();
+}
+
+// boardVolume is how loud the soundboard plays here in the call's den.
+export function boardVolume() {
+    return call ? volumeIn(volumes, call.den, SOUNDBOARD) : 1;
+}
+
+// setBoardVolume sets how loud the soundboard plays here, mid-call too, and
+// keeps it, as a member's volume is kept; 0 mutes it.
+export function setBoardVolume(volume) {
+    if (call) setVolume(call.den, SOUNDBOARD, volume);
 }
 
 // Speaking ----------------------------------------------------------------

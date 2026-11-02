@@ -33,6 +33,10 @@ const (
 	// the call's members who holds it.
 	EventVoiceTalk    = "voice.talk" // a client frame
 	EventVoiceTalking = "voice.talking"
+	// From M14.3: a member plays one of the den's sounds in their call, and
+	// the den tells the call's members whose sound plays.
+	EventVoiceSound    = "voice.sound" // a client frame
+	EventVoiceSounding = "voice.sounding"
 )
 
 // MaxSDP bounds an offer or an answer, in bytes.
@@ -162,23 +166,30 @@ type VoiceWatch struct {
 	On       bool   `json:"on"`
 }
 
-// What a refusal refuses, and why (M4.2).
+// What a refusal refuses, and why (M4.2), and from M14.3 a sound, refused
+// as off with the soundboard off, as staff muted, as not found for a sound
+// the den no longer has, or for one of its own reasons.
 const (
 	RefusedShare = "share"
 	RefusedWatch = "watch"
+	RefusedSound = "sound"
 
-	RefusedOff        = "off"         // the den allows no shares
+	RefusedOff        = "off"         // the den allows no shares, or has the soundboard off
 	RefusedFull       = "full"        // as many share as the den allows, or watch that share, or the member watches MaxWatching
 	RefusedStaffMuted = "staff_muted" // staff muted the member
 	RefusedNotSharing = "not_sharing" // that member isn't sharing in this call
+	RefusedPlaying    = "playing"     // a sound plays in the call (M14.3)
+	RefusedWait       = "wait"        // the member's wait after their last sound hasn't passed (M14.3)
 )
 
-// VoiceRefused says the den refused a share or a watch, which leaves the
-// call as it was (M4.2). MemberID names the share a watch asked for.
+// VoiceRefused says the den refused a share, a watch or a sound, which
+// leaves the call as it was (M4.2). MemberID names the share a watch asked
+// for, and SoundID the sound asked for (M14.3).
 type VoiceRefused struct {
 	ChannelID string `json:"channel_id"`
 	What      string `json:"what"`
 	MemberID  string `json:"member_id,omitempty"`
+	SoundID   string `json:"sound_id,omitempty"`
 	Reason    string `json:"reason"`
 }
 
@@ -198,6 +209,18 @@ type VoiceTalking struct {
 // TalksPerSecond is how often the den lights a member's push-to-talk ring
 // at most (M11); a release always puts it out.
 const TalksPerSecond = 5
+
+// VoiceSound plays one of the den's sounds in the member's call (M14.3).
+type VoiceSound struct {
+	SoundID string `json:"sound_id"`
+}
+
+// VoiceSounding names the member whose sound plays in a call, or none, for
+// the call's members alone (M14.3). Each replaces the last.
+type VoiceSounding struct {
+	ChannelID string `json:"channel_id"`
+	MemberID  string `json:"member_id,omitempty"`
+}
 
 // VoiceMuteRequest is staff muting a member in calls, or lifting it.
 type VoiceMuteRequest struct {
@@ -261,6 +284,10 @@ type VoiceState struct {
 // ScreenStream names the stream a member's share reaches those who watch
 // it in (M4.2), as "screen-<member ID>", which the page reads.
 func ScreenStream(member string) string { return "screen-" + member }
+
+// SoundboardStream names the stream the den's sounds reach the members of
+// a call in (M14.3), which the page reads.
+const SoundboardStream = "soundboard"
 
 // StripCandidates takes every candidate out of an SDP, and puts the
 // unspecified address in its connection (c=), RTCP (a=rtcp:) and origin

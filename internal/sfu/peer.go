@@ -41,17 +41,22 @@ const keyframeGap = 500 * time.Millisecond
 
 // The IDs of the tracks the den sends: a member's voice, in a stream named
 // for the member, and their share's screen and sound, in a stream
-// denproto.ScreenStream names (M4.2).
+// denproto.ScreenStream names (M4.2); and the call's soundboard, in the
+// stream denproto.SoundboardStream names (M14.3).
 const (
 	voiceTrack  = "audio"
 	screenTrack = "screen"
 	soundTrack  = "sound"
+	boardTrack  = "soundboard"
 )
 
 // What a peer sends its member goes by another member's ID for their
-// voice, and by these for the screen and sound of a share they watch.
+// voice, by these for the screen and sound of a share they watch, and by
+// boardKey for the call's soundboard.
 func screenKey(member string) string { return "screen:" + member }
 func soundKey(member string) string  { return "sound:" + member }
+
+const boardKey = "soundboard"
 
 // ErrNotSharing is returned for a watch of a member who isn't sharing.
 var ErrNotSharing = errors.New("the member isn't sharing")
@@ -192,6 +197,21 @@ func (s *SFU) Join(room, member string, bitrate int, signal Signal) (*Peer, erro
 			return fail(err)
 		}
 	}
+	// The call's soundboard reaches each member from their first offer, so
+	// a sound needs none of its own, and a member joining partway hears
+	// the rest of it (M14.3).
+	b := s.boards[room]
+	if b == nil {
+		if b, err = newBoard(); err != nil {
+			s.mu.Unlock()
+			return fail(err)
+		}
+	}
+	if err := p.send(boardKey, b.track, nil); err != nil {
+		s.mu.Unlock()
+		return fail(err)
+	}
+	s.boards[room] = b
 	var renegotiate, broken []*Peer
 	for _, o := range others {
 		if o.send(member, p.track, p) == nil {
@@ -327,8 +347,8 @@ func (p *Peer) note(format string, args ...any) {
 }
 
 // shapes gives, by mid, what each of the member's sections asks of their
-// browser: voice at the channel's bitrate, a share's sound in stereo, and
-// the screen they share within its bitrate. The caller holds the peer's
+// browser: voice at the channel's bitrate, a share's sound and the
+// soundboard in stereo, and the screen they share within its bitrate. The caller holds the peer's
 // lock, after the offer has given every section its mid.
 func (p *Peer) shapes() func(mid string) shape {
 	byMid := map[string]shape{}
@@ -342,7 +362,7 @@ func (p *Peer) shapes() func(mid string) shape {
 		case mid == "":
 		case t == p.screen:
 			byMid[mid] = shape{bitrate: p.shareBitrate}
-		case t == p.sound || (out != nil && out.ID() == soundTrack):
+		case t == p.sound || (out != nil && (out.ID() == soundTrack || out.ID() == boardTrack)):
 			byMid[mid] = shape{opus: soundParams}
 		case t.Kind() == webrtc.RTPCodecTypeAudio:
 			byMid[mid] = shape{opus: voiceParams(p.voice)}
@@ -617,6 +637,11 @@ func (p *Peer) close() bool {
 		delete(room, p.member)
 		if len(room) == 0 {
 			delete(s.rooms, p.room)
+			// A call nobody is in plays nothing.
+			if b := s.boards[p.room]; b != nil {
+				b.stopLocked()
+				delete(s.boards, p.room)
+			}
 		}
 		for _, o := range room {
 			voice := o.retire(p.member)

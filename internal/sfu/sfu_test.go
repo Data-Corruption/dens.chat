@@ -122,6 +122,20 @@ func (m *member) waitOffers(n int) []offer {
 	return nil
 }
 
+// withoutBoard is an SDP without the call's soundboard (M14.3), whose
+// section every offer carries, for checks of the sections that come and go
+// with members and shares.
+func withoutBoard(sdp string) string {
+	parts := strings.Split(sdp, "\r\nm=")
+	kept := parts[:1]
+	for _, p := range parts[1:] {
+		if !strings.Contains(p, "\r\na=msid:"+denproto.SoundboardStream+" ") {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, "\r\nm=")
+}
+
 func (m *member) hears(other *member) {
 	m.t.Helper()
 	if err := m.caller.WaitHeard(other.id, 20, 10*time.Second); err != nil {
@@ -179,13 +193,14 @@ func TestOffersAskForTheBitrate(t *testing.T) {
 	for who, offers := range map[string][]offer{"alice": alice.waitOffers(2), "bob": bob.waitOffers(1)} {
 		for _, o := range offers {
 			var params []string
-			for _, line := range strings.Split(o.sdp, "\r\n") {
+			voices := withoutBoard(o.sdp)
+			for _, line := range strings.Split(voices, "\r\n") {
 				if p, ok := strings.CutPrefix(line, "a=fmtp:111 "); ok {
 					params = append(params, p)
 				}
 			}
 			want := voiceParams(testBitrate)
-			if len(params) != strings.Count(o.sdp, "m=audio") || slices.ContainsFunc(params, func(p string) bool { return p != want }) {
+			if len(params) != strings.Count(voices, "m=audio") || slices.ContainsFunc(params, func(p string) bool { return p != want }) {
 				t.Errorf("%s's offer %d asks for %q, not %q in every section", who, o.version, params, want)
 			}
 		}
@@ -294,7 +309,7 @@ func TestOffersFollowJoinsAndLeaves(t *testing.T) {
 	carol.hears(alice)
 	carol.hears(bob)
 	alice.hears(carol)
-	sections := func(sdp string) int { return strings.Count(sdp, "m=audio") }
+	sections := func(sdp string) int { return strings.Count(withoutBoard(sdp), "m=audio") }
 	got := alice.waitOffers(3)
 	if n := sections(got[2].sdp); n != 3 {
 		t.Fatalf("alice's offer after carol joined has %d sections, not 3", n)
@@ -352,7 +367,7 @@ func TestUnansweredOfferFails(t *testing.T) {
 	}
 	// A failed peer is out of the room: a newcomer gets no section for it.
 	bob := join(t, s, udpPort, tcpPort, "41", "1002", sfutest.Options{}, true)
-	if n := strings.Count(bob.waitOffers(1)[0].sdp, "m=audio"); n != 1 {
+	if n := strings.Count(withoutBoard(bob.waitOffers(1)[0].sdp), "m=audio"); n != 1 {
 		t.Errorf("a newcomer's offer has %d sections, not 1", n)
 	}
 }
@@ -424,8 +439,8 @@ func TestHeldCallKeepsItsMedia(t *testing.T) {
 
 	alice.peer.Resume()
 	got := alice.waitOffers(before + 1)
-	if o := got[before]; o.version != before+1 || strings.Count(o.sdp, "m=audio") != 3 {
-		t.Fatalf("the offer after resuming has version %d and %d sections", o.version, strings.Count(o.sdp, "m=audio"))
+	if o := got[before]; o.version != before+1 || strings.Count(withoutBoard(o.sdp), "m=audio") != 3 {
+		t.Fatalf("the offer after resuming has version %d and %d sections", o.version, strings.Count(withoutBoard(o.sdp), "m=audio"))
 	}
 	alice.hears(carol)
 	carol.hears(alice)

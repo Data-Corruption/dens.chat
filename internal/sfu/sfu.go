@@ -2,8 +2,10 @@
 // connection per member in a call, on the den's two media ports, which
 // forwards each member's audio to the others in their call, and from M4.2
 // a member's screen share to those who watch it, without decoding either.
-// The den (internal/den) decides who may be in which call and who may share
-// and watch; this package carries the media and makes the offers.
+// From M14.3 each call has a track of its own, its soundboard's, which the
+// den plays its sounds on. The den (internal/den) decides who may be in
+// which call, who may share and watch, and what sound plays; this package
+// carries the media and makes the offers.
 package sfu
 
 import (
@@ -195,10 +197,12 @@ type SFU struct {
 	connect time.Duration
 	debugf  func(format string, args ...any)
 
-	// mu guards the rooms, and is taken before any peer's lock.
+	// mu guards the rooms and their soundboards, and is taken before any
+	// peer's lock.
 	mu     sync.Mutex
 	closed bool
 	rooms  map[string]map[string]*Peer // room, then member
+	boards map[string]*board           // room
 }
 
 // New runs calls on the den's media ports, which it closes when it stops.
@@ -226,6 +230,7 @@ func New(udp *net.UDPConn, tcp net.Listener, cfg Config) (*SFU, error) {
 		connect: cfg.ConnectTimeout,
 		debugf:  cfg.Debugf,
 		rooms:   map[string]map[string]*Peer{},
+		boards:  map[string]*board{},
 	}
 	if s.debugf == nil {
 		s.debugf = func(string, ...any) {}

@@ -43,3 +43,10 @@ ffmpeg -f lavfi -i "testsrc2=size=160x120:rate=30:duration=1" -itsoffset 0.05 -f
   -map 0:v -map 1:a -c:v libopenh264 -b:v 200k -g 30 -c:a aac -b:a 64k -video_track_timescale 90000 \
   -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact -movflags +faststart late-sound.mp4
 ```
+
+`tone.mp3` is made the same way, for the soundboard's browser check (M14.3), whose page prepares sounds from the kinds of files members have: a 660 Hz tone for a second and a half, in MP3 at 64 kbps, with no tags.
+
+```sh
+ffmpeg -f lavfi -i "sine=frequency=660:duration=1.5:sample_rate=44100" -c:a libmp3lame -b:a 64k -ac 1 \
+  -map_metadata -1 -fflags +bitexact -flags:a +bitexact tone.mp3
+```

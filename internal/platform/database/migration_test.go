@@ -25,13 +25,16 @@ var releasedSchema = []struct {
 
 // A database a release left, with a row in every table, migrates to this
 // build's schema keeping every row (M14.2, the first migration since
-// v1.0.0): the steps before it never change, so running them alone makes
-// the release's schema.
+// v1.0.0), and so does a backup made of it, which a restore installs as
+// it is: the steps before it never change, so running them alone makes the
+// release's schema. A table keeps every column it had, with the same
+// values; a step may add columns, as M14.3 adds the den's limits for its
+// soundboard, which hold their defaults.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
 		t.Run(released.release, func(t *testing.T) {
-			dir := t.TempDir()
+			dir, backedUp := t.TempDir(), t.TempDir()
 			log, err := xlog.New(filepath.Join(t.TempDir(), "logs"), "error")
 			if err != nil {
 				t.Fatal(err)
@@ -52,46 +55,89 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// The tables' counters too, since an ID is never given out twice.
+			tables = append(tables, "sqlite_sequence")
+			columns := map[string]string{}
 			before := map[string]string{}
 			for _, table := range tables {
-				if before[table] = dumpTable(t, old, table); before[table] == "" {
+				columns[table] = columnsOf(t, old, table)
+				if before[table] = dumpColumns(t, old, table, columns[table]); before[table] == "" {
 					t.Errorf("%s's %s holds no row to keep", released.release, table)
 				}
 			}
-			// The tables' counters too, since an ID is never given out twice.
-			tables = append(tables, "sqlite_sequence")
-			before["sqlite_sequence"] = dumpTable(t, old, "sqlite_sequence")
+			// A backup holds a copy of the database, made as a backup is.
+			if err := Snapshot(ctx, old, filepath.Join(backedUp, FileName)); err != nil {
+				t.Fatal(err)
+			}
 			if err := old.Close(); err != nil {
 				t.Fatal(err)
 			}
 
-			db, err := New(dir, log, bi, ApplyPendingMigrations)
-			if err != nil {
-				t.Fatalf("migrate from %s: %v", released.release, err)
-			}
-			defer db.Close()
-			if v, err := FileSchemaVersion(ctx, db); err != nil || v != SchemaVersion(bi) {
-				t.Fatalf("migrated to schema %d, %v; want %d", v, err, SchemaVersion(bi))
-			}
-			for _, table := range tables {
-				if after := dumpTable(t, db, table); after != before[table] {
-					t.Errorf("%s changed in the migration: before\n%s\nafter\n%s", table, before[table], after)
+			for what, at := range map[string]string{"the database": dir, "its backup": backedUp} {
+				db, err := New(at, log, bi, ApplyPendingMigrations)
+				if err != nil {
+					t.Fatalf("migrate %s from %s: %v", what, released.release, err)
 				}
-			}
-			now, err := Tables(ctx, db)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !slices.Contains(now, "sounds") || dumpTable(t, db, "sounds") != "" {
-				t.Fatalf("after the migration the tables are %v, the sounds table holding %q", now, dumpTable(t, db, "sounds"))
-			}
-			for _, check := range []string{"PRAGMA foreign_key_check", "PRAGMA integrity_check"} {
-				if got := dumpQuery(t, db, check); got != "" && got != `["ok"]` {
-					t.Errorf("%s after the migration: %s", check, got)
+				defer db.Close()
+				if v, err := FileSchemaVersion(ctx, db); err != nil || v != SchemaVersion(bi) {
+					t.Fatalf("%s migrated to schema %d, %v; want %d", what, v, err, SchemaVersion(bi))
+				}
+				for _, table := range tables {
+					if after := dumpColumns(t, db, table, columns[table]); after != before[table] {
+						t.Errorf("%s's %s changed in the migration: before\n%s\nafter\n%s", what, table, before[table], after)
+					}
+				}
+				now, err := Tables(ctx, db)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, table := range []string{"sounds", "den_named_files"} {
+					if !slices.Contains(now, table) || dumpTable(t, db, table) != "" {
+						t.Errorf("after the migration %s's tables are %v, %s holding %q", what, now, table, dumpTable(t, db, table))
+					}
+				}
+				var sounds, longest, wait int
+				if err := db.QueryRow(`SELECT sounds, sound_longest, sound_wait FROM den`).Scan(&sounds, &longest, &wait); err != nil ||
+					sounds != 50 || longest != 10 || wait != 5 {
+					t.Errorf("%s's den has the soundboard's limits %d, %d and %d, %v, not the defaults", what, sounds, longest, wait, err)
+				}
+				for _, check := range []string{"PRAGMA foreign_key_check", "PRAGMA integrity_check"} {
+					if got := dumpQuery(t, db, check); got != "" && got != `["ok"]` {
+						t.Errorf("%s after the migration: %s", check, got)
+					}
 				}
 			}
 		})
 	}
+}
+
+// columnsOf lists a table's columns, quoted for a query.
+func columnsOf(t *testing.T, db *sql.DB, table string) string {
+	t.Helper()
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?) ORDER BY cid`, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, `"`+strings.ReplaceAll(name, `"`, `""`)+`"`)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(names, ", ")
+}
+
+// dumpColumns lists a table's rows in some of its columns, as dumpTable
+// does.
+func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
+	t.Helper()
+	return dumpQuery(t, db, `SELECT `+columns+` FROM "`+strings.ReplaceAll(table, `"`, `""`)+`"`)
 }
 
 // fillEveryTable puts a row in each table of the initial schema, joined as

@@ -5,19 +5,22 @@
 // row for sharing the member's screen, and the list marks who shares,
 // which a click watches. From M13.4 the phone layout shows the call in a
 // bar across the top of the channel's pane, and a touch screen holds the
-// microphone on the call's button, by the thumb.
+// microphone on the call's button, by the thumb. From M14.3 the block,
+// the bar and the box open the den's soundboard, and the channel's row in
+// the list shows how the call stands, where the block's speaker did.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
 import { Tip } from './components.jsx';
-import { ICON, SpeakerIcon } from './icons.jsx';
+import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
 import { nav, useNarrow } from './nav.js';
 import { rank } from './people.jsx';
 import { canShare } from './platform.js';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import { Sheet, SheetRow } from './sheet.jsx';
+import { SoundboardButton } from './soundboard.jsx';
 import { createHold, useHoldsButton } from './touch.js';
 import {
     byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened, setMuted,
@@ -26,9 +29,13 @@ import {
 
 // useCall is the page's call, why the last one ended, who is speaking in
 // it, how loud each member plays here, and from M4.2 its share, the shares
-// it watches, and what it knows of the call's den.
+// it watches, and what it knows of the call's den; and from M14.3 whose
+// sound plays in it, and the member's soundboard.
 export function useCall() {
-    const [state, setState] = useState({ call: null, notice: null, speaking: new Set(), volumes: {}, share: null, shareNotice: null, watched: [], den: null });
+    const [state, setState] = useState({
+        call: null, notice: null, speaking: new Set(), volumes: {}, share: null, shareNotice: null, watched: [], den: null, sounding: '',
+        board: { waitUntil: 0, notice: '' },
+    });
     useEffect(() => onCall(setState), []);
     return state;
 }
@@ -73,6 +80,12 @@ const STATUS = {
     reconnecting: (where) => `Reconnecting to ${where}…`,
 };
 
+// callState is how a call stands in a word, for the channel's row, which
+// shows it on its speaker (M14.3).
+export function callState(status) {
+    return { joining: 'joining', connecting: 'connecting', connected: 'connected', reconnecting: 'reconnecting' }[status] || '';
+}
+
 // notices are what the member should know of their call: why the last one
 // ended, that it waits for the microphone, that staff muted them in this
 // den's, or that push to talk has no key yet, where the call's button
@@ -115,23 +128,45 @@ function notices(call, notice, denID, staffMuted, shareNotice, holds) {
 // its controls in a row. On the phone layout it keeps clear of the call's
 // button in the screen's corner, as roomy says (M13.4).
 export function CallBlock({ denID, staffMuted, roomy }) {
-    const { call, notice, share, shareNotice, den } = useCall();
+    const { call, notice, share, shareNotice, den, sounding, board } = useCall();
     const holds = useHoldsButton();
     const lines = notices(call, notice, denID, staffMuted, shareNotice, holds);
     if (!call && !lines.length) return null;
     return (
         <div class={`flex flex-col gap-1 border-t border-base-300 bg-bar py-1.5 pl-2 ${roomy && call ? 'pr-10' : 'pr-2'}`}>
             {lines.length > 0 && <div class="flex flex-col gap-1 px-1 py-0.5 text-xs">{lines}</div>}
+            {call && <StatusLine denID={denID} call={call} />}
             {call && share && <ShareRow call={call} share={share} den={den} />}
-            {call && <CallControls denID={denID} call={call} share={share} den={den} />}
+            {call && <CallControls denID={denID} call={call} share={share} den={den} sounding={sounding} board={board} />}
         </div>
+    );
+}
+
+// StatusLine says how the call stands, in the list's block, only while it
+// isn't connected, or while it's in another den, which it names, a tap on
+// it going there (M14.3); the channel's row shows the rest.
+function StatusLine({ denID, call }) {
+    const elsewhere = call.den !== denID;
+    if (call.status === 'connected' && !elsewhere) return null;
+    const said = STATUS[call.status](elsewhere ? `${call.label.channel} in ${call.label.den}` : call.label.channel);
+    const color = call.status === 'connected' ? 'text-success' : 'text-warning';
+    const line = 'flex min-h-6 items-center gap-2 px-1.5 text-left text-xs';
+    if (!elsewhere) {
+        return <p role="status" class={`${line} ${color}`} data-call-status><SpeakerIcon size="h-4 w-4" /><span class="truncate text-base-content/80">{said}</span></p>;
+    }
+    return (
+        <button type="button" class={`${line} rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().den(call.den, '', 'list')}>
+            <SpeakerIcon size="h-4 w-4" />
+            <span role="status" class="truncate text-base-content/80">{said}</span>
+            <span class="sr-only">Go to its den</span>
+        </button>
     );
 }
 
 // CallBox is the call, and its notices, boxed on the pages other than a
 // den's, whose channel lists hold them at their foot.
 export function CallBox() {
-    const { call, notice, share, shareNotice, den } = useCall();
+    const { call, notice, share, shareNotice, den, sounding, board } = useCall();
     const holds = useHoldsButton();
     const lines = notices(call, notice, undefined, false, shareNotice, holds);
     if (!call && !lines.length) return null;
@@ -139,7 +174,7 @@ export function CallBox() {
         <div class="flex flex-col gap-2 rounded-box bg-base-200 p-2">
             {lines.length > 0 && <div class="flex flex-col gap-1 text-xs">{lines}</div>}
             {call && share && <ShareRow call={call} share={share} den={den} />}
-            {call && <CallControls call={call} share={share} den={den} labeled />}
+            {call && <CallControls call={call} share={share} den={den} sounding={sounding} board={board} labeled />}
         </div>
     );
 }
@@ -147,10 +182,11 @@ export function CallBox() {
 // CallBar is the call across the top of the channel's pane on the phone
 // layout (M13.4), under its header, for 40 pixels while in a call, as a
 // wider window shows its block beside the channel: where it is and how it
-// stands, deafen and leave. A tap on the rest goes to the list of the
-// call's den, where its members and its other controls are.
+// stands, the soundboard, mute, since a narrow window with a mouse has no
+// call's button (M14.3), deafen and leave. A tap on the rest goes to the
+// list of the call's den, where its members and its other controls are.
 export function CallBar({ denID }) {
-    const { call } = useCall();
+    const { call, den, sounding, board } = useCall();
     if (!call) return null;
     const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
     const said = STATUS[call.status](where);
@@ -162,6 +198,10 @@ export function CallBar({ denID }) {
                 <span role="status" class="truncate text-sm">{said}</span>
                 <span class="sr-only">Show the call</span>
             </button>
+            <SoundboardButton call={call} den={den} board={board} sounding={sounding} where="bar" />
+            <IconButton label={call.muted ? 'Unmute' : 'Mute'} pressed={call.muted} danger={call.muted} onClick={() => setMuted(!call.muted)}>
+                <MicIcon off={call.muted} size="h-[18px] w-[18px]" />
+            </IconButton>
             <IconButton label={call.deafened ? 'Undeafen' : 'Deafen'} pressed={call.deafened} danger={call.deafened}
                 onClick={() => setDeafened(!call.deafened)}>
                 <HeadphonesIcon off={call.deafened} size="h-[18px] w-[18px]" />
@@ -291,8 +331,8 @@ function shareWhy(call, den) {
     return shareBlocked(den.limits, den.calls);
 }
 
-// ShareButton starts a share, between the call's speaker and its mute
-// button, or stops the one going on, when it shows pressed.
+// ShareButton starts a share, beside the call's mute button, or stops the
+// one going on, when it shows pressed.
 function ShareButton({ call, share, den }) {
     if (share) {
         return (
@@ -311,19 +351,24 @@ function ShareButton({ call, share, den }) {
     );
 }
 
-// CallControls are the call, in this den or another, in a row: a speaker
-// for whether it's connected, whose tip says where, and the buttons to
-// mute, deafen, open the voice settings and leave, spread evenly. labeled
-// spells out where beside the speaker, for pages with room for it. They
-// show only what the browser can do: a share where it can share (M13.4).
-function CallControls({ denID, call, share, den, labeled }) {
+// CallControls are the call, in this den or another, in a row: the
+// soundboard (M14.3), where the den has one, and the buttons to share,
+// mute, deafen, open the voice settings and leave, spread evenly, with how
+// the call stands for a screen reader, which the block's line and the
+// channel's row show. labeled spells out where and how it stands, before
+// the buttons, for pages with room for it, Home's box, whose soundboard
+// opens down. They show only what the browser can do: a share where it can
+// share (M13.4).
+function CallControls({ denID, call, share, den, sounding, board, labeled }) {
     const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
     const said = STATUS[call.status](where);
     const color = call.status === 'connected' ? 'text-success' : 'text-warning';
     const sharing = canShare() && <ShareButton call={call} share={share} den={den} />;
+    const soundboard = <SoundboardButton call={call} den={den} board={board} sounding={sounding} where={labeled ? 'box' : 'block'} />;
     const buttons = (
         <>
             {labeled && sharing}
+            {labeled && soundboard}
             <IconButton label={call.muted ? 'Unmute' : 'Mute'} pressed={call.muted} danger={call.muted} onClick={() => setMuted(!call.muted)}>
                 <MicIcon off={call.muted} size="h-[18px] w-[18px]" />
             </IconButton>
@@ -352,10 +397,8 @@ function CallControls({ denID, call, share, den, labeled }) {
     }
     return (
         <div class="flex items-center justify-between">
-            <span class={`flex h-8 w-8 shrink-0 items-center justify-center ${color}`}>
-                <span role="status" class="sr-only">{said}</span>
-                <Tip id="call-status" side="top" label={said} trigger={<span class={color}><SpeakerIcon /></span>}>{said}</Tip>
-            </span>
+            <span role="status" class="sr-only">{said}</span>
+            {soundboard}
             {sharing}
             {buttons}
         </div>
@@ -444,16 +487,6 @@ export function HeadphonesIcon({ off, size = 'h-4 w-4' }) {
     );
 }
 
-// CogIcon is an eight-toothed cog, for settings.
-export function CogIcon({ size = 'h-[18px] w-[18px]' }) {
-    return (
-        <svg class={size} {...ICON} stroke-width="1.3">
-            <path d="M13.06 6.43 L14.90 6.82 L14.90 9.18 L13.06 9.57 L12.69 10.47 L13.72 12.04 L12.04 13.72 L10.47 12.69 L9.57 13.06 L9.18 14.90 L6.82 14.90 L6.43 13.06 L5.53 12.69 L3.96 13.72 L2.28 12.04 L3.31 10.47 L2.94 9.57 L1.10 9.18 L1.10 6.82 L2.94 6.43 L3.31 5.53 L2.28 3.96 L3.96 2.28 L5.53 3.31 L6.43 2.94 L6.82 1.10 L9.18 1.10 L9.57 2.94 L10.47 3.31 L12.04 2.28 L13.72 3.96 L12.69 5.53Z" />
-            <circle cx="8" cy="8" r="2.2" />
-        </svg>
-    );
-}
-
 // ScreenIcon is a monitor, with an arrow going out of it while on: the
 // member is sharing.
 function ScreenIcon({ on }) {
@@ -506,14 +539,14 @@ function LeaveIcon() {
 // CallMembers lists who is in a voice channel's call, under the channel.
 // In the page's own call, a ring marks whoever is speaking or holds push to
 // talk (M11): speaking holds member IDs, and "self" for this page's member,
-// me. A member's name opens
+// me; and whoever's sound plays, sounding (M14.3). A member's name opens
 // their profile through onProfile. Everyone else's row has a menu that sets
 // how loud they play here, from volumes, and gives staff a way to mute or
 // disconnect those they rank above. A member who shares their screen has a
 // LIVE mark (M4.2), which watches or stops watching in the page's own call,
 // inCall, and elsewhere joins the call as label names it and watches;
 // watched holds the members whose shares the page watches.
-export function CallMembers({ denID, call, members, me, speaking, volumes, onProfile, inCall, label, watched, previewing }) {
+export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing }) {
     const [menu, setMenu] = useState('');
     const [error, setError] = useState('');
     const narrow = useNarrow();
@@ -576,7 +609,7 @@ export function CallMembers({ denID, call, members, me, speaking, volumes, onPro
                 {byName(call.members, members).map((m) => {
                     const member = members.get(m.id);
                     const name = member?.display_name || 'Unknown member';
-                    const talking = rings(m, me?.id, speaking);
+                    const talking = rings(m, me?.id, speaking, sounding, deafened);
                     // Everyone else's row has a menu, for their volume here,
                     // and for staff's actions when the member here outranks them.
                     const other = me && m.id !== me.id;

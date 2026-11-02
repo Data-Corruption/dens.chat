@@ -1,5 +1,27 @@
 # Changelog
 
+## [v1.7.0] - 2026-11-02
+
+### Added
+
+- Sounds: a short one for a DM or a mention, and in a call as someone joins or leaves, you included, as someone starts or stops sharing their screen, and as your microphone turns on or off. Turn each off, set how loud it is, or swap in a file of your own, under Sounds in the settings' new Notifications & sounds tab. A message makes one sound, with its notification; turning that kind of notification off silences it too, and a muted den or channel, or the channel on your screen, makes none.
+- A soundboard in each den. Moderators and the owner add sounds in the den's Manage, which the den's name at the top of its channel list now opens: any audio your browser plays, or a video's sound, each made about as loud as the rest. Anyone in a call plays one for everyone from the call's controls, or from the bar at the top of a channel on a phone, and their ring lights up while it plays. One plays at a time, you wait a few seconds after yours, and a slider sets how loud the soundboard is for you, down to silent. In Limits, the owner sets how many sounds the den keeps, how long each may be, up to 5 minutes, and how long members wait between them.
+- On a YouTube player's cover, the title links to the video and the channel's name to the channel; a click anywhere else still plays it.
+
+### Changed
+
+- Links show by their color, and are underlined only under the pointer or the keyboard's focus.
+- A call's state shows on its channel's speaker in the list, green once connected and yellow while connecting. The call's controls hold the soundboard where the speaker was, and say how the call stands only while it isn't connected. On a phone, the call's bar gains mute and the soundboard.
+- While you're deafened, no one's ring lights up for you, and the soundboard waits until you undeafen.
+- Notifications moved from Chat & media to Notifications & sounds.
+
+### Fixed
+
+- A phone asleep for over an hour dropped its connection to each den and signed in again, since Dens renewed its session by a clock that stops while the phone sleeps. It renews in time now.
+- A thin video, like two phone videos side by side in one message, hid its full screen button. The button always shows now, and full screen has the rest of the controls.
+- The note on a small mark, like a muted DM's bell, could be cut off at the edge of the channel list. It stays inside the list now.
+- On Linux with a recent systemd, as Arch Linux has now, sending a video, an audio file, or a photo that goes as a smaller copy or in another format failed, saying the den couldn't be reached, and a den hosted there turned videos and audio away. The sandbox Dens runs in refused how it lowered its media worker's priority; it asks in a way the sandbox allows now.
+
 ## [v1.6.0] - 2026-10-31
 
 ### Added

@@ -55,6 +55,7 @@ type Options struct {
 // and counts the packets that reach it from each member. From M4.2 it
 // shares a screen, with sound, when asked, counts what reaches it of the
 // shares it watches, and asks for keyframes as a viewer's browser does.
+// From M14.3 it keeps what reaches it on the call's soundboard.
 type Caller struct {
 	pc     *webrtc.PeerConnection
 	mic    *webrtc.TrackLocalStaticRTP
@@ -80,7 +81,22 @@ type Caller struct {
 	sharing, withSound          bool
 	screenSending, soundSending bool
 	keyframeRequests            int
+	// board holds what reached the caller on the call's soundboard, in the
+	// order it came, with when (M14.3).
+	board []BoardPacket
 }
+
+// BoardPacket is a packet that reached a caller on the call's soundboard:
+// its payload, its RTP timestamp, and when it came (M14.3).
+type BoardPacket struct {
+	Payload   []byte
+	Timestamp uint32
+	At        time.Time
+}
+
+// maxBoard bounds the soundboard's packets a caller keeps: ten minutes of
+// 20 ms packets.
+const maxBoard = 30_000
 
 // browserOpus is Opus as Chromium describes it in its answers. The caller
 // answers with its parameters, as a browser does, where Pion would echo the
@@ -415,6 +431,7 @@ func (c *Caller) countKeyframeRequests(sender *webrtc.RTPSender) {
 // denproto.ScreenStream.
 func (c *Caller) listen(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 	key := track.Kind().String() + " " + track.StreamID()
+	board := track.StreamID() == denproto.SoundboardStream
 	for {
 		pkt, _, err := track.ReadRTP()
 		if err != nil {
@@ -424,6 +441,9 @@ func (c *Caller) listen(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		c.heard[key]++
 		if bytes.Equal(pkt.Header.GetExtension(testExtensionID), []byte(testExtension)) {
 			c.leaked++
+		}
+		if board && len(c.board) < maxBoard {
+			c.board = append(c.board, BoardPacket{Payload: bytes.Clone(pkt.Payload), Timestamp: pkt.Timestamp, At: time.Now()})
 		}
 		c.signal()
 		c.mu.Unlock()
@@ -444,6 +464,20 @@ func sharedSound(member string) string  { return "audio " + denproto.ScreenStrea
 
 // Heard reports how many packets have reached the caller from a member.
 func (c *Caller) Heard(member string) int { return c.count(voiceKey(member)) }
+
+// Board returns what has reached the caller on the call's soundboard, in
+// the order it came (M14.3).
+func (c *Caller) Board() []BoardPacket {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]BoardPacket(nil), c.board...)
+}
+
+// WaitBoard waits until n more packets than now have come on the call's
+// soundboard.
+func (c *Caller) WaitBoard(n int, timeout time.Duration) error {
+	return c.wait(func() int { return len(c.board) }, n, timeout, "packets on the soundboard")
+}
 
 // Saw reports how many packets of a member's screen have reached the
 // caller, and HeardShare how many of its sound.

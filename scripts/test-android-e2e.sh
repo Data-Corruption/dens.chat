@@ -442,8 +442,11 @@ ok "the settings and Manage opened as lists of pages, which Back walked out of, 
 # share docked there, full screen and back, mutes and unmutes with the
 # call's button, holds it to talk through Android's own touch, which desk
 # sees ring only while it's held, holds it again as the notification shade
-# comes down, which lets it go, and leaves from the bar.
+# comes down, which lets it go, and leaves from the bar. The den's
+# soundboard holds Ping, which desk plays for the phone, and the phone from
+# its bar for desk (M14.3).
 echo ">> A call by the call's button, at 390 pixels"
+den sound Ping >/dev/null
 incus file push -q --uid 1000 --gid 1000 scripts/test/android/desk.mjs dens-browsers/home/tester/browser/desk.mjs
 incus exec dens-browsers --user 1000 --group 1000 --cwd /home/tester/browser --env HOME=/home/tester --env XDG_RUNTIME_DIR=/run/user/1000 -- \
   /home/tester/node desk.mjs "$DESK_PORT" 600 >"$RUN_LOG_DIR/desk.log" 2>&1 &
@@ -457,7 +460,7 @@ phone start
 waitfor 20 "the page in front" front
 walk call || fail "a call by the call's button"
 wait "$desk" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/desk.log")"
-ok "in a call with desk, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, and the call left from the bar"
+ok "in a call with desk, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, desk's sound played from the call's track through the call's context and the phone's from its bar to desk, and the call left from the bar"
 phone start
 waitfor 20 "the page in front" front
 walk screens || fail "the screens at 390 pixels"

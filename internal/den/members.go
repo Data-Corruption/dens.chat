@@ -215,8 +215,8 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // their messages keep a name and a returning member can reclaim it, but
 // they lose their role, devices and sessions, recovery codes, read state,
 // any invites they made, the pictures on their profile and the uploads
-// they hadn't sent. It returns those files' blobs, to remove once tx
-// commits.
+// they hadn't sent. The sounds they added are the den's, and stay (M14.3).
+// It returns those files' blobs, to remove once tx commits.
 func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 	for _, stmt := range []string{
 		`UPDATE den_members SET left_at = ?1, role = 'member' WHERE id = ?2`,
@@ -233,7 +233,7 @@ func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 	if err := logMember(ctx, tx, id, time.UnixMilli(now)); err != nil {
 		return nil, err
 	}
-	return deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL`, id)
+	return deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL AND NOT `+named, id)
 }
 
 // Remove takes a member out of the den, and with Ban keeps their username

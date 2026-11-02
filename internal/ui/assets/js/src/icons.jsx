@@ -13,6 +13,17 @@ export function HashIcon({ size = 'h-4 w-4' }) {
     );
 }
 
+// CogIcon is an eight-toothed cog, for settings: the app's, the call's
+// voice settings, and the soundboard's sounds in Manage (M14.3).
+export function CogIcon({ size = 'h-[18px] w-[18px]' }) {
+    return (
+        <svg class={size} {...ICON} stroke-width="1.3">
+            <path d="M13.06 6.43 L14.90 6.82 L14.90 9.18 L13.06 9.57 L12.69 10.47 L13.72 12.04 L12.04 13.72 L10.47 12.69 L9.57 13.06 L9.18 14.90 L6.82 14.90 L6.43 13.06 L5.53 12.69 L3.96 13.72 L2.28 12.04 L3.31 10.47 L2.94 9.57 L1.10 9.18 L1.10 6.82 L2.94 6.43 L3.31 5.53 L2.28 3.96 L3.96 2.28 L5.53 3.31 L6.43 2.94 L6.82 1.10 L9.18 1.10 L9.57 2.94 L10.47 3.31 L12.04 2.28 L13.72 3.96 L12.69 5.53Z" />
+            <circle cx="8" cy="8" r="2.2" />
+        </svg>
+    );
+}
+
 // SpeakerIcon marks a voice channel, and the call's connection in its
 // controls.
 export function SpeakerIcon({ size = 'h-[18px] w-[18px]' }) {
@@ -82,6 +93,18 @@ export function PlayIcon({ size = 'h-3.5 w-3.5' }) {
     return (
         <svg viewBox="0 0 16 16" class={`${size} shrink-0`} fill="currentColor" aria-hidden="true">
             <path d="M4.5 2.8v10.4L13 8z" />
+        </svg>
+    );
+}
+
+// SoundboardIcon is the soundboard (M14.3): a sampler's pads, one lit.
+export function SoundboardIcon({ size = 'h-[18px] w-[18px]' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <rect x="2" y="2" width="5" height="5" rx="1.25" />
+            <rect x="9" y="2" width="5" height="5" rx="1.25" />
+            <rect x="2" y="9" width="5" height="5" rx="1.25" />
+            <rect x="9" y="9" width="5" height="5" rx="1.25" fill="currentColor" />
         </svg>
     );
 }

@@ -126,10 +126,12 @@ a moderator mutes you. Each is on until you turn it off, under **Sounds** in the
 same settings, where ▶ plays it and the slider sets how loud it is.
 
 - **A message makes one sound.** With a notification in your browser, Dens's
-  sound plays and the browser's own stays quiet. With **Direct messages** or
-  **Mentions** off, a DM or a mention still plays its sound, in the Dens tab you
-  used last, unless that tab shows the channel or you muted it. With no Dens
-  tab open, the notification your desktop shows plays your desktop's sound.
+  sound plays and the browser's own stays quiet. Turning off **Direct
+  messages** or **Mentions** turns off its sound too. If your browser won't let
+  Dens show notifications and the helper isn't running, the sound plays alone,
+  in the Dens tab you used last, unless that tab shows the channel or you
+  muted it. With no Dens tab open, the notification your desktop shows plays
+  your desktop's sound.
 - **On Android**, a notification plays Android's own sound, which you change
   in Android's settings for Dens's notifications. The rest play through the
   call, on the earpiece, the speaker or Bluetooth, wherever you hear it.
@@ -142,9 +144,33 @@ browser, such as an MP3, Ogg or WAV file, of at most 1 MiB and 10 seconds.
 **Reset** brings back Dens's. Your file stays in Dens on your computer, for
 every browser you use it with; it never goes to a den, and a backup holds it.
 
+## The soundboard
+
+A den can have a soundboard: short sounds its moderators add, which anyone in a
+call plays for everyone in it. In a call, the pads button beside the call's
+other buttons opens it, at the foot of the den's channel list, on your home
+page, or in the bar at the top of a channel on a phone. Search for a sound by
+name, and tap one to play it.
+
+- **Everyone in the call hears it at once,** through the call, as they hear
+  you, and someone joining partway hears the rest. Your ring lights up while
+  yours plays, even if you're muted.
+- **One plays at a time.** While one plays, or for a few seconds after your
+  last one ends, the sounds wait, and say so. The den's owner sets how long
+  sounds may be and how long you wait.
+- **The slider** sets how loud the soundboard plays for you alone, and at 0
+  you don't hear it at all. Deafened, you hear nothing of it either, and its
+  sounds wait until you undeafen.
+- **A long sound can't be stopped**, except by the person who played it
+  leaving the call. Turn the slider down if you'd rather not hear it.
+
+Moderators and the owner add sounds from the den's **Manage**, under
+**Soundboard**; see [Host a den](../host/#running-the-den).
+
 ## Leaving
 
-Open the den's **Manage**, and choose **Leave den** at the bottom. You can come
+Open the den's **Manage**, from the den's name at the top of its channel list,
+and choose **Leave den** at the bottom. You can come
 back with a new invite, as yourself: join with your old username and den
 password, and your history comes back with you, along with new recovery codes.
 
