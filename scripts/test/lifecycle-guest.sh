@@ -31,10 +31,12 @@ fail() {
         systemctl status "dens@$instance" --no-pager 2>/dev/null | head -n 15 >&2 || :
         journalctl -u "dens@$instance" -b --no-pager -o cat 2>/dev/null | tail -n 30 >&2 || :
         # Dens keeps its own log, which says why, where the journal has
-        # only systemd's lines.
+        # only systemd's lines; it writes it in batches, which stopping
+        # the service flushes.
+        systemctl stop "dens@$instance" 2>/dev/null || :
         if [ -f "/var/lib/dens/$instance/data/logs/latest.log" ]; then
             printf -- '-- dens@%s log\n' "$instance" >&2
-            tail -n 40 "/var/lib/dens/$instance/data/logs/latest.log" >&2 || :
+            tail -n 80 "/var/lib/dens/$instance/data/logs/latest.log" >&2 || :
         fi
     done
     exit 1
