@@ -193,6 +193,10 @@ name at the top of its channel list, or **Manage** on your home page.
   message in a channel: choose **Remove reactions** from its **⋯** menu. It
   takes those of people of a lower rank than you. Reactions in a DM are its
   two members' alone, and the den can't read them.
+- **@everyone.** Moderators and you can write `@everyone` in a channel to let
+  everyone who can see it know, as a mention does. From anyone else it's only
+  text, or a mention of someone whose username is everyone from before, a name
+  nobody new can take. Members can turn it off for themselves.
 - **Auto-delete**, off unless you turn it on, deletes messages older than a
   number of days, in channels and DMs. Members see the setting. A
   [backup](../backups/) keeps what it held until you delete the backup.

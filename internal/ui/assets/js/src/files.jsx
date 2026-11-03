@@ -334,7 +334,8 @@ function VideoTile({ denID, file, box }) {
                         {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
                     </button>
                     <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
-                    <input type="range" class="range range-md hidden min-w-0 flex-1 @min-[6rem]:block" min="0" max={duration || 0} step="any" value={time}
+                    <input type="range" class="seek hidden min-w-0 flex-1 @min-[6rem]:block" min="0" max={duration || 0} step="any" value={time}
+                        style={{ '--seek': `${duration > 0 ? Math.min(100, (time / duration) * 100) : 0}%` }}
                         onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
                     {/* The volume shows above the mute button on hover or
                         keyboard focus (M3.3), wherever the mute fits. */}

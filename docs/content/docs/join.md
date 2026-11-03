@@ -94,8 +94,10 @@ If a moderator renames or deletes an emoji, the messages that used it show its
 name instead.
 
 Type a colon and two letters, like `:th`, and Dens lists the emoji that match.
-In a channel, `@` lists the people who can see it. Up and down choose, Enter or
-Tab puts one in, and Esc closes the list; on a phone, tap one.
+In a channel, `@` lists the people who can see it, and for moderators and the
+owner, `@everyone`, which lets everyone who can see the channel know. Up and
+down choose, Enter or Tab puts one in, and Esc closes the list; on a phone, tap
+one.
 
 A message of nothing but emoji, up to ten, shows them large, and the den's
 moving ones play as **Animations** says. Dens on your computer keeps a copy of
@@ -121,6 +123,31 @@ and press and hold it to see who reacted.
 Moderators can take an emoji's reactions off a message in a channel. Reactions
 in a DM are end-to-end encrypted, like its messages: the den sees that yours
 changed, and when, but not what they are.
+
+## Polls
+
+In a channel, **+** beside the message box has **Poll**. Write the question in
+the box, and 2 to 10 choices above it, then pick:
+
+- **Members may pick more than one**, or only one choice each.
+- **Runs for**: an hour to two weeks, a day at first. It can't be changed once
+  the poll is sent, but you can end it early: **End now** on your poll.
+- **Totals show**: **As votes come in**, or **After voting**, where each person
+  sees the totals once they vote, and their vote is then final, so nobody moves
+  to the winning side.
+- **Anonymous voting**: **Yes**, so nobody sees who voted for what; **During
+  the poll**, so it shows once the poll ends; or **No**, so it shows beside
+  the totals.
+
+A poll can't be edited, so nobody's vote ends up under a question they didn't
+answer. Vote by picking a choice and **Vote**. Where the totals show as votes
+come in, **Change vote** and **Remove vote** work until it ends. Where the poll
+shows who voted for what, point at a choice's count, or tap it, to see who
+picked it.
+
+Anonymous voting keeps who voted for what from everyone in the den, its owner
+and the person who asked included. The den itself still knows, since it counts
+each person's vote once and lets them change it. DMs have no polls.
 
 ## Direct messages
 
@@ -150,6 +177,12 @@ Nothing notifies you until you turn it on: open **Settings**, then
 **Notifications & sounds**, and turn on **Direct messages**, **Mentions**, or
 both. The settings live in Dens on your computer, so every browser you use it
 with shares them.
+
+Moderators and the owner can write `@everyone` in a channel, which notifies
+everyone who can see it, as a mention does. If that's too much, turn off
+**@everyone**, under **Mentions**: it stops the notifications and their sound,
+though those messages still count among your mentions. Muting the den or the
+channel silences it too.
 
 Where they show depends on what's open:
 

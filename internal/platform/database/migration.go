@@ -431,6 +431,39 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M15.4: polls, and staff's @everyone. A poll is a row beside its
+	// channel's message, with its choices, sealed with the data key as the
+	// text is, its rules and its end, which an early end moves; a vote is
+	// a row for each choice a member picked, and goes with its poll. A
+	// message's everyone marks the @everyone staff put in it.
+	m.Add("Polls", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_messages ADD COLUMN everyone INTEGER NOT NULL DEFAULT 0;
+
+			CREATE TABLE den_polls (
+				message_id  INTEGER PRIMARY KEY REFERENCES den_messages (id) ON DELETE CASCADE,
+				choices     BLOB NOT NULL, -- JSON, sealed with the data key
+				multiple    INTEGER NOT NULL,
+				show_voters TEXT NOT NULL CHECK (show_voters IN ('never', 'end', 'always')),
+				show_totals TEXT NOT NULL CHECK (show_totals IN ('live', 'voted')),
+				ends_at     INTEGER NOT NULL, -- unix milliseconds
+				ended       INTEGER NOT NULL DEFAULT 0
+			) STRICT;
+			CREATE INDEX den_polls_open ON den_polls (ends_at) WHERE ended = 0;
+
+			CREATE TABLE den_poll_votes (
+				message_id INTEGER NOT NULL REFERENCES den_polls (message_id) ON DELETE CASCADE,
+				member_id  INTEGER NOT NULL REFERENCES den_members (id),
+				choice     INTEGER NOT NULL,
+				voted_at   INTEGER NOT NULL, -- unix milliseconds
+				UNIQUE (message_id, member_id, choice)
+			) STRICT;
+		`); err != nil {
+			return fmt.Errorf("create the polls' tables: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

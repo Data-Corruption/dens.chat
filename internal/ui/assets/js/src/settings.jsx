@@ -80,7 +80,9 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><ThemePicker /><AnimationsPicker /></>;
+    // Animations comes first, its two choices above the themes' grid,
+    // where a long list of themes would push it out of sight.
+    else panel = <><AnimationsPicker /><ThemePicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -293,8 +295,9 @@ function NotificationSettings() {
         return onKeys(update);
     }, []);
     function change(kind, on) {
-        // The browser asks only in answer to the click.
-        const asked = on && kind !== 'hideText' ? askToNotify() : null;
+        // The browser asks only in answer to the click, for a kind of its
+        // own: @everyone is among mentions (M15.4).
+        const asked = on && kind !== 'hideText' && kind !== 'everyone' ? askToNotify() : null;
         act.run(async () => {
             if (asked) {
                 setBrowser(await asked);
@@ -309,6 +312,10 @@ function NotificationSettings() {
             <Toggle id="notify-dms" label="Direct messages" checked={!!status.dms} disabled={act.busy} onChange={(on) => change('dms', on)} />
             <Toggle id="notify-mentions" label="Mentions" hint="Messages in a den's channels that mention you by your username."
                 checked={!!status.mentions} disabled={act.busy} onChange={(on) => change('mentions', on)} />
+            <div class="pl-6">
+                <Toggle id="notify-everyone" label="@everyone" hint="Staff's @everyone, in a channel you can see. Off, it notifies nothing and plays no sound, but still counts among your mentions."
+                    checked={!status.everyoneOff} disabled={act.busy || !status.mentions} onChange={(on) => change('everyone', on)} />
+            </div>
             <Toggle id="notify-text" label="Show the message" hint="The start of each message, in its notification."
                 checked={!status.hideText} disabled={act.busy || !notifying(status)} onChange={(on) => change('hideText', !on)} />
             {notifying(status) && <p class="text-sm text-base-content/70">{whereTheyShow(status, browser, elsewhere)}</p>}

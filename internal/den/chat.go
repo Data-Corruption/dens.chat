@@ -882,14 +882,14 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 
 // Messages --------------------------------------------------------------------
 
-const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id`
+const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id, everyone`
 
 func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	var m denproto.Message
 	var id, channel, author int64
 	var editedAt, editedBy, replyTo, keyID sql.NullInt64
 	var text, nonce []byte
-	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID); err != nil {
+	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID, &m.Everyone); err != nil {
 		return m, err
 	}
 	m.ID, m.ChannelID, m.AuthorID = denproto.FormatID(id), denproto.FormatID(channel), denproto.FormatID(author)
@@ -917,8 +917,8 @@ func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 }
 
 // queryMessages returns the messages a query selects, with previews of the
-// messages they reply to.
-func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]denproto.Message, error) {
+// messages they reply to, and their polls as viewer may see them (M15.4).
+func (d *Den) queryMessages(ctx context.Context, viewer int64, query string, args ...any) ([]denproto.Message, error) {
 	ms, err := d.scanMessages(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -953,10 +953,17 @@ func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]d
 	if err != nil {
 		return nil, err
 	}
+	polls, err := d.polls(ctx, d.db, mids, d.now())
+	if err != nil {
+		return nil, err
+	}
 	for i := range ms {
 		ms[i].Reply = replies[ms[i].ReplyTo]
 		ms[i].Editors = editors[mids[i]]
 		ms[i].Reactions, ms[i].DMReactions = reactions[mids[i]], sets[mids[i]]
+		if p := polls[mids[i]]; p != nil {
+			ms[i].Poll = p.view(viewer)
+		}
 		// A DM message's files are listed inside it, with their keys.
 		if ms[i].Sealed == nil {
 			ms[i].Attachments = files[mids[i]]
@@ -1149,7 +1156,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	// Each side of the anchor gets its share of the page's bytes, and
 	// keeps the messages nearest the anchor that fit.
 	older := func(below int64, limit, budget int) ([]denproto.Message, bool, error) {
-		ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
+		ms, err := d.queryMessages(ctx, s.MemberID, `SELECT `+messageColumns+` FROM den_messages
 			WHERE channel_id = ? AND id < ? ORDER BY id DESC LIMIT ?`, cid, below, limit+1)
 		if err != nil {
 			return nil, false, err
@@ -1163,7 +1170,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 		return ms, more || cut, err
 	}
 	newer := func(from int64, limit, budget int) ([]denproto.Message, bool, error) {
-		ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
+		ms, err := d.queryMessages(ctx, s.MemberID, `SELECT `+messageColumns+` FROM den_messages
 			WHERE channel_id = ? AND id >= ? ORDER BY id LIMIT ?`, cid, from, limit+1)
 		if err != nil {
 			return nil, false, err
@@ -1242,6 +1249,10 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			return denproto.Message{}, invalid("text: %v", err)
 		}
 	}
+	poll, err := cleanPoll(req, dm)
+	if err != nil {
+		return denproto.Message{}, err
+	}
 	var replyTo *int64
 	var reply *denproto.Reply
 	if req.ReplyTo != "" {
@@ -1260,7 +1271,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		reply = replyOf(replied[0])
 	}
 	now := d.now()
-	existing, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages
+	existing, err := d.queryMessages(ctx, s.MemberID, `SELECT `+messageColumns+` FROM den_messages
 		WHERE author_id = ? AND nonce = ? AND created_at > ?`, s.MemberID, []byte(req.Nonce), now.Add(-nonceWindow).UnixMilli())
 	if err != nil {
 		return denproto.Message{}, err
@@ -1269,7 +1280,10 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		existing[0].Nonce = req.Nonce
 		return existing[0], nil
 	}
-	mentioned, err := d.mentionedMembers(ctx, req.Text, c, s.MemberID)
+	// Staff's @everyone mentions every member who can see the channel; anyone
+	// else's, a member of that name (M15.4).
+	everyone := !dm && IsStaff(s.Role) && denproto.MentionsEveryone(req.Text)
+	mentioned, err := d.mentionedMembers(ctx, req.Text, c, s.MemberID, everyone)
 	if err != nil {
 		return denproto.Message{}, err
 	}
@@ -1280,6 +1294,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	var id int64
 	var reopened []int64
 	var keyID *int64
+	var posted *denproto.Poll
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		text := []byte(req.Sealed)
 		if dm {
@@ -1293,8 +1308,8 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		} else {
 			text = []byte{}
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID)
+		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id, everyone)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone)
 		if err != nil {
 			return err
 		}
@@ -1320,6 +1335,11 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		if err := attach(ctx, tx, id, s.MemberID, files, dm, now); err != nil {
 			return err
 		}
+		if poll != nil {
+			if posted, err = d.insertPoll(ctx, tx, id, poll, now); err != nil {
+				return err
+			}
+		}
 		// A member has read what they wrote.
 		if _, err = tx.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id) VALUES (?, ?, ?)
 			ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = max(message_id, excluded.message_id)`, s.MemberID, cid, id); err != nil {
@@ -1334,10 +1354,14 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
+	// Nobody has voted on a new poll, so everyone sees it alike.
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
 		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
-		Editors: formatIDs(editors),
+		Editors: formatIDs(editors), Poll: posted, Everyone: everyone,
+	}
+	if posted != nil {
+		d.planPolls()
 	}
 	if dm {
 		m.Sealed, m.KeyID = req.Sealed, denproto.FormatID(*keyID)
@@ -1379,7 +1403,9 @@ func checkSealedText(dm bool, text string, sealed denproto.Bytes, keyID string) 
 // mentionedMembers resolves a text's mentions to members in the den who can
 // see the channel, leaving out the author. In a DM, every message counts
 // for the other member, so their unread count is the messages waiting.
-func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Channel, author int64) ([]int64, error) {
+// With everyone, staff's @everyone (M15.4), it's every member who can see
+// the channel, a row each, so the unread mention counts need nothing new.
+func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Channel, author int64, everyone bool) ([]int64, error) {
 	if c.Kind == denproto.KindDM {
 		if other, ok := dmPartner(c, author); ok {
 			return []int64{other}, nil
@@ -1394,8 +1420,11 @@ func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Chan
 	for i, n := range names {
 		args[i] = n
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT id, role FROM den_members WHERE left_at IS NULL AND username IN (?`+
-		strings.Repeat(", ?", len(names)-1)+`)`, args...)
+	query := `SELECT id, role FROM den_members WHERE left_at IS NULL AND username IN (?` + strings.Repeat(", ?", len(names)-1) + `)`
+	if everyone {
+		query, args = `SELECT id, role FROM den_members WHERE left_at IS NULL`, nil
+	}
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1423,12 +1452,13 @@ func insertMentions(ctx context.Context, tx *sql.Tx, message, channel int64, mem
 	return nil
 }
 
-func (d *Den) message(ctx context.Context, id string) (denproto.Message, int64, error) {
+// message returns a message as viewer may see it.
+func (d *Den) message(ctx context.Context, viewer int64, id string) (denproto.Message, int64, error) {
 	mid, err := denproto.ParseID(id)
 	if err != nil {
 		return denproto.Message{}, 0, errMessageNotFound
 	}
-	ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id = ?`, mid)
+	ms, err := d.queryMessages(ctx, viewer, `SELECT `+messageColumns+` FROM den_messages WHERE id = ?`, mid)
 	if err != nil {
 		return denproto.Message{}, 0, err
 	}
@@ -1444,7 +1474,7 @@ func (d *Den) message(ctx context.Context, id string) (denproto.Message, int64, 
 func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.EditRequest) (denproto.Message, error) {
 	d.changes.Lock()
 	defer d.changes.Unlock()
-	m, mid, err := d.message(ctx, id)
+	m, mid, err := d.message(ctx, s.MemberID, id)
 	if err != nil {
 		return m, err
 	}
@@ -1454,6 +1484,9 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	}
 	if !mayEdit(m, s.MemberID) {
 		return m, forbidden("only the author, and the members they named, edit a message")
+	}
+	if m.Poll != nil {
+		return m, forbidden("a poll can't be edited once posted, so no vote stands under a question it wasn't cast for")
 	}
 	author, _ := denproto.ParseID(m.AuthorID)
 	if req.Editors != nil && author != s.MemberID {
@@ -1503,16 +1536,21 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		}
 	}
 	// In a DM the message counts for the member it was sent to, as when it
-	// was sent, and nobody is mentioned by their own edit.
+	// was sent, and nobody is mentioned by their own edit. An @everyone
+	// counts while the text holds it and staff put it there: one already
+	// marked stays through anyone's edit that keeps it, and a co-editor who
+	// isn't staff can take it out but can't put it in (M15.4). It mentions
+	// everyone but the author, as when it was sent.
 	from := s.MemberID
 	if c.Kind == denproto.KindDM {
 		from = author
 	}
-	mentioned, err := d.mentionedMembers(ctx, req.Text, c, from)
+	everyone := !dm && denproto.MentionsEveryone(req.Text) && (m.Everyone || IsStaff(s.Role))
+	mentioned, err := d.mentionedMembers(ctx, req.Text, c, from, everyone)
 	if err != nil {
 		return m, err
 	}
-	mentioned = slices.DeleteFunc(mentioned, func(id int64) bool { return id == s.MemberID })
+	mentioned = slices.DeleteFunc(mentioned, func(id int64) bool { return id == s.MemberID || everyone && id == author })
 	sealed := []byte(req.Sealed)
 	if !dm {
 		if sealed, err = d.v.Seal([]byte(req.Text), textAD(mid)); err != nil {
@@ -1538,8 +1576,8 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 			edited = edited || filesChanged
 		}
 		res, err := tx.ExecContext(ctx, `UPDATE den_messages SET text = ?, key_id = ?, revision = revision + 1,
-			edited_at = iif(?, ?, edited_at), edited_by = iif(?, ?, edited_by) WHERE id = ? AND revision = ?`,
-			sealed, keyID, edited, now, edited, s.MemberID, mid, req.Revision)
+			edited_at = iif(?, ?, edited_at), edited_by = iif(?, ?, edited_by), everyone = ? WHERE id = ? AND revision = ?`,
+			sealed, keyID, edited, now, edited, s.MemberID, everyone, mid, req.Revision)
 		if err != nil {
 			return err
 		}
@@ -1560,7 +1598,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		return logMessage(ctx, tx, mid, cid, time.UnixMilli(now))
 	})
 	if errors.Is(err, errRaced) {
-		current, _, lerr := d.message(ctx, id)
+		current, _, lerr := d.message(ctx, s.MemberID, id)
 		if lerr != nil {
 			return m, lerr
 		}
@@ -1570,7 +1608,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 		return m, err
 	}
 	d.files.remove(removedBlobs)
-	m.Text, m.Revision = req.Text, m.Revision+1
+	m.Text, m.Revision, m.Everyone = req.Text, m.Revision+1, everyone
 	if dm {
 		m.Sealed, m.KeyID = req.Sealed, denproto.FormatID(*keyID)
 	} else if req.Attachments != nil {
@@ -1597,7 +1635,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req denproto.TaskRequest) (denproto.Message, error) {
 	d.changes.Lock()
 	defer d.changes.Unlock()
-	m, mid, err := d.message(ctx, id)
+	m, mid, err := d.message(ctx, s.MemberID, id)
 	if err != nil {
 		return m, err
 	}
@@ -1607,6 +1645,9 @@ func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req den
 	}
 	if !mayEdit(m, s.MemberID) {
 		return m, forbidden("only the author, and the members they named, tick a message's tasks")
+	}
+	if m.Poll != nil {
+		return m, forbidden("a poll's question can't change once posted")
 	}
 	if c.Kind == denproto.KindDM {
 		return m, invalid("a DM message's tasks tick with an edit: the den can't read its text")
@@ -1663,7 +1704,7 @@ func Conflict(err error) (denproto.Message, bool) {
 // members' messages, and the owner anyone's. Staff powers stop at DMs,
 // whose text they can't see: there only the author deletes (M8).
 func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
-	m, mid, err := d.message(ctx, id)
+	m, mid, err := d.message(ctx, s.MemberID, id)
 	if err != nil {
 		return err
 	}

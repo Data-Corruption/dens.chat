@@ -123,7 +123,7 @@ func TestNothingNotifiesUntilAKindIsOn(t *testing.T) {
 	if got := helper.messages(); len(got) != 0 {
 		t.Fatalf("notified %v with every kind off", got)
 	}
-	if err := h.SetKinds(nil, ptr(true), nil); err != nil {
+	if err := h.SetKinds(Kinds{Mentions: ptr(true)}); err != nil {
 		t.Fatal(err)
 	}
 	h.Message(dm("12"))
@@ -336,7 +336,7 @@ func TestTurningAKindOffTakesItBack(t *testing.T) {
 	defer stop()
 	h.Message(dm("10"))
 	h.Message(mention("11"))
-	if err := h.SetKinds(ptr(false), nil, nil); err != nil {
+	if err := h.SetKinds(Kinds{DMs: ptr(false)}); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(helper.withdrawn, []string{"d1/7"}) {
@@ -357,7 +357,7 @@ func TestHiddenText(t *testing.T) {
 	h.Message(dm("10"))
 	h.Message(mention("11"))
 	h.Message(Message{Den: "d1", Channel: "8", DM: true, ID: "12", Author: "Carol", Files: 2})
-	h.SetKinds(nil, nil, ptr(false))
+	h.SetKinds(Kinds{HideText: ptr(false)})
 	h.Message(Message{Den: "d1", Channel: "9", DM: true, ID: "13", Author: "Dan", Files: 2})
 	h.Message(Message{Den: "d1", Channel: "10", DM: true, ID: "14", Author: "Eve"})
 	var got [][2]string
@@ -377,7 +377,7 @@ func TestHiddenText(t *testing.T) {
 
 func TestSettingsThatWontKeepDontChange(t *testing.T) {
 	h := New(testLog(t), types.Notifications{}, func(types.Notifications) error { return errors.New("disk full") }, nil, false)
-	if err := h.SetKinds(ptr(true), nil, nil); err == nil {
+	if err := h.SetKinds(Kinds{DMs: ptr(true)}); err == nil {
 		t.Fatal("settings that couldn't be kept changed nothing, and said nothing")
 	}
 	if h.Settings().DMs {
@@ -495,7 +495,7 @@ func TestWhereAMessagesSoundPlays(t *testing.T) {
 
 	// DMs and mentions off: no sound either, on the page on screen now or
 	// any other, whether a page could show it or nothing could.
-	if err := h.SetKinds(ptr(false), nil, nil); err != nil {
+	if err := h.SetKinds(Kinds{DMs: ptr(false)}); err != nil {
 		t.Fatal(err)
 	}
 	h.SetPage("a", true, true)
@@ -509,7 +509,7 @@ func TestWhereAMessagesSoundPlays(t *testing.T) {
 	if alone, shown := sounds(b); len(alone) != 0 || len(shown) != 0 {
 		t.Fatalf("with DMs and mentions off, page b played %v and showed %v", alone, shown)
 	}
-	if err := h.SetKinds(ptr(true), nil, nil); err != nil {
+	if err := h.SetKinds(Kinds{DMs: ptr(true)}); err != nil {
 		t.Fatal(err)
 	}
 	h.SetPage("a", true, true)
@@ -607,5 +607,83 @@ func TestSoundSettings(t *testing.T) {
 	}
 	if st := h.Status(); len(st.Own) != 1 {
 		t.Fatalf("the status says %+v", st.Own)
+	}
+}
+
+func everyone(id string) Message {
+	return Message{Den: "d1", DenName: "Den", Channel: "5", ChannelName: "general", ID: id, Author: "Dave", Everyone: true, Text: "@everyone lunch"}
+}
+
+// TestEveryone checks staff's @everyone (M15.4): it notifies as a mention
+// does, on by default with mentions on; the member's switch silences it,
+// notification and sound, and takes back what it showed, while a mention
+// by name in the same message still notifies; and a mute or mentions off
+// silences it as it does mentions.
+func TestEveryone(t *testing.T) {
+	helper := &place{can: true}
+	h, _ := newHub(t, types.Notifications{Mentions: true}, helper, false)
+	h.Message(everyone("10"))
+	if got := helper.messages(); !slices.Equal(got, []string{"10"}) {
+		t.Fatalf("staff's @everyone showed %v, want 10", got)
+	}
+
+	if err := h.SetKinds(Kinds{Everyone: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.Settings(); !s.EveryoneOff {
+		t.Fatalf("the switch off left the settings %+v", s)
+	}
+	if !slices.Equal(helper.withdrawn, []string{"d1/5"}) {
+		t.Fatalf("turning @everyone off took back %v, want d1/5", helper.withdrawn)
+	}
+	h.Message(everyone("11"))
+	both := everyone("12")
+	both.Mention = true
+	h.Message(both)
+	if got := helper.messages(); !slices.Equal(got, []string{"10", "12"}) {
+		t.Fatalf("with @everyone off, the helper showed %v, want 10 and the mention by name, 12", got)
+	}
+	// Turning mentions off then takes the mention back, as it would any.
+	if err := h.SetKinds(Kinds{Mentions: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(helper.withdrawn, []string{"d1/5", "d1/5"}) {
+		t.Fatalf("turning mentions off took back %v", helper.withdrawn)
+	}
+
+	// Silenced, it plays no sound either, even with nothing to show it.
+	h2, _ := newHub(t, types.Notifications{Mentions: true, EveryoneOff: true}, nil, false)
+	p, stop := h2.Watch("a")
+	defer stop()
+	h2.SetPage("a", false, false)
+	sounds(p)
+	h2.Message(everyone("20"))
+	if alone, shown := sounds(p); len(alone)+len(shown) != 0 {
+		t.Fatalf("a silenced @everyone played %v, showed %v", alone, shown)
+	}
+	if err := h2.SetKinds(Kinds{Everyone: ptr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	h2.Message(everyone("21"))
+	if alone, _ := sounds(p); !slices.Equal(alone, []string{"21"}) {
+		t.Fatalf("on again, @everyone with nothing to show it played %v, want 21", alone)
+	}
+	// A mute silences it.
+	if err := h2.Mute("d1", "5", true); err != nil {
+		t.Fatal(err)
+	}
+	h2.Message(everyone("22"))
+	if alone, shown := sounds(p); len(alone)+len(shown) != 0 {
+		t.Fatalf("a muted channel's @everyone played %v, showed %v", alone, shown)
+	}
+}
+
+// TestEveryoneHiddenText checks that a hidden @everyone says what it is.
+func TestEveryoneHiddenText(t *testing.T) {
+	helper := &place{can: true}
+	h, _ := newHub(t, types.Notifications{Mentions: true, HideText: true}, helper, false)
+	h.Message(everyone("10"))
+	if n := helper.shown[0]; n.Title != "Dave in #general" || n.Text != "Mentioned everyone" {
+		t.Fatalf("a hidden @everyone shows %q, %q", n.Title, n.Text)
 	}
 }

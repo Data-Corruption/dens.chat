@@ -429,6 +429,15 @@ export function completeMember(query, members) {
         .map((x) => x.m);
 }
 
+/** completeMention lists what completing a mention offers: @everyone
+    first, where the member may send it (M15.4) and it matches, then the
+    members, as completeMember lists them */
+export function completeMention(query, members, everyone) {
+    const out = completeMember(query, members).map((m) => ({ member: m }));
+    if (everyone && 'everyone'.startsWith(query.toLowerCase())) out.unshift({ everyone: true });
+    return out.slice(0, MAX_COMPLETIONS);
+}
+
 // Names from files ------------------------------------------------------------
 
 /** nameFromFile suggests an emoji's name from its file's: lowercased, the

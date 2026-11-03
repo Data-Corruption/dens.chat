@@ -110,8 +110,9 @@ expect_uninstalled() {
 # first_release hosts a den with Dens's first release, as its installer's
 # den option did, and updates to this one, which still hosts it: the switch
 # takes the den role it had (M9.1); and which migrated its database, as a
-# member's own sound shows (M14.2), and the den's soundboard (M14.3). Then
-# it uninstalls, for the fresh install after it.
+# member's own sound shows (M14.2), the den's soundboard (M14.3), and M15's
+# emoji, a reaction and a poll. Then it uninstalls, for the fresh install
+# after it.
 first_release() {
     first=$(cat /release/first/version)
     case $(uname -m) in
@@ -163,6 +164,45 @@ first_release() {
     api POST "/api/dens/$den_id/soundboard" "{\"name\":\"First\",\"upload\":\"$upload\"}" | grep -q '"name":"First"' ||
         fail "the den took no sound after the update"
     api GET "/api/dens/$den_id/state" | grep -q '"sounds":\[{"id":"[0-9]*","name":"First"' || fail "the den's soundboard doesn't hold the sound"
+    # And M15's: the den has its limit for emoji and takes one, an image of
+    # 8 by 8 pixels (M15.2); a message takes a reaction of it (M15.3); and a
+    # poll goes, takes a vote and shows it (M15.4), in the tables their
+    # migrations made.
+    api GET "/api/dens/$den_id/state" | grep -q '"emoji_limits":{"emojis":50}' ||
+        fail "the den has no limit for emoji after the update: $(api GET "/api/dens/$den_id/state" | head -c 300)"
+    image=/root/party.png
+    printf '\211\120\116\107\015\012\032\012\000\000\000\015\111\110\104\122\000\000\000\010\000\000\000\010\010\006\000\000\000\304\017\276\213\000\000\000\022\111\104\101\124\170\332\143\370\337\300\360\037\037\146\030\031\012\000\123\326\237\201\351\361\021\213\000\000\000\000\111\105\116\104\256\102\140\202' >"$image"
+    answer=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $CLIENT" -H "Content-Type: application/octet-stream" \
+        -H "Dens-Filename: party.png" --data-binary "@$image" "$CLIENT/api/dens/$den_id/uploads") ||
+        fail "the emoji's upload failed after the update: $answer"
+    upload=$(printf '%s' "$answer" | sed -n 's/.*"id":"\([0-9]*\)".*/\1/p')
+    answer=$(api POST "/api/dens/$den_id/emoji" "{\"name\":\"party\",\"upload\":\"$upload\"}") || fail "the den took no emoji after the update: $answer"
+    emoji=$(printf '%s' "$answer" | sed -n 's/^{"id":"\([0-9]*\)","name":"party".*/\1/p')
+    [ -n "$emoji" ] || fail "the den's emoji answered $answer"
+    api POST "/api/dens/$den_id/channels" '{"name":"general","kind":"text"}' >/dev/null
+    for _ in $(seq 50); do
+        general=$(api GET "/api/dens/$den_id/state" | sed -n 's/.*{"id":"\([0-9]*\)","group_id":null,"name":"general".*/\1/p')
+        [ -n "$general" ] && break
+        sleep 0.2
+    done
+    [ -n "$general" ] || fail "the den's new channel never showed"
+    nonce() { head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '='; }
+    answer=$(api POST "/api/dens/$den_id/channels/$general/messages" "{\"nonce\":\"$(nonce)\",\"text\":\"still here :party:\"}") ||
+        fail "the den took no message after the update: $answer"
+    message=$(printf '%s' "$answer" | sed -n 's/^{"id":"\([0-9]*\)".*/\1/p')
+    api POST "/api/dens/$den_id/messages/$message/reactions?channel=$general" "{\"emoji_id\":\"$emoji\",\"on\":true}" >/dev/null ||
+        fail "the den took no reaction after the update"
+    answer=$(api POST "/api/dens/$den_id/channels/$general/messages" \
+        "{\"nonce\":\"$(nonce)\",\"text\":\"Updated?\",\"poll\":{\"choices\":[\"Yes\",\"No\"],\"hours\":1,\"show_voters\":\"always\",\"show_totals\":\"live\"}}") ||
+        fail "the den took no poll after the update: $answer"
+    poll=$(printf '%s' "$answer" | sed -n 's/^{"id":"\([0-9]*\)".*/\1/p')
+    api POST "/api/dens/$den_id/messages/$poll/poll/vote" '{"choices":[0]}' | grep -q '"totals":\[1,0\]' ||
+        fail "the den took no vote on the poll after the update"
+    history=$(api GET "/api/dens/$den_id/channels/$general/messages")
+    printf '%s' "$history" | grep -q "\"reactions\":\[{\"emoji_id\":\"$emoji\",\"members\":\[\"[0-9]*\"\]}\]" ||
+        fail "the message doesn't hold its reaction: $history"
+    printf '%s' "$history" | grep -q '"poll":{"choices":\["Yes","No"\],"ends_at":[0-9]*,"show_voters":"always","show_totals":"live","voted":1,"totals":\[1,0\]' ||
+        fail "the poll doesn't hold its vote: $history"
     dens uninstall --yes
     expect_uninstalled
     rm -f "$JAR"

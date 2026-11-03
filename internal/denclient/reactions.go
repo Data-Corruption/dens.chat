@@ -8,7 +8,6 @@ import (
 	"maps"
 	"net/http"
 	"slices"
-	"sync"
 
 	"github.com/Data-Corruption/dens.chat/internal/cache"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -176,74 +175,6 @@ func applyChange(m *denproto.Message, emoji, emojiID string, members []string, a
 		m.Reactions = slices.Delete(m.Reactions, i, i+1)
 	}
 	return changed
-}
-
-// reactionRing keeps the latest reactions' events a connection applied,
-// numbered, so what the den sends of a message after a request that was
-// out while they came takes them again: the den may have read the message
-// before them, and applying one twice changes nothing.
-type reactionRing struct {
-	mu     sync.Mutex
-	n      uint64 // events seen
-	events []denproto.Event
-}
-
-// ringSize is how many of the latest reactions' events the ring keeps.
-const ringSize = 1024
-
-func (r *reactionRing) add(e denproto.Event) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.events) == ringSize {
-		r.events = append(r.events[:0], r.events[1:]...)
-	}
-	r.events = append(r.events, e)
-	r.n++
-}
-
-// mark is where the ring stands, to replay from once a request returns.
-func (r *reactionRing) mark() uint64 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.n
-}
-
-// since lists the events after a mark that the ring still holds.
-func (r *reactionRing) since(mark uint64) []denproto.Event {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	first := r.n - uint64(len(r.events))
-	if mark < first {
-		mark = first
-	}
-	return slices.Clone(r.events[mark-first:])
-}
-
-// replayReactions applies the reactions' events that came since a mark to
-// messages the den sent meanwhile.
-func (c *conn) replayReactions(mark uint64, ms []denproto.Message) {
-	events := c.reactions.since(mark)
-	if len(events) == 0 {
-		return
-	}
-	for i := range ms {
-		for _, e := range events {
-			applyReaction(&ms[i], e)
-		}
-	}
-}
-
-// cacheReaction keeps what a reaction's event changes of the copy of its
-// message the cache holds.
-func (c *conn) cacheReaction(e denproto.Event, messageID string) {
-	if !c.cached() {
-		return
-	}
-	id, err := denproto.ParseID(messageID)
-	if err != nil {
-		return
-	}
-	c.cacheErr(c.m.Cache.ChangeMessage(c.j.denID, id, func(m *denproto.Message) bool { return applyReaction(m, e) }))
 }
 
 // errReactionsMoved is a DM's set that changed meanwhile, three times

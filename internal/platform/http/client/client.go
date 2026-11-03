@@ -589,6 +589,8 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			DMs      *bool `json:"dms"`
 			Mentions *bool `json:"mentions"`
 			HideText *bool `json:"hideText"`
+			// Everyone turns staff's @everyone on or off (M15.4).
+			Everyone *bool `json:"everyone"`
 		} `json:"notifications"`
 		// Sounds turns each of the page's sounds off or on, and sets its
 		// volume in percent, as given (M14.2).
@@ -601,7 +603,7 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n := body.Notifications; n != nil {
-		if err := rt.a.Notify.SetKinds(n.DMs, n.Mentions, n.HideText); err != nil {
+		if err := rt.a.Notify.SetKinds(notify.Kinds{DMs: n.DMs, Mentions: n.Mentions, HideText: n.HideText, Everyone: n.Everyone}); err != nil {
 			xhttp.Error(r.Context(), w, err)
 			return
 		}

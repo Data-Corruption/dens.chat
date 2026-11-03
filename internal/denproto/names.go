@@ -38,22 +38,36 @@ func NormalizeUsername(s string) (string, error) {
 // bidi overrides and the zero-width ones, and the fillers that render as
 // blanks. It trims what's left, and checks it is 1 to max characters with
 // something visible among them, so a name can't pass for nobody's (M8).
-func CleanName(s string, max int) (string, error) {
+func CleanName(s string, max int) (string, error) { return cleanText(s, max, false, "name") }
+
+// cleanText cleans a name, or with emoji a poll's choice (M15.4), which
+// keeps each of Unicode's emoji whole, joiners and all; what is what the
+// errors call it.
+func cleanText(s string, max int, emoji bool, what string) (string, error) {
 	if !utf8.ValidString(s) {
-		return "", errors.New("names must be valid UTF-8")
+		return "", fmt.Errorf("a %s must be valid UTF-8", what)
 	}
-	s = strings.Map(func(r rune) rune {
-		if hiddenRune(r) {
-			return -1
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if emoji {
+			if n := joinedEmojiAt(s[i:]); n > 0 {
+				b.WriteString(s[i : i+n])
+				i += n
+				continue
+			}
 		}
-		return r
-	}, s)
-	s = strings.Join(strings.Fields(s), " ")
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if !hiddenRune(r) {
+			b.WriteRune(r)
+		}
+		i += size
+	}
+	s = strings.Join(strings.Fields(b.String()), " ")
 	if n := utf8.RuneCountInString(s); n == 0 || n > max {
-		return "", fmt.Errorf("a name is 1 to %d characters", max)
+		return "", fmt.Errorf("a %s is 1 to %d characters", what, max)
 	}
 	if strings.IndexFunc(s, visibleRune) < 0 {
-		return "", errors.New("a name needs a letter, digit, punctuation mark or symbol")
+		return "", fmt.Errorf("a %s needs a letter, digit, punctuation mark or symbol", what)
 	}
 	return s, nil
 }

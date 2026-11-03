@@ -210,7 +210,7 @@ func TestTheShellPostsNotifications(t *testing.T) {
 	if err := stream.Send("notifies", map[string]bool{"on": true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Notify.SetKinds(new(true), nil, nil); err != nil {
+	if err := a.Notify.SetKinds(notify.Kinds{DMs: new(true)}); err != nil {
 		t.Fatal(err)
 	}
 	if msg := next(t, stream); msg.T != "notifying" || string(msg.D) != `{"on":true}` {

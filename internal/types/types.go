@@ -62,6 +62,9 @@ type Notifications struct {
 	DMs      bool `json:"dms,omitempty"`
 	Mentions bool `json:"mentions,omitempty"`
 	HideText bool `json:"hideText,omitempty"`
+	// EveryoneOff silences staff's @everyone (M15.4), which notifies as a
+	// mention does unless the member turns it off.
+	EveryoneOff bool `json:"everyoneOff,omitempty"`
 	// Muted holds what the member muted, by den ID.
 	Muted map[string]Muted `json:"muted,omitempty"`
 	// Sounds are the member's choices for the page's sounds (M14.2), by

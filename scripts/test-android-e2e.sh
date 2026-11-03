@@ -46,7 +46,8 @@
 # page playing their sounds through the call's context (M14.2). Desk reacts
 # to the member's message, which the phone's page shows as a chip, and the
 # member reacts to desk's from the long press's quick row, which desk's
-# page shows (M15.3). Then the screens are walked again with Android's font scale at
+# page shows (M15.3). Desk posts a poll, which the member votes on by taps,
+# and desk's den counts (M15.4). Then the screens are walked again with Android's font scale at
 # 1.3, as a member with larger text has it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
@@ -459,6 +460,27 @@ reacted() {
 }
 waitfor 20 "the member's reaction on desk's page" reacted
 ok "desk's reaction on the member's message showed as a chip on the phone's page, and the member's from the long press's quick row, by Android's own touch, reached desk's page"
+# Polls (M15.4): desk posts a poll, its totals as votes come in with who
+# voted for what, and votes on it; the member votes from the phone's page
+# by taps, and desk's den has their vote.
+echo ">> A poll, at 390 pixels"
+nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+desk_poll=$(den api POST "/api/dens/$den_id/channels/$general/messages" \
+  "{\"nonce\":\"$nonce\",\"text\":\"Train or bus home?\",\"poll\":{\"choices\":[\"Train\",\"Bus\"],\"hours\":1,\"show_voters\":\"always\",\"show_totals\":\"live\"}}" |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')
+[[ -n "$desk_poll" ]] || fail "desk's poll"
+den api POST "/api/dens/$den_id/messages/$desk_poll/poll/vote" '{"choices":[0]}' >/dev/null
+printf '{"den":"%s","general":"%s","random":"%s","dm":"%s","desk_poll":"%s"}\n' "$den_id" "$general" "$random" "$dm" "$desk_poll" |
+  incus exec "$CONTAINER" -- sh -c 'cat > /root/walk-ctx.json'
+phone start
+waitfor 20 "the page in front" front
+walk polls || fail "a poll at 390 pixels"
+polled() {
+  den api GET "/api/dens/$den_id/channels/$general/messages?around=$desk_poll&limit=1" |
+    python3 -c 'import json, sys; p = json.load(sys.stdin)["messages"][0]["poll"]; sys.exit(0 if p["voted"] == 2 and sys.argv[1] in p["voters"][1] else 1)' "$member_id"
+}
+waitfor 20 "the member's vote on desk's poll" polled
+ok "desk's poll showed on the phone's page, the member voted on it by Android's own touch, and desk's den counted the vote, with who cast it"
 # Calls on a phone (M13.4): desk, the den's owner in Chromium in
 # dens-browsers, shares its screen in Lounge and answers the walk over
 # HTTP with what its page shows of the call. The member joins from the

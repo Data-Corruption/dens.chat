@@ -29,26 +29,30 @@ const TASK_RE = /^\[( |x)\] /;
 // text) returns a promise that settles once the den has the tick. With
 // big, as a message's text, one of emoji alone shows them large (M15.2).
 //
+// With everyone, the message's @everyone is staff's (M15.4), which
+// mentions the reader as their own name does.
+//
 // It parses a text once (M8): the parse is kept while the text, the
 // reader's username, whether tasks tick and the den's emoji stay the same,
 // so a row that renders again, as every row does while the member types,
 // gives Preact the same tree, which it skips. A tick goes through a ref,
 // so it reaches the row's current onTask.
-export function Markdown({ text, me, onTask, big }) {
+export function Markdown({ text, me, onTask, big, everyone }) {
     const tick = useRef(onTask);
     tick.current = onTask;
     const ticks = !!onTask;
     const username = me?.username;
     const emoji = useContext(EmojiContext)?.byName;
     return useMemo(
-        () => parse(text, { username, emoji, big: !!big && emojiAlone(text, emoji) > 0, onTask: ticks ? (...a) => tick.current(...a) : undefined }),
-        [text, username, ticks, emoji, big],
+        () => parse(text, { username, everyone: !!everyone, emoji, big: !!big && emojiAlone(text, emoji) > 0, onTask: ticks ? (...a) => tick.current(...a) : undefined }),
+        [text, username, everyone, ticks, emoji, big],
     );
 }
 
 // parse is what Markdown renders: a text's blocks in their container. ctx
-// holds the reader's username, whose mentions look different, onTask, the
-// den's emoji by name, and whether the text is emoji alone, shown large.
+// holds the reader's username, whose mentions look different, as staff's
+// @everyone does where everyone says it's theirs (M15.4), onTask, the den's
+// emoji by name, and whether the text is emoji alone, shown large.
 export function parse(text, ctx) {
     return <div class={ctx.big ? 'markdown font-emoji text-5xl leading-tight' : 'markdown'} data-big={ctx.big ? '' : undefined}>{blocks(text, ctx)}</div>;
 }
@@ -278,7 +282,7 @@ function inline(line, marks, ctx, key, start, end) {
             const name = line.slice(i + 1, j);
             if (name.length >= 2 && name.length <= 32) {
                 flush();
-                const self = ctx.username && name.toLowerCase() === ctx.username;
+                const self = (ctx.username && name.toLowerCase() === ctx.username) || (ctx.everyone && name.toLowerCase() === 'everyone');
                 out.push(
                     <span key={`${key}-${n++}`} data-mention={name.toLowerCase()} class={`rounded px-0.5 font-medium ${self ? 'bg-warning/30' : 'bg-primary/15 text-primary'}`}>
                         @{name}

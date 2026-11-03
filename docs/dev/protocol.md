@@ -255,7 +255,7 @@ GET /api/changes?since=<version>&upto=<message id>
 200 {"version": 1300, "messages": [message, …], "deleted": [{"id", "channel_id"}, …], "more": false}
 ```
 
-- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, or from M15.3 whose reactions changed, its revision as it was, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
+- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, or from M15.3 whose reactions changed, or from M15.4 whose poll's votes changed or that ended, its revision as it was, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
 - A client keeps what it cached from an earlier `ready` only when its version is from the same `epoch`, no older than `floor` and no newer than `version`; otherwise it drops it. It takes the `version` of a `ready` that finds it holding nothing.
 - **Members since (M6.2).** A client that kept the list of members from a `ready` names the epoch and version of that `ready` on the socket's upgrade, as `members`. When the den can still say what changed since, `ready` carries only the members whose records changed after that version, and says so with `sync.members_since`, the version they changed after; the client changes its list by them and takes the new `version` for its list. Otherwise `ready` carries everyone, without `members_since`. A `ready` the den sends mid-stream goes by the same cursor, which the socket's own events kept current.
 - `GET /api/changes` returns the messages edited or deleted after `since`, in channels the member can see now, and with IDs up to `upto` when it's given: the newest message the client holds. An edited message comes as history has it now, and a deleted one as its ID and channel. A change in a channel that's gone is left out, since the channel is missing from `ready` and the client drops it whole.
@@ -326,10 +326,10 @@ group   = {"id", "name", "position"}
 ```
 message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
            "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6),
-           "sealed"?, "key_id"? (M1.7), "reactions"?, "dm_reactions"? (M15.3)}
+           "sealed"?, "key_id"? (M1.7), "reactions"?, "dm_reactions"? (M15.3), "poll"?, "everyone"? (M15.4)}
 ```
 
-A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions-m153)).
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions-m153)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls-m154)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links-m3)).
 
@@ -337,7 +337,7 @@ A DM's message carries its text and files `sealed` instead, with the DM key `key
 
 `reply_to` names the message this one replies to, which is in the same channel. `reply` previews it as `{"author_id", "text"}`: its author and the start of its text, from the first character that isn't a space, at most 100 characters. The text is empty when the original has only files. A client can show the quote without loading a message that may be thousands back. The den builds the preview from the original as it is whenever it sends the reply, and leaves it out once the original is deleted; clients update the previews they hold from the original's `message.updated` and `message.deleted`. In a DM, the den can't read the original, so `reply` carries it whole, for the client to open and quote: `{"author_id", "text": "", "sealed", "key_id", "nonce", "revision"}`.
 
-**Mentions.** `@` then 2 to 32 letters, digits or `_`, matching a username without regard to case. It counts at the start of a line, or after a character that is neither one of those nor `@`, when none of them follows. It doesn't count inside code (a ``` block, or a span from one backtick to the next with something between) or inside a link (`http://` or `https://` at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick). The den counts by this rule (`denproto.Mentions`), and the page highlights by the same one; both are tested against the cases in `internal/denproto/testdata/mentions.json`. A mention adds to the unread mention count of the member it names, if they can see the channel and aren't the author. An edit recounts.
+**Mentions.** `@` then 2 to 32 letters, digits or `_`, matching a username without regard to case. It counts at the start of a line, or after a character that is neither one of those nor `@`, when none of them follows. It doesn't count inside code (a ``` block, or a span from one backtick to the next with something between) or inside a link (`http://` or `https://` at the start or after a character that can't be part of a name, running up to a space or one of `<`, `>`, `"`, `'` and the backtick). The den counts by this rule (`denproto.Mentions`), and the page highlights by the same one; both are tested against the cases in `internal/denproto/testdata/mentions.json`. A mention adds to the unread mention count of the member it names, if they can see the channel and aren't the author. An edit recounts. Staff's `@everyone`, the moderators' and the owner's, mentions every member who can see the channel, and marks the message `everyone`; anyone else's mentions a member named `everyone`, whom a den may have from before (M15.4; see [Polls](#polls-m154)).
 
 ### Links (M3)
 
@@ -909,6 +909,31 @@ PUT  /api/messages/{id}/reactions/sealed   {"revision", "key_id", "sealed"}     
 
 **Older ones.** An older page shows no reactions. An older den sends none and takes none; a client offers none for a den with no `emoji_limits`, since reactions came with emoji.
 
+## Polls (M15.4)
+
+A channel's message may be a poll, whose question its text is (see the design doc's Polls). A poll as the den sends it is as the member it's sent to may see it, by its rules: in history, in what changed while away, in `message.created`, and in its events.
+
+```
+poll         = {"choices": ["…", …], "multiple"?: true, "ends_at", "show_voters": "never" | "end" | "always",
+                "show_totals": "live" | "voted", "ended"?: true, "voted", "totals"?: [n, …], "voters"?: [[member id, …], …],
+                "mine"?: [choice, …]}
+poll_request = {"choices": ["…", …], "multiple"?: true, "hours", "show_voters", "show_totals"}
+
+POST /api/channels/{id}/messages     {"nonce", "text", "poll": poll_request, "reply_to"?}   201 message
+POST /api/messages/{id}/poll/vote    {"choices": [choice, …]}                              200 poll
+POST /api/messages/{id}/poll/end                                                           200 poll   (its author only)
+```
+
+- A poll goes with a message in a text channel, which has a question, and no `attachments` or `editors`; in a DM, or with either, `400 invalid_field`. It has 2 to 10 `choices`, each 1 to 80 characters with something visible, which the den cleans as display names are, keeping each of Unicode's emoji whole, joiners and tags and all, no two the same in any case; `hours`, how long it runs, is 1 to 336; `multiple` lets a member pick more than one; and its two rules are fixed once it's posted: `show_voters`, when who voted for what shows, `never`, at its `end`, or `always`, with the totals; and `show_totals`, when the totals show, `live`, as votes come in, or once the member `voted`, whose vote is then final. Anything else gets `400 invalid_field`. The den keeps the choices as cleaned, which the message shows.
+- `ends_at` is when it ends, and `ended` says it has, at its time or early by its author, who moves `ends_at` to then; one past `ends_at` is ended, though the den's word on it may still be coming. `voted` is how many members voted, which everyone sees. `totals`, each choice's count, come once the member may see them: always under `live`, under `voted` once they voted, and to everyone once it ended. `voters`, each choice's members in the order they voted, come with the totals under `always`, and to everyone once it ended under `end`; never under `never`. `mine` are the member's own votes, by choice, while they have any.
+- `/vote` sets the member's vote: the choices they pick, by their place in `choices`, each once, one unless `multiple`; none takes it back. The poll must be open, or `403 forbidden`; under `voted`, a member who voted gets `403 forbidden`, their vote final. The same vote again changes nothing and tells nobody. The answer is the poll as the member now sees it. `/end` is its author's alone, anyone else getting `403 forbidden`; one that ended stays as it is. A message without a poll gets `400 invalid_field` from either, and one the member can't see `404 not_found`. A poll can't be edited: `PATCH /api/messages/{id}` and its ticks get `403 forbidden`.
+- `poll.updated {"message_id", "channel_id", "voted", "totals"?, "voters"?, "mine"?}` carries how a poll stands, as its audience may see it: to the member's own sessions as their vote changes, with `mine`, their votes, an empty list once they take it back; and in batches every second or two, without `mine`, to those who see the channel under `live`, and under `voted` with the totals to the poll's voters and with only `voted` to the rest. A client sets `voted`; where an update carries totals, the totals and the voters that come with them; and where it carries `mine`, the member's own votes; it keeps the rest as it holds them, and applies none to a poll that ended.
+- `poll.ended {"message_id", "channel_id", "ends_at", "voted", "totals", "voters"?}` carries the final totals, and who voted for what under `end` and `always`, to everyone who sees the channel, as the poll ends.
+- A client checks a poll and its events as they arrive: its choices clean, its tally in range, each count at most `voted` and the voters it names as many, and its member's votes its own choices; one that doesn't fit is refused, and an event whose tally doesn't fit the poll's choices changes nothing.
+- Each vote and each end records its message in the change log, its revision as it was (see [What changed while away](#what-changed-while-away-m6)). A poll goes with its message, and its votes with it.
+- **@everyone.** Staff's `@everyone` in a channel, found by the mention rule, mentions each member who can see the channel but the author, as a mention by name does, and marks the message `everyone`, a client's sign to count it as a mention of its member and highlight it. It counts while the text holds it and staff put it there: an edit by anyone that keeps a marked one keeps the mark, and one that adds it marks the message only where staff make it. Anyone else's mentions the member named `everyone`, if the den has one; nobody new takes that username, which `/api/join` answers as `409 username_taken`.
+- An older page shows a poll's question alone, and an @everyone as a mention of nobody, though the den counts it among the member's mentions. An older den takes no poll: a client offers none where the den sends no `emoji_limits`, which came with them.
+
 ## Rate limits
 
 The den limits per IP, taken from `X-Forwarded-For` only on connections from loopback, and per member. Limits live in memory only. Starting values, to tune with real use:
@@ -921,11 +946,11 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Password sign-in and recovery | 10, then 1 every 6 minutes, per IP and per username. A signed-in member's password checks count against the username's |
 | A new device asking after its sign-in, and revealing | 30 per minute per IP |
 | Sending messages | 5 per 5 seconds per member, per channel |
-| A member's messages, across every channel and DM (M8) | 10, then 1 every half second; and 256 KiB of text, then 16 KiB a second |
+| A member's messages, across every channel and DM (M8) | 10, then 1 every half second; and 256 KiB of text, a poll's choices among it (M15.4), then 16 KiB a second |
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, and from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, and from M15.4 voting and ending a poll | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

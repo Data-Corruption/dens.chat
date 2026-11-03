@@ -154,7 +154,7 @@ func TestTicks(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	final, _, err := f.d.message(ctx, m.ID)
+	final, _, err := f.d.message(ctx, 0, m.ID)
 	if err != nil || strings.Contains(final.Text, "[ ]") || final.Revision != 21 {
 		t.Fatalf("after the ticks: %+v %v", final, err)
 	}

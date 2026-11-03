@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DenEmoji } from '../assets/js/src/denemoji.jsx';
 import {
-    HALF_LIFE, KEEP, MAX_BIG, QUICK, TONES, cleanName, completeEmoji, completeMember, completionAt, denKey, emojiAlone, emojiIn, emojiList,
+    HALF_LIFE, KEEP, MAX_BIG, QUICK, TONES, cleanName, completeEmoji, completeMember, completeMention, completionAt, denKey, emojiAlone, emojiIn, emojiList,
     inTone, mostUsed, nameAt, nameFromFile, noteSent, noteUses, quickRow, scoreOf, searchDen, searchUnicode, setEmojiList, setSkinTone,
     skinTone, unicodeKey, validName,
 } from '../assets/js/src/emoji.js';
@@ -241,6 +241,16 @@ test('a colon and two characters complete an emoji where one may start, and an @
     assert.deepEqual(completeMember('b', members).map((m) => m.username), ['bob', 'carol'], 'by username, then a word of the display name');
     assert.deepEqual(completeMember('', members).map((m) => m.username), ['bob', 'carol']);
     assert.deepEqual(completeMember('tab', members).map((m) => m.username), ['bob']);
+});
+
+test('completing @ offers staff @everyone first where it matches, and others only members (M15.4)', () => {
+    const members = [{ id: '2', username: 'bob', display_name: 'Bobby Tables' }, { id: '3', username: 'carol', display_name: 'Carol B' }];
+    const offered = (q, everyone) => completeMention(q, members, everyone).map((x) => (x.everyone ? '@everyone' : x.member.username));
+    assert.deepEqual(offered('', true), ['@everyone', 'bob', 'carol']);
+    assert.deepEqual(offered('Ev', true), ['@everyone']);
+    assert.deepEqual(offered('b', true), ['bob', 'carol']);
+    assert.deepEqual(offered('', false), ['bob', 'carol']);
+    assert.deepEqual(offered('ev', false), []);
 });
 
 test("completing an emoji offers the den's that match, then Unicode's", () => {

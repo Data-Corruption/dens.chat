@@ -143,11 +143,11 @@ func TestRemoveBanAndReclaim(t *testing.T) {
 	if err := f.d.Remove(ctx, carol, bob, denproto.RemoveRequest{Ban: true, DeleteMessages: 3600, RevokeInvite: true}); err != nil {
 		t.Fatalf("ban: %v", err)
 	}
-	if _, _, err := f.d.message(ctx, old.ID); err != nil {
+	if _, _, err := f.d.message(ctx, 0, old.ID); err != nil {
 		t.Fatalf("an older message was deleted: %v", err)
 	}
 	for _, m := range []denproto.Message{recent, private, withFile} {
-		if _, _, err := f.d.message(ctx, m.ID); err == nil {
+		if _, _, err := f.d.message(ctx, 0, m.ID); err == nil {
 			t.Fatalf("message %s survived the ban", m.ID)
 		}
 	}

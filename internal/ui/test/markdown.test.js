@@ -107,6 +107,16 @@ test("a mention of the reader looks different from anyone else's", () => {
     assert.notEqual(mine.props.class, theirs.props.class);
 });
 
+test("staff's @everyone mentions every reader, and anyone else's only a member of that name (M15.4)", () => {
+    const [mine] = mentioned(render('@alice', { username: 'alice' }));
+    const [marked] = mentioned(parse('@everyone, lunch', { username: 'alice', everyone: true }));
+    const [unmarked] = mentioned(parse('@everyone, lunch', { username: 'alice' }));
+    const [named] = mentioned(parse('@everyone, lunch', { username: 'everyone' }));
+    assert.equal(marked.props.class, mine.props.class);
+    assert.notEqual(unmarked.props.class, mine.props.class);
+    assert.equal(named.props.class, mine.props.class);
+});
+
 // What the renderer may produce; a component is the spoiler.
 const ELEMENTS = new Set(['div', 'p', 'br', 'blockquote', 'pre', 'code', 'strong', 'em', 'del', 'span', 'a']);
 

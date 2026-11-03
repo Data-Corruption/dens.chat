@@ -129,10 +129,10 @@ type conn struct {
 	members      *membersCursor
 	stateDirty   bool
 	membersDirty bool
-	// reactions are the latest reactions' events applied, which what the
-	// den sends of a message after a request they came during takes again
-	// (M15.3).
-	reactions reactionRing
+	// tallies are the latest events applied that change a message without
+	// its revision, reactions' (M15.3) and polls' (M15.4), which what the
+	// den sends of a message after a request they came during takes again.
+	tallies tallyRing
 
 	// Only the run goroutine touches these, and sentMembers, the cursor
 	// this socket's upgrade named.
@@ -716,8 +716,9 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	// they read by sending it (M12.3).
 	var notice *notify.Message
 	var own *denproto.Message
-	// The message a reaction's event changes, for the cache (M15.3).
-	var reacted string
+	// The message whose tallies an event changes, its reactions (M15.3) or
+	// its poll's (M15.4), for the cache.
+	var tallied string
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
 		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {
@@ -763,21 +764,22 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 				set.Emoji = []string{}
 			}
 			out, err = denproto.NewEvent(out.T, out.Seq, PageDMReactions{MessageID: d.MessageID, ChannelID: d.ChannelID, PageReactionSet: set})
-			reacted = d.MessageID
+			tallied = d.MessageID
 		}
-	case e.T == denproto.EventReactionAdded || e.T == denproto.EventReactionRemoved || e.T == denproto.EventReactionCleared:
+	case e.T == denproto.EventReactionAdded || e.T == denproto.EventReactionRemoved || e.T == denproto.EventReactionCleared ||
+		e.T == denproto.EventPollUpdated || e.T == denproto.EventPollEnded:
 		var r struct {
 			MessageID string `json:"message_id"`
 		}
 		if json.Unmarshal(out.D, &r) == nil {
-			reacted = r.MessageID
+			tallied = r.MessageID
 		}
 	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
-	if err == nil && reacted != "" {
-		c.reactions.add(e)
-		c.cacheReaction(e, reacted)
+	if err == nil && tallied != "" {
+		c.tallies.add(e)
+		c.cacheTally(e, tallied)
 	}
 	// A new emoji, a new image, or emoji turned on fetch their files.
 	if err == nil && (e.T == denproto.EventEmojiCreated || e.T == denproto.EventEmojiUpdated || e.T == denproto.EventDenUpdated) {

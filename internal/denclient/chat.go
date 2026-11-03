@@ -173,7 +173,11 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		return PageMessage{}, inputError(err)
 	}
 	req.Sealed, req.KeyID = nil, ""
-	if _, dm := c.isDM(channelID); dm {
+	_, dm := c.isDM(channelID)
+	if req.Poll, err = checkPollSend(req, dm); err != nil {
+		return PageMessage{}, err
+	}
+	if dm {
 		p := denproto.DMPayload{Text: req.Text}
 		var blobs []string
 		if p.Files, blobs, err = c.takeUploads(channelID, req.Attachments); err != nil {

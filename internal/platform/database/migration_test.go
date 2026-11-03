@@ -22,9 +22,9 @@ var releasedSchema = []struct {
 	added []string
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
-	{"v1.6.0", 1, []string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions"}},
+	{"v1.6.0", 1, []string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}},
 	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
-	{"v1.7.0", 3, []string{"den_reactions", "den_dm_reactions"}},
+	{"v1.7.0", 3, []string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}},
 }
 
 // A database a release left, with a row in every table, migrates to this
@@ -33,8 +33,9 @@ var releasedSchema = []struct {
 // it is: the steps before it never change, so running them alone makes the
 // release's schema. A table keeps every column it had, with the same
 // values; a step may add columns, as M14.3 adds the den's limits for its
-// soundboard and M15.2 its limit for emoji, which hold their defaults, and
-// tables, as M15.3 adds the reactions', which start empty.
+// soundboard and M15.2 its limit for emoji, which hold their defaults, as
+// does M15.4's mark of a message's @everyone, and tables, as M15.3 adds
+// the reactions' and M15.4 the polls', which start empty.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -111,6 +112,11 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				var emojis int
 				if err := db.QueryRow(`SELECT emojis FROM den`).Scan(&emojis); err != nil || emojis != 50 {
 					t.Errorf("%s's den keeps %d emoji, %v, not the default", what, emojis, err)
+				}
+				var marked, messages int
+				if err := db.QueryRow(`SELECT count(*) FILTER (WHERE everyone != 0), count(*) FROM den_messages`).Scan(&marked, &messages); err != nil ||
+					marked != 0 || messages == 0 {
+					t.Errorf("%s's %d messages hold %d marks of @everyone, %v", what, messages, marked, err)
 				}
 				for _, check := range []string{"PRAGMA foreign_key_check", "PRAGMA integrity_check"} {
 					if got := dumpQuery(t, db, check); got != "" && got != `["ok"]` {

@@ -48,6 +48,7 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 		n.Text = ""
 	} else {
 		n.Mention = slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username))
+		n.Everyone = m.Everyone
 	}
 	return n
 }

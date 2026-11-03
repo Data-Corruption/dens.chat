@@ -20,7 +20,7 @@ import { copyText } from './clipboard.js';
 import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
-import { completeEmoji, completeMember, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
+import { completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
@@ -38,6 +38,8 @@ import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { useNarrow } from './nav.js';
 import { isStaff, rank } from './people.jsx';
+import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js';
+import { Poll, PollEditor } from './polls.jsx';
 import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
@@ -118,9 +120,12 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // (M15.3).
     const [reacting, setReacting] = useState(null);
     const [removing, setRemoving] = useState(null);
-    // A den older than reactions, which came with its emoji, takes none.
+    // A den older than reactions, which came with its emoji, takes none,
+    // nor polls nor @everyone, which came with them (M15.4). Polls go in
+    // channels, and staff send @everyone there.
     const emoji = useContext(EmojiContext);
     const reactions = !!emoji?.known;
+    const polls = reactions && channel.kind !== 'dm';
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
@@ -471,6 +476,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         } else if (REACTIONS.has(e.t)) {
             holdView();
             setList((cur) => withReaction(cur, e.t, d));
+        } else if (POLLS.has(e.t)) {
+            holdView();
+            setList((cur) => withPoll(cur, e.t, d));
         }
     }
 
@@ -607,10 +615,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         setFiles((cur) => cur.filter((x) => x.key !== key));
     }
 
-    async function send(text, pendingEntry) {
+    async function send(text, poll, pendingEntry) {
         if (listRef.current.hasNewer) loadNewest();
         const entry = pendingEntry || {
-            nonce: newNonce(), text, reply_to: replyTo?.id || '', attachments: files.map((f) => f.result), editors, failed: false,
+            nonce: newNonce(), text, reply_to: replyTo?.id || '', attachments: files.map((f) => f.result), editors, poll, failed: false,
         };
         setPending((p) => [...p.filter((x) => x.nonce !== entry.nonce), { ...entry, failed: false }]);
         if (!pendingEntry) {
@@ -624,6 +632,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 nonce: entry.nonce, text: entry.text, reply_to: entry.reply_to || undefined,
                 attachments: entry.attachments.length ? entry.attachments.map((f) => f.id) : undefined,
                 editors: entry.editors.length ? entry.editors : undefined,
+                poll: entry.poll || undefined,
             });
             setPending((p) => p.filter((x) => x.nonce !== entry.nonce));
             if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
@@ -677,7 +686,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
                 canReply={!closed && canSend}
-                canEdit={!m.locked && (m.author_id === me.id || (m.editors || []).includes(me.id))}
+                canEdit={!m.locked && !m.poll && (m.author_id === me.id || (m.editors || []).includes(me.id))}
                 canDelete={m.author_id === me.id || (channel.kind !== 'dm' && rank(role) > rank(members.get(m.author_id)?.role))}
                 link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
                 menuOpen={menu === m.id}
@@ -693,6 +702,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 onReactPick={(anchor) => setReacting({ id: m.id, anchor })}
                 onRemoveReactions={() => setRemoving(m.id)}
                 onUpdated={(u) => setList((cur) => withUpdate(cur, u, true))}
+                onPolled={(t, d) => {
+                    holdView();
+                    setList((cur) => withPoll(cur, t, d));
+                }}
                 onProfile={onProfile}
                 onMenu={(open) => setMenu(open ? m.id : null)}
                 onReply={() => setReplyTo(m)}
@@ -763,7 +776,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     {list.hasOlder && !offline && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
                     {rows}
-                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onToggle={toggled} onRetry={() => send(p.text, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
+                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onToggle={toggled} onRetry={() => send(p.text, p.poll, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
                     {list.hasNewer && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                 </div>
             </div>
@@ -801,9 +814,11 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         onCancelReply={() => setReplyTo(null)}
                         candidates={candidates}
                         mentionable={channel.kind === 'dm' ? null : candidates}
+                        polls={polls}
+                        everyone={polls && isStaff(role)}
                         editors={editors}
                         onEditors={setEditors}
-                        onSend={(text) => send(text)}
+                        onSend={(text, poll) => send(text, poll)}
                         onEditLast={editLast}
                         onTyping={onTyping}
                         narrow={narrow}
@@ -864,7 +879,7 @@ function Quoted({ text, locked, me }) {
 // may do with it: link is the link to it, for Copy link (M11). A finger's
 // long press opens the menu in the ⋯'s place, which a touch screen has
 // none of, and on the phone layout, narrow, it's a sheet (M13.2).
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -978,7 +993,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         (m.text.trim() || m.edited_at) && (
                             <Fold onToggle={onToggle}>
                                 <div class="wrap-break-word">
-                                    {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} big />}
+                                    {m.text.trim() && <Markdown text={m.text} me={me} everyone={m.everyone} onTask={canEdit ? tick : undefined} big />}
                                     {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
                                     {editorNames.length > 0 && (
                                         <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
@@ -987,6 +1002,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                             </Fold>
                         )
                     )}
+                    {m.poll && !m.locked && !editing && <Poll m={m} me={me} denID={denID} nameOf={nameOf} onPolled={onPolled} />}
                     {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
                     {!m.locked && !editing && m.text && <Videos text={m.text} />}
                     <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
@@ -1276,6 +1292,11 @@ function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
                         {p.attachments.map((f) => <li key={f.id} class="truncate">{f.name} · {formatSize(f.size)}</li>)}
                     </ul>
                 )}
+                {p.poll && (
+                    <ul class="text-xs text-base-content/70" aria-label="Choices">
+                        {p.poll.choices.map((c, i) => <li key={i} class="truncate">○ {c}</li>)}
+                    </ul>
+                )}
                 {p.failed && (
                     <div class="flex items-center gap-2 text-xs text-error">
                         <span>{p.error}</span>
@@ -1425,9 +1446,15 @@ function EditorList({ candidates, selected, onChange }) {
 // edit it. A smiley in the box's corner opens the emoji picker (M15.2),
 // and typing a colon and two characters, or in a channel an @, where a
 // name or a mention may start, lists what completes it: mentionable are
-// the members a mention may name, none in a DM.
-function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
+// the members a mention may name, none in a DM, and with everyone, staff's
+// @everyone first (M15.4). With polls, the + makes the message a poll,
+// whose question is its text (M15.4).
+function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
+    // poll is the poll being written, which goes without files or other
+    // editors, and problem what kept it from going.
+    const [poll, setPoll] = useState(null);
+    const [problem, setProblem] = useState('');
     const emoji = useContext(EmojiContext);
     const den = emoji?.on ? emoji.list : [];
     // picking says the emoji picker is open; completing is what the caret
@@ -1501,7 +1528,14 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     const something = !!text.trim() || files.length > 0;
     function submit() {
         if (!something || length > MAX_TEXT || uploading || failed) return;
-        onSend(text);
+        const held = poll && draftProblem(poll, text);
+        if (held) {
+            setProblem(held);
+            return;
+        }
+        onSend(text, poll ? pollRequest(poll) : undefined);
+        setPoll(null);
+        setProblem('');
         // The emoji it holds count toward the member's most used, once the
         // list knows Unicode's (M15.2).
         const sent = text;
@@ -1534,7 +1568,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
         dismissed.current = null;
         let items;
         if (found.kind === 'member') {
-            items = completeMember(found.query, mentionable).map((m) => ({ member: m }));
+            items = completeMention(found.query, mentionable, everyone);
         } else {
             const l = emojiList();
             if (!l) loadEmoji().then(() => box.current && complete(box.current.value, box.current.selectionStart), () => {});
@@ -1563,6 +1597,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
         const c = completing;
         if (!c) return;
         const end = c.start + 1 + c.query.length;
+        if (item.everyone) return putIn(c.start, end, '@everyone ');
         if (item.member) return putIn(c.start, end, `@${item.member.username} `);
         used(item);
         putIn(c.start, end, `${item.den ? `:${item.den.name}:` : inTone(item.unicode, skinTone())} `);
@@ -1591,6 +1626,12 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     function share() {
         setAdding(false);
         setSharing(true);
+    }
+    function startPoll() {
+        setAdding(false);
+        setPoll(newDraft());
+        setProblem('');
+        box.current?.focus();
     }
     const typers = typingLine(typing.map((m) => m.display_name));
     // While a touch screen's keyboard is up, the box stops growing sooner,
@@ -1633,6 +1674,12 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                         ))}
                     </ul>
                 )}
+                {poll && (
+                    <PollEditor draft={poll} problem={problem} onRemove={() => setPoll(null)} onChange={(d) => {
+                        setPoll(d);
+                        setProblem('');
+                    }} />
+                )}
                 {sharing ? (
                     <div class="mb-2 flex flex-col gap-1 rounded border border-base-300 p-2">
                         <div class="flex items-center justify-between gap-2 text-xs text-base-content/70">
@@ -1659,30 +1706,45 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                     {adding && !narrow && (
                         <ul role="menu" class="menu absolute bottom-full left-0 z-20 mb-1 w-56 rounded-box bg-base-100 p-1 shadow">
                             <li role="none">
-                                <button type="button" role="menuitem" class="pointer-coarse:min-h-11" disabled={files.length >= MAX_ATTACHMENTS} onClick={attach}>
+                                <button type="button" role="menuitem" class="pointer-coarse:min-h-11" disabled={files.length >= MAX_ATTACHMENTS || !!poll} onClick={attach}>
                                     <AttachIcon />
                                     Attach files
                                 </button>
                             </li>
                             <li role="none">
-                                <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${editors.length ? 'text-primary' : ''}`} onClick={share}>
+                                <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${editors.length ? 'text-primary' : ''}`} disabled={!!poll} onClick={share}>
                                     <EditorsIcon />
                                     Let others edit
                                 </button>
                             </li>
+                            {polls && (
+                                <li role="none">
+                                    <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${poll ? 'text-primary' : ''}`}
+                                        disabled={files.length > 0 || editors.length > 0 || !!poll} onClick={startPoll}>
+                                        <PollIcon />
+                                        Poll
+                                    </button>
+                                </li>
+                            )}
                         </ul>
                     )}
                 </div>
                 {adding && narrow && (
                     <Sheet label="Add to this message" onClose={() => setAdding(false)}>
-                        <SheetRow disabled={files.length >= MAX_ATTACHMENTS} onClick={attach}>
+                        <SheetRow disabled={files.length >= MAX_ATTACHMENTS || !!poll} onClick={attach}>
                             <AttachIcon />
                             Attach files
                         </SheetRow>
-                        <SheetRow onClick={share}>
+                        <SheetRow disabled={!!poll} onClick={share}>
                             <EditorsIcon />
                             <span class={editors.length ? 'text-primary' : ''}>Let others edit</span>
                         </SheetRow>
+                        {polls && (
+                            <SheetRow disabled={files.length > 0 || editors.length > 0 || !!poll} onClick={startPoll}>
+                                <PollIcon />
+                                <span class={poll ? 'text-primary' : ''}>Poll</span>
+                            </SheetRow>
+                        )}
                     </Sheet>
                 )}
                 <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {
@@ -1701,7 +1763,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                         ref={box}
                         class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-16"
                         rows={lines}
-                        placeholder={placeholder}
+                        placeholder={poll ? 'Ask your question' : placeholder}
                         enterkeyhint={touch ? 'enter' : 'send'}
                         value={text}
                         onFocus={() => setFocused(true)}
@@ -1795,6 +1857,15 @@ function AttachIcon() {
     );
 }
 
+// PollIcon is three bars of a poll's choices, of different lengths.
+function PollIcon() {
+    return (
+        <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M2.5 4h7M2.5 8h11M2.5 12h4.5" />
+        </svg>
+    );
+}
+
 function EditorsIcon() {
     return (
         <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -1875,6 +1946,10 @@ function WritingGuide({ touch, onClose }) {
                     <h3 class="font-semibold">Mentions and links</h3>
                     <p>@ and a username lets them know, if they can see the channel. Inside code or a link it's only text.</p>
                     <p>
+                        Staff, the moderators and the owner, write @everyone to let everyone who can see the channel know. Anyone can turn
+                        those off in the settings, under Notifications & sounds, or mute the channel.
+                    </p>
+                    <p>
                         A link shows where it goes, as you paste it; there's no way to give one a label. When it's sent, Dens takes its tracking
                         out, and writes YouTube, Reddit, X and Amazon links in a short form.
                     </p>
@@ -1897,6 +1972,11 @@ function WritingGuide({ touch, onClose }) {
                         their location and camera details before they leave this device.
                     </p>
                     <p>Let others edit: up to {MAX_EDITORS} people who can see the channel can edit the message too, but not delete it.</p>
+                    <p>
+                        Poll, in a channel: the message is the question, with 2 to 10 choices. You pick how long it runs, whether anyone sees
+                        who voted for what, and whether the totals show as votes come in or only to those who voted, whose votes are then
+                        final. A poll can't be edited once it's sent, but you can end it early.
+                    </p>
                 </section>
             </div>
         </Dialog>

@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.8.0] - 2026-11-03
+
+### Added
+
+- Animated pictures: a GIF or WebP that moves, as your picture or your profile's banner, framed as a still one is, with your own Dens making it small enough to send. Under Appearance, Animations plays them always, or only while the pointer is over them, and in a profile you open; that's the default where your system asks for less motion.
+- A den's own emoji. Moderators and the owner add them in the den's Manage, under Emoji, from a picture, a photo or a GIF or WebP that moves, and everyone writes them by name, like `:party_parrot:`, in channels and DMs. A message of nothing but emoji shows them large. In Limits, the owner sets how many the den keeps, 50 at first and up to 500, or turns them off. Your Dens keeps a copy of every one, so a den doesn't learn which ones you see.
+- An emoji picker in the message box, with the ones you use most first, the den's own, then the usual ones by group, a search and a skin tone. Typing a colon and two letters, like `:th`, lists the emoji that match, and `@` lists the people who can see the channel.
+- Reactions, in channels and DMs: from the smiley beside a message's ⋯, its menu's Add reaction, or on a phone a long press, with the six you use most at the top. A reaction's chip says who reacted. A DM's reactions are end-to-end encrypted, like its messages, and moderators can take an emoji's reactions off a message in a channel.
+- Polls in channels, from the + beside the message box: the message is the question, with 2 to 10 choices, one or several picks, an hour to two weeks to run, totals that show as votes come in or only once you've voted, which makes your vote final, and voting that's anonymous, anonymous until the poll ends, or not. A poll can't be edited, and its author can end it early.
+- @everyone, for moderators and the owner, which lets everyone who can see the channel know, as a mention does. Turn it off for yourself under Mentions in Notifications & sounds; a muted den or channel silences it too.
+
+### Changed
+
+- A channel or DM with messages you haven't read is bold, with a small mark at its left edge, and the ones you've read are a little fainter, so they're easier to tell apart in every theme and on a phone.
+- A video's seek bar is thinner, with a smaller handle.
+- On a phone, a menu's title stays at its top as a long one scrolls, so the emoji picker's search stays in reach.
+
 ## [v1.7.0] - 2026-11-02
 
 ### Added

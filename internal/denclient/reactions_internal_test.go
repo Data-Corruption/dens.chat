@@ -106,8 +106,8 @@ func TestApplyingReactions(t *testing.T) {
 
 // The ring hands back the events that came after a mark, while it still
 // holds them, and what it holds once more come than it keeps.
-func TestReactionRing(t *testing.T) {
-	var r reactionRing
+func TestTallyRing(t *testing.T) {
+	var r tallyRing
 	at := r.mark()
 	for i := range 3 {
 		r.add(denproto.Event{T: fmt.Sprint(i)})
