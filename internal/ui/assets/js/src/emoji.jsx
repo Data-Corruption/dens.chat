@@ -195,12 +195,19 @@ export function Completions({ items, index, tone, onPick, onIndex }) {
         <ul ref={list} role="listbox" aria-label="Completions" data-completions
             class="absolute inset-x-0 bottom-full z-30 mb-1 max-h-72 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow-lg">
             {items.map((item, i) => (
-                <HoverRow key={item.member ? item.member.id : item.den ? `d${item.den.id}` : item.unicode.emoji} as="li" role="option" aria-selected={i === index}
+                <HoverRow key={item.everyone ? 'everyone' : item.member ? item.member.id : item.den ? `d${item.den.id}` : item.unicode.emoji} as="li" role="option"
+                    aria-selected={i === index}
                     class={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm pointer-coarse:min-h-11 ${i === index ? 'bg-base-200' : ''}`}
-                    data-completion={item.member ? `@${item.member.username}` : item.den ? `:${item.den.name}:` : item.unicode.emoji}
+                    data-completion={item.everyone ? '@everyone' : item.member ? `@${item.member.username}` : item.den ? `:${item.den.name}:` : item.unicode.emoji}
                     onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => onIndex(i)} onClick={() => onPick(item)}>
-                    {item.member ? (
+                    {item.everyone ? (
+                        <>
+                            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary" aria-hidden="true">@</span>
+                            <span class="truncate font-medium">@everyone</span>
+                            <span class="truncate text-base-content/60">Everyone who can see this channel</span>
+                        </>
+                    ) : item.member ? (
                         <>
                             <Avatar member={item.member} size="sm" />
                             <span class="truncate font-medium">{item.member.display_name}</span>

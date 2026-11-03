@@ -4,6 +4,7 @@
 // check it without a browser.
 
 import { compareIds } from './ids.js';
+import { POLLS, withPoll } from './polls.js';
 import { keptReactions, withReaction } from './reactions.js';
 
 // WINDOW is the most messages a run holds, and PAGE the most a load
@@ -102,8 +103,9 @@ export function atTail(list, d, above) {
 // came while it was out: the service may have taken the page before them.
 // Applying one twice changes nothing, so the run they already reached
 // takes them as well: a reaction's too (M15.3), each applied to its
-// emoji's set, and a DM's set by its revision. A new message joins only a
-// run that holds the newest.
+// emoji's set, and a DM's set by its revision; and a poll's (M15.4), which
+// carry how it stands, in order, the newest last. A new message joins only
+// a run that holds the newest.
 export function replayed(list, events) {
     for (const e of events) {
         if (e.t === 'message.created' && !list.hasNewer) list = { ...list, messages: mergeIn(list.messages, [e.d]) };
@@ -111,6 +113,7 @@ export function replayed(list, events) {
         else if (e.t === 'message.deleted') list = withDelete(list, e.d);
         else if (e.t === 'messages.expired') list = withExpired(list, e.d.through);
         else if (REACTIONS.has(e.t)) list = withReaction(list, e.t, e.d);
+        else if (POLLS.has(e.t)) list = withPoll(list, e.t, e.d);
     }
     return list;
 }
