@@ -141,7 +141,7 @@ jobs:
         run: |
           Set-Content internal/ui/assets/css/output.css ""
           Set-Content internal/ui/assets/js/output.js ""
-          Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","wasm/rnnoise.wasm":"test"}'
+          Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","wasm/rnnoise.wasm":"test","emoji.json":"test"}'
 
       - name: Test native Windows build
         shell: pwsh
@@ -194,8 +194,8 @@ jobs:
 
   # The Linux checks that need no containers: the Go suite, which the
   # release job's build relies on rather than running it again, the
-  # third-party notices, shell lint, the page's tests and the release state
-  # machine.
+  # third-party notices, the list of emoji, shell lint, the page's tests and
+  # the release state machine.
   linux-tests:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
@@ -228,6 +228,9 @@ jobs:
 
       - name: Check the third-party notices are current
         run: ./scripts/notices.sh --check
+
+      - name: Check the list of emoji matches its inputs
+        run: ./scripts/emoji.sh --check
 
       - name: Lint shell scripts
         run: ./scripts/test.sh -lint
