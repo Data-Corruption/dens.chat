@@ -44,6 +44,9 @@ type PageMessage struct {
 	denproto.Message
 	Locked string     `json:"locked,omitempty"`
 	Reply  *PageReply `json:"reply,omitempty"`
+	// DMReactions are a DM message's sets of reactions, opened, in place
+	// of the den's sealed ones (M15.3).
+	DMReactions []PageReactionSet `json:"dm_reactions,omitempty"`
 }
 
 // PageReply previews the message another replies to, for the page.
@@ -133,10 +136,13 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		c.noteLocked(m)
 		return PageMessage{Message: out, Reply: reply}
 	}
-	out.Sealed = nil
+	// Its members' sets of reactions open with the keys they name, which
+	// may be newer than the message's (M15.3).
+	sets := c.openSetsLocked(m)
+	out.Sealed, out.DMReactions = nil, nil
 	p, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
 	if locked != "" {
-		return PageMessage{Message: out, Locked: locked, Reply: reply}
+		return PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
 	}
 	out.Text = p.Text
 	channel, _ := denproto.ParseID(m.ChannelID)
@@ -152,7 +158,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		}
 		c.dmFiles[f.ID] = df
 	}
-	return PageMessage{Message: out, Reply: reply}
+	return PageMessage{Message: out, Reply: reply, DMReactions: sets}
 }
 
 // open opens a DM message for the page.

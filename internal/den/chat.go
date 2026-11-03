@@ -945,9 +945,18 @@ func (d *Den) queryMessages(ctx context.Context, query string, args ...any) ([]d
 	if err != nil {
 		return nil, err
 	}
+	reactions, err := reactionsOf(ctx, d.db, mids)
+	if err != nil {
+		return nil, err
+	}
+	sets, err := dmReactionsOf(ctx, d.db, mids)
+	if err != nil {
+		return nil, err
+	}
 	for i := range ms {
 		ms[i].Reply = replies[ms[i].ReplyTo]
 		ms[i].Editors = editors[mids[i]]
+		ms[i].Reactions, ms[i].DMReactions = reactions[mids[i]], sets[mids[i]]
 		// A DM message's files are listed inside it, with their keys.
 		if ms[i].Sealed == nil {
 			ms[i].Attachments = files[mids[i]]

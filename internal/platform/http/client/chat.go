@@ -22,6 +22,8 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Patch("/api/dens/{den}/messages/{message}", rt.handleEdit)
 	r.Post("/api/dens/{den}/messages/{message}/tasks/{n}", rt.handleTask)
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
+	r.Post("/api/dens/{den}/messages/{message}/reactions", rt.handleReact)
+	r.Post("/api/dens/{den}/messages/{message}/reactions/clear", rt.handleClearReaction)
 	r.Get("/api/dens/{den}/dms/{channel}/check", rt.handleCheckState)
 	r.Post("/api/dens/{den}/dms/{channel}/check", rt.handleCheckDM)
 	r.Post("/api/dens/{den}/dms/{channel}/key", rt.handleStartKey)
@@ -119,6 +121,37 @@ func (rt *router) changed(w http.ResponseWriter, r *http.Request, m denclient.Pa
 
 func (rt *router) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	if err := rt.a.Dens.DeleteMessage(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleReact adds the member's reaction to a message in the channel the
+// query names, or takes it back (M15.3). A DM's answers with the member's
+// set as it now is, which this service sealed; a channel's comes back as
+// the den's event.
+func (rt *router) handleReact(w http.ResponseWriter, r *http.Request) {
+	var req denclient.PageReaction
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	set, err := rt.a.Dens.React(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), req)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "set": set})
+}
+
+// handleClearReaction takes one emoji's reactions off a channel's message,
+// at staff's word: those of the members they outrank.
+func (rt *router) handleClearReaction(w http.ResponseWriter, r *http.Request) {
+	var req denproto.ReactionRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.a.Dens.ClearReaction(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"), req); err != nil {
 		rt.denError(w, r, err)
 		return
 	}

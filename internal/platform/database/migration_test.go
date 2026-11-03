@@ -22,9 +22,9 @@ var releasedSchema = []struct {
 	added []string
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
-	{"v1.6.0", 1, []string{"sounds", "den_named_files"}},
+	{"v1.6.0", 1, []string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions"}},
 	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
-	{"v1.7.0", 3, nil},
+	{"v1.7.0", 3, []string{"den_reactions", "den_dm_reactions"}},
 }
 
 // A database a release left, with a row in every table, migrates to this
@@ -33,7 +33,8 @@ var releasedSchema = []struct {
 // it is: the steps before it never change, so running them alone makes the
 // release's schema. A table keeps every column it had, with the same
 // values; a step may add columns, as M14.3 adds the den's limits for its
-// soundboard and M15.2 its limit for emoji, which hold their defaults.
+// soundboard and M15.2 its limit for emoji, which hold their defaults, and
+// tables, as M15.3 adds the reactions', which start empty.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {

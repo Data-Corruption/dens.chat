@@ -129,6 +129,10 @@ type conn struct {
 	members      *membersCursor
 	stateDirty   bool
 	membersDirty bool
+	// reactions are the latest reactions' events applied, which what the
+	// den sends of a message after a request they came during takes again
+	// (M15.3).
+	reactions reactionRing
 
 	// Only the run goroutine touches these, and sentMembers, the cursor
 	// this socket's upgrade named.
@@ -712,6 +716,8 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	// they read by sending it (M12.3).
 	var notice *notify.Message
 	var own *denproto.Message
+	// The message a reaction's event changes, for the cache (M15.3).
+	var reacted string
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
 		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {
@@ -745,9 +751,34 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if json.Unmarshal(e.D, &k) == nil && needsMe(k, me) {
 			c.markDueLocked(k.ChannelID)
 		}
+	case !ok:
+	case e.T == denproto.EventDMReactions:
+		// A DM's set reaches the page opened, or as none where this device
+		// can't open it (M15.3).
+		var d denproto.DMReactions
+		if json.Unmarshal(out.D, &d) == nil {
+			set, _ := c.openSetLocked(d.ChannelID, d.MessageID, d.SealedReactions)
+			set.MemberID, set.Revision = d.MemberID, d.Revision
+			if set.Emoji == nil {
+				set.Emoji = []string{}
+			}
+			out, err = denproto.NewEvent(out.T, out.Seq, PageDMReactions{MessageID: d.MessageID, ChannelID: d.ChannelID, PageReactionSet: set})
+			reacted = d.MessageID
+		}
+	case e.T == denproto.EventReactionAdded || e.T == denproto.EventReactionRemoved || e.T == denproto.EventReactionCleared:
+		var r struct {
+			MessageID string `json:"message_id"`
+		}
+		if json.Unmarshal(out.D, &r) == nil {
+			reacted = r.MessageID
+		}
 	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
+	if err == nil && reacted != "" {
+		c.reactions.add(e)
+		c.cacheReaction(e, reacted)
+	}
 	// A new emoji, a new image, or emoji turned on fetch their files.
 	if err == nil && (e.T == denproto.EventEmojiCreated || e.T == denproto.EventEmojiUpdated || e.T == denproto.EventDenUpdated) {
 		c.kickFill()

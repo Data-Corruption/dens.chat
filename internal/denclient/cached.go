@@ -463,6 +463,7 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 			q.Set("upto", strconv.FormatInt(upto, 10))
 		}
 		var page denproto.Changes
+		mark := c.reactions.mark()
 		err := c.call(ctx, http.MethodGet, "/api/changes?"+q.Encode(), nil, &page)
 		if denproto.IsCode(err, denproto.CodeChangesGone) {
 			// Pruned since the last snapshot: what the cache holds goes,
@@ -484,6 +485,12 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 			if denproto.CheckMessage(m) != nil {
 				return errMalformed
 			}
+		}
+		// A message's reactions change without its revision, so the cache
+		// takes each as the den sent it, with the reactions' events that
+		// came since it was asked for applied again (M15.3).
+		c.replayReactions(mark, page.Messages)
+		for _, m := range page.Messages {
 			id, _ := denproto.ParseID(m.ID)
 			// A message this device can't open loses every file it had in
 			// the cache: there's no telling which it still has.
@@ -491,7 +498,7 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 			if err := cs.DropMessage(den, id, keep...); err != nil {
 				return err
 			}
-			if err := cs.UpdateMessage(den, m); err != nil {
+			if err := cs.RefreshMessage(den, m); err != nil {
 				return err
 			}
 			if e, err := denproto.NewEvent(denproto.EventMessageUpdated, 0, c.open(m)); err == nil {
@@ -659,11 +666,12 @@ func (c *conn) cachedHistory(ctx context.Context, channelID string, q HistoryQue
 			}
 		}
 	}
+	mark := c.reactions.mark()
 	h, err := c.history(ctx, channelID, q)
 	if err != nil {
 		return h, err
 	}
-	c.keepPage(channel, q, h, gen)
+	c.keepPage(channel, q, h, gen, mark)
 	return h, nil
 }
 
@@ -694,11 +702,12 @@ func (c *conn) catchUp(ctx context.Context, channelID string, channel, gen int64
 	after := runs[len(runs)-1].Hi
 	for range catchUpPages {
 		q := HistoryQuery{After: denproto.FormatID(after), Limit: denproto.MaxHistory}
+		mark := c.reactions.mark()
 		h, err := c.history(ctx, channelID, q)
 		if err != nil {
 			return false
 		}
-		c.keepPage(channel, q, h, gen)
+		c.keepPage(channel, q, h, gen, mark)
 		if !h.HasNewer {
 			return true
 		}
@@ -714,9 +723,11 @@ func (c *conn) catchUp(ctx context.Context, channelID string, channel, gen int64
 // covers: from the anchor to its last message, or the other way, and from
 // the channel's start when nothing comes before it. A page that reaches
 // the newest does so in the connection it was fetched in, if that's still
-// the one.
-func (c *conn) keepPage(channel int64, q HistoryQuery, h denproto.History, gen int64) {
+// the one. The reactions' events that came since mark, while it was out,
+// apply to it again, since the den may have read it before them (M15.3).
+func (c *conn) keepPage(channel int64, q HistoryQuery, h denproto.History, gen int64, mark uint64) {
 	ms := h.Messages
+	c.replayReactions(mark, ms)
 	var lo, hi int64
 	if len(ms) > 0 {
 		lo, _ = denproto.ParseID(ms[0].ID)

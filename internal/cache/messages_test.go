@@ -400,3 +400,96 @@ func TestStateAndMembersOutlastRestarts(t *testing.T) {
 		t.Fatalf("a dropped den's state: %q", st)
 	}
 }
+
+// held returns the message the cache holds, as a page from it has it.
+func (f *fixture) held(channel, id int64) denproto.Message {
+	f.t.Helper()
+	p := f.page(channel, Query{Around: id, Limit: 1}, 1, true)
+	for _, m := range p.Messages {
+		if m.ID == denproto.FormatID(id) {
+			return m
+		}
+	}
+	f.t.Fatalf("the cache holds no message %d", id)
+	return denproto.Message{}
+}
+
+// A message's reactions change without its revision (M15.3): a reaction's
+// event changes the cached copy in place; an edit's event, of a newer
+// revision, replaces it whole, while one at the same revision, as a page
+// fetched before the event, changes nothing; and what the den sends after
+// being away, or a page it just sent, replaces it at its own revision. A
+// DM's sets each keep the newer of the two copies', by their revision.
+func TestReactionsChangeTheCachedCopy(t *testing.T) {
+	f := newFixture(t)
+	m := msg(5, 1, "react")
+	f.addRun(1, 1, 9, true, 1, []denproto.Message{m})
+	thumbs := []denproto.Reaction{{Emoji: "👍", Members: []string{"2"}}}
+	if err := f.s.ChangeMessage(denA, 5, func(m *denproto.Message) bool {
+		m.Reactions = thumbs
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.held(1, 5); len(got.Reactions) != 1 || got.Revision != 1 {
+		t.Fatalf("after a reaction, the cache holds %+v", got)
+	}
+	// A change that changes nothing leaves the copy, and one of a message
+	// the cache doesn't hold, nothing.
+	if err := f.s.ChangeMessage(denA, 5, func(*denproto.Message) bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.ChangeMessage(denA, 77, func(*denproto.Message) bool { t.Error("a change ran on a message not held"); return true }); err != nil {
+		t.Fatal(err)
+	}
+	// An event at its revision, as a duplicate, leaves it.
+	if err := f.s.UpdateMessage(denA, m); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.held(1, 5); len(got.Reactions) != 1 {
+		t.Fatalf("a stale event at its revision took its reactions: %+v", got)
+	}
+	// What the den sends now replaces it at that revision.
+	fresh := m
+	fresh.Reactions = []denproto.Reaction{{Emoji: "🎉", Members: []string{"3"}}}
+	if err := f.s.RefreshMessage(denA, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.held(1, 5); len(got.Reactions) != 1 || got.Reactions[0].Emoji != "🎉" {
+		t.Fatalf("what the den sent didn't replace the copy: %+v", got)
+	}
+	f.addRun(1, 1, 9, true, 1, []denproto.Message{m})
+	if got := f.held(1, 5); len(got.Reactions) != 0 {
+		t.Fatalf("a page the den sent didn't replace the copy: %+v", got)
+	}
+
+	// A DM's sets: each member's newer one stays, whichever copy has it.
+	set := func(member string, revision int) denproto.SealedReactions {
+		return denproto.SealedReactions{MemberID: member, KeyID: "4", Revision: revision, Sealed: bytes.Repeat([]byte{byte(revision)}, denproto.SealedReactionsSize)}
+	}
+	dm := denproto.Message{ID: "20", ChannelID: "2", AuthorID: "2", Revision: 1, Sealed: []byte("sealed"), KeyID: "4", Nonce: []byte("n"),
+		DMReactions: []denproto.SealedReactions{set("1", 3), set("2", 1)}}
+	f.addRun(2, 20, 20, false, 1, []denproto.Message{dm})
+	older := dm
+	older.DMReactions = []denproto.SealedReactions{set("1", 2), set("2", 4)}
+	if err := f.s.RefreshMessage(denA, older); err != nil {
+		t.Fatal(err)
+	}
+	got := f.held(2, 20).DMReactions
+	if len(got) != 2 || got[0].MemberID != "1" || got[0].Revision != 3 || got[1].Revision != 4 {
+		t.Fatalf("the sets held are %+v", got)
+	}
+}
+
+func TestNewerSets(t *testing.T) {
+	a := []denproto.SealedReactions{{MemberID: "9", Revision: 2}, {MemberID: "10", Revision: 5}}
+	b := []denproto.SealedReactions{{MemberID: "10", Revision: 4}, {MemberID: "9", Revision: 3}, {MemberID: "3", Revision: 1}}
+	got := NewerSets(a, b)
+	var said []string
+	for _, r := range got {
+		said = append(said, fmt.Sprintf("%s@%d", r.MemberID, r.Revision))
+	}
+	if want := []string{"3@1", "9@3", "10@5"}; !slices.Equal(said, want) {
+		t.Errorf("NewerSets gave %q, not %q", said, want)
+	}
+}

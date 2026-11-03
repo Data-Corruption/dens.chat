@@ -1,10 +1,12 @@
 package cache
 
 import (
+	"cmp"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -92,9 +94,13 @@ func (s *Store) txLocked(fn func(*sql.Tx) error) error {
 }
 
 // putLocked keeps messages of a den within tx: new ones, and newer
-// revisions of those it holds. A message deleted lately, or one retention
-// reached, stays out. It returns the bytes this added to each channel.
-func (s *Store) putLocked(tx *sql.Tx, den int64, denID []byte, g *guards, ms []denproto.Message) (map[int64]int64, error) {
+// revisions of those it holds, or with fresh, what the den just sent of
+// them at the revision the cache holds too, as their reactions change
+// without changing it (M15.3). A DM's sets of reactions each have a
+// revision of their own, and the newer of each stays, whichever copy held
+// it. A message deleted lately, or one retention reached, stays out. It
+// returns the bytes this added to each channel.
+func (s *Store) putLocked(tx *sql.Tx, den int64, denID []byte, g *guards, ms []denproto.Message, fresh bool) (map[int64]int64, error) {
 	added := map[int64]int64{}
 	for _, m := range ms {
 		id, err := denproto.ParseID(m.ID)
@@ -109,10 +115,14 @@ func (s *Store) putLocked(tx *sql.Tx, den int64, denID []byte, g *guards, ms []d
 		var old []byte
 		err = tx.QueryRow(`SELECT revision, body FROM messages WHERE den = ? AND id = ?`, den, id).Scan(&revision, &old)
 		switch {
-		case err == nil && revision >= m.Revision:
+		case err == nil && (revision > m.Revision || revision == m.Revision && !fresh):
 			continue // a page from before an edit keeps the edit
 		case err != nil && !errors.Is(err, sql.ErrNoRows):
 			return nil, err
+		case err == nil && m.Sealed != nil:
+			if was, err := s.openMessage(denID, id, old); err == nil {
+				m.DMReactions = NewerSets(m.DMReactions, was.DMReactions)
+			}
 		}
 		body, err := s.sealMessage(denID, id, m)
 		if err != nil {
@@ -210,7 +220,7 @@ func (s *Store) AddRun(denID []byte, channel, lo, hi int64, first bool, gen int6
 	}
 	var added map[int64]int64
 	err = s.txLocked(func(tx *sql.Tx) error {
-		if added, err = s.putLocked(tx, den, denID, g, ms); err != nil {
+		if added, err = s.putLocked(tx, den, denID, g, ms, true); err != nil {
 			return err
 		}
 		if lo <= hi || gen != 0 {
@@ -341,7 +351,7 @@ func (s *Store) AppendTail(denID []byte, m denproto.Message, gen int64) error {
 	}
 	var added map[int64]int64
 	err = s.txLocked(func(tx *sql.Tx) error {
-		if added, err = s.putLocked(tx, den, denID, g, []denproto.Message{m}); err != nil {
+		if added, err = s.putLocked(tx, den, denID, g, []denproto.Message{m}, false); err != nil {
 			return err
 		}
 		runs, err := runsLocked(tx, den, channel)
@@ -368,9 +378,22 @@ func (s *Store) AppendTail(denID []byte, m denproto.Message, gen int64) error {
 	return s.settleLocked(den, total(added))
 }
 
-// UpdateMessage keeps a message's newer revision, if the cache holds the
-// message, and has the replies to it quote it as it is now.
+// UpdateMessage keeps a message's newer revision, as an edit's event
+// brings it, if the cache holds the message, and has the replies to it
+// quote it as it is now.
 func (s *Store) UpdateMessage(denID []byte, m denproto.Message) error {
+	return s.updateMessage(denID, m, false)
+}
+
+// RefreshMessage keeps a message as the den just sent it, as what changed
+// while away brings it, if the cache holds the message: at a newer
+// revision, or the one the cache holds, as its reactions change without
+// changing it (M15.3).
+func (s *Store) RefreshMessage(denID []byte, m denproto.Message) error {
+	return s.updateMessage(denID, m, true)
+}
+
+func (s *Store) updateMessage(denID []byte, m denproto.Message, fresh bool) error {
 	id, err := denproto.ParseID(m.ID)
 	if err != nil {
 		return nil
@@ -393,7 +416,7 @@ func (s *Store) UpdateMessage(denID []byte, m denproto.Message) error {
 		}
 		added = map[int64]int64{}
 		if held {
-			if added, err = s.putLocked(tx, den, denID, g, []denproto.Message{m}); err != nil {
+			if added, err = s.putLocked(tx, den, denID, g, []denproto.Message{m}, fresh); err != nil {
 				return err
 			}
 		}
@@ -411,6 +434,72 @@ func (s *Store) UpdateMessage(denID []byte, m denproto.Message) error {
 		return err
 	}
 	return s.settleLocked(den, total(added))
+}
+
+// ChangeMessage changes the copy of a message the cache holds, if it holds
+// one, as change says, which reports whether it changed it: as a reaction
+// changes it (M15.3), its revision staying.
+func (s *Store) ChangeMessage(denID []byte, id int64, change func(*denproto.Message) bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	den, ok, err := s.denNumberLocked(denID)
+	if err != nil || !ok {
+		return err
+	}
+	added := map[int64]int64{}
+	err = s.txLocked(func(tx *sql.Tx) error {
+		var channel int64
+		var old []byte
+		err := tx.QueryRow(`SELECT channel, body FROM messages WHERE den = ? AND id = ?`, den, id).Scan(&channel, &old)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		m, err := s.openMessage(denID, id, old)
+		if err != nil {
+			return err
+		}
+		if !change(&m) {
+			return nil
+		}
+		body, err := s.sealMessage(denID, id, m)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE messages SET body = ? WHERE den = ? AND id = ?`, body, den, id); err != nil {
+			return err
+		}
+		added[channel] = int64(len(body) - len(old))
+		return s.countLocked(tx, den, added)
+	})
+	if err != nil {
+		return err
+	}
+	return s.settleLocked(den, total(added))
+}
+
+// NewerSets joins two lists of a DM message's sets of reactions, a set a
+// member, keeping the newer of each member's, by its revision, in the
+// order of the members' IDs (M15.3).
+func NewerSets(a, b []denproto.SealedReactions) []denproto.SealedReactions {
+	var out []denproto.SealedReactions
+	for _, r := range append(slices.Clip(a), b...) {
+		i := slices.IndexFunc(out, func(o denproto.SealedReactions) bool { return o.MemberID == r.MemberID })
+		switch {
+		case i < 0:
+			out = append(out, r)
+		case r.Revision > out[i].Revision:
+			out[i] = r
+		}
+	}
+	slices.SortFunc(out, func(x, y denproto.SealedReactions) int {
+		a, _ := denproto.ParseID(x.MemberID)
+		b, _ := denproto.ParseID(y.MemberID)
+		return cmp.Compare(a, b)
+	})
+	return out
 }
 
 // quoteOf is what a reply to m quotes, as the den builds it: the start of

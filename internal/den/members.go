@@ -262,7 +262,13 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	now := d.now().UnixMilli()
 	var left bool
 	var deleted []deletedMessage
+	var unreacted []denproto.ReactionChange
 	var blobs [][]byte
+	// The reactions a ban takes off wait their turn with edits (M15.3).
+	if req.DeleteMessages > 0 {
+		d.changes.Lock()
+		defer d.changes.Unlock()
+	}
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var role string
 		var leftAt, bannedAt, inviteID sql.NullInt64
@@ -290,7 +296,12 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		if req.DeleteMessages > 0 {
 			// DMs too (M8): the den deletes them without reading them, and
 			// a member flooding DMs leaves no other way to clear them.
-			if deleted, blobs, err = deleteRecent(ctx, tx, mid, now-req.DeleteMessages*1000, time.UnixMilli(now)); err != nil {
+			since := now - req.DeleteMessages*1000
+			if deleted, blobs, err = deleteRecent(ctx, tx, mid, since, time.UnixMilli(now)); err != nil {
+				return err
+			}
+			// And the reactions they added then, in channels (M15.3).
+			if unreacted, err = unreactRecent(ctx, tx, mid, since, time.UnixMilli(now)); err != nil {
 				return err
 			}
 		}
@@ -320,7 +331,10 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			return err
 		}
 	}
-	return d.publishDeleted(ctx, deleted)
+	if err := d.publishDeleted(ctx, deleted); err != nil {
+		return err
+	}
+	return d.publishUnreacted(ctx, unreacted)
 }
 
 type deletedMessage struct {

@@ -394,6 +394,43 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M15.3: reactions. A channel's are a row each: a member's emoji on a
+	// message, one of Unicode's or one of the den's, which goes with its
+	// message, and with the den's emoji as staff delete it. A DM's are a
+	// sealed set for each message and member, which their client sealed
+	// with the DM's key that key_id names, replaced whole against its
+	// revision, as an edit is.
+	m.Add("Reactions", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_reactions (
+				message_id INTEGER NOT NULL REFERENCES den_messages (id) ON DELETE CASCADE,
+				member_id  INTEGER NOT NULL REFERENCES den_members (id),
+				emoji      TEXT,
+				emoji_id   INTEGER REFERENCES den_named_files (id) ON DELETE CASCADE,
+				created_at INTEGER NOT NULL, -- unix milliseconds
+				CHECK ((emoji IS NULL) != (emoji_id IS NULL))
+			) STRICT;
+			CREATE INDEX den_reactions_message ON den_reactions (message_id, created_at);
+			CREATE UNIQUE INDEX den_reactions_unicode ON den_reactions (message_id, member_id, emoji) WHERE emoji IS NOT NULL;
+			CREATE UNIQUE INDEX den_reactions_den ON den_reactions (message_id, member_id, emoji_id) WHERE emoji_id IS NOT NULL;
+			CREATE INDEX den_reactions_member ON den_reactions (member_id, created_at);
+			CREATE INDEX den_reactions_emoji ON den_reactions (emoji_id) WHERE emoji_id IS NOT NULL;
+
+			CREATE TABLE den_dm_reactions (
+				message_id INTEGER NOT NULL REFERENCES den_messages (id) ON DELETE CASCADE,
+				member_id  INTEGER NOT NULL REFERENCES den_members (id),
+				key_id     INTEGER NOT NULL REFERENCES den_dm_keys (id),
+				revision   INTEGER NOT NULL,
+				sealed     BLOB NOT NULL,
+				updated_at INTEGER NOT NULL, -- unix milliseconds
+				PRIMARY KEY (message_id, member_id)
+			) STRICT, WITHOUT ROWID;
+		`); err != nil {
+			return fmt.Errorf("create the reactions' tables: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 
