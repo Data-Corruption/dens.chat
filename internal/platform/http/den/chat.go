@@ -99,7 +99,14 @@ func (h *handler) send(w http.ResponseWriter, r *http.Request) {
 	if !h.decode(w, r, &req) {
 		return
 	}
-	if err := h.d.AllowMessage(s.MemberID, len(req.Text)+len(req.Sealed)); err != nil {
+	// A poll's choices count with its question (M15.4).
+	size := len(req.Text) + len(req.Sealed)
+	if req.Poll != nil {
+		for _, c := range req.Poll.Choices {
+			size += len(c)
+		}
+	}
+	if err := h.d.AllowMessage(s.MemberID, size); err != nil {
 		h.fail(w, r, err)
 		return
 	}

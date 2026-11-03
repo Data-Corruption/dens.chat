@@ -24,6 +24,8 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
 	r.Post("/api/dens/{den}/messages/{message}/reactions", rt.handleReact)
 	r.Post("/api/dens/{den}/messages/{message}/reactions/clear", rt.handleClearReaction)
+	r.Post("/api/dens/{den}/messages/{message}/poll/vote", rt.handleVote)
+	r.Post("/api/dens/{den}/messages/{message}/poll/end", rt.handleEndPoll)
 	r.Get("/api/dens/{den}/dms/{channel}/check", rt.handleCheckState)
 	r.Post("/api/dens/{den}/dms/{channel}/check", rt.handleCheckDM)
 	r.Post("/api/dens/{den}/dms/{channel}/key", rt.handleStartKey)
@@ -156,6 +158,33 @@ func (rt *router) handleClearReaction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleVote sets the member's vote on a poll (M15.4), the choices they
+// pick by their place in it, or none to take it back, and answers with the
+// poll as they now see it.
+func (rt *router) handleVote(w http.ResponseWriter, r *http.Request) {
+	var req denproto.VoteRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	poll, err := rt.a.Dens.Vote(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"), req.Choices)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, poll)
+}
+
+// handleEndPoll ends the member's own poll before its time, and answers
+// with it as it ended.
+func (rt *router) handleEndPoll(w http.ResponseWriter, r *http.Request) {
+	poll, err := rt.a.Dens.EndPoll(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "message"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, poll)
 }
 
 func (rt *router) handleMarkRead(w http.ResponseWriter, r *http.Request) {

@@ -48,8 +48,11 @@ type Message struct {
 	DM                   bool
 	ID                   string
 	Author               string
-	// Mention is whether it mentions the member.
-	Mention bool
+	// Mention is whether it mentions the member by name, and Everyone
+	// whether it's staff's @everyone (M15.4), which notifies as a mention
+	// unless the member silenced it.
+	Mention  bool
+	Everyone bool
 	// Text is what it says, opened where it's a DM's, and "" where this
 	// device couldn't open it; Files is how many files it carries.
 	Text  string
@@ -190,7 +193,10 @@ type page struct {
 type shown struct {
 	den, channel, message string
 	dm                    bool
-	at                    string
+	// everyone is a notification staff's @everyone made alone (M15.4),
+	// which turning @everyone off takes back.
+	everyone bool
+	at       string
 }
 
 const (
@@ -262,19 +268,31 @@ func (h *Hub) Muted(den string) types.Muted {
 	return m
 }
 
-// SetKinds turns DMs' and mentions' notifications on or off, and shows
-// or hides their messages' text, as the settings ask; nil leaves one as it
-// is. What a kind turned off showed is taken back.
-func (h *Hub) SetKinds(dms, mentions, hideText *bool) error {
+// Kinds are the kinds of notification the settings turn on or off, and
+// whether they show their messages' text; nil leaves one as it is.
+type Kinds struct {
+	DMs, Mentions, HideText *bool
+	// Everyone is staff's @everyone (M15.4), on unless the member turns it
+	// off.
+	Everyone *bool
+}
+
+// SetKinds turns DMs' and mentions' notifications on or off, and staff's
+// @everyone, and shows or hides their messages' text, as the settings ask.
+// What a kind turned off showed is taken back.
+func (h *Hub) SetKinds(k Kinds) error {
 	return h.change(func(s *types.Notifications) {
-		if dms != nil {
-			s.DMs = *dms
+		if k.DMs != nil {
+			s.DMs = *k.DMs
 		}
-		if mentions != nil {
-			s.Mentions = *mentions
+		if k.Mentions != nil {
+			s.Mentions = *k.Mentions
 		}
-		if hideText != nil {
-			s.HideText = *hideText
+		if k.HideText != nil {
+			s.HideText = *k.HideText
+		}
+		if k.Everyone != nil {
+			s.EveryoneOff = !*k.Everyone
 		}
 	})
 }
@@ -374,7 +392,8 @@ func (h *Hub) change(f func(*types.Notifications)) error {
 	h.settings = next
 	var gone []shown
 	for _, key := range slices.Clone(h.order) {
-		if s := h.shown[key]; !h.notifiesLocked(s.den, s.channel, s.dm, !s.dm) {
+		s := h.shown[key]
+		if !h.notifiesLocked(Message{Den: s.den, Channel: s.channel, DM: s.dm, Mention: !s.dm && !s.everyone, Everyone: s.everyone}) {
 			gone = append(gone, h.forgetLocked(key))
 		}
 	}
@@ -391,13 +410,15 @@ func (h *Hub) change(f func(*types.Notifications)) error {
 func ptr[T any](v T) *T { return &v }
 
 // notifiesLocked is whether a message in a channel notifies, as a DM or as
-// a mention, by the settings and mutes.
-func (h *Hub) notifiesLocked(den, channel string, dm, mention bool) bool {
+// a mention, by the settings and mutes. Staff's @everyone is a mention the
+// member may silence apart (M15.4).
+func (h *Hub) notifiesLocked(m Message) bool {
 	s := h.settings
-	if !(dm && s.DMs) && !(mention && !dm && s.Mentions) {
+	mention := m.Mention || m.Everyone && !s.EveryoneOff
+	if !(m.DM && s.DMs) && !(mention && !m.DM && s.Mentions) {
 		return false
 	}
-	return !h.mutedLocked(den, channel)
+	return !h.mutedLocked(m.Den, m.Channel)
 }
 
 // mutedLocked is whether the member muted a den, or its channel.
@@ -578,7 +599,7 @@ func (h *Hub) soundLocked(rec shown) bool {
 func (h *Hub) Message(m Message) {
 	key := m.Den + "/" + m.Channel
 	h.mu.Lock()
-	if !(m.DM || m.Mention) || h.mutedLocked(m.Den, m.Channel) || h.onScreenLocked(m.Den, m.Channel) {
+	if !(m.DM || m.Mention || m.Everyone) || h.mutedLocked(m.Den, m.Channel) || h.onScreenLocked(m.Den, m.Channel) {
 		h.mu.Unlock()
 		return
 	}
@@ -589,11 +610,11 @@ func (h *Hub) Message(m Message) {
 		h.mu.Unlock()
 		return
 	}
-	if !h.notifiesLocked(m.Den, m.Channel, m.DM, m.Mention) {
+	if !h.notifiesLocked(m) {
 		h.mu.Unlock()
 		return
 	}
-	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM}
+	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM, everyone: m.Everyone && !m.Mention}
 	n := compose(m, h.settings.HideText)
 	if id, p := h.pageLocked(); p != nil {
 		rec.at = id
@@ -795,6 +816,8 @@ func compose(m Message, hideText bool) Notification {
 	switch {
 	case hideText && m.DM:
 		n.Text = "Sent you a message"
+	case hideText && m.Everyone && !m.Mention:
+		n.Text = "Mentioned everyone"
 	case hideText:
 		n.Text = "Mentioned you"
 	case m.Files == 1:

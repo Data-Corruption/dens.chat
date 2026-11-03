@@ -13,6 +13,12 @@ import (
 type Audience struct {
 	kind audienceKind
 	a, b int64
+	// set holds a poll's voters, for an audience of them or of the rest of
+	// its channel (M15.4), and staff whether the channel is staff's alone.
+	// Nothing changes a set once its audience is made, since the ring
+	// keeps the audience for replays.
+	set   map[int64]bool
+	staff bool
 }
 
 type audienceKind uint8
@@ -23,6 +29,8 @@ const (
 	toNonStaff
 	toMembers
 	toNobody
+	toVoters
+	toNonVoters
 )
 
 // Audiences.
@@ -39,6 +47,17 @@ func OnlyMember(id int64) Audience { return Audience{kind: toMembers, a: id, b: 
 // Pair is the audience of a DM: its two members.
 func Pair(a, b int64) Audience { return Audience{kind: toMembers, a: a, b: b} }
 
+// Voters is the audience of a poll's voters among those who see its
+// channel, staff's alone where staffOnly says (M15.4), and NonVoters the
+// rest of them. voters mustn't change once it's passed.
+func Voters(voters map[int64]bool, staffOnly bool) Audience {
+	return Audience{kind: toVoters, set: voters, staff: staffOnly}
+}
+
+func NonVoters(voters map[int64]bool, staffOnly bool) Audience {
+	return Audience{kind: toNonVoters, set: voters, staff: staffOnly}
+}
+
 func (a Audience) includes(member int64, staff bool) bool {
 	switch a.kind {
 	case toStaff:
@@ -49,6 +68,10 @@ func (a Audience) includes(member int64, staff bool) bool {
 		return member == a.a || member == a.b
 	case toNobody:
 		return false
+	case toVoters:
+		return (staff || !a.staff) && a.set[member]
+	case toNonVoters:
+		return (staff || !a.staff) && !a.set[member]
 	}
 	return true
 }

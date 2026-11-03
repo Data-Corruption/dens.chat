@@ -134,6 +134,7 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 	}
 	d.TokenLifetime = lifetime
 	d.PresenceDelay = 50 * time.Millisecond
+	d.PollDelay = 50 * time.Millisecond
 	h.d = d
 	routes := denhttp.New(&app.App{Den: d, Log: h.s.log})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

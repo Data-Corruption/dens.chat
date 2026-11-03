@@ -175,7 +175,7 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 			wanted = append(wanted, c.ref)
 		}
 	}
-	messages, err := d.messagesByID(ctx, wanted)
+	messages, err := d.messagesByID(ctx, s.MemberID, wanted)
 	if err != nil {
 		return out, err
 	}
@@ -206,8 +206,8 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 }
 
 // messagesByID returns the messages with the given IDs that still exist,
-// as history has them, by ID.
-func (d *Den) messagesByID(ctx context.Context, ids []int64) (map[int64]denproto.Message, error) {
+// as viewer's history has them, by ID.
+func (d *Den) messagesByID(ctx context.Context, viewer int64, ids []int64) (map[int64]denproto.Message, error) {
 	out := map[int64]denproto.Message{}
 	if len(ids) == 0 {
 		return out, nil
@@ -216,7 +216,7 @@ func (d *Den) messagesByID(ctx context.Context, ids []int64) (map[int64]denproto
 	for i, id := range ids {
 		args[i] = id
 	}
-	ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id IN (?`+
+	ms, err := d.queryMessages(ctx, viewer, `SELECT `+messageColumns+` FROM den_messages WHERE id IN (?`+
 		strings.Repeat(", ?", len(ids)-1)+`)`, args...)
 	if err != nil {
 		return nil, err

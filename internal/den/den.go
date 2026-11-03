@@ -94,10 +94,16 @@ type Den struct {
 	// pruner forgets changes older than clients may ask for (M6).
 	expiry expiry
 	pruner pruner
+	// pollTimer ends polls at their time, and pollBatch gathers the polls
+	// whose votes changed for the next batch of totals (M15.4).
+	pollTimer pollTimer
+	pollBatch pollBatch
 
 	// PresenceDelay is how long presence changes gather before they're
-	// announced; tests shorten it.
+	// announced, and PollDelay how long a poll's votes gather before its
+	// totals go out (M15.4); tests shorten them.
 	PresenceDelay time.Duration
+	PollDelay     time.Duration
 	// CallHold is how long a call whose socket closed waits for its device
 	// to take it back (M3); tests shorten it.
 	CallHold time.Duration
@@ -138,6 +144,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		presence:      newPresence(),
 		calls:         newCallRegistry(),
 		PresenceDelay: defaultPresenceDelay,
+		PollDelay:     defaultPollDelay,
 		PingInterval:  defaultPingInterval,
 	}
 	d.limits.challenge = newLimiter(30, 2*time.Second, 100_000)
@@ -222,6 +229,7 @@ func (d *Den) Start(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) error {
 	d.openSockets()
 	d.StartRetention()
 	d.StartPruning()
+	d.StartPolls()
 	return nil
 }
 
@@ -237,16 +245,19 @@ func (d *Den) Stop(timeout time.Duration) {
 	}
 	d.StopRetention()
 	d.StopPruning()
+	d.StopPolls()
 }
 
-// Close ends calls, stops sweeping uploads and deleting old messages, and
-// releases the identity key.
+// Close ends calls, stops sweeping uploads, deleting old messages and
+// ending polls, and releases the identity key.
 func (d *Den) Close() {
 	if err := d.StopCalls(); err != nil {
 		d.log.Warnf("stop calls: %v", err)
 	}
 	d.StopRetention()
 	d.StopPruning()
+	d.StopPolls()
+	d.pollBatch.close()
 	d.files.stop()
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -847,12 +858,17 @@ var errUsernameTaken = denproto.Errorf(http.StatusConflict, denproto.CodeUsernam
 // returns 0 for a free username, or the ID and first join time of the
 // former member it belongs to, when the verifier proves the joiner is them.
 // A wrong verifier gets the same answer as a taken name, so an invite
-// can't be used to learn who used to be here.
+// can't be used to learn who used to be here. Nobody new takes the name
+// staff's @everyone mentions everyone by (M15.4): a member who had it from
+// before keeps it, and comes back to it.
 func claimUsername(ctx context.Context, tx *sql.Tx, username string, verifier []byte) (id, joinedAt int64, err error) {
 	var hash []byte
 	var left, banned sql.NullInt64
 	err = tx.QueryRowContext(ctx, `SELECT id, verifier_hash, joined_at, left_at, banned_at FROM den_members WHERE username = ?`, username).
 		Scan(&id, &hash, &joinedAt, &left, &banned)
+	if errors.Is(err, sql.ErrNoRows) && username == denproto.Everyone {
+		return 0, 0, errUsernameTaken
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, 0, nil
 	}

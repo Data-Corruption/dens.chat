@@ -104,7 +104,7 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 	}
 	sealed := map[string]denproto.Message{}
 	if len(sealedIDs) > 0 {
-		ms, err := d.queryMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id IN (?`+
+		ms, err := d.queryMessages(ctx, s.MemberID, `SELECT `+messageColumns+` FROM den_messages WHERE id IN (?`+
 			strings.Repeat(", ?", len(sealedIDs)-1)+`)`, anys(sealedIDs)...)
 		if err != nil {
 			return page, err

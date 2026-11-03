@@ -670,7 +670,7 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		if json.Unmarshal(e.D, &ch) != nil || ch.Check() != nil {
 			return e, false, errMalformed
 		}
-		if known, err := s.reactsIn(ch.ChannelID, false); !known || err != nil {
+		if known, err := s.talliedIn(ch.ChannelID, false); !known || err != nil {
 			return e, false, err
 		}
 		data = ch
@@ -679,17 +679,35 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		if json.Unmarshal(e.D, &cl) != nil || cl.Check() != nil {
 			return e, false, errMalformed
 		}
-		if known, err := s.reactsIn(cl.ChannelID, false); !known || err != nil {
+		if known, err := s.talliedIn(cl.ChannelID, false); !known || err != nil {
 			return e, false, err
 		}
 		data = cl
+	case denproto.EventPollUpdated:
+		var u denproto.PollUpdated
+		if json.Unmarshal(e.D, &u) != nil || u.Check() != nil {
+			return e, false, errMalformed
+		}
+		if known, err := s.talliedIn(u.ChannelID, false); !known || err != nil {
+			return e, false, err
+		}
+		data = u
+	case denproto.EventPollEnded:
+		var x denproto.PollEnded
+		if json.Unmarshal(e.D, &x) != nil || x.Check() != nil {
+			return e, false, errMalformed
+		}
+		if known, err := s.talliedIn(x.ChannelID, false); !known || err != nil {
+			return e, false, err
+		}
+		data = x
 	case denproto.EventDMReactions:
 		// The connection opens it for the page.
 		var d denproto.DMReactions
 		if json.Unmarshal(e.D, &d) != nil || d.SealedReactions.Check() != nil || !validID(d.MessageID) {
 			return e, false, errMalformed
 		}
-		if known, err := s.reactsIn(d.ChannelID, true); !known || err != nil {
+		if known, err := s.talliedIn(d.ChannelID, true); !known || err != nil {
 			return e, false, err
 		}
 		if !slices.Contains(s.channels[d.ChannelID].Members, d.MemberID) {
@@ -816,11 +834,12 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 	return out, err == nil, err
 }
 
-// reactsIn says whether a reaction's channel is one the member sees, of
-// the kind its event is for: a DM for a sealed set, a text channel for
-// the rest (M15.3). One it doesn't know, as one deleted while the event
+// talliedIn says whether the channel of an event that changes a message's
+// tallies is one the member sees, of the kind its event is for: a DM for a
+// sealed set of reactions, a text channel for the rest, reactions' (M15.3)
+// and polls' (M15.4). One it doesn't know, as one deleted while the event
 // was on its way, is passed over.
-func (s *denState) reactsIn(channel string, dm bool) (bool, error) {
+func (s *denState) talliedIn(channel string, dm bool) (bool, error) {
 	c, ok := s.channels[channel]
 	if !ok {
 		return false, nil
@@ -873,9 +892,9 @@ func (s *denState) liveKey(channel string) (denproto.DMKey, bool) {
 
 // noteMessage keeps unread state current as messages arrive: the channel's
 // last message moves, and a mention of this member counts unless it's
-// their own message; in a DM, as the den counts, every message does. A
-// page showing the channel marks it read, and the den's read_state.updated
-// resets the count.
+// their own message, staff's @everyone among them (M15.4); in a DM, as the
+// den counts, every message does. A page showing the channel marks it
+// read, and the den's read_state.updated resets the count.
 func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	r, ok := s.reads[m.ChannelID]
 	if !ok {
@@ -890,7 +909,7 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	}
 	if m.AuthorID == me.ID {
 		r.ReadPosition = m.ID
-	} else if dm || slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {
+	} else if dm || m.Everyone || slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {
 		r.MentionCount++
 	}
 	s.reads[m.ChannelID] = r

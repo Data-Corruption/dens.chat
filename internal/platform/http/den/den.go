@@ -76,6 +76,8 @@ func New(a *app.App) http.Handler {
 			r.Post("/messages/{id}/reactions/remove", h.react(false))
 			r.Post("/messages/{id}/reactions/clear", h.clearReactions)
 			r.Put("/messages/{id}/reactions/sealed", h.setDMReactions)
+			r.Post("/messages/{id}/poll/vote", h.vote)
+			r.Post("/messages/{id}/poll/end", h.endPoll)
 			r.Post("/channels", h.createChannel)
 			r.Patch("/channels/{id}", h.updateChannel)
 			r.Delete("/channels/{id}", h.deleteChannel)

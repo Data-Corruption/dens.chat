@@ -125,6 +125,12 @@ type Message struct {
 	// it (M15.3).
 	Reactions   []Reaction        `json:"reactions,omitempty"`
 	DMReactions []SealedReactions `json:"dm_reactions,omitempty"`
+	// Poll is a channel's message's poll, whose question its text is, as
+	// the member it's sent to may see it (M15.4).
+	Poll *Poll `json:"poll,omitempty"`
+	// Everyone marks a channel's message whose @everyone staff put there,
+	// which mentions every member who can see the channel (M15.4).
+	Everyone bool `json:"everyone,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -204,6 +210,9 @@ type SendRequest struct {
 	// Text empty; Attachments are then its sealed uploads.
 	Sealed Bytes  `json:"sealed,omitempty"`
 	KeyID  string `json:"key_id,omitempty"`
+	// Poll makes the message a poll, its text the question (M15.4): in a
+	// channel, without files or editors.
+	Poll *PollRequest `json:"poll,omitempty"`
 }
 
 // EditRequest replaces a message's text, and its editors when set, which
@@ -354,6 +363,14 @@ func CheckMessage(m Message) error {
 	}
 	if err := checkReactions(m); err != nil {
 		return err
+	}
+	if m.Sealed != nil && (m.Poll != nil || m.Everyone) {
+		return errors.New("a DM's message has no poll and mentions nobody by @everyone")
+	}
+	if m.Poll != nil {
+		if err := m.Poll.Check(); err != nil {
+			return err
+		}
 	}
 	seen := map[string]bool{}
 	for _, f := range m.Attachments {
