@@ -76,10 +76,34 @@ of the animation goes in, so a long one can come out over the limit, 2 MB for a
 picture and 4 MB for a banner, and Dens says so; a shorter clip fits.
 
 **Animations**, under **Appearance** in the settings, chooses when moving
-pictures play: **Always**, or **On hover**, only while your pointer is over
-someone's message or name, and in a profile you open. It starts at On hover if
-your system asks for less motion. On a phone, On hover plays them only in
-profiles.
+pictures and emoji play: **Always**, or **On hover**, only while your pointer
+is over someone's message or name, and in a profile you open. It starts at On
+hover if your system asks for less motion. On a phone, On hover plays them only
+in profiles.
+
+## Emoji
+
+The smiley in the message box picks an emoji. The ones you use most come
+first, then the den's own, then the usual ones by group, with a search over
+their names. ✋ at the top picks a skin tone, which your browser remembers.
+
+A den can have emoji of its own, which its moderators add. Write one by its
+name between colons, like `:party_parrot:`, and everyone sees the picture. In
+code, in a link, or with a name the den doesn't have, it stays as you typed it.
+If a moderator renames or deletes an emoji, the messages that used it show its
+name instead.
+
+Type a colon and two letters, like `:th`, and Dens lists the emoji that match.
+In a channel, `@` lists the people who can see it. Up and down choose, Enter or
+Tab puts one in, and Esc closes the list; on a phone, tap one.
+
+A message of nothing but emoji, up to ten, shows them large, and the den's
+moving ones play as **Animations** says. Dens on your computer keeps a copy of
+every one of a den's emoji, so the den doesn't learn which ones you see, in a
+DM or anywhere else.
+
+The usual emoji are your system's, so they look the way they do everywhere else
+on your computer or phone. A phone too old for a newer one shows a box.
 
 ## Direct messages
 

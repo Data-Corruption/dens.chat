@@ -37,7 +37,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
 | 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code), `no_other_device` (a password sign-in with no other device to approve it) |
 | 404 | `not_found` |
-| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3) |
+| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3), `emoji_name_taken` (another of the den's emoji has the name; M15.2) |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed), `changes_gone` (a version the den no longer has the changes since; M6) |
 | 413 | `too_large` |
 | 415 | `unsupported_type` |
@@ -61,16 +61,17 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 ## Objects
 
 ```
-den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3)}
+den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3),
+          "emoji_limits"? (M15.2)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?}
 image  = {"id", "width", "height", "animated"? (M15.1)}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), and `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1).
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), and `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1).
 
 ```
-PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?}   200 den        (owner only)
+PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?, "emoji_limits"?}   200 den   (owner only)
 ```
 
 A change reaches every member as a `den.updated {den}` event.
@@ -234,7 +235,7 @@ From M6, client and den negotiate permessage-deflate without context takeover: e
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)); and from M14.3, `sounds`, the den's soundboard's, by name (see [The soundboard](#the-soundboard-m143)).
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)); from M14.3, `sounds`, the den's soundboard's, by name (see [The soundboard](#the-soundboard-m143)); and from M15.2, `emoji`, the den's emoji, by name (see [Emoji](#emoji-m152)).
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
@@ -858,6 +859,26 @@ DELETE /api/soundboard/{id}                         204              (staff only
 - An older den sends no `sound_limits`, no `sounds` and no soundboard section, and clients show no soundboard for it; clients check `sound_limits` as they arrive, as they check `call_limits`, and refuse a den whose limits are out of range. An older client plays the soundboard's section as it would a member's voice.
 - Playing a sound, and adding, renaming and deleting one, count toward the member's other writes.
 
+## Emoji (M15.2)
+
+Staff add emoji to the den, which members write by name in the markdown subset, as `:name:` (see the design doc's Emoji).
+
+```
+emoji        = {"id", "name", "image": image, "added_by", "added_at"}
+emoji_limits = {"emojis"}
+
+POST   /api/emoji        {"name", "file_id"}   201 emoji        (staff only)
+PATCH  /api/emoji/{id}   {"name"}              200 emoji        (staff only)
+DELETE /api/emoji/{id}                         204              (staff only)
+```
+
+- An emoji is one of the den's named files: its name, 2 to 32 of `a-z`, `0-9` and `_`, lowercased on entry and unique among the den's emoji; its `image`, an upload, with its size and `animated` when it's an animated GIF; and who added it and when. `ready` carries every emoji, by name, and each change reaches every member as `emoji.created {emoji}`, `emoji.updated {emoji}` or `emoji.deleted {"id"}`. An emoji's image, and its preview, open with `GET /api/files/{id}` for every member, since every page draws it.
+- `POST /api/emoji` takes an upload of the staff member's own, waiting to be used, and makes it the emoji's image, which then counts toward the den's space, not theirs, isn't among their files, and stays until staff delete the emoji: retention, the sweep of waiting uploads and the uploader leaving don't remove it, and no message, picture or replacement takes it. The upload must be a still PNG, JPEG, GIF or WebP, or an animated GIF, at most 128 pixels each way, and at most 256 KiB, or 512 KiB animated. A name another emoji has gets `409 emoji_name_taken`; any other upload, a den holding `emojis` emoji already, or emoji off gets `400 invalid_field`; anyone but staff gets `403 forbidden`.
+- `PATCH` renames an emoji, under the same rule for names; `DELETE` deletes it with its image. The den never reads messages for emoji, so the messages that wrote its old name keep the text, which pages show as text, or as another emoji given the name.
+- `emoji_limits`: `emojis` is how many emoji the den keeps, 0 to 500, where 0 turns emoji off and keeps them: no emoji is added, and pages show their names as text. A new den keeps 50. The owner changes it with `PATCH /api/den`. A lower count applies to emoji added afterwards: the emoji already added stay. The den sends it at 0 too, so a client tells emoji turned off from an older den.
+- An older den sends no `emoji_limits` and no `emoji`, and clients show none of its emoji and offer no way to add one; clients check `emoji_limits` and every emoji as they arrive, and refuse a den whose are out of range. An older client shows `:name:` as the text it is.
+- Adding, renaming and deleting an emoji count toward the member's other writes.
+
 ## Rate limits
 
 The den limits per IP, taken from `X-Forwarded-For` only on connections from loopback, and per member. Limits live in memory only. Starting values, to tune with real use:
@@ -875,6 +896,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, and from M14.3 playing a sound and adding, renaming and deleting one | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, and from M15.2 adding, renaming and deleting an emoji | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |
