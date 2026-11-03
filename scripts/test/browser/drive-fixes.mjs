@@ -5,8 +5,10 @@
 // with its member's profile beside it, or none; the New divider only for
 // what was unread when a channel opened; the message box's focus; Enter in
 // a code block; the composer's + bordered as its box is; folding a channel
-// group; a video whose sound starts late playing it in time; and a thin
-// video keeping its full screen button as the rest give way (M14.3).
+// group; a video whose sound starts late playing it in time; a thin video
+// keeping its full screen button as the rest give way (M14.3); and from
+// M15, an unread channel told from a read one at a glance, and a video's
+// seek bar drawn thin.
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -120,6 +122,19 @@ try {
     await send(general, "Bob's message 5");
     await send(general, "Bob's message 6");
     await sleep(1000);
+    // A channel waiting to be read stands out at a glance (M15): its name
+    // bold, at full strength, and a pill at its row's left; one read is a
+    // little fainter, but the one open, which is as the rest of the text.
+    const marks = JSON.parse(await b.eval(`(() => {
+        const row = (name) => [...document.querySelectorAll('nav[aria-label=Channels] li')].find((li) => li.querySelector('button span.truncate')?.textContent === name);
+        const of = (name) => { const r = row(name); const s = getComputedStyle(r.querySelector('button span.truncate'));
+            return { weight: Number(s.fontWeight), color: s.color, pill: !!r.querySelector('[data-unread]') }; };
+        return JSON.stringify({ general: of('general'), clips: of('clips'), arcade: of('Arcade'), body: getComputedStyle(document.body).color });
+    })()`));
+    c.report(marks.general.weight >= 700 && marks.general.pill && !marks.clips.pill && marks.clips.weight < 700 && marks.clips.color === marks.body &&
+        marks.arcade.color !== marks.general.color && !marks.arcade.pill,
+    `an unread channel is bold with a pill, the open one plain, a read one fainter: ${JSON.stringify(marks)}`);
+    await shot('unread');
     await open(general);
     await waitFor(async () => (await rows()) >= 6, "general's six messages");
     const message = (n) => `[...document.querySelectorAll('[data-id]')].find((r) => r.textContent.includes("Bob's message ${n}"))`;
@@ -238,6 +253,18 @@ try {
         56: { play: false, seek: false, mute: false, full: true },
     };
     c.report(JSON.stringify(widths) === JSON.stringify(want), `the full screen button stays at every width, the rest giving way: ${JSON.stringify(widths)}`);
+
+    step("the seek bar's track and its played part are thin, and its thumb small");
+    // Measured in the bar's box, 24 pixels tall for a finger, at a width
+    // with room for it (M15).
+    await controls(300);
+    const bar = JSON.parse(await b.eval(`(() => {
+        const seek = (${clip}).parentElement.querySelector('input[aria-label=Seek]');
+        const r = seek.getBoundingClientRect();
+        return JSON.stringify({ height: Math.round(r.height), seek: seek.style.getPropertyValue('--seek'), utility: seek.classList.contains('seek') });
+    })()`));
+    c.report(bar.height === 24 && bar.utility && /%$/.test(bar.seek), `the seek bar is 24 pixels tall for a finger, drawn thin, with its played part set: ${JSON.stringify(bar)}`);
+    await shot('seek');
     await shot('done');
 } catch (e) {
     c.fail(e);

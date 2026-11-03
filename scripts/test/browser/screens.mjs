@@ -367,7 +367,10 @@ export async function memberScreens(h, ctx) {
         await h.click(h.byText('[role=dialog] button', 'Cancel'));
     });
     await h.step('edit', async () => {
-        await h.click(`[...document.querySelectorAll('button[aria-label="Message actions"]')].at(-1)`);
+        // The newest message but a poll, which can't be edited (M15.4), as
+        // a mode before may have left newest.
+        await h.click(`[...document.querySelectorAll('[data-scroller] [data-id]')].filter((r) => !r.querySelector('[data-poll]')).at(-1)
+            .querySelector('button[aria-label="Message actions"]')`);
         await h.click(`[...document.querySelectorAll('[role=menuitem]')].find((b) => b.textContent.trim() === 'Edit')`, 'Edit');
         await h.snap('edit');
         await h.escape();
@@ -1270,4 +1273,60 @@ export async function quickReacting(h, ctx, d, report, { at, keep } = {}) {
         await waitFor(async () => !(await h.ev(chips)).some((x) => x.key === `u:${picked}` && x.mine), 'the pick taken back', 8000).catch(() => {});
     }
     return made;
+}
+
+// polling is a poll on the phone layout (M15.4): the composer's + as a
+// sheet, whose Poll opens the poll's editor above the box, two choices
+// written and who voted for what always shown, and the question sent;
+// then a tap on a choice's row and on Vote votes, and a tap on its count
+// says who voted for it.
+const POLL_BOX = `document.querySelector('textarea[placeholder="Ask your question"]')`;
+const POLL_EDITOR = `document.querySelector('[data-poll-editor]')`;
+export async function polling(h, ctx, d, report) {
+    const { den, general } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    await d.tap(`document.querySelector('button[aria-label="Add to this message"]')`);
+    const item = `[...document.querySelectorAll('[data-sheet] [role=menuitem]')].find((x) => x.textContent.trim() === 'Poll')`;
+    const sheet = await waitFor(() => h.has(item), "the +'s sheet with Poll", 5000).then(() => true, () => false);
+    await h.snap('poll-add');
+    did(sheet, "the composer's + opens as a sheet, with Poll");
+    if (!sheet) return;
+    await d.tap(item);
+    const editor = await waitFor(async () => (await h.has(POLL_EDITOR)) && !(await h.has(SHEET)), 'the poll editor', 5000).then(() => true, () => false);
+    did(editor, "its Poll opens the poll's editor above the box, the sheet closing");
+    if (!editor) return;
+    await d.tap(`${POLL_EDITOR}.querySelector('[data-choice-input="0"]')`);
+    await d.type('Yes');
+    await d.tap(`${POLL_EDITOR}.querySelector('[data-choice-input="1"]')`);
+    await d.type('No');
+    await h.ev(`(() => { const el = [...${POLL_EDITOR}.querySelectorAll('label')].find((l) => l.firstElementChild?.textContent === 'Anonymous voting')
+        .querySelector('select'); el.value = 'always'; el.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
+    await h.snap('poll-editor', { scroll: `${POLL_EDITOR}.parentElement` });
+    const question = `A poll from ${d.name}?`;
+    await d.tap(POLL_BOX);
+    await d.type(question);
+    if (d.touch) await d.tap(SEND);
+    else await d.enter();
+    const target = `[...document.querySelectorAll('[data-scroller] [data-id]')].filter((r) => r.querySelector('[data-poll]')).at(-1)`;
+    const posted = await waitFor(async () => (await h.has(target)) && (await h.ev(`${target}.textContent.includes(${JSON.stringify(question)})`)) &&
+        !(await h.has(POLL_EDITOR)), 'the poll sent', 10000).then(() => true, () => false);
+    did(posted, `the poll goes with its question, which shows above it, and the editor goes`);
+    if (!posted) return;
+    await h.snap('poll');
+    await d.tap(`${target}.querySelector('[data-choice="0"] label')`);
+    await d.tap(`[...${target}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Vote')`);
+    const voted = await waitFor(() => h.has(`${target}.querySelector('[data-choice="0"][data-mine][data-count="1"]')`), 'the vote', 10000)
+        .then(() => true, () => false);
+    did(voted, 'a tap on a choice and one on Vote vote, and the totals show, the vote marked');
+    await h.snap('poll-voted');
+    if (!voted) return;
+    const count = `${target}.querySelector('[data-choice="0"] [data-voters]')`;
+    await d.tap(count);
+    const tip = await waitFor(() => h.ev(`(() => { const t = ${count}?.parentElement.querySelector('[role=tooltip]'); return t && !t.hidden ? t.textContent : ''; })()`),
+        "the count's tip", 5000).catch(() => '');
+    did(tip === 'You', `a tap on the count says who voted for it: ${JSON.stringify(tip)}`);
+    await h.snap('poll-tip');
+    await h.escape();
 }

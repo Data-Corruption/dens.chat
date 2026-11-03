@@ -522,7 +522,8 @@ try {
     await openGeneral();
     const menu = JSON.parse(await B.b.eval(`(() => {
         const menu = ${PICKER};
-        const items = [...menu.querySelectorAll('[role=radiogroup] label')];
+        // The themes' groups, not Appearance's others, as Animations (M15.1).
+        const items = [...menu.querySelectorAll('[role=radiogroup][aria-label=Theme] label, [role=radiogroup][aria-label="More themes"] label')];
         const primaries = new Set(items.slice(1).map((i) => getComputedStyle(i.querySelector('[data-theme] > :nth-child(2)')).backgroundColor));
         // Role badges, in every theme, against WCAG's 4.5:1 for small text.
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
@@ -664,7 +665,8 @@ try {
     await B.b.eval(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
     await sleep(200);
     const guideClosed = !(await B.b.eval(`!!${GUIDE}`));
-    report(items === 'Attach files|Let others edit' && escClosed && clickClosed && !caption && inside && guide === true && guideClosed && bordered.same,
+    // A channel's + makes a poll too (M15.4).
+    report(items === 'Attach files|Let others edit|Poll' && escClosed && clickClosed && !caption && inside && guide === true && guideClosed && bordered.same,
         `${B.browser} composer: + bordered as the box ${JSON.stringify(bordered)}, menu ${items}, closed by Escape ${escClosed} and a click ${clickClosed}, old caption ${caption}, ? inside the box ${inside}, guide ${guide}, closed ${guideClosed}`);
 
     // Who's typing floats above the message box, which keeps its place.

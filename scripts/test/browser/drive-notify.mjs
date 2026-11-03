@@ -4,7 +4,11 @@
 // who sent it, the den and its start, a spoiler hidden, and its click
 // opens the DM at the message; read on another device, it's taken back; on
 // screen in the DM, nothing shows; and muted from the DM's bell, nothing
-// shows. Then with no tab open, Dens's helper, dens shortcuts, shows a DM
+// shows. With mentions turned on, staff's @everyone in a channel shows, as
+// bob, a moderator, writes it (M15.4); the @everyone switch under Mentions,
+// on by default, silences it, though it still counts among her mentions;
+// and on again, a mute of the channel silences it too. Then with no tab
+// open, Dens's helper, dens shortcuts, shows a DM
 // through the desktop's notification service, dunst here, as Dens's, and
 // its click opens the page at the message, paired as dens open pairs it;
 // read elsewhere, it's taken back from the desktop too.
@@ -143,6 +147,69 @@ try {
     await b.eval(`document.querySelector('button[aria-label="Unmute the DM with Bob"]').click(), true`);
     const unmuted = await may(waitFor(() => !settings().muted?.[den], 'the DM unmuted', 5000));
     c.report(mutedQuiet && unmuted, `with the DM muted from its bell, no notification showed (${mutedQuiet}), and it unmuted (${unmuted})`);
+
+    step("staff's @everyone in a channel, with mentions on");
+    await openSettings(b, 'Notifications & sounds');
+    await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
+    const under = await b.eval(`(() => { const t = document.getElementById('notify-everyone'); return t.checked && t.disabled; })()`);
+    await b.eval(`document.getElementById('notify-mentions').click(), true`, true);
+    await waitFor(() => settings().mentions, 'mentions on, kept by the service');
+    const on = await may(waitFor(() => b.eval(`(() => { const t = document.getElementById('notify-everyone'); return t.checked && !t.disabled; })()`),
+        '@everyone on with mentions', 5000));
+    await shot('everyone-settings');
+    c.report(under && on, `@everyone is on by default, under Mentions, which turning on lets it notify (${under}, ${on})`);
+    await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    const count = () => JSON.parse(lib('api', 'alice', 'GET', `/api/dens/${den}/state`)).read_states.find((r) => r.channel_id === general)?.mention_count || 0;
+    const shout = (text) => lib('send', 'bob', general, text);
+    const counted = count();
+    await hide();
+    shout('@everyone the den moves tonight');
+    const everyone = await may(waitFor(async () => {
+        const n = await notes();
+        return n.length === 3 && n[2];
+    }, 'the @everyone notification'));
+    c.report(everyone && everyone.title === 'Bob in #general · Voice Den' && everyone.body === '@everyone the den moves tonight' && everyone.tag === `${den}/${general}`,
+        `staff's @everyone shows, as a mention in #general: ${JSON.stringify(everyone)}`);
+    await front();
+
+    step('@everyone switched off, nothing shows, and it still counts');
+    await openSettings(b, 'Notifications & sounds');
+    await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
+    await b.eval(`document.getElementById('notify-everyone').click(), true`, true);
+    await waitFor(() => settings().everyoneOff, '@everyone off, kept by the service');
+    await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    await hide();
+    shout('@everyone, silenced');
+    await sleep(3000);
+    const silenced = (await notes()).length === 3;
+    const counts = await may(waitFor(() => count() === counted + 2, 'the mentions counted', 5000));
+    c.report(silenced && counts, `with @everyone off, nothing showed (${silenced}), and both counted among her mentions (${counted} to ${count()})`);
+    await front();
+
+    step('@everyone on again, its channel muted from its bell, nothing shows');
+    await openSettings(b, 'Notifications & sounds');
+    await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
+    await b.eval(`document.getElementById('notify-everyone').click(), true`, true);
+    await waitFor(() => !settings().everyoneOff, '@everyone on again');
+    await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    await b.go(`http://localhost:18484/den/${den}/${general}`);
+    await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Mute #general"]')`), "#general's bell");
+    await b.eval(`document.querySelector('button[aria-label="Mute #general"]').click(), true`);
+    await waitFor(() => settings().muted?.[den]?.channels?.includes(general), '#general muted');
+    // A page loaded anew keeps what it notified of from then on.
+    await b.go(`http://localhost:18484/den/${den}/${dm}`);
+    await waitFor(() => b.eval(`!!document.querySelector('textarea')`), 'the DM');
+    const before = (await notes()).length;
+    await hide();
+    shout('@everyone, muted');
+    await sleep(3000);
+    const muted = (await notes()).length === before;
+    await front();
+    await b.go(`http://localhost:18484/den/${den}/${general}`);
+    await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Unmute #general"]')`), "#general's struck bell");
+    await b.eval(`document.querySelector('button[aria-label="Unmute #general"]').click(), true`);
+    const unmutedGeneral = await may(waitFor(() => !settings().muted?.[den], '#general unmuted', 5000));
+    c.report(muted && unmutedGeneral, `with #general muted, its @everyone showed nothing (${muted}), and it unmuted (${unmutedGeneral})`);
 
     step("Dens's helper, with no tab open");
     helper = spawn(`${HOME}/dens-dev`, ['shortcuts'], {

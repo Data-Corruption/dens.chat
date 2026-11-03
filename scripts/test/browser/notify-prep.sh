@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The M12.3 check's den: a DM between alice and bob that both have
-# checked, and the desktop's notification service, dunst on Xvfb's
+# checked, bob a moderator, whose @everyone in #general mentions alice
+# (M15.4), and the desktop's notification service, dunst on Xvfb's
 # display, which keeps each notification it shows until it's taken back,
 # and writes down what it showed in ~/notify-shown.txt. ~/notify-bin holds
 # an xdg-open that writes down the address it's given, in
@@ -10,6 +11,8 @@ source "$(dirname "$0")/lib.sh"
 fresh
 general=$(channel general)
 dm=$(checked_dm alice bob)
+bob=$(api bob GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
+api alice PUT "/api/dens/$DEN/members/$bob/role" '{"role":"moderator"}' >/dev/null
 
 export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
 pkill -u "$(id -u)" -x dunst 2>/dev/null || true

@@ -33,9 +33,11 @@
 // reactions, M15.3's: desk's reaction on the member's message, whose
 // phone_msg CTX names, shown as a chip, and the member's on desk's,
 // desk_msg, from the long press's quick row, which stays for desk to see,
-// with the chip's tip by a long press; or screens, every member's screen
-// with its picture and its audit, which fails as the phone check's does on
-// a touch screen. around unless given.
+// with the chip's tip by a long press; polls, M15.4's: desk's poll, whose
+// desk_poll CTX names, voted on by Android's own touch, its totals and
+// voters showing; or screens, every member's screen with its picture and
+// its audit, which fails as the phone check's does on a touch screen.
+// around unless given.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -445,6 +447,34 @@ async function reactionsWalk(h, d, c) {
     if (made) fs.writeFileSync(`${out}/reacted.json`, JSON.stringify(made));
 }
 
+// pollsWalk has the member vote on desk's poll by Android's own touch: a
+// tap on a choice's row and one on Vote, after which the totals show, with
+// their vote marked and desk's beside it, and a tap on its count says who
+// (M15.4).
+async function pollsWalk(h, d, c) {
+    await h.go(`/den/${c.den}/${c.general}`);
+    const poll = `document.querySelector('[data-scroller] [data-poll="${c.desk_poll}"]')`;
+    const shown = await waitFor(() => h.has(`${poll}?.querySelector('[data-choice="1"] label')`), "desk's poll", 15000).then(() => true, () => false);
+    report(shown, "the WebView, by Android's input: desk's poll shows, open to the member's vote");
+    await h.snap('poll-desk');
+    if (!shown) return;
+    await d.tap(`${poll}.querySelector('[data-choice="1"] label')`);
+    await d.tap(`[...${poll}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Vote')`);
+    const voted = await waitFor(() => h.ev(`(() => { const p = ${poll}; const c = p.querySelector('[data-choice="1"]');
+        return c.hasAttribute('data-mine') && c.dataset.count === '1' && p.querySelector('[data-choice="0"]').dataset.count === '1'; })()`),
+    'the vote', 15000).then(() => true, () => false);
+    report(voted, "the WebView, by Android's input: a tap on a choice and one on Vote vote, and the totals show, the member's marked, desk's beside it");
+    await h.snap('poll-voted');
+    const count = `${poll}.querySelector('[data-choice="1"] [data-voters]')`;
+    if (voted) {
+        await d.tap(count);
+        const tip = await waitFor(() => h.ev(`(() => { const t = ${count}?.parentElement.querySelector('[role=tooltip]'); return t && !t.hidden ? t.textContent : ''; })()`),
+            "the count's tip", 5000).catch(() => '');
+        report(tip === 'You', `the WebView, by Android's input: a tap on the count says who voted for it: ${JSON.stringify(tip)}`);
+        await h.snap('poll-tip');
+    }
+}
+
 // The page's own screenshots go through the DevTools protocol; Android's,
 // of the whole screen, show what the member sees.
 b.shot = async (file) => fs.writeFileSync(file, execFileSync(ADB, ['-s', serial, 'exec-out', 'screencap', '-p'], { maxBuffer: 64 << 20 }));
@@ -597,6 +627,9 @@ try {
     }
     if (want('reactions')) {
         await reactionsWalk(h, d, ctx).catch((e) => report(false, e.message));
+    }
+    if (want('polls')) {
+        await pollsWalk(h, d, ctx).catch((e) => report(false, e.message));
     }
     if (want('call')) {
         try {
