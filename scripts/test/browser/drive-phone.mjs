@@ -23,17 +23,19 @@
 // screen and back, and the call left from its bar; and staff's long press
 // on a channel's or a group's row for its settings, on a touch screen; and
 // the soundboard (M14.3): the bar's mute and soundboard, its sheet, and
-// Manage opened from the den's name.
+// Manage opened from the den's name; and emoji (M15.2): the picker as a
+// sheet, its search staying at its top, a group's button and a tap's
+// pick, and :par and @al completed above the box by taps.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
-// The parts are member, around, touch, pages, call, owner and before; all
-// by default.
+// The parts are member, around, touch, pages, call, emoji, owner and
+// before; all by default.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, token } from './browsers.mjs';
-import { audits, callScreens, gettingAround, helpers, memberScreens, ownerScreens, pages, staffPress, touching, waitFor } from './screens.mjs';
+import { audits, callScreens, emojiPicking, gettingAround, helpers, memberScreens, ownerScreens, pages, staffPress, touching, waitFor } from './screens.mjs';
 
 const args = process.argv.slice(2);
 const cut = args.indexOf('--');
@@ -255,7 +257,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
     fs.rmSync(out, { recursive: true, force: true });
     fs.mkdirSync(out, { recursive: true });
     const log = [];
-    if (want('member') || want('around') || want('touch') || want('pages') || want('call')) {
+    if (want('member') || want('around') || want('touch') || want('pages') || want('call') || want('emoji')) {
         const b = await browser(mode, port++, { media: mode === 'chromium' ? true : 'pulse', screen: mode === 'chromium' });
         try {
             await pair(b, BOB);
@@ -264,6 +266,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             if (want('around')) await gettingAround(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('touch')) await touching(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('pages')) await pages(h, ctx, driver(mode, b, h), report).catch(fail);
+            if (want('emoji')) await emojiPicking(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('call')) {
                 // Carol, the voice probe, hears bob and shares, for the player.
                 const jar = fs.readFileSync(`${HOME}/jar-${CAROL.instance}`, 'utf8').split('\n').map((l) => l.split('\t'));
