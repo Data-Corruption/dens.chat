@@ -18,6 +18,7 @@ protect you from.
 | Who plays which sound on the soundboard | Everyone in the call hears it and sees who played it, and the den knows who played which, as it knows who's in a call |
 | DMs, and the photos and files in them | Only the two of you: they're end-to-end encrypted |
 | Reactions | In a channel, its members and the den. In a DM, only the two of you, like its messages; the den sees only that someone's reactions changed, and when |
+| Who voted for what in a poll | The den, always: it counts each vote. Members, as the poll's author chose: never, once it ends, or always |
 | Who DMs whom, when, and how much | The den |
 | Your IP address | Each den you're connected to, while you're connected. Other members never see it, even in calls |
 | Your profile | Members of that den. You have a separate one in each den, and no den can link it to your others |
