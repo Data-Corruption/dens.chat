@@ -105,6 +105,23 @@ DM or anywhere else.
 The usual emoji are your system's, so they look the way they do everywhere else
 on your computer or phone. A phone too old for a newer one shows a box.
 
+## Reactions
+
+React to a message with an emoji: point at it and click the smiley beside its
+**⋯**, or choose **Add reaction** from the **⋯** menu. Reactions show under the
+message, each emoji with how many picked it, yours highlighted. Click one to add
+yours or take it back, and point at it to see who reacted. **+** at the end of
+the row picks another. A message holds up to 20 different emoji, and reacting
+doesn't notify anyone.
+
+On a phone, press and hold a message: the six emoji you use most sit at the top
+of its menu, with **+** for the rest. Tap a reaction to add or take back yours,
+and press and hold it to see who reacted.
+
+Moderators can take an emoji's reactions off a message in a channel. Reactions
+in a DM are end-to-end encrypted, like its messages: the den sees that yours
+changed, and when, but not what they are.
+
 ## Direct messages
 
 DMs are end-to-end encrypted: only you and the other person can read them, not
