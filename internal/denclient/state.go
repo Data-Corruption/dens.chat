@@ -665,6 +665,37 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		}
 		s.gone = append(s.gone, d.Files...)
 		data = d
+	case denproto.EventReactionAdded, denproto.EventReactionRemoved:
+		var ch denproto.ReactionChange
+		if json.Unmarshal(e.D, &ch) != nil || ch.Check() != nil {
+			return e, false, errMalformed
+		}
+		if known, err := s.reactsIn(ch.ChannelID, false); !known || err != nil {
+			return e, false, err
+		}
+		data = ch
+	case denproto.EventReactionCleared:
+		var cl denproto.ReactionCleared
+		if json.Unmarshal(e.D, &cl) != nil || cl.Check() != nil {
+			return e, false, errMalformed
+		}
+		if known, err := s.reactsIn(cl.ChannelID, false); !known || err != nil {
+			return e, false, err
+		}
+		data = cl
+	case denproto.EventDMReactions:
+		// The connection opens it for the page.
+		var d denproto.DMReactions
+		if json.Unmarshal(e.D, &d) != nil || d.SealedReactions.Check() != nil || !validID(d.MessageID) {
+			return e, false, errMalformed
+		}
+		if known, err := s.reactsIn(d.ChannelID, true); !known || err != nil {
+			return e, false, err
+		}
+		if !slices.Contains(s.channels[d.ChannelID].Members, d.MemberID) {
+			return e, false, errMalformed
+		}
+		data = d
 	case denproto.EventMessagesExpired:
 		var x denproto.MessagesExpired
 		if json.Unmarshal(e.D, &x) != nil || !validID(x.Through) {
@@ -783,6 +814,21 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 	}
 	out, err := denproto.NewEvent(e.T, e.Seq, data)
 	return out, err == nil, err
+}
+
+// reactsIn says whether a reaction's channel is one the member sees, of
+// the kind its event is for: a DM for a sealed set, a text channel for
+// the rest (M15.3). One it doesn't know, as one deleted while the event
+// was on its way, is passed over.
+func (s *denState) reactsIn(channel string, dm bool) (bool, error) {
+	c, ok := s.channels[channel]
+	if !ok {
+		return false, nil
+	}
+	if (c.Kind == denproto.KindDM) != dm || c.Kind == denproto.KindVoice {
+		return false, errMalformed
+	}
+	return true, nil
 }
 
 // marks are a den's channels and DMs with messages unread, and the

@@ -51,6 +51,10 @@
 #                               picked and completed, with @ for members, shown on both pages, in a DM too,
 #                               and large alone; the picker led by the most used, in a skin tone; On hover;
 #                               a renamed one's old name as text, the den's count full, and one deleted
+#   reactions BROWSER           M15.3: reactions from the smiley beside a message's ⋯, its menu's Add
+#                               reaction, a chip's click and the row's +, through the picker; the chips'
+#                               tips; a DM's, sealed, the den's emoji by name; staff's Remove reactions;
+#                               a twenty-first refused; and the view held as a row above it wraps
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
@@ -63,14 +67,16 @@
 #                               (M13.3); and the call, its bar, the call's button held and tapped by its
 #                               role, a member's volume in a sheet, a share docked, full screen and back,
 #                               and leaving from the bar (M13.4); and the emoji picker's sheet, its search
-#                               at its top as it scrolls, and :par and @al completed by taps (M15.2). PART
-#                               is member, around, touch, pages, call, emoji, owner or before; all unless given
+#                               at its top as it scrolls, and :par and @al completed by taps (M15.2); and a
+#                               message's sheet with its quick reactions, a tap reacting, the chip's tip by
+#                               a long press, and the picker's sheet (M15.3). PART is member, around,
+#                               touch, pages, call, emoji, reactions, owner or before; all unless given
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,69p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,75p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

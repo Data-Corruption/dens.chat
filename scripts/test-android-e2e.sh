@@ -43,7 +43,10 @@
 # ringing for the owner only while it's held, has it let go as the
 # notification shade comes down mid-press, and leaves from the bar
 # (M13.4); before leaving, it hears the owner leave and join again, the
-# page playing their sounds through the call's context (M14.2). Then the screens are walked again with Android's font scale at
+# page playing their sounds through the call's context (M14.2). Desk reacts
+# to the member's message, which the phone's page shows as a chip, and the
+# member reacts to desk's from the long press's quick row, which desk's
+# page shows (M15.3). Then the screens are walked again with Android's font scale at
 # 1.3, as a member with larger text has it. The host package's tests, which
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
@@ -435,6 +438,27 @@ phone start
 waitfor 20 "the page in front" front
 walk pages || fail "dialogs, the settings and the viewer at 390 pixels"
 ok "the settings and Manage opened as lists of pages, which Back walked out of, and the phone's settings held no keyboard shortcuts or screen share; the viewer moved to a message's second photo by a swipe, zoomed by a double tap, and Back closed it; and a dialog, a sheet, closed by a swipe down"
+# Reactions (M15.3): desk reacts to the member's message, which the phone's
+# page shows as a chip; the member reacts to desk's from the long press's
+# quick row, by Android's own touch, which desk's page shows.
+echo ">> Reactions, at 390 pixels"
+nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+phone_msg=$(phone drive api POST "/api/dens/$den_id/channels/$general/messages" "{\"nonce\":\"$nonce\",\"text\":\"react to this, desk\"}" |
+  sed -n 's/^200 //p' | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')
+[[ -n "$phone_msg" ]] || fail "the member's message for desk to react to"
+desk_msg=$(den say "$general" "react to this from the phone")
+den api POST "/api/dens/$den_id/messages/$phone_msg/reactions?channel=$general" '{"emoji":"🎉","on":true}' >/dev/null
+printf '{"den":"%s","general":"%s","random":"%s","dm":"%s","phone_msg":"%s","desk_msg":"%s"}\n' "$den_id" "$general" "$random" "$dm" "$phone_msg" "$desk_msg" |
+  incus exec "$CONTAINER" -- sh -c 'cat > /root/walk-ctx.json'
+phone start
+waitfor 20 "the page in front" front
+walk reactions || fail "reactions at 390 pixels"
+reacted() {
+  den api GET "/api/dens/$den_id/channels/$general/messages?around=$desk_msg&limit=1" |
+    python3 -c 'import json, sys; m = json.load(sys.stdin)["messages"][0]; sys.exit(0 if any(sys.argv[1] in r["members"] for r in m.get("reactions", [])) else 1)' "$member_id"
+}
+waitfor 20 "the member's reaction on desk's page" reacted
+ok "desk's reaction on the member's message showed as a chip on the phone's page, and the member's from the long press's quick row, by Android's own touch, reached desk's page"
 # Calls on a phone (M13.4): desk, the den's owner in Chromium in
 # dens-browsers, shares its screen in Lounge and answers the walk over
 # HTTP with what its page shows of the call. The member joins from the

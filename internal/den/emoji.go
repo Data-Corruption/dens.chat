@@ -212,7 +212,10 @@ func (d *Den) RenameEmoji(ctx context.Context, s *Session, id string, req denpro
 }
 
 // DeleteEmoji deletes one of the den's emoji, and its image, at staff's
-// word. The messages that wrote it show its name as text.
+// word. The messages that wrote it show its name as text, and its
+// reactions go with it (M15.3): the members' pages drop them as they hear
+// it went, and the change log has their messages fetched again by an
+// install that was away.
 func (d *Den) DeleteEmoji(ctx context.Context, s *Session, id string) error {
 	if !IsStaff(s.Role) {
 		return forbidden("only moderators and the owner delete emoji")
@@ -221,15 +224,28 @@ func (d *Den) DeleteEmoji(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return errEmojiNotFound
 	}
+	// Its reactions' messages change, as a reaction changes them.
+	d.changes.Lock()
+	defer d.changes.Unlock()
 	var blobs [][]byte
 	err = d.tx(ctx, func(tx *sql.Tx) error {
+		reacted, err := reactedWith(ctx, tx, eid)
+		if err != nil {
+			return err
+		}
 		var file int64
-		err := tx.QueryRowContext(ctx, `DELETE FROM den_named_files WHERE id = ? AND kind = ? RETURNING file_id`, eid, kindEmoji).Scan(&file)
+		err = tx.QueryRowContext(ctx, `DELETE FROM den_named_files WHERE id = ? AND kind = ? RETURNING file_id`, eid, kindEmoji).Scan(&file)
 		if errors.Is(err, sql.ErrNoRows) {
 			return errEmojiNotFound
 		}
 		if err != nil {
 			return err
+		}
+		now := d.now()
+		for _, m := range reacted {
+			if err := logMessage(ctx, tx, m[0], m[1], now); err != nil {
+				return err
+			}
 		}
 		blobs, err = deleteFiles(ctx, tx, `id = ?`, file)
 		return err

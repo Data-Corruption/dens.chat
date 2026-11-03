@@ -28,6 +28,9 @@
 //                            swiped and zoomed, a dialog as a sheet swiped down
 //   (M13.4)                  the call's bar, the call's button muted, its role, held,
 //                            a member's sheet, a share docked and full screen
+//   emoji, reactions         the emoji picker's sheet, completion; a message's sheet
+//   (M15.2, M15.3)           with its quick reactions, its chips and a chip's tip, the
+//                            picker's sheet to react
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 
@@ -1181,4 +1184,90 @@ export async function emojiPicking(h, ctx, d, report) {
     await h.ev(`(() => { const el = ${COMPOSER}; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, '');
         el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); return true; })()`);
     await sleep(500);
+}
+
+// QUICK_ROW is the quick reactions atop a message's sheet (M15.3), and
+// REACT_SHEET the picker's sheet to react.
+const QUICK_ROW = `document.querySelector('[data-sheet] [data-quick-reactions]')`;
+const REACT_SHEET = `document.querySelector('[data-sheet][aria-label="Add a reaction"]')`;
+
+// quickReacting has the member react from a message's sheet at 390 pixels
+// (M15.3): its quick reactions at its top, ahead of its actions, a tap on
+// one reacting, the sheet closing, and the message's chip marked as theirs;
+// a long press on the chip, or with a mouse the pointer, saying who; a tap
+// on it taking it back; and the sheet's + opening the picker as a sheet,
+// whose tap reacts too. With a mouse the ⋯ opens the sheet. at names the
+// message, the newest unless given; with keep, the quick reaction stays,
+// for another's page to see, and the rest is left out. It returns the
+// chip the quick reaction made.
+export async function quickReacting(h, ctx, d, report, { at, keep } = {}) {
+    const { den, general } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const target = at ? `document.querySelector('[data-scroller] [data-id="${at}"]')` : NEWEST;
+    const chips = `[...(${target})?.querySelectorAll('[data-reaction]') || []].map((c) => ({ key: c.dataset.reaction,
+        count: Number(c.dataset.count), mine: c.getAttribute('aria-pressed') === 'true' }))`;
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    await h.wait(target, 'the message to react to');
+    await sleep(1000);
+    const open = async () => {
+        if (d.touch) {
+            await d.press(target);
+        } else {
+            await d.hover(target);
+            await d.tap(`${target}.querySelector('button[aria-label="Message actions"]')`);
+        }
+        return waitFor(() => h.has(QUICK_ROW), 'the quick reactions', 5000).then(() => true, () => false);
+    };
+    did(await open(), `${d.touch ? 'a long press' : 'the ⋯'} opens the message's sheet with its quick reactions`);
+    const row = await h.ev(`(() => { const q = ${QUICK_ROW}; const s = q.closest('[data-sheet]');
+        const rows = [...s.querySelectorAll('[role=menuitem]')].filter((i) => !q.contains(i));
+        return { quick: [...q.querySelectorAll('[data-quick-reaction]')].map((b) => b.dataset.quickReaction), more: !!q.querySelector('[data-more-reactions]'),
+            above: rows.length > 0 && q.getBoundingClientRect().bottom <= rows[0].getBoundingClientRect().top + 1,
+            sizes: [...q.querySelectorAll('button')].map((b) => { const r = b.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height)); }) }; })()`);
+    did(row.quick.length === 6 && row.more && row.above && row.sizes.every((n) => n >= 44),
+        `six quick reactions and a + at the sheet's top, ahead of its actions, each 44 pixels or more: ${JSON.stringify(row)}`);
+    await h.snap('reactions-sheet');
+    // One the member hasn't reacted with here, as a run before may have.
+    const before = await h.ev(chips);
+    const quick = `${QUICK_ROW}.querySelector('[data-quick-reaction][aria-pressed="false"]')`;
+    const emoji = await h.ev(`${quick}.dataset.quickReaction`);
+    await d.tap(quick);
+    const made = await waitFor(async () => {
+        const now = await h.ev(chips);
+        const fresh = now.find((x) => x.mine && !before.some((b) => b.key === x.key && b.mine));
+        return fresh && !(await h.has(SHEET)) ? fresh : null;
+    }, 'the quick reaction on the message', 8000).catch(() => null);
+    did(!!made, `a tap on ${emoji} reacts, the sheet closing, and the message's chip is theirs: ${JSON.stringify(made)}`);
+    await h.snap('reactions-chip');
+    if (!made) return null;
+    const chip = `${target}.querySelector('[data-reaction="${made.key}"]')`;
+    if (d.touch) await d.press(chip);
+    else await d.hover(chip);
+    const tip = await waitFor(() => h.ev(`(() => { const t = ${chip}?.parentElement.querySelector('[role=tooltip]'); return t && !t.hidden ? t.textContent : ''; })()`),
+        "the chip's tip", 5000).catch(() => '');
+    const held = (await h.ev(chips)).some((x) => x.key === made.key && x.mine);
+    did(tip.startsWith('You') && held, `${d.touch ? 'a long press' : 'the pointer'} on the chip says who, and leaves the reaction: ${JSON.stringify(tip)}`);
+    await h.snap('reactions-tip');
+    if (keep) return made;
+    await d.tap(chip);
+    const gone = await waitFor(async () => !(await h.ev(chips)).some((x) => x.key === made.key && x.mine), 'the reaction taken back', 8000)
+        .then(() => true, () => false);
+    did(gone, 'a tap on the chip takes it back');
+    // The sheet's + opens the picker as a sheet, whose tap reacts.
+    if (!(await open())) return made;
+    await d.tap(`${QUICK_ROW}.querySelector('[data-more-reactions]')`);
+    const tile = `${REACT_SHEET}?.querySelector('[data-section=g0] [data-emoji-tile]')`;
+    const sheet = await waitFor(() => h.has(tile), 'the picker as a sheet', 8000).then(() => true, () => false);
+    await h.snap('reactions-picker');
+    const picked = sheet ? await h.ev(`${tile}.dataset.emojiTile`) : '';
+    if (sheet) await d.tap(tile);
+    const added = await waitFor(async () => !(await h.has(REACT_SHEET)) && (await h.ev(chips)).find((x) => x.key === `u:${picked}` && x.mine), 'the pick', 8000)
+        .catch(() => null);
+    did(sheet && !!added, `the sheet's + opens the picker as a sheet, and a tap on ${picked} reacts: ${JSON.stringify(added)}`);
+    if (added) {
+        await d.tap(`${target}.querySelector('[data-reaction="u:${picked}"]')`);
+        await waitFor(async () => !(await h.ev(chips)).some((x) => x.key === `u:${picked}` && x.mine), 'the pick taken back', 8000).catch(() => {});
+    }
+    return made;
 }

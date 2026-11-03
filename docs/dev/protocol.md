@@ -37,7 +37,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
 | 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code), `no_other_device` (a password sign-in with no other device to approve it) |
 | 404 | `not_found` |
-| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict`, `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3), `emoji_name_taken` (another of the den's emoji has the name; M15.2) |
+| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` (an edit, a tick, or from M15.3 a DM's set of reactions, made against another revision), `key_exists` (a DM key, or a sign-in waiting for approval, isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3), `emoji_name_taken` (another of the den's emoji has the name; M15.2) |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed), `changes_gone` (a version the den no longer has the changes since; M6) |
 | 413 | `too_large` |
 | 415 | `unsupported_type` |
@@ -255,7 +255,7 @@ GET /api/changes?since=<version>&upto=<message id>
 200 {"version": 1300, "messages": [message, …], "deleted": [{"id", "channel_id"}, …], "more": false}
 ```
 
-- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
+- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, or from M15.3 whose reactions changed, its revision as it was, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
 - A client keeps what it cached from an earlier `ready` only when its version is from the same `epoch`, no older than `floor` and no newer than `version`; otherwise it drops it. It takes the `version` of a `ready` that finds it holding nothing.
 - **Members since (M6.2).** A client that kept the list of members from a `ready` names the epoch and version of that `ready` on the socket's upgrade, as `members`. When the den can still say what changed since, `ready` carries only the members whose records changed after that version, and says so with `sync.members_since`, the version they changed after; the client changes its list by them and takes the new `version` for its list. Otherwise `ready` carries everyone, without `members_since`. A `ready` the den sends mid-stream goes by the same cursor, which the socket's own events kept current.
 - `GET /api/changes` returns the messages edited or deleted after `since`, in channels the member can see now, and with IDs up to `upto` when it's given: the newest message the client holds. An edited message comes as history has it now, and a deleted one as its ID and channel. A change in a channel that's gone is left out, since the channel is missing from `ready` and the client drops it whole.
@@ -326,10 +326,10 @@ group   = {"id", "name", "position"}
 ```
 message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
            "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6),
-           "sealed"?, "key_id"? (M1.7)}
+           "sealed"?, "key_id"? (M1.7), "reactions"?, "dm_reactions"? (M15.3)}
 ```
 
-A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)).
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions-m153)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links-m3)).
 
@@ -661,6 +661,7 @@ PATCH /api/messages/{id}           {"revision", "sealed", "key_id", "editors"?, 
 
 - `sealed` is `{"text", "files"?}` as JSON, sealed with XChaCha20-Poly1305 under the DM key and bound to `"dens-dm-message-v1" ‖ den_id ‖ channel ‖ author ‖ len(nonce) ‖ nonce ‖ key_id ‖ revision`, as nonce ‖ ciphertext, at most 64 KiB. `text` stays empty. The sealed text follows a message's rules, and lists at most 10 files.
 - `key_id` must name the DM's live key, and one its sender checked; otherwise `400 invalid_field`.
+- A DM's reactions are each member's set, which their client seals as it seals a message (see [Reactions](#reactions-m153)).
 - An edit seals the message again at the next revision, under the DM's live key, which may be newer than the one it was sent with. The den can't compare texts, so `"unedited": true` marks an edit that only ticks a task or changes the editors, and doesn't mark the message edited. A DM's tasks tick this way: `POST /api/messages/{id}/tasks/{n}` refuses a DM's message.
 - The rest works as in channels: ordering, history, revisions and edit conflicts, deletes, read state, and unread counts, where every message counts for the other member.
 - Binding the author, nonce, key and revision keeps the den from moving a sealed text to another message, or passing an old revision off as a new one. It can still hold a message back, or show one twice.
@@ -879,6 +880,35 @@ DELETE /api/emoji/{id}                         204              (staff only)
 - An older den sends no `emoji_limits` and no `emoji`, and clients show none of its emoji and offer no way to add one; clients check `emoji_limits` and every emoji as they arrive, and refuse a den whose are out of range. An older client shows `:name:` as the text it is.
 - Adding, renaming and deleting an emoji count toward the member's other writes.
 
+## Reactions (M15.3)
+
+A reaction is a member's emoji on a message: one of Unicode's, from the list (`denproto.IsEmoji`), or one of the den's (see the design doc's Reactions).
+
+```
+reaction        = {"emoji"?: "<one of Unicode's>", "emoji_id"?: "<one of the den's>", "members": [member id, …]}
+sealed_reactions = {"member_id", "key_id", "revision", "sealed"}
+
+POST /api/messages/{id}/reactions          {"emoji"? | "emoji_id"?}               204
+POST /api/messages/{id}/reactions/remove   {"emoji"? | "emoji_id"?}               204
+POST /api/messages/{id}/reactions/clear    {"emoji"? | "emoji_id"?}               204   (staff only)
+PUT  /api/messages/{id}/reactions/sealed   {"revision", "key_id", "sealed"}       200 sealed_reactions
+```
+
+- A reaction names one emoji, `emoji` or `emoji_id`, never both. A channel's message carries its `reactions`: each emoji with the members who reacted with it, in the order each emoji came and each member reacted, in history, in what changed while away, and in `message.updated`; a new message has none. It holds at most 20 different emoji and 10,000 reactions in all; a client refuses a message from the den with more.
+- `POST /api/messages/{id}/reactions` adds the member's reaction to a message in a text channel they can see: one of Unicode's emoji, fully qualified, as the list has it, or one of the den's by ID while its `emoji_limits` aren't 0. Anything else gets `400 invalid_field`, as does a 21st different emoji, a message at 10,000, or a DM's message; a message they can't see gets `404 not_found`. `/remove` takes it back. Reacting again, or taking back one that isn't there, changes nothing and tells nobody.
+- `/clear`, staff's, takes one emoji's reactions off a channel's message: those of the members of a lower rank than theirs, as their other powers reach. Anyone else gets `403 forbidden`, and so does a DM's message, whose reactions are its members' alone.
+- `reaction.added` and `reaction.removed` carry `{"message_id", "channel_id", "member_id", "emoji"? | "emoji_id"?}`, one member's one emoji, and `reaction.cleared` carries `{"message_id", "channel_id", "emoji"? | "emoji_id"?, "members"}`, whose reactions went; each goes to those who can see the channel. A client applies each to its emoji's set on the message, so applying one twice changes nothing.
+- A reaction with one of the den's emoji goes as the emoji is deleted: the den tells of it by `emoji.deleted` alone, by which a client drops its chips, and records the messages it was on in the change log. A ban with `delete_messages` takes the reactions the member added in that time too, in channels, each as `reaction.removed`.
+- Each change records its message in the change log, its revision as it was (see [What changed while away](#what-changed-while-away-m6)). Reactions mention nobody and notify nobody.
+
+**A DM's.** Each member's reactions on a DM's message are one set, which their client seals: `{"emoji": [...]}` as JSON, each one of Unicode's emoji from the list or a name one of the den's emoji may have, as a DM's text writes them, each once, at most 20, padded with spaces to 1,024 bytes, and sealed with XChaCha20-Poly1305 under the DM's live key, bound to `"dens-dm-reactions-v1" ‖ den_id ‖ channel ‖ message ‖ member ‖ key_id ‖ revision`, as nonce ‖ ciphertext, 1,064 bytes.
+
+- `PUT /api/messages/{id}/reactions/sealed` sets the member's set: `revision` is the revision of their set it was made against, 0 while they have none, and `sealed` is sealed as the revision after it. `key_id` must name the DM's live key, and one the member checked, as for a message, and `sealed` must be 1,064 bytes; otherwise `400 invalid_field`. A set made against another revision gets `409 edit_conflict` with the member's set as it is, `{"error": {…}, "reactions": sealed_reactions}`, without `reactions` while they have none, and the client makes it again on that one. Once the other member has left, `403 forbidden`.
+- The den answers with the set as it keeps it, and sends it to both members as `dm.reactions {"message_id", "channel_id", "member_id", "key_id", "revision", "sealed"}`; a DM's message carries its members' sets as `dm_reactions`, a set a member, in the order of their IDs. A client keeps the newer of a member's sets by `revision`, and opening one keeps only emoji from the list and names a den's emoji may have, and drops anything else; one that doesn't open shows none.
+- A set stays once made, empty or not, and goes with its message. The den sees that a member's reactions changed, and when, never what they are.
+
+**Older ones.** An older page shows no reactions. An older den sends none and takes none; a client offers none for a den with no `emoji_limits`, since reactions came with emoji.
+
 ## Rate limits
 
 The den limits per IP, taken from `X-Forwarded-For` only on connections from loopback, and per member. Limits live in memory only. Starting values, to tune with real use:
@@ -896,6 +926,6 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, and from M15.2 adding, renaming and deleting an emoji | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, and from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

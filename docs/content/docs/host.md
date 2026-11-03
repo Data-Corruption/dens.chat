@@ -158,7 +158,8 @@ name at the top of its channel list, or **Manage** on your home page.
 - **Invites** are the only way in. Each one expires, and works a set number of
   times.
 - **Removing and banning.** Removing someone signs them out everywhere. A ban
-  also keeps their username out, and can delete their recent messages. Dens
+  also keeps their username out, and can delete their recent messages, with
+  the reactions they added in that time in channels. Dens
   keeps no IP addresses, so someone banned can come back under a new name with
   a new invite: revoke the invite they used.
 - **Limits** cap file sizes and storage, and how big calls and screen shares
@@ -188,6 +189,10 @@ name at the top of its channel list, or **Manage** on your home page.
   and up to 500, or off, which keeps them and shows their names as text.
   Lowering it leaves the emoji already added. Everyone's Dens keeps a copy of
   every emoji, which is why each is small.
+- **Reactions.** Moderators and you can take an emoji's reactions off a
+  message in a channel: choose **Remove reactions** from its **⋯** menu. It
+  takes those of people of a lower rank than you. Reactions in a DM are its
+  two members' alone, and the den can't read them.
 - **Auto-delete**, off unless you turn it on, deletes messages older than a
   number of days, in channels and DMs. Members see the setting. A
   [backup](../backups/) keeps what it held until you delete the backup.

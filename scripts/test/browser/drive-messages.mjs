@@ -84,8 +84,8 @@ try {
     const end = await focused();
     await press('Escape');
     const closed = !(await b.eval(`!!${MENU}`)) && (await focused()) === 'Message actions';
-    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Edit', 'Copy text', 'Copy link', 'Delete']) &&
-        down === 'Edit' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
+    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Add reaction', 'Edit', 'Copy text', 'Copy link', 'Delete']) &&
+        down === 'Add reaction' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
         `Enter opened ${JSON.stringify(all)} at Reply (${opened}); the arrows moved to ${down} and round to ${wrapped}, Home to ${home}, End to ${end}, and Escape closed it back to the ⋯ (${closed})`);
 
     step('Reply, Copy text and Copy link');
@@ -97,7 +97,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const text = await may(waitFor(async () => (await copied())?.includes("Bob's first") && (await has('Text copied')), 'the text copied', 5000));
     await press('Enter');
     await menuWith('Reply');
@@ -109,7 +109,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'Enter');
     const editing = await may(waitFor(() => b.eval(`(() => { const el = document.activeElement; return el?.tagName === 'TEXTAREA' && el.value === "Bob's first" && el.selectionStart === el.value.length; })()`), 'the edit box, caret at its end', 5000));
     await b.type(' (fixed)');
     await press('Enter');
@@ -148,7 +148,7 @@ try {
     await menuWith('Reply');
     const inside = await b.eval(`${MENU}.getBoundingClientRect().bottom <= document.querySelector('[data-scroller]').getBoundingClientRect().bottom + 1`);
     await press('Escape');
-    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Copy text', 'Copy link']) && inside,
+    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy link']) && inside,
         `alice's message offers bob ${JSON.stringify(theirs)}, and the last message's menu stays inside the list (${inside})`);
 
     step("a message's link, underlined only on hover and keyboard focus");
@@ -229,7 +229,7 @@ try {
     await waitFor(() => b.eval(`!!${DIALOG}`), 'the dialog', 5000);
     const whose = await b.eval(`${DIALOG}.innerText`);
     await press('Escape');
-    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Copy text', 'Copy link', 'Delete']) && whose.includes("This is Bob's message, @bob. It goes for everyone"),
+    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy link', 'Delete']) && whose.includes("This is Bob's message, @bob. It goes for everyone"),
         `bob's message offers alice ${JSON.stringify(hers)}, and its dialog says ${JSON.stringify(whose)}`);
 
     step('the menu by a long press');

@@ -42,8 +42,10 @@ function nameOfItem(item) {
 // Unicode's, by group, which the buttons at its top go to; and the skin
 // tone, which the browser keeps, for those that take one. onPick hears the
 // emoji picked, which onPick's caller puts in. As a sheet, its search and
-// its buttons stay at the sheet's top while the emoji scroll.
-export function EmojiPicker({ emoji, onPick, onClose, sheet }) {
+// its buttons stay at the sheet's top while the emoji scroll. It opens
+// above the composer's box, or where place, a fixed place in the window,
+// says, beside a message to react to it (M15.3); label names it.
+export function EmojiPicker({ emoji, onPick, onClose, sheet, place, label = 'Emoji' }) {
     // The list, where the page fetched it already, shows from the start.
     const [list, setList] = useState(emojiList);
     const [failed, setFailed] = useState('');
@@ -166,14 +168,14 @@ export function EmojiPicker({ emoji, onPick, onClose, sheet }) {
     );
     if (sheet) {
         return (
-            <Sheet label="Emoji" title={top} onClose={onClose}>
+            <Sheet label={label} title={top} onClose={onClose}>
                 {body}
             </Sheet>
         );
     }
     return (
-        <div role="dialog" aria-label="Emoji" data-emoji-picker
-            class="absolute bottom-full right-0 z-30 mb-2 flex h-96 max-h-[60vh] w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-box border border-base-300 bg-base-100 shadow-xl">
+        <div role="dialog" aria-label={label} data-emoji-picker style={place || undefined}
+            class={`${place ? 'fixed z-40' : 'absolute bottom-full right-0 z-30 mb-2'} flex h-96 max-h-[60vh] w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-box border border-base-300 bg-base-100 shadow-xl`}>
             {top}
             {body}
         </div>

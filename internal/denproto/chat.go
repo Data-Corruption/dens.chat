@@ -119,6 +119,12 @@ type Message struct {
 	// history too, since opening it takes the nonce.
 	Sealed Bytes  `json:"sealed,omitempty"`
 	KeyID  string `json:"key_id,omitempty"`
+	// Reactions are a channel's message's reactions, each emoji with the
+	// members who reacted with it, in the order each emoji came, and
+	// DMReactions a DM's, each of its members' sets as their client sealed
+	// it (M15.3).
+	Reactions   []Reaction        `json:"reactions,omitempty"`
+	DMReactions []SealedReactions `json:"dm_reactions,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -345,6 +351,9 @@ func CheckMessage(m Message) error {
 	}
 	if len(m.Attachments) > MaxAttachments {
 		return errors.New("message has too many files")
+	}
+	if err := checkReactions(m); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, f := range m.Attachments {

@@ -20,7 +20,7 @@ import { copyText } from './clipboard.js';
 import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
-import { completeEmoji, completeMember, completionAt, denKey, emojiList, inTone, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
+import { completeEmoji, completeMember, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
@@ -28,7 +28,11 @@ import {
 import { compareIds, newNonce } from './ids.js';
 import { linkTo } from './links.js';
 import { OFFLINE_NOTE } from './offline.js';
-import { PAGE, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate } from './paging.js';
+import {
+    PAGE, REACTIONS, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate,
+} from './paging.js';
+import { reactionOf, room, withReaction } from './reactions.js';
+import { QuickReactions, ReactionPicker, Reactions, RemoveReactions, useChips } from './reactions.jsx';
 import { keptFor } from './retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
@@ -109,6 +113,14 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // delete waits on the member's word (M11).
     const [menu, setMenu] = useState(null);
     const [deleting, setDeleting] = useState(null);
+    // reacting is the message whose picker is open to react to it, with
+    // what opened it, and removing the one whose reactions staff take off
+    // (M15.3).
+    const [reacting, setReacting] = useState(null);
+    const [removing, setRemoving] = useState(null);
+    // A den older than reactions, which came with its emoji, takes none.
+    const emoji = useContext(EmojiContext);
+    const reactions = !!emoji?.known;
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
@@ -453,8 +465,56 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         } else if (e.t === 'message.deleted') {
             setViewing((v) => (v && v.message === d.id ? null : v));
             setDeleting((m) => (m && m.id === d.id ? null : m));
+            setReacting((r) => (r && r.id === d.id ? null : r));
+            setRemoving((id) => (id === d.id ? null : id));
             setList((cur) => withDelete(cur, d));
+        } else if (REACTIONS.has(e.t)) {
+            holdView();
+            setList((cur) => withReaction(cur, e.t, d));
         }
+    }
+
+    // holdView keeps what the member reads where it is as a message above
+    // it changes size, as a reaction's row comes or goes, or wraps (M15.3).
+    // At the newest, the list stays there by itself.
+    function holdView() {
+        if (!atBottom.current || listRef.current.hasNewer) captureAnchor();
+    }
+
+    // react adds the member's reaction to a message, or takes it back, and
+    // shows it at once: the den's word on it comes as an event, which
+    // changes nothing more. An emoji added counts toward their most used.
+    async function react(m, item, on) {
+        setError('');
+        try {
+            const res = await api.post(`/api/dens/${denID}/messages/${m.id}/reactions?channel=${channel.id}`, { ...item, on });
+            holdView();
+            if (res.set) setList((cur) => withReaction(cur, 'dm.reactions', { message_id: m.id, ...res.set }));
+            else setList((cur) => withReaction(cur, on ? 'reaction.added' : 'reaction.removed', { message_id: m.id, member_id: me.id, ...item }));
+        } catch (e) {
+            setError(e.message);
+            return;
+        }
+        if (!on) return;
+        loadEmoji().then((l) => {
+            const den = item.emoji_id || (item.name && emoji?.byName.get(item.name)?.id);
+            const key = den ? denKey(denID, den) : item.emoji ? keyOf({ unicode: item.emoji }, denID, null, l) : null;
+            if (key) noteUses([key]);
+        }, () => {});
+    }
+
+    // pickReaction reacts with what the picker picked, where the message
+    // has room for another emoji.
+    function pickReaction(id, item, chips) {
+        const m = listRef.current.messages.find((x) => x.id === id);
+        if (!m) return;
+        const key = item.emoji ? `u:${item.emoji}` : `d:${item.emoji_id}`;
+        const name = item.emoji_id && emoji?.all.find((e) => e.id === item.emoji_id)?.name;
+        if (!room(chips, key) && !chips.some((c) => c.name && c.name === name)) {
+            setError('A message holds at most 20 different emoji.');
+            return;
+        }
+        react(m, item, true);
     }
 
     // expired drops what a retention pass deleted: every message up to
@@ -625,7 +685,14 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 touch={touch}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
                 candidates={candidates}
-                onUpdated={(u) => setList((cur) => withUpdate(cur, u))}
+                canReact={reactions && !m.locked && !closed && canSend}
+                canRemoveReactions={channel.kind !== 'dm' && isStaff(role) &&
+                    (m.reactions || []).some((r) => r.members.some((id) => rank(members.get(id)?.role) < rank(role)))}
+                nameOf={(id) => name(members.get(id))}
+                onReact={(item, on) => react(m, item, on)}
+                onReactPick={(anchor) => setReacting({ id: m.id, anchor })}
+                onRemoveReactions={() => setRemoving(m.id)}
+                onUpdated={(u) => setList((cur) => withUpdate(cur, u, true))}
                 onProfile={onProfile}
                 onMenu={(open) => setMenu(open ? m.id : null)}
                 onReply={() => setReplyTo(m)}
@@ -751,6 +818,14 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             {deleting && (
                 <DeleteDialog denID={denID} m={deleting} author={members.get(deleting.author_id)} me={me} onClose={() => setDeleting(null)} />
             )}
+            {reacting && byId.has(reacting.id) && (
+                <ReactingPicker m={byId.get(reacting.id)} me={me} anchor={reacting.anchor} sheet={narrow}
+                    onPick={(item, chips) => pickReaction(reacting.id, item, chips)} onClose={() => setReacting(null)} />
+            )}
+            {removing && byId.has(removing) && (
+                <RemoveReactions denID={denID} m={byId.get(removing)} me={me} myRank={rank(role)} rankOf={(id) => rank(members.get(id)?.role)}
+                    nameOf={(id) => name(members.get(id))} onClose={() => setRemoving(null)} />
+            )}
             {comparing !== null && comparable(files).some((f) => f.key === comparing) && (
                 <Compare denID={denID} files={comparable(files)} index={comparable(files).findIndex((f) => f.key === comparing)} limits={limits}
                     onIndex={(i) => setComparing(comparable(filesRef.current)[i]?.key ?? null)} onSwitch={switchVersions}
@@ -789,7 +864,7 @@ function Quoted({ text, locked, me }) {
 // may do with it: link is the link to it, for Copy link (M11). A finger's
 // long press opens the menu in the ⋯'s place, which a touch screen has
 // none of, and on the phone layout, narrow, it's a sheet (M13.2).
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, onUpdated, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -814,13 +889,18 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
         clearTimeout(copiedTimer.current);
         copiedTimer.current = setTimeout(() => setCopied(''), 1500);
     }
+    // Add reaction opens the picker beside the ⋯ it was picked from, or as
+    // a sheet (M15.3).
     const actions = [
         canReply && { label: 'Reply', run: onReply },
+        canReact && { label: 'Add reaction', run: (from) => onReactPick(from) },
         canEdit && { label: 'Edit', run: onEdit },
         !m.locked && m.text.trim() && { label: 'Copy text', run: () => copy(m.text, 'Text copied') },
         link && { label: 'Copy link', run: () => copy(link, 'Link copied') },
+        canRemoveReactions && { label: 'Remove reactions', run: onRemoveReactions },
         canDelete && { label: 'Delete', run: onDelete, danger: true },
     ].filter(Boolean);
+    const { chips } = useChips(m, me.id);
     async function tick(n, checked, text) {
         setError('');
         try {
@@ -909,13 +989,27 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                     )}
                     {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
                     {!m.locked && !editing && m.text && <Videos text={m.text} />}
+                    <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
                     {error && <p class="text-xs text-error">{error}</p>}
                 </div>
             </div>
-            {!editing && actions.length > 0 && <MessageMenu open={menuOpen} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} />}
+            {!editing && actions.length > 0 && (
+                <MessageMenu open={menuOpen} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} onReact={canReact ? onReactPick : null} />
+            )}
             {!editing && menuOpen && narrow && actions.length > 0 && (
                 <Sheet label="Message actions" title={<MessageHeading m={m} author={author} editorNames={editorNames} />} onClose={() => onMenu(false)}>
-                    {actions.map((a) => (
+                    {canReact && (
+                        <QuickReactions denID={denID} chips={chips}
+                            onReact={(item, on) => {
+                                onMenu(false);
+                                onReact(item, on);
+                            }}
+                            onMore={() => {
+                                onMenu(false);
+                                onReactPick(null);
+                            }} />
+                    )}
+                    {actions.filter((a) => a.label !== 'Add reaction').map((a) => (
                         <SheetRow key={a.label} danger={a.danger} onClick={() => {
                             onMenu(false);
                             a.run();
@@ -927,6 +1021,14 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
             )}
         </HoverRow>
     );
+}
+
+// ReactingPicker opens the picker to react to a message, and hands what's
+// picked on with the message's chips, which say whether it has room for
+// another emoji (M15.3).
+function ReactingPicker({ m, me, anchor, sheet, onPick, onClose }) {
+    const { chips } = useChips(m, me.id);
+    return <ReactionPicker anchor={anchor} sheet={sheet} onPick={(item) => onPick(item, chips)} onClose={onClose} />;
 }
 
 // MessageHeading heads a message's sheet with what a hover shows of it
@@ -949,7 +1051,7 @@ function MessageHeading({ m, author, editorNames }) {
 // it. Arrow keys move through it, and Escape, Tab or a press elsewhere
 // closes it. On the phone layout, narrow, the ⋯ opens the message's sheet
 // instead. copied says what the member just copied.
-function MessageMenu({ open, narrow, onOpen, actions, copied }) {
+function MessageMenu({ open, narrow, onOpen, actions, copied, onReact }) {
     const box = useRef(null);
     const button = useRef(null);
     const list = useRef(null);
@@ -997,6 +1099,12 @@ function MessageMenu({ open, narrow, onOpen, actions, copied }) {
     return (
         <div ref={box} class={`absolute -top-3 right-2 flex items-center gap-1 ${dropdown ? 'z-20' : 'z-10'} ${dropdown || copied ? '' : hidden}`}>
             {copied && <span role="status" class="cursor-default select-none rounded bg-base-100 px-1.5 py-0.5 text-xs shadow">{copied}</span>}
+            {onReact && (
+                <button type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:hidden" aria-label="Add a reaction"
+                    title="Add a reaction" data-react-button onClick={(e) => onReact(e.currentTarget)}>
+                    <SmileyIcon size="h-4 w-4" />
+                </button>
+            )}
             <button ref={button} type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:hidden"
                 aria-label="Message actions" title="More" aria-haspopup="menu" aria-expanded={open} onClick={toggle}
                 onKeyDown={(e) => {
@@ -1014,7 +1122,7 @@ function MessageMenu({ open, narrow, onOpen, actions, copied }) {
                             <button type="button" role="menuitem" tabIndex={-1} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
                                 onClick={() => {
                                     close();
-                                    a.run();
+                                    a.run(button.current);
                                 }}>
                                 {a.label}
                             </button>

@@ -29,15 +29,21 @@
 // through Android's own touch while desk sees the member ring, with no
 // long press's buzz, and let go as the notification shade comes down
 // mid-press, desk leaving and joining again, whose sounds the page plays
-// through the call's context (M14.2), and the call left from its bar; or
-// screens, every member's screen with its picture and its
-// audit, which fails as the phone check's does on a touch screen. around
-// unless given.
+// through the call's context (M14.2), and the call left from its bar;
+// reactions, M15.3's: desk's reaction on the member's message, whose
+// phone_msg CTX names, shown as a chip, and the member's on desk's,
+// desk_msg, from the long press's quick row, which stays for desk to see,
+// with the chip's tip by a long press; or screens, every member's screen
+// with its picture and its audit, which fails as the phone check's does on
+// a touch screen. around unless given.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { webview } from './drive.mjs';
-import { CALL, LIST_END, audits, barPlaced, buttonPlaced, dockedPlaced, gettingAround, helpers, listEnds, memberScreens, pages, touching, waitFor } from './screens.mjs';
+import {
+    CALL, LIST_END, audits, barPlaced, buttonPlaced, dockedPlaced, gettingAround, helpers, listEnds, memberScreens, pages, quickReacting, touching,
+    waitFor,
+} from './screens.mjs';
 
 const ADB = '/opt/android/sdk/platform-tools/adb';
 const APP = process.env.ANDROID_APP || 'chat.dens.Dens.dev';
@@ -424,6 +430,21 @@ async function board(b) {
 }
 
 const b = await webview(serial);
+// reactionsWalk checks desk's reaction on the member's message shows on the
+// phone's page as a chip, not the member's, and has the member react to
+// desk's from the long press's quick row, by Android's own touch, leaving
+// it for desk's page (M15.3).
+async function reactionsWalk(h, d, c) {
+    await h.go(`/den/${c.den}/${c.general}`);
+    const chip = `document.querySelector('[data-scroller] [data-id="${c.phone_msg}"] [data-reaction="u:🎉"]')`;
+    const shown = await waitFor(() => h.ev(`(() => { const ch = ${chip}; return ch ? { count: Number(ch.dataset.count), mine: ch.getAttribute('aria-pressed') === 'true' } : null; })()`),
+        "desk's 🎉 on the member's message", 15000).catch(() => null);
+    report(shown?.count === 1 && !shown.mine, `the WebView, by Android's input: desk's 🎉 shows on the member's message, not marked theirs: ${JSON.stringify(shown)}`);
+    await h.snap('reactions-desk');
+    const made = await quickReacting(h, c, d, report, { at: c.desk_msg, keep: true });
+    if (made) fs.writeFileSync(`${out}/reacted.json`, JSON.stringify(made));
+}
+
 // The page's own screenshots go through the DevTools protocol; Android's,
 // of the whole screen, show what the member sees.
 b.shot = async (file) => fs.writeFileSync(file, execFileSync(ADB, ['-s', serial, 'exec-out', 'screencap', '-p'], { maxBuffer: 64 << 20 }));
@@ -573,6 +594,9 @@ try {
     if (want('pages')) {
         await pages(h, ctx, d, report).catch((e) => report(false, e.message));
         await bars(h, d).catch((e) => report(false, e.message));
+    }
+    if (want('reactions')) {
+        await reactionsWalk(h, d, ctx).catch((e) => report(false, e.message));
     }
     if (want('call')) {
         try {
