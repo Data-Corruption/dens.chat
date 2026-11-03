@@ -1,10 +1,12 @@
 // A member's avatar: the picture on their profile, or the default, a
 // colored circle with the first letter or digit of their username. The
 // color comes from the member's ID, so every device shows the same one
-// without the den storing or sending anything.
+// without the den storing or sending anything. An animated picture plays as
+// Appearance's Animations says (M15.1).
 
 import { createContext } from 'preact';
 import { useContext, useState } from 'preact/hooks';
+import { usePicture } from './animations.js';
 
 // DenContext names the den a view shows, so pictures can be fetched from
 // it wherever they appear.
@@ -46,16 +48,24 @@ const DOTS = {
 };
 
 // Avatar shows a member's picture. online, when given, adds a presence dot.
-// A picture that fails to load gives way to the default.
+// A picture that fails to load gives way to the default. An animated one
+// that isn't playing shows its preview, its first frame, which the
+// picture covers while it plays, so it never blinks out as it starts.
 export function Avatar({ member, size = 'md', online }) {
     const denID = useContext(DenContext);
     const [failed, setFailed] = useState('');
     const picture = denID && member?.avatar?.id && member.avatar.id !== failed ? member.avatar.id : '';
+    const how = usePicture(!!picture && !!member.avatar.animated);
+    const file = `/api/dens/${denID}/files/${picture}`;
+    const round = 'h-full w-full select-none rounded-full object-cover';
     return (
         <span class={`relative inline-flex shrink-0 ${SIZES[size]}`} aria-hidden="true">
             {picture ? (
-                <img src={`/api/dens/${denID}/files/${picture}`} alt="" draggable={false} onError={() => setFailed(picture)}
-                    class="h-full w-full select-none rounded-full bg-base-300 object-cover" />
+                <>
+                    <img src={how === 'file' ? file : `${file}/thumb`} alt="" draggable={false} onError={() => setFailed(picture)}
+                        class={`${round} bg-base-300`} />
+                    {how === 'hover' && <img src={file} alt="" draggable={false} class={`absolute inset-0 ${round}`} />}
+                </>
             ) : (
                 <span class={`flex h-full w-full select-none items-center justify-center rounded-full font-semibold text-white ${avatarColor(member?.id)}`}>
                     {avatarLetter(member?.username)}

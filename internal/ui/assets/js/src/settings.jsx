@@ -1,7 +1,8 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
 // a call stay in view (M3.3), in five tabs (M8.3, M14.2), or on the phone
 // layout a list of the five, each a page (M13.3). Appearance holds the
-// theme; Chat & media whether photos and videos go compressed (M5), what
+// theme, and when animated pictures play (M15.1); Chat & media whether
+// photos and videos go compressed (M5), what
 // happens to links, and whether YouTube videos play in Dens (M4.1);
 // Notifications & sounds what notifies the member (M12.3) and the page's
 // sounds (M14.2); Voice & video the microphone and speaker, noise
@@ -12,6 +13,7 @@
 // out, and the version.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
 import {
@@ -78,7 +80,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <ThemePicker />;
+    else panel = <><ThemePicker /><AnimationsPicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -178,6 +180,32 @@ function ThemePicker() {
                     ))}
                 </div>
             )}
+        </Card>
+    );
+}
+
+// AnimationsPicker chooses when animated pictures play (M15.1): always, or
+// while the pointer is over their row, which the system's asking for less
+// motion makes the default. This browser keeps it, as it keeps the theme.
+function AnimationsPicker() {
+    const choice = useAnimations();
+    return (
+        <Card title="Animations">
+            <div role="radiogroup" aria-label="Animations" class="flex flex-col gap-3">
+                {[
+                    [ALWAYS, 'Always', 'Animated pictures play wherever they show.'],
+                    [ON_HOVER, 'On hover', "A picture plays while the pointer is over its message or member, and in a profile you open. On a touch screen, only in profiles."],
+                ].map(([value, label, hint]) => (
+                    <label key={value} class="flex cursor-pointer items-start gap-3">
+                        <input type="radio" class="radio radio-sm mt-0.5 shrink-0" name="animations" value={value} checked={choice === value}
+                            onChange={() => setAnimations(value)} />
+                        <span class="min-w-0">
+                            <span class="block">{label}</span>
+                            <span class="block text-sm text-base-content/70">{hint}</span>
+                        </span>
+                    </label>
+                ))}
+            </div>
         </Card>
     );
 }

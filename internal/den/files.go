@@ -852,9 +852,10 @@ func (d *Den) tidyFiles(ctx context.Context) error {
 }
 
 // checkPicture checks an upload a member puts on their profile: their own,
-// waiting to be used, a still image, and the shape the kind of picture
-// takes. One made to replace a file must replace the picture it takes the
-// place of. It returns the upload's ID.
+// waiting to be used, a still image or an animated GIF (M15.1), and the
+// shape and size the kind of picture takes. One made to replace a file
+// must replace the picture it takes the place of. It returns the upload's
+// ID.
 func checkPicture(ctx context.Context, tx *sql.Tx, member int64, id string, banner bool, now time.Time) (int64, error) {
 	fid, err := denproto.ParseID(id)
 	if err != nil {
@@ -866,28 +867,42 @@ func checkPicture(ctx context.Context, tx *sql.Tx, member int64, id string, bann
 	}
 	var typ string
 	var w, h sql.NullInt64
+	var size int64
 	var animated bool
-	err = tx.QueryRowContext(ctx, `SELECT type, width, height, animated FROM den_files
+	err = tx.QueryRowContext(ctx, `SELECT type, width, height, size, animated FROM den_files
 		WHERE id = ? AND uploader_id = ? AND created_at > ? AND `+unused+`
 		AND (replaces IS NULL OR replaces = (SELECT `+column+` FROM den_members WHERE id = ?))`,
 		fid, member, now.Add(-uploadExpiry).UnixMilli(), member).
-		Scan(&typ, &w, &h, &animated)
+		Scan(&typ, &w, &h, &size, &animated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, invalid("no such upload waiting to be used")
 	}
 	if err != nil {
 		return 0, err
 	}
-	if !w.Valid || animated || !strings.HasPrefix(typ, "image/") {
-		return 0, invalid("a profile picture is a still image")
+	// Only a member's own service makes an animated picture, as a GIF.
+	if !w.Valid || !strings.HasPrefix(typ, "image/") || animated && typ != "image/gif" {
+		return 0, invalid("a profile picture is a still image or an animated GIF")
 	}
 	width, height := w.Int64, h.Int64
 	if banner {
 		// Three times as wide as high, give or take the rounding of a crop.
-		if width < denproto.MinBannerWide || width > denproto.MaxBannerWide || width*100 < height*290 || width*100 > height*310 {
+		shaped := width >= denproto.MinBannerWide && width*100 >= height*290 && width*100 <= height*310
+		switch {
+		case animated && (!shaped || width > denproto.MaxAnimatedBannerWide || size > denproto.MaxAnimatedBannerSize):
+			return 0, invalid("an animated banner is %d to %d pixels wide and three times as wide as high, at most %d MiB",
+				denproto.MinBannerWide, denproto.MaxAnimatedBannerWide, denproto.MaxAnimatedBannerSize>>20)
+		case !shaped || width > denproto.MaxBannerWide:
 			return 0, invalid("a banner is %d to %d pixels wide and three times as wide as high", denproto.MinBannerWide, denproto.MaxBannerWide)
 		}
-	} else if width != height || width < denproto.MinAvatarSide || width > denproto.MaxAvatarSide {
+		return fid, nil
+	}
+	square := width == height && width >= denproto.MinAvatarSide
+	switch {
+	case animated && (!square || width > denproto.MaxAnimatedAvatarSide || size > denproto.MaxAnimatedAvatarSize):
+		return 0, invalid("an animated avatar is square, %d to %d pixels, at most %d MiB",
+			denproto.MinAvatarSide, denproto.MaxAnimatedAvatarSide, denproto.MaxAnimatedAvatarSize>>20)
+	case !square || width > denproto.MaxAvatarSide:
 		return 0, invalid("an avatar is square, %d to %d pixels", denproto.MinAvatarSide, denproto.MaxAvatarSide)
 	}
 	return fid, nil

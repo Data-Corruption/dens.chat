@@ -534,7 +534,7 @@ func TestStripGIF(t *testing.T) {
 //go:embed testdata
 var fixtures embed.FS
 
-func readFixture(t *testing.T, name string) []byte {
+func readFixture(t testing.TB, name string) []byte {
 	t.Helper()
 	b, err := fixtures.ReadFile("testdata/" + name)
 	if err != nil {

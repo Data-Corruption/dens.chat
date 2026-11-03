@@ -64,9 +64,10 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?}
+image  = {"id", "width", "height", "animated"? (M15.1)}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), and `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4).
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), and `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1).
 
 ```
 PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?}   200 den        (owner only)
@@ -578,6 +579,7 @@ PATCH /api/me   {"avatar"?: "<upload id>" | "", "banner"?: "<upload id>" | ""}  
 ```
 
 - An avatar is a square still image, 64 to 1,024 pixels a side. A banner is a still image 300 to 3,000 pixels wide and three times as wide as it is high, give or take 3%. Clients crop pictures to these shapes before uploading them.
+- Either may be an animated GIF instead (M15.1): an avatar then at most 256 pixels a side and 2 MiB, and a banner at most 600 pixels wide and 4 MiB. An animated picture of any other kind, such as an animated WebP or PNG, is refused; a member's own service makes its GIF.
 - `""` takes a picture off. The picture a change replaces is deleted.
 - A member who leaves or is removed loses their pictures and the uploads they hadn't used.
 

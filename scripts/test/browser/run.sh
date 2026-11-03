@@ -44,6 +44,9 @@
 #                               prepared by the page, played in a call from the call's block, Home's box
 #                               and the phone's bar, received by the other page, one at a time, its
 #                               player's ring lit, the rest heard by who joins partway, 0 muting it
+#   pictures BROWSER            M15.1: an animated GIF and an animated WebP cropped into each member's
+#                               picture and banner, shown still or playing, row by row, as each page's
+#                               Animations says, which starts at On hover where the system asks for less motion
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
@@ -62,7 +65,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,61p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,64p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

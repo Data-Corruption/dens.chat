@@ -48,12 +48,19 @@ const (
 )
 
 // Profile images: a square avatar, and a banner three times as wide as it
-// is high. Clients crop them to these shapes before uploading.
+// is high. Clients crop them to these shapes before uploading. An animated
+// one is a GIF (M15.1), at most half a still's sides, since each of its
+// frames costs all of them, and of a size of its own.
 const (
 	MinAvatarSide = 64
 	MaxAvatarSide = 1024
 	MinBannerWide = 300
 	MaxBannerWide = 3000
+
+	MaxAnimatedAvatarSide = 256
+	MaxAnimatedBannerWide = 600
+	MaxAnimatedAvatarSize = 2 << 20
+	MaxAnimatedBannerSize = 4 << 20
 )
 
 // HeaderFilename carries an upload's name, percent-encoded, since headers
@@ -176,11 +183,13 @@ type Thumb struct {
 	Height int `json:"height"`
 }
 
-// Image is a picture on a profile: an uploaded image and its size.
+// Image is a picture on a profile: an uploaded image, its size, and
+// whether it's animated (M15.1).
 type Image struct {
-	ID     string `json:"id"`
-	Width  int    `json:"width"`
-	Height int    `json:"height"`
+	ID       string `json:"id"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	Animated bool   `json:"animated,omitempty"`
 }
 
 // Limits are a den's upload limits, in bytes: per file, per member's
