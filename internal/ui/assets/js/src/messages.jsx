@@ -11,7 +11,7 @@
 // around it and detaches, and new messages then only update a "jump to
 // present" bar.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { onEvent } from './events.js';
@@ -19,6 +19,9 @@ import { Avatar } from './avatar.jsx';
 import { copyText } from './clipboard.js';
 import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
+import { EmojiContext } from './denemoji.jsx';
+import { completeEmoji, completeMember, completionAt, denKey, emojiList, inTone, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
+import { Completions, EmojiPicker } from './emoji.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
 } from './files.jsx';
@@ -35,6 +38,7 @@ import { LOCKED, keyChanges } from './private.js';
 import { CheckPanel, KeyDivider } from './private.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
+import { SmileyIcon } from './icons.jsx';
 import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
 
@@ -729,6 +733,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         onCompare={setComparing}
                         onCancelReply={() => setReplyTo(null)}
                         candidates={candidates}
+                        mentionable={channel.kind === 'dm' ? null : candidates}
                         editors={editors}
                         onEditors={setEditors}
                         onSend={(text) => send(text)}
@@ -893,7 +898,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         (m.text.trim() || m.edited_at) && (
                             <Fold onToggle={onToggle}>
                                 <div class="wrap-break-word">
-                                    {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} />}
+                                    {m.text.trim() && <Markdown text={m.text} me={me} onTask={canEdit ? tick : undefined} big />}
                                     {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
                                     {editorNames.length > 0 && (
                                         <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
@@ -1155,7 +1160,7 @@ function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
                 </div>
                 {p.text.trim() && (
                     <Fold onToggle={onToggle}>
-                        <Markdown text={p.text} me={me} />
+                        <Markdown text={p.text} me={me} big />
                     </Fold>
                 )}
                 {p.attachments?.length > 0 && (
@@ -1308,8 +1313,29 @@ function EditorList({ candidates, selected, onChange }) {
     );
 }
 
-function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
+// Composer writes a message: its text, its files, a reply and who else may
+// edit it. A smiley in the box's corner opens the emoji picker (M15.2),
+// and typing a colon and two characters, or in a channel an @, where a
+// name or a mention may start, lists what completes it: mentionable are
+// the members a mention may name, none in a DM.
+function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
+    const emoji = useContext(EmojiContext);
+    const den = emoji?.on ? emoji.list : [];
+    // picking says the emoji picker is open; completing is what the caret
+    // completes, with what it offers and the one marked, and dismissed the
+    // text Escape closed it on, which stays closed until the text changes.
+    const [picking, setPicking] = useState(false);
+    const [completing, setCompleting] = useState(null);
+    const dismissed = useRef(null);
+    // picked counts the emoji put in by the picker and completion since the
+    // last message went, which count as they go in, not again as it goes.
+    const picked = useRef(new Map());
+    // caret is where the caret goes once the text that put it there shows,
+    // and refocus has the box take the focus back once the picker's sheet,
+    // which gives it back to its opener, has closed.
+    const caret = useRef(null);
+    const refocus = useRef(false);
     const [sharing, setSharing] = useState(false);
     // The + menu, and the guide to writing a message (M3.3).
     const [adding, setAdding] = useState(false);
@@ -1317,6 +1343,24 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     // focused says the box has the focus, which on a touch screen brings
     // its keyboard up.
     const [focused, setFocused] = useState(false);
+    useEffect(() => {
+        if (!picking || narrow) return undefined;
+        const away = (e) => {
+            if (!e.target.closest?.('[data-emoji-picker]') && !e.target.closest?.('[data-emoji-button]')) setPicking(false);
+        };
+        const escape = (e) => {
+            if (e.key === 'Escape') {
+                setPicking(false);
+                box.current?.focus();
+            }
+        };
+        document.addEventListener('pointerdown', away);
+        document.addEventListener('keydown', escape);
+        return () => {
+            document.removeEventListener('pointerdown', away);
+            document.removeEventListener('keydown', escape);
+        };
+    }, [picking, narrow]);
     useEffect(() => {
         if (!adding || narrow) return undefined;
         const away = (e) => {
@@ -1350,18 +1394,88 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     function submit() {
         if (!something || length > MAX_TEXT || uploading || failed) return;
         onSend(text);
+        // The emoji it holds count toward the member's most used, once the
+        // list knows Unicode's (M15.2).
+        const sent = text;
+        const counted = picked.current;
+        picked.current = new Map();
+        const byName = emoji?.on ? emoji.byName : null;
+        loadEmoji().then((l) => noteSent(sent, denID, byName, counted, Date.now(), l), () => {});
         setText('');
+        setCompleting(null);
         setSharing(false);
         lastTyping.current = 0;
     }
-    function input(value) {
+    function input(value, at) {
         setText(value);
+        complete(value, at);
         const now = Date.now();
         if (value.trim() && now - lastTyping.current > TYPING_EVERY) {
             lastTyping.current = now;
             onTyping();
         }
     }
+    // complete finds what the caret at at completes in value, and what that
+    // offers, which needs the list of Unicode's emoji for a name.
+    function complete(value, at) {
+        const found = at == null ? null : completionAt(value, at, mentionable);
+        if (!found || dismissed.current === value) {
+            setCompleting(null);
+            return;
+        }
+        dismissed.current = null;
+        let items;
+        if (found.kind === 'member') {
+            items = completeMember(found.query, mentionable).map((m) => ({ member: m }));
+        } else {
+            const l = emojiList();
+            if (!l) loadEmoji().then(() => box.current && complete(box.current.value, box.current.selectionStart), () => {});
+            items = completeEmoji(found.query, den, l);
+        }
+        setCompleting(items.length ? { ...found, items, index: 0 } : null);
+    }
+    // putIn puts an emoji or a mention in place of from to to in the text,
+    // and the caret after it, keeping the box's focus.
+    function putIn(from, to, what) {
+        const value = text.slice(0, from) + what + text.slice(to);
+        caret.current = from + what.length;
+        setText(value);
+        setCompleting(null);
+        box.current?.focus();
+    }
+    // used counts a use of an emoji the picker or completion put in.
+    function used(item) {
+        const key = item.den ? denKey(denID, item.den.id) : unicodeKey(item.unicode.emoji);
+        noteUses([key]);
+        picked.current.set(key, (picked.current.get(key) || 0) + 1);
+    }
+    // completeWith puts in what a completion offers: a mention or an emoji,
+    // and a space after it.
+    function completeWith(item) {
+        const c = completing;
+        if (!c) return;
+        const end = c.start + 1 + c.query.length;
+        if (item.member) return putIn(c.start, end, `@${item.member.username} `);
+        used(item);
+        putIn(c.start, end, `${item.den ? `:${item.den.name}:` : inTone(item.unicode, skinTone())} `);
+    }
+    // pickEmoji puts an emoji picked in the picker in at the caret.
+    function pickEmoji(item, what) {
+        used(item);
+        const el = box.current;
+        refocus.current = true;
+        putIn(el ? el.selectionStart : text.length, el ? el.selectionEnd : text.length, what);
+    }
+    useLayoutEffect(() => {
+        if (caret.current == null || !box.current) return;
+        box.current.setSelectionRange(caret.current, caret.current);
+        caret.current = null;
+    }, [text]);
+    useEffect(() => {
+        if (picking || !refocus.current) return;
+        refocus.current = false;
+        box.current?.focus();
+    }, [picking]);
     function attach() {
         setAdding(false);
         picker.current?.click();
@@ -1468,23 +1582,60 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                     e.currentTarget.value = '';
                 }} />
                 <div class="relative min-w-0 flex-1">
+                    {completing && (
+                        <Completions items={completing.items} index={completing.index} tone={skinTone()} onPick={completeWith}
+                            onIndex={(index) => setCompleting((c) => c && { ...c, index })} />
+                    )}
+                    {picking && (
+                        <EmojiPicker emoji={emoji} sheet={narrow} onPick={pickEmoji} onClose={() => setPicking(false)} />
+                    )}
                     <textarea
                         ref={box}
-                        class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-10"
+                        class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-16"
                         rows={lines}
                         placeholder={placeholder}
                         enterkeyhint={touch ? 'enter' : 'send'}
                         value={text}
                         onFocus={() => setFocused(true)}
-                        onBlur={() => setFocused(false)}
+                        onBlur={() => {
+                            setFocused(false);
+                            setCompleting(null);
+                        }}
+                        onClick={(e) => complete(e.currentTarget.value, e.currentTarget.selectionStart)}
+                        onKeyUp={(e) => {
+                            if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) complete(e.currentTarget.value, e.currentTarget.selectionStart);
+                        }}
                         onPaste={(e) => {
                             if (e.clipboardData?.files?.length) {
                                 e.preventDefault();
                                 onAddFiles(e.clipboardData.files);
                             }
                         }}
-                        onInput={(e) => input(e.currentTarget.value)}
+                        onInput={(e) => input(e.currentTarget.value, e.currentTarget.selectionStart)}
                         onKeyDown={(e) => {
+                            // An open completion takes the arrows, Enter and Tab,
+                            // and Escape closes it until the text changes.
+                            if (completing && !e.isComposing) {
+                                const n = completing.items.length;
+                                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const step = e.key === 'ArrowDown' ? 1 : -1;
+                                    setCompleting((c) => c && { ...c, index: (c.index + step + n) % n });
+                                    return;
+                                }
+                                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+                                    e.preventDefault();
+                                    completeWith(completing.items[completing.index]);
+                                    return;
+                                }
+                                if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    dismissed.current = text;
+                                    setCompleting(null);
+                                    return;
+                                }
+                            }
                             if (sends(e, touch)) {
                                 e.preventDefault();
                                 submit();
@@ -1496,7 +1647,17 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                             }
                         }}
                     ></textarea>
-                    {/* The guide to writing sits in the box's corner, by the last line. */}
+                    {/* The emoji picker and the guide to writing sit in the box's
+                        corner, by the last line. */}
+                    <button type="button" data-emoji-button
+                        class={`absolute bottom-3 right-9 flex h-6 w-6 items-center justify-center rounded-full hover:text-base-content touch-room ${picking ? 'text-base-content' : 'text-base-content/50'}`}
+                        aria-label="Emoji" title="Emoji" aria-haspopup="dialog" aria-expanded={picking}
+                        onClick={() => {
+                            setCompleting(null);
+                            setPicking(!picking);
+                        }}>
+                        <SmileyIcon size="h-5 w-5" />
+                    </button>
                     <button type="button"
                         class="absolute bottom-3 right-2 flex h-6 w-6 items-center justify-center rounded-full text-base-content/50 hover:text-base-content touch-room"
                         aria-label="How to write a message" title="How to write a message" onClick={() => setGuide(true)}>
@@ -1589,6 +1750,18 @@ function WritingGuide({ touch, onClose }) {
                             ))}
                         </tbody>
                     </table>
+                </section>
+                <section class="flex flex-col gap-1">
+                    <h3 class="font-semibold">Emoji</h3>
+                    <p>
+                        The smiley in the box's corner picks one, with the ones you use most first. The den's own emoji go in by name, as :name:,
+                        which everyone sees as the emoji, and as text inside code or a link.
+                    </p>
+                    <p>
+                        A colon and two letters, as :th, lists the emoji that match, and in a channel @ lists who can see it.{' '}
+                        {touch ? 'Tap one to put it in.' : <>{kbd('↑')} and {kbd('↓')} choose, {kbd('Enter')} or {kbd('Tab')} puts it in, and {kbd('Esc')} closes the list.</>}
+                    </p>
+                    <p>A message of nothing but emoji, ten at most, shows them large.</p>
                 </section>
                 <section class="flex flex-col gap-1">
                     <h3 class="font-semibold">Mentions and links</h3>

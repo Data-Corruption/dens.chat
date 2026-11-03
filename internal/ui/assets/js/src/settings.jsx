@@ -184,17 +184,18 @@ function ThemePicker() {
     );
 }
 
-// AnimationsPicker chooses when animated pictures play (M15.1): always, or
-// while the pointer is over their row, which the system's asking for less
-// motion makes the default. This browser keeps it, as it keeps the theme.
+// AnimationsPicker chooses when animated pictures, and from M15.2 the den's
+// emoji, play (M15.1): always, or while the pointer is over their row,
+// which the system's asking for less motion makes the default. This browser
+// keeps it, as it keeps the theme.
 function AnimationsPicker() {
     const choice = useAnimations();
     return (
         <Card title="Animations">
             <div role="radiogroup" aria-label="Animations" class="flex flex-col gap-3">
                 {[
-                    [ALWAYS, 'Always', 'Animated pictures play wherever they show.'],
-                    [ON_HOVER, 'On hover', "A picture plays while the pointer is over its message or member, and in a profile you open. On a touch screen, only in profiles."],
+                    [ALWAYS, 'Always', 'Animated pictures and emoji play wherever they show.'],
+                    [ON_HOVER, 'On hover', "A picture or an emoji plays while the pointer is over its message or member, and in a profile you open. On a touch screen, only in profiles."],
                 ].map(([value, label, hint]) => (
                     <label key={value} class="flex cursor-pointer items-start gap-3">
                         <input type="radio" class="radio radio-sm mt-0.5 shrink-0" name="animations" value={value} checked={choice === value}

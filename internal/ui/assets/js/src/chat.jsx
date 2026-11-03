@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { Avatar, DenContext } from './avatar.jsx';
+import { EmojiContext, useDenEmoji } from './denemoji.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
 import { Tip, useNotifications } from './components.jsx';
@@ -48,10 +49,12 @@ const STATE_WORDS = { connecting: 'Connecting', offline: 'Offline', revoked: 'Si
 // A typing notice shows this long unless another arrives; senders repeat
 // theirs while they type.
 const TYPING_SHOWN = 6000;
-// Changes to these reload the den's state rather than being applied here.
+// Changes to these reload the den's state rather than being applied here,
+// the den's emoji among them (M15.2).
 const STRUCTURAL = new Set([
     'den.updated', 'member.joined', 'member.updated', 'member.left', 'channel.created', 'channel.updated', 'channel.deleted',
     'channels.reordered', 'group.created', 'group.updated', 'group.deleted', 'groups.reordered',
+    'emoji.created', 'emoji.updated', 'emoji.deleted',
 ]);
 
 function stored(key) {
@@ -360,6 +363,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
     const toPane = (next) => nav().den(denID, shownID, next);
     // A swipe that settles on another pane goes there in the history too.
     const row = usePaneRow(at, !!view, (near) => near !== at && toPane(near));
+    // The den's emoji, for every text the den's page shows (M15.2).
+    const emoji = useDenEmoji(denID, view?.emoji, view?.emoji_limits);
 
     if (error && !view) return <div class="p-6"><div role="alert" class="alert alert-error">{error}</div></div>;
     if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
@@ -477,6 +482,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
 
     return (
         <DenContext.Provider value={denID}>
+            <EmojiContext.Provider value={emoji}>
             <LinkContext.Provider value={links}>
                 {/* On the phone layout a row that scrolls sideways, snapping to
                     each pane; the side panes take 85% of it, so the channel shows
@@ -645,6 +651,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                 {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
             </LinkContext.Provider>
+            </EmojiContext.Provider>
         </DenContext.Provider>
     );
 }

@@ -1,7 +1,7 @@
 // A den's Manage dialog (M8.3), in two parts by who they're for. This den:
 // its address and Den ID, which everyone sees, and the name and address
-// its owner changes; invites, bans and the soundboard (M14.3), for staff;
-// and the owner's limits.
+// its owner changes; invites, bans, the soundboard (M14.3) and emoji
+// (M15.2), for staff; and the owner's limits.
 // You in this den: the member's devices, their den password, recovery
 // codes and DM recovery key, and their files. The owner's edits gather in
 // one draft, saved from one bar.
@@ -12,7 +12,8 @@ import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import {
     CopyButton, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater,
 } from './components.jsx';
-import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf, hasBoard } from './dendraft.js';
+import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf, hasBoard, hasEmoji } from './dendraft.js';
+import { ManageEmoji } from './emoji.jsx';
 import { onEvent } from './events.js';
 import { useLayer, useNarrow } from './nav.js';
 import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
@@ -30,7 +31,9 @@ import { ManageSoundboard } from './soundboard.jsx';
 export function sectionsFor(den) {
     const list = [['general', 'General', 'den']];
     if (den.state !== 'connected') return list;
-    if (rank(den.role) > 0) list.push(['invites', 'Invites', 'den'], ['bans', 'Bans', 'den'], ['soundboard', 'Soundboard', 'den']);
+    if (rank(den.role) > 0) {
+        list.push(['invites', 'Invites', 'den'], ['bans', 'Bans', 'den'], ['soundboard', 'Soundboard', 'den'], ['emoji', 'Emoji', 'den']);
+    }
     if (den.role === 'owner') list.push(['limits', 'Limits', 'den']);
     list.push(['devices', 'Devices', 'you'], ['password', 'Password and recovery', 'you'], ['files', 'Your files', 'you']);
     return list;
@@ -151,6 +154,8 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         panel = <Bans denID={denID} role={den.role} />;
     } else if (at === 'soundboard') {
         panel = <ManageSoundboard denID={denID} owner={owner} onLimits={() => onSection('limits')} />;
+    } else if (at === 'emoji') {
+        panel = <ManageEmoji denID={denID} owner={owner} onLimits={() => onSection('limits')} />;
     } else if (at === 'limits') {
         panel = draft && view ? <Limits denID={denID} view={view} draft={draft} base={base} onEdit={edit} /> : <span class="loading loading-spinner"></span>;
     } else if (at === 'devices') {
@@ -510,8 +515,8 @@ const PRESET_NAMES = { small: 'Small group', large: 'Large group' };
 
 // Limits sets how large a file may be and how much space files take, how
 // long the den keeps messages, its limits for calls, from a preset or field
-// by field, with the upload they need as they change, and from M14.3 for
-// its soundboard.
+// by field, with the upload they need as they change, from M14.3 for its
+// soundboard, and from M15.2 how many emoji it keeps.
 function Limits({ denID, view, draft, base, onEdit }) {
     const [custom, setCustom] = useState(() => presetOf(callLimitsOf(draft)) === 'custom');
     const [preview, setPreview] = useState(null);
@@ -653,6 +658,25 @@ function Limits({ denID, view, draft, base, onEdit }) {
                         </div>
                     )}
                     <p class="text-sm text-base-content/70">Lowering these leaves the sounds already added.</p>
+                </section>
+            )}
+            {hasEmoji(draft) && (
+                <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-emoji>
+                    <h4 class="font-medium">Emoji</h4>
+                    <p class="text-sm text-base-content/70">The den's own emoji, which staff add. Everyone's Dens keeps every one, to show them.</p>
+                    <label class="label gap-2">
+                        <input type="checkbox" class="toggle toggle-sm" checked={Number(draft.emojis) > 0}
+                            onChange={(e) => onEdit({ emojis: e.currentTarget.checked ? String(Number(base.emojis) || 50) : '0' })} />
+                        Allow emoji
+                    </label>
+                    {Number(draft.emojis) > 0 && (
+                        <div class="grid gap-x-3 sm:grid-cols-3">
+                            <Field label="Max emoji">
+                                <Unit unit="emoji" min="1" max="500" step="1" value={draft.emojis} onInput={field('emojis')} required />
+                            </Field>
+                        </div>
+                    )}
+                    <p class="text-sm text-base-content/70">Lowering this leaves the emoji already added; turning emoji off keeps them.</p>
                 </section>
             )}
         </>

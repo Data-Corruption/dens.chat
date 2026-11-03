@@ -108,3 +108,15 @@ export function SoundboardIcon({ size = 'h-[18px] w-[18px]' }) {
         </svg>
     );
 }
+
+// SmileyIcon is a face, smiling, for emoji (M15.2): the composer's picker.
+export function SmileyIcon({ size = 'h-5 w-5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M5.25 9.6a3.25 3.25 0 0 0 5.5 0" />
+            <circle cx="5.9" cy="6.3" r="0.5" fill="currentColor" stroke="none" />
+            <circle cx="10.1" cy="6.3" r="0.5" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}

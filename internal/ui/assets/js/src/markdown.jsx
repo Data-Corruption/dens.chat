@@ -1,9 +1,9 @@
 // The markdown subset messages use: **bold**, *italic* or _italic_,
 // ~~strikethrough~~, `inline code`, ``` code blocks ```, > quotes,
-// ||spoilers||, @mentions, bare http(s) links, and task lines that start
-// with [ ] or [x]. There are no [label](url) links, so a link always shows
-// where it goes; a link to a message shows the channel it's in, with its
-// address on hover (M11).
+// ||spoilers||, @mentions, bare http(s) links, task lines that start with
+// [ ] or [x], and the den's emoji by name, :name: (M15.2). There are no
+// [label](url) links, so a link always shows where it goes; a link to a
+// message shows the channel it's in, with its address on hover (M11).
 //
 // Every message comes from a den, and dens are other people's servers. The
 // renderer builds Preact nodes whose text is always text: nothing here
@@ -11,7 +11,9 @@
 // http(s) URL the parser matched. Any member can send any text, so a line
 // takes time in proportion to its length, whatever its delimiters (M8).
 
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { DenEmoji, EmojiContext } from './denemoji.jsx';
+import { emojiAlone, nameAt } from './emoji.js';
 import { messageLink, shownLink, trimLink, videoOf } from './links.js';
 import { MessageLink } from './msglinks.jsx';
 
@@ -24,25 +26,31 @@ const TASK_RE = /^\[( |x)\] /;
 
 // Markdown renders text as blocks: code blocks, quotes, task lines and
 // paragraphs. With onTask, the reader may tick tasks: onTask(n, checked,
-// text) returns a promise that settles once the den has the tick.
+// text) returns a promise that settles once the den has the tick. With
+// big, as a message's text, one of emoji alone shows them large (M15.2).
 //
 // It parses a text once (M8): the parse is kept while the text, the
-// reader's username and whether tasks tick stay the same, so a row that
-// renders again, as every row does while the member types, gives Preact
-// the same tree, which it skips. A tick goes through a ref, so it reaches
-// the row's current onTask.
-export function Markdown({ text, me, onTask }) {
+// reader's username, whether tasks tick and the den's emoji stay the same,
+// so a row that renders again, as every row does while the member types,
+// gives Preact the same tree, which it skips. A tick goes through a ref,
+// so it reaches the row's current onTask.
+export function Markdown({ text, me, onTask, big }) {
     const tick = useRef(onTask);
     tick.current = onTask;
     const ticks = !!onTask;
     const username = me?.username;
-    return useMemo(() => parse(text, { username, onTask: ticks ? (...a) => tick.current(...a) : undefined }), [text, username, ticks]);
+    const emoji = useContext(EmojiContext)?.byName;
+    return useMemo(
+        () => parse(text, { username, emoji, big: !!big && emojiAlone(text, emoji) > 0, onTask: ticks ? (...a) => tick.current(...a) : undefined }),
+        [text, username, ticks, emoji, big],
+    );
 }
 
 // parse is what Markdown renders: a text's blocks in their container. ctx
-// holds the reader's username, whose mentions look different, and onTask.
+// holds the reader's username, whose mentions look different, onTask, the
+// den's emoji by name, and whether the text is emoji alone, shown large.
 export function parse(text, ctx) {
-    return <div class="markdown">{blocks(text, ctx)}</div>;
+    return <div class={ctx.big ? 'markdown font-emoji text-5xl leading-tight' : 'markdown'} data-big={ctx.big ? '' : undefined}>{blocks(text, ctx)}</div>;
 }
 
 // Preview renders a text's first line inline, for places that are already
@@ -51,14 +59,15 @@ export function parse(text, ctx) {
 // keeps its parse as Markdown does.
 export function Preview({ text, me, more }) {
     const username = me?.username;
-    return useMemo(() => preview(text, username, more), [text, username, more]);
+    const emoji = useContext(EmojiContext)?.byName;
+    return useMemo(() => preview(text, username, more, emoji), [text, username, more, emoji]);
 }
 
 // preview is what Preview renders.
-export function preview(text, username, more) {
+export function preview(text, username, more, emoji) {
     let line = firstLine(text);
     if (more) line = line.trimEnd().replace(/[.,;:]+$/, '');
-    return <span>{inline(line, marksOf(line), { username, preview: true }, 'p', 0, line.length)}{more && '…'}</span>;
+    return <span>{inline(line, marksOf(line), { username, emoji, preview: true }, 'p', 0, line.length)}{more && '…'}</span>;
 }
 
 // MAX_VIDEOS is how many YouTube covers a message gets at most (M4.1).
@@ -150,7 +159,7 @@ const DELIMITERS = ['**', '~~', '||', '*', '_'];
 const MAKE = [
     (c, k) => <strong key={k}>{c}</strong>,
     (c, k) => <del key={k}>{c}</del>,
-    (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-content/40 px-0.5 text-transparent select-none">{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
+    (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-content/40 px-0.5 text-transparent select-none [&_img]:invisible">{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
     (c, k) => <em key={k}>{c}</em>,
     (c, k) => <em key={k}>{c}</em>,
 ];
@@ -208,7 +217,8 @@ function linkEnd(line, i, end) {
 // inline renders the inline syntax of line from start to end, with the
 // marks marksOf found for it. Code spans are kept literal; everything else
 // can nest. Links and mentions start where denproto.Mentions says they do,
-// nested or not: after a character that can't be in a name.
+// nested or not: after a character that can't be in a name. A den's emoji
+// is a name it has, by the rule in emoji.js (M15.2).
 function inline(line, marks, ctx, key, start, end) {
     const out = [];
     let plain = '';
@@ -249,6 +259,16 @@ function inline(line, marks, ctx, key, start, end) {
                     ),
                 );
                 i += url.length;
+                continue;
+            }
+        }
+        if (c === ':' && ctx.emoji) {
+            const named = nameAt(line, i, end, start);
+            const e = named && ctx.emoji.get(named.name);
+            if (e) {
+                flush();
+                out.push(<DenEmoji key={`${key}-${n++}`} emoji={e} big={ctx.big} />);
+                i = named.end;
                 continue;
             }
         }
@@ -319,7 +339,7 @@ function Spoiler({ children }) {
         <span
             role="button"
             tabIndex={0}
-            class={`rounded px-0.5 ${shown ? 'bg-base-300' : 'cursor-pointer bg-base-content text-transparent select-none'}`}
+            class={`rounded px-0.5 ${shown ? 'bg-base-300' : 'cursor-pointer bg-base-content text-transparent select-none [&_img]:invisible'}`}
             onClick={() => setShown(true)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setShown(true)}
             title={shown ? undefined : 'Spoiler: click to show'}
