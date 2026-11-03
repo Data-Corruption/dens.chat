@@ -43,6 +43,10 @@ type denState struct {
 	// for them, none from a den older than the soundboard (M14.3).
 	sounds      map[string]denproto.Sound
 	soundLimits denproto.SoundLimits
+	// emoji are the den's emoji, by ID, and emojiLimits its limit for
+	// them, nil from a den older than emoji (M15.2).
+	emoji       map[string]denproto.Emoji
+	emojiLimits *denproto.EmojiLimits
 }
 
 // View is a joined den as the page sees it.
@@ -65,13 +69,17 @@ type View struct {
 	// limits for them (M14.3).
 	Sounds      []denproto.Sound     `json:"sounds"`
 	SoundLimits denproto.SoundLimits `json:"sound_limits"`
+	// Emoji are the den's emoji, by name, and EmojiLimits its limit for
+	// them, null from a den older than emoji (M15.2).
+	Emoji       []denproto.Emoji      `json:"emoji"`
+	EmojiLimits *denproto.EmojiLimits `json:"emoji_limits"`
 }
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
-		calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{}}
+		calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{}, emoji: map[string]denproto.Emoji{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -90,7 +98,8 @@ func (s *denState) takeTouched() []denproto.ReadState {
 func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
-		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits}
+		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
+		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -134,6 +143,16 @@ func sortedSounds(sounds map[string]denproto.Sound) []denproto.Sound {
 	})
 	if out == nil {
 		out = []denproto.Sound{}
+	}
+	return out
+}
+
+// sortedEmoji lists the den's emoji by name, as the den lists them.
+func sortedEmoji(emoji map[string]denproto.Emoji) []denproto.Emoji {
+	out := slices.Collect(maps.Values(emoji))
+	slices.SortFunc(out, func(a, b denproto.Emoji) int { return cmp.Or(strings.Compare(a.Name, b.Name), compareIDs(a.ID, b.ID)) })
+	if out == nil {
+		out = []denproto.Emoji{}
 	}
 	return out
 }
@@ -202,13 +221,32 @@ func cleanRead(r denproto.ReadState) (denproto.ReadState, bool) {
 }
 
 // cleanLimits checks a den's upload limits, its limits for calls, its
-// retention period and its soundboard's limits, which a den older than the
-// soundboard doesn't send (M14.3). The den checked them when they were
-// set, so any that don't check are the den misbehaving.
+// retention period, its soundboard's limits and its limit for emoji, which
+// a den older than the soundboard (M14.3) or emoji (M15.2) doesn't send.
+// The den checked them when they were set, so any that don't check are the
+// den misbehaving.
 func cleanLimits(d denproto.Den) bool {
 	return denproto.CheckLimits(d.Limits) == nil && denproto.CheckCallLimits(d.CallLimits) == nil &&
 		denproto.CheckRetention(d.Retention) == nil &&
-		(d.SoundLimits == denproto.SoundLimits{} || denproto.CheckSoundLimits(d.SoundLimits) == nil)
+		(d.SoundLimits == denproto.SoundLimits{} || denproto.CheckSoundLimits(d.SoundLimits) == nil) &&
+		(d.EmojiLimits == nil || denproto.CheckEmojiLimits(*d.EmojiLimits) == nil)
+}
+
+// cleanEmoji checks a den's emoji, as many as a den keeps at most, each
+// once and by a name of its own.
+func cleanEmoji(list []denproto.Emoji) (map[string]denproto.Emoji, bool) {
+	if len(list) > denproto.MaxEmojis {
+		return nil, false
+	}
+	out := map[string]denproto.Emoji{}
+	names := map[string]bool{}
+	for _, e := range list {
+		if denproto.CheckEmoji(e) != nil || out[e.ID] != (denproto.Emoji{}) || names[e.Name] {
+			return nil, false
+		}
+		out[e.ID], names[e.Name] = e, true
+	}
+	return out, true
 }
 
 // cleanSounds checks a den's sounds, as many as a den keeps at most, each
@@ -248,6 +286,11 @@ func (s *denState) load(r denproto.Ready, prev map[string]denproto.Member) error
 		return errMalformed
 	}
 	next.sounds = sounds
+	emoji, ok := cleanEmoji(r.Emoji)
+	if !ok {
+		return errMalformed
+	}
+	next.emoji, next.emojiLimits = emoji, r.Den.EmojiLimits
 	for _, m := range r.Members {
 		m, ok := cleanMember(m)
 		if !ok || !validID(m.ID) {
@@ -338,14 +381,16 @@ type keptState struct {
 	Keys      []denproto.DMKey     `json:"keys"`
 	SealCheck denproto.Bytes       `json:"seal_check"`
 	Sounds    []denproto.Sound     `json:"sounds,omitempty"` // M14.3
+	Emoji     []denproto.Emoji     `json:"emoji,omitempty"`  // M15.2
 }
 
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
-	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits},
+	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
+		EmojiLimits: s.emojiLimits},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
-		Sounds: slices.Collect(maps.Values(s.sounds))}
+		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji))}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -363,6 +408,11 @@ func restore(k keptState, members []denproto.Member) (*denState, error) {
 		return nil, errMalformed
 	}
 	s.sounds = sounds
+	emoji, ok := cleanEmoji(k.Emoji)
+	if !ok {
+		return nil, errMalformed
+	}
+	s.emoji, s.emojiLimits = emoji, k.Den.EmojiLimits
 	for _, m := range members {
 		m, ok := cleanMember(m)
 		if !ok {
@@ -685,6 +735,33 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 			return e, false, errMalformed
 		}
 		delete(s.sounds, d.ID)
+		data = d
+	case denproto.EventEmojiCreated, denproto.EventEmojiUpdated:
+		var emoji denproto.Emoji
+		if json.Unmarshal(e.D, &emoji) != nil || denproto.CheckEmoji(emoji) != nil {
+			return e, false, errMalformed
+		}
+		// Two renames' events may cross, so a name may name two emoji for a
+		// moment, which the page takes as it comes.
+		old, ok := s.emoji[emoji.ID]
+		if !ok && len(s.emoji) >= denproto.MaxEmojis {
+			return e, false, errMalformed
+		}
+		if ok && old.Image.ID != emoji.Image.ID {
+			s.gone = append(s.gone, old.Image.ID)
+		}
+		s.emoji[emoji.ID] = emoji
+		data = emoji
+	case denproto.EventEmojiDeleted:
+		var d denproto.EmojiDeleted
+		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) {
+			return e, false, errMalformed
+		}
+		// Its image goes with it.
+		if old, ok := s.emoji[d.ID]; ok {
+			s.gone = append(s.gone, old.Image.ID)
+		}
+		delete(s.emoji, d.ID)
 		data = d
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState

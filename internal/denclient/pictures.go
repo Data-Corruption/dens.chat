@@ -13,11 +13,12 @@ import (
 )
 
 // UploadAnimated makes an animated GIF or WebP into this member's picture
-// or banner (M15.1), which picture names, and uploads it for their profile
-// to use, as Upload does; replaces is the picture it takes the place of, if
-// any. The page sends the file as it is, with the part of it the member
-// framed, in its pixels, and this service makes each frame again, cropped
-// and scaled, as a GIF of the picture's size, which a page's canvas can't.
+// or banner (M15.1), or one of the den's emoji (M15.2), which picture
+// names, and uploads it for their profile or the emoji to use, as Upload
+// does; replaces is the picture it takes the place of, if any. The page
+// sends the file as it is, with the part of it the member framed, in its
+// pixels, and this service makes each frame again, cropped and scaled, as
+// a GIF of the picture's size, which a page's canvas can't.
 func (m *Manager) UploadAnimated(ctx context.Context, denID, picture string, crop image.Rectangle, name string, size int64, body io.Reader,
 	replaces string) (Uploaded, error) {
 	c, err := m.find(denID)
@@ -58,6 +59,9 @@ func (m *Manager) UploadAnimated(ctx context.Context, denID, picture string, cro
 	switch {
 	case errors.Is(err, media.ErrAnimationTooLarge):
 		return Uploaded{}, tooLarge
+	case errors.Is(err, media.ErrAnimationTooLong) && picture == animatedEmoji:
+		return Uploaded{}, inputError(fmt.Errorf("This animation comes out larger than the %d KB an emoji can be. Try a shorter one.",
+			p.MaxSize>>10))
 	case errors.Is(err, media.ErrAnimationTooLong):
 		return Uploaded{}, inputError(fmt.Errorf("This animation comes out larger than the %d MB a %s can be. Try a shorter one.",
 			p.MaxSize>>20, map[string]string{denproto.ProfileAvatar: "picture", denproto.ProfileBanner: "banner"}[picture]))
@@ -71,13 +75,26 @@ func (m *Manager) UploadAnimated(ctx context.Context, denID, picture string, cro
 	return m.uploadTo(ctx, c, "", name, int64(len(gif)), bytes.NewReader(gif), replaces)
 }
 
+// animatedEmoji is what an animated emoji names as its picture (M15.2).
+const animatedEmoji = "emoji"
+
 // animatedPicture is what an animated picture's GIF is to be: the part
 // framed, which must have the picture's shape give or take the rounding of
 // a crop, at its own size, but at most half a still's sides and at least a
-// picture's least; and the most it may take.
+// picture's least; and the most it may take. An emoji's is the part
+// framed, of any shape, at its own size but at most MaxEmojiSide on its
+// longer side.
 func animatedPicture(picture string, crop image.Rectangle) (media.AnimatedPicture, error) {
 	w, h := crop.Dx(), crop.Dy()
 	switch picture {
+	case animatedEmoji:
+		if w < 1 || h < 1 {
+			return media.AnimatedPicture{}, errors.New("An emoji needs something to show.")
+		}
+		long := max(w, h)
+		side := min(long, denproto.MaxEmojiSide)
+		width, height := max(1, (w*side+long/2)/long), max(1, (h*side+long/2)/long)
+		return media.AnimatedPicture{Crop: crop, Width: width, Height: height, MaxSize: denproto.MaxAnimatedEmojiSize}, nil
 	case denproto.ProfileAvatar:
 		if w < 1 || w-h > 1 || h-w > 1 {
 			return media.AnimatedPicture{}, errors.New("A picture is square.")

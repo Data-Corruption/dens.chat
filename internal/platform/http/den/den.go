@@ -113,6 +113,9 @@ func New(a *app.App) http.Handler {
 			r.Post("/soundboard", h.addSound)
 			r.Patch("/soundboard/{id}", h.renameSound)
 			r.Delete("/soundboard/{id}", h.deleteSound)
+			r.Post("/emoji", h.addEmoji)
+			r.Patch("/emoji/{id}", h.renameEmoji)
+			r.Delete("/emoji/{id}", h.deleteEmoji)
 		})
 	})
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {

@@ -31,9 +31,9 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
 | `internal/layout` | The deployment forms, and every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, desktop user, release URL, and v1.0's den role, which hosting starts from |
-| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, and the cryptography of private DMs and device approval |
-| `internal/den` | The den this install hosts: members, invites, sessions and devices, the event hub and its sockets, messages, uploads and files, retention, DM key relays, calls' rules, the soundboard's sounds and their playing (M14.3), and the change log clients sync from |
-| `internal/denclient` | The dens this install has joined: keeping each connected, the den's state for the page, history and files through the cache, DMs and their seal, device approval, calls relayed for the page, and the smaller copies of photos and videos made before sending, and animated pictures (M15.1) |
+| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, verifiers, invites, name rules, the rule that takes tracking out of links, the cryptography of private DMs and device approval, and the list of Unicode's emoji (`emojilist.go`, generated and committed, M15.2) |
+| `internal/den` | The den this install hosts: members, invites, sessions and devices, the event hub and its sockets, messages, uploads and files, retention, DM key relays, calls' rules, the soundboard's sounds and their playing (M14.3), the den's emoji (M15.2), and the change log clients sync from |
+| `internal/denclient` | The dens this install has joined: keeping each connected, the den's state for the page, history and files through the cache, DMs and their seal, device approval, calls relayed for the page, and the smaller copies of photos and videos made before sending, and animated pictures (M15.1), and the den's emoji, kept in the cache ahead of their use (M15.2) |
 | `internal/sfu` | The den's calls: Pion peer connections on the media ports, offers, voice forwarded to the call and shares to their watchers, within the owner's limits, and each call's soundboard track, which plays the den's sounds; `sfutest`, Pion in a browser's place, and a sound as the page writes one, for tests and the den e2e |
 | `internal/cache` | The client's cache of other dens (M6), under `data/cache` and out of backups: files, sealed as they're read, message history, each den's state and members, and its size and eviction |
 | `internal/shortcuts` | Voice keys in other programs (M7): the service's side of the shortcut helper's stream, and the helper (`dens shortcuts`), which reads the keys during a call through Windows, X11 or Wayland's portal, and shows the member's notifications where no page can (M12.3) |
@@ -49,7 +49,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers |
 | `internal/platform/release` | Reads the root `version` pointer from the release host, and checks a release's signed checksums where no cosign runs, as the Android app's updater does, against Sigstore's trusted root, embedded (M12.4); `sigstoretest`, a Sigstore of the tests' own, for tests and the Android e2e's fixture releases |
 | `internal/types` | Configuration shape |
-| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, the share player, the copier that makes videos' smaller copies with WebCodecs, the soundboard, which prepares staff's sounds with WebCodecs too (M14.3), the voice worklet with RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed), and its sounds (`assets/sounds/`, Kenney's, CC0) |
+| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, the share player, the copier that makes videos' smaller copies with WebCodecs, the soundboard, which prepares staff's sounds with WebCodecs too (M14.3), the voice worklet with RNNoise's module (`assets/wasm/rnnoise.wasm`, generated and committed), its sounds (`assets/sounds/`, Kenney's, CC0), and emoji: the picker, completion and Manage's Emoji, with the list of Unicode's emoji the page fetches (`assets/emoji.json`, generated and committed, M15.2) |
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
 | `android/` | The Android app's shell (M12): Kotlin with no AndroidX, its manifest and resources, the newer framework calls it makes behind a version check, and the release key's certificate (`release.pem`), which a release's APK must be signed by |
@@ -58,6 +58,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
 | `scripts/rnnoise.sh` | Builds RNNoise's module for the page from its pinned inputs, and checks the committed one |
+| `scripts/emoji.sh`, `scripts/emoji/` | Writes the list of Unicode's emoji, the page's and `denproto`'s, from Emoji's test file and CLDR's annotations, pinned in `vendor.sh`, up to the Emoji version the systems draw, and checks the committed ones; `scripts/emoji/` is the generator |
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary, with its desktop file, MetaInfo and icon, commits it to a repository, and writes the repository's deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
@@ -223,6 +224,11 @@ Change `scripts/rnnoise.sh` or `internal/ui/rnnoise`, run the script, and
 commit what it writes; CI builds it again and fails on any difference. The
 module imports nothing, and the voice worklet gives it nothing.
 
+**And the list of emoji.** Never edit `internal/ui/assets/emoji.json` or
+`internal/denproto/emojilist.go`. Change `scripts/emoji/`, or the pins or the
+Emoji version in `scripts/emoji.sh`, run the script, and commit what it
+writes; CI writes them again and fails on any difference.
+
 ## Build and test
 
 ```sh
@@ -247,6 +253,7 @@ scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Fire
 ./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build
 ./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
 ./scripts/rnnoise.sh           # rebuild RNNoise's module for the page after changing its build
+./scripts/emoji.sh             # rewrite the list of Unicode's emoji after changing its generator or its pins
 ./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes
 go test ./internal/build/winres -args -update  # rewrite cmd's Windows resource objects after changing the manifest
 gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./... && GOOS=android GOARCH=arm64 go vet ./...
@@ -261,9 +268,10 @@ Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md)
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
 cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests,
 Caddy for the den e2e, the media module's FFmpeg, zlib, libaom, CMake,
-wasi-sdk, binaryen and wasm2go, RNNoise's source and model, and the Android
-app's NDK, SDK pieces, emulator, Kotlin and JDK) are pinned by version and
-SHA-256 in `scripts/vendor.sh` and fetched into the gitignored `tools/`.
+wasi-sdk, binaryen and wasm2go, RNNoise's source and model, Unicode's emoji
+test file and CLDR's annotations, and the Android app's NDK, SDK pieces,
+emulator, Kotlin and JDK) are pinned by version and SHA-256 in
+`scripts/vendor.sh` and fetched into the gitignored `tools/`.
 Never depend on `tools/` contents directly.
 
 Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest.json}`,

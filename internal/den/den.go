@@ -160,13 +160,14 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	var limits denproto.Limits
 	var calls denproto.CallLimits
 	var sounds denproto.SoundLimits
+	var emoji denproto.EmojiLimits
 	var retention int
 	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key, file_size, member_storage, den_storage,
 		call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, retention,
-		sounds, sound_longest, sound_wait FROM den WHERE id = 1`).
+		sounds, sound_longest, sound_wait, emojis FROM den WHERE id = 1`).
 		Scan(&name, &url, &pub, &sealed, &limits.FileSize, &limits.MemberStorage, &limits.DenStorage,
 			&calls.Members, &calls.Callers, &calls.Shares, &calls.ShareViewers, &calls.ShareBitrate, &calls.ShareHeight, &calls.ShareFPS,
-			&retention, &sounds.Sounds, &sounds.Longest, &sounds.Wait)
+			&retention, &sounds.Sounds, &sounds.Longest, &sounds.Wait, &emoji.Emojis)
 	if errors.Is(err, sql.ErrNoRows) {
 		// A den erased here may have left files, had the service stopped
 		// before they went (M10).
@@ -186,7 +187,8 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention, SoundLimits: sounds}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
+		SoundLimits: sounds, EmojiLimits: &emoji}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -295,15 +297,16 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	limits := denproto.Limits{FileSize: denproto.DefaultFileSize, MemberStorage: denproto.DefaultMemberStorage, DenStorage: denproto.DefaultDenStorage}
 	calls := denproto.DefaultCallLimits
 	sounds := denproto.DefaultSoundLimits
+	emoji := denproto.DefaultEmojiLimits
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage,
 				call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, sync_epoch,
-				sounds, sound_longest, sound_wait)
-			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				sounds, sound_longest, sound_wait, emojis)
+			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			name, url, []byte(pub), sealed, now.UnixMilli(), limits.FileSize, limits.MemberStorage, limits.DenStorage,
 			calls.Members, calls.Callers, calls.Shares, calls.ShareViewers, calls.ShareBitrate, calls.ShareHeight, calls.ShareFPS,
-			denproto.Random(denproto.SyncEpochSize), sounds.Sounds, sounds.Longest, sounds.Wait); err != nil {
+			denproto.Random(denproto.SyncEpochSize), sounds.Sounds, sounds.Longest, sounds.Wait, emoji.Emojis); err != nil {
 			return fmt.Errorf("store den: %w", err)
 		}
 		_, err := tx.ExecContext(ctx,
@@ -317,7 +320,8 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	if err := d.holdKey(seed, pub); err != nil {
 		return nil, err
 	}
-	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds}
+	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
+		EmojiLimits: &emoji}
 	d.log.Infof("Den created")
 	return code, nil
 }
@@ -463,7 +467,8 @@ func (d *Den) forget() {
 }
 
 // Update changes the den's name, address, upload limits, limits for calls,
-// retention period or limits for its soundboard. Only the owner may.
+// retention period, or limits for its soundboard or its emoji. Only the
+// owner may.
 func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequest) (denproto.Den, error) {
 	if s.Role != denproto.RoleOwner {
 		return denproto.Den{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner changes the den")
@@ -509,13 +514,26 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		}
 		info.SoundLimits = *req.SoundLimits
 	}
+	// As for sounds, lowering the count leaves the emoji already added
+	// (M15.2).
+	if req.EmojiLimits != nil {
+		if err := denproto.CheckEmojiLimits(*req.EmojiLimits); err != nil {
+			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "emoji_limits: %v", err)
+		}
+		l := *req.EmojiLimits
+		info.EmojiLimits = &l
+	}
 	c, sl := info.CallLimits, info.SoundLimits
+	el := denproto.DefaultEmojiLimits
+	if info.EmojiLimits != nil {
+		el = *info.EmojiLimits
+	}
 	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
 		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ?,
-		retention = ?, sounds = ?, sound_longest = ?, sound_wait = ? WHERE id = 1`,
+		retention = ?, sounds = ?, sound_longest = ?, sound_wait = ?, emojis = ? WHERE id = 1`,
 		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
 		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS, info.Retention,
-		sl.Sounds, sl.Longest, sl.Wait); err != nil {
+		sl.Sounds, sl.Longest, sl.Wait, el.Emojis); err != nil {
 		return denproto.Den{}, err
 	}
 	d.mu.Lock()
@@ -637,6 +655,7 @@ func (d *Den) Preview(ctx context.Context, code []byte) (denproto.Den, error) {
 	info.CallLimits = denproto.CallLimits{}
 	info.Retention = 0
 	info.SoundLimits = denproto.SoundLimits{}
+	info.EmojiLimits = nil
 	return info, nil
 }
 

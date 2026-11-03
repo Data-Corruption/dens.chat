@@ -55,7 +55,7 @@ grep -q '^Status: RUNNING' <<<"$(incus info "$CONTAINER")" || incus start "$CONT
 
 # What the container needs, which each run sees to.
 packages=(chromium firefox-esr xvfb xauth pulseaudio pulseaudio-utils dbus-user-session python3 curl ca-certificates
-    fonts-dejavu-core fonts-liberation espeak-ng procps iptables sudo dunst)
+    fonts-dejavu-core fonts-liberation fonts-noto-color-emoji espeak-ng procps iptables sudo dunst)
 if ! incus exec "$CONTAINER" -- dpkg-query -W "${packages[@]}" >/dev/null 2>&1; then
     incus exec "$CONTAINER" -- sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ${packages[*]} >/dev/null"
 fi

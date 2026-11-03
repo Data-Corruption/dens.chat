@@ -163,7 +163,10 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 		return r, err
 	}
 	r.DeviceRequests = d.memberRequests(member)
-	r.Sounds, err = d.sounds(ctx, d.db)
+	if r.Sounds, err = d.sounds(ctx, d.db); err != nil {
+		return r, err
+	}
+	r.Emoji, err = d.emojis(ctx, d.db)
 	return r, err
 }
 

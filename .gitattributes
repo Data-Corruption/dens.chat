@@ -1,6 +1,8 @@
 *.sh text eol=lf
 *.go text eol=lf
 internal/build/notices.txt text eol=lf
+# The page's list of emoji, which scripts/emoji.sh --check compares byte for byte.
+internal/ui/assets/emoji.json text eol=lf
 *.syso binary
 # A release's signed checksums, which tests check byte for byte, and
 # Sigstore's trusted root as its TUF repository served it (M12.4).

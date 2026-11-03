@@ -59,9 +59,10 @@ export function useDragDown(onClose, grab) {
 }
 
 // Sheet frames a sheet: label names it, and title, if given, heads it,
-// under the handle. Its rows are SheetRows, or anything else as tall. The
-// focus starts on its first row, and goes back to where it was once the
-// sheet closes.
+// under the handle, staying at its top as a long sheet scrolls, as the
+// emoji picker's search does (M15.2). Its rows are SheetRows, or anything
+// else as tall. The focus starts on its first row, and goes back to where
+// it was once the sheet closes.
 export function Sheet({ label, title, onClose, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
@@ -104,7 +105,7 @@ export function Sheet({ label, title, onClose, children }) {
             <div ref={panel} role="dialog" aria-modal="true" aria-label={label} data-sheet onKeyDown={keys}
                 class={`max-h-[85%] overflow-y-auto overscroll-contain rounded-t-box bg-base-100 pb-[env(safe-area-inset-bottom)] shadow-xl ${scrolls ? 'touch-pan-y' : 'touch-none'}`}
                 style={drag.style} {...drag.handlers}>
-                <div data-sheet-top class="touch-none">
+                <div data-sheet-top class="sticky top-0 z-10 touch-none bg-base-100">
                     <Handle />
                     {title && <div class="cursor-default select-none px-4 pb-2 text-sm">{title}</div>}
                 </div>

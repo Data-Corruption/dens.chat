@@ -83,6 +83,17 @@ BROWSER_MEDIA=(
   "iphone-12-pro-hevc.mov 41cc5f00b7318627f83a67ef8be08aca65a26e6d39d265a6079717e520d6e096 https://raw.githubusercontent.com/immich-app/test-assets/ec56cc6c1d76c45bc9615dc6ea232470a2b0a3a1/videos/train.mov"
 )
 
+# Unicode's emoji (M15.2), which scripts/emoji.sh makes the page's and the
+# den's list of from Emoji 18.0's test file and CLDR 49's English
+# annotations, names and keywords, of single emoji and of sequences. The
+# list stops at an older Emoji version, the newest the systems draw, which
+# scripts/emoji.sh names. Name, SHA-256, address.
+EMOJI_DATA=(
+  "emoji-test.txt 8f3735cda1f92a779d78af67cf86066bb1f07143dc22f2ac29394d9bc57ab21a https://www.unicode.org/Public/18.0.0/emoji/emoji-test.txt"
+  "annotations-en.xml 14d0e9bb5003c085250df4ac7bd7ba1e26d92e74174d7a3a2f42dc16e07fb155 https://raw.githubusercontent.com/unicode-org/cldr/release-49/common/annotations/en.xml"
+  "annotations-derived-en.xml a4a6c1a4c341d94179cb116623c5f44c47400a5bc55da483423ef7430ecf622e https://raw.githubusercontent.com/unicode-org/cldr/release-49/common/annotationsDerived/en.xml"
+)
+
 # The Android app (M12): the NDK, which builds Dens for Android with cgo;
 # the SDK's build tools and platform, Kotlin and a JDK, which build the APK
 # around it without Gradle; and the platform tools (adb), the emulator and
@@ -248,6 +259,7 @@ VENDOR_EXIFTOOL=""
 VENDOR_RNNOISE_SRC=""
 VENDOR_RNNOISE_MODEL=""
 VENDOR_BROWSER_MEDIA=""
+VENDOR_EMOJI_DATA=""
 VENDOR_FIRST_RELEASE=""
 VENDOR_ANDROID=""
 VENDOR_ANDROID_EMULATOR=""
@@ -261,7 +273,7 @@ VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
 VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
   wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake browser-media
-  android android-emulator)
+  emoji-data android android-emulator)
 
 # Pin validation --------------------------------------------------------------
 
@@ -347,6 +359,10 @@ validate_pins() {
   for entry in "${BROWSER_MEDIA[@]}"; do
     read -r _ sha _ <<<"$entry"
     validate_sha256 "$sha" "BROWSER_MEDIA"
+  done
+  for entry in "${EMOJI_DATA[@]}"; do
+    read -r _ sha _ <<<"$entry"
+    validate_sha256 "$sha" "EMOJI_DATA"
   done
   for entry in "${ANDROID_TOOLS[@]}" "${ANDROID_EMULATOR_TOOLS[@]}"; do
     read -r _ sha _ <<<"$entry"
@@ -759,6 +775,19 @@ vendor_browser_media() {
   printf '🟢 Vendored the browser checks'"'"' media\n'
 }
 
+# vendor_emoji_data resolves to a directory of the inputs of the list of
+# Unicode's emoji (M15.2), which scripts/emoji.sh writes.
+vendor_emoji_data() {
+  VENDOR_EMOJI_DATA="$TOOLS_DIR/emoji-data"
+  mkdir -p "$VENDOR_EMOJI_DATA"
+  local entry name sha url
+  for entry in "${EMOJI_DATA[@]}"; do
+    read -r name sha url <<<"$entry"
+    download_verified "$VENDOR_EMOJI_DATA/$name" "$url" "$sha" "$name"
+  done
+  printf "🟢 Vendored Unicode's emoji data\n"
+}
+
 # vendor_android_unpack NAME DIR TOP unpacks the verified download NAME
 # from ANDROID_TOOLS to DIR, from its top directory TOP, once: DIR keeps
 # the SHA-256 it came from, so a new pin unpacks again.
@@ -887,6 +916,7 @@ vendor_ensure() {
     aom-src) vendor_aom_src ;;
     cmake) vendor_cmake ;;
     browser-media) vendor_browser_media ;;
+    emoji-data) vendor_emoji_data ;;
     android) vendor_android ;;
     android-emulator) vendor_android_emulator ;;
     *)
@@ -921,6 +951,7 @@ vendor_resolved() {
     aom-src) printf '%s' "$VENDOR_AOM_SRC" ;;
     cmake) printf '%s' "$VENDOR_CMAKE" ;;
     browser-media) printf '%s' "$VENDOR_BROWSER_MEDIA" ;;
+    emoji-data) printf '%s' "$VENDOR_EMOJI_DATA" ;;
     android) printf '%s' "$VENDOR_ANDROID" ;;
     android-emulator) printf '%s' "$VENDOR_ANDROID_EMULATOR" ;;
   esac
@@ -971,9 +1002,9 @@ vendor_main() {
     for candidate in "${VENDOR_FETCHABLE[@]}"; do
       case "$HOST_GOARCH:$candidate" in
         # The media module's and RNNoise's inputs, the browser checks'
-        # media, and the Android app's tools are large, and only their
-        # builds and checks ask for them.
-        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake|*:browser-media|*:android|*:android-emulator) continue ;;
+        # media, the emoji list's inputs and the Android app's tools are
+        # large, and only their builds and checks ask for them.
+        arm64:rclone|arm64:hugo|*:caddy-windows|*:wasi-sdk|*:binaryen|*:ffmpeg-src|*:zlib-src|*:wasm2go|*:exiftool|*:rnnoise-src|*:rnnoise-model|*:aom-src|*:cmake|*:browser-media|*:emoji-data|*:android|*:android-emulator) continue ;;
       esac
       tools+=("$candidate")
     done

@@ -1119,3 +1119,66 @@ export async function pages(h, ctx, d, report) {
         did(shut, 'a swipe down its top closes it');
     }
 }
+
+// EMOJI_SHEET is the emoji picker as a sheet (M15.2).
+const EMOJI_SHEET = `document.querySelector('[data-sheet][aria-label="Emoji"]')`;
+
+// emojiPicking walks M15.2 on the phone layout, by what the driver's d
+// does as a member would: the composer's smiley opens the emoji picker as
+// a sheet from the screen's foot, whose search and buttons stay at its top
+// as the emoji scroll, a group's button going to its emoji, and a tap on
+// one puts it in at the caret and closes the sheet; and typing :par and
+// @al lists what completes them above the box, which a tap puts in.
+export async function emojiPicking(h, ctx, d, report) {
+    const { den, general } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    await sleep(1000);
+    await d.tap(`document.querySelector('button[data-emoji-button]')`);
+    const sheet = await waitFor(() => h.ev(`(() => { const s = ${EMOJI_SHEET}; if (!s || s.querySelectorAll('[data-emoji-tile]').length < 1000) return null;
+        const r = s.getBoundingClientRect();
+        return { bottom: Math.round(r.bottom), vh: innerHeight, tiles: s.querySelectorAll('[data-emoji-tile]').length,
+            search: !!s.querySelector('input[type=search]'), first: s.querySelector('[data-section]')?.getAttribute('aria-label') }; })()`),
+    'the emoji sheet', 8000).catch(() => null);
+    did(sheet && Math.abs(sheet.bottom - sheet.vh) <= 1 && sheet.search, `the smiley opens the picker as a sheet from the screen's foot: ${JSON.stringify(sheet)}`);
+    await h.snap('emoji-sheet');
+    // Scrolled, its search stays at its top.
+    const kept = await h.ev(`(() => { const s = ${EMOJI_SHEET}; s.scrollTop += 1500;
+        return { scrolled: s.scrollTop > 0, top: Math.round(s.querySelector('[data-sheet-top]').getBoundingClientRect().top - s.getBoundingClientRect().top) }; })()`);
+    await h.snap('emoji-sheet-scrolled');
+    did(kept.scrolled && Math.abs(kept.top) <= 1, `scrolled, its search stays at its top: ${JSON.stringify(kept)}`);
+    // A group's button goes to its emoji, under the sheet's top.
+    await d.tap(`${EMOJI_SHEET}.querySelector('button[aria-label="Flags"]')`);
+    const flags = await h.ev(`(() => { const s = ${EMOJI_SHEET};
+        return Math.round(s.querySelector('[data-section=g8]').getBoundingClientRect().top - s.querySelector('[data-sheet-top]').getBoundingClientRect().bottom); })()`);
+    did(Math.abs(flags) <= 2, `Flags' button goes to the flags, just under the sheet's top: ${flags}`);
+    // A tap on an emoji puts it in and closes the sheet.
+    await h.ev(`${EMOJI_SHEET}.scrollTop = 0, true`);
+    await sleep(300);
+    await d.tap(`${EMOJI_SHEET}.querySelector('[data-emoji-tile=":party:"]')`);
+    const put = await waitFor(async () => ((await h.has(EMOJI_SHEET)) ? null : h.ev(`({ box: ${COMPOSER}.value, focused: document.activeElement === ${COMPOSER} })`)),
+        'the sheet closed', 5000).catch(() => null);
+    did(put?.box === ':party:' && put.focused, `a tap on :party: puts it in and closes the sheet, the box keeping the focus: ${JSON.stringify(put)}`);
+    // Typing a name, and a mention, lists what completes it above the box.
+    await h.ev(`${COMPOSER}.focus(), true`);
+    await d.type(' hi :par');
+    const list = await waitFor(() => h.ev(`(() => { const l = document.querySelector('[data-completions]'); if (!l) return null;
+        const r = l.getBoundingClientRect(), b = ${COMPOSER}.getBoundingClientRect();
+        return { items: [...l.querySelectorAll('[data-completion]')].map((x) => x.dataset.completion), above: r.bottom <= b.top + 1,
+            left: Math.round(r.left), right: Math.round(r.right), vw: document.documentElement.clientWidth,
+            rowH: Math.round(l.querySelector('[data-completion]').getBoundingClientRect().height) }; })()`), 'the completions', 5000).catch(() => null);
+    await h.snap('emoji-completion');
+    did(list?.items[0] === ':party:' && list.above && list.left >= 0 && list.right <= list.vw && (!d.touch || list.rowH >= 44),
+        `:par lists :party: above the box, within the screen${d.touch ? ', in rows a finger fits' : ''}: ${JSON.stringify(list)}`);
+    await d.tap(`document.querySelector('[data-completion=":party:"]')`);
+    await d.type('@al');
+    const member = await waitFor(() => h.has(`document.querySelector('[data-completion="@alice"]')`), "alice's completion", 5000).catch(() => false);
+    await d.tap(`document.querySelector('[data-completion="@alice"]')`);
+    const box = await h.ev(`${COMPOSER}.value`);
+    did(member && box === ':party: hi :party: @alice ', `a tap puts in each, :party: and @alice, with a space: ${JSON.stringify(box)}`);
+    // The box empties again, and its keyboard goes.
+    await h.ev(`(() => { const el = ${COMPOSER}; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, '');
+        el.dispatchEvent(new Event('input', { bubbles: true })); el.blur(); return true; })()`);
+    await sleep(500);
+}

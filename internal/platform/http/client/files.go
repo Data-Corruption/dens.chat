@@ -44,7 +44,8 @@ func (rt *router) mountFiles(r chi.Router) {
 // follows its progress by while a video's copy is made (M5.4). An animated
 // GIF or WebP for a profile names its picture, and comes as it is, with
 // the part of it the member framed, which this service makes into a GIF of
-// the picture's size (M15.1).
+// the picture's size (M15.1); one for the den's emoji names "emoji", and
+// becomes a GIF of an emoji's size (M15.2).
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { day, dayTime } from '../assets/js/src/components.jsx';
-import { callFields, changed, changesOf, draftOf, hasBoard } from '../assets/js/src/dendraft.js';
+import { callFields, changed, changesOf, draftOf, hasBoard, hasEmoji } from '../assets/js/src/dendraft.js';
 import { CALL_PRESETS } from '../assets/js/src/share.js';
 
 const MB = 1 << 20;
@@ -65,6 +65,23 @@ test("the soundboard's limits are the draft's too, where the den has a soundboar
     assert.equal(problem({ longest: '0' }), 'The longest sound is 1 to 300 seconds.');
     assert.equal(problem({ longest: '301' }), 'The longest sound is 1 to 300 seconds.');
     assert.equal(problem({ wait: '601' }), "The wait between a member's sounds is 0 to 600 seconds.");
+});
+
+// A den's limit for its emoji is the draft's too (M15.2), at 0 as well,
+// which turns them off; a den older than emoji has none.
+test("the den's limit for emoji is the draft's too, where the den has emoji", () => {
+    assert.equal(hasEmoji(draftOf(den, view)), false);
+    const base = draftOf(den, { ...view, emoji_limits: { emojis: 50 } });
+    assert.equal(hasEmoji(base), true);
+    assert.equal(base.emojis, '50');
+    assert.equal(changed(base, base), false);
+    assert.deepEqual(changesOf({ ...base, emojis: '120' }, base).body, { emoji_limits: { emojis: 120 } });
+    assert.deepEqual(changesOf({ ...base, emojis: '0' }, base).body, { emoji_limits: { emojis: 0 } }, 'off');
+    const off = draftOf(den, { ...view, emoji_limits: { emojis: 0 } });
+    assert.equal(hasEmoji(off) && off.emojis, '0', "a den with emoji off still has the field, to turn them on");
+    const problem = (changes) => changesOf({ ...base, ...changes }, base).problem;
+    assert.equal(problem({ emojis: '501' }), 'Max emoji is 1 to 500.');
+    assert.equal(problem({ emojis: '1.5' }), 'Max emoji is 1 to 500.');
 });
 
 test('dates take one form, with the time where it matters', () => {

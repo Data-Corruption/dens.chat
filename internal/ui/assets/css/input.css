@@ -40,6 +40,16 @@
     box-shadow: 0 1px color-mix(in oklab, var(--input-color) calc(var(--depth) * 10%), #0000) inset, 0 -1px oklch(100% 0 0 / calc(var(--depth) * 0.1)) inset;
 }
 
+/* Emoji where nothing else is (M15.2): the picker's, completion's and a
+   message of emoji alone, in the system's color emoji font first. The
+   text's own font comes first everywhere else, and some, such as DejaVu
+   Sans, which a Linux desktop may have as its sans-serif, draw the older
+   emoji in black and white, which Chromium takes over a color font named
+   after them. */
+@utility font-emoji {
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", "Android Emoji", sans-serif;
+}
+
 /* Room around a small control for a finger (M13.2): on a coarse pointer
    its target reaches at least 44 pixels each way, centered on it, without
    growing to the eye. The control is positioned, relative or absolute, to

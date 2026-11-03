@@ -178,6 +178,16 @@ name at the top of its channel list, or **Manage** on your home page.
   leaves the sounds already added. A sound goes from your den to everyone in
   the call while it plays, about 64 kbps each, which the upload for calls
   counts.
+- **Emoji.** Moderators and you add emoji, which everyone writes by name,
+  like `:party_parrot:`, or picks beside the usual ones. Pick an image, still
+  or a GIF or WebP that moves, and give it a name of letters, digits and _.
+  Dens makes it 128 pixels at most. A moving one has to fit in 512 KB, and
+  Dens says when a clip is too long for that. Renaming or deleting an emoji
+  turns the messages that used it back into its name.
+- **Emoji limit**, in **Limits**: how many emoji the den keeps, 50 at first
+  and up to 500, or off, which keeps them and shows their names as text.
+  Lowering it leaves the emoji already added. Everyone's Dens keeps a copy of
+  every emoji, which is why each is small.
 - **Auto-delete**, off unless you turn it on, deletes messages older than a
   number of days, in channels and DMs. Members see the setting. A
   [backup](../backups/) keeps what it held until you delete the backup.

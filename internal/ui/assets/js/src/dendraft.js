@@ -1,7 +1,8 @@
 // The owner's edits to a den in its Manage dialog (M8.3): its name and
 // address, its upload limits, how long it keeps messages, its limits for
-// calls, and from M14.3 for its soundboard. They gather in one draft, kept
-// as the fields' text, and go to the den as one update of what changed.
+// calls, from M14.3 for its soundboard and from M15.2 for its emoji. They
+// gather in one draft, kept as the fields' text, and go to the den as one
+// update of what changed.
 
 import { HEIGHTS } from './share.js';
 
@@ -24,7 +25,19 @@ export function draftOf(den, view) {
         days: String(view.retention > 0 ? view.retention : 90),
         ...callFields(view.call_limits),
         ...soundFields(view.sound_limits),
+        ...emojiFields(view.emoji_limits),
     };
+}
+
+// emojiFields are a den's limit for its emoji as a draft's field, or none
+// for a den older than emoji, which has no limit for them.
+export function emojiFields(l) {
+    return l ? { emojis: String(l.emojis) } : {};
+}
+
+// hasEmoji says whether a draft has the limit for emoji.
+export function hasEmoji(d) {
+    return 'emojis' in d;
 }
 
 // soundFields are a den's limits for its soundboard as a draft's fields,
@@ -117,6 +130,12 @@ export function changesOf(draft, base) {
             if (!whole(sounds.wait, 0, 600)) return refuse("The wait between a member's sounds is 0 to 600 seconds.");
             body.sound_limits = sounds;
         }
+    }
+
+    if (hasEmoji(draft) && Number(draft.emojis) !== Number(base.emojis)) {
+        const emojis = Number(draft.emojis);
+        if (!whole(emojis, 0, 500)) return refuse('Max emoji is 1 to 500.');
+        body.emoji_limits = { emojis };
     }
     return { body, problem: '' };
 }

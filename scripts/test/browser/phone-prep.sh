@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The phone check's den (M13): alice's install hosts it; bob and carol
 # join; dave's, which the driver starts new for each browser, shows the
-# screens before a den. Its soundboard holds a sound (M14.3). general
+# screens before a den. Its soundboard holds a sound (M14.3), and it has
+# an emoji of its own (M15.2). general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
 # only. Alice and bob share a checked DM, checked again after alice started
@@ -26,6 +27,10 @@ limits=$(api alice GET "/api/dens/$DEN/state" | python3 -c 'import json, sys; d 
 api alice POST "/api/dens/$DEN/settings" "$limits" >/dev/null
 ./node browser/make-sound.mjs ping.ogg 1
 api alice POST "/api/dens/$DEN/soundboard" "{\"name\":\"Ping\",\"upload\":\"$(upload alice ping.ogg ping.ogg)\"}" >/dev/null
+# An emoji of the den's own (M15.2), which the phone's picker and
+# completion offer.
+./node browser/make-emoji.mjs party.png 96 96
+api alice POST "/api/dens/$DEN/emoji" "{\"name\":\"party\",\"upload\":\"$(upload alice party.png party.png)\"}" >/dev/null
 
 say() { send "$@" >/dev/null; }
 printf 'A file to attach.\n' >note.txt
@@ -46,6 +51,7 @@ say carol "$general" "a clip" "$(upload carol clip.mp4 clip.mp4)"
 say bob "$general" "notes attached" "$(upload bob note.txt a-file-with-a-rather-long-name-for-a-phone.txt)"
 say carol "$general" "Supercalifragilisticexpialidociousandthensomemorelettersthatneverbreakanywhereatall"
 say carol "$general" "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+say bob "$general" "party time :party:"
 say bob "$general" "Bob's last word"
 for i in 1 2 3; do say alice "$random" "random $i"; done
 

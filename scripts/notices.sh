@@ -104,6 +104,10 @@ generate() {
   section "RNNoise ${DEFAULT_RNNOISE_VERSION}, with its model ${DEFAULT_RNNOISE_MODEL_VERSION}, in the page" "$TEXTS/rnnoise.txt" \
     "https://gitlab.xiph.org/xiph/rnnoise" \
     "Its model comes from the same project, beside its code."
+  section "Unicode's emoji data, in the page and the den's list of emoji" "$TEXTS/unicode.txt" \
+    "https://www.unicode.org/emoji and https://cldr.unicode.org" \
+    "The page's and the den's list of emoji is made from Emoji 18.0's emoji-test.txt and" \
+    "CLDR 49's English annotations, the emoji's names and keywords."
   section "Preact ${DEFAULT_PREACT_VERSION}, in the page" "$TEXTS/preact.txt" "https://preactjs.com"
   section "Tailwind CSS ${DEFAULT_TAILWIND_VERSION#v}, in the page's styles" "$TEXTS/tailwindcss.txt" "https://tailwindcss.com"
   section "daisyUI ${DEFAULT_DAISYUI_VERSION#v}, in the page's styles" "$TEXTS/daisyui.txt" "https://daisyui.com"
