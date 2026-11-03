@@ -48,6 +48,7 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountFiles(r)
 	rt.mountDevices(r)
 	rt.mountSoundboard(r)
+	rt.mountEmoji(r)
 }
 
 // hosting describes the den this install holds: whether hosting is on
@@ -696,6 +697,8 @@ func denMessage(e *denproto.Error) string {
 		return "That username is taken on this den."
 	case denproto.CodeSoundNameTaken:
 		return "Another sound in this den has that name."
+	case denproto.CodeEmojiNameTaken:
+		return "Another emoji in this den has that name."
 	case denproto.CodeRateLimited:
 		return "The den asked us to slow down. Try again in a minute."
 	case denproto.CodeProtocolUnsupported:

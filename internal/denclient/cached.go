@@ -2,6 +2,7 @@ package denclient
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -89,7 +90,8 @@ func (c *conn) noteOwnFiles(files []denproto.OwnFile) {
 }
 
 // ownerOf says what a file is on, as far as this service knows: a message,
-// in a channel or a DM, or a member's picture.
+// in a channel or a DM, a member's picture, or one of the den's emoji
+// (M15.2).
 func (c *conn) ownerOf(fileID string) cache.Owner {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -106,15 +108,35 @@ func (c *conn) ownerOf(fileID string) cache.Owner {
 				return cache.Owner{Member: id}
 			}
 		}
+		for _, e := range c.den.emoji {
+			if e.Image.ID == fileID {
+				id, _ := denproto.ParseID(e.ID)
+				return cache.Owner{Named: id}
+			}
+		}
 	}
 	return cache.Owner{}
 }
 
-// openCached opens a file of another den through the cache.
+// openCached opens a file of another den through the cache. An emoji's
+// comes from the cache alone while emoji are on (M15.2): one it let go of
+// brings every one it lacks, rather than the den hearing which showed.
 func (c *conn) openCached(ctx context.Context, fileID string, thumb bool) (*OpenedFile, error) {
 	id, err := denproto.ParseID(fileID)
 	if err != nil {
 		return nil, inputError(errors.New("invalid file ID"))
+	}
+	if c.keptEmoji(fileID) {
+		whole, err := c.m.Cache.Whole(c.j.denID, id, thumb)
+		if err != nil {
+			return nil, err
+		}
+		if !whole {
+			fillErr := c.fillEmoji(ctx)
+			if whole, err = c.m.Cache.Whole(c.j.denID, id, thumb); err != nil || !whole {
+				return nil, cmp.Or(err, fillErr, errFileNotKept)
+			}
+		}
 	}
 	h, err := c.m.Cache.File(c.j.denID, id, thumb, c.ownerOf(fileID), func() (cache.Source, error) {
 		return c.fileSource(ctx, fileID, thumb)
@@ -222,7 +244,10 @@ type pendingSync struct {
 	sync     denproto.Sync
 	channels []int64
 	pictures map[int64]bool
-	fresh    bool
+	// emoji are the files of the den's emoji (M15.2), all of which a
+	// snapshot names.
+	emoji map[int64]bool
+	fresh bool
 }
 
 // cacheReady checks what the cache holds against a fresh snapshot. A
@@ -235,7 +260,7 @@ func (c *conn) cacheReady(r denproto.Ready) {
 		return
 	}
 	cs, den := c.m.Cache, c.j.denID
-	p := &pendingSync{sync: r.Sync, pictures: map[int64]bool{}}
+	p := &pendingSync{sync: r.Sync, pictures: map[int64]bool{}, emoji: map[int64]bool{}}
 	synced, ok, err := cs.Synced(den)
 	if err != nil {
 		c.cacheErr(err)
@@ -277,6 +302,11 @@ func (c *conn) cacheReady(r denproto.Ready) {
 	if r.Sync.MembersSince != nil {
 		p.pictures = nil
 	}
+	for _, e := range r.Emoji {
+		if id, err := denproto.ParseID(e.Image.ID); err == nil {
+			p.emoji[id] = true
+		}
+	}
 	c.mu.Lock()
 	c.readySync = p
 	c.mu.Unlock()
@@ -315,11 +345,20 @@ func (c *conn) cacheWork(ctx context.Context) {
 			continue
 		case <-c.syncDue:
 			wait = syncRetry
+		case <-c.fillDue:
+			if err := c.fillEmoji(ctx); err != nil && ctx.Err() == nil {
+				c.m.log.Infof("Couldn't keep a den's emoji in the cache: %v", logged(err))
+			}
+			continue
 		case <-daily.C:
 		case <-retry:
 		}
 		retry = nil
 		err := c.syncCache(ctx)
+		// The den's emoji, as the snapshot that woke this lists them.
+		if err == nil {
+			c.kickFill()
+		}
 		c.saveKept()
 		if err == nil {
 			wait = syncRetry
@@ -383,6 +422,19 @@ func (c *conn) syncCache(ctx context.Context) error {
 			if err := cs.DropFiles(den, replaced...); err != nil {
 				return err
 			}
+		}
+		named, err := cs.NamedFiles(den)
+		if err != nil {
+			return err
+		}
+		var deleted []int64
+		for id := range named {
+			if !p.emoji[id] {
+				deleted = append(deleted, id)
+			}
+		}
+		if err := cs.DropFiles(den, deleted...); err != nil {
+			return err
 		}
 	}
 	// A den that isn't connected is asked once it is: its snapshot wakes

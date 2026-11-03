@@ -42,15 +42,17 @@ type Source interface {
 	Close() error
 }
 
-// Owner is what a cached file is on: a message, in its channel, or a
-// member's picture. It says which files go when the message changes or
-// goes, the channel goes, or the picture is replaced.
+// Owner is what a cached file is on: a message, in its channel, a member's
+// picture, or one of the den's named files, as an emoji (M15.2), by its ID.
+// It says which files go when the message changes or goes, the channel
+// goes, the picture is replaced or the emoji is deleted.
 type Owner struct {
 	Message, Channel int64
 	Member           int64
+	Named            int64
 }
 
-func (o Owner) known() bool { return o.Message != 0 || o.Member != 0 }
+func (o Owner) known() bool { return o.Message != 0 || o.Member != 0 || o.Named != 0 }
 
 func nullable(n int64) any {
 	if n == 0 {
@@ -247,9 +249,9 @@ func (s *Store) takeLocked(k key, denID []byte, owner Owner) (*entry, error) {
 	if e == nil {
 		var name string
 		var size, held int64
-		var message, member sql.NullInt64
-		err := s.db.QueryRow(`SELECT name, size, held, message, member FROM files WHERE den = ? AND id = ? AND thumb = ?`,
-			k.den, k.id, k.thumb).Scan(&name, &size, &held, &message, &member)
+		var message, member, named sql.NullInt64
+		err := s.db.QueryRow(`SELECT name, size, held, message, member, named FROM files WHERE den = ? AND id = ? AND thumb = ?`,
+			k.den, k.id, k.thumb).Scan(&name, &size, &held, &message, &member, &named)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -271,7 +273,7 @@ func (s *Store) takeLocked(k key, denID []byte, owner Owner) (*entry, error) {
 			}
 		}
 		s.entries[k] = e
-		if owner.known() && !message.Valid && !member.Valid {
+		if owner.known() && !message.Valid && !member.Valid && !named.Valid {
 			s.setOwnerLocked(k, owner)
 		}
 	} else if e.refs == 0 {
@@ -297,8 +299,8 @@ func (s *Store) takeLocked(k key, denID []byte, owner Owner) (*entry, error) {
 }
 
 func (s *Store) setOwnerLocked(k key, owner Owner) {
-	if _, err := s.db.Exec(`UPDATE files SET message = ?, channel = ?, member = ? WHERE den = ? AND id = ? AND thumb = ?`,
-		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), k.den, k.id, k.thumb); err != nil {
+	if _, err := s.db.Exec(`UPDATE files SET message = ?, channel = ?, member = ?, named = ? WHERE den = ? AND id = ? AND thumb = ?`,
+		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), k.den, k.id, k.thumb); err != nil {
 		s.log.Warnf("note what a cached file is on: %v", err)
 	}
 }
@@ -315,9 +317,9 @@ func (s *Store) addLocked(k key, denID []byte, size int64, owner Owner) (*entry,
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.db.Exec(`INSERT INTO files (den, id, thumb, name, size, message, channel, member, used_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, k.den, k.id, k.thumb, name, size,
-		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), s.now().UnixMilli())
+	_, err = s.db.Exec(`INSERT INTO files (den, id, thumb, name, size, message, channel, member, named, used_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, k.den, k.id, k.thumb, name, size,
+		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), s.now().UnixMilli())
 	if err != nil {
 		f.Close()
 		os.Remove(s.path(name))
@@ -785,6 +787,59 @@ func (s *Store) Pictures(denID []byte) (map[int64]int64, error) {
 			return nil, err
 		}
 		out[id] = member
+	}
+	return out, rows.Err()
+}
+
+// Whole reports whether the cache holds every chunk of a file of a den, or
+// of its preview, as a file fetched ahead of its use is held (M15.2).
+func (s *Store) Whole(denID []byte, id int64, thumb bool) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	den, ok, err := s.denNumberLocked(denID)
+	if err != nil || !ok {
+		return false, err
+	}
+	// An entry's count is current, its row's as of the last chunk stored.
+	if e := s.entries[key{den: den, id: id, thumb: thumb}]; e != nil {
+		return !e.doomed && e.held == wholeLen(e.size), nil
+	}
+	var size, held int64
+	err = s.db.QueryRow(`SELECT size, held FROM files WHERE den = ? AND id = ? AND thumb = ?`, den, id, thumb).Scan(&size, &held)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil && held == wholeLen(size), err
+}
+
+// wholeLen is what a file of size takes on disk with every chunk in its
+// slot, which no chunk takes twice.
+func wholeLen(size int64) int64 {
+	n := (size + chunkSize - 1) / chunkSize
+	return n*(slotHead+sealOverhead) + size
+}
+
+// NamedFiles returns the files of a den's named files the cache holds, as
+// its emoji's images (M15.2): each file's named file.
+func (s *Store) NamedFiles(denID []byte) (map[int64]int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[int64]int64{}
+	den, ok, err := s.denNumberLocked(denID)
+	if err != nil || !ok {
+		return out, err
+	}
+	rows, err := s.db.Query(`SELECT id, named FROM files WHERE den = ? AND named IS NOT NULL`, den)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, named int64
+		if err := rows.Scan(&id, &named); err != nil {
+			return nil, err
+		}
+		out[id] = named
 	}
 	return out, rows.Err()
 }

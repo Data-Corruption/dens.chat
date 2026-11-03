@@ -565,8 +565,9 @@ func (d *Den) preview(ctx context.Context, orig *part, blob []byte, kind media.K
 
 // OpenFile opens a file, or its preview, for a member who may see it:
 // anyone who can see the message it's on, anyone in the den for a picture
-// on a profile, staff alone for a named file's (M14.3), since only the den
-// plays a sound, and only its uploader while it waits to be used.
+// on a profile or an emoji (M15.2), which every page draws, staff alone for
+// a sound (M14.3), since only the den plays one, and only its uploader
+// while it waits to be used.
 func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (StoredFile, error) {
 	none := StoredFile{}
 	fid, err := denproto.ParseID(id)
@@ -576,12 +577,13 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	var blob []byte
 	var size, uploader int64
 	var thumbSize, channel sql.NullInt64
-	var profile, isNamed bool
+	var profile bool
+	var named sql.NullString
 	err = d.db.QueryRowContext(ctx, `SELECT f.blob, f.size, f.thumb_size, f.uploader_id, m.channel_id,
 		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id),
-		EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
+		(SELECT kind FROM den_named_files WHERE file_id = f.id)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?`, fid).
-		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &isNamed)
+		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named)
 	if errors.Is(err, sql.ErrNoRows) {
 		return none, errFileNotFound
 	}
@@ -589,8 +591,8 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 		return none, err
 	}
 	switch {
-	case isNamed:
-		if !IsStaff(s.Role) {
+	case named.Valid:
+		if named.String != kindEmoji && !IsStaff(s.Role) {
 			return none, errFileNotFound
 		}
 	case channel.Valid:
@@ -758,7 +760,8 @@ func deleteFiles(ctx context.Context, q querier, where string, args ...any) ([][
 const unused = `message_id IS NULL AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)
 	AND NOT ` + named
 
-// named selects files one of the den's names uses, as a sound (M14.3).
+// named selects files one of the den's names uses, as a sound (M14.3) or
+// an emoji (M15.2).
 const named = `EXISTS (SELECT 1 FROM den_named_files WHERE file_id = den_files.id)`
 
 // scheduleSweep makes sure pending uploads are swept by at.

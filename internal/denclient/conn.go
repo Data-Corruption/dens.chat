@@ -117,6 +117,10 @@ type conn struct {
 	owners    map[string]fileOwner
 	readySync *pendingSync
 	syncDue   chan struct{}
+	// The den's emoji (M15.2): one fill of the cache with their files at a
+	// time, and the worker's wake for one.
+	fillMu  sync.Mutex
+	fillDue chan struct{}
 	// From M6.2: the connection's generation, new with each snapshot, in
 	// which a run of messages that reached a channel's newest still does;
 	// where the kept list of members stands, and whether the state and
@@ -658,6 +662,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if c.den != nil {
 			retained = c.den.retention != d.Retention
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
+			c.den.emojiLimits = d.EmojiLimits
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -669,7 +674,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// The page shows the den's name, limits and retention; the address
 		// is this install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
-			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits})
+			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits})
 		return out, err == nil, err
 	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking,
 		denproto.EventVoiceSounding:
@@ -743,6 +748,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
+	// A new emoji, a new image, or emoji turned on fetch their files.
+	if err == nil && (e.T == denproto.EventEmojiCreated || e.T == denproto.EventEmojiUpdated || e.T == denproto.EventDenUpdated) {
+		c.kickFill()
+	}
 	if requests && err == nil {
 		c.requestChanged(e)
 	}

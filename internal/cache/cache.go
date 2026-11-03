@@ -25,8 +25,9 @@ import (
 
 // Format is the cache's format, kept as its database's user_version. A
 // cache of another format starts again from empty: it holds nothing that
-// can't be fetched again.
-const Format = 2
+// can't be fetched again. Format 3 keeps the files of the den's named
+// files, as its emoji's images (M15.2).
+const Format = 3
 
 // The cache's size, which the member chooses in the settings.
 const (
@@ -222,7 +223,8 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 
 		-- Files and their previews (thumb), each held in the file name
 		-- names, of which held bytes are on disk, as slots of sealed chunks.
-		-- A file is on a message, in its channel, or is a member's picture.
+		-- A file is on a message, in its channel, is a member's picture, or
+		-- is one of the den's named files, as an emoji's image (M15.2).
 		CREATE TABLE files (
 			den     INTEGER NOT NULL,
 			id      INTEGER NOT NULL,
@@ -233,6 +235,7 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 			message INTEGER,
 			channel INTEGER,
 			member  INTEGER,
+			named   INTEGER,
 			used_at INTEGER NOT NULL,
 			PRIMARY KEY (den, id, thumb)
 		) STRICT;
@@ -240,6 +243,7 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 		CREATE INDEX files_message ON files (den, message) WHERE message IS NOT NULL;
 		CREATE INDEX files_channel ON files (den, channel) WHERE channel IS NOT NULL;
 		CREATE INDEX files_member ON files (den, member) WHERE member IS NOT NULL;
+		CREATE INDEX files_named ON files (den, named) WHERE named IS NOT NULL;
 	`)
 	if err != nil {
 		return err

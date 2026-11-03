@@ -74,7 +74,7 @@ var codes = map[string]bool{
 	CodeEditConflict: true, CodeInviteInvalid: true, CodeTooLarge: true, CodeProtocolUnsupported: true,
 	CodeRateLimited: true, CodeDenNotCreated: true, CodeWrongPassword: true, CodeUnsupportedType: true,
 	CodeQuotaExceeded: true, CodeDenFull: true, CodeKeyExists: true, CodeNoOtherDevice: true, CodeChangesGone: true,
-	CodeSoundNameTaken: true,
+	CodeSoundNameTaken: true, CodeEmojiNameTaken: true,
 }
 
 // KnownCode reports whether code is one of the protocol's error codes. A
@@ -268,14 +268,18 @@ type Den struct {
 	ID   Bytes  `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
-	// Limits, CallLimits, Retention and SoundLimits come to members, in
-	// ready and den.updated, and not in a join preview. CallLimits are from
-	// M4.2, Retention, the days a message is kept, 0 for ever, from M5, and
-	// SoundLimits, the soundboard's, from M14.3.
-	Limits      Limits      `json:"limits,omitzero"`
-	CallLimits  CallLimits  `json:"call_limits,omitzero"`
-	Retention   int         `json:"retention,omitempty"`
-	SoundLimits SoundLimits `json:"sound_limits,omitzero"`
+	// Limits, CallLimits, Retention, SoundLimits and EmojiLimits come to
+	// members, in ready and den.updated, and not in a join preview.
+	// CallLimits are from M4.2, Retention, the days a message is kept, 0 for
+	// ever, from M5, SoundLimits, the soundboard's, from M14.3, and
+	// EmojiLimits from M15.2. Emoji turned off are a count of 0, which a
+	// den sends as it is, so it needs telling from a den older than emoji,
+	// which sends none.
+	Limits      Limits       `json:"limits,omitzero"`
+	CallLimits  CallLimits   `json:"call_limits,omitzero"`
+	Retention   int          `json:"retention,omitempty"`
+	SoundLimits SoundLimits  `json:"sound_limits,omitzero"`
+	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
 }
 
 // Roles.
@@ -382,6 +386,7 @@ type DenUpdateRequest struct {
 	// Retention is the days a message is kept, or 0 to keep them all (M5).
 	Retention   *int         `json:"retention,omitempty"`
 	SoundLimits *SoundLimits `json:"sound_limits,omitempty"` // M14.3
+	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"` // M15.2
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's
@@ -408,6 +413,8 @@ type Ready struct {
 	Sync Sync `json:"sync"`
 	// M14.3: the den's sounds, by name.
 	Sounds []Sound `json:"sounds"`
+	// M15.2: the den's emoji, by name.
+	Emoji []Emoji `json:"emoji"`
 }
 
 type Renew struct {

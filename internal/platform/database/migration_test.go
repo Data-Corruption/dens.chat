@@ -18,9 +18,13 @@ import (
 var releasedSchema = []struct {
 	release string
 	version int
+	// added are the tables later steps make, which the release lacks.
+	added []string
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
-	{"v1.6.0", 1},
+	{"v1.6.0", 1, []string{"sounds", "den_named_files"}},
+	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
+	{"v1.7.0", 3, nil},
 }
 
 // A database a release left, with a row in every table, migrates to this
@@ -29,7 +33,7 @@ var releasedSchema = []struct {
 // it is: the steps before it never change, so running them alone makes the
 // release's schema. A table keeps every column it had, with the same
 // values; a step may add columns, as M14.3 adds the den's limits for its
-// soundboard, which hold their defaults.
+// soundboard and M15.2 its limit for emoji, which hold their defaults.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -50,7 +54,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				old.Close()
 				t.Fatalf("make %s's schema: version %d, %v", released.release, v, err)
 			}
-			fillEveryTable(t, old)
+			fillEveryTable(t, old, released.version)
 			tables, err := Tables(ctx, old)
 			if err != nil {
 				t.Fatal(err)
@@ -91,15 +95,21 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				for _, table := range []string{"sounds", "den_named_files"} {
+				for _, table := range released.added {
 					if !slices.Contains(now, table) || dumpTable(t, db, table) != "" {
 						t.Errorf("after the migration %s's tables are %v, %s holding %q", what, now, table, dumpTable(t, db, table))
 					}
 				}
 				var sounds, longest, wait int
-				if err := db.QueryRow(`SELECT sounds, sound_longest, sound_wait FROM den`).Scan(&sounds, &longest, &wait); err != nil ||
-					sounds != 50 || longest != 10 || wait != 5 {
-					t.Errorf("%s's den has the soundboard's limits %d, %d and %d, %v, not the defaults", what, sounds, longest, wait, err)
+				if err := db.QueryRow(`SELECT sounds, sound_longest, sound_wait FROM den`).Scan(&sounds, &longest, &wait); err != nil {
+					t.Fatal(err)
+				}
+				if released.version < 3 && (sounds != 50 || longest != 10 || wait != 5) {
+					t.Errorf("%s's den has the soundboard's limits %d, %d and %d, not the defaults", what, sounds, longest, wait)
+				}
+				var emojis int
+				if err := db.QueryRow(`SELECT emojis FROM den`).Scan(&emojis); err != nil || emojis != 50 {
+					t.Errorf("%s's den keeps %d emoji, %v, not the default", what, emojis, err)
 				}
 				for _, check := range []string{"PRAGMA foreign_key_check", "PRAGMA integrity_check"} {
 					if got := dumpQuery(t, db, check); got != "" && got != `["ok"]` {
@@ -140,15 +150,16 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 	return dumpQuery(t, db, `SELECT `+columns+` FROM "`+strings.ReplaceAll(table, `"`, `""`)+`"`)
 }
 
-// fillEveryTable puts a row in each table of the initial schema, joined as
-// the den's and the client's rows are: a member with a device, a session
-// and a recovery code, an invite, a group and channels, a message with a
+// fillEveryTable puts a row in each table of a schema, joined as the den's
+// and the client's rows are: a member with a device, a session and a
+// recovery code, an invite, a group and channels, a message with a
 // mention, an editor and a file, a DM's key, a change and a read position;
 // the client's joined den, browser session and vault; and the settings
-// the first step wrote.
-func fillEveryTable(t *testing.T, db *sql.DB) {
+// the first step wrote. From version 3, v1.7.0's, a sound of the member's
+// own and one on the den's soundboard, its limits not at their defaults.
+func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
-	for _, q := range []string{
+	rows := []string{
 		`INSERT INTO vault (id, check_value, password_wrap, updated_at, dm_seal) VALUES (1, x'0102', '{"v":1}', 1, x'0304')`,
 		`INSERT INTO client_sessions (token_hash, created_at, expires_at, last_seen_at) VALUES ('hash', 1, 2, 1)`,
 		`INSERT INTO joined_dens (den_id, profile, device_key, joined_at, dm_seal) VALUES (x'0a', x'0b', x'0c', 1, x'0d')`,
@@ -180,7 +191,16 @@ func fillEveryTable(t *testing.T, db *sql.DB) {
 		`INSERT INTO den_dm_key_members (key_id, member_id, state, sealed, checked_at) VALUES (1, 1, x'54', x'55', 2)`,
 		`INSERT INTO den_changes (id, kind, ref, channel_id, at) VALUES (1, 'message', 1, 1, 2)`,
 		`INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (1, 1, 1, 0)`,
-	} {
+	}
+	if version >= 3 {
+		rows = append(rows,
+			`INSERT INTO sounds (name, file, set_at) VALUES ('message', x'61', 3)`,
+			`INSERT INTO den_files (id, blob, uploader_id, name, type, size, duration_ms, created_at) VALUES (3, x'45', 1, x'46', 'audio/ogg', 300, 2400, 3)`,
+			`INSERT INTO den_named_files (id, kind, name, file_id, added_by, added_at) VALUES (1, 'sound', 'Air horn', 3, 1, 3)`,
+			`UPDATE den SET sounds = 20, sound_longest = 30, sound_wait = 0`,
+		)
+	}
+	for _, q := range rows {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}

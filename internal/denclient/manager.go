@@ -332,7 +332,8 @@ func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *c
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		due: map[string]bool{}, keysDue: make(chan struct{}, 1), dmFiles: map[string]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
-		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1)}
+		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1),
+		fillDue: make(chan struct{}, 1)}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	// The page shows the den as it last was until it sends a snapshot, or
 	// while it's away (M6.2).
@@ -795,6 +796,11 @@ func (m *Manager) UpdateDen(ctx context.Context, denID string, req denproto.DenU
 	}
 	if req.SoundLimits != nil {
 		if err := denproto.CheckSoundLimits(*req.SoundLimits); err != nil {
+			return inputError(err)
+		}
+	}
+	if req.EmojiLimits != nil {
+		if err := denproto.CheckEmojiLimits(*req.EmojiLimits); err != nil {
 			return inputError(err)
 		}
 	}

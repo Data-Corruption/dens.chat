@@ -385,6 +385,15 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M15.2: the den's limit for its emoji, which are named files of kind
+	// emoji: how many it keeps, 0 turning them off and keeping them.
+	m.Add("Emoji", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE den ADD COLUMN emojis INTEGER NOT NULL DEFAULT 50`); err != nil {
+			return fmt.Errorf("add the den's emoji limit: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

@@ -219,7 +219,8 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // their messages keep a name and a returning member can reclaim it, but
 // they lose their role, devices and sessions, recovery codes, read state,
 // any invites they made, the pictures on their profile and the uploads
-// they hadn't sent. The sounds they added are the den's, and stay (M14.3).
+// they hadn't sent. The sounds and emoji they added are the den's, and
+// stay (M14.3, M15.2).
 // It returns those files' blobs, to remove once tx commits.
 func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 	for _, stmt := range []string{
