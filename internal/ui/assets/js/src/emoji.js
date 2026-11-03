@@ -360,9 +360,11 @@ export function mostUsed(denID, denEmoji, limit, now = Date.now(), l = list) {
 }
 
 /** quickRow is the quick reactions (M15.3): the member's six most used,
-    filled out with QUICK while they've used fewer */
-export function quickRow(denID, denEmoji, now = Date.now(), l = list) {
-    const row = mostUsed(denID, denEmoji, QUICK.length, now, l);
+    filled out with QUICK while they've used fewer. denEmoji are all the
+    den's emoji, whose scores stay while emoji are off, when on is false
+    and the row leaves them out. */
+export function quickRow(denID, denEmoji, now = Date.now(), l = list, on = true) {
+    const row = mostUsed(denID, denEmoji, KEEP, now, l).filter((x) => on || !x.den).slice(0, QUICK.length);
     for (const q of QUICK) {
         if (row.length >= QUICK.length) break;
         const e = l?.byEmoji.get(q);

@@ -4,6 +4,7 @@
 // check it without a browser.
 
 import { compareIds } from './ids.js';
+import { keptReactions, withReaction } from './reactions.js';
 
 // WINDOW is the most messages a run holds, and PAGE the most a load
 // fetches. SCREENS is how far, in screens of the list, the run reaches
@@ -39,12 +40,17 @@ export function mergeIn(messages, incoming) {
 }
 
 // withUpdate puts a changed message into the run. A tick's answer can
-// arrive after a newer update, so the higher revision wins.
-export function withUpdate(list, d) {
+// arrive after a newer update, so the higher revision wins. Its reactions
+// change without its revision (M15.3): a DM's sets each keep the newer,
+// and the answer to the member's own edit or tick, a response, at the
+// revision held keeps the reactions held, which events may have changed
+// since.
+export function withUpdate(list, d, response = false) {
     const held = list.messages.find((m) => m.id === d.id);
     if (held && held.revision > d.revision) return list;
+    const next = held ? keptReactions(held, d, response) : d;
     const reply = { author_id: d.author_id, text: d.text, locked: !!d.locked };
-    return { ...list, messages: list.messages.map((m) => (m.id === d.id ? d : m.reply_to === d.id ? { ...m, reply } : m)) };
+    return { ...list, messages: list.messages.map((m) => (m.id === d.id ? next : m.reply_to === d.id ? { ...m, reply } : m)) };
 }
 
 // withDelete takes a deleted message out of the run, and the quote out of
@@ -95,17 +101,22 @@ export function atTail(list, d, above) {
 // replayed applies again, on top of what a load fetched, the events that
 // came while it was out: the service may have taken the page before them.
 // Applying one twice changes nothing, so the run they already reached
-// takes them as well. A new message joins only a run that holds the
-// newest.
+// takes them as well: a reaction's too (M15.3), each applied to its
+// emoji's set, and a DM's set by its revision. A new message joins only a
+// run that holds the newest.
 export function replayed(list, events) {
     for (const e of events) {
         if (e.t === 'message.created' && !list.hasNewer) list = { ...list, messages: mergeIn(list.messages, [e.d]) };
         else if (e.t === 'message.updated') list = withUpdate(list, e.d);
         else if (e.t === 'message.deleted') list = withDelete(list, e.d);
         else if (e.t === 'messages.expired') list = withExpired(list, e.d.through);
+        else if (REACTIONS.has(e.t)) list = withReaction(list, e.t, e.d);
     }
     return list;
 }
+
+// REACTIONS are the events that change a message's reactions.
+export const REACTIONS = new Set(['reaction.added', 'reaction.removed', 'reaction.cleared', 'dm.reactions']);
 
 // farIds finds where a run reaches more than reach px beyond what's shown:
 // above, the newest message that lies wholly further than that above the

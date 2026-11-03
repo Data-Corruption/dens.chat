@@ -55,8 +55,9 @@ function clipOf(el) {
 // which a touch screen has instead of hover (M13.2): a tap's tip stays
 // until the next tap, on it or anywhere else, or Escape. side is where it
 // opens if there's room; its place moves to stay within the window, and
-// within a list around it that would clip it, which it wraps to fit.
-function useTip(side) {
+// within a list around it that would clip it, which it wraps to fit. A
+// reaction's chip opens its own on a long press (M15.3).
+export function useTip(side) {
     const wrap = useRef(null);
     const content = useRef(null);
     const [hover, setHover] = useState(false);
@@ -124,7 +125,7 @@ function useTip(side) {
 
 // A tip fades in, without sliding from where it would have run past the
 // window's edge.
-const TIP = 'tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal normal-case [transition-property:opacity]';
+export const TIP = 'tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text-sm font-normal normal-case [transition-property:opacity]';
 
 // The i, or what stands in its place, is at least 24 pixels each way, and
 // takes room around it on a touch screen.
