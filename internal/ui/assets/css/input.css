@@ -64,6 +64,55 @@
     }
 }
 
+/* A video's seek bar: a thin track whose played part, --seek of it, is as
+   thin as the rest, and a small round thumb, in a box 24 pixels tall for a
+   finger. DaisyUI's range draws the played part as tall as its thumb. */
+@utility seek {
+    appearance: none;
+    height: 1.5rem;
+    background: transparent;
+    cursor: pointer;
+    &::-webkit-slider-runnable-track {
+        height: 0.25rem;
+        border-radius: 9999px;
+        background: linear-gradient(to right, currentColor var(--seek, 0%), color-mix(in oklab, currentColor 30%, transparent) var(--seek, 0%));
+    }
+    &::-webkit-slider-thumb {
+        appearance: none;
+        width: 0.75rem;
+        height: 0.75rem;
+        margin-top: -0.25rem;
+        border: 0;
+        border-radius: 9999px;
+        background: currentColor;
+    }
+    &::-moz-range-track {
+        height: 0.25rem;
+        border-radius: 9999px;
+        background: color-mix(in oklab, currentColor 30%, transparent);
+    }
+    &::-moz-range-progress {
+        height: 0.25rem;
+        border-radius: 9999px;
+        background: currentColor;
+    }
+    &::-moz-range-thumb {
+        width: 0.75rem;
+        height: 0.75rem;
+        border: 0;
+        border-radius: 9999px;
+        background: currentColor;
+    }
+    &:focus-visible {
+        outline: 2px solid;
+        outline-offset: 2px;
+    }
+    &:disabled {
+        cursor: default;
+        opacity: 0.3;
+    }
+}
+
 /* A label that holds its checkbox or radio is what a finger or a mouse
    aims at, so it's at least 24 pixels tall, WCAG 2.2's minimum (M13.2).
    Its words wrap, where DaisyUI keeps a label on one line, which ran a

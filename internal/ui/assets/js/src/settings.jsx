@@ -80,7 +80,9 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><ThemePicker /><AnimationsPicker /></>;
+    // Animations comes first, its two choices above the themes' grid,
+    // where a long list of themes would push it out of sight.
+    else panel = <><AnimationsPicker /><ThemePicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (

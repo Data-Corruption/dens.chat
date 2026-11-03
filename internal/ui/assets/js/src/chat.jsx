@@ -786,6 +786,20 @@ function rowLabel(name, ...marks) {
 const STAFF_ONLY = 'Staff only: only moderators and the owner can see it.';
 const MUTED = "Muted: its messages don't notify you.";
 
+// readStyle is how a row's name shows whether it waits to be read: bold at
+// full strength, while one read is a little fainter, unless it's open or
+// its call is the member's.
+function readStyle(unread, here) {
+    if (unread) return 'font-bold text-base-content';
+    return here ? '' : 'text-base-content/85';
+}
+
+// UnreadPill marks a row with messages unread at its left edge, which tells
+// it from one read in any theme, at a glance on a phone too.
+function UnreadPill() {
+    return <span class="pointer-events-none absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-base-content" data-unread aria-hidden="true"></span>;
+}
+
 // Marks says on a button what waits behind it: how many mentions, or a dot
 // for unread messages.
 function Marks({ mentions, unread }) {
@@ -907,8 +921,9 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                         <span class={!inCall ? 'text-base-content/50' : state === 'connected' ? 'text-success' : 'text-warning'} data-call-state={state || undefined}>
                             {voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}
                         </span>
-                        <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{c.name}</span>
+                        <span class={`truncate ${readStyle(isUnread, c.id === open || inCall)}`}>{c.name}</span>
                     </button>
+                    {isUnread && <UnreadPill />}
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
@@ -996,8 +1011,9 @@ function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, on
                                 aria-label={rowLabel(who, isMuted && 'muted', checking && 'check codes to compare', mentions && `${mentions} mentions`)}
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
-                                <span class={`truncate ${isUnread ? 'font-bold' : ''}`}>{who}</span>
+                                <span class={`truncate ${readStyle(isUnread, c.id === open)}`}>{who}</span>
                             </button>
+                            {isUnread && <UnreadPill />}
                             {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                             {checking && (
                                 <Tip id={`check-${c.id}`} label="Compare check codes" trigger={<span class="badge badge-warning badge-xs">Check</span>}>
