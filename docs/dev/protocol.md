@@ -22,10 +22,10 @@ Terms used below:
 The client sends `Dens-Protocol: <n>` on every request and on the WebSocket upgrade, where `n` is the highest version it speaks. The den replies with `Dens-Protocol-Range: <min>-<max>`.
 
 - If `n` falls in the range, the request proceeds at version `n`.
-- If `n` is above the range, the client retries once at the den's `max` if its own minimum allows it.
+- If `n` is above the range, the client retries once at the den's `max` if its own minimum allows it, and goes at it from then on, until a response's range says the den speaks a newer one, as once it updates.
 - Otherwise the den answers `426` with the error code `protocol_unsupported`, and the client shows "this den needs a newer or older Dens" with both ranges.
 
-This document describes version 1.
+This document describes version 2, which M16.3 brought with group DMs (see [Group DMs](#group-dms-m163)). A den serves 1 and 2 (`Dens-Protocol-Range: 1-2`): to a request or socket at version 1, it sends nothing of group DMs, in `ready`, events or answers, and their routes answer `404 not_found`, since an older client takes a channel of more than two members, or a message with more than two members' sets of reactions, for the den breaking the protocol. Everything else is as at version 1.
 
 ## Errors
 
@@ -217,7 +217,7 @@ device = {"key_id", "label", "created_at", "last_seen_at", "current"?}
 ```
 GET /api/ws?resume=<epoch>.<seq>&members=<sync epoch>.<version>
 Authorization: Bearer <token>
-Dens-Protocol: 1
+Dens-Protocol: 2
 ```
 
 `resume` is left out on a first connection, and `members` by a client that kept no list of members (M6.2; see [What changed while away](#what-changed-while-away-m6)). Frames are JSON text, each an array of one or more events, of at most 1 MiB from the den and 64 KiB from the client:
@@ -238,7 +238,7 @@ From M6, client and den negotiate permessage-deflate without context takeover: e
 
 The den's first frame is one of:
 
-- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)); from M14.3, `sounds`, the den's soundboard's, by name (see [The soundboard](#the-soundboard-m143)); and from M15.2, `emoji`, the den's emoji, by name (see [Emoji](#emoji-m152)); and from M16.1, `signed_keys`, the keys of the member's DMs sealed to identities, each with their own copy, which a den older than M16.1 doesn't send at all, as a client tells it keeps no identities (see [Private DMs](#private-dms-m17)).
+- `ready`: a full snapshot. It says the client's state is gone or never existed, and replaces everything the client held for this den. `d` holds `epoch`, `seq` (the resume point), `den`, `me`, `members`, `channels` (the member's DMs among them, and from M16.3, at version 2, their group DMs), `groups`, `read_states` and `online`; from M1.7, `seal_check`, `dm_keys` (the keys of the member's DMs, without their exchanges) and `device_requests` (sign-ins waiting for their approval); from M2, `calls` (see [Voice](#voice-m2)); from M6, `sync` (see [What changed while away](#what-changed-while-away-m6)); from M14.3, `sounds`, the den's soundboard's, by name (see [The soundboard](#the-soundboard-m143)); and from M15.2, `emoji`, the den's emoji, by name (see [Emoji](#emoji-m152)); and from M16.1, `signed_keys`, the keys of the member's DMs sealed to identities, each with their own copy, which a den older than M16.1 doesn't send at all, as a client tells it keeps no identities (see [Private DMs](#private-dms-m17)).
 - `resumed`, followed by every durable event the member can see after the given `seq`, then the live stream.
 
 The den resumes when `epoch` matches its current process and every event after `seq` is still in its ring. The ring holds the last 10 minutes or 50,000 events, whichever is less. Otherwise it sends `ready`.
@@ -474,7 +474,7 @@ POST /api/dms/{id}/close                   204
 - A DM is a channel of kind `dm` between two members: `{"id", "kind": "dm", "members": [lower ID, higher ID], "group_id": null, "name": "", "position": 0, "staff_only": false}`. Each pair has one; `POST /api/dms` returns it, creating it on first use and sending `channel.created` to both.
 - Only its two members see it, in `ready`, events, history and sends. Staff don't see or moderate DMs, and from M1.7 the den's owner can't read them either: their messages and files are end-to-end encrypted (see [Private DMs](#private-dms-m17)).
 - Messages, edits, deletes, replies and read state work as in channels, their text sealed. Every message counts toward the other member's unread `mention_count`.
-- DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit.
+- DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit. Nor are group DMs, which `POST /api/dms/{id}/close` closes as it does a DM (see [Group DMs](#group-dms-m163)).
 - A DM whose other member left keeps its history, but nothing more can be sent (`403 forbidden`), and no new DM starts with a former member.
 - Closing a DM takes it out of the member's list on all their devices: their read state for it gets `"closed": true`, sent as `read_state.updated`. A new message in it, from either member, or opening it again with `POST /api/dms`, reopens it the same way.
 
@@ -712,6 +712,29 @@ POST /api/uploads/sealed   (body: the sealed file)   201 {"id", "name": "", "typ
 - From M5, a DM's edit can change its files as a channel's does: the sealed text lists the files afterward, and `attachments` names every blob, as a send's does. Blobs it leaves out are deleted.
 - A sealed file answers byte ranges like any other, and a client opens the chunks a range covers with the file's key, so a DM's video seeks the same way.
 - A DM's message takes only sealed uploads, and a channel's none. The den counts a sealed blob against the upload limits, and serves it like any file, with no preview of its own.
+
+### Group DMs (M16.3)
+
+```
+channel = {"id", "kind": "group_dm", "members": [member id, …], "changes": n, "sealed_name"?: {"kid", "sealed"}, "group_id": null, "name": "", "position": 0, "staff_only": false}
+change  = {"id", "made_at", "n", "prev", "kind": "made" | "added" | "removed" | "left" | "departed" | "named", "by"?, "subjects"?: [member id, …],
+           "after": [member id, …], "name"?: {"kid", "sealed"}, "signer"?: {"kem_hash", "sig"}, "signature"?}
+
+POST /api/group-dms                                                       201 {"id"}
+GET  /api/group-dms/{id}/changes?after=<n>                                200 {"changes": [change, …], "more"}
+POST /api/group-dms/{id}/changes  {"change", "key"?: signed key request}  200 change
+```
+
+A group DM is a DM of three to ten members, at version 2 of the protocol alone. Its channel lists its members as the den holds them, in the order they joined, the number of its latest change, and its name sealed; a client knows its members from its changes alone.
+
+- **A change** names its number `n`, from 1, `prev`, the hash of the change before it (32 zero bytes for the first), its `kind`, its maker `by`, the members it took in or out `subjects`, and the group's members `after` it, in the order they joined. Its maker's identity signs `"dens-group-change-v1" ‖ den_id ‖ channel ‖ n ‖ prev ‖ kind ‖ by ‖ len(subjects) ‖ subject… ‖ len(after) ‖ member… ‖ name`, where `kind` is one byte, 1 to 6 in the order above, and `name` is 1 ‖ kid ‖ SHA-256(sealed), or 0 with none; `signer` is the maker's identity as a signed key's `maker` carries it, which hashes to their identity. A change's hash is `SHA-256("dens-group-change-hash-v1" ‖ what it signs)`.
+- **The rules,** which the den checks, as every member's client does: `made` is the first change, its maker first in `after`, the others its `subjects`, three to ten in all; `added`, by a member, takes in `subjects`, none of them members, at the end of `after`, ten at most; `removed`, by the first of the members in the order they joined, takes out one other; `left` takes out its maker; `departed`, the den's, unsigned, takes out one who left the den; and `named`, by a member, carries the new name, sealed under the live key. Each follows the one before, by `n` and `prev`, and `after` is what it makes of the members before it. The den takes a change only from its maker, signed by the identity they publish now; one made against an earlier change gets `409 edit_conflict`, and the client makes it again on the group as it is.
+- **Making one.** `POST /api/group-dms` reserves a group for the session's member, which nobody sees until its first change, `made`, makes it: every statement binds the den's ID for the group. A member who reserved one and didn't make it gets the same one again; one reserved an hour ago goes as the next is reserved, or as its maker leaves the den. A member is in at most 100 group DMs; making one, and each change, count toward the member's other writes.
+- **Keys.** A change that makes a membership, `made`, `added` or `removed`, carries its key, as `POST /api/dms/{id}/signed-keys` makes one, for the members `after` it, each with the identity they publish now; `left` retires the live key, as `departed` does, and the first member's client to send makes the next, through `POST /api/dms/{id}/signed-keys`, which takes a group's key for its members as they are, retiring a live key that names the members or identities as they were. A group's key may carry the group's name sealed under it, `name`, its `kid` the key's: the den keeps it as the group's. A member gets a group's keys they hold a copy of, in `ready` and as `dm.signed_key`, while they're in it.
+- **The name** is `{"len(name)" as 2 bytes ‖ name ‖ zeros to 160 bytes}` sealed with XChaCha20-Poly1305 under the group key whose `kid` it names, bound to `"dens-group-name-v1" ‖ den_id ‖ channel ‖ kid`, as nonce ‖ ciphertext, 200 bytes. An empty name is none. A client opens it with the key whose `kid` it names, and cleans it as a display name.
+- **Members' changes.** `GET /api/group-dms/{id}/changes` returns a page of the group's changes after `after`, at most 200, from the change that took the member in, which names the group's members then. `group.change {"channel_id", "change"}` goes to the members after each change; a member taken in gets `channel.created`, one taken out `channel.deleted`, and the rest `channel.updated`. A member removed, gone or leaving loses the group, its history, keys and changes.
+- **Messages** are sealed as a DM's, under the group's live key, with `"dens-group-message-v1"` in its binding's place, and the sealed text starts with its signer's ID as 8 bytes, the hash of their identity's X-Wing key, their Ed25519 key, and their signature over `"dens-group-signed-v1" ‖ binding ‖ signer ‖ SHA-256(text)`; the signer is the author at the first revision, and whoever edited or ticked it after. A member's set of reactions is sealed as a DM's, with `"dens-group-reactions-v1"` in its binding's place, its 1,024 bytes the same header, signed over `"dens-group-reacted-v1" ‖ binding ‖ member ‖ SHA-256(set)`, then the set padded to the rest; a message carries at most 20 members' sets. A client opens one only where its signature checks against the identity its key names for the signer.
+- **The rest** works as in a DM: history from the member's joining on, sends, edits, deletes by their author alone, read state, closing, and unread counts, where every message counts for each other member. No polls, and no @everyone.
 
 ### Starting over
 

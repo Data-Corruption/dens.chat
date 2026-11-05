@@ -189,6 +189,33 @@ A DM with someone whose Dens hasn't been updated waits until it is. DMs where
 you both typed each other's check digits, as Dens once asked, go on as they
 did.
 
+### Group DMs
+
+A group DM is a DM of three to ten people, end-to-end encrypted as a DM is:
+only its members can read it, not the den. Start one from **+ New group** above
+your DMs, picking the others, or from **Add people** on the profile beside a
+DM, which starts a group of the two of you and those you add and leaves the DM
+as it is. Give it a name if you like; without one, it's named by its members.
+Only its members ever see the name: the den keeps it sealed.
+
+The group's members show beside it, where a DM shows the other person's
+profile, each with their green check or **Compare**. Anyone in it can add
+people, rename it or leave. Whoever made it can remove people, and once they've
+left, whoever has been in it longest can. Each change shows in the group as a
+line, such as "Alice added Carol".
+
+Someone added reads the group from when they joined, not before, and someone
+removed, or who left, reads nothing written after. Each change is signed by the
+member who made it, and every member's Dens checks it, so the den can't add
+anyone on its own. If a change doesn't check out, the group says someone may be
+in the middle, and nothing more is sent there. If someone's keys changed since
+you compared codes with them, the group waits, as a DM does, until you compare
+again or choose **Send anyway**.
+
+Group DMs notify you, and count as unread, as DMs do. They have no polls and no
+@everyone, and no calls. A device whose Dens hasn't been updated yet doesn't
+see your groups until it is; your other devices go on as before.
+
 ## Notifications and sounds
 
 Dens can tell you about a DM, or a message that mentions you by your username.
