@@ -29,6 +29,7 @@ import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
 import { applyCalls, joinCall } from './voice.js';
+import { CallLock } from './calllock.jsx';
 import { CallBar, CallBlock, CallMembers, callState, useCall, useCallButton } from './voice.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
@@ -861,7 +862,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         store(FOLDED + denID, JSON.stringify([...next]));
         setFolded(next);
     }
-    const { call, speaking, sounding, volumes, watched, share } = useCall();
+    const { call, speaking, sounding, volumes, watched, share, den } = useCall();
     const watching = new Set(watched.map((w) => w.member));
     // Staff reach each channel's and group's settings from a ⋯ beside it
     // (M4.2), which shows on hover or focus. It shows once its row has the
@@ -931,6 +932,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                         </span>
                         <span class={`truncate ${readStyle(isUnread, c.id === open || inCall)}`}>{c.name}</span>
                     </button>
+                    {/* The call's lock, beside how it stands (M16.2). */}
+                    {inCall && <CallLock call={call} den={den} />}
                     {isUnread && <UnreadPill />}
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
@@ -945,7 +948,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 {voice && (
                     <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
                         sounding={inCall ? sounding : ''} deafened={inCall && !!call?.deafened} volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} inCall={inCall} label={label}
-                        watched={watching} previewing={!!share?.preview} />
+                        watched={watching} previewing={!!share?.preview} identities={view.keeps_identities ? view.identities : null} since={call?.since} />
                 )}
             </li>
         );

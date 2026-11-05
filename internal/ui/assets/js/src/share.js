@@ -153,14 +153,18 @@ export function refusalText(what, reason, limits) {
 // SOUND_BITRATE is the bitrate of a den's soundboard's sounds (M14.3).
 export const SOUND_BITRATE = 64000;
 
+// SEALING is what sealing a voice costs it (M16.2): SFrame's header and
+// tag, about 22 bytes on each frame, 50 a second.
+export const SEALING = 9000;
+
 // shareCost is what a den's limits cost its upload at most, in bits a
 // second: video, every share at its bitrate to every viewer it may have;
-// voice, a full call at bitrate while two members talk; and with a
-// soundboard (M14.3), a sound to everyone in that call; with about a
-// fifth more for the packets' headers.
+// voice, a full call at bitrate while two members talk, each sealed; and
+// with a soundboard (M14.3), a sound to everyone in that call; with about
+// a fifth more for the packets' headers.
 export function shareCost(limits, voiceBitrate, soundboard = false) {
     const video = limits.shares * limits.share_viewers * limits.share_bitrate * 1.05;
-    const voice = 2 * Math.max(0, limits.members - 1) * voiceBitrate * 1.2;
+    const voice = 2 * Math.max(0, limits.members - 1) * (voiceBitrate * 1.2 + SEALING);
     const sounds = soundboard ? limits.members * SOUND_BITRATE * 1.2 : 0;
     return { video, voice, sounds };
 }

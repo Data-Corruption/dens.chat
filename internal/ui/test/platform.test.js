@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { browserOf, canCall, canPopOut, canShare, hasKeys, inApp, systemOf } from '../assets/js/src/platform.js';
+import { browserOf, canCall, canPopOut, canSeal, canShare, hasKeys, inApp, systemOf } from '../assets/js/src/platform.js';
 
 const AGENTS = {
     chromeWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -46,6 +46,17 @@ test('calls need WebRTC, and sharing a screen getDisplayMedia too', () => {
     assert.deepEqual([canCall(gnomeWeb), canShare(gnomeWeb)], [false, false]);
     assert.deepEqual([canCall(insecure), canShare(insecure)], [true, false]);
     assert.deepEqual([canCall({}), canShare({})], [false, false]);
+});
+
+// A den that seals its calls takes a page only where it seals what it
+// sends, which takes Encoded Transform in a worker (M16.2): Firefox from
+// 117, and Chromium, Android's WebView among them, from 141.
+test('sealing a call needs WebRTC and RTCRtpScriptTransform', () => {
+    const pc = function RTCPeerConnection() {};
+    const transform = function RTCRtpScriptTransform() {};
+    assert.equal(canSeal({ RTCPeerConnection: pc, RTCRtpScriptTransform: transform }), true);
+    assert.equal(canSeal({ RTCPeerConnection: pc }), false, 'a WebView before 141');
+    assert.equal(canSeal({ RTCRtpScriptTransform: transform }), false, 'no WebRTC at all');
 });
 
 // A share's window of its own is for a desktop's monitors (M11).

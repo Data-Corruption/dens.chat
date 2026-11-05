@@ -42,10 +42,20 @@
 // the member's soundboard volume, and silent while they're deafened. The
 // member plays a sound for the call through the den, which says whose
 // sound plays, and that player's ring lights as it does.
+//
+// From M16.2 a den that seals its calls takes a page only where it seals
+// what it sends: each frame of the member's voice, screen and share's
+// sound, in a worker of its own (sframe.worker.js), with WebRTC's Encoded
+// Transform, under keys the member's Dens makes for the call and hands the
+// page whole as they change. Every frame the page receives is opened there
+// too, but the soundboard's, which is the den's own track; one that
+// doesn't open is dropped. Where the browser has no Encoded Transform, or
+// the device no seal to open the call's keys with, the page says why
+// rather than join.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
-import { NO_CALLS, NO_SHARING, autoplays, canCall, canShare, inApp } from './platform.js';
+import { NO_CALLS, NO_SHARING, autoplays, canCall, canSeal, canShare, inApp } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
 import { callSounds, playSound, setSoundRoute, warmSounds } from './sounds.js';
 import { soundRefusal } from './soundboard.js';
@@ -185,6 +195,18 @@ let board = { waitUntil: 0, notice: '' };
 // the volume the browser keeps for it, by den.
 export const SOUNDBOARD = 'soundboard';
 
+// frames is the worker that seals and opens a sealed call's frames
+// (M16.2), made at the first sealed call and kept, since a sender's or a
+// receiver's transform stays with the worker it was made with. receivers
+// names each receiver to it by an ID of the page's.
+let frames = null;
+const receivers = new WeakMap();
+let nextReceiver = 0;
+const countWaiters = [];
+// keysAsked is when the page last asked for its call's keys again.
+let keysAsked = -Infinity;
+const KEYS_EVERY = 500;
+
 // The page's sounds play as the call's voices do (M14.2): through the
 // call's context where that plays them, and otherwise on the speaker the
 // member chose.
@@ -226,7 +248,7 @@ function snapshot() {
     return {
         call: call && {
             den: call.den, channel: call.channel, label: call.label, status: call.status, muted: call.muted, deafened: call.deafened,
-            waitingForMic: !!call.waitingForMic,
+            waitingForMic: !!call.waitingForMic, sealed: call.sealed, since: call.since,
         },
         notice,
         speaking,
@@ -286,13 +308,17 @@ export async function joinCall(den, channel, label) {
     watched.clear();
     denView = null;
     stopMicTest();
-    call = { den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false };
+    frames?.postMessage({ t: 'end' });
+    call = {
+        den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false,
+        since: Date.now(),
+    };
+    const c = call;
     audible = new Set();
     talkers = new Set();
     sounding = '';
     board = { ...board, notice: '' };
     unsent.length = 0;
-    loadDen(call);
     // The click that joins lets audio start, so the call's context starts
     // here, and the voice processor's: one made after the browser has asked
     // for the microphone may need another click to start. Where audio may
@@ -304,8 +330,35 @@ export async function joinCall(den, channel, label) {
         if (!mic && !processorFailed) warmContext ??= new AudioContext({ sampleRate: 48000 });
     }
     notify();
+    // Whether the den seals its calls decides how the page joins (M16.2).
+    await loadDen(c);
+    if (call !== c) return;
+    const why = sealedJoin(denView);
+    if (why) {
+        finish(why);
+        return;
+    }
+    c.sealed = !!denView?.sealed;
+    notify();
     await connect();
 }
+
+// sealedJoin says why the page can't join a call in a den, as it knows
+// it, or null where it can (M16.2): a den that seals its calls takes a page
+// only where it seals what it sends, which takes the browser's Encoded
+// Transform, and opens the others' keys, which takes the member's DM
+// recovery key on this device. A den the page couldn't load is taken for
+// one that doesn't seal, which a den that does refuses to join.
+export function sealedJoin(view, sealing = canSeal(), app = inApp()) {
+    if (!view?.sealed) return null;
+    if (!sealing) return app ? { text: NO_SEALING_APP, update: true } : { text: NO_SEALING };
+    if (!view.seal) return { text: NO_SEAL, seal: true };
+    return null;
+}
+
+export const NO_SEALING = "This den's calls are end-to-end encrypted, which this browser can't do. Join from Firefox 117 or later, or Chrome or Edge 141 or later.";
+export const NO_SEALING_APP = "This den's calls are end-to-end encrypted, which needs Android System WebView 141 or later. Update it, then join again.";
+export const NO_SEAL = "This den's calls are end-to-end encrypted, and this device doesn't have your DM recovery key for it, which opens their keys.";
 
 // leaveCall hangs up.
 export function leaveCall() {
@@ -381,6 +434,18 @@ async function connect() {
         c.waitingForMic = false;
         notify();
     }
+    // A den that came to seal its calls since the page joined, as by an
+    // update, which ended the call as it restarted, takes it back only
+    // sealed (M16.2).
+    if (denView?.den === c.den && denView.sealed && !c.sealed) {
+        const why = sealedJoin(denView);
+        if (why) {
+            finish(why);
+            return;
+        }
+        c.sealed = true;
+        notify();
+    }
     c.version = 0;
     c.answer = '';
     c.attached = false;
@@ -399,7 +464,7 @@ async function connect() {
     };
     clearInterval(statsTimer);
     statsTimer = setInterval(noteStats, STATS_EVERY);
-    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened })) {
+    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened, sealed: !!c.sealed })) {
         dropped('disconnected', 'stream');
         return;
     }
@@ -1241,6 +1306,7 @@ function handle(msg) {
     else if (e.refused) refused(e.refused);
     else if (e.talking) talked(e.talking);
     else if (typeof e.sounding === 'string') sounded(e.sounding);
+    else if (e.keys) gotKeys(e.keys);
     else if (e.ended) ended(e.ended);
 }
 
@@ -1273,6 +1339,9 @@ async function answer(offer) {
             // rest brings another member's audio, or a share's (M4.2).
             const mine = own.getTransceivers()[0];
             mine.direction = 'sendonly';
+            // Sealed before the microphone goes on, so nothing leaves in
+            // the clear (M16.2).
+            sealSender(mine.sender, VOICE_TRACK);
             await mine.sender.replaceTrack(sent);
             c.attached = true;
         }
@@ -1302,6 +1371,9 @@ async function answer(offer) {
 function play(e) {
     const stream = e.streams[0];
     if (!stream) return;
+    // Before anything plays, the receiver's frames go through the worker,
+    // which opens its member's and passes the soundboard's (M16.2).
+    openReceiver(e.receiver, stream.id, e.track?.kind);
     // A share the page watches plays in the player; one it didn't ask for,
     // which only a misbehaving den would send, plays nowhere.
     const sharer = screenOwner(stream.id);
@@ -1472,7 +1544,7 @@ function tryResume() {
     const c = call;
     if (!c || !c.held || c.resuming || !pc || !live || denStates.get(c.den) !== 'connected') return;
     c.resuming = true;
-    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened, resume: true })) {
+    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened, resume: true, sealed: !!c.sealed })) {
         c.resuming = false;
         return;
     }
@@ -1597,6 +1669,8 @@ function finish(why) {
     board = { waitUntil: 0, notice: '' };
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
+    // The browser holds a call's keys only while it lasts (M16.2).
+    frames?.postMessage({ t: 'end' });
     notify();
     if (left) playSound('left');
 }
@@ -1653,6 +1727,11 @@ async function noteStats() {
     sentBefore = { bytes: stats.bytes_sent, at: now };
     const behind = processorBehind();
     if (behind !== null) stats.behind = behind;
+    if (call?.sealed) {
+        const counts = await frameCounts();
+        if (pc !== own) return;
+        if (counts) stats.frames = { sealed: counts.sealed, opened: counts.opened, dropped: counts.dropped };
+    }
     note({ what: 'stats', stats });
 }
 
@@ -1714,6 +1793,95 @@ export function summarize(report) {
     };
 }
 
+// Sealing (M16.2) -------------------------------------------------------------
+
+// The tracks of a member's, as the worker names them.
+export const VOICE_TRACK = 0;
+export const SCREEN_TRACK = 1;
+export const SOUND_TRACK = 2;
+
+// framesWorker is the worker that seals and opens a sealed call's frames,
+// made as the first one needs it.
+function framesWorker() {
+    if (frames) return frames;
+    frames = new Worker(document.getElementById('app').dataset.sframeWorker, { type: 'module' });
+    frames.onmessage = (e) => {
+        const m = e.data || {};
+        if (m.t === 'lack') askKeys();
+        else if (m.t === 'counts') countWaiters.splice(0).forEach((resolve) => resolve(m));
+    };
+    return frames;
+}
+
+// sealSender seals what a sender of the page's call sends, on one of the
+// member's tracks: set before its track goes on, and kept as the track
+// changes.
+function sealSender(sender, track) {
+    if (!call?.sealed || sender.transform) return;
+    sender.transform = new RTCRtpScriptTransform(framesWorker(), { side: 'send', track });
+}
+
+// openReceiver has the worker open what a receiver of the page's call
+// receives, as its stream says whose it is, which can change as the den
+// gives a section to another member.
+function openReceiver(receiver, streamID, kind) {
+    if (!call?.sealed || !receiver) return;
+    let id = receivers.get(receiver);
+    if (id === undefined) {
+        id = ++nextReceiver;
+        receivers.set(receiver, id);
+    }
+    framesWorker().postMessage({ t: 'target', id, ...targetOf(streamID, kind) });
+    if (!receiver.transform) receiver.transform = new RTCRtpScriptTransform(framesWorker(), { side: 'receive', id });
+}
+
+// targetOf is whose track a stream carries, as the den names it: a
+// member's voice by their ID, their share's screen and sound by
+// ScreenStream's, and the soundboard, which plays in the clear, as no
+// member's ('').
+export function targetOf(streamID, kind) {
+    if (streamID === SOUNDBOARD) return { member: '', track: VOICE_TRACK };
+    const sharer = screenOwner(streamID);
+    if (sharer) return { member: sharer, track: kind === 'video' ? SCREEN_TRACK : SOUND_TRACK };
+    return { member: streamID, track: VOICE_TRACK };
+}
+
+// gotKeys hands the call's keys to the worker, whole, as the member's Dens
+// sent them.
+function gotKeys(keys) {
+    if (!call?.sealed) return;
+    const bytes = (k) => k && { n: k.n, key: fromBase64url(k.key) };
+    const members = {};
+    for (const [id, k] of Object.entries(keys.members || {})) members[id] = bytes(k);
+    framesWorker().postMessage({ t: 'keys', own: bytes(keys.own), members });
+}
+
+// askKeys asks the member's Dens for the call's keys again, as when a
+// frame names a key the page lacks: at most every KEYS_EVERY.
+function askKeys() {
+    const now = performance.now();
+    if (!call?.sealed || now - keysAsked < KEYS_EVERY) return;
+    keysAsked = now;
+    sendCall('voice.keys', { den: call.den });
+}
+
+// frameCounts asks the worker what it did with the call's frames, for the
+// notes, or gives null if it doesn't say within a second.
+function frameCounts() {
+    if (!frames) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        countWaiters.push(resolve);
+        frames.postMessage({ t: 'counts' });
+        setTimeout(() => resolve(null), 1000);
+    });
+}
+
+// fromBase64url reads bytes as a den writes them.
+export function fromBase64url(s) {
+    const b = atob(String(s || '').replaceAll('-', '+').replaceAll('_', '/'));
+    return Uint8Array.from(b, (c) => c.charCodeAt(0));
+}
+
 // Screen share --------------------------------------------------------------
 
 // loadDen fetches what the page needs to know of the call's den for
@@ -1732,6 +1900,12 @@ async function loadDen(c) {
             names: new Map((v.members || []).map((m) => [m.id, m.display_name])),
             sounds: v.sounds || [],
             soundLimits: readSoundLimits(v.sound_limits),
+            // From M16.2: whether the den seals its calls, whether this
+            // device holds the member's seal, and the identities their Dens
+            // kept, for the call's lock.
+            sealed: !!v.sealed_calls,
+            seal: !!v.seal,
+            identities: v.identities || {},
         };
         followDen();
     } catch {
@@ -1744,8 +1918,9 @@ function denEvents(events) {
     if (!denView) return;
     for (const e of events) {
         if (e.t === 'voice.state') denView = { ...denView, calls: applyCalls(denView.calls, e.d) };
+        else if (e.t === 'identities') denView = { ...denView, identities: e.d || {} };
         else if (e.t === 'den.updated') {
-            denView = { ...denView, limits: e.d.call_limits || denView.limits, soundLimits: readSoundLimits(e.d.sound_limits) };
+            denView = { ...denView, limits: e.d.call_limits || denView.limits, soundLimits: readSoundLimits(e.d.sound_limits), sealed: !!e.d.sealed_calls };
         } else if (e.t === 'member.joined' || e.t === 'member.updated') {
             denView = { ...denView, names: new Map(denView.names).set(e.d.id, e.d.display_name) };
             if (e.d.id === denView.me) denView.role = e.d.role;
@@ -1938,10 +2113,11 @@ async function attachShare(own) {
     const c = call;
     const s = share;
     if (!c || !s?.video) return;
-    for (const [mid, track] of [[c.screenMid, s.video], [c.soundMid, s.audio]]) {
+    for (const [mid, track, kind] of [[c.screenMid, s.video, SCREEN_TRACK], [c.soundMid, s.audio, SOUND_TRACK]]) {
         const t = mid && track ? own.getTransceivers().find((x) => x.mid === mid) : null;
         if (!t) continue;
         if (t.direction !== 'sendonly') t.direction = 'sendonly';
+        sealSender(t.sender, kind);
         if (t.sender.track !== track) await t.sender.replaceTrack(track);
     }
 }
@@ -2314,6 +2490,8 @@ export function endedText(reason, ports) {
             return 'Lost the call. Join again once the den is back.';
         case 'gone':
             return 'The call ended: this device is no longer in that den.';
+        case 'update_needed':
+            return "This den seals its calls end to end, and took this page for one that doesn't. Reload the page, then join again.";
     }
     if (ports?.[0] && ports?.[1]) {
         return `Couldn't connect to the den's voice ports. Its owner can check that UDP ${ports[0]} and TCP ${ports[1]} are open to the internet.`;
