@@ -40,8 +40,9 @@ import { useNarrow } from './nav.js';
 import { isStaff, rank } from './people.jsx';
 import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js';
 import { Poll, PollEditor } from './polls.jsx';
-import { LOCKED, keyChanges, keysChangedAt } from './private.js';
+import { LOCKED, isPrivate, keyChanges, placeAt } from './private.js';
 import { DMGate, KeyDivider, KeysChanged } from './private.jsx';
+import { GroupGate, GroupLine } from './groups.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { SmileyIcon } from './icons.jsx';
@@ -105,8 +106,8 @@ export function dividerAt(readPosition, lastMessage) {
 // retention the days it keeps a message, 0 for ever (M5). lastMessage is
 // the channel's newest, as its read state has it, and denURL the den's
 // address, which links to its messages start with (M11).
-export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, keys, gate = '', changes, typing, closed, limits, retention,
-    offline, onProfile, onCompare, onTyping }) {
+export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, group, groupTitle, keys, gate = '', changes, identities,
+    typing, closed, limits, retention, offline, onProfile, onCompare, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -126,7 +127,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // channels, and staff send @everyone there.
     const emoji = useContext(EmojiContext);
     const reactions = !!emoji?.known;
-    const polls = reactions && channel.kind !== 'dm';
+    const polls = reactions && channel.kind === 'text';
+    // A DM's and a group's (M16.3) messages are sealed by their members.
+    const sealed = isPrivate(channel);
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
@@ -173,7 +176,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // candidates could edit a message here with its author: the members
     // who can see the channel, besides this one.
     const candidates = [...members.values()]
-        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : !channel.staff_only || isStaff(x.role)))
+        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : group ? group.members.includes(x.id) : !channel.staff_only || isStaff(x.role)))
         .sort((a, b) => name(a).localeCompare(name(b)));
 
     // captureAnchor remembers where the topmost visible message sits, so
@@ -655,23 +658,38 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }
 
     // A DM takes messages unless something stands in its composer's
-    // place (M16.1).
-    const canSend = channel.kind !== 'dm' || gate === '';
+    // place (M16.1), and a group as well (M16.3), whose gate names whom it
+    // waits on.
+    const gated = group ? gate.gate : gate;
+    const canSend = !sealed || gated === '';
     const byId = new Map(list.messages.map((m) => [m.id, m]));
     const rows = [];
     let prev = null;
     // In a DM, dividers mark where its keys changed before M16.1, and
     // lines where the other member's keys changed since.
-    const dividers = channel.kind === 'dm' && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id))), me.id) : new Map();
-    const changed = channel.kind === 'dm' ? keysChangedAt(list.messages, changes, list) : { before: new Map(), after: [] };
-    const changeLine = (at) => <KeysChanged key={`changed-${at}`} name={dm ? dm.display_name : 'The other member'} at={at} onCompare={() => dm && onCompare?.(dm)} />;
+    const dividers = sealed && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id))), me.id) : new Map();
+    // In a group, lines where its members changed, and where each one's
+    // keys did since this member joined it (M16.3).
+    const joinedAt = group?.changes?.[0]?.at || 0;
+    const keyLines = group
+        ? group.members.filter((id) => id !== me.id)
+            .flatMap((id) => (identities?.[id]?.changes || []).filter((at) => at >= joinedAt).map((at) => ({ at, member: id })))
+        : (dm ? changes || [] : []).map((at) => ({ at, member: dm?.id }));
+    const changed = sealed ? placeAt(list.messages, keyLines, (x) => x.at, list) : { before: new Map(), after: [] };
+    const changeLine = ({ at, member }) => {
+        const who = members.get(member);
+        return <KeysChanged key={`changed-${member}-${at}`} name={who ? who.display_name : 'The other member'} at={at} onCompare={() => who && onCompare?.(who)} />;
+    };
+    const groupLines = group ? placeAt(list.messages, group.changes || [], (c) => c.at, list) : { before: new Map(), after: [] };
+    const groupLine = (c) => <GroupLine key={`group-${c.n}`} change={c} me={me.id} nameOf={(id) => name(members.get(id))} />;
     for (const m of list.messages) {
         const day = new Date(m.created_at).toDateString();
         if (!prev || new Date(prev.created_at).toDateString() !== day) {
             rows.push(<DayDivider key={`day-${m.id}`} time={m.created_at} />);
         }
         if (dividers.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={dividers.get(m.id)} />);
-        for (const at of changed.before.get(m.id) || []) rows.push(changeLine(at));
+        for (const x of changed.before.get(m.id) || []) rows.push(changeLine(x));
+        for (const c of groupLines.before.get(m.id) || []) rows.push(groupLine(c));
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
             rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
@@ -692,7 +710,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 editing={editing === m.id}
                 canReply={!closed && canSend}
                 canEdit={!m.locked && !m.poll && (m.author_id === me.id || (m.editors || []).includes(me.id))}
-                canDelete={m.author_id === me.id || (channel.kind !== 'dm' && rank(role) > rank(members.get(m.author_id)?.role))}
+                canDelete={m.author_id === me.id || (!sealed && rank(role) > rank(members.get(m.author_id)?.role))}
                 link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
                 menuOpen={menu === m.id}
                 narrow={narrow}
@@ -700,7 +718,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
                 candidates={candidates}
                 canReact={reactions && !m.locked && !closed && canSend}
-                canRemoveReactions={channel.kind !== 'dm' && isStaff(role) &&
+                canRemoveReactions={!sealed && isStaff(role) &&
                     (m.reactions || []).some((r) => r.members.some((id) => rank(members.get(id)?.role) < rank(role)))}
                 nameOf={(id) => name(members.get(id))}
                 onReact={(item, on) => react(m, item, on)}
@@ -727,6 +745,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         prev = m;
     }
     rows.push(...changed.after.map(changeLine));
+    rows.push(...groupLines.after.map(groupLine));
 
     // Files dragged over the pane attach to the message being written.
     const withFiles = (e) => !closed && [...(e.dataTransfer?.types || [])].includes('Files');
@@ -761,7 +780,12 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
-                            {dm ? (
+                            {group ? (
+                                <>
+                                    <p>{retention ? `Messages in ${groupTitle} are deleted after ${keptFor(retention)}.` : `This is the start of ${groupTitle}, as you can read it.`}</p>
+                                    <p class="text-xs">End-to-end encrypted: only the group's members can read it, each from when they joined.</p>
+                                </>
+                            ) : dm ? (
                                 <>
                                     <p>
                                         {retention
@@ -806,13 +830,16 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 {!closed && channel.kind === 'dm' && gate !== '' && (
                     <DMGate denID={denID} gate={gate} dm={dm} onCompare={() => dm && onCompare?.(dm)} />
                 )}
+                {!closed && group && gated !== '' && (
+                    <GroupGate denID={denID} gate={gated} member={members.get(gate.member)} onCompare={(m) => onCompare?.(m)} />
+                )}
                 {closed ? (
                     <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
                 ) : !canSend ? null : (
                     <Composer
                         denID={denID}
                         limits={limits}
-                        placeholder={dm ? `Message @${dm.username}` : `Message #${channel.name}`}
+                        placeholder={dm ? `Message @${dm.username}` : group ? `Message ${groupTitle}` : `Message #${channel.name}`}
                         replyTo={replyTo}
                         replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
                         typing={typing}
@@ -822,7 +849,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         onCompare={setComparing}
                         onCancelReply={() => setReplyTo(null)}
                         candidates={candidates}
-                        mentionable={channel.kind === 'dm' ? null : candidates}
+                        mentionable={sealed ? null : candidates}
                         polls={polls}
                         everyone={polls && isStaff(role)}
                         editors={editors}

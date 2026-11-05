@@ -1005,7 +1005,8 @@ function Files({ den, navigate }) {
         const file = e.currentTarget.files?.[0];
         const f = swapping.current;
         if (!file || !f) return;
-        const dm = shown.view.channels.find((c) => c.id === f.channel_id)?.kind === 'dm';
+        const kind = shown.view.channels.find((c) => c.id === f.channel_id)?.kind;
+        const dm = kind === 'dm' || kind === 'group_dm';
         // The row follows the upload while a video's copy is made (M5.4).
         const key = progressKey();
         const track = (sent) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], sent } }));
