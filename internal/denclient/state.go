@@ -55,6 +55,9 @@ type denState struct {
 	// sealedCalls says the den seals every call end to end, and takes no
 	// join that doesn't (M16.2).
 	sealedCalls bool
+	// groupDMs says the snapshot came on a socket speaking the protocol's
+	// version with group DMs (M16.3).
+	groupDMs bool
 }
 
 // View is a joined den as the page sees it.
@@ -90,6 +93,10 @@ type View struct {
 	// SealedCalls says the den seals its calls end to end, so the page
 	// joins one only sealing what it sends (M16.2).
 	SealedCalls bool `json:"sealed_calls"`
+	// HasGroupDMs says the den has group DMs for this Dens, and GroupDMs
+	// are this member's, as their changes make them (M16.3).
+	HasGroupDMs bool                 `json:"has_group_dms"`
+	GroupDMs    map[string]PageGroup `json:"group_dms"`
 }
 
 func newState() *denState {
@@ -203,8 +210,21 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	}
 	if c.Kind == denproto.KindDM {
 		ok := len(c.Members) == 2 && validID(c.Members[0]) && validID(c.Members[1]) && c.Members[0] != c.Members[1] &&
-			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && c.Bitrate == 0
+			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && c.Bitrate == 0 && c.Changes == 0 && c.SealedName == nil
 		return c, ok
+	}
+	if c.Kind == denproto.KindGroupDM {
+		// Its members as the den holds them, which only its changes, checked
+		// here, make (M16.3).
+		ok := len(c.Members) <= denproto.MaxGroupMembers && c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly &&
+			c.Bitrate == 0 && c.Changes >= 1 && c.Changes <= denproto.MaxGroupChanges && (c.SealedName == nil || c.SealedName.Check() == nil)
+		for i, m := range c.Members {
+			ok = ok && validID(m) && !slices.Contains(c.Members[:i], m)
+		}
+		return c, ok
+	}
+	if c.Changes != 0 || c.SealedName != nil {
+		return c, false
 	}
 	name, err := denproto.CleanName(c.Name, denproto.MaxNameRunes)
 	if err != nil || len(c.Members) != 0 || (c.GroupID != nil && !validID(*c.GroupID)) ||
@@ -220,10 +240,16 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	return c, true
 }
 
-// hasMessages reports whether a channel holds messages, as text channels
-// and DMs do.
+// hasMessages reports whether a channel holds messages, as text channels,
+// DMs and group DMs (M16.3) do.
 func hasMessages(c denproto.Channel) bool {
-	return c.Kind == denproto.KindText || c.Kind == denproto.KindDM
+	return c.Kind == denproto.KindText || isSealed(c)
+}
+
+// isSealed reports whether a channel's messages are sealed by its
+// members' Dens: a DM's, or a group's (M16.3).
+func isSealed(c denproto.Channel) bool {
+	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM
 }
 
 func cleanGroup(g denproto.Group) (denproto.Group, bool) {
@@ -347,11 +373,18 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		}
 		next.online[id] = true
 	}
-	channels := 0
+	channels, groups := 0, 0
 	for _, c := range next.channels {
-		if c.Kind != denproto.KindDM {
+		switch c.Kind {
+		case denproto.KindDM:
+		case denproto.KindGroupDM:
+			groups++
+		default:
 			channels++
 		}
+	}
+	if groups > denproto.MaxGroupDMs {
+		return errMalformed
 	}
 	if channels > denproto.MaxChannels || len(next.groups) > denproto.MaxGroups {
 		return errMalformed
@@ -416,6 +449,10 @@ type keptState struct {
 	// identities.
 	SignedKeys []denproto.SignedKey `json:"signed_keys,omitempty"`
 	Identities bool                 `json:"identities,omitempty"`
+	// M16.3: the member's group DMs as their changes, checked, made them,
+	// and whether the den has them for this Dens.
+	GroupStates map[string]*groupState `json:"group_states,omitempty"`
+	GroupDMs    bool                   `json:"group_dms,omitempty"`
 }
 
 // kept returns the state as the cache keeps it, and its members.
@@ -425,8 +462,31 @@ func (s *denState) kept() (keptState, []denproto.Member) {
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
-		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities}
+		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, GroupDMs: s.groupDMs}
 	return k, slices.Collect(maps.Values(s.members))
+}
+
+// cleanGroups checks the groups the cache kept, as checked here: each one
+// of the den's group channels, its members IDs, at most a group's, and its
+// changes no more than the page gets.
+func cleanGroups(channels map[string]denproto.Channel, groups map[string]*groupState) bool {
+	for id, g := range groups {
+		if g == nil || channels[id].Kind != denproto.KindGroupDM || g.N < 0 || len(g.Members) > denproto.MaxGroupMembers ||
+			len(g.Changes) > maxShownChanges || (g.N > 0 && len(g.Hash) != 32) {
+			return false
+		}
+		for _, c := range g.Changes {
+			if c.Sealed != nil && c.Sealed.Check() != nil {
+				return false
+			}
+		}
+		for i, m := range g.Members {
+			if !validID(m) || slices.Contains(g.Members[:i], m) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // restore makes a state of what the cache kept of the den with denID. The
@@ -483,7 +543,7 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		}
 		s.keys[key.ID] = key
 	}
-	s.identities = k.Identities
+	s.identities, s.groupDMs = k.Identities, k.GroupDMs
 	for _, key := range k.SignedKeys {
 		if !s.cleanSigned(denID, key) {
 			return nil, errMalformed
@@ -753,10 +813,21 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if known, err := s.talliedIn(d.ChannelID, true); !known || err != nil {
 			return e, false, err
 		}
-		if !slices.Contains(s.channels[d.ChannelID].Members, d.MemberID) {
+		// A group's member may have left it as their set came (M16.3).
+		if c := s.channels[d.ChannelID]; c.Kind == denproto.KindDM && !slices.Contains(c.Members, d.MemberID) {
 			return e, false, errMalformed
 		}
 		data = d
+	case denproto.EventGroupChange:
+		// The connection checks it, against the group as it knew it (M16.3).
+		var g denproto.GroupChanged
+		if json.Unmarshal(e.D, &g) != nil || !validID(g.ChannelID) || !validID(g.Change.ID) {
+			return e, false, errMalformed
+		}
+		if c, ok := s.channels[g.ChannelID]; ok && c.Kind != denproto.KindGroupDM {
+			return e, false, errMalformed
+		}
+		return e, false, nil
 	case denproto.EventMessagesExpired:
 		var x denproto.MessagesExpired
 		if json.Unmarshal(e.D, &x) != nil || !validID(x.Through) {
@@ -794,9 +865,17 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		s.keys[k.ID] = k
 		data = pageKey(k)
 	case denproto.EventDMSignedKey:
-		// The page hears of it as of any of a DM's keys (M16.1).
+		// The page hears of it as of any of a DM's keys (M16.1). One of a
+		// channel it doesn't know, as a group this member just left, is
+		// passed over (M16.3).
 		var k denproto.SignedKey
-		if json.Unmarshal(e.D, &k) != nil || !s.cleanSigned(denID, k) || s.keys[k.ID].ID != "" {
+		if json.Unmarshal(e.D, &k) != nil || denproto.CheckSignedKey(denID, k) != nil {
+			return e, false, errMalformed
+		}
+		if _, known := s.channels[k.ChannelID]; !known {
+			return e, false, nil
+		}
+		if !s.cleanSigned(denID, k) || s.keys[k.ID].ID != "" {
 			return e, false, errMalformed
 		}
 		s.signed[k.ID] = k
@@ -896,7 +975,7 @@ func (s *denState) talliedIn(channel string, dm bool) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	if (c.Kind == denproto.KindDM) != dm || c.Kind == denproto.KindVoice {
+	if isSealed(c) != dm || c.Kind == denproto.KindVoice {
 		return false, errMalformed
 	}
 	return true, nil
@@ -913,8 +992,7 @@ type marks struct {
 func (s *denState) marks() marks {
 	var m marks
 	for id, r := range s.reads {
-		kind := s.channels[id].Kind
-		if (kind != denproto.KindText && kind != denproto.KindDM) || r.Closed {
+		if !hasMessages(s.channels[id]) || r.Closed {
 			continue
 		}
 		if compareIDs(r.LastMessage, r.ReadPosition) > 0 {
@@ -948,7 +1026,7 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	if compareIDs(m.ID, r.LastMessage) > 0 {
 		r.LastMessage = m.ID
 	}
-	dm := s.channels[m.ChannelID].Kind == denproto.KindDM
+	dm := isSealed(s.channels[m.ChannelID])
 	if dm {
 		r.Closed = false // a new message reopens a closed DM, as on the den
 	}

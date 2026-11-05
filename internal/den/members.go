@@ -228,8 +228,11 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // hadn't sent, and their identity and record (M16.1), which they publish
 // again if they come back. The sounds and emoji they added are the den's, and
 // stay (M14.3, M15.2).
-// It returns those files' blobs, to remove once tx commits.
-func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
+// They leave their group DMs too, each by a change of the den's own
+// (M16.3).
+// It returns those files' blobs, to remove once tx commits, and the
+// groups' changes, to tell their members of.
+func depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) ([][]byte, []groupDone, error) {
 	for _, stmt := range []string{
 		`UPDATE den_members SET left_at = ?1, role = 'member', identity = NULL WHERE id = ?2`,
 		`DELETE FROM den_identities WHERE member_id = ?2`,
@@ -241,13 +244,28 @@ func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 		`DELETE FROM den_invites WHERE created_by = ?2 AND role = 'member'`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, now, id); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if err := logMember(ctx, tx, id, time.UnixMilli(now)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL AND NOT `+named, id)
+	groups, err := departGroups(ctx, tx, denID, id, time.UnixMilli(now))
+	if err != nil {
+		return nil, nil, err
+	}
+	blobs, err := deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL AND NOT `+named, id)
+	return blobs, groups, err
+}
+
+// publishDeparted tells the members of a member's groups that the den
+// took them out, as they left the den.
+func (d *Den) publishDeparted(ctx context.Context, groups []groupDone) error {
+	var errs []error
+	for _, g := range groups {
+		errs = append(errs, d.publishGroup(ctx, g))
+	}
+	return errors.Join(errs...)
 }
 
 // Remove takes a member out of the den, and with Ban keeps their username
@@ -269,15 +287,20 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		return invalid("to leave the den, use /api/me/leave")
 	}
 	now := d.now().UnixMilli()
+	info, _ := d.Info()
 	var left bool
 	var deleted []deletedMessage
 	var unreacted []denproto.ReactionChange
 	var blobs [][]byte
+	var groups []groupDone
 	// The reactions a ban takes off wait their turn with edits (M15.3).
 	if req.DeleteMessages > 0 {
 		d.changes.Lock()
 		defer d.changes.Unlock()
 	}
+	// Their groups' keys retire with their leaving them (M16.3).
+	d.keys.Lock()
+	defer d.keys.Unlock()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var role string
 		var leftAt, bannedAt, inviteID sql.NullInt64
@@ -318,8 +341,8 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			return nil
 		}
 		left = true
-		kept, err := depart(ctx, tx, mid, now)
-		blobs = append(blobs, kept...)
+		kept, departed, err := depart(ctx, tx, info.ID, mid, now)
+		blobs, groups = append(blobs, kept...), departed
 		return err
 	})
 	if err != nil {
@@ -341,6 +364,9 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		}
 	}
 	if err := d.publishDeleted(ctx, deleted); err != nil {
+		return err
+	}
+	if err := d.publishDeparted(ctx, groups); err != nil {
 		return err
 	}
 	return d.publishUnreacted(ctx, unreacted)
@@ -416,9 +442,13 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 		return forbidden("the owner can't leave the den")
 	}
 	now := d.now().UnixMilli()
+	info, _ := d.Info()
 	var blobs [][]byte
+	var groups []groupDone
+	d.keys.Lock()
+	defer d.keys.Unlock()
 	err := d.tx(ctx, func(tx *sql.Tx) (err error) {
-		blobs, err = depart(ctx, tx, s.MemberID, now)
+		blobs, groups, err = depart(ctx, tx, info.ID, s.MemberID, now)
 		return err
 	})
 	if err != nil {
@@ -429,7 +459,8 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 	d.CloseMemberSockets(s.MemberID, denproto.CloseRevoked, denproto.CloseReasonLeft)
 	d.memberGone(s.MemberID)
 	d.log.Infof("Member %d left", s.MemberID)
-	return d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(s.MemberID), LeftAt: now}, Everyone)
+	return errors.Join(d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(s.MemberID), LeftAt: now}, Everyone),
+		d.publishDeparted(ctx, groups))
 }
 
 // Bans lists the banned members, most recent first.

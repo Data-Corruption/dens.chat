@@ -92,7 +92,7 @@ func (m *Manager) uploadReady(ctx context.Context, c *conn, channelID string, p 
 func (m *Manager) uploadFile(ctx context.Context, c *conn, channelID, name string, size int64, body io.Reader, replaces string,
 	ready *prepared) (Uploaded, error) {
 	if channelID != "" {
-		if _, dm := c.isDM(channelID); dm {
+		if c.private(channelID) {
 			return c.uploadDM(ctx, channelID, name, size, body, replaces, ready)
 		}
 	}

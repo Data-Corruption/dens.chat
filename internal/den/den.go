@@ -120,7 +120,15 @@ type Session struct {
 	KeyID     []byte
 	Role      string
 	ExpiresAt time.Time
+	// Version is the protocol version the request speaks, which the den's
+	// router sets; a session that speaks one before group DMs sees nothing
+	// of them (M16.3).
+	Version int
 }
+
+// groups reports whether the session speaks a version of the protocol
+// with group DMs.
+func (s *Session) groups() bool { return s.Version >= denproto.GroupsVersion }
 
 // Storage is where the den keeps uploads: Dir holds them sealed, and
 // Temp, on the same filesystem, holds uploads still arriving. Media runs

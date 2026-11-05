@@ -77,7 +77,10 @@ type RetentionPreview struct {
 
 // Channel is a text or voice channel, or a DM. A DM has no name, group or
 // position, and names its two members, lower ID first. A voice channel has
-// a bitrate, in bits a second, for its call's Opus (M4.2).
+// a bitrate, in bits a second, for its call's Opus (M4.2). A group DM
+// (M16.3) names its members as the den holds them, in the order they
+// joined, the number of its latest change, and its name sealed; a Dens
+// knows its members from its changes alone.
 type Channel struct {
 	ID          string   `json:"id"`
 	GroupID     *string  `json:"group_id"`
@@ -88,6 +91,9 @@ type Channel struct {
 	StaffOnly   bool     `json:"staff_only"`
 	Members     []string `json:"members,omitempty"`
 	Bitrate     int      `json:"bitrate,omitempty"`
+	// Changes and SealedName are a group DM's (M16.3).
+	Changes    int         `json:"changes,omitempty"`
+	SealedName *SealedName `json:"sealed_name,omitempty"`
 }
 
 type Group struct {
@@ -346,7 +352,8 @@ func CheckMessage(m Message) error {
 		if err := checkSealed(m.Sealed, m.KeyID, m.Nonce, m.Revision); err != nil || m.Text != "" || len(m.Attachments) > 0 {
 			return errors.New("message has an invalid sealed text")
 		}
-		if len(m.Editors) > 1 {
+		// A DM's other member, or from M16.3 a group's others.
+		if len(m.Editors) > MaxGroupMembers-1 {
 			return errors.New("message has too many editors")
 		}
 	}

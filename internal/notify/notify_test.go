@@ -360,12 +360,16 @@ func TestHiddenText(t *testing.T) {
 	h.SetKinds(Kinds{HideText: ptr(false)})
 	h.Message(Message{Den: "d1", Channel: "9", DM: true, ID: "13", Author: "Dan", Files: 2})
 	h.Message(Message{Den: "d1", Channel: "10", DM: true, ID: "14", Author: "Eve"})
+	// A group's notifies as a DM's, naming the group (M16.3).
+	h.Message(Message{Den: "d1", Channel: "11", DM: true, Group: "Weekend", ID: "15", Author: "Fay", Text: "who's in?"})
+	h.SetKinds(Kinds{HideText: ptr(true)})
+	h.Message(Message{Den: "d1", Channel: "12", DM: true, Group: "Bob, Carol", ID: "16", Author: "Gus", Text: "later"})
 	var got [][2]string
 	for _, n := range helper.shown {
 		got = append(got, [2]string{n.Title, n.Text})
 	}
 	want := [][2]string{{"Alice", "Sent you a message"}, {"Bob in #general", "Mentioned you"}, {"Carol", "Sent you a message"},
-		{"Dan", "Sent 2 files"}, {"Eve", "Sent you a message"}}
+		{"Dan", "Sent 2 files"}, {"Eve", "Sent you a message"}, {"Fay in Weekend", "who's in?"}, {"Gus in Bob, Carol", "Sent a message"}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("shown %q, want %q", got, want)
 	}

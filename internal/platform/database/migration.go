@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -509,6 +510,95 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE den_dm_key_members SET state = NULL WHERE state IS NOT NULL`); err != nil {
 			return fmt.Errorf("drop the exchanges' states: %w", err)
+		}
+		return nil
+	})
+
+	// M16.3: group DMs, a fourth kind of channel. SQLite changes a table's
+	// checks only by making it again, so den_channels is made again with
+	// group_dm among its kinds, by SQLite's procedure, which this step's run
+	// takes foreign keys off for: dropping the old table with them on would
+	// take every message, key and read position with it. Its counter stays
+	// where it was, since a channel's ID is never given out twice, even past
+	// the channels a restore moved it beyond (M11). A group DM keeps its
+	// maker and its name, sealed under one of its keys, by that key's ID;
+	// its members, in the order they joined, each with the change that took
+	// them in, from which they get its changes, and the group's last message
+	// as they joined, after which they read; and its changes, each a
+	// member's statement and signature, as JSON, in order.
+	m.AddRemaking("Group DMs", func(ctx context.Context, tx *sql.Tx) error {
+		var seq sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'den_channels'`).Scan(&seq)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read the channels' counter: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_channels_new (
+				id          INTEGER PRIMARY KEY AUTOINCREMENT,
+				group_id    INTEGER REFERENCES den_groups (id) ON DELETE SET NULL,
+				name        TEXT NOT NULL,
+				description TEXT NOT NULL DEFAULT '',
+				kind        TEXT NOT NULL CHECK (kind IN ('text', 'voice', 'dm', 'group_dm')),
+				position    INTEGER NOT NULL,
+				staff_only  INTEGER NOT NULL DEFAULT 0,
+				dm_low      INTEGER REFERENCES den_members (id),
+				dm_high     INTEGER REFERENCES den_members (id),
+				created_at  INTEGER NOT NULL,
+				bitrate     INTEGER,
+				CHECK ((kind = 'dm') = (dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high)),
+				CHECK ((kind = 'voice') = (bitrate IS NOT NULL))
+			) STRICT;
+			INSERT INTO den_channels_new (id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, created_at, bitrate)
+				SELECT id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, created_at, bitrate FROM den_channels;
+			DROP TABLE den_channels;
+			ALTER TABLE den_channels_new RENAME TO den_channels;
+			CREATE UNIQUE INDEX den_channels_dm ON den_channels (dm_low, dm_high) WHERE kind = 'dm';
+			CREATE INDEX den_channels_dm_high ON den_channels (dm_high) WHERE kind = 'dm';
+
+			CREATE TABLE den_group_dms (
+				channel_id INTEGER PRIMARY KEY REFERENCES den_channels (id) ON DELETE CASCADE,
+				made_by    INTEGER NOT NULL REFERENCES den_members (id),
+				made_at    INTEGER NOT NULL, -- unix milliseconds
+				name       BLOB,
+				name_kid   BLOB,
+				CHECK ((name IS NULL) = (name_kid IS NULL))
+			) STRICT;
+			CREATE INDEX den_group_dms_maker ON den_group_dms (made_by);
+
+			CREATE TABLE den_group_members (
+				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
+				member_id  INTEGER NOT NULL REFERENCES den_members (id),
+				position   INTEGER NOT NULL, -- the order they joined in
+				joined     INTEGER NOT NULL, -- the change that took them in
+				since      INTEGER NOT NULL, -- the group's last message as they joined
+				PRIMARY KEY (channel_id, member_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_group_members_member ON den_group_members (member_id);
+
+			CREATE TABLE den_group_changes (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
+				n          INTEGER NOT NULL,
+				made_by    INTEGER REFERENCES den_members (id),
+				made_at    INTEGER NOT NULL, -- unix milliseconds
+				statement  BLOB NOT NULL,    -- JSON
+				UNIQUE (channel_id, n)
+			) STRICT;
+		`); err != nil {
+			return fmt.Errorf("add group DMs: %w", err)
+		}
+		if seq.Valid {
+			res, err := tx.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = 'den_channels'`, seq.Int64)
+			if err != nil {
+				return fmt.Errorf("keep the channels' counter: %w", err)
+			}
+			if n, err := res.RowsAffected(); err != nil {
+				return err
+			} else if n == 0 {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES ('den_channels', ?)`, seq.Int64); err != nil {
+					return fmt.Errorf("keep the channels' counter: %w", err)
+				}
+			}
 		}
 		return nil
 	})

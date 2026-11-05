@@ -238,3 +238,22 @@ func TestCheckingSignedKeys(t *testing.T) {
 		t.Errorf("a key after starting over: %q", v)
 	}
 }
+
+// A member's own identities before they started over join from every
+// device's record, each once, the latest eight kept (M16.3).
+func TestRecordKeepsOwnPast(t *testing.T) {
+	ours := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{hashOf(1)}}
+	theirs := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{hashOf(1), hashOf(2)}}
+	if !ours.merge(theirs) || len(ours.Own) != 2 || !bytes.Equal(ours.Own[1], hashOf(2)) {
+		t.Fatalf("merged own identities: %x", ours.Own)
+	}
+	if ours.merge(theirs) {
+		t.Error("merging the same own identities again changed the record")
+	}
+	for i := range 10 {
+		ours.merge(identityRecord{Own: []denproto.Bytes{hashOf(byte(10 + i))}})
+	}
+	if len(ours.Own) != maxPast || !bytes.Equal(ours.Own[maxPast-1], hashOf(19)) {
+		t.Errorf("own identities after ten more: %d, the last %x", len(ours.Own), ours.Own[len(ours.Own)-1])
+	}
+}

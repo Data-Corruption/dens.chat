@@ -206,6 +206,17 @@ func IsReactionName(s string) bool {
 // padded to one length. Each must be one of Unicode's emoji or a name the
 // den's emoji may have, once, and at most MaxReactionEmoji.
 func SealReactions(key []byte, ad ReactionsAD, set ReactionSet) (Bytes, error) {
+	plain, err := padSet(set, reactionsPlain)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(plain)
+	return sealWith(key, plain, ad.bytes())
+}
+
+// padSet checks a set and writes it as JSON, padded to size with spaces,
+// which JSON reads past, so the padding needs no length.
+func padSet(set ReactionSet, size int) ([]byte, error) {
 	if len(set.Emoji) > MaxReactionEmoji {
 		return nil, fmt.Errorf("a message holds at most %d different emoji", MaxReactionEmoji)
 	}
@@ -223,13 +234,10 @@ func SealReactions(key []byte, ad ReactionsAD, set ReactionSet) (Bytes, error) {
 	if err := enc.Encode(set); err != nil {
 		return nil, err
 	}
-	if buf.Len() > reactionsPlain {
+	if buf.Len() > size {
 		return nil, errors.New("a set of reactions is too long")
 	}
-	// Spaces, which JSON reads past, so the padding needs no length.
-	plain := append(buf.Bytes(), bytes.Repeat([]byte{' '}, reactionsPlain-buf.Len())...)
-	defer clear(plain)
-	return sealWith(key, plain, ad.bytes())
+	return append(buf.Bytes(), bytes.Repeat([]byte{' '}, size-buf.Len())...), nil
 }
 
 // OpenReactions opens a member's set on a DM's message. The other member's
@@ -245,6 +253,11 @@ func OpenReactions(key []byte, ad ReactionsAD, sealed []byte) (ReactionSet, erro
 		return ReactionSet{}, ErrSealedOpen
 	}
 	defer clear(plain)
+	return readSet(plain)
+}
+
+// readSet reads a padded set, keeping only what a set may hold.
+func readSet(plain []byte) (ReactionSet, error) {
 	var set ReactionSet
 	if err := json.Unmarshal(plain, &set); err != nil {
 		return ReactionSet{}, ErrSealedOpen
@@ -263,10 +276,11 @@ func OpenReactions(key []byte, ad ReactionsAD, sealed []byte) (ReactionSet, erro
 
 // checkReactions checks a message's reactions as a den sends them: a
 // channel's, each emoji once, at most MaxReactionEmoji and MaxReactions in
-// all, each member once an emoji; and a DM's sealed sets, one a member.
+// all, each member once an emoji; and a DM's or a group's sealed sets, one
+// a member, at most MaxReactionSets (M16.3).
 func checkReactions(m Message) error {
 	if m.Sealed != nil {
-		if len(m.Reactions) > 0 || len(m.DMReactions) > 2 {
+		if len(m.Reactions) > 0 || len(m.DMReactions) > MaxReactionSets {
 			return errors.New("a DM's message carries its reactions sealed, a set a member")
 		}
 		for i, r := range m.DMReactions {

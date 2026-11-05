@@ -52,6 +52,27 @@ func (d *Den) keyDM(ctx context.Context, s *Session, channelID string, changing 
 	return c, cid, other, nil
 }
 
+// keyChannel returns a DM or a group DM (M16.3) the session's member is
+// in, with the members its keys are sealed to: a DM's two, the other of
+// whom must still be in the den for anything to change, or a group's, as
+// the den held them when it was read.
+func (d *Den) keyChannel(ctx context.Context, s *Session, channelID string, changing bool) (denproto.Channel, int64, []int64, error) {
+	c, cid, err := d.visibleChannel(ctx, s, channelID)
+	if err != nil {
+		return c, 0, nil, err
+	}
+	if c.Kind == denproto.KindGroupDM {
+		members := make([]int64, 0, len(c.Members))
+		for _, m := range c.Members {
+			id, _ := denproto.ParseID(m)
+			members = append(members, id)
+		}
+		return c, cid, members, nil
+	}
+	c, cid, other, err := d.keyDM(ctx, s, channelID, changing)
+	return c, cid, []int64{s.MemberID, other}, err
+}
+
 // dmKeyColumns reads den_dm_keys aliased k.
 const dmKeyColumns = `k.id, k.channel_id, k.started_by, k.started_at, k.stage, k.offer, k.answer, k.reveal, k.retired_at, k.retired_by, k.retired`
 
@@ -159,23 +180,37 @@ func memberKeys(ctx context.Context, q querier, member int64) ([]denproto.DMKey,
 
 // publishKeys tells each member of the keys' DMs how the keys now stand,
 // each as they see them: M1.7's as dm.key, and signed keys as
-// dm.signed_key (M16.1).
+// dm.signed_key (M16.1). A group's key (M16.3) goes to those it was sealed
+// to who are in the group now, never to a socket speaking version 1: one
+// removed has lost the group, whose keys mean nothing to them.
 func (d *Den) publishKeys(ctx context.Context, ids ...int64) error {
 	for _, id := range ids {
-		var low, high int64
+		var low, high sql.NullInt64
 		var signed bool
-		if err := d.db.QueryRowContext(ctx, `SELECT c.dm_low, c.dm_high, k.statement IS NOT NULL FROM den_dm_keys k
-			JOIN den_channels c ON c.id = k.channel_id WHERE k.id = ?`, id).Scan(&low, &high, &signed); err != nil {
+		var kind string
+		if err := d.db.QueryRowContext(ctx, `SELECT c.kind, c.dm_low, c.dm_high, k.statement IS NOT NULL FROM den_dm_keys k
+			JOIN den_channels c ON c.id = k.channel_id WHERE k.id = ?`, id).Scan(&kind, &low, &high, &signed); err != nil {
 			return err
 		}
-		for _, member := range []int64{low, high} {
+		members := []int64{low.Int64, high.Int64}
+		if kind == denproto.KindGroupDM {
+			var err error
+			if members, err = keyMembers(ctx, d.db, id); err != nil {
+				return err
+			}
+		}
+		for _, member := range members {
 			if signed {
 				keys, err := loadSignedKeys(ctx, d.db, member, `k.id = ?2`, id)
 				if err != nil {
 					return err
 				}
+				audience := OnlyMember(member)
+				if kind == denproto.KindGroupDM {
+					audience = audience.aboutGroups()
+				}
 				if len(keys) == 1 {
-					if err := d.Hub.Publish(denproto.EventDMSignedKey, keys[0], OnlyMember(member)); err != nil {
+					if err := d.Hub.Publish(denproto.EventDMSignedKey, keys[0], audience); err != nil {
 						return err
 					}
 				}
@@ -193,6 +228,26 @@ func (d *Den) publishKeys(ctx context.Context, ids ...int64) error {
 		}
 	}
 	return nil
+}
+
+// keyMembers lists the members a group's key was sealed to, who hold a
+// copy of it, and are in its group now.
+func keyMembers(ctx context.Context, q querier, key int64) ([]int64, error) {
+	rows, err := q.QueryContext(ctx, `SELECT c.member_id FROM den_dm_key_members c JOIN den_dm_keys k ON k.id = c.key_id
+		JOIN den_group_members g ON g.channel_id = k.channel_id AND g.member_id = c.member_id WHERE c.key_id = ? ORDER BY c.member_id`, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var m int64
+		if err := rows.Scan(&m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 // liveKey is a DM's live key: its ID, stage, who started it, and how many
@@ -309,8 +364,10 @@ func resetSeal(ctx context.Context, tx *sql.Tx, member int64, sealCheck []byte, 
 	if err := logMember(ctx, tx, member, time.UnixMilli(now)); err != nil {
 		return nil, err
 	}
+	// Their groups' keys too (M16.3), whose next is sealed to the new
+	// identity.
 	ids, err := retireKeys(ctx, tx, member, now, denproto.RetiredStartedOver, `k.channel_id IN (SELECT id FROM den_channels
-		WHERE kind = 'dm' AND (dm_low = ? OR dm_high = ?))`, member, member)
+		WHERE kind = 'dm' AND (dm_low = ?4 OR dm_high = ?4)) OR k.channel_id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?4)`, member)
 	if err != nil {
 		return nil, err
 	}

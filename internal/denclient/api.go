@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -28,37 +29,84 @@ type api struct {
 	// public address, not the one it's reached at here, and nothing can
 	// sit between the two.
 	own bool
+	// version is the protocol's version this den and this build share,
+	// the highest both speak, as the den's range says; 0 until it says.
+	version atomic.Int32
+}
+
+// speaks is the protocol's version requests to the den go at: the highest
+// it and this build share, once the den said, and this build's own until
+// then.
+func (a *api) speaks() int {
+	if v := a.version.Load(); v != 0 {
+		return int(v)
+	}
+	return denproto.Version
+}
+
+// heard takes the den's range from a response, and goes at the highest
+// version it shares with this build, as the den speaks newer ones once it
+// updates. A range that shares none leaves it, for the den to refuse.
+func (a *api) heard(h http.Header) bool {
+	lo, hi, err := denproto.ParseRange(h.Get(denproto.HeaderRange))
+	if err != nil {
+		return false
+	}
+	v := min(hi, denproto.Version)
+	if v < max(lo, denproto.MinVersion) {
+		return false
+	}
+	return a.version.Swap(int32(v)) != int32(v)
 }
 
 // call sends req (unless nil) as JSON and decodes the response into resp
-// (unless nil). token, when set, is the bearer token.
+// (unless nil). token, when set, is the bearer token. A den that speaks
+// only older versions of the protocol than this build's is asked again,
+// once, at the newest it speaks.
 func (a *api) call(ctx context.Context, method, path string, token denproto.Bytes, req, resp any) error {
 	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-	var body io.Reader
+	var data []byte
 	if req != nil {
-		data, err := json.Marshal(req)
+		var err error
+		if data, err = json.Marshal(req); err != nil {
+			return err
+		}
+	}
+	for attempt := 0; ; attempt++ {
+		var body io.Reader
+		if req != nil {
+			body = bytes.NewReader(data)
+		}
+		r, err := http.NewRequestWithContext(ctx, method, a.base+path, body)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(data)
-	}
-	r, err := http.NewRequestWithContext(ctx, method, a.base+path, body)
-	if err != nil {
+		a.headers(r.Header, token)
+		if req != nil {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		res, err := a.client.Do(r)
+		if err != nil {
+			return fmt.Errorf("reach the den: %w", err)
+		}
+		changed := a.heard(res.Header)
+		if res.StatusCode >= 300 {
+			err := denproto.ReadError(res)
+			res.Body.Close()
+			if attempt == 0 && changed && denproto.IsCode(err, denproto.CodeProtocolUnsupported) {
+				continue
+			}
+			return err
+		}
+		err = a.read(res, resp)
+		res.Body.Close()
 		return err
 	}
-	a.headers(r.Header, token)
-	if req != nil {
-		r.Header.Set("Content-Type", "application/json")
-	}
-	res, err := a.client.Do(r)
-	if err != nil {
-		return fmt.Errorf("reach the den: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode >= 300 {
-		return denproto.ReadError(res)
-	}
+}
+
+// read decodes a response into resp, unless nil.
+func (a *api) read(res *http.Response, resp any) error {
 	if resp == nil {
 		return nil
 	}
@@ -76,7 +124,7 @@ func (a *api) call(ctx context.Context, method, path string, token denproto.Byte
 }
 
 func (a *api) headers(h http.Header, token denproto.Bytes) {
-	h.Set(denproto.HeaderVersion, strconv.Itoa(denproto.Version))
+	h.Set(denproto.HeaderVersion, strconv.Itoa(a.speaks()))
 	h.Set("User-Agent", a.agent)
 	if token != nil {
 		h.Set("Authorization", "Bearer "+token.String())
