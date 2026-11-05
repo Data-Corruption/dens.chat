@@ -113,6 +113,20 @@ export function HoverRow({ as = 'div', children, ...props }) {
     );
 }
 
+/** useOver says whether the pointer is over the row something shows in, a
+    profile counting as one, since the member opened it: verified marks
+    shown on hover follow it (M16.4) */
+export function useOver() {
+    const scope = useContext(Play);
+    const [over, setOver] = useState(() => !!scope?.over);
+    useEffect(() => {
+        if (!scope || scope === SHOWN) return undefined;
+        setOver(scope.over);
+        return scope.listen(() => setOver(scope.over));
+    }, [scope]);
+    return scope === SHOWN || over;
+}
+
 /** usePicture says how a picture shows: "file", the picture itself, which
     a still one always is and an animated one is while it plays from the
     start, under Always or in a profile; "still", an animated one's preview,

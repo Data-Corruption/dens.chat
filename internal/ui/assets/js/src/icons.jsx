@@ -35,8 +35,8 @@ export function SpeakerIcon({ size = 'h-[18px] w-[18px]' }) {
     );
 }
 
-// LockIcon marks what not everyone sees: a staff-only channel, and a DM,
-// which is end-to-end encrypted; open, a call that isn't (M16.2).
+// LockIcon marks end-to-end encryption: a DM's, a group's and a call's;
+// open, a call that isn't (M16.2).
 export function LockIcon({ size = 'h-3.5 w-3.5', open = false }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -117,6 +117,27 @@ export function SmileyIcon({ size = 'h-5 w-5' }) {
             <path d="M5.25 9.6a3.25 3.25 0 0 0 5.5 0" />
             <circle cx="5.9" cy="6.3" r="0.5" fill="currentColor" stroke="none" />
             <circle cx="10.1" cy="6.3" r="0.5" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
+// TimerIcon marks messages that disappear (M16.4): a DM's or a group's
+// time, its line, and each message sent under one.
+export function TimerIcon({ size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <circle cx="8" cy="9" r="5.5" />
+            <path d="M8 6v3l2 1.5M6.5 1.75h3" />
+        </svg>
+    );
+}
+
+// ShieldIcon marks a staff-only channel, which only moderators and the
+// owner see (M16.4): the lock is end-to-end encryption's.
+export function ShieldIcon({ size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M8 1.75 13 3.5v4c0 3.1-2.1 5.45-5 6.75C5.1 12.95 3 10.6 3 7.5v-4z" />
         </svg>
     );
 }

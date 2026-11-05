@@ -820,7 +820,7 @@ function YourCode({ den, view }) {
         <>
             <Heading>
                 Your code{' '}
-                <DocsTip id={`docs-code-${den.den_id}`} page="join/#direct-messages">Why members compare codes, and where it's safe to.</DocsTip>
+                <DocsTip id={`docs-code-${den.den_id}`} page="join/#comparing-codes">Why members compare codes, and where it's safe to.</DocsTip>
             </Heading>
             {view && !view.keeps_identities ? (
                 <p class="text-sm">This den runs an older Dens, which keeps no identities, so there's no code to compare here yet.</p>

@@ -193,3 +193,49 @@ export function sameDigits(a, b) {
     const clean = (s) => s.replace(/[\s-]/g, '');
     return clean(a) !== '' && clean(a) === clean(b);
 }
+
+// EXPIRY_TIMES are the times a DM's or a group's messages disappear after
+// they're sent (M16.4), in seconds, Off first: an hour, a day, a week and
+// four weeks, as the den takes them.
+export const EXPIRY_TIMES = [0, 3600, 86400, 604800, 2419200];
+
+const UNITS = [[604800, 'week', 'w'], [86400, 'day', 'd'], [3600, 'hour', 'h'], [60, 'minute', 'm'], [1, 'second', 's']];
+
+// afterText says how long a time of seconds is, in its largest whole unit:
+// 1 hour, 4 weeks, or the seconds a development instance's den takes for
+// the browser checks.
+export function afterText(seconds) {
+    const [size, unit] = UNITS.find(([size]) => seconds % size === 0 && seconds >= size) || UNITS[UNITS.length - 1];
+    const n = seconds / size;
+    return `${n} ${unit}${n === 1 ? '' : 's'}`;
+}
+
+// shortAfter says it in a few letters, as a header has room for: 1h, 4w.
+export function shortAfter(seconds) {
+    const [size, , letter] = UNITS.find(([size]) => seconds % size === 0 && seconds >= size) || UNITS[UNITS.length - 1];
+    return `${seconds / size}${letter}`;
+}
+
+// expiryText says who last set a DM's or a group's time, when, and to
+// what, as its line in the conversation shows it (M16.4): you for this
+// member. The day stays said once the messages around the line are gone.
+export function expiryText(after, set, nameOf, me) {
+    const lead = `On ${when(set.at)}, ${set.by === me ? 'you' : nameOf(set.by)}`;
+    if (!after) return `${lead} turned off disappearing messages.`;
+    return `${lead} set messages to disappear ${afterText(after)} after they're sent.`;
+}
+
+// dueBy lists the messages whose time to disappear came by now (M16.4).
+export function dueBy(messages, now) {
+    return messages.filter((m) => m.expires_at && m.expires_at <= now);
+}
+
+// nextDue is when the next of the messages whose time is still to come
+// goes, or 0 with none.
+export function nextDue(messages, now) {
+    let next = 0;
+    for (const m of messages) {
+        if (m.expires_at > now && (!next || m.expires_at < next)) next = m.expires_at;
+    }
+    return next;
+}

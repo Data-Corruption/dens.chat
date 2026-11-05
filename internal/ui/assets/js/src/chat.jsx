@@ -12,7 +12,7 @@ import { EmojiContext, useDenEmoji } from './denemoji.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage } from './dialogs.js';
 import { Tip, useNotifications } from './components.jsx';
-import { BellIcon, CogIcon, HashIcon, ICON, LockIcon, SpeakerIcon } from './icons.jsx';
+import { BellIcon, CogIcon, HashIcon, ICON, LockIcon, ShieldIcon, SpeakerIcon } from './icons.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane, openAt } from './messages.jsx';
@@ -26,6 +26,7 @@ import { NO_CALLS, canCall } from './platform.js';
 import { dmGate, groupGate, groupTitle, isPrivate, partnerOf } from './private.js';
 import { CodesDialog, SignInRequests, VerifiedMark } from './private.jsx';
 import { GroupIcon, GroupPanel, MAX_MEMBERS, PickPeople, RenameGroup } from './groups.jsx';
+import { ExpiryBadge } from './disappearing.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
@@ -563,7 +564,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                             {/* Room for the call's button over the list's end, so
                                 the last row clears it. */}
                             {button && <div class="h-11" aria-hidden="true"></div>}
-                            {staff && !gone && (
+                            {/* Channels and their groups are the Den tab's. */}
+                            {staff && !gone && tab !== 'dms' && (
                                 <div class="flex gap-1 px-2 pb-1">
                                     <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'channel' })}>+ Channel</button>
                                     <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
@@ -663,11 +665,13 @@ export function Chat({ denID, channelID, pane, navigate }) {
                             {channel?.kind === 'dm' ? (
                                 dm && <ProfilePanel key={dm.id} denID={denID} member={dm} me={view.me} online={online.has(dm.id)}
                                     kept={view.keeps_identities ? view.identities?.[dm.id] || {} : null} onCompare={() => setDialog({ kind: 'codes', member: dm })}
-                                    onAddPeople={view.has_group_dms && !dm.left_at && !gone ? () => setDialog({ kind: 'new-group', with: dm.id }) : null} />
+                                    onAddPeople={view.has_group_dms && !dm.left_at && !gone ? () => setDialog({ kind: 'new-group', with: dm.id }) : null}
+                                    expiry={view.disappearing && !dm.left_at && !gone ? channel : null} />
                             ) : group ? (
                                 <GroupPanel key={channel.id} denID={denID} view={view} channel={channel} group={group} title={title(channel)} members={members}
                                     online={online} onCompare={(m) => setDialog({ kind: 'codes', member: m })} onProfile={(m) => setDialog({ kind: 'profile', member: m })}
-                                    onAdd={() => setDialog({ kind: 'add-to-group' })} onRename={() => setDialog({ kind: 'rename-group' })} />
+                                    onAdd={() => setDialog({ kind: 'add-to-group' })} onRename={() => setDialog({ kind: 'rename-group' })}
+                                    expiry={view.disappearing && !gone ? channel : null} />
                             ) : (
                                 <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                             )}
@@ -984,7 +988,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     {/* The call's lock, beside how it stands (M16.2). */}
                     {inCall && <CallLock call={call} den={den} />}
                     {isUnread && <UnreadPill />}
-                    {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
+                    {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
                     {managed && (
@@ -1160,12 +1164,16 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                 </button>
                 {dm !== null && channel.kind === 'dm' ? (
                     <>
-                        <HoverRow as="button" type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
-                            <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
-                            <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
-                            {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
+                        {/* The member and their verified mark are one row, which
+                            the mark shows on hover over (M16.4). */}
+                        <HoverRow as="span" class="flex min-w-0 items-center gap-1">
+                            <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
+                                <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
+                                <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
+                                {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
+                            </button>
+                            {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}
                         </HoverRow>
-                        {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}
                         {/* The lock says the DM is end-to-end encrypted, and
                             opens comparing codes (M16.1). */}
                         <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onCompare}
@@ -1174,6 +1182,7 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                             <LockIcon size="h-3 w-3" />
                             Encrypted
                         </button>
+                        {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
                     </>
                 ) : channel.kind === 'group_dm' ? (
                     <>
@@ -1189,12 +1198,13 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                             <LockIcon size="h-3 w-3" />
                             Encrypted
                         </button>
+                        {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
                     </>
                 ) : (
                     <span class="flex shrink-0 items-center gap-1 font-semibold">
                         <span class="text-base-content/50"><HashIcon /></span>
                         {channel.name}
-                        {channel.staff_only && <Tip id={`header-staff-${channel.id}`} label="Staff only" trigger={<LockIcon />}>{STAFF_ONLY}</Tip>}
+                        {channel.staff_only && <Tip id={`header-staff-${channel.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
                     </span>
                 )}
                 {channel.description && (

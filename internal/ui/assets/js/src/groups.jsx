@@ -8,11 +8,12 @@ import { useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, SubmitButton, TextInput, useAction } from './components.jsx';
+import { DocsLink, ErrorText, Field, SubmitButton, TextInput, useAction } from './components.jsx';
 import { LockIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { changeText } from './private.js';
 import { VerifiedMark } from './private.jsx';
+import { ExpirySetting } from './disappearing.jsx';
 
 // MAX_MEMBERS is how many a group holds, its maker among them.
 export const MAX_MEMBERS = 10;
@@ -33,8 +34,9 @@ export function GroupIcon({ size = 'h-8 w-8' }) {
 // GroupPanel shows a group beside it, where a DM shows its other member's
 // profile: its name, which any member changes, its members in the order
 // they joined, each with their mark or Compare, and Remove for the member
-// who removes others, the first of them; then Add people and Leave.
-export function GroupPanel({ denID, view, channel, group, title, members, online, onCompare, onProfile, onAdd, onRename }) {
+// who removes others, the first of them; then Add people and Leave, and
+// its time, which any member sets (M16.4), where expiry gives the group.
+export function GroupPanel({ denID, view, channel, group, title, members, online, onCompare, onProfile, onAdd, onRename, expiry }) {
     const act = useAction();
     const me = view.me.id;
     const list = group?.members || [];
@@ -52,7 +54,7 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
             </div>
             <p class="flex items-start gap-1 text-xs text-base-content/60">
                 <span class="mt-0.5"><LockIcon size="h-3 w-3" /></span>
-                <span>End-to-end encrypted: only its members can read it, each from when they joined. Compare codes to check nobody sits between you.</span>
+                <span>End-to-end encrypted: only its members can read it. <DocsLink icon page="join/#group-dms" label="How group DMs work" /></span>
             </p>
             {group?.broken && <p role="alert" class="text-sm text-error">{BROKEN}</p>}
             <ul class="flex flex-col" aria-label="The group's members" data-group-members>
@@ -62,13 +64,13 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
                     const kept = view.identities?.[id];
                     const name = m ? m.display_name : 'Unknown member';
                     return (
-                        <li key={id} class="flex items-center gap-1" data-member={id}>
-                            <HoverRow as="button" type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11"
+                        <HoverRow as="li" key={id} class="flex items-center gap-1" data-member={id}>
+                            <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11"
                                 onClick={() => m && onProfile(m)}>
                                 <Avatar member={m} size="sm" online={m && !m.left_at ? online.has(id) : undefined} />
                                 <span class="min-w-0 truncate">{self ? `${name} (you)` : name}</span>
                                 {id === remover && <span class="badge badge-ghost badge-xs shrink-0" title="Removes members: they made the group, or have been in it longest">Removes</span>}
-                            </HoverRow>
+                            </button>
                             {!self && kept?.verified && <VerifiedMark id={`group-verified-${channel.id}-${id}`} name={name} />}
                             {!self && m?.identity && !kept?.verified && (
                                 <button type="button" class="btn btn-ghost btn-xs" onClick={() => onCompare(m)}>Compare</button>
@@ -79,7 +81,7 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
                                     Remove
                                 </button>
                             )}
-                        </li>
+                        </HoverRow>
                     );
                 })}
             </ul>
@@ -93,6 +95,7 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
                     Leave
                 </button>
             </div>
+            {expiry && !group?.broken && <ExpirySetting denID={denID} channel={expiry} />}
         </div>
     );
 }
