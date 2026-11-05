@@ -152,13 +152,20 @@ each person's vote once and lets them change it. DMs have no polls.
 ## Direct messages
 
 DMs are end-to-end encrypted: only you and the other person can read them, not
-the den. To start one, open someone's profile and choose
-**Message**.
+the den. To start one, open someone's profile and choose **Message**, and
+write: it opens at once.
 
-Before your first message, you compare a **check code**: each of you reads out
-half of it and types in the other's half. The den passes your keys between you,
-so if it were tampered with, it could slip in keys of its own. The digits only
-match if nobody did. Compare somewhere the den can't reach, best first:
+The den passes your keys between you, so if it were tampered with, it could
+slip in keys of its own. To be sure it didn't, compare **codes**. Each of you
+has one in each den, 20 digits, the same for everyone who compares with you.
+Open the lock beside the person's name in the DM, or **Compare codes** on their
+profile, read your code out to them, and type theirs as they read it out. If
+both match, nobody sits between you, and a green check shows beside their name,
+on your other devices too within the hour. Comparing is up to you, any time,
+and the den never learns whether you did. Your own code is in the den's
+**Manage**, under **Your code**.
+
+Compare somewhere the den can't reach, best first:
 
 1. In person.
 2. On a voice or video call, where you know it's really them.
@@ -167,8 +174,16 @@ match if nobody did. Compare somewhere the den can't reach, best first:
 5. In a den neither of you owns, which could change what you see there.
 
 Be wary of "I'm @them over there, let's compare there": compare where you know
-who you're talking to. If the digits don't match, someone may be in the middle,
-so start the DM again.
+who you're talking to. If the digits don't match, someone may be in the middle:
+don't trust the DM until you've compared somewhere else.
+
+If someone's keys change, as when they reset their DM recovery key, the DM says
+so where it happened, and their green check goes. If you'd compared codes with
+them, the DM waits until you compare again, or choose **Send anyway**.
+
+A DM with someone whose Dens hasn't been updated waits until it is. DMs where
+you both typed each other's check digits, as Dens once asked, go on as they
+did.
 
 ## Notifications and sounds
 
