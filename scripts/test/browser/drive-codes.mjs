@@ -109,12 +109,14 @@ try {
     said = await compares(B, '1111 2222 3333 4444 5555', /don't match/);
     report(/don't match/.test(said) && !(await B.b.eval(`!!${CODES}.querySelector('[data-verified]')`)), "wrong digits don't match, and mark nothing");
     said = await compares(A, bobCode.replaceAll(' ', '-'), /The codes match/);
-    report(/The codes match: you verified Bob/.test(said), 'alice types bob\'s code, with dashes, and it matches');
+    report(/The codes match\./.test(said) && !said.includes('Bob'), 'alice types bob\'s code, with dashes, and it matches, the dialog naming nobody');
+    const guide = await A.b.eval(`${CODES}.querySelector('a[data-docs-link]')?.href + ' ' + ${CODES}.querySelector('a[data-docs-link]')?.target`);
+    report(guide === 'https://dens.chat/docs/join/#comparing-codes _blank', `the dialog's i opens the guide in a new tab: ${guide}`);
     said = await compares(B, aliceCode, /The codes match/);
-    report(/The codes match: you verified Alice/.test(said), "bob types alice's code, and it matches");
+    report(/The codes match\./.test(said), "bob types alice's code, and it matches");
     for (const s of [A, B]) await close(s);
-    report(await waitFor(() => verified(A, 'Bob'), "bob's mark on alice's page").catch(() => false), "a green circled check beside bob's name on alice's page");
-    report(await waitFor(() => verified(B, 'Alice'), "alice's mark on bob's page").catch(() => false), "a green circled check beside alice's name on bob's page");
+    report(await waitFor(() => verified(A, 'Bob'), "bob's mark on alice's page").catch(() => false), "a check beside bob's name on alice's page");
+    report(await waitFor(() => verified(B, 'Alice'), "alice's mark on bob's page").catch(() => false), "a check beside alice's name on bob's page");
     await A.b.shot(`${HOME}/shot-codes-verified-alice.png`);
 
     step("bob's comparison reaches his laptop");
