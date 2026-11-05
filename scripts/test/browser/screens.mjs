@@ -645,7 +645,8 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
     // from the screen's foot.
     await h.step('call-soundboard', async () => {
         const labels = await h.ev(`[...document.querySelectorAll('[data-call-bar] button')].map((b) => b.getAttribute('aria-label')).filter(Boolean).join('|')`);
-        did(labels === 'Soundboard|Mute|Deafen|Leave the call', `the call's bar holds the soundboard, mute, deafen and leave: ${labels}`);
+        did(labels === 'The call is end-to-end encrypted: compare codes|Soundboard|Mute|Deafen|Leave the call',
+            `the call's bar holds its lock (M16.2), the soundboard, mute, deafen and leave: ${labels}`);
         await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Mute"]')`);
         const muted = await waitFor(() => h.has(`document.querySelector('[data-call-bar] button[aria-label="Unmute"][aria-pressed="true"]')`), 'muted from the bar', 5000).catch(() => false);
         await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Unmute"]')`);
@@ -659,6 +660,23 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         did(tiles === 'Ping', `the soundboard opens as a sheet from the screen's foot, with the den's sounds: ${tiles}`);
         await d.back();
         await waitFor(async () => !(await h.has(sheet)), 'the sheet to close', 5000);
+    });
+    // The call's lock, beside how it stands in the bar, opens the member's
+    // code and each other member's Compare, which compares in place
+    // (M16.2).
+    await h.step('call-lock', async () => {
+        await d.tap(`document.querySelector('[data-call-bar] [data-call-lock]')`);
+        const dialog = `document.querySelector('[data-call-lock-dialog]')`;
+        await h.wait(`/[0-9]{4} [0-9]{4} [0-9]{4} [0-9]{4} [0-9]{4}/.test(${dialog}?.textContent || '')`, "the call's lock", 10000);
+        await h.snap('call-lock', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
+        const lock = await h.ev(`JSON.stringify({ sealed: ${dialog}.dataset.callLockDialog, others: [...${dialog}.querySelectorAll('li')].map((li) => li.textContent.trim()) })`);
+        const x = JSON.parse(lock);
+        did(x.sealed === 'sealed' && x.others.some((o) => o.includes('Carol') && o.includes('Compare')), `the call's lock opens the member's code and Carol's Compare: ${lock}`);
+        await d.tap(`[...${dialog}.querySelectorAll('li button')].find((b) => b.textContent.trim() === 'Compare')`);
+        await h.wait(`document.querySelector('[data-codes]')`, 'comparing with Carol', 5000);
+        await h.snap('call-lock-compare', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
+        await d.back();
+        await waitFor(async () => !(await h.has(`document.querySelector('[role=dialog]')`)), 'the dialog to close', 5000);
     });
     if (d.touch) {
         await h.step('call-button', async () => {

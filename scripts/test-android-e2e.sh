@@ -298,6 +298,9 @@ ok "a phone photo went as its smaller copy, and saved from the viewer it reached
 # would freeze a page that quiet a minute after it hid, but the app tells
 # its WebView it shows while the page has the microphone.
 echo ">> A call, off screen"
+# The den seals its calls (M16.2): each page's notes on its frames, which
+# its Dens logs at debug, say what it sealed and opened.
+phone drive api POST /api/settings '{"logLevel":"debug"}' | grep -q '^200' || fail "turning the phone's debug logs on"
 incus file push -q --uid 1000 --gid 1000 scripts/test/android/call.mjs dens-browsers/home/tester/browser/call.mjs
 incus exec dens-browsers --user 1000 --group 1000 --cwd /home/tester/browser --env HOME=/home/tester --env XDG_RUNTIME_DIR=/run/user/1000 -- \
   /home/tester/node call.mjs desk 215 quiet 20 150 >"$RUN_LOG_DIR/call-desk.log" 2>&1 &
@@ -329,6 +332,14 @@ wait "$desk_call" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/ca
 "$(./scripts/vendor.sh node 2>/dev/null | sed -n 's/^node=//p')" scripts/test/android/call.mjs judge \
   "$RUN_LOG_DIR/call-phone.log" "$RUN_LOG_DIR/call-desk.log" "$off" "$on" | tee "$RUN_LOG_DIR/call-judged.log" ||
   fail "the call off screen"
+# Each side sealed what it sent and opened what the other did.
+frames() { grep -oE 'frames sealed [0-9]+, opened [0-9]+, dropped [0-9]+' | tail -n 1; }
+both() { [[ "$1" =~ frames\ sealed\ ([0-9]+),\ opened\ ([0-9]+) ]] && ((BASH_REMATCH[1] > 0 && BASH_REMATCH[2] > 0)); }
+phone_frames=$(phone drive eval "fetch('/api/logs').then((r) => r.text())" | frames || :)
+desk_frames=$(den api GET /api/logs | frames || :)
+both "$phone_frames" || fail "the phone's notes don't show its call sealed both ways: ${phone_frames:-none}"
+both "$desk_frames" || fail "desk's notes don't show its call sealed both ways: ${desk_frames:-none}"
+ok "the call was sealed both ways, by the pages' notes: the phone's $phone_frames, desk's $desk_frames"
 ended() { shell_log | grep -q 'service: the page stopped recording, so its call is over'; }
 waitfor 25 "the call's end" ended
 shell_log | grep -q 'page: no longer held' || fail "the page still held after its call"
