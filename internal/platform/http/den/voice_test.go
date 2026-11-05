@@ -166,6 +166,45 @@ func (v *voiceSocket) wait(what string, match func(denproto.Event) bool) {
 	}
 }
 
+// expected is an event to wait for, by what wait takes.
+type expected struct {
+	what  string
+	match func(denproto.Event) bool
+}
+
+func expect(what string, match func(denproto.Event) bool) expected { return expected{what, match} }
+
+// waitEach reads events until each of these has come, in whatever order:
+// the den queues the socket's own call's events, as voice.resumed, apart
+// from what goes through its subscription, as voice.sounding and
+// voice.key, and the two can pass each other on the way out.
+func (v *voiceSocket) waitEach(want ...expected) {
+	v.t.Helper()
+	left := append([]expected(nil), want...)
+	timeout := time.After(10 * time.Second)
+	for len(left) > 0 {
+		select {
+		case e, ok := <-v.events:
+			if !ok {
+				v.t.Fatalf("the socket closed waiting for %s", left[0].what)
+			}
+			for i, x := range left {
+				if x.match(e) {
+					left = append(left[:i], left[i+1:]...)
+					break
+				}
+			}
+		case <-timeout:
+			v.t.Fatalf("timed out waiting for %s", left[0].what)
+		}
+	}
+}
+
+// resumed matches the den's answer to a socket that takes its call back.
+func resumed() (string, func(denproto.Event) bool) {
+	return "the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed }
+}
+
 // ended matches the end of a call, for a reason.
 func ended(channel, reason string) (string, func(denproto.Event) bool) {
 	return "the call in " + channel + " to end: " + reason, func(e denproto.Event) bool {
@@ -282,7 +321,7 @@ func TestCallRidesOutItsSocket(t *testing.T) {
 	again := f.voiceSocket(bobToken, bobCaller)
 	again.version, again.answer = bob.version, bob.answer
 	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
-	again.wait("the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed })
+	again.wait(resumed())
 	carol := f.voiceSocket(carolToken, carolCaller)
 	carol.join(lounge.ID)
 	alice.wait(inCall(lounge.ID, alice.me, bob.me, carol.me))

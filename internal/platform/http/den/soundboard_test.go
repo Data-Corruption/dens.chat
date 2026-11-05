@@ -303,8 +303,7 @@ func TestASoundReachesWhoJoinsPartway(t *testing.T) {
 	again := f.voiceSocket(bobToken, bobCaller)
 	again.version, again.answer = bob.version, bob.answer
 	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
-	again.wait("the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed })
-	again.wait(sounding(lounge.ID, alice.me))
+	again.waitEach(expect(resumed()), expect(sounding(lounge.ID, alice.me)))
 
 	time.Sleep(500 * time.Millisecond)
 	carol := f.voiceSocket(carolToken, carolCaller)
