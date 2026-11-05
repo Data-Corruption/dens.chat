@@ -108,11 +108,15 @@ settings, slide up from the bottom of the screen; swipe one down to close it.
 ## Calls
 
 Tap a voice channel in a den's list to join its call. While you're in one, a
-bar across the top of the channel shows it: the pads open the den's
-soundboard, where a tap plays a sound for the call; the microphone mutes you;
-the headphones stop you hearing the call; the red phone leaves it; and a tap
-on the rest of the bar goes to the channel list, where the call's other
-buttons and the people in it are.
+bar across the top of the channel shows it: the lock says the call is
+end-to-end encrypted, and opens your code to compare with the others in it;
+the pads open the den's soundboard, where a tap plays a sound for the call;
+the microphone mutes you; the headphones stop you hearing the call; the red
+phone leaves it; and a tap on the rest of the bar goes to the channel list,
+where the call's other buttons and the people in it are.
+
+Encrypted calls need Android System WebView 141 or later. On an older one,
+Dens says so as you join, with a link to update it.
 
 A round button at the bottom right, by your thumb, holds your microphone.
 Tap it to mute, and again to unmute: it's struck through in red while you're

@@ -213,6 +213,14 @@ members, 500 of them online at once.
 Your den updates along with the Dens that hosts it: `dens update` updates both.
 If you'd rather keep them apart, host the den from an install of its own.
 
+Calls on your den are end-to-end encrypted: each member's Dens seals what they
+send, so neither you nor anyone holding the computer can hear or watch them.
+Your den takes calls only from a Dens that seals them, so a member whose Dens
+is older than that has to update before they can join a call: until then their
+call doesn't connect. Calls need Firefox 117 or later, or Chrome or Edge 141 or
+later, and on Android, Android System WebView 141 or later; Dens says so
+anywhere older.
+
 One install hosts one den. A second den on the same computer is a second
 **instance**: run the installer again with `--instance` and a name, and ports
 of its own (`--client-port`, `--den-port`, `--media-udp-port` and

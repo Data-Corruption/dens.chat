@@ -165,6 +165,10 @@ on your other devices too within the hour. Comparing is up to you, any time,
 and the den never learns whether you did. Your own code is in the den's
 **Manage**, under **Your code**.
 
+Calls are end-to-end encrypted too, with the same codes: the lock beside a call
+shows yours, and everyone in the call, to compare with right there. A
+comparison holds wherever you meet them after, in DMs and calls.
+
 Compare somewhere the den can't reach, best first:
 
 1. In person.
