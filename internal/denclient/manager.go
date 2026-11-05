@@ -116,9 +116,12 @@ type Manager struct {
 	signIns   map[string]*pendingSignIn
 	signInSeq uint64
 
-	// call is the install's one call, if it holds one (M2).
-	callMu sync.Mutex
-	call   *activeCall
+	// call is the install's one call, if it holds one (M2), and withheld
+	// the members whose keys for calls its pages don't get, as a
+	// development build's browser checks ask (M16.2); guarded by callMu.
+	callMu   sync.Mutex
+	call     *activeCall
+	withheld map[string]bool
 	// OnCall hears whether the install holds a call as that changes: the
 	// shortcut helper reads keys only during one (M7). hookMu keeps its
 	// calls in order, each with the state as it is then.

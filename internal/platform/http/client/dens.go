@@ -14,6 +14,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
@@ -49,6 +50,29 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountDevices(r)
 	rt.mountSoundboard(r)
 	rt.mountEmoji(r)
+	// A development build's browser checks deny a page a member's keys for
+	// calls, to show it then hears nothing of them (M16.2); no other form
+	// offers it.
+	if rt.a.Layout.Form == layout.Development {
+		r.Post("/api/dens/{den}/members/{member}/withhold", rt.handleWithhold)
+	}
+}
+
+// handleWithhold keeps a member's keys for calls from this install's
+// pages, or with on false gives them again (M16.2): development builds
+// alone.
+func (rt *router) handleWithhold(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		On bool `json:"on"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.a.Dens.Withhold(chi.URLParam(r, "den"), chi.URLParam(r, "member"), req.On); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // hosting describes the den this install holds: whether hosting is on
@@ -372,8 +396,9 @@ func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *webs
 // its call: joining or resuming it, answering the den's offers, asking for
 // an ICE restart, muting, sharing its screen and watching others' (M4.2),
 // holding push to talk and its notes for the log (M11), playing one of the
-// den's sounds (M14.3), and leaving; and from M12.3 "page", whether it's on
-// screen and whether the browser lets it notify.
+// den's sounds (M14.3), asking for its keys again (M16.2), and leaving;
+// and from M12.3 "page", whether it's on screen and whether the browser
+// lets it notify.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
@@ -382,6 +407,7 @@ type pageMessage struct {
 		Muted    bool                `json:"muted"`
 		Deafened bool                `json:"deafened"`
 		Resume   bool                `json:"resume"`
+		Sealed   bool                `json:"sealed"`
 		Version  int                 `json:"version"`
 		SDP      string              `json:"sdp"`
 		On       bool                `json:"on"`
@@ -410,10 +436,13 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 	case "typing":
 		_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 	case "voice.join":
-		marks := denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened}
-		if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, marks, msg.D.Resume, deliver) != nil {
+		opts := denclient.JoinOptions{Marks: denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened}, Resume: msg.D.Resume,
+			Sealed: msg.D.Sealed}
+		if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, opts, deliver) != nil {
 			deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
 		}
+	case "voice.keys":
+		rt.a.Dens.CallKeysAgain(page, msg.D.Den)
 	case "voice.answer":
 		rt.a.Dens.AnswerCall(page, msg.D.Den, msg.D.Version, msg.D.SDP)
 	case "voice.restart":

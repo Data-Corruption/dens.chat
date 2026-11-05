@@ -52,6 +52,9 @@ type denState struct {
 	// them, nil from a den older than emoji (M15.2).
 	emoji       map[string]denproto.Emoji
 	emojiLimits *denproto.EmojiLimits
+	// sealedCalls says the den seals every call end to end, and takes no
+	// join that doesn't (M16.2).
+	sealedCalls bool
 }
 
 // View is a joined den as the page sees it.
@@ -84,6 +87,9 @@ type View struct {
 	// them, null from a den older than emoji (M15.2).
 	Emoji       []denproto.Emoji      `json:"emoji"`
 	EmojiLimits *denproto.EmojiLimits `json:"emoji_limits"`
+	// SealedCalls says the den seals its calls end to end, so the page
+	// joins one only sealing what it sends (M16.2).
+	SealedCalls bool `json:"sealed_calls"`
 }
 
 func newState() *denState {
@@ -111,7 +117,7 @@ func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
-		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities}
+		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -296,6 +302,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		maps.Copy(next.members, prev)
 	}
 	next.limits, next.callLimits, next.retention, next.soundLimits = r.Den.Limits, r.Den.CallLimits, r.Den.Retention, r.Den.SoundLimits
+	next.sealedCalls = r.Den.SealedCalls
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
 		return errMalformed
@@ -414,7 +421,7 @@ type keptState struct {
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
 	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
-		EmojiLimits: s.emojiLimits},
+		EmojiLimits: s.emojiLimits, SealedCalls: s.sealedCalls},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
@@ -431,7 +438,7 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		return nil, errMalformed
 	}
 	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
-	s.soundLimits = k.Den.SoundLimits
+	s.soundLimits, s.sealedCalls = k.Den.SoundLimits, k.Den.SealedCalls
 	sounds, ok := cleanSounds(k.Sounds)
 	if !ok {
 		return nil, errMalformed

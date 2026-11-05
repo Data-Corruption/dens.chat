@@ -27,7 +27,8 @@ const CallDisconnected = "disconnected"
 // answer, carrying the den's candidates; that the den took the call back
 // after its connection dropped (M3); that it refused a share or a watch
 // (M4.2), or a sound (M14.3); who in the call holds push to talk (M11);
-// whose sound plays in it, "" for none (M14.3); or the call's end and why.
+// whose sound plays in it, "" for none (M14.3); the call's keys, whole,
+// as one changes (M16.2); or the call's end and why.
 type CallEvent struct {
 	DenID    string       `json:"den"`
 	Channel  string       `json:"channel"`
@@ -36,6 +37,7 @@ type CallEvent struct {
 	Refused  *CallRefusal `json:"refused,omitempty"`
 	Talking  *[]string    `json:"talking,omitempty"`
 	Sounding *string      `json:"sounding,omitempty"`
+	Keys     *CallKeys    `json:"keys,omitempty"`
 	Ended    string       `json:"ended,omitempty"`
 }
 
@@ -69,6 +71,19 @@ type activeCall struct {
 	asked     string
 	askedAt   time.Time
 	offeredAt time.Time
+	// keys are the call's keys, where its page seals it (M16.2), nil
+	// where it doesn't.
+	keys *callKeys
+}
+
+// JoinOptions are how a page joins a call: its member's marks, muted and
+// deafened; whether it takes back the call the den holds for this device
+// (M3); and whether it seals what it sends, frame by frame, under keys
+// this service makes (M16.2), as a den that seals calls requires.
+type JoinOptions struct {
+	Marks  denproto.VoiceMute
+	Resume bool
+	Sealed bool
 }
 
 // note logs a step of a call's signaling, at debug (M11).
@@ -81,12 +96,13 @@ func since(t time.Time) time.Duration { return time.Since(t).Round(time.Millisec
 
 // JoinCall starts the install's call in one of a den's voice channels, for
 // a page, which gets the call's offers and its end through deliver; it
-// mustn't block. A call another page held ends, as moved. With resume, the
+// mustn't block. A call another page held ends, as moved. With Resume, the
 // page asks the den for the call it holds for this device after the den's
 // connection dropped (M3), which the page's peer connection carries on.
 // Either way, the den's addresses are looked up afresh, since the network
-// may have changed.
-func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, marks denproto.VoiceMute, resume bool, deliver func(CallEvent)) error {
+// may have changed. A sealed call has this service make the member's keys
+// for it, from the start, or afresh as it's taken back (M16.2).
+func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, opts JoinOptions, deliver func(CallEvent)) error {
 	if !validID(channel) {
 		return inputError(errors.New("no such channel"))
 	}
@@ -95,10 +111,13 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mar
 		return err
 	}
 	asked := "join"
-	if resume {
+	if opts.Resume {
 		asked = "resume"
 	}
 	call := &activeCall{page: page, den: denID, channel: channel, deliver: deliver, fp: denproto.Fingerprint(c.j.denID), asked: asked}
+	if opts.Sealed {
+		call.keys = newCallKeys()
+	}
 	end := func(reason string) { deliver(CallEvent{DenID: denID, Channel: channel, Ended: reason}) }
 	if call.addrs, err = c.mediaAddrs(ctx); err != nil {
 		m.log.Warnf("Couldn't find where to send a call's media: %v", logged(err))
@@ -111,7 +130,13 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mar
 	m.call = call
 	m.callMu.Unlock()
 	m.callChanged()
+	if call.keys != nil {
+		go m.keyWork(call)
+	}
 	if old != nil {
+		if old.keys != nil {
+			old.keys.end()
+		}
 		if old.page != page {
 			m.note(old, "moved to another page")
 			old.deliver(CallEvent{DenID: old.den, Channel: old.channel, Ended: denproto.VoiceMoved})
@@ -124,7 +149,7 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, mar
 			}
 		}
 	}
-	join := denproto.VoiceJoin{ChannelID: channel, Muted: marks.Muted, Deafened: marks.Deafened, Resume: resume}
+	join := denproto.VoiceJoin{ChannelID: channel, Muted: opts.Marks.Muted, Deafened: opts.Marks.Deafened, Resume: opts.Resume, Sealed: opts.Sealed}
 	if err := c.sendFrame(denproto.EventVoiceJoin, join); err != nil {
 		m.note(call, "couldn't ask to %s it: the den isn't connected", asked)
 		if m.takeCall(func(x *activeCall) bool { return x == call }) != nil {
@@ -271,7 +296,8 @@ func (m *Manager) currentCall(page, denID string) *activeCall {
 	return m.call
 }
 
-// takeCall clears the install's call if it matches, and returns it.
+// takeCall clears the install's call if it matches, and returns it. Its
+// keys go with it (M16.2).
 func (m *Manager) takeCall(match func(*activeCall) bool) *activeCall {
 	m.callMu.Lock()
 	call := m.call
@@ -281,6 +307,9 @@ func (m *Manager) takeCall(match func(*activeCall) bool) *activeCall {
 	}
 	m.call = nil
 	m.callMu.Unlock()
+	if call.keys != nil {
+		call.keys.end()
+	}
 	m.callChanged()
 	return call
 }
@@ -321,8 +350,9 @@ func (m *Manager) denDropped(denID string) {
 // callEvent handles a den's offer or end of a call. An offer goes to the
 // page that holds the call once it checks out, with the den's candidates
 // written in; an offer that doesn't ends the call, since only it is at
-// stake.
-func (c *conn) callEvent(e denproto.Event) error {
+// stake. Another member's key for the call is checked and opened here
+// before the page gets it (M16.2).
+func (c *conn) callEvent(ctx context.Context, e denproto.Event) error {
 	m := c.m
 	denID := c.j.denID.String()
 	switch e.T {
@@ -377,6 +407,10 @@ func (c *conn) callEvent(e denproto.Event) error {
 		if call != nil && call.den == denID && call.channel == x.ChannelID {
 			m.note(call, "the den took it back, %s after the resume", since(asked))
 			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Resumed: true})
+			// The member's keys start afresh as the call is taken back.
+			if call.keys != nil {
+				call.keys.wake()
+			}
 		}
 	case denproto.EventVoiceRefused:
 		var x denproto.VoiceRefused
@@ -423,6 +457,12 @@ func (c *conn) callEvent(e denproto.Event) error {
 			member := x.MemberID
 			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, Sounding: &member})
 		}
+	case denproto.EventVoiceKey:
+		var k denproto.VoiceKeyEvent
+		if json.Unmarshal(e.D, &k) != nil || denproto.CheckVoiceKeyEvent(c.j.denID, k) != nil {
+			return errMalformed
+		}
+		c.takeKey(ctx, k)
 	case denproto.EventVoiceEnded:
 		var x denproto.VoiceEnded
 		if json.Unmarshal(e.D, &x) != nil {
@@ -466,7 +506,7 @@ func cleanRefusal(x denproto.VoiceRefused) (CallRefusal, bool) {
 func cleanReason(reason string) string {
 	switch reason {
 	case denproto.VoiceMoved, denproto.VoiceNotFound, denproto.VoiceFull, denproto.VoiceRateLimited,
-		denproto.VoiceForbidden, denproto.VoiceDeleted, denproto.VoiceDisconnectedByStaff:
+		denproto.VoiceForbidden, denproto.VoiceDeleted, denproto.VoiceDisconnectedByStaff, denproto.VoiceUpdateNeeded:
 		return reason
 	}
 	return denproto.VoiceFailed

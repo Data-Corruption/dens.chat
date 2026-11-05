@@ -51,6 +51,9 @@ type page struct {
 	// sends that offer again after a resume, as the page does.
 	version int
 	answer  string
+	// keys are the call's keys as the page last got them (M16.2).
+	keysMu sync.Mutex
+	keys   *denclient.CallKeys
 }
 
 func newPage(t *testing.T, m *denclient.Manager, id string) *page {
@@ -96,6 +99,10 @@ func (p *page) run() {
 				p.talking <- *e.Talking
 			case e.Sounding != nil:
 				p.sounding <- *e.Sounding
+			case e.Keys != nil:
+				p.keysMu.Lock()
+				p.keys = e.Keys
+				p.keysMu.Unlock()
 			case e.Offer != nil:
 				if e.Offer.Version != p.version {
 					answer, err := p.caller.Answer(e.Offer.SDP)
@@ -112,7 +119,7 @@ func (p *page) run() {
 
 func (p *page) join(denID, channel string) {
 	p.t.Helper()
-	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denproto.VoiceMute{}, false, p.deliver); err != nil {
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denclient.JoinOptions{Sealed: true}, p.deliver); err != nil {
 		p.t.Fatal(err)
 	}
 }
@@ -121,7 +128,7 @@ func (p *page) join(denID, channel string) {
 // is back.
 func (p *page) resume(denID, channel string) {
 	p.t.Helper()
-	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denproto.VoiceMute{}, true, p.deliver); err != nil {
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denclient.JoinOptions{Resume: true, Sealed: true}, p.deliver); err != nil {
 		p.t.Fatal(err)
 	}
 	select {
@@ -142,6 +149,25 @@ func (p *page) waitEnded(reason string) {
 		}
 	case <-time.After(10 * time.Second):
 		p.t.Fatalf("page %s's call didn't end %q", p.id, reason)
+	}
+}
+
+// waitKeys waits until the call's keys, as the page last got them, are as
+// want says, and returns them.
+func (p *page) waitKeys(what string, want func(denclient.CallKeys) bool) denclient.CallKeys {
+	p.t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		p.keysMu.Lock()
+		k := p.keys
+		p.keysMu.Unlock()
+		if k != nil && want(*k) {
+			return *k
+		}
+		if time.Now().After(deadline) {
+			p.t.Fatalf("page %s never got %s: %+v", p.id, what, k)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -313,7 +339,7 @@ func TestCallRefusalsReachThePage(t *testing.T) {
 	// The den has no calls running: no media ports in this test.
 	a.join(denID, general)
 	a.waitEnded(denproto.VoiceNotFound)
-	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, denproto.VoiceMute{}, false, a.deliver); err == nil {
+	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, denclient.JoinOptions{Sealed: true}, a.deliver); err == nil {
 		t.Error("joined a call in a den this install hasn't joined")
 	}
 }
@@ -534,4 +560,137 @@ func TestTheSoundboardThroughTheClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	viewOf(t, member, denID, "the sound deleted", func(v denclient.View) bool { return len(v.Sounds) == 0 })
+}
+
+// TestCallKeysThroughTheClient checks a sealed call's keys between three
+// installs (M16.2): each member's Dens makes a key as they join, and a new
+// one as anyone joins or leaves, sealed to the others' identities, which
+// the den passes on; each opens the others' and gives its page the call's
+// keys whole, without those of a member who left; a page asks for them
+// again; and a development build withholds a member's from its pages.
+func TestCallKeysThroughTheClient(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.startCalls()
+	name := "Lounge"
+	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+		t.Fatal(err)
+	}
+	invite, _, err := owner.CreateInvite(context.Background(), denID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := h.client(t, noOwnDen)
+	join(t, third, invite, "carol")
+	var lounge string
+	v := viewOf(t, third, denID, "the voice channel, and a den that seals calls", func(v denclient.View) bool {
+		for _, c := range v.Channels {
+			if c.Name == name {
+				lounge = c.ID
+			}
+		}
+		return lounge != "" && v.SealedCalls
+	})
+	if !v.SealedCalls {
+		t.Fatal("the den's view doesn't say it seals calls")
+	}
+	alice, bob, carol := me(t, owner, denID).ID, me(t, member, denID).ID, me(t, third, denID).ID
+	// Each member's Dens publishes their identity as it signs in.
+	viewOf(t, owner, denID, "everyone's identities", func(v denclient.View) bool {
+		n := 0
+		for _, m := range v.Members {
+			if m.Identity != "" {
+				n++
+			}
+		}
+		return n == 3
+	})
+	a, b := newPage(t, owner, "page-a"), newPage(t, member, "page-b")
+	a.join(denID, lounge)
+	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
+	b.join(denID, lounge)
+
+	// settled waits until each page holds every other's latest key, and
+	// no member's but theirs, and returns what each holds, by member.
+	type side struct {
+		p  *page
+		id string
+	}
+	settled := func(what string, sides ...side) map[string]denclient.CallKeys {
+		t.Helper()
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			got := map[string]denclient.CallKeys{}
+			for _, s := range sides {
+				s.p.keysMu.Lock()
+				if s.p.keys != nil {
+					got[s.id] = *s.p.keys
+				}
+				s.p.keysMu.Unlock()
+			}
+			ok := len(got) == len(sides)
+			for _, s := range sides {
+				k := got[s.id]
+				if !ok || k.Own == nil || len(k.Members) != len(sides)-1 {
+					ok = false
+					break
+				}
+				for _, o := range sides {
+					if o.id != s.id && (got[o.id].Own == nil || !bytes.Equal(k.Members[o.id].Key, got[o.id].Own.Key) || k.Members[o.id].N != got[o.id].Own.N) {
+						ok = false
+					}
+				}
+			}
+			if ok {
+				return got
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the pages never settled on %s: %+v", what, got)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	first := settled("alice's and bob's keys", side{a, alice}, side{b, bob})
+	if len(first[alice].Own.Key) != denproto.CallKeySize {
+		t.Fatalf("a key of %d bytes", len(first[alice].Own.Key))
+	}
+
+	// Carol joins: alice's and bob's keys change, and each page holds all
+	// three members' latest.
+	c := newPage(t, third, "page-c")
+	c.join(denID, lounge)
+	second := settled("three members' keys", side{a, alice}, side{b, bob}, side{c, carol})
+	for _, id := range []string{alice, bob} {
+		if bytes.Equal(second[id].Own.Key, first[id].Own.Key) {
+			t.Errorf("member %s's key didn't change as carol joined", id)
+		}
+	}
+	c.hears(alice)
+
+	// A page asks again, and gets them whole.
+	a.keysMu.Lock()
+	a.keys = nil
+	a.keysMu.Unlock()
+	owner.CallKeysAgain("page-a", denID)
+	a.waitKeys("its keys again", func(k denclient.CallKeys) bool { return k.Own != nil && len(k.Members) == 2 })
+
+	// A development build withholds bob's key from alice's pages, and
+	// gives it again.
+	if err := owner.Withhold(denID, bob, true); err != nil {
+		t.Fatal(err)
+	}
+	a.waitKeys("its keys without bob's", func(k denclient.CallKeys) bool { _, ok := k.Members[bob]; return !ok && len(k.Members) == 1 })
+	if err := owner.Withhold(denID, bob, false); err != nil {
+		t.Fatal(err)
+	}
+	a.waitKeys("bob's key again", func(k denclient.CallKeys) bool { _, ok := k.Members[bob]; return ok })
+
+	// Carol leaves: alice's and bob's keys change again, without hers.
+	third.LeaveCall("page-c", denID)
+	viewOf(t, owner, denID, "carol gone", showsCall(lounge, alice, bob))
+	third3 := settled("alice's and bob's keys after carol left", side{a, alice}, side{b, bob})
+	for _, id := range []string{alice, bob} {
+		if bytes.Equal(third3[id].Own.Key, second[id].Own.Key) {
+			t.Errorf("member %s's key didn't change as carol left", id)
+		}
+	}
 }

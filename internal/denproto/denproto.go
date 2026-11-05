@@ -280,6 +280,9 @@ type Den struct {
 	Retention   int          `json:"retention,omitempty"`
 	SoundLimits SoundLimits  `json:"sound_limits,omitzero"`
 	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
+	// SealedCalls says the den seals every call end to end (M16.2), and
+	// takes no join that doesn't; a den older than it doesn't say so.
+	SealedCalls bool `json:"sealed_calls,omitempty"`
 }
 
 // Roles.

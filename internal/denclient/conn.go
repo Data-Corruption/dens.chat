@@ -658,6 +658,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.identitiesChanged(ctx)
 		}
 		c.wakeIdentities()
+		c.m.keysDue(c.j.denID.String())
 		c.m.notify()
 		// What the member can see may have changed, so files cached in
 		// memory go too, those on disk as far as the den's changes say
@@ -681,7 +682,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if c.den != nil {
 			retained = c.den.retention != d.Retention
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
-			c.den.emojiLimits = d.EmojiLimits
+			c.den.emojiLimits, c.den.sealedCalls = d.EmojiLimits, d.SealedCalls
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -693,12 +694,12 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// The page shows the den's name, limits and retention; the address
 		// is this install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
-			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits})
+			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits, SealedCalls: d.SealedCalls})
 		return out, err == nil, err
 	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking,
-		denproto.EventVoiceSounding:
+		denproto.EventVoiceSounding, denproto.EventVoiceKey:
 		// These go to the page holding the call, not to every page.
-		return e, false, c.callEvent(e)
+		return e, false, c.callEvent(ctx, e)
 	case denproto.EventRecordUpdated:
 		// Another device of this member's wrote their record (M16.1).
 		var u denproto.RecordUpdated
@@ -821,6 +822,11 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
+	// Who is in the install's call may have changed, or a member's identity,
+	// which changes the member's key for it (M16.2).
+	if err == nil && ok && (e.T == denproto.EventVoiceState || e.T == denproto.EventMemberUpdated) {
+		c.m.keysDue(c.j.denID.String())
+	}
 	if met {
 		c.identitiesChanged(ctx)
 	}

@@ -1,8 +1,10 @@
 package client_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/sfu/sfutest"
 
 	"github.com/coder/websocket"
@@ -22,7 +25,11 @@ import (
 // a voice channel through an install's page socket, answers the den's
 // offers as the page does, with Pion in the browser's place, and passes
 // once it has heard another member, and whatever DENS_PROBE_THEN asks for
-// after. It runs only when DENS_VOICE_PROBE names the install's client
+// after. It joins as a page that seals its frames, as a den with M16.2
+// takes no other, and waits for the call's keys, the other member's among
+// them, which shows their services passed their keys through the den; it
+// sends Pion's numbered packets as they are, which the den forwards all
+// the same. It runs only when DENS_VOICE_PROBE names the install's client
 // listener; the harness sets the rest:
 //
 //	DENS_VOICE_PROBE    the client listener, such as http://127.0.0.1:8484
@@ -106,7 +113,7 @@ func TestVoiceProbe(t *testing.T) {
 		}
 		return socket().Write(ctx, websocket.MessageText, data)
 	}
-	if err := send("voice.join", map[string]any{"den": den, "channel": channel}); err != nil {
+	if err := send("voice.join", map[string]any{"den": den, "channel": channel, "sealed": true}); err != nil {
 		t.Fatal(err)
 	}
 	// The reader answers offers as the page does, the same answer again to
@@ -129,6 +136,8 @@ func TestVoiceProbe(t *testing.T) {
 	version, firstAfterResume := 0, 0
 	answer := ""
 	away, offline := false, false
+	// keys are the call's keys as the service last gave them (M16.2).
+	var keys *denclient.CallKeys
 	read := func(ws *websocket.Conn) {
 		for {
 			_, data, err := ws.Read(ctx)
@@ -192,6 +201,10 @@ func TestVoiceProbe(t *testing.T) {
 				case refusals <- *e.Refused:
 				default:
 				}
+			case e.Keys != nil:
+				mu.Lock()
+				keys = e.Keys
+				mu.Unlock()
 			case e.Offer != nil:
 				select {
 				case offers <- e.Offer.SDP:
@@ -241,6 +254,39 @@ func TestVoiceProbe(t *testing.T) {
 		return c
 	}
 	wait("member "+hear, 70*time.Second, heard(100))
+	// keysWith waits until the call's keys hold this member's own, unlike
+	// before, and the heard member's.
+	keysWith := func(before []byte) <-chan error {
+		c := make(chan error, 1)
+		go func() {
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				mu.Lock()
+				k := keys
+				mu.Unlock()
+				if k != nil && k.Own != nil && len(k.Members[hear].Key) == denproto.CallKeySize && !bytes.Equal(k.Own.Key, before) {
+					t.Logf("the call's keys: this member's numbered %d, member %s's %d", k.Own.N, hear, k.Members[hear].N)
+					c <- nil
+					return
+				}
+				if time.Now().After(deadline) {
+					c <- fmt.Errorf("the call's keys never held member %s's: %+v", hear, k)
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+		return c
+	}
+	ownKey := func() []byte {
+		mu.Lock()
+		defer mu.Unlock()
+		if keys == nil || keys.Own == nil {
+			return nil
+		}
+		return keys.Own.Key
+	}
+	wait("the call's keys", 35*time.Second, keysWith(nil))
 	path := caller.Path()
 	if path != network {
 		t.Fatalf("the call went over %q, not %s", path, network)
@@ -260,7 +306,8 @@ func TestVoiceProbe(t *testing.T) {
 		before := version
 		firstAfterResume = -1
 		mu.Unlock()
-		if err := send("voice.join", map[string]any{"den": den, "channel": channel, "resume": true}); err != nil {
+		key := ownKey()
+		if err := send("voice.join", map[string]any{"den": den, "channel": channel, "resume": true, "sealed": true}); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -273,6 +320,8 @@ func TestVoiceProbe(t *testing.T) {
 			t.Fatal("the call wasn't resumed")
 		}
 		wait("member "+hear+" after resuming", 30*time.Second, heard(100))
+		// The member's keys start afresh as the call is taken back.
+		wait("the call's keys after resuming", 35*time.Second, keysWith(key))
 		mu.Lock()
 		after := firstAfterResume
 		mu.Unlock()

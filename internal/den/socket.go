@@ -545,6 +545,11 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				if json.Unmarshal(e.D, &req) == nil {
 					d.soundCall(ctx, s, sock, req)
 				}
+			case denproto.EventVoiceKey:
+				var req denproto.VoiceKey
+				if json.Unmarshal(e.D, &req) == nil {
+					d.relayKey(s, sock, req)
+				}
 			}
 			// Unknown event types are ignored, as the protocol requires.
 		}
