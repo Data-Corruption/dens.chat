@@ -22,7 +22,7 @@ Terms used below:
 The client sends `Dens-Protocol: <n>` on every request and on the WebSocket upgrade, where `n` is the highest version it speaks. The den replies with `Dens-Protocol-Range: <min>-<max>`.
 
 - If `n` falls in the range, the request proceeds at version `n`.
-- If `n` is above the range, the client retries once at the den's `max` if its own minimum allows it, and goes at it from then on, until a response's range says the den speaks a newer one, as once it updates.
+- If `n` is above the range, the client retries once at the den's `max` if its own minimum allows it, and goes at it from then on, until a response's range says the den speaks a newer one, as once it updates. A socket keeps the version its upgrade went at, so a client whose upgrade's answer shows another version they share opens the socket again at it, once.
 - Otherwise the den answers `426` with the error code `protocol_unsupported`, and the client shows "this den needs a newer or older Dens" with both ranges.
 
 This document describes version 2, which M16.3 brought with group DMs (see [Group DMs](#group-dms-m163)). A den serves 1 and 2 (`Dens-Protocol-Range: 1-2`): to a request or socket at version 1, it sends nothing of group DMs, in `ready`, events or answers, and their routes answer `404 not_found`, since an older client takes a channel of more than two members, or a message with more than two members' sets of reactions, for the den breaking the protocol. Everything else is as at version 1.
@@ -65,13 +65,13 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 
 ```
 den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3),
-          "emoji_limits"? (M15.2), "sealed_calls"? (M16.2)}
+          "emoji_limits"? (M15.2), "sealed_calls"? (M16.2), "disappearing"? (M16.4)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?, "identity"? (M16.1)}
 image  = {"id", "width", "height", "animated"? (M15.1)}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), and `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)), and `disappearing` that it deletes a DM's and a group's messages at the time their members set (see [Disappearing messages](#disappearing-messages-m164)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
 
 ```
 PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?, "emoji_limits"?}   200 den   (owner only)
@@ -258,7 +258,7 @@ GET /api/changes?since=<version>&upto=<message id>
 200 {"version": 1300, "messages": [message, …], "deleted": [{"id", "channel_id"}, …], "more": false}
 ```
 
-- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, or from M15.3 whose reactions changed, or from M15.4 whose poll's votes changed or that ended, its revision as it was, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
+- `version` counts the den's changes: each message edited (its text, files or editors, or a tick) or deleted, from M16.4 as its time came too, or from M15.3 whose reactions changed, or from M15.4 whose poll's votes changed or that ended, its revision as it was, and from M6.2 each member whose record changed (joining, leaving or removed, a name, a picture or a role), in the order they happened. `epoch` names the den's run of versions; a den restored from a backup starts a new one, since the backup can give a new message an ID a client holds for another. `floor` is the oldest version the den still has the changes since, which moves up as it forgets changes older than 30 days. `expired` is the last message retention deleted, once it has deleted any (see [Retention](#retention-m5)).
 - A client keeps what it cached from an earlier `ready` only when its version is from the same `epoch`, no older than `floor` and no newer than `version`; otherwise it drops it. It takes the `version` of a `ready` that finds it holding nothing.
 - **Members since (M6.2).** A client that kept the list of members from a `ready` names the epoch and version of that `ready` on the socket's upgrade, as `members`. When the den can still say what changed since, `ready` carries only the members whose records changed after that version, and says so with `sync.members_since`, the version they changed after; the client changes its list by them and takes the new `version` for its list. Otherwise `ready` carries everyone, without `members_since`. A `ready` the den sends mid-stream goes by the same cursor, which the socket's own events kept current.
 - `GET /api/changes` returns the messages edited or deleted after `since`, in channels the member can see now, and with IDs up to `upto` when it's given: the newest message the client holds. An edited message comes as history has it now, and a deleted one as its ID and channel. A change in a channel that's gone is left out, since the channel is missing from `ready` and the client drops it whole.
@@ -329,10 +329,10 @@ group   = {"id", "name", "position"}
 ```
 message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
            "text", "reply_to"?, "reply"?, "nonce"?, "attachments"? (M1.4), "editors"? (M1.6),
-           "sealed"?, "key_id"? (M1.7), "reactions"?, "dm_reactions"? (M15.3), "poll"?, "everyone"? (M15.4)}
+           "sealed"?, "key_id"? (M1.7), "reactions"?, "dm_reactions"? (M15.3), "poll"?, "everyone"? (M15.4), "expires_at"? (M16.4)}
 ```
 
-A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions-m153)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls-m154)).
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](#private-dms-m17)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions-m153)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls-m154)). A DM's or a group's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](#disappearing-messages-m164)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files (M1.4), when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links-m3)).
 
@@ -411,6 +411,7 @@ DELETE /api/messages/{id}                                                       
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages-m16)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's. In a DM only the author deletes a message (M8).
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way, in `files` beside the message's own fields (M5; see [Attachments](#attachments)).
+- Each member a deleted message counted for, in a DM or a group each other member and in a channel each it mentioned, gets `read_state.updated` after its `message.deleted`: their `mention_count` without it, and where it was all that lay past their read position, the position moved past it (M16.4). A client learns a channel's newest message only as messages come, so a DM whose last message went unread would otherwise stay unread until the next `ready`.
 
 ### Retention (M5)
 
@@ -419,9 +420,24 @@ GET /api/den/retention?days=N   200 {"messages", "bytes"}   (owner only)
 messages.expired {"through": "<message id>"}
 ```
 
-- With a retention period, the den deletes the messages sent more than that many days ago, in channels and DMs, with their files, as it deletes any message, within the hour after they pass it. Edits don't change a message's age, and neither do replies to it.
+- With a retention period, the den deletes the messages sent more than that many days ago, in channels and DMs, with their files, as it deletes any message, within the hour after they pass it. Edits don't change a message's age, and neither do replies to it. A message that disappears (M16.4) goes at its own time, or with retention's pass where that comes first.
 - It deletes the oldest first, in the order they were sent, so after a pass every message up to the last one it deleted is gone, in every channel. It sends `messages.expired` naming that message, and no `message.deleted` for each. Clients drop every message with an ID up to `through`, the quotes of them in replies, and the files on them; a channel whose last message is among them holds none, so nothing in it is unread. `ready` names the last message retention deleted as `sync.expired` (M6), for a client that was away.
 - The owner sets the period with `PATCH /api/den`: 1 to 3,650 days, or 0 to turn it off. A change starts a pass at once. `GET /api/den/retention` says what a period of `days` would delete now, for the settings to show before a change: how many messages, and the bytes their files take.
+
+### Disappearing messages (M16.4)
+
+```
+channel = {…, "expires_after"?: <seconds>, "expires_set"?: {"by", "at"}}   a DM's or a group DM's
+message = {…, "expires_at"?}
+
+PUT /api/dms/{id}/expiry   {"expires_after"}   200 channel
+```
+
+- Any member of a DM or a group DM sets how long its messages stay after they're sent: `expires_after` is 3600, 86400, 604800 or 2419200 seconds, an hour, a day, a week or four weeks, or 0, Off, which a new one starts at and its channel then leaves out. A development instance's den also takes any whole number of seconds up to 2419200, for the browser checks, and a client takes any such time from a den. `expires_set` is who last set it and when, once anyone has, Off included, for the line that says so.
+- Another time gets `400 invalid_field`, as does a channel that isn't a DM or a group DM; a DM whose other member left gets `403 forbidden`, and a group at version 1 `404 not_found`. The same time again changes nothing and tells nobody. A change reaches the DM's two members, or the group's, as `channel.updated {channel}`, and `ready` carries it with the channel. Setting a time counts toward the member's other writes.
+- A message sent while its channel has a time carries `expires_at`: its `created_at` plus the time, by the den's clock. An edit leaves it. A client refuses a message whose `expires_at` isn't after its `created_at`, or that isn't a DM's or a group's.
+- The den deletes each as `expires_at` comes, as its author's delete would: with its files and reactions, `message.deleted {id, channel_id, files?}` to whoever can see it, and the change log; and as it starts, what came due while it was stopped. Each member it counted for hears `read_state.updated`, as for any delete (see [Sending, editing, deleting](#sending-editing-deleting)).
+- A client drops what it holds past `expires_at`, by its own clock, whether it can reach the den or not, and leaves it out of history. An older client, which knows no `expires_at`, drops it as the den deletes it. A client offers the setting only on a den whose info says `disappearing`.
 
 ### Read state
 
@@ -1029,7 +1045,7 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, and from M16.1 publishing an identity, making a DM's key and writing the record | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, and from M16.4 setting a DM's or a group's time | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | A member's keys for calls (M16.2) | 30 per 10 seconds per member; the rest are dropped |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |
