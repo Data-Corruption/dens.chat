@@ -403,3 +403,55 @@ func TestSnapshotLastMessages(t *testing.T) {
 		}
 	}
 }
+
+// An author's delete of what another member hadn't read moves that
+// member's read position past it, where it was all that lay unread, so a
+// DM whose last message went isn't left unread for their Dens, which knows
+// a channel's newest message only as messages come; an older message
+// still unread keeps it short of that. Each hears their read state.
+func TestDeletesReadPastWhatWent(t *testing.T) {
+	f, owner, bob := chatFixture(t)
+	ctx := context.Background()
+	dm, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(bob.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := f.send(bob, dm.ID, "read")
+	if err := f.d.MarkRead(ctx, owner, dm.ID, denproto.ReadRequest{MessageID: read.ID}); err != nil {
+		t.Fatal(err)
+	}
+	sub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
+	defer f.d.Hub.Unsubscribe(sub)
+	unread := f.send(bob, dm.ID, "unread")
+	last := f.send(bob, dm.ID, "last")
+	if err := f.d.Delete(ctx, bob, last.ID); err != nil {
+		t.Fatal(err)
+	}
+	// The older one, still unread, holds the position where it was.
+	if r := nextEvent[denproto.ReadState](t, sub, denproto.EventReadStateUpdated); r.ReadPosition != read.ID || r.MentionCount != 1 {
+		t.Fatalf("alice's read state after bob's last went: %+v", r)
+	}
+	if err := f.d.Delete(ctx, bob, unread.ID); err != nil {
+		t.Fatal(err)
+	}
+	if r := nextEvent[denproto.ReadState](t, sub, denproto.EventReadStateUpdated); r.ReadPosition != unread.ID || r.MentionCount != 0 {
+		t.Fatalf("alice's read state once nothing unread is left: %+v", r)
+	}
+	if r := f.readState(owner.MemberID, dm.ID); r.LastMessage != read.ID || r.ReadPosition != unread.ID {
+		t.Errorf("alice's snapshot: %+v", r)
+	}
+
+	// A ban's delete reads its readers past what it took too.
+	carol := f.member(owner, "carol")
+	dm2, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(carol.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spam := f.send(carol, dm2.ID, "spam")
+	if err := f.d.Remove(ctx, owner, denproto.FormatID(carol.MemberID), denproto.RemoveRequest{Ban: true, DeleteMessages: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.readState(owner.MemberID, dm2.ID); r.LastMessage != "" || r.ReadPosition != spam.ID || r.MentionCount != 0 {
+		t.Errorf("alice's read state after the ban took carol's spam: %+v", r)
+	}
+}

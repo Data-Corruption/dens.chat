@@ -242,13 +242,15 @@ func (d *Den) groups(ctx context.Context, q querier) ([]denproto.Group, error) {
 	return out, rows.Err()
 }
 
-const channelColumns = `id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, bitrate`
+const channelColumns = `id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, bitrate,
+	expires_after, expires_by, expires_set_at`
 
 func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	var c denproto.Channel
 	var id int64
-	var group, low, high, bitrate sql.NullInt64
-	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly, &low, &high, &bitrate)
+	var group, low, high, bitrate, expiresBy, expiresSet sql.NullInt64
+	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly, &low, &high, &bitrate,
+		&c.ExpiresAfter, &expiresBy, &expiresSet)
 	c.ID = denproto.FormatID(id)
 	c.Bitrate = int(bitrate.Int64)
 	if low.Valid && high.Valid {
@@ -257,6 +259,10 @@ func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	if group.Valid {
 		g := denproto.FormatID(group.Int64)
 		c.GroupID = &g
+	}
+	// Who last set a DM's or a group's time, and when (M16.4).
+	if expiresBy.Valid && expiresSet.Valid {
+		c.ExpiresSet = &denproto.ExpirySet{By: denproto.FormatID(expiresBy.Int64), At: expiresSet.Int64}
 	}
 	return c, err
 }
@@ -916,16 +922,18 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 
 // Messages --------------------------------------------------------------------
 
-const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id, everyone`
+const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id, everyone, expires_at`
 
 func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	var m denproto.Message
 	var id, channel, author int64
-	var editedAt, editedBy, replyTo, keyID sql.NullInt64
+	var editedAt, editedBy, replyTo, keyID, expiresAt sql.NullInt64
 	var text, nonce []byte
-	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID, &m.Everyone); err != nil {
+	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID, &m.Everyone,
+		&expiresAt); err != nil {
 		return m, err
 	}
+	m.ExpiresAt = expiresAt.Int64
 	m.ID, m.ChannelID, m.AuthorID = denproto.FormatID(id), denproto.FormatID(channel), denproto.FormatID(author)
 	if keyID.Valid {
 		// A DM's text is sealed by its members' clients. It goes out as it
@@ -1338,7 +1346,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	}
 	var id int64
 	var reopened []int64
-	var keyID *int64
+	var keyID, expires *int64
 	var posted *denproto.Poll
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		text := []byte(req.Sealed)
@@ -1350,11 +1358,22 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 				return err
 			}
 			keyID = &k
+			// A DM's or a group's message goes by the time it has as it's
+			// sent, read here so a member setting one meanwhile can't slip
+			// in between (M16.4).
+			var after int64
+			if err := tx.QueryRowContext(ctx, `SELECT expires_after FROM den_channels WHERE id = ?`, cid).Scan(&after); err != nil {
+				return err
+			}
+			if after > 0 {
+				at := now.Add(time.Duration(after) * time.Second).UnixMilli()
+				expires = &at
+			}
 		} else {
 			text = []byte{}
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id, everyone)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone)
+		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id, everyone, expires_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone, expires)
 		if err != nil {
 			return err
 		}
@@ -1407,10 +1426,14 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		Editors: formatIDs(editors), Poll: posted, Everyone: everyone,
 	}
 	if posted != nil {
-		d.planPolls()
+		d.planTimer()
 	}
 	if dm {
 		m.Sealed, m.KeyID = req.Sealed, denproto.FormatID(*keyID)
+		if expires != nil {
+			m.ExpiresAt = *expires
+			d.dueAt(*expires)
+		}
 	} else {
 		attached, err := d.attachments(ctx, d.db, []int64{id})
 		if err != nil {
@@ -1784,8 +1807,16 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return err
 	}
+	var readers []reader
 	err = d.tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		if readers, err = readersOf(ctx, tx, []int64{mid}); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
+			return err
+		}
+		if err := passDeleted(ctx, tx, readers, map[int64][]int64{cid: {mid}}); err != nil {
 			return err
 		}
 		return logMessage(ctx, tx, mid, cid, d.now())
@@ -1794,7 +1825,105 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 		return err
 	}
 	d.files.remove(blobs)
-	return d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid]}, audienceOf(c))
+	if err := d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid]}, audienceOf(c)); err != nil {
+		return err
+	}
+	return d.publishReaders(ctx, readers)
+}
+
+// reader is a member a message counted for in their unread count, in its
+// channel: a DM's other member, a group's others, or one a channel's
+// message mentions, as its rows in den_mentions say.
+type reader struct{ member, channel int64 }
+
+// readersOf lists the members the messages with the given IDs counted
+// for, within tx, before they go.
+func readersOf(ctx context.Context, tx *sql.Tx, ids []int64) ([]reader, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT member_id, channel_id FROM den_mentions WHERE message_id IN (?`+
+		strings.Repeat(", ?", len(ids)-1)+`) ORDER BY channel_id, member_id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []reader
+	for rows.Next() {
+		var r reader
+		if err := rows.Scan(&r.member, &r.channel); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// passDeleted moves each reader's read position past the messages just
+// deleted in their channel, by channel in deleted, as far as they were all
+// that lay between it and the next message left, within tx. A client knows
+// a channel's newest message only as messages come, so without it a DM
+// whose last message went unread, deleted or disappearing (M16.4), would
+// stay unread until the client's next snapshot; one still holding a message
+// unread before it stays so.
+func passDeleted(ctx context.Context, tx *sql.Tx, readers []reader, deleted map[int64][]int64) error {
+	for _, r := range readers {
+		if err := passGone(ctx, tx, r.member, r.channel, deleted[r.channel]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// passGone moves a member's read position in a channel past the messages
+// just deleted there, ids, as far as they were all that lay between it and
+// the next message left. A group's member reads from their joining (M16.3),
+// so the messages before it don't hold it back.
+func passGone(ctx context.Context, tx *sql.Tx, member, channel int64, ids []int64) error {
+	var pos int64
+	err := tx.QueryRowContext(ctx, `SELECT message_id FROM den_read_states WHERE member_id = ? AND channel_id = ?`, member, channel).Scan(&pos)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var since int64
+	err = tx.QueryRowContext(ctx, `SELECT since FROM den_group_members WHERE channel_id = ? AND member_id = ?`, channel, member).Scan(&since)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	from := max(pos, since)
+	var next sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT min(id) FROM den_messages WHERE channel_id = ? AND id > ?`, channel, from).Scan(&next); err != nil {
+		return err
+	}
+	to := pos
+	for _, id := range ids {
+		if id > from && (!next.Valid || id < next.Int64) {
+			to = max(to, id)
+		}
+	}
+	if to == pos {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id) VALUES (?, ?, ?)
+		ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = excluded.message_id
+		WHERE excluded.message_id > den_read_states.message_id`, member, channel, to)
+	return err
+}
+
+// publishReaders tells each reader their read state after deletes: their
+// unread count without what went, and where passDeleted moved it.
+func (d *Den) publishReaders(ctx context.Context, readers []reader) error {
+	var errs []error
+	for _, r := range readers {
+		if err := d.publishReadState(ctx, r.member, r.channel); err != nil && !errors.Is(err, errChannelNotFound) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // MarkRead moves a member's read position in a channel forward.

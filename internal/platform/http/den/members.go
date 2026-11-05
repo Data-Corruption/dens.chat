@@ -134,6 +134,23 @@ func (h *handler) closeDM(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// setExpiry sets how long a DM's or a group's messages stay (M16.4).
+func (h *handler) setExpiry(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	var req denproto.ExpiryRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	c, err := h.d.SetExpiry(r.Context(), session(r), chi.URLParam(r, "id"), req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, c)
+}
+
 func (h *handler) openDM(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

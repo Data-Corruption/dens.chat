@@ -476,6 +476,30 @@ func (c *conn) call(ctx context.Context, method, path string, req, resp any) err
 	return err
 }
 
+// dialSocket opens the den's socket at the protocol's version the den and
+// this build share, as far as the client knows, and returns that version.
+// Where the den's answer shows they share another, as a den that updated
+// since the client last heard from it, or an older one that refuses this
+// build's, it dials again, once, at that one: a socket keeps the version it
+// opened at, so one left at an older version would go without group DMs
+// (M16.3) until it next reconnected.
+func dialSocket(ctx context.Context, a *api, u string, token denproto.Bytes, opts websocket.DialOptions) (*websocket.Conn, *http.Response, int, error) {
+	for attempt := 0; ; attempt++ {
+		opts.HTTPHeader = http.Header{}
+		a.headers(opts.HTTPHeader, token)
+		speaking := a.speaks()
+		ws, resp, err := websocket.Dial(ctx, u, &opts)
+		// The den's range, so the next upgrade goes at a version it speaks.
+		changed := resp != nil && a.heard(resp.Header)
+		if attempt > 0 || !changed || a.speaks() == speaking {
+			return ws, resp, speaking, err
+		}
+		if ws != nil {
+			ws.CloseNow()
+		}
+	}
+}
+
 // stream holds one WebSocket connection until it closes, and returns when
 // it came up (zero if it never did), its close status, and why it closed,
 // for the log.
@@ -502,14 +526,11 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	h := http.Header{}
-	a.headers(h, token)
-	speaking := a.speaks()
 	c.setState(StateConnecting, "")
 	// Each of the den's pings has renew look at the time (M14.1). The
 	// socket hears pings as it reads, so this mustn't block.
 	pinged := make(chan struct{}, 1)
-	ws, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: a.client, HTTPHeader: h,
+	ws, resp, speaking, err := dialSocket(ctx, a, u, token, websocket.DialOptions{HTTPClient: a.client,
 		CompressionMode: websocket.CompressionNoContextTakeover,
 		OnPingReceived: func(context.Context, []byte) bool {
 			select {
@@ -518,10 +539,6 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 			}
 			return true
 		}})
-	if resp != nil {
-		// The den's range, so the next upgrade goes at a version it speaks.
-		a.heard(resp.Header)
-	}
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 			return time.Time{}, -1, "it no longer accepts the session", errDialUnauthorized
@@ -708,7 +725,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if c.den != nil {
 			retained = c.den.retention != d.Retention
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
-			c.den.emojiLimits, c.den.sealedCalls = d.EmojiLimits, d.SealedCalls
+			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {

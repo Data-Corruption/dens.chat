@@ -324,7 +324,7 @@ func (d *Den) EndPoll(ctx context.Context, s *Session, messageID string) (denpro
 		if err := d.publishEnd(c, p); err != nil {
 			return *p.view(s.MemberID), err
 		}
-		d.planPolls()
+		d.planTimer()
 	}
 	return *p.view(s.MemberID), nil
 }
@@ -421,84 +421,6 @@ func (d *Den) publishTotals(c denproto.Channel, p *pollRow) error {
 	}
 	update.Tally = p.poll.TallyFor(votes, false)
 	return d.Hub.Publish(denproto.EventPollUpdated, update, NonVoters(voters, c.StaffOnly))
-}
-
-// pollTimer ends polls at their time: a timer for the next to end, set
-// as the den starts and as polls are posted and ended.
-type pollTimer struct {
-	// pass lets one pass run at a time, and Stop wait for one under way.
-	pass sync.Mutex
-
-	mu      sync.Mutex
-	timer   *time.Timer
-	started bool
-	closed  bool
-}
-
-// StartPolls starts ending polls at their time, beginning with those whose
-// time passed while the den was stopped. Without it, as in tests, polls end
-// only when endPolls is called. It starts again after StopPolls, as hosting
-// does (M9.1).
-func (d *Den) StartPolls() {
-	t := &d.pollTimer
-	t.mu.Lock()
-	t.started, t.closed = true, false
-	t.mu.Unlock()
-	d.planPolls()
-}
-
-// StopPolls stops ending polls, and waits for a pass under way.
-func (d *Den) StopPolls() {
-	t := &d.pollTimer
-	t.mu.Lock()
-	t.closed = true
-	if t.timer != nil {
-		t.timer.Stop()
-		t.timer = nil
-	}
-	t.mu.Unlock()
-	t.pass.Lock()
-	t.pass.Unlock()
-}
-
-// planPolls sets the timer for the next poll to end.
-func (d *Den) planPolls() {
-	t := &d.pollTimer
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.timer != nil {
-		t.timer.Stop()
-		t.timer = nil
-	}
-	if !t.started || t.closed {
-		return
-	}
-	var next sql.NullInt64
-	if err := d.db.QueryRow(`SELECT min(ends_at) FROM den_polls WHERE ended = 0`).Scan(&next); err != nil {
-		d.log.Errorf("plan ending polls: %v", err)
-		next = sql.NullInt64{Int64: d.now().Add(time.Minute).UnixMilli(), Valid: true}
-	}
-	if !next.Valid {
-		return
-	}
-	t.timer = time.AfterFunc(max(time.UnixMilli(next.Int64).Sub(d.now()), 0), d.endPolls)
-}
-
-// endPolls ends the polls whose time came, then plans the next.
-func (d *Den) endPolls() {
-	t := &d.pollTimer
-	t.pass.Lock()
-	defer t.pass.Unlock()
-	t.mu.Lock()
-	closed := t.closed
-	t.mu.Unlock()
-	if closed {
-		return
-	}
-	if err := d.endDue(context.Background()); err != nil {
-		d.log.Errorf("end polls: %v", err)
-	}
-	d.planPolls()
 }
 
 // endDue ends every poll whose time came, records each in the change log

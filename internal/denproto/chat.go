@@ -94,6 +94,11 @@ type Channel struct {
 	// Changes and SealedName are a group DM's (M16.3).
 	Changes    int         `json:"changes,omitempty"`
 	SealedName *SealedName `json:"sealed_name,omitempty"`
+	// ExpiresAfter is how long, in seconds, a DM's or a group's messages
+	// stay after they're sent, 0 while they stay, and ExpiresSet who last
+	// set it and when, once anyone has (M16.4).
+	ExpiresAfter int        `json:"expires_after,omitempty"`
+	ExpiresSet   *ExpirySet `json:"expires_set,omitempty"`
 }
 
 type Group struct {
@@ -137,6 +142,9 @@ type Message struct {
 	// Everyone marks a channel's message whose @everyone staff put there,
 	// which mentions every member who can see the channel (M15.4).
 	Everyone bool `json:"everyone,omitempty"`
+	// ExpiresAt is when a DM's or a group's message disappears, by the
+	// time its channel had as it was sent (M16.4).
+	ExpiresAt int64 `json:"expires_at,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -373,6 +381,10 @@ func CheckMessage(m Message) error {
 	}
 	if m.Sealed != nil && (m.Poll != nil || m.Everyone) {
 		return errors.New("a DM's message has no poll and mentions nobody by @everyone")
+	}
+	// Only a DM's or a group's messages disappear, after they're sent.
+	if m.ExpiresAt != 0 && (m.Sealed == nil || m.ExpiresAt <= m.CreatedAt) {
+		return errors.New("message has an invalid time to disappear")
 	}
 	if m.Poll != nil {
 		if err := m.Poll.Check(); err != nil {

@@ -290,6 +290,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	info, _ := d.Info()
 	var left bool
 	var deleted []deletedMessage
+	var readers []reader
 	var unreacted []denproto.ReactionChange
 	var blobs [][]byte
 	var groups []groupDone
@@ -329,7 +330,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			// DMs too (M8): the den deletes them without reading them, and
 			// a member flooding DMs leaves no other way to clear them.
 			since := now - req.DeleteMessages*1000
-			if deleted, blobs, err = deleteRecent(ctx, tx, mid, since, time.UnixMilli(now)); err != nil {
+			if deleted, readers, blobs, err = deleteRecent(ctx, tx, mid, since, time.UnixMilli(now)); err != nil {
 				return err
 			}
 			// And the reactions they added then, in channels (M15.3).
@@ -366,6 +367,9 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	if err := d.publishDeleted(ctx, deleted); err != nil {
 		return err
 	}
+	if err := d.publishReaders(ctx, readers); err != nil {
+		return err
+	}
 	if err := d.publishDeparted(ctx, groups); err != nil {
 		return err
 	}
@@ -378,41 +382,53 @@ type deletedMessage struct {
 }
 
 // deleteRecent deletes a member's messages, in channels and DMs, from since
-// on, and returns what it deleted, and the blobs of their files to remove
-// once tx commits.
-func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64, now time.Time) ([]deletedMessage, [][]byte, error) {
+// on, and returns what it deleted, whom they counted for, read past them
+// where they were all that lay unread (see passDeleted), and the blobs of
+// their files to remove once tx commits.
+func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64, now time.Time) ([]deletedMessage, []reader, [][]byte, error) {
 	const where = `m.author_id = ? AND m.created_at >= ?`
 	files, blobs, err := filesOf(ctx, tx, where, member, since)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT m.id, m.channel_id FROM den_messages m WHERE `+where+` ORDER BY m.id`, member, since)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var out []deletedMessage
+	var ids []int64
+	byChannel := map[int64][]int64{}
 	for rows.Next() {
 		var m deletedMessage
 		if err := rows.Scan(&m.id, &m.channel); err != nil {
 			rows.Close()
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		m.files = files[m.id]
 		out = append(out, m)
+		ids = append(ids, m.id)
+		byChannel[m.channel] = append(byChannel[m.channel], m.id)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	readers, err := readersOf(ctx, tx, ids)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM den_messages AS m WHERE `+where, member, since); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, m := range out {
 		if err := logMessage(ctx, tx, m.id, m.channel, now); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	return out, blobs, nil
+	if err := passDeleted(ctx, tx, readers, byChannel); err != nil {
+		return nil, nil, nil, err
+	}
+	return out, readers, blobs, nil
 }
 
 func (d *Den) publishDeleted(ctx context.Context, deleted []deletedMessage) error {
