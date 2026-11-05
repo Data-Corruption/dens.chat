@@ -17,6 +17,9 @@
 #        scripts/test/android/den.sh upload FILE NAME         an upload from desk, in its home
 #        scripts/test/android/den.sh dm MEMBER                desk's DM with a member by ID, which opens at once
 #        scripts/test/android/den.sh sound NAME               a sound on the den's soundboard, added if it isn't there
+#        scripts/test/android/den.sh third                    print the ID of third, a member on another instance
+#                                                             beside desk's, which joins once (M16.3)
+#        scripts/test/android/den.sh group MEMBER...          a group DM desk makes with members by ID (M16.3)
 #
 # The app's Dens trusts the root through SSL_CERT_FILE, which phone.sh trust
 # gives a development build.
@@ -145,8 +148,53 @@ case $1 in
     fi
     named
     ;;
+  third)
+    # A member beside desk on an instance of its own, which a group needs
+    # for a third (M16.3), joined once through Caddy, as the phone joins.
+    TJAR=$HOME/android-den/jar-tden
+    TPORT=18586
+    tapi() {
+      local base=http://127.0.0.1:$TPORT
+      if [[ $# -ge 3 ]]; then
+        curl -sS --fail-with-body -b "$TJAR" -c "$TJAR" -X "$1" -H "Origin: $base" -H "Content-Type: application/json" --data "$3" "$base$2"
+      else
+        curl -sS --fail-with-body -b "$TJAR" -c "$TJAR" -X "$1" -H "Origin: $base" "$base$2"
+      fi
+    }
+    if running tden && [[ ./dens-dev -nt android-den/tden.pid ]]; then
+      stop tden
+    fi
+    if ! running tden; then
+      SSL_CERT_FILE=$ROOT_CRT nohup ./dens-dev -i tden service run --port $TPORT >android-den/tden.log 2>&1 &
+      echo $! >android-den/tden.pid
+    fi
+    for _ in $(seq 100); do curl -s -o /dev/null "http://127.0.0.1:$TPORT/api/status" && break; sleep 0.1; done
+    if ! [[ -s $TJAR ]]; then
+      link=$(./dens-dev -i tden open --print)
+      tapi POST /api/pair "{\"token\":\"${link#*#token=}\"}" >/dev/null
+    fi
+    if tapi GET /api/status | json 'd["passwordSet"]' | grep -q False; then
+      tapi POST /api/password '{"password":"local password"}' >/dev/null
+    fi
+    if [[ $(tapi GET /api/dens | json "any(x['den_id'] == '$(den)' for x in d['dens'])") != True ]]; then
+      invite=$(api POST "/api/dens/$(den)/invites" '{"expires_in":3600,"max_uses":1}' | json 'd["invite"]')
+      tapi POST /api/dens/join "{\"invite\":\"$invite\",\"username\":\"third\",\"display_name\":\"Third\",\"password\":\"third password\"}" >/dev/null
+    fi
+    for _ in $(seq 120); do
+      id=$(tapi GET "/api/dens/$(den)/state" 2>/dev/null | json "d['me']['id'] if d['me'].get('identity') else ''" 2>/dev/null || :)
+      [[ -n $id ]] && { echo "$id"; exit 0; }
+      sleep 0.25
+    done
+    echo "third never published its identity" >&2
+    exit 1
+    ;;
+  group)
+    shift
+    members=$(printf '"%s",' "$@")
+    api POST "/api/dens/$(den)/group-dms" "{\"members\":[${members%,}]}" | json 'd["id"]'
+    ;;
   root) cat "$ROOT_CRT" ;;
-  down) stop sden; stop caddy ;;
+  down) stop sden; stop tden; stop caddy ;;
 esac
 GUEST
   incus file push -q --uid 1000 --gid 1000 --mode 0755 "$tmp" "$BROWSERS/home/tester/android-den.sh"
@@ -159,12 +207,12 @@ case ${1:-} in
     guest
     as_tester ./android-den.sh up
     ;;
-  invite | root | down | api | den | general | channel | say | upload | dm | sound)
+  invite | root | down | api | den | general | channel | say | upload | dm | sound | third | group)
     guest
     as_tester ./android-den.sh "$@"
     ;;
   *)
-    sed -n '9,19p' "$0" >&2
+    sed -n '9,22p' "$0" >&2
     exit 2
     ;;
 esac
