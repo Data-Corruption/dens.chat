@@ -197,7 +197,7 @@ func (m *Manager) UploadVersions(ctx context.Context, denID, channelID, name str
 	limits := c.limits()
 	dm := false
 	if channelID != "" {
-		_, dm = c.isDM(channelID)
+		dm = c.private(channelID)
 	}
 	fits := func(v *version) bool {
 		n := v.size()

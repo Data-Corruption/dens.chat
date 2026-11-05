@@ -71,18 +71,26 @@ export function dividerText(old, next, names, me) {
 // it holds the newest. One from before the first message loaded waits
 // until the list reaches the start. It returns the times by the ID of the
 // message each goes before, and those at the end.
-export function keysChangedAt(messages, changes, { hasOlder = false, hasNewer = false } = {}) {
+export function keysChangedAt(messages, changes, opts) {
+    return placeAt(messages, changes || [], (at) => at, opts);
+}
+
+// placeAt places lines among the messages loaded by their times, as
+// keysChangedAt does, and returns them by the ID of the message each goes
+// before, and those at the end.
+export function placeAt(messages, items, timeOf, { hasOlder = false, hasNewer = false } = {}) {
     const before = new Map();
     const after = [];
     const first = messages[0]?.created_at;
-    for (const at of [...(changes || [])].sort((a, b) => a - b)) {
+    for (const item of [...items].sort((a, b) => timeOf(a) - timeOf(b))) {
+        const at = timeOf(item);
         if (hasOlder && first !== undefined && at < first) continue;
         const m = messages.find((x) => x.created_at > at);
         if (m) {
             if (!before.has(m.id)) before.set(m.id, []);
-            before.get(m.id).push(at);
+            before.get(m.id).push(item);
         } else if (!hasNewer) {
-            after.push(at);
+            after.push(item);
         }
     }
     return { before, after };
@@ -110,6 +118,73 @@ export function dmGate(view, channel) {
 // partnerOf is the other member of a DM.
 export function partnerOf(channel, me) {
     return (channel?.members || []).find((id) => id !== me) || '';
+}
+
+// isPrivate reports whether a channel's messages are sealed by its
+// members' Dens: a DM's, or a group DM's (M16.3).
+export function isPrivate(channel) {
+    return channel?.kind === 'dm' || channel?.kind === 'group_dm';
+}
+
+// groupTitle is what a group DM is called (M16.3): its name, or its other
+// members' names as its changes make them, the first two and how many more
+// past three.
+export function groupTitle(group, members, me) {
+    if (group?.name) return group.name;
+    const names = (group?.members || []).filter((id) => id !== me).map((id) => members.get(id)?.display_name || 'Unknown member');
+    if (names.length === 0) return 'Just you';
+    if (names.length <= 3) return names.join(', ');
+    return `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`;
+}
+
+// groupGate says what stands in a group's composer's place, or '' when it
+// takes messages (M16.3): no_seal, on a device without the member's DM
+// recovery key; checking, while the den holds changes this Dens hasn't
+// checked yet; broken, once one doesn't check; alone, with nobody else
+// left in it; update, while a member's Dens publishes no identity, being
+// older; and held, once a member's keys changed since this member
+// verified them. member is whom update and held name.
+export function groupGate(view, channel) {
+    const g = view.group_dms?.[channel.id];
+    const me = view.me?.id;
+    if (!view.seal) return { gate: 'no_seal' };
+    if (g?.broken) return { gate: 'broken' };
+    if (!g || g.syncing || !g.members.includes(me)) return { gate: 'checking' };
+    const others = g.members.filter((id) => id !== me);
+    if (others.length === 0) return { gate: 'alone' };
+    const byID = new Map((view.members || []).map((m) => [m.id, m]));
+    const old = others.find((id) => !byID.get(id)?.identity);
+    if (old) return { gate: 'update', member: old };
+    const held = others.find((id) => view.identities?.[id]?.held);
+    if (held) return { gate: 'held', member: held };
+    return { gate: '' };
+}
+
+// changeText says what a change to a group did, as its line in the group
+// shows it (M16.3): who made it, You for this member, whom it took in or
+// out, and a name where the change carries one this Dens could open.
+export function changeText(change, nameOf, me) {
+    const who = (id, start) => (id === me ? (start ? 'You' : 'you') : nameOf(id));
+    const by = change.by ? who(change.by, true) : '';
+    const them = (change.subjects || []).map((id) => who(id, false));
+    const list = them.length <= 1 ? them.join('') : `${them.slice(0, -1).join(', ')} and ${them[them.length - 1]}`;
+    const named = typeof change.name === 'string';
+    switch (change.kind) {
+        case 'made':
+            return named && change.name ? `${by} made the group “${change.name}”.` : `${by} made the group.`;
+        case 'added':
+            return `${by} added ${list}.`;
+        case 'removed':
+            return `${by} removed ${list}.`;
+        case 'left':
+            return `${by} left the group.`;
+        case 'departed':
+            return `${them.length ? list[0].toUpperCase() + list.slice(1) : 'Someone'} left the den.`;
+        case 'named':
+            if (!named) return `${by} renamed the group.`;
+            return change.name ? `${by} named the group “${change.name}”.` : `${by} took the group's name away.`;
+    }
+    return '';
 }
 
 // sameDigits reports whether two strings of digits match once spaces and

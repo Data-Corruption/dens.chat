@@ -370,6 +370,18 @@ done
 den api POST "/api/dens/$den_id/members/$member_id/compare" "{\"digits\":\"$phone_code\"}" | grep -q '"verified":true' || fail "desk's comparison of codes"
 phone drive api POST "/api/dens/$den_id/members/$desk_id/compare" "{\"digits\":\"$desk_code\"}" | grep -q '^200' || fail "the phone's comparison of codes"
 ok "the phone's DM with desk opened at once, and the two compared codes"
+# A group DM (M16.3): desk makes one of itself, the phone's member and
+# third, a member on another instance beside desk's, and writes in it; the
+# phone's Dens checks the group's changes and keys, and opens desk's
+# message, checking desk's signature inside it.
+third_id=$(den third)
+group=$(den group "$member_id" "$third_id")
+grouped() { [[ $(pagejson "/api/dens/$den_id/state" "((v.group_dms || {})['$group'] || {}).members?.length === 3 && !v.group_dms['$group'].syncing") == true ]]; }
+waitfor 30 "the group on the phone" grouped
+den say "$group" "a group message for the phone" >/dev/null
+reads() { [[ $(pagejson "/api/dens/$den_id/channels/$group/messages" "v.messages.some((m) => m.text === 'a group message for the phone' && !m.locked)") == true ]]; }
+waitfor 30 "desk's message in the group, on the phone" reads
+ok "the phone reads desk's message in a group of three, its changes, keys and desk's signature checked"
 phone drive api POST /api/settings '{"notifications":{"dms":true}}' | grep -q '^200' || fail "turning DMs on"
 adb shell input keyevent KEYCODE_HOME
 sleep 2

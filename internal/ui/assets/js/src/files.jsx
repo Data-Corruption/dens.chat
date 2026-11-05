@@ -143,6 +143,7 @@ export function fileWhere(f, view) {
     if (!f.message_id) return 'Waiting to be sent';
     const c = view.channels.find((x) => x.id === f.channel_id);
     if (!c) return "In a channel you can't see";
+    if (c.kind === 'group_dm') return 'In a group DM';
     if (c.kind !== 'dm') return `In #${c.name}`;
     const other = view.members.find((m) => m.id !== view.me.id && (c.members || []).includes(m.id));
     return `In your DM with ${other?.display_name || 'a former member'}`;

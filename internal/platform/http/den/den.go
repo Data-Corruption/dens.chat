@@ -99,6 +99,9 @@ func New(a *app.App) http.Handler {
 			r.Post("/dms/{id}/keys", h.startKey)
 			r.Get("/dms/{id}/signed-keys", h.signedKeys)
 			r.Post("/dms/{id}/signed-keys", h.makeSignedKey)
+			r.Post("/group-dms", h.reserveGroup)
+			r.Get("/group-dms/{id}/changes", h.groupChanges)
+			r.Post("/group-dms/{id}/changes", h.changeGroup)
 			r.Put("/me/identity", h.publishIdentity)
 			r.Get("/identities", h.identities)
 			r.Get("/me/record", h.record)
@@ -187,6 +190,8 @@ func (h *handler) authenticate(next http.Handler) http.Handler {
 			h.fail(w, r, err)
 			return
 		}
+		// versionCheck admitted it, so it's one this den speaks.
+		s.Version, _ = strconv.Atoi(r.Header.Get(denproto.HeaderVersion))
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), sessionKey{}, s)))
 	})
 }

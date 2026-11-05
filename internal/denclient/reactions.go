@@ -61,8 +61,19 @@ func (c *conn) openSetLocked(channel, message string, r denproto.SealedReactions
 	mid, _ := denproto.ParseID(message)
 	keyID, _ := denproto.ParseID(r.KeyID)
 	who, _ := denproto.ParseID(r.MemberID)
-	set, err := denproto.OpenReactions(key, denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who,
-		KeyID: keyID, Revision: r.Revision}, r.Sealed)
+	ad := denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who, KeyID: keyID, Revision: r.Revision}
+	var set denproto.ReactionSet
+	var err error
+	if c.den.channels[channel].Kind == denproto.KindGroupDM {
+		// Signed by its member, whose identity its key names (M16.3).
+		stmt, serr := c.den.signed[r.KeyID].Statement(c.j.denID)
+		if serr != nil {
+			return PageReactionSet{}, false
+		}
+		set, err = denproto.OpenGroupReactions(key, ad, stmt.Named(who), r.Sealed)
+	} else {
+		set, err = denproto.OpenReactions(key, ad, r.Sealed)
+	}
 	if err != nil {
 		return PageReactionSet{}, false
 	}
@@ -187,7 +198,7 @@ func (m *Manager) React(ctx context.Context, denID, channelID, messageID string,
 	if err := checkID("channel", channelID); err != nil {
 		return nil, err
 	}
-	if _, dm := c.isDM(channelID); dm {
+	if c.private(channelID) {
 		return c.reactDM(ctx, channelID, messageID, req)
 	}
 	r := denproto.ReactionRequest{Emoji: req.Emoji, EmojiID: req.EmojiID}
@@ -356,8 +367,18 @@ func (c *conn) nextSet(ctx context.Context, channelID, messageID string, sets []
 	mid, _ := denproto.ParseID(messageID)
 	kid, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(me)
-	sealed, err := denproto.SealReactions(key, denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who, KeyID: kid,
-		Revision: revision + 1}, denproto.ReactionSet{Emoji: next})
+	ad := denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who, KeyID: kid, Revision: revision + 1}
+	var sealed denproto.Bytes
+	if c.isGroup(channelID) {
+		// A group's set is signed by its member (M16.3).
+		err = c.ownIdentity(func(ik *denproto.IdentityKeys) error {
+			var err error
+			sealed, err = denproto.SealGroupReactions(key, ad, ik, denproto.ReactionSet{Emoji: next})
+			return err
+		})
+	} else {
+		sealed, err = denproto.SealReactions(key, ad, denproto.ReactionSet{Emoji: next})
+	}
 	if err != nil {
 		return nil, inputError(err)
 	}

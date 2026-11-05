@@ -92,13 +92,15 @@ type KeyCopy struct {
 }
 
 // SignedKeyRequest makes a DM's key: its statement, signed by the maker's
-// identity, and a copy for each member.
+// identity, and a copy for each member. A group's key (M16.3) carries the
+// group's name sealed under it, where the group has one.
 type SignedKeyRequest struct {
 	KID       Bytes       `json:"kid"`
 	Commit    Bytes       `json:"commit"`
 	Members   []KeyMember `json:"members"`
 	Signature Bytes       `json:"signature"`
 	Copies    []KeyCopy   `json:"copies"`
+	Name      *SealedName `json:"name,omitempty"`
 }
 
 type SignedKeyList struct {

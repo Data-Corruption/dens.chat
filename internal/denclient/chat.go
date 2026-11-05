@@ -27,6 +27,7 @@ func (m *Manager) View(denID string) (View, error) {
 	}
 	v := state.view(status, c.profile.Member)
 	v.Identities = c.pageIdentitiesLocked()
+	v.HasGroupDMs, v.GroupDMs = c.groupsOnLocked(), c.pageGroupsLocked()
 	return v, nil
 }
 
@@ -175,7 +176,7 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		return PageMessage{}, inputError(err)
 	}
 	req.Sealed, req.KeyID = nil, ""
-	_, dm := c.isDM(channelID)
+	dm := c.private(channelID)
 	if req.Poll, err = checkPollSend(req, dm); err != nil {
 		return PageMessage{}, err
 	}
@@ -238,7 +239,7 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 		}
 	}
 	req.Sealed, req.KeyID, req.Unedited = nil, "", false
-	if _, dm := c.isDM(channelID); dm {
+	if c.private(channelID) {
 		return c.editDM(ctx, channelID, messageID, req.Revision, req.Editors, func(p *denproto.DMPayload) (bool, error) {
 			if err := denproto.CheckMessageText(req.Text, len(p.Files) > 0); err != nil {
 				return false, inputError(err)
@@ -268,7 +269,7 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 		c.mu.Unlock()
 		return PageMessage{}, ErrNotStarted
 	}
-	p, locked := c.openPayloadLocked(current.ChannelID, current.AuthorID, current.KeyID, current.Nonce, current.Revision, current.Sealed)
+	p, _, locked := c.openPayloadLocked(current.ChannelID, current.AuthorID, current.KeyID, current.Nonce, current.Revision, current.Sealed)
 	opened := c.openLocked(current)
 	c.mu.Unlock()
 	if locked != "" {
@@ -317,7 +318,7 @@ func (m *Manager) SetTask(ctx context.Context, denID, channelID, messageID strin
 	if n < 0 || n > denproto.MaxTextRunes || len(req.Text) > denproto.MaxTextBytes {
 		return PageMessage{}, inputError(errors.New("no such task"))
 	}
-	if _, dm := c.isDM(channelID); !dm {
+	if !c.private(channelID) {
 		return change(ctx, c, http.MethodPost, "/api/messages/"+messageID+"/tasks/"+strconv.Itoa(n), req)
 	}
 	// Ticks on other tasks may land meanwhile; each is its own edit, so

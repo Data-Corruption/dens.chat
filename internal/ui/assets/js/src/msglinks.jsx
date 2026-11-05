@@ -88,7 +88,7 @@ export function place(link, links, viewOf = otherView) {
     const den = denOf(link, links);
     if (!den) return { den: null, view: null, channel: null };
     const view = den.den_id === links.denID ? links.view : viewOf(den.den_id);
-    const channel = (view && view.channels.find((c) => c.id === link.channel && (c.kind === 'text' || c.kind === 'dm'))) || null;
+    const channel = (view && view.channels.find((c) => c.id === link.channel && (c.kind === 'text' || c.kind === 'dm' || c.kind === 'group_dm'))) || null;
     return { den, view, channel };
 }
 
@@ -102,6 +102,7 @@ export function chipLabel(link, { den, view, channel }, hereID) {
     if (view === null) where = '…';
     else if (view && !channel) where = '#unknown';
     else if (channel?.kind === 'dm') where = `@${partner(view, channel)?.username || 'unknown'}`;
+    else if (channel?.kind === 'group_dm') where = 'a group DM';
     else if (channel) where = `#${channel.name}`;
     if (den.den_id === hereID) return where;
     return where ? `${den.name} › ${where}` : den.name;

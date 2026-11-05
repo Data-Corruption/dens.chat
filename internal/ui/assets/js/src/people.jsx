@@ -110,11 +110,18 @@ function Profile({ denID, member, me, online, panel = false, verified = false })
 // list's place (M11), and from M16.1 whether this member verified them,
 // with Compare codes. kept is what this member's Dens kept of their
 // identity, null on a den that keeps none.
-export function ProfilePanel({ denID, member, me, online, kept, onCompare }) {
+export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAddPeople }) {
     return (
         <div class="flex flex-col gap-3 p-3">
             <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified} />
             <CompareCodes member={member} kept={kept} onCompare={onCompare} />
+            {/* A group of the two and those added, which leaves the DM as it
+                is (M16.3). */}
+            {onAddPeople && (
+                <div>
+                    <button type="button" class="btn btn-sm" data-add-people onClick={onAddPeople}>Add people</button>
+                </div>
+            )}
         </div>
     );
 }

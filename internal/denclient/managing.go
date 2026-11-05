@@ -158,7 +158,7 @@ func (m *Manager) changeFile(ctx context.Context, denID, channelID, messageID, f
 		}
 	}
 	var with *denproto.DMFile
-	_, dm := c.isDM(channelID)
+	dm := c.private(channelID)
 	if dm && upload != "" {
 		c.mu.Lock()
 		u, ok := c.uploads[upload]

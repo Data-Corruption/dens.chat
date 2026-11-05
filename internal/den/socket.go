@@ -254,7 +254,9 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	if e, v, ok := denproto.ParseMembersCursor(r.URL.Query().Get("members")); ok {
 		members = &membersCursor{epoch: e, version: v}
 	}
-	sub, missed, resumed, seq := d.Hub.Subscribe(s.MemberID, IsStaff(s.Role), epoch, after)
+	// A Dens speaking a version before group DMs gets nothing of them
+	// (M16.3).
+	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), s.groups(), epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 	sock.sub = sub
 
@@ -295,7 +297,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	sendReady := func(seq uint64) bool {
 		// The role can change while the socket is open; the hub knows the
 		// current one.
-		snap, err := d.snapshot(ctx, s.MemberID, d.Hub.Staff(sub), seq, members)
+		snap, err := d.snapshotAt(ctx, s.MemberID, d.Hub.Staff(sub), s.groups(), seq, members)
 		if err != nil {
 			d.log.Errorf("den snapshot: %v", err)
 			end("its snapshot failed")

@@ -64,6 +64,11 @@
 #                               digits and wrong ones refused; the mark on bob's laptop within its shortened
 #                               hour; and bob starting over: the line where his keys changed, his mark gone,
 #                               the hold, Send anyway, and his new code compared
+#   groups BROWSER              M16.3: a group made from the DM list's + New group and named, each change a line
+#                               in it; written in, a photo sent, read through its members' Dens; dave added from
+#                               its members, reading from his joining on; renamed, the name only sealed in the
+#                               den's database; bob removed by alice, who made it, his page reading nothing
+#                               after; and carol and alice leaving
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
@@ -88,7 +93,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,87p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,92p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

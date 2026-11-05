@@ -60,12 +60,16 @@ func pageSignedKey(k denproto.SignedKey) PageKey {
 }
 
 // cleanSigned checks a signed key from the den: its shape, and that it's
-// the key of one of this member's DMs, naming its two members.
+// the key of one of this member's DMs, naming its two members, or of one
+// of their groups (M16.3), whose members its changes say.
 func (s *denState) cleanSigned(denID []byte, k denproto.SignedKey) bool {
 	if denproto.CheckSignedKey(denID, k) != nil {
 		return false
 	}
 	ch, ok := s.channels[k.ChannelID]
+	if ok && ch.Kind == denproto.KindGroupDM {
+		return len(k.Members) <= denproto.MaxGroupMembers
+	}
 	if !ok || ch.Kind != denproto.KindDM || len(k.Members) != 2 {
 		return false
 	}
@@ -77,14 +81,17 @@ func (s *denState) cleanSigned(denID []byte, k denproto.SignedKey) bool {
 	return true
 }
 
-// liveSigned returns a DM's live signed key, if it has one.
+// liveSigned returns a DM's live signed key, if it has one: the newest of
+// those not retired, since one this Dens just made goes live as the den
+// retires the one before, whose word may still be on its way.
 func (s *denState) liveSigned(channel string) (denproto.SignedKey, bool) {
+	var live denproto.SignedKey
 	for _, k := range s.signed {
-		if k.ChannelID == channel && k.Retired == "" {
-			return k, true
+		if k.ChannelID == channel && k.Retired == "" && (live.ID == "" || compareIDs(k.ID, live.ID) > 0) {
+			live = k
 		}
 	}
-	return denproto.SignedKey{}, false
+	return live, live.ID != ""
 }
 
 // checkSignedLocked says why a signed key can't be used, or "" when it
@@ -142,6 +149,15 @@ func (c *conn) verdictLocked(k denproto.SignedKey, sending bool) string {
 	// above against what was kept.
 	if !denproto.VerifyStatement(k.Maker.Sig, s, k.Signature) {
 		return lockedBroken
+	}
+	// A group's key is sent under only where it names the group's members
+	// as its changes, checked here, make them (M16.3).
+	if sending && c.den.channels[k.ChannelID].Kind == denproto.KindGroupDM {
+		g := c.groups[k.ChannelID]
+		if g == nil || g.Broken != "" || len(g.Members) != len(k.Members) ||
+			slices.ContainsFunc(k.Members, func(m denproto.KeyMember) bool { return !slices.Contains(g.Members, m.MemberID) }) {
+			return lockedKeys
+		}
 	}
 	return ""
 }
@@ -213,6 +229,9 @@ func (c *conn) partnerLocked(channel string) (string, bool) {
 // Dens publishes none, being older; or while it holds, since the other's
 // keys changed after this member verified them. The caller holds c.mu.
 func (c *conn) canMakeKeyLocked(channel string) error {
+	if c.den.channels[channel].Kind == denproto.KindGroupDM {
+		return c.canMakeGroupKeyLocked(channel)
+	}
 	partner, ok := c.partnerLocked(channel)
 	if !ok {
 		return ErrUnknownChannel
@@ -336,4 +355,34 @@ func (c *conn) addSignedKeys(keys ...denproto.SignedKey) {
 			delete(c.verdicts, k.ID)
 		}
 	}
+}
+
+// canMakeGroupKeyLocked says why a group can't get a new key, if it
+// can't, as canMakeKeyLocked does a DM's (M16.3): its changes don't check,
+// nobody else is in it, or one of its members is gone, has a Dens that
+// publishes no identity, or holds since their keys changed. The caller
+// holds c.mu.
+func (c *conn) canMakeGroupKeyLocked(channel string) error {
+	g, err := c.groupLocked(channel)
+	if err != nil {
+		return err
+	}
+	if len(g.Members) < 2 {
+		return inputError(errors.New("nobody else is in this group: add someone first"))
+	}
+	for _, id := range g.Members {
+		if id == c.meLocked() {
+			continue
+		}
+		m := c.den.members[id]
+		switch k := c.ids.Record.Members[id]; {
+		case m.LeftAt != 0:
+			return inputError(fmt.Errorf("%s is no longer in this den", m.DisplayName))
+		case m.IdentityHash() == nil:
+			return inputError(fmt.Errorf("%s's Dens needs an update before you can write here", m.DisplayName))
+		case k != nil && k.Held:
+			return inputError(fmt.Errorf("%s's keys changed since you compared codes: compare them again, or send anyway", m.DisplayName))
+		}
+	}
+	return nil
 }

@@ -43,7 +43,12 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 		author = "A member"
 	}
 	n := &notify.Message{Den: c.j.denID.String(), DenName: c.profile.Name, Channel: m.ChannelID, ChannelName: ch.Name,
-		DM: ch.Kind == denproto.KindDM, ID: m.ID, Author: author, Text: m.Text, Files: len(m.Attachments)}
+		DM: isSealed(ch), ID: m.ID, Author: author, Text: m.Text, Files: len(m.Attachments)}
+	if ch.Kind == denproto.KindGroupDM {
+		// A group's notifies as a DM's, under Direct messages, naming the
+		// group (M16.3).
+		n.Group = c.groupTitleLocked(m.ChannelID)
+	}
 	if locked {
 		n.Text = ""
 	} else {

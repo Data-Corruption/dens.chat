@@ -1,6 +1,7 @@
 package denclient
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -34,6 +35,7 @@ func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 		clear(have)
 	}
 	c.mu.Lock()
+	before := c.ownHashLocked()
 	old := c.j.seal
 	c.j.seal = secret
 	// The identity comes from the seal, and the keys opened here were kept
@@ -41,9 +43,19 @@ func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 	c.ownHash = nil
 	clear(c.copies)
 	clear(c.verdicts)
+	// The identity before signed the changes to groups this member made
+	// before (M16.3).
+	now := c.ownHashLocked()
+	replaced := before != nil && !bytes.Equal(before, now)
+	if replaced {
+		c.ids.Record.Own = withPast(c.ids.Record.Own, now, before)
+	}
 	c.mu.Unlock()
 	if old != nil {
 		old.Close()
+	}
+	if replaced {
+		c.identitiesChanged(ctx)
 	}
 	c.wakeIdentities()
 	c.m.notify()

@@ -570,6 +570,10 @@ func (c *conn) saveKept() {
 		return
 	}
 	k, members := c.den.kept()
+	k.GroupStates = map[string]*groupState{}
+	for id, g := range c.groups {
+		k.GroupStates[id] = g.clone()
+	}
 	cursor, withMembers := c.members, c.membersDirty
 	c.stateDirty, c.membersDirty = false, false
 	c.mu.Unlock()
@@ -613,6 +617,9 @@ func (c *conn) restoreKept() {
 	if err == nil {
 		s, err = restore(c.j.denID, k, members)
 	}
+	if err == nil && !cleanGroups(s.channels, k.GroupStates) {
+		err = errMalformed
+	}
 	if err != nil {
 		c.m.log.Warnf("A den's state in the cache doesn't read, so its cache starts again: %v", err)
 		c.cacheErr(cs.DropDen(den))
@@ -622,6 +629,9 @@ func (c *conn) restoreKept() {
 	// it, so its marks need no telling.
 	c.mu.Lock()
 	c.den = s
+	if k.GroupStates != nil {
+		c.groups = k.GroupStates
+	}
 	c.remarkLocked()
 	if withMembers {
 		c.members = &membersCursor{epoch: kept.Epoch, version: kept.Version}

@@ -152,6 +152,12 @@ func DeriveIdentity(seal, denID []byte) (*IdentityKeys, error) {
 // Public returns the identity's public keys.
 func (k *IdentityKeys) Public() Identity { return k.public }
 
+// Maker is the identity as a key or a change carries its maker's: the
+// hash of its X-Wing key, and its signing key.
+func (k *IdentityKeys) Maker() KeyMaker {
+	return KeyMaker{KEMHash: KEMHash(k.public.KEM), Sig: k.public.Sig}
+}
+
 // Close clears the signing key. The HPKE key's own copies are the
 // library's, and go with the garbage collector.
 func (k *IdentityKeys) Close() { clear(k.sig) }

@@ -597,7 +597,7 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 		}
 	case channel.Valid:
 		c, err := d.channel(ctx, d.db, channel.Int64)
-		if err != nil || !visible(c, s.MemberID, IsStaff(s.Role)) {
+		if err != nil || !sees(c, s) {
 			return none, errFileNotFound
 		}
 	case profile, uploader == s.MemberID:

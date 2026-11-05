@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -118,21 +119,39 @@ func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
 }
 
 // openPayloadLocked opens a DM message's sealed text and files with the
-// key it names; the caller holds c.mu.
-func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, revision int, sealed []byte) (denproto.DMPayload, string) {
+// key it names, and says who sealed it: in a DM its author, in a group
+// (M16.3) whoever its signature says, which must be a member its key
+// names, and its author at its first revision. The caller holds c.mu.
+func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, revision int, sealed []byte) (denproto.DMPayload, string, string) {
 	key, locked := c.dmKeyLocked(channel, keyID)
 	if locked != "" {
-		return denproto.DMPayload{}, locked
+		return denproto.DMPayload{}, "", locked
 	}
 	defer clear(key)
 	ch, _ := denproto.ParseID(channel)
 	id, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(author)
-	p, err := denproto.OpenDMMessage(key, denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}, sealed)
-	if err != nil {
-		return denproto.DMPayload{}, lockedBroken
+	ad := denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}
+	if c.den.channels[channel].Kind != denproto.KindGroupDM {
+		p, err := denproto.OpenDMMessage(key, ad, sealed)
+		if err != nil {
+			return denproto.DMPayload{}, "", lockedBroken
+		}
+		return p, author, ""
 	}
-	return p, ""
+	k, ok := c.den.signed[keyID]
+	if !ok {
+		return denproto.DMPayload{}, "", lockedBroken
+	}
+	stmt, err := k.Statement(c.j.denID)
+	if err != nil {
+		return denproto.DMPayload{}, "", lockedBroken
+	}
+	p, signer, err := denproto.OpenGroupMessage(key, ad, stmt.Named, sealed)
+	if err != nil || revision == 1 && signer != who {
+		return denproto.DMPayload{}, "", lockedBroken
+	}
+	return p, denproto.FormatID(signer), ""
 }
 
 // openLocked opens a DM message for the page; other messages pass as they
@@ -142,7 +161,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	if r := m.Reply; r != nil {
 		reply = &PageReply{AuthorID: r.AuthorID, Text: r.Text}
 		if r.Sealed != nil {
-			p, locked := c.openPayloadLocked(m.ChannelID, r.AuthorID, r.KeyID, r.Nonce, r.Revision, r.Sealed)
+			p, _, locked := c.openPayloadLocked(m.ChannelID, r.AuthorID, r.KeyID, r.Nonce, r.Revision, r.Sealed)
 			reply.Text, reply.Locked = denproto.Excerpt(p.Text), locked != ""
 		}
 	}
@@ -156,7 +175,12 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	// may be newer than the message's (M15.3).
 	sets := c.openSetsLocked(m)
 	out.Sealed, out.DMReactions = nil, nil
-	p, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
+	p, signer, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
+	// A group's message changed by someone the den doesn't say may edit it
+	// isn't shown as its author's (M16.3).
+	if locked == "" && signer != m.AuthorID && signer != m.EditedBy && !slices.Contains(m.Editors, signer) {
+		locked = lockedBroken
+	}
 	if locked != "" {
 		return PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
 	}
@@ -224,7 +248,7 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			c.mu.Unlock()
 			return "", nil, errNoSeal
 		}
-		if k, ok := c.den.liveKey(channel); ok && len(k.Checks) == 2 && k.Sealed != nil {
+		if k, ok := c.den.liveKey(channel); ok && c.den.channels[channel].Kind == denproto.KindDM && len(k.Checks) == 2 && k.Sealed != nil {
 			key, locked := c.dmKeyLocked(channel, k.ID)
 			c.mu.Unlock()
 			if locked != "" {
@@ -241,11 +265,16 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			return k.ID, key, nil
 		}
 		err := c.canMakeKeyLocked(channel)
+		group := c.den.channels[channel].Kind == denproto.KindGroupDM
 		c.mu.Unlock()
 		if err != nil {
 			return "", nil, err
 		}
-		if err := c.makeKey(ctx, channel); err != nil {
+		makeKey := c.makeKey
+		if group {
+			makeKey = c.makeGroupKey
+		}
+		if err := makeKey(ctx, channel); err != nil {
 			return "", nil, err
 		}
 	}
@@ -263,7 +292,22 @@ func (c *conn) sealMessage(ctx context.Context, channel, author string, nonce []
 	ch, _ := denproto.ParseID(channel)
 	id, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(author)
-	sealed, err := denproto.SealDMMessage(key, denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}, p)
+	ad := denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}
+	var sealed denproto.Bytes
+	if c.isGroup(channel) {
+		// A group's is signed inside by whoever wrote or changed it (M16.3).
+		me, _ := denproto.ParseID(c.memberID())
+		err = c.ownIdentity(func(ik *denproto.IdentityKeys) error {
+			var err error
+			sealed, err = denproto.SealGroupMessage(key, ad, ik, me, p)
+			return err
+		})
+		if errors.Is(err, errNoSeal) {
+			return "", nil, err
+		}
+	} else {
+		sealed, err = denproto.SealDMMessage(key, ad, p)
+	}
 	if err != nil {
 		return "", nil, inputError(errors.New("this message is too long to send"))
 	}

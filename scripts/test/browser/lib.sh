@@ -6,6 +6,7 @@
 #   m2a  alice, who hosts the den: page 18484, den 18485, media 17881/17882
 #   m2b  bob, a member: page 18486
 #   m2c  carol, a member when a check needs one: page 18487
+#   m2d  dave, a member when a check needs one: page 18489
 #   m2e  bob's laptop, his second device when a check needs one: page 18490
 #
 # The instances run in the background with their PIDs in ~/<instance>.pid
@@ -15,8 +16,8 @@ set -euo pipefail
 cd "$HOME"
 export XDG_RUNTIME_DIR=/run/user/$UID
 
-declare -A PORT=([alice]=18484 [bob]=18486 [carol]=18487 [laptop]=18490)
-declare -A INSTANCE=([alice]=m2a [bob]=m2b [carol]=m2c [laptop]=m2e)
+declare -A PORT=([alice]=18484 [bob]=18486 [carol]=18487 [dave]=18489 [laptop]=18490)
+declare -A INSTANCE=([alice]=m2a [bob]=m2b [carol]=m2c [dave]=m2d [laptop]=m2e)
 DEN_URL=${DEN_URL:-http://127.0.0.1:18485}
 
 # api WHO METHOD PATH [JSON] calls WHO's page API as their paired browser.
@@ -130,11 +131,12 @@ group() {
     return 1
 }
 
-# upload WHO FILE NAME uploads a file as WHO and prints its ID.
+# upload WHO FILE NAME [CHANNEL] uploads a file as WHO, sealed for a DM or
+# a group where CHANNEL is one, and prints its ID.
 upload() {
     curl -sS --fail-with-body -b "$HOME/jar-${INSTANCE[$1]}" -c "$HOME/jar-${INSTANCE[$1]}" -X POST \
         -H "Origin: http://127.0.0.1:${PORT[$1]}" -H "Content-Type: application/octet-stream" -H "Dens-Filename: $3" \
-        --data-binary "@$2" "http://127.0.0.1:${PORT[$1]}/api/dens/$DEN/uploads" | json 'd["id"]'
+        --data-binary "@$2" "http://127.0.0.1:${PORT[$1]}/api/dens/$DEN/uploads${4:+?channel=$4}" | json 'd["id"]'
 }
 
 # send WHO CHANNEL TEXT [FILE...] sends a message as WHO, with uploads by

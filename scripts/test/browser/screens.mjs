@@ -19,6 +19,7 @@
 //   hosting, move, cache     the System tab, as an owner
 //   retention, files         Manage, each section, as a member and as an owner
 //   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
+//   groups                   a group DM, its members beside it, a new group (M16.3)
 //   (M8.3, M11)              Home, adding a den, a member's profile, editing one's own,
 //                            removing a member, a channel's and a group's settings
 //   (M9, M10)                unpaired, setting the local password, joining a den,
@@ -292,9 +293,10 @@ const sections = (h, frame) => h.ev(`[...document.querySelectorAll(${JSON.string
 
 // memberScreens are the screens every member reaches, in a den with
 // general (text, with a description and every kind of message) and a DM
-// (dm), whose codes they compare (M16.1).
+// (dm), whose codes they compare (M16.1), and a group DM (group), with its
+// members beside it (M16.3).
 export async function memberScreens(h, ctx) {
-    const { den, general, dm } = ctx;
+    const { den, general, dm, group } = ctx;
     await h.step('home', async () => {
         await h.go('/');
         await h.wait(HOME, 'home');
@@ -451,6 +453,27 @@ export async function memberScreens(h, ctx) {
             await h.click(h.label('End-to-end encrypted: compare codes'));
             await h.wait(`document.querySelector('[data-codes]')`, 'comparing codes');
             await h.snap('dm-codes', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
+            await h.escape();
+        });
+    }
+    if (group) {
+        // A group DM, its lines, and its members beside it, where its
+        // header's lock and members button lead (M16.3).
+        await h.step('group', async () => {
+            await h.go(`/den/${den}/${group}`);
+            await h.wait(COMPOSER, 'the group');
+            await h.wait(`document.querySelector('[data-group-change]')`, "the group's lines");
+            await sleep(1200);
+            await h.snap('group');
+            await h.click(h.label("The group's members"));
+            await h.wait(`document.querySelector('[data-group-members]')`, "the group's members");
+            await h.snap('group-members', { scroll: `document.querySelector('[data-pane=side]')`, max: 2 });
+        });
+        await h.step('new-group', async () => {
+            await h.go(`/den/${den}/dms`);
+            await h.click(`document.querySelector('[data-new-group]')`, '+ New group');
+            await h.wait(`document.querySelector('[role=dialog][aria-label="New group"]')`, 'the New group dialog');
+            await h.snap('new-group', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
             await h.escape();
         });
     }

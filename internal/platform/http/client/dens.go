@@ -46,6 +46,7 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountChat(r)
 	rt.mountNotify(r)
 	rt.mountMembers(r)
+	rt.mountGroups(r)
 	rt.mountFiles(r)
 	rt.mountDevices(r)
 	rt.mountSoundboard(r)

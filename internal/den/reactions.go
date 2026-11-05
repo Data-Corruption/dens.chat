@@ -132,6 +132,11 @@ func (d *Den) reactable(ctx context.Context, s *Session, messageID string) (denp
 	if err != nil {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}
+	// A group's member reacts to what they can read, from their joining
+	// (M16.3).
+	if since, err := groupSince(ctx, d.db, c, cid, s.MemberID); err != nil || mid <= since {
+		return denproto.Channel{}, 0, 0, errMessageNotFound
+	}
 	return c, cid, mid, nil
 }
 
@@ -185,7 +190,7 @@ func (d *Den) react(ctx context.Context, s *Session, messageID string, req denpr
 	if err != nil {
 		return err
 	}
-	if c.Kind == denproto.KindDM {
+	if isPrivate(c) {
 		return invalid("a DM's reactions come sealed, as a set each member's client seals")
 	}
 	emoji, emojiID := reactionArgs(req)
@@ -281,7 +286,7 @@ func (d *Den) ClearReactions(ctx context.Context, s *Session, messageID string, 
 	if err != nil {
 		return err
 	}
-	if c.Kind == denproto.KindDM {
+	if isPrivate(c) {
 		return forbidden("a DM's reactions are its members' alone")
 	}
 	emoji, emojiID := reactionArgs(req)
@@ -364,11 +369,13 @@ func (d *Den) SetDMReactions(ctx context.Context, s *Session, messageID string, 
 	if err != nil {
 		return out, err
 	}
-	if c.Kind != denproto.KindDM {
+	if !isPrivate(c) {
 		return out, invalid("only a DM's reactions come sealed")
 	}
-	if err := d.checkDMOpen(ctx, c, s.MemberID); err != nil {
-		return out, err
+	if c.Kind == denproto.KindDM {
+		if err := d.checkDMOpen(ctx, c, s.MemberID); err != nil {
+			return out, err
+		}
 	}
 	now := d.now()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
@@ -396,6 +403,17 @@ func (d *Den) SetDMReactions(ctx context.Context, s *Session, messageID string, 
 		}
 		if (current == nil && req.Revision != 0) || (current != nil && current.Revision != req.Revision) {
 			return &reactionsConflict{current}
+		}
+		if current == nil {
+			// A group's message carries the sets of its members and of those
+			// who left it, as many as a message may (M16.3).
+			var sets int
+			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_dm_reactions WHERE message_id = ?`, mid).Scan(&sets); err != nil {
+				return err
+			}
+			if sets >= denproto.MaxReactionSets {
+				return invalid("a message holds the reactions of at most %d members", denproto.MaxReactionSets)
+			}
 		}
 		out = denproto.SealedReactions{MemberID: denproto.FormatID(s.MemberID), KeyID: denproto.FormatID(key),
 			Revision: req.Revision + 1, Sealed: req.Sealed}

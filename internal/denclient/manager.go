@@ -343,6 +343,7 @@ func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *c
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		ids: ids, verdicts: map[string]string{}, copies: map[string]denproto.Bytes{}, idDue: make(chan struct{}, 1),
+		groups: map[string]*groupState{}, groupDue: make(chan struct{}, 1),
 		dmFiles: map[string]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1),

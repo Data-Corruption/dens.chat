@@ -14,11 +14,14 @@ type Audience struct {
 	kind audienceKind
 	a, b int64
 	// set holds a poll's voters, for an audience of them or of the rest of
-	// its channel (M15.4), and staff whether the channel is staff's alone.
-	// Nothing changes a set once its audience is made, since the ring
-	// keeps the audience for replays.
+	// its channel (M15.4), and staff whether the channel is staff's alone;
+	// or a group DM's members (M16.3). Nothing changes a set once its
+	// audience is made, since the ring keeps the audience for replays.
 	set   map[int64]bool
 	staff bool
+	// groups marks an event about a group DM, which a socket speaking
+	// version 1 of the protocol never gets (M16.3).
+	groups bool
 }
 
 type audienceKind uint8
@@ -31,6 +34,7 @@ const (
 	toNobody
 	toVoters
 	toNonVoters
+	toSet
 )
 
 // Audiences.
@@ -58,7 +62,24 @@ func NonVoters(voters map[int64]bool, staffOnly bool) Audience {
 	return Audience{kind: toNonVoters, set: voters, staff: staffOnly}
 }
 
-func (a Audience) includes(member int64, staff bool) bool {
+// Members is the audience of a group DM's members, which a socket speaking
+// version 1 of the protocol never gets (M16.3). members mustn't change
+// once it's passed.
+func Members(members map[int64]bool) Audience {
+	return Audience{kind: toSet, set: members, groups: true}
+}
+
+// aboutGroups is the audience with events about a group DM, which a socket
+// speaking version 1 of the protocol never gets.
+func (a Audience) aboutGroups() Audience {
+	a.groups = true
+	return a
+}
+
+func (a Audience) includes(member int64, staff, groups bool) bool {
+	if a.groups && !groups {
+		return false
+	}
 	switch a.kind {
 	case toStaff:
 		return staff
@@ -72,6 +93,8 @@ func (a Audience) includes(member int64, staff bool) bool {
 		return (staff || !a.staff) && a.set[member]
 	case toNonVoters:
 		return (staff || !a.staff) && !a.set[member]
+	case toSet:
+		return a.set[member]
 	}
 	return true
 }
@@ -121,8 +144,11 @@ type ringEntry struct {
 
 // Sub is one socket's subscription. Events arrive in order; the channel is
 // closed when the socket falls too far behind (Slow) or unsubscribes.
+// groups says its socket speaks a version of the protocol with group DMs
+// (M16.3).
 type Sub struct {
 	member int64
+	groups bool
 	Events chan denproto.Event
 	slow   bool
 
@@ -166,7 +192,7 @@ func (h *Hub) Publish(t string, data any, audience Audience) error {
 	}
 	h.record(event, audience)
 	for sub := range h.subs {
-		if audience.includes(sub.member, sub.staff) {
+		if audience.includes(sub.member, sub.staff, sub.groups) {
 			h.send(sub, event)
 		}
 	}
@@ -316,21 +342,29 @@ func (h *Hub) forget() {
 	clear(h.memberRefresh)
 }
 
-// Subscribe registers a socket for a member. When the client's resume
-// point (epoch and seq) is still covered by the ring, it returns the events
-// the member missed and resumed is true; otherwise the client needs a fresh
-// snapshot, taken after this call, and seq is where that snapshot starts.
-// Events published after Subscribe arrive on the subscription either way.
+// Subscribe registers a socket for a member, speaking the protocol's
+// version with group DMs. When the client's resume point (epoch and seq)
+// is still covered by the ring, it returns the events the member missed
+// and resumed is true; otherwise the client needs a fresh snapshot, taken
+// after this call, and seq is where that snapshot starts. Events published
+// after Subscribe arrive on the subscription either way.
 func (h *Hub) Subscribe(member int64, staff bool, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
+	return h.SubscribeAt(member, staff, true, epoch, after)
+}
+
+// SubscribeAt subscribes as Subscribe does, for a socket that speaks a
+// version of the protocol with group DMs or, without groups, one before
+// them (M16.3), which gets nothing of them.
+func (h *Hub) SubscribeAt(member int64, staff, groups bool, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.trim(h.now())
-	sub = &Sub{member: member, staff: staff, Events: make(chan denproto.Event, h.subSize)}
+	sub = &Sub{member: member, groups: groups, staff: staff, Events: make(chan denproto.Event, h.subSize)}
 	h.subs[sub] = struct{}{}
 	stale := (!staff && after < h.nonStaffRefresh) || after < h.memberRefresh[member]
 	if epoch == h.epoch && !stale && after <= h.seq && after+1 >= h.first {
 		for _, e := range h.ring[h.head+int(after+1-h.first):] {
-			if e.audience.includes(member, staff) {
+			if e.audience.includes(member, staff, groups) {
 				missed = append(missed, e.event)
 			}
 		}

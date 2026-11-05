@@ -96,7 +96,8 @@ func (d *Den) focus(ctx context.Context, sub *Sub, channels []string) {
 			continue
 		}
 		c, err := d.channel(ctx, d.db, cid)
-		if err == nil && visible(c, sub.member, staff) {
+		// A socket speaking a version before group DMs shows none (M16.3).
+		if err == nil && visible(c, sub.member, staff) && (c.Kind != denproto.KindGroupDM || sub.groups) {
 			shown[id] = true
 		}
 	}

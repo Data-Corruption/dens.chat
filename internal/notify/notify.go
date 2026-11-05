@@ -46,8 +46,11 @@ type Message struct {
 	Den, DenName         string
 	Channel, ChannelName string
 	DM                   bool
-	ID                   string
-	Author               string
+	// Group is a group DM's name, or its members', where the DM is a group's
+	// (M16.3).
+	Group  string
+	ID     string
+	Author string
 	// Mention is whether it mentions the member by name, and Everyone
 	// whether it's staff's @everyone (M15.4), which notifies as a mention
 	// unless the member silenced it.
@@ -804,8 +807,11 @@ func (h *Hub) Forgot(den string) {
 func compose(m Message, hideText bool) Notification {
 	n := Notification{Key: m.Den + "/" + m.Channel, Den: m.Den, DenName: m.DenName, Channel: m.Channel, Message: m.ID,
 		Title: m.Author, Path: "/den/" + m.Den + "/" + m.Channel + "#message=" + m.ID}
-	if !m.DM {
+	switch {
+	case !m.DM:
 		n.Title = m.Author + " in #" + m.ChannelName
+	case m.Group != "":
+		n.Title = m.Author + " in " + m.Group
 	}
 	if !hideText {
 		n.Text = denproto.Plain(m.Text, TextLimit)
@@ -814,6 +820,8 @@ func compose(m Message, hideText bool) Notification {
 		return n
 	}
 	switch {
+	case hideText && m.DM && m.Group != "":
+		n.Text = "Sent a message"
 	case hideText && m.DM:
 		n.Text = "Sent you a message"
 	case hideText && m.Everyone && !m.Mention:

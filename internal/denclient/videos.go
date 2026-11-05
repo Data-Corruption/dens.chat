@@ -263,8 +263,8 @@ func forDM(c *conn, channelID string) bool {
 	if channelID == "" {
 		return false
 	}
-	_, ok := c.isDM(channelID)
-	return ok
+	// A DM's or a group's (M16.3).
+	return c.private(channelID)
 }
 
 // stripVideo spools a video into a scratch file and strips it, as uploading

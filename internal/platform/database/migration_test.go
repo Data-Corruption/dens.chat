@@ -22,13 +22,16 @@ var releasedSchema = []struct {
 	added []string
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
-	{"v1.6.0", 1, []string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes",
-		"den_identities", "den_records"}},
+	{"v1.6.0", 1, append([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables...)},
 	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
-	{"v1.7.0", 3, []string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes", "den_identities", "den_records"}},
+	{"v1.7.0", 3, append([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables...)},
 	// v1.8.0 added M15.2's emoji, M15.3's reactions and M15.4's polls.
-	{"v1.8.0", 6, []string{"den_identities", "den_records"}},
+	{"v1.8.0", 6, m16Tables},
 }
+
+// m16Tables are the tables M16's steps add: M16.1's identities and
+// records, and M16.3's group DMs.
+var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_group_members", "den_group_changes"}
 
 // retiredKeys are the tables of DM keys, which M16.1's step changes: an
 // exchange still running, or checked by one member alone, retires.
@@ -42,9 +45,12 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // values; a step may add columns, as M14.3 adds the den's limits for its
 // soundboard and M15.2 its limit for emoji, which hold their defaults, as
 // does M15.4's mark of a message's @everyone and M16.1's identities, and
-// tables, as M15.3 adds the reactions', M15.4 the polls' and M16.1 the
-// identities' and the records', which start empty. M16.1 retires the DM
-// keys whose exchanges hadn't finished, and keeps every row of them.
+// tables, as M15.3 adds the reactions', M15.4 the polls', M16.1 the
+// identities' and the records' and M16.3 the group DMs', which start
+// empty. M16.1 retires the DM keys whose exchanges hadn't finished, and
+// keeps every row of them. M16.3 makes den_channels again, with foreign
+// keys off, which keeps every row that refers to a channel, and its
+// counter where a restore moved it.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -137,6 +143,18 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					(SELECT count(*) FROM joined_dens WHERE identities IS NOT NULL)`).Scan(&identities, &statements, &kept); err != nil ||
 					identities+statements+kept != 0 {
 					t.Errorf("%s holds %d identities, %d signed keys and %d kept records after the migration, %v", what, identities, statements, kept, err)
+				}
+				// den_channels was made again, with group DMs among its kinds.
+				if _, err := db.Exec(`INSERT INTO den_channels (name, kind, position, created_at) VALUES ('', 'group_dm', 0, 9)`); err != nil {
+					t.Errorf("%s takes no group DM after the migration: %v", what, err)
+				}
+				var channel int64
+				if err := db.QueryRow(`SELECT max(id) FROM den_channels`).Scan(&channel); err != nil || channel != 1700000000000001 {
+					t.Errorf("%s gave a new channel ID %d, %v, not one past the counter", what, channel, err)
+				}
+				var on int
+				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
+					t.Errorf("%s has foreign keys %d after the migration, %v", what, on, err)
 				}
 				for _, check := range []string{"PRAGMA foreign_key_check", "PRAGMA integrity_check"} {
 					if got := dumpQuery(t, db, check); got != "" && got != `["ok"]` {
@@ -247,6 +265,8 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 		`INSERT INTO den_dm_key_members (key_id, member_id, sealed, checked_at) VALUES (2, 1, x'56', 3), (2, 3, x'57', 4)`,
 		`INSERT INTO den_changes (id, kind, ref, channel_id, at) VALUES (1, 'message', 1, 1, 2)`,
 		`INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (1, 1, 1, 0)`,
+		// A restore moved the channels' counter past their IDs (M11).
+		`UPDATE sqlite_sequence SET seq = 1700000000000000 WHERE name = 'den_channels'`,
 	}
 	if version >= 3 {
 		rows = append(rows,
