@@ -104,8 +104,64 @@ func (f *fixture) approve(existing denproto.Bytes, username string, verifier den
 	return st.Session.Token
 }
 
-// The routes of M1.7 answer as the protocol says, and a waiting sign-in
-// is asked after only with its own token.
+// signedKey publishes an identity for each member of a DM, made from a
+// seal of its own, and makes the DM's key from the first, sealed to both
+// and signed by the first's, as their clients do (M16.1). It returns the
+// key as the first sees it.
+func (f *fixture) signedKey(dm denproto.Channel, makers ...denproto.Bytes) denproto.SignedKey {
+	f.t.Helper()
+	ctx := context.Background()
+	info, _ := f.d.Info()
+	cid, _ := denproto.ParseID(dm.ID)
+	key, kid := denproto.Random(denproto.DMKeySize), denproto.Random(denproto.KIDSize)
+	req := denproto.SignedKeyRequest{KID: kid, Commit: denproto.KeyCommit(kid, key)}
+	var ids []*denproto.IdentityKeys
+	for _, token := range makers {
+		s, err := f.d.Authenticate(ctx, token)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		k, err := denproto.DeriveIdentity(denproto.NewSeal(), info.ID)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		ids = append(ids, k)
+		var m denproto.Member
+		if status := f.call(http.MethodPut, "/api/me/identity", token, k.Public(), &m); status != http.StatusOK || m.Identity != k.Public().Hash().String() {
+			f.t.Fatalf("publish an identity: %d %+v", status, m)
+		}
+		copied, _ := denproto.SealKeyCopy(k.Public(), info.ID, cid, kid, s.MemberID, key)
+		member := denproto.KeyMember{MemberID: denproto.FormatID(s.MemberID), Identity: k.Public().Hash()}
+		req.Copies = append(req.Copies, denproto.KeyCopy{MemberID: member.MemberID, Copy: copied})
+		if len(req.Members) > 0 && s.MemberID < mustID(req.Members[0].MemberID) {
+			req.Members = append([]denproto.KeyMember{member}, req.Members...)
+		} else {
+			req.Members = append(req.Members, member)
+		}
+	}
+	first, _ := f.d.Authenticate(ctx, makers[0])
+	stmt, err := req.Statement(info.ID, dm.ID, denproto.FormatID(first.MemberID))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	req.Signature = ids[0].Sign(stmt)
+	var k denproto.SignedKey
+	if status := f.call(http.MethodPost, "/api/dms/"+dm.ID+"/signed-keys", makers[0], req, &k); status != http.StatusCreated {
+		f.t.Fatalf("make a key: %d", status)
+	}
+	return k
+}
+
+func mustID(s string) int64 {
+	id, err := denproto.ParseID(s)
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+// The routes of M1.7 and M16.1 answer as the protocol says, and a waiting
+// sign-in is asked after only with its own token.
 func TestPrivateRoutes(t *testing.T) {
 	f := newFixture(t)
 	alice, _ := f.owner()
@@ -119,32 +175,44 @@ func TestPrivateRoutes(t *testing.T) {
 	info, _ := f.d.Info()
 	a, _ := f.d.Authenticate(ctx, alice)
 	cid, _ := denproto.ParseID(dm.ID)
-	starter, offer, _ := denproto.StartExchange(denproto.DMExchangeContext(info.ID, cid, a.MemberID, b.MemberID))
+	// The den starts no exchange any more (M16.1).
+	_, offer, _ := denproto.StartExchange(denproto.DMExchangeContext(info.ID, cid, a.MemberID, b.MemberID))
 	keys := "/api/dms/" + dm.ID + "/keys"
-	var k denproto.DMKey
-	if status := f.call(http.MethodPost, keys, alice, denproto.KeyStartRequest{Offer: offer, State: denproto.Random(100)}, &k); status != http.StatusCreated || k.Stage != denproto.StageOffered {
-		t.Fatalf("start: %d %+v", status, k)
+	if status := f.call(http.MethodPost, keys, alice, denproto.KeyStartRequest{Offer: offer, State: denproto.Random(100)}, nil); status != http.StatusBadRequest {
+		t.Fatalf("start an exchange: %d", status)
 	}
-	if status := f.call(http.MethodPost, keys, bob, denproto.KeyStartRequest{Offer: offer, State: denproto.Random(100)}, nil); status != http.StatusConflict {
-		t.Fatalf("a second start: %d", status)
+	if status := f.call(http.MethodGet, "/api/identities", alice, nil, nil); status != http.StatusBadRequest {
+		t.Fatalf("identities of nobody: %d", status)
+	}
+	k := f.signedKey(dm, alice, bob)
+	if k.Copy == nil || k.MadeBy != denproto.FormatID(a.MemberID) {
+		t.Fatalf("the key alice made: %+v", k)
+	}
+	var ids denproto.IdentityList
+	if status := f.call(http.MethodGet, "/api/identities?members="+denproto.FormatID(a.MemberID)+","+denproto.FormatID(b.MemberID), bob, nil, &ids); status != http.StatusOK ||
+		len(ids.Identities) != 2 || ids.Identities[0].Identity().Check() != nil {
+		t.Fatalf("identities: %d %+v", status, ids)
+	}
+	var signed denproto.SignedKeyList
+	if status := f.call(http.MethodGet, "/api/dms/"+dm.ID+"/signed-keys", bob, nil, &signed); status != http.StatusOK || len(signed.Keys) != 1 ||
+		signed.Keys[0].ID != k.ID || denproto.Equal(signed.Keys[0].Copy, k.Copy) {
+		t.Fatalf("bob's list of the DM's signed keys: %d %+v", status, signed)
 	}
 	var list denproto.DMKeyList
-	if status := f.call(http.MethodGet, keys, bob, nil, &list); status != http.StatusOK || len(list.Keys) != 1 || list.Keys[0].Exchange == nil {
-		t.Fatalf("list: %d %+v", status, list)
+	if status := f.call(http.MethodGet, keys, bob, nil, &list); status != http.StatusOK || len(list.Keys) != 0 {
+		t.Fatalf("an older Dens's list: %d %+v", status, list)
 	}
-	_, answer, _ := denproto.AnswerExchange(denproto.DMExchangeContext(info.ID, cid, a.MemberID, b.MemberID), offer)
-	if status := f.call(http.MethodPost, keys+"/"+k.ID+"/answer", bob, denproto.KeyAnswerRequest{Answer: answer, State: denproto.Random(100)}, &k); status != http.StatusOK || k.Stage != denproto.StageAnswered {
-		t.Fatalf("answer: %d %+v", status, k)
+	// The member's record, written over the revision it was merged from.
+	var rec denproto.Record
+	if status := f.call(http.MethodGet, "/api/me/record", bob, nil, &rec); status != http.StatusOK || rec.Revision != 0 {
+		t.Fatalf("the record before a write: %d %+v", status, rec)
 	}
-	reveal, _, _ := starter.Finish(answer)
-	if status := f.call(http.MethodPost, keys+"/"+k.ID+"/reveal", alice, denproto.KeyRevealRequest{Reveal: reveal}, &k); status != http.StatusOK || k.Stage != denproto.StageRevealed {
-		t.Fatalf("reveal: %d %+v", status, k)
+	write := denproto.RecordWrite{Revision: 0, Sealed: denproto.Random(16<<10 + 40)}
+	if status := f.call(http.MethodPut, "/api/me/record", bob, write, &rec); status != http.StatusOK || rec.Revision != 1 {
+		t.Fatalf("a write: %d %+v", status, rec)
 	}
-	if status := f.call(http.MethodPut, keys+"/"+k.ID+"/sealed", alice, denproto.KeySealRequest{Sealed: denproto.Random(denproto.SealedKeySize)}, &k); status != http.StatusOK || len(k.Checks) != 1 {
-		t.Fatalf("seal: %d %+v", status, k)
-	}
-	if status := f.call(http.MethodPut, keys+"/999/sealed", alice, denproto.KeySealRequest{Sealed: denproto.Random(denproto.SealedKeySize)}, nil); status != http.StatusNotFound {
-		t.Fatalf("another key: %d", status)
+	if status := f.call(http.MethodPut, "/api/me/record", bob, write, nil); status != http.StatusConflict {
+		t.Fatalf("a write over a stale revision: %d", status)
 	}
 	if status := f.call(http.MethodPost, "/api/me/seal", alice, denproto.StartOverRequest{Verifier: denproto.Random(32), SealCheck: denproto.Random(32)}, nil); status != http.StatusForbidden {
 		t.Fatalf("starting over with the wrong password: %d", status)

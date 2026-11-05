@@ -3,8 +3,8 @@
 // its owner changes; invites, bans, the soundboard (M14.3) and emoji
 // (M15.2), for staff; and the owner's limits.
 // You in this den: the member's devices, their den password, recovery
-// codes and DM recovery key, and their files. The owner's edits gather in
-// one draft, saved from one bar.
+// codes and DM recovery key, their code for others to compare (M16.1), and
+// their files. The owner's edits gather in one draft, saved from one bar.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -35,7 +35,7 @@ export function sectionsFor(den) {
         list.push(['invites', 'Invites', 'den'], ['bans', 'Bans', 'den'], ['soundboard', 'Soundboard', 'den'], ['emoji', 'Emoji', 'den']);
     }
     if (den.role === 'owner') list.push(['limits', 'Limits', 'den']);
-    list.push(['devices', 'Devices', 'you'], ['password', 'Password and recovery', 'you'], ['files', 'Your files', 'you']);
+    list.push(['devices', 'Devices', 'you'], ['password', 'Password and recovery', 'you'], ['code', 'Your code', 'you'], ['files', 'Your files', 'you']);
     return list;
 }
 
@@ -162,6 +162,8 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         panel = <Devices den={den} />;
     } else if (at === 'password') {
         panel = <PasswordAndRecovery den={den} onCodes={showCodes} onKey={showKey} />;
+    } else if (at === 'code') {
+        panel = <YourCode den={den} view={view} />;
     } else if (at === 'files') {
         panel = <Files den={den} navigate={(to) => {
             onClose();
@@ -800,6 +802,37 @@ function PasswordAndRecovery({ den, onCodes, onKey }) {
                 <h4 class="font-medium">DM recovery key</h4>
                 <DMKey den={den} onSeal={onKey} />
             </section>
+        </>
+    );
+}
+
+// YourCode shows the member's code in this den (M16.1), which others
+// compare with what their Dens shows for them, from a DM, a profile or a
+// call, to check nobody sits between them.
+function YourCode({ den, view }) {
+    const [code, setCode] = useState('');
+    const [error, setError] = useState('');
+    const me = view?.me?.id;
+    useEffect(() => {
+        if (me) api.get(`/api/dens/${den.den_id}/members/${me}/code`).then((v) => setCode(v.mine), (e) => setError(e.message));
+    }, [den.den_id, me]);
+    return (
+        <>
+            <Heading>
+                Your code{' '}
+                <DocsTip id={`docs-code-${den.den_id}`} page="join/#direct-messages">Why members compare codes, and where it's safe to.</DocsTip>
+            </Heading>
+            {view && !view.keeps_identities ? (
+                <p class="text-sm">This den runs an older Dens, which keeps no identities, so there's no code to compare here yet.</p>
+            ) : (
+                <>
+                    <p class="text-sm">
+                        Others in this den compare this code with the one their Dens shows for you, to check nobody sits between you. Read it out
+                        when they ask. It's the same for everyone, and changes only if you reset your DM recovery key.
+                    </p>
+                    {code ? <p class="select-all font-mono text-2xl tracking-wider" data-own-code>{code}</p> : <ErrorText message={error} />}
+                </>
+            )}
         </>
     );
 }

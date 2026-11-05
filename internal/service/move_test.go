@@ -272,44 +272,21 @@ func send(t *testing.T, m *denclient.Manager, denID, channel, text string, files
 	}
 }
 
-// checkDM has two members compare check digits, so their DM takes
-// messages: a starts its key, and each types what the other's screen shows.
-func checkDM(t *testing.T, a, b *denclient.Manager, denID, dm string) {
+// readyDM waits until both members' Dens have their DM and have kept each
+// other's identity, so either's first message makes its key (M16.1).
+func readyDM(t *testing.T, a, b *denclient.Manager, denID, dm string) {
 	t.Helper()
-	ctx := context.Background()
+	ids := []string{}
 	for _, m := range []*denclient.Manager{a, b} {
-		viewOf(t, m, denID, "the DM", func(v denclient.View) bool {
-			return slices.ContainsFunc(v.Channels, func(c denproto.Channel) bool { return c.ID == dm })
+		ids = append(ids, viewOf(t, m, denID, "a view", func(denclient.View) bool { return true }).Me.ID)
+	}
+	for i, m := range []*denclient.Manager{a, b} {
+		other := ids[1-i]
+		viewOf(t, m, denID, "the DM, with the other's identity kept", func(v denclient.View) bool {
+			_, kept := v.Identities[other]
+			return kept && v.Me.Identity != "" && slices.ContainsFunc(v.Channels, func(c denproto.Channel) bool { return c.ID == dm })
 		})
 	}
-	if err := a.StartDMKey(ctx, denID, dm, false); err != nil {
-		t.Fatal(err)
-	}
-	state := func(m *denclient.Manager, match func(denclient.DMCheck) bool) denclient.DMCheck {
-		t.Helper()
-		deadline := time.Now().Add(20 * time.Second)
-		for {
-			st, err := m.CheckState(ctx, denID, dm)
-			if err == nil && match(st) {
-				return st
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("timed out waiting on the DM's check: %+v %v", st, err)
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-	}
-	shown := func(st denclient.DMCheck) bool { return st.Half != "" }
-	x, y := state(a, shown), state(b, shown)
-	if err := a.CheckDM(ctx, denID, dm, y.Half); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.CheckDM(ctx, denID, dm, x.Half); err != nil {
-		t.Fatal(err)
-	}
-	both := func(st denclient.DMCheck) bool { return st.Checked && st.Partner }
-	state(a, both)
-	state(b, both)
 }
 
 // dump lists a table's rows as text, in order.
@@ -419,7 +396,7 @@ func TestDenMovesToAnotherComputer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkDM(t, alice, carol, denID, dm.ID)
+	readyDM(t, alice, carol, denID, dm.ID)
 	send(t, alice, denID, dm.ID, "a private word, before the move")
 	before := []string{"from the owner, before the move", "from the member, before the move"}
 

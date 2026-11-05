@@ -228,7 +228,7 @@ func TestDMsBetweenClients(t *testing.T) {
 	viewOf(t, member, denID, "the DM", func(v denclient.View) bool {
 		return slices.ContainsFunc(v.Channels, func(c denproto.Channel) bool { return c.ID == dm.ID })
 	})
-	checkDM(t, owner, member, denID, dm.ID)
+	readyDM(t, owner, member, denID, dm.ID)
 	stream, stop := owner.Stream()
 	defer stop()
 	send(t, member, denID, dm.ID, "psst")

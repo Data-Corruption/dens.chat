@@ -23,8 +23,8 @@ import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from './people.jsx';
 import { NO_CALLS, canCall } from './platform.js';
-import { needsCheck } from './private.js';
-import { SignInRequests } from './private.jsx';
+import { dmGate, partnerOf } from './private.js';
+import { CodesDialog, SignInRequests, VerifiedMark } from './private.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
@@ -260,6 +260,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                     if (e.t === 'voice.state') view = { ...view, calls: applyCalls(view.calls, e.d) };
                     else if (e.t === 'presence') present = applyPresence(present, e.d);
                     else if (e.t === 'dm.key') view = withKey(view, e.d);
+                    else if (e.t === 'identities') view = { ...view, identities: e.d };
                     else if (e.t === 'dens') view = withStatus(view, e.d);
                 }
                 setView(view);
@@ -304,7 +305,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
             if (msg.t !== 'den' || msg.d.den !== denID) return;
             if (msg.d.reset) return reloadSoon();
             for (const e of msg.d.events || []) {
-                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key') catchUp(e);
+                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key' || e.t === 'identities') catchUp(e);
                 if (STRUCTURAL.has(e.t)) reloadSoon();
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
                 else if (e.t === 'voice.state') setView((v) => (v ? { ...v, calls: applyCalls(v.calls, e.d) } : v));
@@ -312,6 +313,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                 else if (e.t === 'message.created') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.author_id, 0));
                 else if (e.t === 'device.added') setNewDevice(e.d);
                 else if (e.t === 'dm.key') setView((v) => (v ? withKey(v, e.d) : v));
+                // What this member's Dens kept of identities here (M16.1).
+                else if (e.t === 'identities') setView((v) => (v ? { ...v, identities: e.d } : v));
             }
             // The local service counts unread messages and mentions.
             if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
@@ -526,7 +529,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                         <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id} />
                         {tab === 'dms' ? (
                             <DMList dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
-                                keys={view.dm_keys || []} me={view.me.id} muted={bells ? muted.channels : null} onOpen={openChannel} onClose={closeDM} />
+                                identities={view.identities || {}} muted={bells ? muted.channels : null} onOpen={openChannel} onClose={closeDM} />
                         ) : (
                             <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
                                 muted={bells ? muted.channels : null} onOpen={openChannel} onDialog={setDialog} />
@@ -572,6 +575,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                         {channel ? (
                             <>
                                 <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} elsewhere={elsewhere}
+                                    verified={!!(dm && view.identities?.[dm.id]?.verified)} onCompare={() => dm && setDialog({ kind: 'codes', member: dm })}
                                     online={dm && online.has(dm.id)} membersOpen={!at && membersOpen}
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
                                     onChannels={() => toPane('list')} onMembers={toggleMembers}
@@ -589,6 +593,9 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     role={view.role}
                                     dm={dm}
                                     keys={channel.kind === 'dm' ? (view.dm_keys || []).filter((k) => k.channel_id === channel.id) : undefined}
+                                    gate={channel.kind === 'dm' ? dmGate(view, channel) : ''}
+                                    changes={channel.kind === 'dm' ? view.identities?.[partnerOf(channel, view.me.id)]?.changes : undefined}
+                                    onCompare={(m) => setDialog({ kind: 'codes', member: m })}
                                     typing={typers}
                                     closed={closed}
                                     limits={view.limits}
@@ -626,7 +633,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     aria-label={channel?.kind === 'dm' ? 'Close the profile' : 'Close the member list'}>✕</button>
                             </div>
                             {channel?.kind === 'dm' ? (
-                                dm && <ProfilePanel key={dm.id} denID={denID} member={dm} me={view.me} online={online.has(dm.id)} />
+                                dm && <ProfilePanel key={dm.id} denID={denID} member={dm} me={view.me} online={online.has(dm.id)}
+                                    kept={view.keeps_identities ? view.identities?.[dm.id] || {} : null} onCompare={() => setDialog({ kind: 'codes', member: dm })} />
                             ) : (
                                 <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                             )}
@@ -644,10 +652,13 @@ export function Chat({ denID, channelID, pane, navigate }) {
                         online={online.has(dialog.member.id)}
                         onClose={() => setDialog(null)}
                         onMessage={message}
+                        kept={view.keeps_identities ? view.identities?.[dialog.member.id] || {} : null}
+                        onCompare={(m) => setDialog({ kind: 'codes', member: m })}
                         onEdit={() => setDialog({ kind: 'edit' })}
                         onRemove={(m) => setDialog({ kind: 'remove', member: m })}
                     />
                 )}
+                {dialog?.kind === 'codes' && <CodesDialog denID={denID} member={members.get(dialog.member.id) || dialog.member} onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
             </LinkContext.Provider>
@@ -663,12 +674,9 @@ function withKey(view, key) {
 }
 
 // ListTabs switches the sidebar between the den's channels and DMs, and
-// shows whether the other has anything waiting: a channel or DM unread,
-// or a DM whose check codes this member hasn't compared, as one someone
-// just started (M8.3).
+// shows whether the other has anything waiting: a channel or DM unread.
 function ListTabs({ tab, onTab, view, reads, open }) {
-    const keys = view.dm_keys || [];
-    const waits = (c) => (unread(reads.get(c.id)) || (c.kind === 'dm' && needsCheck(keys, c.id, view.me.id)));
+    const waits = (c) => unread(reads.get(c.id));
     const waiting = (dms) => view.channels.some((c) => (c.kind === 'dm') === dms && c.id !== open && hasMessages(c) && waits(c) && !reads.get(c.id)?.closed);
     const tabs = [['den', 'Den', waiting(false)], ['dms', 'Direct messages', waiting(true)]];
     return (
@@ -983,7 +991,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
 // dms are as recentDMs lists them.
 // muted holds the DMs the member muted, or is null while no kind of
 // notification is on (M12.3).
-function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, onClose }) {
+function DMList({ dms, reads, open, partner, online, identities, muted, onOpen, onClose }) {
     if (dms.length === 0) {
         return (
             <p class="cursor-default select-none p-4 text-sm text-base-content/60">
@@ -999,7 +1007,7 @@ function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, on
                     const r = reads.get(c.id);
                     const isUnread = unread(r) && c.id !== open;
                     const isMuted = !!muted?.has(c.id);
-                    const checking = needsCheck(keys, c.id, me);
+                    const verified = !!(other && identities[other.id]?.verified);
                     const mentions = c.id !== open ? r?.mention_count || 0 : 0;
                     const who = other ? other.display_name : 'Unknown member';
                     return (
@@ -1008,18 +1016,14 @@ function DMList({ dms, reads, open, partner, online, keys, me, muted, onOpen, on
                                 type="button"
                                 class={`flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded ${other?.left_at ? 'opacity-60' : ''}`}
                                 onClick={() => onOpen(c.id)}
-                                aria-label={rowLabel(who, isMuted && 'muted', checking && 'check codes to compare', mentions && `${mentions} mentions`)}
+                                aria-label={rowLabel(who, verified && 'verified', isMuted && 'muted', mentions && `${mentions} mentions`)}
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
                                 <span class={`truncate ${readStyle(isUnread, c.id === open)}`}>{who}</span>
                             </button>
                             {isUnread && <UnreadPill />}
                             {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
-                            {checking && (
-                                <Tip id={`check-${c.id}`} label="Compare check codes" trigger={<span class="badge badge-warning badge-xs">Check</span>}>
-                                    Compare check codes with {who} before you write: open the DM to see them.
-                                </Tip>
-                            )}
+                            {verified && <VerifiedMark id={`verified-${c.id}`} name={who} />}
                             {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
                             {/* Touch screens have no hover, so there the X always shows. */}
                             <button
@@ -1053,7 +1057,7 @@ function PeopleIcon() {
 // description shows its first line, which opens the rest when there is
 // more than fits. Its bell mutes the channel's notifications, once the
 // member turned some on (M12.3): muted is null until then.
-function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
+function ChannelHeader({ channel, dm, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
     const clipped = useClipped(line, channel.description);
@@ -1074,15 +1078,22 @@ function ChannelHeader({ channel, dm, me, elsewhere, online, membersOpen, muted,
                     <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
                 </button>
                 {dm !== null && channel.kind === 'dm' ? (
-                    <HoverRow as="button" type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
-                        <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
-                        <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
-                        {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
-                        <span class="flex shrink-0 items-center gap-1 text-xs text-base-content/50" title="End-to-end encrypted: only the two of you can read it">
+                    <>
+                        <HoverRow as="button" type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
+                            <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
+                            <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
+                            {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
+                        </HoverRow>
+                        {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}
+                        {/* The lock says the DM is end-to-end encrypted, and
+                            opens comparing codes (M16.1). */}
+                        <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onCompare}
+                            title="End-to-end encrypted: only the two of you can read it. Compare codes to check nobody sits between you."
+                            aria-label="End-to-end encrypted: compare codes">
                             <LockIcon size="h-3 w-3" />
                             Encrypted
-                        </span>
-                    </HoverRow>
+                        </button>
+                    </>
                 ) : (
                     <span class="flex shrink-0 items-center gap-1 font-semibold">
                         <span class="text-base-content/50"><HashIcon /></span>

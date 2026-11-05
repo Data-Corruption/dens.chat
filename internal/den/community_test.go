@@ -294,6 +294,9 @@ func TestDirectMessages(t *testing.T) {
 	bob := denproto.FormatID(member.MemberID)
 	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
 
+	// Their Dens publish their identities as they sign in (M16.1).
+	f.publish(owner.MemberID)
+	f.publish(member.MemberID)
 	carolSub, _, _, _ := f.d.Hub.Subscribe(carol.MemberID, false, "", 0)
 	bobSub, _, _, _ := f.d.Hub.Subscribe(member.MemberID, false, "", 0)
 	_, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(owner.MemberID)})
@@ -313,7 +316,7 @@ func TestDirectMessages(t *testing.T) {
 	// Only the two of them see it, and every message counts for the other.
 	f.send(member, dm.ID, "hi, no mention needed")
 	e := <-bobSub.Events
-	for e.T == denproto.EventDMKey {
+	for e.T == denproto.EventDMSignedKey {
 		e = <-bobSub.Events
 	}
 	if e.T != denproto.EventMessageCreated {

@@ -5,8 +5,6 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 ## Big
 
 - Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app and M13 its phone layout; staying connected while the phone sleeps is under Medium; more in [android.md](android.md).
-- End-to-end encrypted group DMs, then end-to-end encrypted calls with SFrame, one to one and in groups, piggybacking off the keys used for DMs? A call button in that person's or group's DM channel? Beside a group DM, the panel that shows a DM's other member (M11) would list the group's members.
-- Post quantum double ratchet for forward secrecy? Maybe kinda copy Signal but force the side channel check? I need to learn more about this first.
 
 ## Medium
 
@@ -17,6 +15,8 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - Custom themes, image backgrounds, etc.
 - Marking uploaded media as a spoiler.
 - Onboarding in the page's own first steps, with simple, careful explanations tried on people who haven't seen Dens.
+- Moderators can drag other members from one voice channel into another with mouse (desktop).
+- Den channels can be reordered via dragging with mouse (desktop).
 - x.com and reddit embeds
 - TPM binding for the Windows data key.
 - Optional TOTP on the password fallback.
@@ -25,6 +25,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - TURN, should restrictive networks need it.
 - A static dictionary for compressing the den socket's small frames, should measurements show live events matter: built from the protocol's shapes, never members' messages, and named in the upgrade so client and den agree on its version.
 - AVIF: stripped in place by `internal/media`, keeping the original as sent, with dav1d in the module for previews of AVIF images and AV1 videos.
+- Forward secrecy for disappearing messages (M16.4's option (b)): keys of each device's own for them, made at random and changed every day, with a disappearing conversation's key sealed to each of its members' devices rather than their identities, so a den that kept copies of what it should have deleted, and later got a member's DM recovery key or a device of theirs, couldn't open them. A new device would read nothing from before it, and it's a second way of sealing keys beside identities.
 - Dedup of each member's own channel uploads: their Dens hashes a file once it's stripped, the den keeps the hashes keyed with its data key so its database doesn't show which files it holds, and a file on several messages goes with the last of them.
 
 ## Small
@@ -37,5 +38,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 ## Probably not doing
 
+- Calls from a DM or a group DM, with a call button in the conversation. Calls stay in voice channels, which M16 encrypts end to end, until members ask for calls of their own.
+- A Double Ratchet for DMs, as Signal's. Its forward secrecy comes from every device forgetting old keys, while Dens opens a DM's whole history from the den on each of the member's devices: it would take keys of each device's own, history handed over at every approval, and a copy of each message for each device. M16 takes Signal's way of checking keys instead, and keeps Dens's history.
 - Dens's own F-Droid repository, from which F-Droid 2.0 updates apps by itself, with the app's updater stepping aside when F-Droid installed it. The APK on the release host and the updater already install and update the app with one tap, and a repository would be another signed thing to publish and keep each release, for updates that need no tap.
 - UnifiedPush through the den, so a den wakes its members' phones: an additive protocol change, which needs nothing from Google. The foreground service's own connections keep the app connected, for about 1% of the battery a night per den in the spike, and a phone that stops Dens would stop the distributor UnifiedPush needs on the phone too, unless the member exempts it from the battery's limits, as they'd exempt Dens.

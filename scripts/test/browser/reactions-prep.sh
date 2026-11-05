@@ -8,7 +8,7 @@
 source "$(dirname "$0")/lib.sh"
 fresh
 general=$(channel general)
-dm=$(checked_dm alice bob)
+dm=$(open_dm alice bob)
 ./node browser/make-emoji.mjs party.png 96 96
 api alice POST "/api/dens/$DEN/emoji" "{\"name\":\"party\",\"upload\":\"$(upload alice party.png party.png)\"}" >/dev/null
 old=$(send alice "$general" 'An old message, far above the view')

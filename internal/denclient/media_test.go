@@ -85,7 +85,7 @@ func TestDMVideo(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	video := mediaFile(t, "with-gps.mov")
 	up, err := owner.Upload(ctx, denID, dm, "IMG_0001.MOV", int64(len(video)), bytes.NewReader(video))
 	if err != nil || !up.Stripped || up.Type != "video/mp4" || up.Width != 320 || up.Height != 568 || up.Duration < 3900 ||
@@ -193,7 +193,7 @@ func TestPagePreviews(t *testing.T) {
 	}
 
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	dup, err := owner.Upload(ctx, denID, dm, "clip.mp4", int64(len(clip)), bytes.NewReader(clip))
 	if err != nil || dup.Thumb != nil || dup.Width != 64 {
 		t.Fatalf("a DM video: %+v %v", dup, err)
@@ -257,7 +257,7 @@ func TestLargeFilesReadByRanges(t *testing.T) {
 	check(owner, up.ID)
 
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	dup, err := owner.Upload(ctx, denID, dm, "big.bin", int64(len(big)), bytes.NewReader(big))
 	if err != nil {
 		t.Fatal(err)

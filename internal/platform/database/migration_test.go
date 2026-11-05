@@ -22,10 +22,17 @@ var releasedSchema = []struct {
 	added []string
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
-	{"v1.6.0", 1, []string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}},
+	{"v1.6.0", 1, []string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes",
+		"den_identities", "den_records"}},
 	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
-	{"v1.7.0", 3, []string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}},
+	{"v1.7.0", 3, []string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes", "den_identities", "den_records"}},
+	// v1.8.0 added M15.2's emoji, M15.3's reactions and M15.4's polls.
+	{"v1.8.0", 6, []string{"den_identities", "den_records"}},
 }
+
+// retiredKeys are the tables of DM keys, which M16.1's step changes: an
+// exchange still running, or checked by one member alone, retires.
+var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 
 // A database a release left, with a row in every table, migrates to this
 // build's schema keeping every row (M14.2, the first migration since
@@ -34,8 +41,10 @@ var releasedSchema = []struct {
 // release's schema. A table keeps every column it had, with the same
 // values; a step may add columns, as M14.3 adds the den's limits for its
 // soundboard and M15.2 its limit for emoji, which hold their defaults, as
-// does M15.4's mark of a message's @everyone, and tables, as M15.3 adds
-// the reactions' and M15.4 the polls', which start empty.
+// does M15.4's mark of a message's @everyone and M16.1's identities, and
+// tables, as M15.3 adds the reactions', M15.4 the polls' and M16.1 the
+// identities' and the records', which start empty. M16.1 retires the DM
+// keys whose exchanges hadn't finished, and keeps every row of them.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -89,10 +98,14 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					t.Fatalf("%s migrated to schema %d, %v; want %d", what, v, err, SchemaVersion(bi))
 				}
 				for _, table := range tables {
+					if slices.Contains(retiredKeys, table) {
+						continue
+					}
 					if after := dumpColumns(t, db, table, columns[table]); after != before[table] {
 						t.Errorf("%s's %s changed in the migration: before\n%s\nafter\n%s", what, table, before[table], after)
 					}
 				}
+				checkRetired(t, db, what)
 				now, err := Tables(ctx, db)
 				if err != nil {
 					t.Fatal(err)
@@ -110,13 +123,20 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					t.Errorf("%s's den has the soundboard's limits %d, %d and %d, not the defaults", what, sounds, longest, wait)
 				}
 				var emojis int
-				if err := db.QueryRow(`SELECT emojis FROM den`).Scan(&emojis); err != nil || emojis != 50 {
+				if err := db.QueryRow(`SELECT emojis FROM den`).Scan(&emojis); err != nil || (released.version < 4 && emojis != 50) {
 					t.Errorf("%s's den keeps %d emoji, %v, not the default", what, emojis, err)
 				}
 				var marked, messages int
 				if err := db.QueryRow(`SELECT count(*) FILTER (WHERE everyone != 0), count(*) FROM den_messages`).Scan(&marked, &messages); err != nil ||
-					marked != 0 || messages == 0 {
+					(released.version < 6 && marked != 0) || messages == 0 {
 					t.Errorf("%s's %d messages hold %d marks of @everyone, %v", what, messages, marked, err)
+				}
+				var identities, statements, kept int
+				if err := db.QueryRow(`SELECT (SELECT count(*) FROM den_members WHERE identity IS NOT NULL),
+					(SELECT count(*) FROM den_dm_keys WHERE statement IS NOT NULL OR signature IS NOT NULL),
+					(SELECT count(*) FROM joined_dens WHERE identities IS NOT NULL)`).Scan(&identities, &statements, &kept); err != nil ||
+					identities+statements+kept != 0 {
+					t.Errorf("%s holds %d identities, %d signed keys and %d kept records after the migration, %v", what, identities, statements, kept, err)
 				}
 				for _, check := range []string{"PRAGMA foreign_key_check", "PRAGMA integrity_check"} {
 					if got := dumpQuery(t, db, check); got != "" && got != `["ok"]` {
@@ -125,6 +145,28 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// checkRetired checks M16.1's step retired the DM key whose exchange one
+// member alone had checked, by its starter, dropping its exchange and the
+// states, and kept the one both members checked as it was, with every
+// member's copy of each.
+func checkRetired(t *testing.T, db *sql.DB, what string) {
+	t.Helper()
+	got := dumpQuery(t, db, `SELECT id, channel_id, started_by, started_at, stage, offer, answer, reveal,
+		retired_at > 1000, retired_by, retired FROM den_dm_keys`)
+	want := `['\x01' '\x03' '\x01' '\x01' "revealed" <nil> <nil> <nil> '\x01' '\x01' "restarted"]
+['\x02' '\x04' '\x03' '\x02' "revealed" <nil> <nil> <nil> <nil> <nil> <nil>]`
+	if got != want {
+		t.Errorf("%s's DM keys after the migration:\n%s\nwant\n%s", what, got, want)
+	}
+	got = dumpTable(t, db, "den_dm_key_members")
+	want = `['\x01' '\x01' <nil> "U" '\x02']
+['\x02' '\x01' <nil> "V" '\x03']
+['\x02' '\x03' <nil> "W" '\x04']`
+	if got != want {
+		t.Errorf("%s's copies of DM keys after the migration:\n%s\nwant\n%s", what, got, want)
 	}
 }
 
@@ -163,7 +205,9 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 // mention, an editor and a file, a DM's key, a change and a read position;
 // the client's joined den, browser session and vault; and the settings
 // the first step wrote. From version 3, v1.7.0's, a sound of the member's
-// own and one on the den's soundboard, its limits not at their defaults.
+// own and one on the den's soundboard, its limits not at their defaults;
+// from version 6, v1.8.0's, an emoji, reactions in a channel and a DM, and
+// a poll with @everyone and a vote.
 func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 	rows := []string{
@@ -196,6 +240,11 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 		`UPDATE den_members SET avatar_id = 1, banner_id = 1 WHERE id = 1`,
 		`INSERT INTO den_dm_keys (id, channel_id, started_by, started_at, stage, offer, answer, reveal) VALUES (1, 3, 1, 1, 'revealed', x'51', x'52', x'53')`,
 		`INSERT INTO den_dm_key_members (key_id, member_id, state, sealed, checked_at) VALUES (1, 1, x'54', x'55', 2)`,
+		// A DM both members checked, whose key stays (M16.1).
+		`INSERT INTO den_members (id, username, display_name, role, verifier_hash, joined_at, seal_check) VALUES (3, 'carol', 'Carol', 'member', x'17', 3, x'18')`,
+		`INSERT INTO den_channels (id, name, kind, position, dm_low, dm_high, created_at) VALUES (4, '', 'dm', 0, 1, 3, 2)`,
+		`INSERT INTO den_dm_keys (id, channel_id, started_by, started_at, stage) VALUES (2, 4, 3, 2, 'revealed')`,
+		`INSERT INTO den_dm_key_members (key_id, member_id, sealed, checked_at) VALUES (2, 1, x'56', 3), (2, 3, x'57', 4)`,
 		`INSERT INTO den_changes (id, kind, ref, channel_id, at) VALUES (1, 'message', 1, 1, 2)`,
 		`INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (1, 1, 1, 0)`,
 	}
@@ -205,6 +254,19 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 			`INSERT INTO den_files (id, blob, uploader_id, name, type, size, duration_ms, created_at) VALUES (3, x'45', 1, x'46', 'audio/ogg', 300, 2400, 3)`,
 			`INSERT INTO den_named_files (id, kind, name, file_id, added_by, added_at) VALUES (1, 'sound', 'Air horn', 3, 1, 3)`,
 			`UPDATE den SET sounds = 20, sound_longest = 30, sound_wait = 0`,
+		)
+	}
+	if version >= 6 {
+		rows = append(rows,
+			`UPDATE den SET emojis = 20`,
+			`INSERT INTO den_files (id, blob, uploader_id, name, type, size, width, height, created_at) VALUES (4, x'47', 1, x'48', 'image/png', 400, 64, 64, 4)`,
+			`INSERT INTO den_named_files (id, kind, name, file_id, added_by, added_at) VALUES (2, 'emoji', 'party', 4, 1, 4)`,
+			`INSERT INTO den_reactions (message_id, member_id, emoji, created_at) VALUES (1, 1, '👍', 4)`,
+			`INSERT INTO den_reactions (message_id, member_id, emoji_id, created_at) VALUES (1, 2, 2, 5)`,
+			`INSERT INTO den_dm_reactions (message_id, member_id, key_id, revision, sealed, updated_at) VALUES (2, 1, 1, 1, x'62', 5)`,
+			`INSERT INTO den_messages (id, channel_id, author_id, created_at, text, nonce, everyone) VALUES (3, 1, 1, 6, x'35', x'36', 1)`,
+			`INSERT INTO den_polls (message_id, choices, multiple, show_voters, show_totals, ends_at, ended) VALUES (3, x'63', 1, 'end', 'voted', 7, 0)`,
+			`INSERT INTO den_poll_votes (message_id, member_id, choice, voted_at) VALUES (3, 2, 0, 6)`,
 		)
 	}
 	for _, q := range rows {

@@ -37,6 +37,11 @@ type denState struct {
 	keys      map[string]denproto.DMKey
 	requests  map[string]denproto.DeviceRequest
 	sealCheck denproto.Bytes
+	// signed are this member's DM keys sealed to identities, by ID, with
+	// their own copies; identities says the den keeps identities at all,
+	// which one older than M16.1 doesn't.
+	signed     map[string]denproto.SignedKey
+	identities bool
 	// calls are who is in each voice channel's call (M2).
 	calls map[string]denproto.Call
 	// sounds are the den's soundboard's, by ID, and soundLimits its limits
@@ -61,8 +66,14 @@ type View struct {
 	Limits     denproto.Limits      `json:"limits"`
 	CallLimits denproto.CallLimits  `json:"call_limits"`
 	Retention  int                  `json:"retention"`
-	// DMKeys are the keys of this member's DMs, without anything secret.
-	DMKeys []denproto.DMKey `json:"dm_keys"`
+	// DMKeys are the keys of this member's DMs, M1.7's and those sealed to
+	// identities (M16.1), without anything secret.
+	DMKeys []PageKey `json:"dm_keys"`
+	// Identities are the identities this member's Dens kept here, by
+	// member, and KeepsIdentities whether the den keeps identities at all
+	// (M16.1).
+	Identities      map[string]PageIdentity `json:"identities"`
+	KeepsIdentities bool                    `json:"keeps_identities"`
 	// Calls are the calls with someone in them.
 	Calls []denproto.Call `json:"calls"`
 	// Sounds are the den's soundboard's, by name, and SoundLimits its
@@ -79,7 +90,8 @@ func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
-		calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{}, emoji: map[string]denproto.Emoji{}}
+		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{},
+		emoji: map[string]denproto.Emoji{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -99,7 +111,7 @@ func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
-		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits}
+		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -116,11 +128,14 @@ func (s *denState) view(status Status, me denproto.Member) View {
 	for _, r := range s.reads {
 		v.ReadStates = append(v.ReadStates, r)
 	}
-	v.DMKeys = []denproto.DMKey{}
+	v.DMKeys = []PageKey{}
 	for _, k := range s.keys {
 		v.DMKeys = append(v.DMKeys, pageKey(k))
 	}
-	slices.SortFunc(v.DMKeys, func(a, b denproto.DMKey) int { return compareIDs(a.ID, b.ID) })
+	for _, k := range s.signed {
+		v.DMKeys = append(v.DMKeys, pageSignedKey(k))
+	}
+	slices.SortFunc(v.DMKeys, func(a, b PageKey) int { return compareIDs(a.ID, b.ID) })
 	v.Calls = []denproto.Call{}
 	for _, c := range s.calls {
 		v.Calls = append(v.Calls, c)
@@ -265,11 +280,11 @@ func cleanSounds(list []denproto.Sound) (map[string]denproto.Sound, bool) {
 	return out, true
 }
 
-// load replaces the state with a snapshot. Anything malformed in it is a
-// protocol violation. A snapshot that sends only the members changed since
-// the client's list (M6.2) changes that list, prev, which the client named
-// on the socket's upgrade.
-func (s *denState) load(r denproto.Ready, prev map[string]denproto.Member) error {
+// load replaces the state with a snapshot of the den with denID. Anything
+// malformed in it is a protocol violation. A snapshot that sends only the
+// members changed since the client's list (M6.2) changes that list, prev,
+// which the client named on the socket's upgrade.
+func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto.Member) error {
 	next := newState()
 	if !cleanLimits(r.Den) || denproto.CheckSync(r.Sync) != nil {
 		return errMalformed
@@ -344,6 +359,14 @@ func (s *denState) load(r denproto.Ready, prev map[string]denproto.Member) error
 		}
 		next.keys[k.ID] = k
 	}
+	// A den older than M16.1 sends no signed keys at all.
+	next.identities = r.SignedKeys != nil
+	for _, k := range r.SignedKeys {
+		if !next.cleanSigned(denID, k) || next.keys[k.ID].ID != "" {
+			return errMalformed
+		}
+		next.signed[k.ID] = k
+	}
 	if len(r.DeviceRequests) > maxRequests {
 		return errMalformed
 	}
@@ -382,6 +405,10 @@ type keptState struct {
 	SealCheck denproto.Bytes       `json:"seal_check"`
 	Sounds    []denproto.Sound     `json:"sounds,omitempty"` // M14.3
 	Emoji     []denproto.Emoji     `json:"emoji,omitempty"`  // M15.2
+	// M16.1: the DM keys sealed to identities, and whether the den keeps
+	// identities.
+	SignedKeys []denproto.SignedKey `json:"signed_keys,omitempty"`
+	Identities bool                 `json:"identities,omitempty"`
 }
 
 // kept returns the state as the cache keeps it, and its members.
@@ -390,13 +417,15 @@ func (s *denState) kept() (keptState, []denproto.Member) {
 		EmojiLimits: s.emojiLimits},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
-		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji))}
+		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
+		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
-// restore makes a state of what the cache kept. The cache sealed it with
-// the data key, but it's checked as a den's answer is all the same.
-func restore(k keptState, members []denproto.Member) (*denState, error) {
+// restore makes a state of what the cache kept of the den with denID. The
+// cache sealed it with the data key, but it's checked as a den's answer is
+// all the same.
+func restore(denID []byte, k keptState, members []denproto.Member) (*denState, error) {
 	s := newState()
 	if !cleanLimits(k.Den) {
 		return nil, errMalformed
@@ -447,6 +476,13 @@ func restore(k keptState, members []denproto.Member) (*denState, error) {
 		}
 		s.keys[key.ID] = key
 	}
+	s.identities = k.Identities
+	for _, key := range k.SignedKeys {
+		if !s.cleanSigned(denID, key) {
+			return nil, errMalformed
+		}
+		s.signed[key.ID] = key
+	}
 	return s, nil
 }
 
@@ -482,7 +518,7 @@ const maxRequests = 16
 // may be forwarded to the page: decoded, checked and re-encoded, so no
 // byte from a den reaches the page unchecked. ok is false for an event the
 // client ignores.
-func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Event, bool, error) {
+func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member) (denproto.Event, bool, error) {
 	var data any
 	switch e.T {
 	case denproto.EventMemberJoined, denproto.EventMemberUpdated:
@@ -750,6 +786,15 @@ func (s *denState) applyEvent(e denproto.Event, me denproto.Member) (denproto.Ev
 		k.Exchange = nil
 		s.keys[k.ID] = k
 		data = pageKey(k)
+	case denproto.EventDMSignedKey:
+		// The page hears of it as of any of a DM's keys (M16.1).
+		var k denproto.SignedKey
+		if json.Unmarshal(e.D, &k) != nil || !s.cleanSigned(denID, k) || s.keys[k.ID].ID != "" {
+			return e, false, errMalformed
+		}
+		s.signed[k.ID] = k
+		out, err := denproto.NewEvent(denproto.EventDMKey, e.Seq, pageSignedKey(k))
+		return out, err == nil, err
 	case denproto.EventDeviceRequest:
 		var q denproto.DeviceRequest
 		if json.Unmarshal(e.D, &q) != nil || denproto.CheckDeviceRequest(q) != nil {
@@ -871,13 +916,6 @@ func (s *denState) marks() marks {
 		m.mentions += r.MentionCount
 	}
 	return m
-}
-
-// pageKey is a DM key as the page sees it: without its sealed copy or
-// exchange, which are for this service alone.
-func pageKey(k denproto.DMKey) denproto.DMKey {
-	k.Sealed, k.Exchange = nil, nil
-	return k
 }
 
 // liveKey returns a DM's live key, if it has one.

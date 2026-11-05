@@ -109,11 +109,12 @@ type denHost struct {
 	handler  http.Handler
 	// files counts the requests for files and previews the den answers,
 	// history those for pages of history, and changes those for what
-	// changed since a version (M6); upgrades are the members cursors the
-	// socket upgrades named.
-	files, history, changes atomic.Int64
-	upgradeMu               sync.Mutex
-	upgrades                []string
+	// changed since a version (M6); requests counts every request but
+	// those for the member's record, which records counts (M16.1);
+	// upgrades are the members cursors the socket upgrades named.
+	files, history, changes, requests, records atomic.Int64
+	upgradeMu                                  sync.Mutex
+	upgrades                                   []string
 }
 
 func startDen(t *testing.T, s store, lifetime time.Duration) *denHost {
@@ -138,6 +139,11 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 	h.d = d
 	routes := denhttp.New(&app.App{Den: d, Log: h.s.log})
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/me/record" {
+			h.records.Add(1)
+		} else {
+			h.requests.Add(1)
+		}
 		switch p := r.URL.Path; {
 		case strings.HasPrefix(p, "/api/files/"):
 			h.files.Add(1)

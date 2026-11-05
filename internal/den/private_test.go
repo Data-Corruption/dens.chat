@@ -3,6 +3,7 @@ package den
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -63,19 +64,122 @@ func (f *fixture) openDM(k testKey, m denproto.Message) string {
 	return p.Text
 }
 
-// keyFor returns a DM's key, first making it with an exchange from a to
-// b in which each checks the other's digits.
+// keyFor returns a DM's key, first making it from a, sealed to both
+// members' identities, as a's client does (M16.1).
 func (f *fixture) keyFor(a, b, channel int64) testKey {
 	f.t.Helper()
 	if k, ok := f.keys[denproto.FormatID(channel)]; ok {
 		return k
 	}
-	k := f.exchange(&Session{MemberID: a}, &Session{MemberID: b}, channel, false)
+	f.publish(a)
+	f.publish(b)
+	key := denproto.Random(denproto.DMKeySize)
+	made, err := f.d.MakeSignedKey(context.Background(), &Session{MemberID: a}, denproto.FormatID(channel), f.keyRequest(a, b, channel, key))
+	if err != nil {
+		f.t.Fatalf("make a key: %v", err)
+	}
+	k := testKey{id: made.ID, key: key}
 	f.keys[denproto.FormatID(channel)] = k
 	return k
 }
 
-// keyAs finds one of a DM's keys as a member sees it.
+// identityOf makes a member's identity from the seal their clients hold.
+func (f *fixture) identityOf(member int64) *denproto.IdentityKeys {
+	f.t.Helper()
+	info, _ := f.d.Info()
+	k, err := denproto.DeriveIdentity(f.seals[member], info.ID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.t.Cleanup(k.Close)
+	return k
+}
+
+// publish publishes a member's identity, as their Dens does as it signs
+// in.
+func (f *fixture) publish(member int64) {
+	f.t.Helper()
+	if _, err := f.d.PublishIdentity(context.Background(), &Session{MemberID: member}, f.identityOf(member).Public()); err != nil {
+		f.t.Fatalf("publish member %d's identity: %v", member, err)
+	}
+}
+
+// keyRequest makes a DM's key from a to b, as a's client does: sealed to
+// each one's identity, and signed by a's.
+func (f *fixture) keyRequest(a, b, channel int64, key []byte) denproto.SignedKeyRequest {
+	f.t.Helper()
+	info, _ := f.d.Info()
+	ka, kb := f.identityOf(a), f.identityOf(b)
+	kid := denproto.Random(denproto.KIDSize)
+	members := []denproto.KeyMember{{MemberID: denproto.FormatID(a), Identity: ka.Public().Hash()}, {MemberID: denproto.FormatID(b), Identity: kb.Public().Hash()}}
+	if b < a {
+		members[0], members[1] = members[1], members[0]
+	}
+	req := denproto.SignedKeyRequest{KID: kid, Commit: denproto.KeyCommit(kid, key), Members: members}
+	for _, m := range []struct {
+		id int64
+		k  *denproto.IdentityKeys
+	}{{a, ka}, {b, kb}} {
+		copied, err := denproto.SealKeyCopy(m.k.Public(), info.ID, channel, kid, m.id, key)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		req.Copies = append(req.Copies, denproto.KeyCopy{MemberID: denproto.FormatID(m.id), Copy: copied})
+	}
+	s, err := req.Statement(info.ID, denproto.FormatID(channel), denproto.FormatID(a))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	req.Signature = ka.Sign(s)
+	return req
+}
+
+// legacyKey writes a DM key both members checked before M16.1, with each
+// one's copy sealed with their seal, as M1.7's exchange left it.
+func (f *fixture) legacyKey(a, b, channel int64) testKey {
+	f.t.Helper()
+	info, _ := f.d.Info()
+	res, err := f.db.Exec(`INSERT INTO den_dm_keys (channel_id, started_by, started_at, stage) VALUES (?, ?, 1, 'revealed')`, channel, a)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	key := denproto.Random(denproto.DMKeySize)
+	for _, m := range []int64{a, b} {
+		sealed, err := denproto.SealDMKey(f.seals[m], info.ID, channel, id, m, key)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		if _, err := f.db.Exec(`INSERT INTO den_dm_key_members (key_id, member_id, sealed, checked_at) VALUES (?, ?, ?, 2)`, id, m, sealed); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	k := testKey{id: denproto.FormatID(id), key: key}
+	f.keys[denproto.FormatID(channel)] = k
+	return k
+}
+
+// signedKeyAs finds one of a DM's signed keys as a member sees it.
+func (f *fixture) signedKeyAs(s *Session, dm, id string) denproto.SignedKey {
+	f.t.Helper()
+	list, err := f.d.SignedKeys(context.Background(), s, dm)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	info, _ := f.d.Info()
+	for _, k := range list.Keys {
+		if k.ID == id {
+			if err := denproto.CheckSignedKey(info.ID, k); err != nil {
+				f.t.Fatalf("key %s: %v", id, err)
+			}
+			return k
+		}
+	}
+	f.t.Fatalf("member %d doesn't see key %s", s.MemberID, id)
+	return denproto.SignedKey{}
+}
+
+// keyAs finds one of a DM's keys from before M16.1 as a member sees it.
 func (f *fixture) keyAs(s *Session, dm, id string) denproto.DMKey {
 	f.t.Helper()
 	list, err := f.d.DMKeys(context.Background(), s, dm)
@@ -92,80 +196,6 @@ func (f *fixture) keyAs(s *Session, dm, id string) denproto.DMKey {
 	}
 	f.t.Fatalf("member %d doesn't see key %s", s.MemberID, id)
 	return denproto.DMKey{}
-}
-
-// exchange runs a DM key's exchange from a to b through the den, the way
-// their clients do, each opening its state from the den at each step. It
-// checks the two sides' digits match, and stores both members' copies.
-func (f *fixture) exchange(a, b *Session, channel int64, restart bool) testKey {
-	f.t.Helper()
-	ctx := context.Background()
-	info, _ := f.d.Info()
-	dm := denproto.FormatID(channel)
-	xctx := denproto.DMExchangeContext(info.ID, channel, a.MemberID, b.MemberID)
-	starter, offer, err := denproto.StartExchange(xctx)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	state, err := denproto.SealExchangeState(f.seals[a.MemberID], info.ID, channel, a.MemberID, offer.Commit, true, starter)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	k, err := f.d.StartKey(ctx, a, dm, denproto.KeyStartRequest{Offer: offer, State: state, Restart: restart})
-	if err != nil {
-		f.t.Fatalf("start: %v", err)
-	}
-
-	seen := f.keyAs(b, dm, k.ID)
-	responder, answer, err := denproto.AnswerExchange(xctx, seen.Exchange.Offer)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	rstate, err := denproto.SealExchangeState(f.seals[b.MemberID], info.ID, channel, b.MemberID, seen.Exchange.Offer.Commit, false, responder)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	if _, err := f.d.AnswerKey(ctx, b, dm, k.ID, denproto.KeyAnswerRequest{Answer: answer, State: rstate}); err != nil {
-		f.t.Fatalf("answer: %v", err)
-	}
-
-	mine := f.keyAs(a, dm, k.ID)
-	var s denproto.Starter
-	if err := denproto.OpenExchangeState(f.seals[a.MemberID], info.ID, channel, a.MemberID, mine.Exchange.Offer.Commit, true, mine.Exchange.State, &s); err != nil {
-		f.t.Fatalf("the starter's state: %v", err)
-	}
-	reveal, ra, err := s.Finish(*mine.Exchange.Answer)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	if _, err := f.d.RevealKey(ctx, a, dm, k.ID, denproto.KeyRevealRequest{Reveal: reveal}); err != nil {
-		f.t.Fatalf("reveal: %v", err)
-	}
-
-	theirs := f.keyAs(b, dm, k.ID)
-	var r denproto.Responder
-	if err := denproto.OpenExchangeState(f.seals[b.MemberID], info.ID, channel, b.MemberID, theirs.Exchange.Offer.Commit, false, theirs.Exchange.State, &r); err != nil {
-		f.t.Fatalf("the answering side's state: %v", err)
-	}
-	rb, err := r.Finish(*theirs.Exchange.Reveal)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	// Each types the digits the other reads out.
-	if !denproto.CheckTyped(ra.Check, true, denproto.CheckHalf(rb.Check, false)) || !denproto.CheckTyped(rb.Check, false, denproto.CheckHalf(ra.Check, true)) {
-		f.t.Fatalf("the check codes differ: %s and %s", ra.Check, rb.Check)
-	}
-	id, _ := denproto.ParseID(k.ID)
-	for _, m := range []*Session{a, b} {
-		sealed, err := denproto.SealDMKey(f.seals[m.MemberID], info.ID, channel, id, m.MemberID, ra.Key)
-		if err != nil {
-			f.t.Fatal(err)
-		}
-		if _, err := f.d.SealKey(ctx, m, dm, k.ID, denproto.KeySealRequest{Sealed: sealed}); err != nil {
-			f.t.Fatalf("seal: %v", err)
-		}
-	}
-	return testKey{id: k.ID, key: ra.Key}
 }
 
 // askSignIn asks to sign in on a new device with a password, with an offer
@@ -276,137 +306,113 @@ func (f *fixture) signIn(approver *Session, username, password string, dev devic
 	return *st.Session, nil
 }
 
-func TestDMKeyExchange(t *testing.T) {
+// A DM's key is sealed to its members' identities and signed by its
+// maker's (M16.1). The den takes one only when it names the identities
+// its members publish now, checks against its maker's, and has a copy for
+// each of the two; a second made at once is refused, so the slower takes
+// the live one; one made after an identity changed replaces the live key.
+// Each member hears of it with their own copy alone, beside the keys from
+// before M16.1, never among them.
+func TestSignedDMKeys(t *testing.T) {
 	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
-	carol := f.member(owner, "carol")
-	dm, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(bob.MemberID)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cid, _ := denproto.ParseID(dm.ID)
+	dm, _ := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(bob.MemberID)})
+	cid := mustID(dm.ID)
 	info, _ := f.d.Info()
-	ownerSub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
-	bobSub, _, _, _ := f.d.Hub.Subscribe(bob.MemberID, false, "", 0)
-	carolSub, _, _, _ := f.d.Hub.Subscribe(carol.MemberID, false, "", 0)
+	key := denproto.Random(denproto.DMKeySize)
 
-	xctx := denproto.DMExchangeContext(info.ID, cid, owner.MemberID, bob.MemberID)
-	starter, offer, _ := denproto.StartExchange(xctx)
-	state, _ := denproto.SealExchangeState(f.seals[owner.MemberID], info.ID, cid, owner.MemberID, offer.Commit, true, starter)
-	k, err := f.d.StartKey(ctx, owner, dm.ID, denproto.KeyStartRequest{Offer: offer, State: state})
-	if err != nil || k.Stage != denproto.StageOffered || k.StartedBy != denproto.FormatID(owner.MemberID) || !denproto.Equal(k.Exchange.State, state) {
-		t.Fatalf("start: %+v %v", k, err)
-	}
-	// Each member hears of it with their own view: the answering side has
-	// no state of theirs yet. Nobody else hears.
-	var seen denproto.DMKey
-	if e := <-bobSub.Events; e.T != denproto.EventDMKey || json.Unmarshal(e.D, &seen) != nil || seen.Exchange == nil || seen.Exchange.State != nil {
-		t.Fatalf("bob got %s %s", e.T, e.D)
-	}
-	if e := <-ownerSub.Events; e.T != denproto.EventDMKey || json.Unmarshal(e.D, &seen) != nil || !denproto.Equal(seen.Exchange.State, state) {
-		t.Fatalf("the owner got %s", e.T)
-	}
-	select {
-	case e := <-carolSub.Events:
-		t.Fatalf("carol got %s", e.T)
-	default:
-	}
-	_, err = f.d.DMKeys(ctx, carol, dm.ID)
-	wantCode(t, err, denproto.CodeNotFound)
+	// Neither has published an identity yet, as from an older Dens.
+	_, err := f.d.MakeSignedKey(ctx, owner, dm.ID, f.keyRequest(owner.MemberID, bob.MemberID, cid, key))
+	wantCode(t, err, denproto.CodeInvalidField)
+	f.publish(owner.MemberID)
+	_, err = f.d.MakeSignedKey(ctx, owner, dm.ID, f.keyRequest(owner.MemberID, bob.MemberID, cid, key))
+	wantCode(t, err, denproto.CodeInvalidField)
+	f.publish(bob.MemberID)
 
-	// While it runs, nothing else starts, and nothing is sent with it.
-	_, err = f.d.StartKey(ctx, bob, dm.ID, denproto.KeyStartRequest{Offer: offer, State: state})
-	wantCode(t, err, denproto.CodeKeyExists)
-	_, err = f.d.Send(ctx, owner, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Sealed: denproto.Random(40), KeyID: k.ID})
-	wantCode(t, err, denproto.CodeInvalidField)
-	// Each step comes from the right member, in order.
-	responder, answer, _ := denproto.AnswerExchange(xctx, offer)
-	rstate, _ := denproto.SealExchangeState(f.seals[bob.MemberID], info.ID, cid, bob.MemberID, offer.Commit, false, responder)
-	_, err = f.d.AnswerKey(ctx, owner, dm.ID, k.ID, denproto.KeyAnswerRequest{Answer: answer, State: rstate})
-	wantCode(t, err, denproto.CodeForbidden)
-	_, err = f.d.RevealKey(ctx, owner, dm.ID, k.ID, denproto.KeyRevealRequest{Reveal: denproto.ExchangeReveal{X: denproto.Random(32), Nonce: denproto.Random(32)}})
-	wantCode(t, err, denproto.CodeKeyExists)
-	_, err = f.d.SealKey(ctx, owner, dm.ID, k.ID, denproto.KeySealRequest{Sealed: denproto.Random(denproto.SealedKeySize)})
-	wantCode(t, err, denproto.CodeKeyExists)
-	_, err = f.d.AnswerKey(ctx, bob, dm.ID, "999", denproto.KeyAnswerRequest{Answer: answer, State: rstate})
-	wantCode(t, err, denproto.CodeNotFound)
-	_, err = f.d.AnswerKey(ctx, bob, dm.ID, k.ID, denproto.KeyAnswerRequest{Answer: denproto.ExchangeAnswer{X: answer.X}, State: rstate})
-	wantCode(t, err, denproto.CodeInvalidField)
-	if _, err := f.d.AnswerKey(ctx, bob, dm.ID, k.ID, denproto.KeyAnswerRequest{Answer: answer, State: rstate}); err != nil {
-		t.Fatal(err)
+	good := f.keyRequest(owner.MemberID, bob.MemberID, cid, key)
+	for what, change := range map[string]func(*denproto.SignedKeyRequest){
+		"a bad signature":      func(r *denproto.SignedKeyRequest) { r.Signature = denproto.Random(denproto.SignatureSize) },
+		"another identity":     func(r *denproto.SignedKeyRequest) { r.Members[1].Identity = denproto.Random(denproto.IdentityHashSize) },
+		"another member":       func(r *denproto.SignedKeyRequest) { r.Members[1].MemberID = "999" },
+		"a copy too few":       func(r *denproto.SignedKeyRequest) { r.Copies = r.Copies[:1] },
+		"a copy too short":     func(r *denproto.SignedKeyRequest) { r.Copies[1].Copy = r.Copies[1].Copy[:100] },
+		"a copy twice":         func(r *denproto.SignedKeyRequest) { r.Copies[1] = r.Copies[0] },
+		"a short key ID":       func(r *denproto.SignedKeyRequest) { r.KID = r.KID[:8] },
+		"one member":           func(r *denproto.SignedKeyRequest) { r.Members = r.Members[:1] },
+		"members out of order": func(r *denproto.SignedKeyRequest) { r.Members[0], r.Members[1] = r.Members[1], r.Members[0] },
+	} {
+		bad := good
+		bad.Members, bad.Copies = slices.Clone(good.Members), slices.Clone(good.Copies)
+		change(&bad)
+		if _, err := f.d.MakeSignedKey(ctx, owner, dm.ID, bad); !denproto.IsCode(err, denproto.CodeInvalidField) {
+			t.Errorf("a key with %s: %v", what, err)
+		}
 	}
-	_, err = f.d.AnswerKey(ctx, bob, dm.ID, k.ID, denproto.KeyAnswerRequest{Answer: answer, State: rstate})
-	wantCode(t, err, denproto.CodeKeyExists)
-	reveal, ra, _ := starter.Finish(answer)
-	_, err = f.d.RevealKey(ctx, bob, dm.ID, k.ID, denproto.KeyRevealRequest{Reveal: reveal})
-	wantCode(t, err, denproto.CodeForbidden)
-	// The den turns away a reveal its commitment didn't fix.
-	_, err = f.d.RevealKey(ctx, owner, dm.ID, k.ID, denproto.KeyRevealRequest{Reveal: denproto.ExchangeReveal{X: reveal.X, Nonce: denproto.Random(32)}})
+	// Signed by bob's identity, but sent by alice, it's refused too.
+	signedByBob := f.keyRequest(bob.MemberID, owner.MemberID, cid, key)
+	_, err = f.d.MakeSignedKey(ctx, owner, dm.ID, signedByBob)
 	wantCode(t, err, denproto.CodeInvalidField)
-	if _, err := f.d.RevealKey(ctx, owner, dm.ID, k.ID, denproto.KeyRevealRequest{Reveal: reveal}); err != nil {
-		t.Fatal(err)
-	}
-	rb, _ := responder.Finish(reveal)
 
-	// Checking stores the member's copy, which lets them send with it.
-	sealedFor := func(s *Session) denproto.Bytes {
-		id, _ := denproto.ParseID(k.ID)
-		sealed, _ := denproto.SealDMKey(f.seals[s.MemberID], info.ID, cid, id, s.MemberID, ra.Key)
-		return sealed
-	}
-	_, err = f.d.SealKey(ctx, owner, dm.ID, k.ID, denproto.KeySealRequest{Sealed: denproto.Random(10)})
-	wantCode(t, err, denproto.CodeInvalidField)
-	mine, err := f.d.SealKey(ctx, owner, dm.ID, k.ID, denproto.KeySealRequest{Sealed: sealedFor(owner)})
-	if err != nil || !mine.Checked(denproto.FormatID(owner.MemberID)) || mine.Checked(denproto.FormatID(bob.MemberID)) || mine.Exchange == nil {
-		t.Fatalf("the owner's check: %+v %v", mine, err)
-	}
-	// The owner's state stays until bob has checked too, so the owner's
-	// Dens can still show the digits bob has yet to type.
-	if !denproto.Equal(mine.Exchange.State, state) {
-		t.Fatal("the owner's state went with their check")
-	}
-	key := testKey{id: k.ID, key: ra.Key}
-	nonce := denproto.Random(16)
-	sent, err := f.d.Send(ctx, owner, dm.ID, denproto.SendRequest{Nonce: nonce, Sealed: f.sealText(key, cid, owner.MemberID, nonce, 1, "x"), KeyID: k.ID})
+	sub, _, _, _ := f.d.Hub.Subscribe(bob.MemberID, false, "", 0)
+	defer f.d.Hub.Unsubscribe(sub)
+	made, err := f.d.MakeSignedKey(ctx, owner, dm.ID, good)
 	if err != nil {
-		t.Fatalf("sending after checking: %v", err)
+		t.Fatal(err)
 	}
-	// Bob hasn't checked, so he can't send yet, and until he has, a
-	// restart can still retire the key.
-	_, err = f.d.Send(ctx, bob, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Sealed: denproto.Random(40), KeyID: k.ID})
-	wantCode(t, err, denproto.CodeInvalidField)
-	if !bytesEqualKeys(ra.Key, rb.Key) {
-		t.Fatal("the two sides' keys differ")
+	if err := denproto.CheckSignedKey(info.ID, made); err != nil || made.MadeBy != denproto.FormatID(owner.MemberID) || made.Retired != "" {
+		t.Fatalf("the key alice made: %+v %v", made, err)
 	}
-	theirs, err := f.d.SealKey(ctx, bob, dm.ID, k.ID, denproto.KeySealRequest{Sealed: sealedFor(bob)})
-	if err != nil || len(theirs.Checks) != 2 || theirs.Exchange != nil || len(theirs.Sealed) != denproto.SealedKeySize {
-		t.Fatalf("bob's check: %+v %v", theirs, err)
-	}
-	// Once both checked, the exchange is gone, and each sees only their own
-	// copy.
-	var row struct{ offer, answer, reveal []byte }
-	if err := f.db.QueryRow(`SELECT offer, answer, reveal FROM den_dm_keys WHERE id = ?`, k.ID).Scan(&row.offer, &row.answer, &row.reveal); err != nil || row.offer != nil || row.answer != nil || row.reveal != nil {
-		t.Fatalf("the finished exchange is kept: %v", err)
-	}
-	var states int
-	f.db.QueryRow(`SELECT count(*) FROM den_dm_key_members WHERE state IS NOT NULL`).Scan(&states)
-	if states != 0 {
-		t.Fatalf("%d states outlived the exchange", states)
-	}
-	snap, err := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
-	if err != nil || len(snap.DMKeys) != 1 || snap.DMKeys[0].Exchange != nil || snap.DMKeys[0].Sealed == nil {
-		t.Fatalf("bob's snapshot: %+v %v", snap.DMKeys, err)
-	}
-	if got, err := denproto.OpenDMKey(f.seals[bob.MemberID], info.ID, cid, mustID(k.ID), bob.MemberID, snap.DMKeys[0].Sealed); err != nil || !bytesEqualKeys(got, rb.Key) {
+	// Each member gets their own copy, which opens to the key.
+	heard := nextEvent[denproto.SignedKey](t, sub, denproto.EventDMSignedKey)
+	got, err := f.identityOf(bob.MemberID).OpenKeyCopy(info.ID, cid, heard.KID, bob.MemberID, heard.Copy)
+	if err != nil || !bytesEqualKeys(got, key) || heard.ID != made.ID {
 		t.Fatalf("bob's copy: %v", err)
 	}
-	h, err := f.d.History(ctx, bob, dm.ID, HistoryQuery{})
-	if err != nil || len(h.Messages) != 1 || f.openDM(key, h.Messages[0]) != "x" || h.Messages[0].ID != sent.ID {
-		t.Fatalf("bob's history: %+v %v", h, err)
+	if mine, err := f.identityOf(owner.MemberID).OpenKeyCopy(info.ID, cid, made.KID, owner.MemberID, made.Copy); err != nil || !bytesEqualKeys(mine, key) {
+		t.Fatalf("alice's copy: %v", err)
 	}
-	// Both checked, so it stays: no restart.
-	_, err = f.d.StartKey(ctx, bob, dm.ID, denproto.KeyStartRequest{Offer: offer, State: state, Restart: true})
+	s, _ := heard.Statement(info.ID)
+	if !denproto.VerifyStatement(heard.Maker.Sig, s, heard.Signature) {
+		t.Fatal("the key's statement doesn't check against its maker's keys")
+	}
+	// Bob's Dens, making one at the same moment, finds the live one.
+	_, err = f.d.MakeSignedKey(ctx, bob, dm.ID, f.keyRequest(bob.MemberID, owner.MemberID, cid, denproto.Random(denproto.DMKeySize)))
 	wantCode(t, err, denproto.CodeKeyExists)
+	// Signed keys come beside M1.7's, never among them, whose copies an
+	// older Dens checks to be its own 72 bytes.
+	snap, err := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
+	if err != nil || len(snap.SignedKeys) != 1 || len(snap.DMKeys) != 0 || !denproto.Equal(snap.SignedKeys[0].Copy, heard.Copy) {
+		t.Fatalf("bob's snapshot: %+v %+v %v", snap.SignedKeys, snap.DMKeys, err)
+	}
+	if list, _ := f.d.DMKeys(ctx, bob, dm.ID); len(list.Keys) != 0 {
+		t.Fatalf("an older Dens's list of the DM's keys: %+v", list.Keys)
+	}
+	f.keys[dm.ID] = testKey{id: made.ID, key: key}
+	sent := f.send(owner, dm.ID, "x")
+	if sent.KeyID != made.ID {
+		t.Fatalf("sent under %s", sent.KeyID)
+	}
+
+	// Bob's identity changes: a key naming his new one replaces the live
+	// key, which retires as replaced.
+	f.seals[bob.MemberID] = denproto.NewSeal()
+	f.publish(bob.MemberID)
+	next := denproto.Random(denproto.DMKeySize)
+	replaced, err := f.d.MakeSignedKey(ctx, bob, dm.ID, f.keyRequest(bob.MemberID, owner.MemberID, cid, next))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := f.signedKeyAs(owner, dm.ID, made.ID)
+	if old.Retired != denproto.RetiredReplaced || old.RetiredBy != denproto.FormatID(bob.MemberID) || old.Copy == nil {
+		t.Fatalf("the replaced key: %+v", old)
+	}
+	_, err = f.d.Send(ctx, owner, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Sealed: denproto.Random(40), KeyID: made.ID})
+	wantCode(t, err, denproto.CodeInvalidField)
+	f.keys[dm.ID] = testKey{id: replaced.ID, key: next}
+	f.send(owner, dm.ID, "after")
+	// The den starts no exchange any more.
+	_, err = f.d.StartKey(ctx, bob, dm.ID, denproto.KeyStartRequest{})
+	wantCode(t, err, denproto.CodeInvalidField)
 }
 
 func mustID(s string) int64 {
@@ -419,36 +425,171 @@ func mustID(s string) int64 {
 
 func bytesEqualKeys(a, b []byte) bool { return len(a) == denproto.DMKeySize && denproto.Equal(a, b) }
 
-// A restart retires a key only one member checked, and nothing more is
-// sent with it.
-func TestDMKeyRestart(t *testing.T) {
+// A DM's key both members checked before M16.1 stays live: both send and
+// read under it, an older Dens still sees it among the DM's keys, a signed
+// key can't take its place, and the den starts no exchange.
+func TestLegacyDMKeys(t *testing.T) {
 	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
 	dm, _ := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(bob.MemberID)})
-	cid, _ := denproto.ParseID(dm.ID)
+	cid := mustID(dm.ID)
 	info, _ := f.d.Info()
-	first := f.exchange(owner, bob, cid, false)
-	// Pretend bob's check never happened: his digits didn't match.
-	if _, err := f.db.Exec(`UPDATE den_dm_key_members SET sealed = NULL, checked_at = NULL WHERE member_id = ?`, bob.MemberID); err != nil {
-		t.Fatal(err)
+	k := f.legacyKey(owner.MemberID, bob.MemberID, cid)
+	first := f.send(owner, dm.ID, "from before")
+	reply := f.send(bob, dm.ID, "still here")
+	if first.KeyID != k.id || reply.KeyID != k.id {
+		t.Fatalf("sent under %s and %s", first.KeyID, reply.KeyID)
 	}
-	xctx := denproto.DMExchangeContext(info.ID, cid, bob.MemberID, owner.MemberID)
-	starter, offer, _ := denproto.StartExchange(xctx)
-	state, _ := denproto.SealExchangeState(f.seals[bob.MemberID], info.ID, cid, bob.MemberID, offer.Commit, true, starter)
-	_, err := f.d.StartKey(ctx, bob, dm.ID, denproto.KeyStartRequest{Offer: offer, State: state})
+	seen := f.keyAs(bob, dm.ID, k.id)
+	if len(seen.Checks) != 2 || len(seen.Sealed) != denproto.SealedKeySize || seen.Retired != "" {
+		t.Fatalf("bob's view of the key: %+v", seen)
+	}
+	if got, err := denproto.OpenDMKey(f.seals[bob.MemberID], info.ID, cid, mustID(k.id), bob.MemberID, seen.Sealed); err != nil || !bytesEqualKeys(got, k.key) {
+		t.Fatalf("bob's copy: %v", err)
+	}
+	h, err := f.d.History(ctx, bob, dm.ID, HistoryQuery{})
+	if err != nil || len(h.Messages) != 2 || f.openDM(k, h.Messages[0]) != "from before" {
+		t.Fatalf("bob's history: %+v %v", h, err)
+	}
+	f.publish(owner.MemberID)
+	f.publish(bob.MemberID)
+	_, err = f.d.MakeSignedKey(ctx, owner, dm.ID, f.keyRequest(owner.MemberID, bob.MemberID, cid, denproto.Random(denproto.DMKeySize)))
 	wantCode(t, err, denproto.CodeKeyExists)
-	second, err := f.d.StartKey(ctx, bob, dm.ID, denproto.KeyStartRequest{Offer: offer, State: state, Restart: true})
-	if err != nil {
+	_, err = f.d.StartKey(ctx, owner, dm.ID, denproto.KeyStartRequest{})
+	wantCode(t, err, denproto.CodeInvalidField)
+}
+
+// A member's Dens publishes their identity, which the den hands any member
+// who asks, a few at a time, and whose hash their record carries, so a
+// change reaches everyone. Leaving takes it, and so does starting over,
+// with the record it sealed.
+func TestIdentities(t *testing.T) {
+	f, owner, bob := chatFixture(t)
+	ctx := context.Background()
+	id := f.identityOf(bob.MemberID).Public()
+	_, err := f.d.PublishIdentity(ctx, bob, denproto.Identity{KEM: id.KEM[:100], Sig: id.Sig})
+	wantCode(t, err, denproto.CodeInvalidField)
+	sub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, false, "", 0)
+	defer f.d.Hub.Unsubscribe(sub)
+	before := f.version()
+	m, err := f.d.PublishIdentity(ctx, bob, id)
+	if err != nil || m.Identity != id.Hash().String() {
+		t.Fatalf("published: %+v %v", m, err)
+	}
+	if heard := nextEvent[denproto.Member](t, sub, denproto.EventMemberUpdated); heard.Identity != id.Hash().String() {
+		t.Fatalf("alice heard %+v", heard)
+	}
+	if f.version() == before {
+		t.Fatal("the change log has no record of the member's change")
+	}
+	// The same again changes nothing.
+	same := f.version()
+	if _, err := f.d.PublishIdentity(ctx, bob, id); err != nil || f.version() != same {
+		t.Fatalf("publishing it again: %v", err)
+	}
+	list, err := f.d.Identities(ctx, []string{denproto.FormatID(bob.MemberID), denproto.FormatID(owner.MemberID), "12345"})
+	if err != nil || len(list.Identities) != 1 || !denproto.Equal(list.Identities[0].KEM, id.KEM) || list.Identities[0].MemberID != denproto.FormatID(bob.MemberID) {
+		t.Fatalf("the identities fetched: %+v %v", list, err)
+	}
+	_, err = f.d.Identities(ctx, nil)
+	wantCode(t, err, denproto.CodeInvalidField)
+	_, err = f.d.Identities(ctx, slices.Repeat([]string{"1"}, denproto.MaxIdentities+1))
+	wantCode(t, err, denproto.CodeInvalidField)
+	_, err = f.d.Identities(ctx, []string{"x"})
+	wantCode(t, err, denproto.CodeInvalidField)
+
+	// Starting over takes the identity, which came from the old seal, and
+	// the record it sealed.
+	f.writeRecord(bob, 0)
+	info, _ := f.d.Info()
+	seal := denproto.NewSeal()
+	check, _ := denproto.SealCheck(seal, info.ID)
+	if _, err := f.d.StartOver(ctx, bob, denproto.StartOverRequest{Verifier: f.verifier("bob", "password"), SealCheck: check}); err != nil {
 		t.Fatal(err)
 	}
-	old := f.keyAs(owner, dm.ID, first.id)
-	if old.Retired != denproto.RetiredRestarted || old.RetiredBy != denproto.FormatID(bob.MemberID) || old.Sealed == nil {
-		t.Fatalf("the restarted key: %+v", old)
+	if heard := nextEvent[denproto.Member](t, sub, denproto.EventMemberUpdated); heard.ID != denproto.FormatID(bob.MemberID) || heard.Identity != "" {
+		t.Fatalf("alice heard %+v", heard)
 	}
-	_, err = f.d.Send(ctx, owner, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16), Sealed: denproto.Random(40), KeyID: first.id})
+	if rec, err := f.d.Record(ctx, bob); err != nil || rec.Revision != 0 || rec.Sealed != nil {
+		t.Fatalf("bob's record after starting over: %+v %v", rec, err)
+	}
+	if list, _ := f.d.Identities(ctx, []string{denproto.FormatID(bob.MemberID)}); len(list.Identities) != 0 {
+		t.Fatalf("bob's identity after starting over: %+v", list)
+	}
+	// Leaving takes it too.
+	f.seals[bob.MemberID] = seal
+	f.publish(bob.MemberID)
+	if err := f.d.Leave(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := f.d.Member(ctx, bob.MemberID); m.Identity != "" {
+		t.Fatalf("bob's record after leaving: %+v", m)
+	}
+}
+
+// writeRecord writes a member's record over a revision, sealed as their
+// client seals it.
+func (f *fixture) writeRecord(s *Session, revision int64) denproto.Record {
+	f.t.Helper()
+	info, _ := f.d.Info()
+	sealed, err := denproto.SealRecord(f.seals[s.MemberID], info.ID, s.MemberID, revision+1, []byte(`{"members":{}}`))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	rec, err := f.d.WriteRecord(context.Background(), s, denproto.RecordWrite{Revision: revision, Sealed: sealed})
+	if err != nil {
+		f.t.Fatalf("write the record: %v", err)
+	}
+	return rec
+}
+
+// A member's record is written over the revision it was merged from, and
+// a write over another is refused; it's padded to its sizes; and the
+// member's own sessions hear of each revision, nobody else's.
+func TestRecords(t *testing.T) {
+	f, owner, bob := chatFixture(t)
+	ctx := context.Background()
+	if rec, err := f.d.Record(ctx, bob); err != nil || rec.Revision != 0 || rec.Sealed != nil {
+		t.Fatalf("before the first write: %+v %v", rec, err)
+	}
+	mine, _, _, _ := f.d.Hub.Subscribe(bob.MemberID, false, "", 0)
+	defer f.d.Hub.Unsubscribe(mine)
+	theirs, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, false, "", 0)
+	defer f.d.Hub.Unsubscribe(theirs)
+	if rec := f.writeRecord(bob, 0); rec.Revision != 1 {
+		t.Fatalf("the first write: %+v", rec)
+	}
+	if u := nextEvent[denproto.RecordUpdated](t, mine, denproto.EventRecordUpdated); u.Revision != 1 {
+		t.Fatalf("bob's sessions heard %+v", u)
+	}
+	_, err := f.d.WriteRecord(ctx, bob, denproto.RecordWrite{Revision: 0, Sealed: denproto.Random(16<<10 + 40)})
+	wantCode(t, err, denproto.CodeEditConflict)
+	_, err = f.d.WriteRecord(ctx, bob, denproto.RecordWrite{Revision: 1, Sealed: denproto.Random(1000)})
 	wantCode(t, err, denproto.CodeInvalidField)
-	if got := f.keyAs(owner, dm.ID, second.ID); got.Exchange == nil || got.Exchange.State != nil || got.Stage != denproto.StageOffered {
-		t.Fatalf("the new key: %+v", got)
+	if rec := f.writeRecord(bob, 1); rec.Revision != 2 {
+		t.Fatalf("the second write: %+v", rec)
+	}
+	rec, err := f.d.Record(ctx, bob)
+	if err != nil || rec.Revision != 2 || !denproto.CheckSealedRecord(rec.Sealed) {
+		t.Fatalf("the record: %+v %v", rec, err)
+	}
+	info, _ := f.d.Info()
+	if _, err := denproto.OpenRecord(f.seals[bob.MemberID], info.ID, bob.MemberID, 2, rec.Sealed); err != nil {
+		t.Fatalf("the record doesn't open as bob wrote it: %v", err)
+	}
+	if other, _ := f.d.Record(ctx, owner); other.Revision != 0 {
+		t.Fatalf("alice's record: %+v", other)
+	}
+	// Alice heard nothing of bob's record.
+	f.send(owner, f.newChannel(owner, "general", denproto.ChannelRequest{}).ID, "marker")
+	for {
+		e := <-theirs.Events
+		if e.T == denproto.EventRecordUpdated {
+			t.Fatal("alice heard of bob's record")
+		}
+		if e.T == denproto.EventMessageCreated {
+			break
+		}
 	}
 }
 
@@ -565,33 +706,33 @@ func TestStartOver(t *testing.T) {
 		t.Fatal("the other device, which holds the old seal, is still signed in")
 	}
 	// The other member hears the key retired, and keeps their copy.
-	var retired denproto.DMKey
-	if e := <-sub.Events; e.T != denproto.EventDMKey || json.Unmarshal(e.D, &retired) != nil ||
-		retired.Retired != denproto.RetiredStartedOver || retired.RetiredBy != denproto.FormatID(bob.MemberID) || retired.Sealed == nil {
+	var retired denproto.SignedKey
+	if e := <-sub.Events; e.T != denproto.EventDMSignedKey || json.Unmarshal(e.D, &retired) != nil ||
+		retired.Retired != denproto.RetiredStartedOver || retired.RetiredBy != denproto.FormatID(bob.MemberID) || retired.Copy == nil {
 		t.Fatalf("the owner heard %s %s", e.T, e.D)
 	}
 	snap, _ := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
-	if !denproto.Equal(snap.SealCheck, check) || len(snap.DMKeys) != 2 {
-		t.Fatalf("bob's snapshot: %+v", snap.DMKeys)
+	if !denproto.Equal(snap.SealCheck, check) || len(snap.SignedKeys) != 2 || snap.Me.Identity != "" {
+		t.Fatalf("bob's snapshot: %+v %+v", snap.SignedKeys, snap.Me)
 	}
-	for _, k := range snap.DMKeys {
-		if k.Sealed != nil || k.Retired != denproto.RetiredStartedOver || len(k.Checks) != 1 {
+	for _, k := range snap.SignedKeys {
+		if k.Copy != nil || k.Retired != denproto.RetiredStartedOver {
 			t.Fatalf("bob's view of an old key: %+v", k)
 		}
 	}
-	// Nothing more goes out under the old keys; a new exchange, with the
-	// new seal, lets both send again.
+	// Nothing more goes out under the old keys; a new key, sealed to the
+	// identity the new seal makes, lets both send again.
 	dm := dms[owner]
 	cid, _ := denproto.ParseID(dm.ID)
 	old := f.keys[dm.ID]
 	nonce := denproto.Random(16)
 	_, err = f.d.Send(ctx, owner, dm.ID, denproto.SendRequest{Nonce: nonce, Sealed: f.sealText(old, cid, owner.MemberID, nonce, 1, "x"), KeyID: old.id})
 	wantCode(t, err, denproto.CodeInvalidField)
-	fresh := f.exchange(bob, owner, cid, false)
-	f.keys[dm.ID] = fresh
+	delete(f.keys, dm.ID)
+	fresh := f.keyFor(bob.MemberID, owner.MemberID, cid)
 	f.send(owner, dm.ID, "after")
 	if fresh.id == old.id {
-		t.Fatal("the new exchange reused the key's ID")
+		t.Fatal("the new key reused the key's ID")
 	}
 }
 
@@ -612,7 +753,7 @@ func TestRejoinWithAnotherSeal(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, _ := f.d.Authenticate(ctx, same.Token)
-	if k := f.keyAs(back, dm.ID, f.keys[dm.ID].id); k.Retired != "" || k.Sealed == nil {
+	if k := f.signedKeyAs(back, dm.ID, f.keys[dm.ID].id); k.Retired != "" || k.Copy == nil {
 		t.Fatalf("the key after coming back with the same seal: %+v", k)
 	}
 	if err := f.d.Leave(ctx, back); err != nil {
@@ -623,7 +764,7 @@ func TestRejoinWithAnotherSeal(t *testing.T) {
 		t.Fatal(err)
 	}
 	back, _ = f.d.Authenticate(ctx, other.Token)
-	if k := f.keyAs(back, dm.ID, f.keys[dm.ID].id); k.Retired != denproto.RetiredStartedOver || k.Sealed != nil {
+	if k := f.signedKeyAs(back, dm.ID, f.keys[dm.ID].id); k.Retired != denproto.RetiredStartedOver || k.Copy != nil {
 		t.Fatalf("the key after coming back with another seal: %+v", k)
 	}
 }

@@ -15,6 +15,9 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Post("/api/dens/{den}/members/{member}/remove", rt.handleRemoveMember)
 	r.Post("/api/dens/{den}/members/{member}/disconnect", rt.handleDisconnectFromCall)
 	r.Post("/api/dens/{den}/members/{member}/voice-mute", rt.handleStaffMute)
+	r.Get("/api/dens/{den}/members/{member}/code", rt.handleCode)
+	r.Post("/api/dens/{den}/members/{member}/compare", rt.handleCompare)
+	r.Post("/api/dens/{den}/members/{member}/send-anyway", rt.handleSendAnyway)
 	r.Get("/api/dens/{den}/bans", rt.handleBans)
 	r.Delete("/api/dens/{den}/bans/{member}", rt.handleUnban)
 	r.Post("/api/dens/{den}/dms", rt.handleOpenDM)
@@ -141,4 +144,43 @@ func (rt *router) handleForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCode gives what the page shows to compare codes with a member
+// (M16.1): this member's own code, and whether they verified the other;
+// with this member's own ID, their code alone.
+func (rt *router) handleCode(w http.ResponseWriter, r *http.Request) {
+	view, err := rt.a.Dens.Code(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, view)
+}
+
+// handleCompare takes the digits the member typed as the other read out
+// their code. It asks nothing of the den.
+func (rt *router) handleCompare(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Digits string `json:"digits"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	view, err := rt.a.Dens.Compare(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"), body.Digits)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, view)
+}
+
+// handleSendAnyway lets the DMs with a member whose keys changed since
+// this member verified them take messages again.
+func (rt *router) handleSendAnyway(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.SendAnyway(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }

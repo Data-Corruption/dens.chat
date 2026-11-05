@@ -518,39 +518,32 @@ dm)
     # dm DEN_ID MEMBER_ID: open the DM with a member; print its ID.
     api POST "/api/dens/$1/dms" "{\"member_id\":\"$2\"}" | json 'd["id"]'
     ;;
-start-key)
-    # start-key DEN_ID DM_ID: start the DM's key, as the page does.
-    api POST "/api/dens/$1/dms/$2/key" '{"restart":false}' >/dev/null
-    ;;
-dm-half)
-    # dm-half DEN_ID DM_ID: print the digits this member reads out, once
-    # both Dens moved the DM's exchange on.
-    for _ in $(seq 1 120); do
-        half=$(api GET "/api/dens/$1/dms/$2/check" | json 'd.get("half", "")')
-        [ -n "$half" ] && { printf '%s\n' "$half"; exit 0; }
+wait-identity)
+    # wait-identity DEN_ID MEMBER_ID: wait until this member's Dens has
+    # published their identity and kept the other member's (M16.1).
+    for _ in $(seq 1 80); do
+        [ "$(api GET "/api/dens/$1/state" | json "'$2' in (d.get('identities') or {}) and d['me'].get('identity', '') != ''")" = True ] && exit 0
         sleep 0.25
     done
-    api GET "/api/dens/$1/dms/$2/check" >&2
-    fail "the DM's check never showed digits"
+    fail "this member's Dens never kept member $2's identity"
     ;;
-check-dm)
-    # check-dm DEN_ID DM_ID DIGITS: type the digits the other member reads.
-    api POST "/api/dens/$1/dms/$2/check" "{\"digits\":\"$3\"}" >/dev/null
+own-code)
+    # own-code DEN_ID MEMBER_ID: print this member's own code, as comparing
+    # codes with a member shows it (M16.1).
+    api GET "/api/dens/$1/members/$2/code" | json 'd["mine"]'
     ;;
-check-dm-refused)
-    # check-dm-refused DEN_ID DM_ID DIGITS: print why digits were refused.
+compare)
+    # compare DEN_ID MEMBER_ID DIGITS: type the code the other member reads
+    # out, which must match.
+    [ "$(api POST "/api/dens/$1/members/$2/compare" "{\"digits\":\"$3\"}" | json 'd.get("verified", False)')" = True ] ||
+        fail "the code didn't mark member $2 verified"
+    ;;
+compare-refused)
+    # compare-refused DEN_ID MEMBER_ID DIGITS: print why digits were refused.
     status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \
-        -d "{\"digits\":\"$3\"}" -o /root/check.json -w '%{http_code}' "$BASE/api/dens/$1/dms/$2/check")
+        -d "{\"digits\":\"$3\"}" -o /root/compare.json -w '%{http_code}' "$BASE/api/dens/$1/members/$2/compare")
     [ "$status" -ge 400 ] || fail "the wrong digits were taken"
-    json 'd["error"]' < /root/check.json
-    ;;
-send-refused)
-    # send-refused DEN_ID CHANNEL_ID TEXT: print why a message was refused.
-    nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
-    status=$(curl -sS -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" -H "Content-Type: application/json" \
-        -d "{\"nonce\":\"$nonce\",\"text\":\"$3\"}" -o /root/send.json -w '%{http_code}' "$BASE/api/dens/$1/channels/$2/messages")
-    [ "$status" -ge 400 ] || fail "the message was sent"
-    json 'd["error"]' < /root/send.json
+    json 'd["error"]' < /root/compare.json
     ;;
 dm-sealed)
     # dm-sealed TEXT: fail if the den's database holds TEXT in the clear,

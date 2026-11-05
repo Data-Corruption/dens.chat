@@ -162,6 +162,9 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 	if r.DMKeys, err = memberKeys(ctx, d.db, member); err != nil {
 		return r, err
 	}
+	if r.SignedKeys, err = memberSignedKeys(ctx, d.db, member); err != nil {
+		return r, err
+	}
 	r.DeviceRequests = d.memberRequests(member)
 	if r.Sounds, err = d.sounds(ctx, d.db); err != nil {
 		return r, err

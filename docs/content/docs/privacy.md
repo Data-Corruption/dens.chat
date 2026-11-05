@@ -56,6 +56,9 @@ held until the backup itself is deleted.
 - **The den**, which can read channels and their files, could listen to calls,
   and sees who DMs whom and when. Join dens run by people you trust, or host
   your own.
+- **A tampered den, with people who never compare codes.** It could hand each
+  of you keys of its own and read your DMs. Comparing codes, even once, shows
+  it: see [Join a den](../join/#direct-messages).
 - **Members** screenshotting or repeating what you say.
 - **Whoever sees your screen.** A notification shows the start of a message, a
   DM's included. Turn off **Show the message**, in the settings under

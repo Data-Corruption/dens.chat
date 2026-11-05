@@ -171,7 +171,7 @@ func TestOfflineReading(t *testing.T) {
 		send(t, owner, denID, channelID, fmt.Sprintf("message %d", i))
 	}
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	sendDM(t, owner, denID, dm, "a private word")
 	online := pageOf(t, member, denID, channelID, denclient.HistoryQuery{Limit: 50})
 	if p := pageOf(t, member, denID, dm, denclient.HistoryQuery{Limit: 50}); len(p.Messages) != 1 || p.Messages[0].Text != "a private word" {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The M12.3 check's den: a DM between alice and bob that both have
-# checked, bob a moderator, whose @everyone in #general mentions alice
+# The M12.3 check's den: a DM between alice and bob, which opens at once
+# (M16.1), bob a moderator, whose @everyone in #general mentions alice
 # (M15.4), and the desktop's notification service, dunst on Xvfb's
 # display, which keeps each notification it shows until it's taken back,
 # and writes down what it showed in ~/notify-shown.txt. ~/notify-bin holds
@@ -10,7 +10,7 @@
 source "$(dirname "$0")/lib.sh"
 fresh
 general=$(channel general)
-dm=$(checked_dm alice bob)
+dm=$(open_dm alice bob)
 bob=$(api bob GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
 api alice PUT "/api/dens/$DEN/members/$bob/role" '{"role":"moderator"}' >/dev/null
 

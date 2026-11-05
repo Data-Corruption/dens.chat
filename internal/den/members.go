@@ -22,23 +22,29 @@ func forbidden(format string, args ...any) error {
 func bioAD(id int64) []byte { return []byte("den_members.bio:" + strconv.FormatInt(id, 10)) }
 
 // memberColumns selects a member from den_members, with the size of the
-// pictures on their profile, and whether each is animated (M15.1).
+// pictures on their profile, and whether each is animated (M15.1), and
+// their identity's hash (M16.1).
 const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	avatar_id, (SELECT width FROM den_files WHERE den_files.id = den_members.avatar_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.avatar_id),
 	(SELECT animated FROM den_files WHERE den_files.id = den_members.avatar_id),
 	banner_id, (SELECT width FROM den_files WHERE den_files.id = den_members.banner_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.banner_id),
-	(SELECT animated FROM den_files WHERE den_files.id = den_members.banner_id)`
+	(SELECT animated FROM den_files WHERE den_files.id = den_members.banner_id),
+	identity`
 
 func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) {
 	var m denproto.Member
 	var id int64
 	var left, avatar, aw, ah, banner, bw, bh sql.NullInt64
 	var aa, ba sql.NullBool
-	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &aa, &banner, &bw, &bh, &ba},
-		extra...)...)
+	var identity []byte
+	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &aa, &banner, &bw, &bh, &ba,
+		&identity}, extra...)...)
 	m.ID = denproto.FormatID(id)
+	if len(identity) > 0 {
+		m.Identity = denproto.Bytes(identity).String()
+	}
 	if left.Valid {
 		m.LeftAt = left.Int64
 	}
@@ -218,13 +224,16 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // depart takes a member out of the den within tx. Their row stays, so
 // their messages keep a name and a returning member can reclaim it, but
 // they lose their role, devices and sessions, recovery codes, read state,
-// any invites they made, the pictures on their profile and the uploads
-// they hadn't sent. The sounds and emoji they added are the den's, and
+// any invites they made, the pictures on their profile, the uploads they
+// hadn't sent, and their identity and record (M16.1), which they publish
+// again if they come back. The sounds and emoji they added are the den's, and
 // stay (M14.3, M15.2).
 // It returns those files' blobs, to remove once tx commits.
 func depart(ctx context.Context, tx *sql.Tx, id, now int64) ([][]byte, error) {
 	for _, stmt := range []string{
-		`UPDATE den_members SET left_at = ?1, role = 'member' WHERE id = ?2`,
+		`UPDATE den_members SET left_at = ?1, role = 'member', identity = NULL WHERE id = ?2`,
+		`DELETE FROM den_identities WHERE member_id = ?2`,
+		`DELETE FROM den_records WHERE member_id = ?2`,
 		`DELETE FROM den_devices WHERE member_id = ?2`, // and, through them, sessions
 		`DELETE FROM den_recovery_codes WHERE member_id = ?2`,
 		`DELETE FROM den_read_states WHERE member_id = ?2`,

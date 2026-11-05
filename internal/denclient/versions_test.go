@@ -299,7 +299,7 @@ func TestDMPhotoGoesSmaller(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	up := uploadVersions(t, owner, denID, dm, "IMG_3004.jpg", photo(t, 2800, 1200, 92), denclient.SendSmaller)
 	if up.Versions == nil || up.Versions.Sent != denclient.SendSmaller || up.Height != 2560 || up.Thumb == nil {
 		t.Fatalf("a DM's photo: %+v", up)

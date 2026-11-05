@@ -25,7 +25,9 @@ func (m *Manager) View(denID string) (View, error) {
 	if state == nil {
 		state = newState()
 	}
-	return state.view(status, c.profile.Member), nil
+	v := state.view(status, c.profile.Member)
+	v.Identities = c.pageIdentitiesLocked()
+	return v, nil
 }
 
 func checkID(what, id string) error {
@@ -183,7 +185,7 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		if p.Files, blobs, err = c.takeUploads(channelID, req.Attachments); err != nil {
 			return PageMessage{}, err
 		}
-		if req.KeyID, req.Sealed, err = c.sealMessage(channelID, c.memberID(), req.Nonce, 1, p); err != nil {
+		if req.KeyID, req.Sealed, err = c.sealMessage(ctx, channelID, c.memberID(), req.Nonce, 1, p); err != nil {
 			return PageMessage{}, err
 		}
 		req.Text, req.Attachments = "", blobs
@@ -285,7 +287,7 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 	if err != nil {
 		return PageMessage{}, err
 	}
-	keyID, sealed, err := c.sealMessage(channelID, current.AuthorID, current.Nonce, revision+1, p)
+	keyID, sealed, err := c.sealMessage(ctx, channelID, current.AuthorID, current.Nonce, revision+1, p)
 	if err != nil {
 		return PageMessage{}, err
 	}

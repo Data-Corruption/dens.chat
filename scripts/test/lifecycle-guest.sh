@@ -108,10 +108,13 @@ expect_uninstalled() {
 }
 
 # first_release hosts a den with Dens's first release, as its installer's
-# den option did, and updates to this one, which still hosts it: the switch
-# takes the den role it had (M9.1); and which migrated its database, as a
-# member's own sound shows (M14.2), the den's soundboard (M14.3), and M15's
-# emoji, a reaction and a poll. Then it uninstalls, for the fresh install
+# den option did, with a member on a second instance, whose DM with the
+# owner both check by typing each other's digits, as that release has
+# them; and updates to this one, which still hosts it: the switch takes
+# the den role it had (M9.1); and which migrated its database, as a
+# member's own sound shows (M14.2), the den's soundboard (M14.3), M15's
+# emoji, a reaction and a poll, and the DM, which reads and sends under
+# the key they checked (M16.1). Then it uninstalls, for the fresh install
 # after it.
 first_release() {
     first=$(cat /release/first/version)
@@ -126,9 +129,12 @@ first_release() {
     systemctl is-active --quiet dens@main || fail "$first's dens@main is not running"
     expect_state main "$first"
     pair_alice
-    api POST /api/den '{"name":"First Den","url":"https://den.test","username":"alice","display_name":"Alice","password":"den password"}' >/dev/null
+    # The den's address is its loopback one, where the second instance
+    # reaches it.
+    api POST /api/den '{"name":"First Den","url":"http://127.0.0.1:8485","username":"alice","display_name":"Alice","password":"den password"}' >/dev/null
     wait_own_connected
     den_answers 8485 || fail "$first's den listener doesn't answer"
+    first_dm
 
     step "update the den $first hosts to $V1"
     SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify
@@ -203,9 +209,99 @@ first_release() {
         fail "the message doesn't hold its reaction: $history"
     printf '%s' "$history" | grep -q '"poll":{"choices":\["Yes","No"\],"ends_at":[0-9]*,"show_voters":"always","show_totals":"live","voted":1,"totals":\[1,0\]' ||
         fail "the poll doesn't hold its vote: $history"
+    first_dm_after
+    printf 'perm delete data\n' | dens uninstall --instance second >/dev/null
     dens uninstall --yes
     expect_uninstalled
-    rm -f "$JAR"
+    rm -f "$JAR" /root/cookies-second
+}
+
+# dm_history prints a DM's messages as an instance's page gets them.
+dm_history() { "$1" GET "/api/dens/$den_id/channels/$dm/messages"; }
+
+# dm_says succeeds once a DM's history, as an instance's page gets it,
+# holds a message with the text, opened.
+dm_says() {
+    for _ in $(seq 50); do
+        dm_history "$1" | grep -q "\"text\":\"$2\"" && return 0
+        sleep 0.2
+    done
+    return 1
+}
+
+# dm_send sends a message in the DM from an instance's page.
+dm_send() {
+    "$1" POST "/api/dens/$den_id/channels/$dm/messages" "{\"nonce\":\"$(head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')\",\"text\":\"$2\"}" >/dev/null ||
+        fail "$1 couldn't send in the DM"
+}
+
+# first_dm joins bob to the first release's den on a second instance of
+# it, and has alice and bob check their DM's key, each typing the digits
+# the other's page shows, as that release has members do, and write in
+# it. It sets den_id, dm and bob.
+first_dm() {
+    step "a DM between two of $first's members, its digits checked"
+    "$first_bin" install --instance second --user alice --client-port 18484 --den-port 18485 \
+        --media-udp-port 17891 --media-tcp-port 17892 --release-url file:///release/
+    systemctl is-active --quiet dens@second || fail "$first's dens@second is not running"
+    url=$(as_alice dens open --print --instance second)
+    second_api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
+    second_api POST /api/password "{\"password\":\"$PASSWORD\"}" >/dev/null
+    den_id=$(api GET /api/dens | sed -n 's/.*"den_id":"\([^"]*\)".*/\1/p')
+    invite=$(api POST "/api/dens/$den_id/invites" '{"expires_in":3600,"max_uses":1}' | sed -n 's/.*"invite":"\([^"]*\)".*/\1/p')
+    [ -n "$invite" ] || fail "$first's den made no invite"
+    second_api POST /api/dens/join "{\"invite\":\"$invite\",\"username\":\"bob\",\"display_name\":\"Bob\",\"password\":\"bob password\"}" >/dev/null ||
+        fail "bob couldn't join $first's den"
+    bob=$(second_api GET "/api/dens/$den_id/state" | sed -n 's/.*"me":{"id":"\([0-9]*\)".*/\1/p')
+    [ -n "$bob" ] || fail "bob's state has no member: $(second_api GET "/api/dens/$den_id/state" | head -c 300)"
+    dm=$(api POST "/api/dens/$den_id/dms" "{\"member_id\":\"$bob\"}" | sed -n 's/^{"id":"\([0-9]*\)".*/\1/p')
+    [ -n "$dm" ] || fail "alice's DM with bob didn't open"
+    for _ in $(seq 50); do
+        second_api GET "/api/dens/$den_id/state" | grep -q "{\"id\":\"$dm\",\"kind\":\"dm\"" && break
+        sleep 0.2
+    done
+    api POST "/api/dens/$den_id/dms/$dm/key" '{}' >/dev/null
+    a="" b=""
+    for _ in $(seq 60); do
+        a=$(api GET "/api/dens/$den_id/dms/$dm/check" | sed -n 's/.*"half":"\([0-9 ]*\)".*/\1/p')
+        b=$(second_api GET "/api/dens/$den_id/dms/$dm/check" | sed -n 's/.*"half":"\([0-9 ]*\)".*/\1/p')
+        [ -n "$a" ] && [ -n "$b" ] && break
+        sleep 0.5
+    done
+    [ -n "$a" ] && [ -n "$b" ] || fail "the DM's check codes never came"
+    api POST "/api/dens/$den_id/dms/$dm/check" "{\"digits\":\"$b\"}" >/dev/null || fail "alice's check failed"
+    second_api POST "/api/dens/$den_id/dms/$dm/check" "{\"digits\":\"$a\"}" >/dev/null || fail "bob's check failed"
+    dm_send api "checked with the first release"
+    dm_send second_api "and back"
+    dm_says second_api "checked with the first release" || fail "bob doesn't read alice's DM: $(dm_history second_api | head -c 400)"
+    dm_says api "and back" || fail "alice doesn't read bob's DM: $(dm_history api | head -c 400)"
+    key=$(dm_history api | sed -n 's/.*"key_id":"\([0-9]*\)".*/\1/p' | head -n 1)
+    [ -n "$key" ] || fail "the DM's messages name no key"
+}
+
+# first_dm_after checks the DM checked with the first release reads and
+# sends as it did after the update: both members read what was sealed
+# before it, and write under the key they checked, which no new key took
+# the place of (M16.1).
+first_dm_after() {
+    step "the DM checked with $first reads and sends after the update"
+    expect_state second "$V1"
+    for _ in $(seq 60); do
+        second_api GET /api/dens | grep -q '"state":"connected"' && break
+        sleep 0.5
+    done
+    for side in api second_api; do
+        if ! dm_says "$side" "checked with the first release" || ! dm_says "$side" "and back"; then
+            fail "$side doesn't read the DM after the update: $(dm_history "$side" | head -c 400)"
+        fi
+        ! dm_history "$side" | grep -q '"locked"' || fail "$side's DM holds a message it can't open: $(dm_history "$side" | head -c 400)"
+    done
+    dm_send api "after the update"
+    dm_send second_api "still checked"
+    dm_says second_api "after the update" || fail "bob doesn't read alice's DM after the update: $(dm_history second_api | head -c 400)"
+    dm_says api "still checked" || fail "alice doesn't read bob's DM after the update: $(dm_history api | head -c 400)"
+    keys=$(dm_history api | grep -o '"key_id":"[0-9]*"' | sort -u)
+    [ "$keys" = "\"key_id\":\"$key\"" ] || fail "the DM's messages name keys $keys, not the one checked, $key"
 }
 
 # prepare readies the container: the unit's real sandbox, the tools the

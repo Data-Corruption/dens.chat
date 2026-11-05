@@ -335,9 +335,9 @@ shell_log | grep -q 'page: no longer held' || fail "the page still held after it
 [[ $(services) == *'types=0x40000000'* ]] || fail "the service kept the microphone's type after the call"
 ok "the call held through $(((on - off) / 1000)) s off screen, both ways, and once it ended the service let the microphone and the page go"
 
-# Notifications (M12.3). Desk and the phone's member check their DM's
-# digits, as members comparing codes do, and the member turns DMs on in the
-# page's settings. Android asked for notifications at the call, which the
+# Notifications (M12.3). Desk and the phone's member's DM opens at once,
+# and they compare codes, each typing the code the other reads out
+# (M16.1); the member turns DMs on in the page's settings. Android asked for notifications at the call, which the
 # member allowed, so it doesn't ask again. A DM from desk while the app is
 # behind the others posts through the shell, and its tap opens the page at
 # the message; read on the den, the next is taken back.
@@ -346,16 +346,19 @@ pagejson() { phone drive eval "fetch('$1').then((r) => r.json()).then((v) => $2)
 den_id=$(pagejson /api/dens 'v.dens[0].den_id')
 member_id=$(pagejson "/api/dens/$den_id/state" 'v.me.id')
 dm=$(den dm "$member_id")
-desk_half="" phone_half=""
+desk_id=$(den api GET "/api/dens/$den_id/state" | python3 -c 'import json, sys; print(json.load(sys.stdin)["me"]["id"])')
+# Each shows its own code once its Dens kept the other's identity.
+desk_code="" phone_code=""
 for _ in $(seq 60); do
-  desk_half=$(den api GET "/api/dens/$den_id/dms/$dm/check" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("half", ""))')
-  phone_half=$(pagejson "/api/dens/$den_id/dms/$dm/check" "v.half || ''")
-  [[ -n "$desk_half" && -n "$phone_half" ]] && break
+  desk_code=$(den api GET "/api/dens/$den_id/members/$member_id/code" 2>/dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin).get("mine", ""))' || :)
+  phone_code=$(pagejson "/api/dens/$den_id/members/$desk_id/code" "v.mine || ''")
+  [[ -n "$desk_code" && -n "$phone_code" ]] && break
   sleep 0.5
 done
-[[ -n "$desk_half" && -n "$phone_half" ]] || fail "the DM's check codes never came"
-den api POST "/api/dens/$den_id/dms/$dm/check" "{\"digits\":\"$phone_half\"}" >/dev/null
-phone drive api POST "/api/dens/$den_id/dms/$dm/check" "{\"digits\":\"$desk_half\"}" | grep -q '^200' || fail "the phone's check of the DM"
+[[ -n "$desk_code" && -n "$phone_code" ]] || fail "the members' codes never came"
+den api POST "/api/dens/$den_id/members/$member_id/compare" "{\"digits\":\"$phone_code\"}" | grep -q '"verified":true' || fail "desk's comparison of codes"
+phone drive api POST "/api/dens/$den_id/members/$desk_id/compare" "{\"digits\":\"$desk_code\"}" | grep -q '^200' || fail "the phone's comparison of codes"
+ok "the phone's DM with desk opened at once, and the two compared codes"
 phone drive api POST /api/settings '{"notifications":{"dms":true}}' | grep -q '^200' || fail "turning DMs on"
 adb shell input keyevent KEYCODE_HOME
 sleep 2

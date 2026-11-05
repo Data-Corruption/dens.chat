@@ -168,6 +168,11 @@ const (
 	DeviceModelEnv = "DENS_DEVICE_MODEL"
 )
 
+// devRecordEvery is how often a development instance writes a member's
+// record of the identities they kept, where an installed one writes it
+// every hour (M16.1).
+const devRecordEvery = 20 * time.Second
+
 // ErrCantHost is turning hosting on in a form that hosts no den.
 var ErrCantHost = errors.New("hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in")
 
@@ -420,6 +425,11 @@ func (a *App) unlock(key []byte) error {
 		return err
 	}
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
+	if l.Form == layout.Development {
+		// The browser checks see a comparison reach a member's other device
+		// in moments, not within the hour (M16.1).
+		a.Dens.RecordEvery = devRecordEvery
+	}
 	if l.Form == layout.Android {
 		a.Dens.Label = denclient.PhoneLabel(os.Getenv(DeviceNameEnv), os.Getenv(DeviceModelEnv))
 	}

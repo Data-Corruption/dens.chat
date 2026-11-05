@@ -5,8 +5,8 @@
 # an emoji of its own (M15.2). general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
-# only. Alice and bob share a checked DM, checked again after alice started
-# over, and bob has started one with carol that waits for its check.
+# only. Alice and bob share a DM, which opens at once (M16.1), where alice
+# started over, so bob's page shows her keys changed.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 stop m2d
@@ -55,21 +55,17 @@ say bob "$general" "party time :party:"
 say bob "$general" "Bob's last word"
 for i in 1 2 3; do say alice "$random" "random $i"; done
 
-dm=$(checked_dm alice bob)
+dm=$(open_dm alice bob)
 say alice "$dm" "a DM for bob, end to end"
 say bob "$dm" "and one back"
-# Alice starts over, as on a new phone, and the two check their codes
-# again, so the DM shows where its keys changed (M13.4).
+# Alice starts over, as on a new phone, so the DM shows where her keys
+# changed (M13.4, M16.1).
 api alice POST "/api/dens/$DEN/seal/start-over" '{"password":"den password"}' >/dev/null
-checked_dm alice bob >/dev/null
+open_dm alice bob >/dev/null
 say alice "$dm" "and one after starting over"
-carol_id=$(api carol GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
-dm2=$(api bob POST "/api/dens/$DEN/dms" "{\"member_id\":\"$carol_id\"}" | json 'd["id"]')
-api bob POST "/api/dens/$DEN/dms/$dm2/key" '{}' >/dev/null
 
 echo "DEN=$DEN"
 echo "GENERAL=$general"
 echo "RANDOM_ID=$random"
 echo "LOUNGE=$LOUNGE"
 echo "DM=$dm"
-echo "DM_CHECK=$dm2"

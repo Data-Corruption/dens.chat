@@ -29,6 +29,9 @@ type joined struct {
 	// seal is the member's DM seal at this den, or nil while this device
 	// has none.
 	seal *vault.Secret
+	// identities are those the member's Dens kept at this den, as this
+	// device holds them (M16.1).
+	identities *keptIdentities
 }
 
 // close releases the keys in locked memory.
@@ -46,7 +49,7 @@ func sealAD(denID []byte) []byte    { return append([]byte("joined_dens.dm_seal:
 var installSealAD = []byte("vault.dm_seal")
 
 func loadJoined(ctx context.Context, db *sql.DB, v *vault.Vault) ([]*joined, error) {
-	rows, err := db.QueryContext(ctx, `SELECT den_id, profile, device_key, joined_at, dm_seal FROM joined_dens ORDER BY joined_at`)
+	rows, err := db.QueryContext(ctx, `SELECT den_id, profile, device_key, joined_at, dm_seal, identities FROM joined_dens ORDER BY joined_at`)
 	if err != nil {
 		return nil, fmt.Errorf("load joined dens: %w", err)
 	}
@@ -59,9 +62,9 @@ func loadJoined(ctx context.Context, db *sql.DB, v *vault.Vault) ([]*joined, err
 		return nil, err
 	}
 	for rows.Next() {
-		var id, sealedProfile, sealedKey, sealedSeal []byte
+		var id, sealedProfile, sealedKey, sealedSeal, sealedIdentities []byte
 		var at int64
-		if err := rows.Scan(&id, &sealedProfile, &sealedKey, &at, &sealedSeal); err != nil {
+		if err := rows.Scan(&id, &sealedProfile, &sealedKey, &at, &sealedSeal, &sealedIdentities); err != nil {
 			return fail(err)
 		}
 		plain, err := v.Open(sealedProfile, profileAD(id))
@@ -83,6 +86,9 @@ func loadJoined(ctx context.Context, db *sql.DB, v *vault.Vault) ([]*joined, err
 		}
 		j := &joined{denID: id, profile: p, key: key, joinedAt: time.UnixMilli(at)}
 		out = append(out, j)
+		if j.identities, err = loadIdentities(v, id, sealedIdentities); err != nil {
+			return fail(err)
+		}
 		if sealedSeal != nil {
 			seal, err := v.Open(sealedSeal, sealAD(id))
 			if err != nil {

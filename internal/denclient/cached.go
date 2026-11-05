@@ -611,7 +611,7 @@ func (c *conn) restoreKept() {
 	}
 	var s *denState
 	if err == nil {
-		s, err = restore(k, members)
+		s, err = restore(c.j.denID, k, members)
 	}
 	if err != nil {
 		c.m.log.Warnf("A den's state in the cache doesn't read, so its cache starts again: %v", err)

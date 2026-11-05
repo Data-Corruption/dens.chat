@@ -49,29 +49,20 @@ type PageDMReactions struct {
 }
 
 // openSetLocked opens a member's sealed set on a DM's message with the key
-// it names, and reports false for one this device can't open. The caller
-// holds c.mu.
+// it names, M1.7's or a signed one (M16.1), and reports false for one this
+// device can't open. The caller holds c.mu.
 func (c *conn) openSetLocked(channel, message string, r denproto.SealedReactions) (PageReactionSet, bool) {
-	k, ok := c.den.keys[r.KeyID]
-	if c.j.seal == nil || !ok || k.ChannelID != channel || k.Sealed == nil {
+	key, locked := c.dmKeyLocked(channel, r.KeyID)
+	if locked != "" {
 		return PageReactionSet{}, false
 	}
+	defer clear(key)
 	ch, _ := denproto.ParseID(channel)
 	mid, _ := denproto.ParseID(message)
 	keyID, _ := denproto.ParseID(r.KeyID)
 	who, _ := denproto.ParseID(r.MemberID)
-	mine, _ := denproto.ParseID(c.meLocked())
-	var set denproto.ReactionSet
-	err := c.j.seal.Use(func(seal []byte) error {
-		key, err := denproto.OpenDMKey(seal, c.j.denID, ch, keyID, mine, k.Sealed)
-		if err != nil {
-			return err
-		}
-		defer clear(key)
-		set, err = denproto.OpenReactions(key, denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who,
-			KeyID: keyID, Revision: r.Revision}, r.Sealed)
-		return err
-	})
+	set, err := denproto.OpenReactions(key, denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who,
+		KeyID: keyID, Revision: r.Revision}, r.Sealed)
 	if err != nil {
 		return PageReactionSet{}, false
 	}
@@ -241,7 +232,7 @@ func (c *conn) reactDM(ctx context.Context, channelID, messageID string, req Pag
 	}
 	sets := current.DMReactions
 	for range 3 {
-		set, err := c.nextSet(channelID, messageID, sets, item, req.On)
+		set, err := c.nextSet(ctx, channelID, messageID, sets, item, req.On)
 		if err != nil {
 			return nil, err
 		}
@@ -313,7 +304,7 @@ type sealedSet struct {
 // the revision of the set they have in sets, or that set where it holds
 // the item already, or doesn't. A message holds at most MaxReactionEmoji
 // different emoji, both members' together.
-func (c *conn) nextSet(channelID, messageID string, sets []denproto.SealedReactions, item string, on bool) (*sealedSet, error) {
+func (c *conn) nextSet(ctx context.Context, channelID, messageID string, sets []denproto.SealedReactions, item string, on bool) (*sealedSet, error) {
 	me := c.memberID()
 	mine := []string{}
 	revision := 0
@@ -356,7 +347,7 @@ func (c *conn) nextSet(channelID, messageID string, sets []denproto.SealedReacti
 	} else {
 		next = slices.DeleteFunc(next, func(e string) bool { return e == item })
 	}
-	keyID, key, err := c.sendKey(channelID)
+	keyID, key, err := c.sendKey(ctx, channelID)
 	if err != nil {
 		return nil, err
 	}

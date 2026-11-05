@@ -145,7 +145,7 @@ func TestDenSoundsAreChecked(t *testing.T) {
 		{denproto.EventSoundDeleted, denproto.SoundDeleted{ID: "1"}, true},
 	} {
 		ev, _ := denproto.NewEvent(e.t, 1, e.data)
-		if _, _, err := s.applyEvent(ev, denproto.Member{ID: "1"}); (err == nil) != e.ok {
+		if _, _, err := s.applyEvent(nil, ev, denproto.Member{ID: "1"}); (err == nil) != e.ok {
 			t.Errorf("%s %+v: %v", e.t, e.data, err)
 		}
 	}
@@ -153,7 +153,7 @@ func TestDenSoundsAreChecked(t *testing.T) {
 		t.Errorf("the view's sounds are %+v", v.Sounds)
 	}
 	k, _ := s.kept()
-	if back, err := restore(k, nil); err != nil || len(back.sounds) != 1 || back.soundLimits != denproto.DefaultSoundLimits {
+	if back, err := restore(nil, k, nil); err != nil || len(back.sounds) != 1 || back.soundLimits != denproto.DefaultSoundLimits {
 		t.Errorf("the kept state came back as %v, %v", back, err)
 	}
 }

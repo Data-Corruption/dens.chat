@@ -40,8 +40,8 @@ import { useNarrow } from './nav.js';
 import { isStaff, rank } from './people.jsx';
 import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js';
 import { Poll, PollEditor } from './polls.jsx';
-import { LOCKED, keyChanges } from './private.js';
-import { CheckPanel, KeyDivider } from './private.jsx';
+import { LOCKED, keyChanges, keysChangedAt } from './private.js';
+import { DMGate, KeyDivider, KeysChanged } from './private.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { SmileyIcon } from './icons.jsx';
@@ -105,7 +105,8 @@ export function dividerAt(readPosition, lastMessage) {
 // retention the days it keeps a message, 0 for ever (M5). lastMessage is
 // the channel's newest, as its read state has it, and denURL the den's
 // address, which links to its messages start with (M11).
-export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, keys, typing, closed, limits, retention, offline, onProfile, onTyping }) {
+export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, keys, gate = '', changes, typing, closed, limits, retention,
+    offline, onProfile, onCompare, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -433,7 +434,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (e.t === 'messages.expired' && d) return expired(e);
         if (!d || d.channel_id !== channel.id) return;
         caught.current.forEach((since) => since.push(e));
-        // Once this member checks a DM's key, what it sealed opens.
+        // As a DM's key comes or changes, what it sealed may open.
         if (e.t === 'dm.key') {
             if (listRef.current.messages.some((m) => m.locked)) loadNewest();
             return;
@@ -653,20 +654,24 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (mine.length) setEditing(mine[mine.length - 1].id);
     }
 
-    // A DM takes messages once this member checked its live key.
-    const live = keys?.find((k) => k.channel_id === channel.id && !k.retired);
-    const canSend = channel.kind !== 'dm' || (live?.stage === 'revealed' && (live.checks || []).some((c) => c.member_id === me.id));
+    // A DM takes messages unless something stands in its composer's
+    // place (M16.1).
+    const canSend = channel.kind !== 'dm' || gate === '';
     const byId = new Map(list.messages.map((m) => [m.id, m]));
     const rows = [];
     let prev = null;
-    // In a DM, dividers mark where its keys changed.
-    const changes = channel.kind === 'dm' && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id)))) : new Map();
+    // In a DM, dividers mark where its keys changed before M16.1, and
+    // lines where the other member's keys changed since.
+    const dividers = channel.kind === 'dm' && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id))), me.id) : new Map();
+    const changed = channel.kind === 'dm' ? keysChangedAt(list.messages, changes, list) : { before: new Map(), after: [] };
+    const changeLine = (at) => <KeysChanged key={`changed-${at}`} name={dm ? dm.display_name : 'The other member'} at={at} onCompare={() => dm && onCompare?.(dm)} />;
     for (const m of list.messages) {
         const day = new Date(m.created_at).toDateString();
         if (!prev || new Date(prev.created_at).toDateString() !== day) {
             rows.push(<DayDivider key={`day-${m.id}`} time={m.created_at} />);
         }
-        if (changes.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={changes.get(m.id)} />);
+        if (dividers.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={dividers.get(m.id)} />);
+        for (const at of changed.before.get(m.id) || []) rows.push(changeLine(at));
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
             rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
@@ -721,6 +726,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         );
         prev = m;
     }
+    rows.push(...changed.after.map(changeLine));
 
     // Files dragged over the pane attach to the message being written.
     const withFiles = (e) => !closed && [...(e.dataTransfer?.types || [])].includes('Files');
@@ -762,7 +768,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                                             ? `Messages with ${dm.display_name} are deleted after ${keptFor(retention)}.`
                                             : `This is the start of your conversation with ${dm.display_name}.`}
                                     </p>
-                                    <p class="text-xs">End-to-end encrypted: only the two of you can read it.</p>
+                                    <p class="text-xs">
+                                        End-to-end encrypted: only the two of you can read it.{' '}
+                                        <button type="button" class="link link-primary" onClick={() => onCompare?.(dm)}>Compare codes</button>
+                                    </p>
                                 </>
                             ) : (
                                 <p>
@@ -794,8 +803,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     </div>
                 )}
                 {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
-                {!closed && channel.kind === 'dm' && (
-                    <CheckPanel denID={denID} channel={channel} dm={dm} keyID={live?.id || ''} />
+                {!closed && channel.kind === 'dm' && gate !== '' && (
+                    <DMGate denID={denID} gate={gate} dm={dm} onCompare={() => dm && onCompare?.(dm)} />
                 )}
                 {closed ? (
                     <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>

@@ -52,28 +52,13 @@ func TestReactionsOverHTTP(t *testing.T) {
 		t.Fatalf("history after the clearing: %+v", h)
 	}
 
-	// A DM's key, which alice checked, for her set.
+	// A DM's key, sealed to both members' identities, for her set (M16.1).
 	b := f.session(bob)
 	var dm denproto.Channel
 	if f.call(http.MethodPost, "/api/dms", alice, denproto.DMRequest{MemberID: denproto.FormatID(b.MemberID)}, &dm) != http.StatusOK {
 		t.Fatal("open a DM")
 	}
-	info, _ := f.d.Info()
-	cid, _ := denproto.ParseID(dm.ID)
-	xctx := denproto.DMExchangeContext(info.ID, cid, a.MemberID, b.MemberID)
-	starter, offer, _ := denproto.StartExchange(xctx)
-	keys := "/api/dms/" + dm.ID + "/keys"
-	var k denproto.DMKey
-	if f.call(http.MethodPost, keys, alice, denproto.KeyStartRequest{Offer: offer, State: denproto.Random(100)}, &k) != http.StatusCreated {
-		t.Fatal("start a key")
-	}
-	_, answer, _ := denproto.AnswerExchange(xctx, offer)
-	f.call(http.MethodPost, keys+"/"+k.ID+"/answer", bob, denproto.KeyAnswerRequest{Answer: answer, State: denproto.Random(100)}, nil)
-	reveal, _, _ := starter.Finish(answer)
-	f.call(http.MethodPost, keys+"/"+k.ID+"/reveal", alice, denproto.KeyRevealRequest{Reveal: reveal}, nil)
-	if f.call(http.MethodPut, keys+"/"+k.ID+"/sealed", alice, denproto.KeySealRequest{Sealed: denproto.Random(denproto.SealedKeySize)}, nil) != http.StatusOK {
-		t.Fatal("seal the key")
-	}
+	k := f.signedKey(dm, alice, bob)
 	var dmMessage denproto.Message
 	if status := f.call(http.MethodPost, "/api/channels/"+dm.ID+"/messages", alice, denproto.SendRequest{Nonce: denproto.Random(denproto.NonceBytes),
 		Sealed: denproto.Random(80), KeyID: k.ID}, &dmMessage); status != http.StatusCreated {

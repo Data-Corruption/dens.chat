@@ -7,7 +7,7 @@ source "$(dirname "$0")/lib.sh"
 fresh
 speak
 general=$(channel general)
-checked_dm alice bob >/dev/null
+open_dm alice bob >/dev/null
 echo "DEN=$DEN"
 echo "GENERAL=$general"
 echo "ALICE_MSG=$(send alice "$general" 'Hello from alice')"

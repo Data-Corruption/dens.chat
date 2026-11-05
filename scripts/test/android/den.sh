@@ -15,7 +15,7 @@
 #        scripts/test/android/den.sh api METHOD PATH [JSON]   desk's page API
 #        scripts/test/android/den.sh say CHANNEL TEXT [IDS]   a message from desk, with uploads by ID
 #        scripts/test/android/den.sh upload FILE NAME         an upload from desk, in its home
-#        scripts/test/android/den.sh dm MEMBER                desk's DM with a member by ID, its key started
+#        scripts/test/android/den.sh dm MEMBER                desk's DM with a member by ID, which opens at once
 #        scripts/test/android/den.sh sound NAME               a sound on the den's soundboard, added if it isn't there
 #
 # The app's Dens trusts the root through SSL_CERT_FILE, which phone.sh trust
@@ -133,13 +133,7 @@ case $1 in
   upload) curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: http://127.0.0.1:$PORT" -H "Content-Type: application/octet-stream" \
       -H "Dens-Filename: $3" --data-binary "@$2" "http://127.0.0.1:$PORT/api/dens/$(den)/uploads" | json 'd["id"]' ;;
   invite) api POST "/api/dens/$(den)/invites" '{"expires_in":86400,"max_uses":1}' | json 'd["invite"]' ;;
-  dm)
-    dm=$(api POST "/api/dens/$(den)/dms" "{\"member_id\":\"$2\"}" | json 'd["id"]')
-    if [[ $(api GET "/api/dens/$(den)/dms/$dm/check" | json 'd["stage"]') == none ]]; then
-      api POST "/api/dens/$(den)/dms/$dm/key" '{}' >/dev/null
-    fi
-    echo "$dm"
-    ;;
+  dm) api POST "/api/dens/$(den)/dms" "{\"member_id\":\"$2\"}" | json 'd["id"]' ;;
   sound)
     name=$2
     named() { api GET "/api/dens/$(den)/state" | json "next((s['id'] for s in d.get('sounds', []) if s['name'] == '$name'), '')"; }
