@@ -11,8 +11,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Private DMs and device approval (M1.7): relaying DM keys' exchanges,
-// starting over with a new seal, and sign-ins waiting for approval.
+// Private DMs and device approval (M1.7): the DM keys made before M16.1,
+// starting over with a new seal, and sign-ins waiting for approval; and
+// from M16.1 identities, the DM keys sealed to them, and members' records.
 
 func (h *handler) dmKeys(w http.ResponseWriter, r *http.Request) {
 	list, err := h.d.DMKeys(r.Context(), session(r), chi.URLParam(r, "id"))
@@ -39,52 +40,85 @@ func (h *handler) startKey(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusCreated, k)
 }
 
-func (h *handler) answerKey(w http.ResponseWriter, r *http.Request) {
-	if !h.limitWrite(w, r) {
-		return
-	}
-	var req denproto.KeyAnswerRequest
-	if !h.decode(w, r, &req) {
-		return
-	}
-	k, err := h.d.AnswerKey(r.Context(), session(r), chi.URLParam(r, "id"), chi.URLParam(r, "key"), req)
+// Identities, signed DM keys and records (M16.1).
+
+func (h *handler) signedKeys(w http.ResponseWriter, r *http.Request) {
+	list, err := h.d.SignedKeys(r.Context(), session(r), chi.URLParam(r, "id"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	denproto.WriteJSON(w, http.StatusOK, k)
+	denproto.WriteJSON(w, http.StatusOK, list)
 }
 
-func (h *handler) revealKey(w http.ResponseWriter, r *http.Request) {
+func (h *handler) makeSignedKey(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
 	}
-	var req denproto.KeyRevealRequest
+	var req denproto.SignedKeyRequest
 	if !h.decode(w, r, &req) {
 		return
 	}
-	k, err := h.d.RevealKey(r.Context(), session(r), chi.URLParam(r, "id"), chi.URLParam(r, "key"), req)
+	k, err := h.d.MakeSignedKey(r.Context(), session(r), chi.URLParam(r, "id"), req)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	denproto.WriteJSON(w, http.StatusOK, k)
+	denproto.WriteJSON(w, http.StatusCreated, k)
 }
 
-func (h *handler) sealKey(w http.ResponseWriter, r *http.Request) {
+func (h *handler) publishIdentity(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
 	}
-	var req denproto.KeySealRequest
+	var req denproto.Identity
 	if !h.decode(w, r, &req) {
 		return
 	}
-	k, err := h.d.SealKey(r.Context(), session(r), chi.URLParam(r, "id"), chi.URLParam(r, "key"), req)
+	m, err := h.d.PublishIdentity(r.Context(), session(r), req)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	denproto.WriteJSON(w, http.StatusOK, k)
+	denproto.WriteJSON(w, http.StatusOK, m)
+}
+
+func (h *handler) identities(w http.ResponseWriter, r *http.Request) {
+	var members []string
+	if v := r.URL.Query().Get("members"); v != "" {
+		members = strings.Split(v, ",")
+	}
+	list, err := h.d.Identities(r.Context(), members)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, list)
+}
+
+func (h *handler) record(w http.ResponseWriter, r *http.Request) {
+	rec, err := h.d.Record(r.Context(), session(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, rec)
+}
+
+func (h *handler) writeRecord(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	var req denproto.RecordWrite
+	if !h.decode(w, r, &req) {
+		return
+	}
+	rec, err := h.d.WriteRecord(r.Context(), session(r), req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, rec)
 }
 
 func (h *handler) startOver(w http.ResponseWriter, r *http.Request) {

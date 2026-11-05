@@ -7,23 +7,27 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// DM keys (M1.7). The den relays each key's exchange between the DM's two
-// members' clients, and keeps what they seal with their DM seals: each
-// side's state while the exchange runs, and each member's copy of the key
-// once they compared check codes. It can't open any of it. What it
-// enforces keeps honest clients in step: one live key per DM, each
-// exchange message from the right member in the right order, and messages
-// only under a live key their sender checked. Clients check the
-// cryptography themselves and trust none of this.
+// DM keys (M1.7). Before M16.1 the den relayed each key's exchange between
+// the DM's two members' clients, and kept what they sealed with their DM
+// seals: each side's state while the exchange ran, and each member's copy
+// of the key once they compared check codes. From M16.1 it starts no
+// exchange: a DM's new key is sealed to its members' identities (see
+// identities.go), and the keys both members checked before stay live, with
+// their copies. It can't open any of it. What it enforces keeps honest
+// clients in step: one live key per DM, and messages only under a live key
+// their sender holds a copy of. Clients check the cryptography themselves
+// and trust none of this.
 
 var (
 	errKeyNotFound = denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such DM key")
-	errKeyExists   = denproto.Errorf(http.StatusConflict, denproto.CodeKeyExists, "the DM has a key, or an exchange under way")
-	errKeyStage    = denproto.Errorf(http.StatusConflict, denproto.CodeKeyExists, "the key's exchange isn't at that step")
+	errKeyExists   = denproto.Errorf(http.StatusConflict, denproto.CodeKeyExists, "the DM has a live key both members can use")
+	errNoExchange  = denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField,
+		"a DM's key is sealed to its members' identities now, and needs no exchange")
 )
 
 // keyDM returns a DM the session's member is in, with its other member,
@@ -54,9 +58,10 @@ const dmKeyColumns = `k.id, k.channel_id, k.started_by, k.started_at, k.stage, k
 // loadKeys returns the DM keys a condition on den_dm_keys (aliased k)
 // selects, oldest first, as member sees them: with their own sealed copy
 // and, when exchange is set, the exchange of any still running, with their
-// own sealed state.
+// own sealed state. They're M1.7's alone, never M16.1's signed keys, whose
+// copies an older Dens would refuse as a protocol violation.
 func loadKeys(ctx context.Context, q querier, member int64, exchange bool, where string, args ...any) ([]denproto.DMKey, error) {
-	rows, err := q.QueryContext(ctx, `SELECT `+dmKeyColumns+` FROM den_dm_keys k WHERE `+where+` ORDER BY k.id`, args...)
+	rows, err := q.QueryContext(ctx, `SELECT `+dmKeyColumns+` FROM den_dm_keys k WHERE k.statement IS NULL AND `+where+` ORDER BY k.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -153,15 +158,29 @@ func memberKeys(ctx context.Context, q querier, member int64) ([]denproto.DMKey,
 }
 
 // publishKeys tells each member of the keys' DMs how the keys now stand,
-// each as they see them.
+// each as they see them: M1.7's as dm.key, and signed keys as
+// dm.signed_key (M16.1).
 func (d *Den) publishKeys(ctx context.Context, ids ...int64) error {
 	for _, id := range ids {
 		var low, high int64
-		if err := d.db.QueryRowContext(ctx, `SELECT c.dm_low, c.dm_high FROM den_dm_keys k JOIN den_channels c ON c.id = k.channel_id
-			WHERE k.id = ?`, id).Scan(&low, &high); err != nil {
+		var signed bool
+		if err := d.db.QueryRowContext(ctx, `SELECT c.dm_low, c.dm_high, k.statement IS NOT NULL FROM den_dm_keys k
+			JOIN den_channels c ON c.id = k.channel_id WHERE k.id = ?`, id).Scan(&low, &high, &signed); err != nil {
 			return err
 		}
 		for _, member := range []int64{low, high} {
+			if signed {
+				keys, err := loadSignedKeys(ctx, d.db, member, `k.id = ?2`, id)
+				if err != nil {
+					return err
+				}
+				if len(keys) == 1 {
+					if err := d.Hub.Publish(denproto.EventDMSignedKey, keys[0], OnlyMember(member)); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			keys, err := loadKeys(ctx, d.db, member, true, `k.id = ?`, id)
 			if err != nil {
 				return err
@@ -172,13 +191,6 @@ func (d *Den) publishKeys(ctx context.Context, ids ...int64) error {
 				}
 			}
 		}
-	}
-	return nil
-}
-
-func checkState(state []byte) error {
-	if len(state) == 0 || len(state) > denproto.MaxExchangeState {
-		return invalid("state: 1 to %d bytes", denproto.MaxExchangeState)
 	}
 	return nil
 }
@@ -234,74 +246,14 @@ func retireKeys(ctx context.Context, tx *sql.Tx, member, now int64, why, where s
 	return ids, nil
 }
 
-// StartKey starts a key for a DM with the starter's offer and sealed
-// state. A DM has one live key at a time: while one is being made, or
-// only one member checked it, Restart retires it to start again; once both
-// checked it, it stays until a member starts over.
+// StartKey refused to start an exchange from M16.1 on: a DM's new key is
+// sealed to its members' identities, so an older Dens can't start a key a
+// newer one couldn't use.
 func (d *Den) StartKey(ctx context.Context, s *Session, channelID string, req denproto.KeyStartRequest) (denproto.DMKey, error) {
-	_, cid, _, err := d.keyDM(ctx, s, channelID, true)
-	if err != nil {
+	if _, _, _, err := d.keyDM(ctx, s, channelID, true); err != nil {
 		return denproto.DMKey{}, err
 	}
-	if err := req.Offer.Check(); err != nil {
-		return denproto.DMKey{}, invalid("offer: %v", err)
-	}
-	if err := checkState(req.State); err != nil {
-		return denproto.DMKey{}, err
-	}
-	offer, err := json.Marshal(req.Offer)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	d.keys.Lock()
-	defer d.keys.Unlock()
-	now := d.now().UnixMilli()
-	var id int64
-	var retired []int64
-	err = d.tx(ctx, func(tx *sql.Tx) error {
-		live, err := dmLiveKey(ctx, tx, cid)
-		if err != nil {
-			return err
-		}
-		if live.ok {
-			if !req.Restart || live.checks == 2 {
-				return errKeyExists
-			}
-			if retired, err = retireKeys(ctx, tx, s.MemberID, now, denproto.RetiredRestarted, `k.id = ?`, live.id); err != nil {
-				return err
-			}
-		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO den_dm_keys (channel_id, started_by, started_at, stage, offer) VALUES (?, ?, ?, 'offered', ?)`,
-			cid, s.MemberID, now, offer)
-		if err != nil {
-			return err
-		}
-		if id, err = res.LastInsertId(); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO den_dm_key_members (key_id, member_id, state) VALUES (?, ?, ?)`, id, s.MemberID, []byte(req.State))
-		return err
-	})
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	return d.keyChanged(ctx, s, id, retired...)
-}
-
-// keyChanged announces the keys that changed, and returns the key id as
-// the session's member now sees it.
-func (d *Den) keyChanged(ctx context.Context, s *Session, id int64, also ...int64) (denproto.DMKey, error) {
-	if err := d.publishKeys(ctx, append(also, id)...); err != nil {
-		return denproto.DMKey{}, err
-	}
-	keys, err := loadKeys(ctx, d.db, s.MemberID, true, `k.id = ?`, id)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	if len(keys) != 1 {
-		return denproto.DMKey{}, errKeyNotFound
-	}
-	return keys[0], nil
+	return denproto.DMKey{}, errNoExchange
 }
 
 // dmKey finds the DM's live key with an ID.
@@ -317,153 +269,10 @@ func dmKey(ctx context.Context, q querier, channel int64, keyID string) (liveKey
 	return live, nil
 }
 
-// AnswerKey answers a DM key's offer, from the member who didn't start it,
-// with their sealed state.
-func (d *Den) AnswerKey(ctx context.Context, s *Session, channelID, keyID string, req denproto.KeyAnswerRequest) (denproto.DMKey, error) {
-	_, cid, _, err := d.keyDM(ctx, s, channelID, true)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	if err := req.Answer.Check(); err != nil {
-		return denproto.DMKey{}, invalid("answer: %v", err)
-	}
-	if err := checkState(req.State); err != nil {
-		return denproto.DMKey{}, err
-	}
-	answer, err := json.Marshal(req.Answer)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	d.keys.Lock()
-	defer d.keys.Unlock()
-	var id int64
-	err = d.tx(ctx, func(tx *sql.Tx) error {
-		live, err := dmKey(ctx, tx, cid, keyID)
-		if err != nil {
-			return err
-		}
-		if live.startedBy == s.MemberID {
-			return forbidden("the member who didn't start the exchange answers it")
-		}
-		if live.stage != denproto.StageOffered {
-			return errKeyStage
-		}
-		id = live.id
-		if _, err := tx.ExecContext(ctx, `UPDATE den_dm_keys SET stage = 'answered', answer = ? WHERE id = ?`, answer, id); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO den_dm_key_members (key_id, member_id, state) VALUES (?, ?, ?)`, id, s.MemberID, []byte(req.State))
-		return err
-	})
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	return d.keyChanged(ctx, s, id)
-}
-
-// RevealKey takes the starter's reveal, which must open their offer's
-// commitment. Both sides can then work out the key and its check code.
-func (d *Den) RevealKey(ctx context.Context, s *Session, channelID, keyID string, req denproto.KeyRevealRequest) (denproto.DMKey, error) {
-	_, cid, other, err := d.keyDM(ctx, s, channelID, true)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	reveal, err := json.Marshal(req.Reveal)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	info, _ := d.Info()
-	d.keys.Lock()
-	defer d.keys.Unlock()
-	var id int64
-	err = d.tx(ctx, func(tx *sql.Tx) error {
-		live, err := dmKey(ctx, tx, cid, keyID)
-		if err != nil {
-			return err
-		}
-		if live.startedBy != s.MemberID {
-			return forbidden("the member who started the exchange reveals")
-		}
-		if live.stage != denproto.StageAnswered {
-			return errKeyStage
-		}
-		var raw []byte
-		if err := tx.QueryRowContext(ctx, `SELECT offer FROM den_dm_keys WHERE id = ?`, live.id).Scan(&raw); err != nil {
-			return err
-		}
-		var offer denproto.ExchangeOffer
-		if err := json.Unmarshal(raw, &offer); err != nil {
-			return err
-		}
-		if !req.Reveal.Opens(denproto.DMExchangeContext(info.ID, cid, s.MemberID, other), offer) {
-			return invalid("reveal: it doesn't open the offer's commitment")
-		}
-		id = live.id
-		_, err = tx.ExecContext(ctx, `UPDATE den_dm_keys SET stage = 'revealed', reveal = ? WHERE id = ?`, reveal, id)
-		return err
-	})
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	return d.keyChanged(ctx, s, id)
-}
-
-// SealKey stores the member's copy of a DM key, sealed with their seal,
-// once they compared the check code. That's what lets them send with it,
-// and their other devices read with it. Their state stays until the other
-// member has checked too, so their Dens can still show the digits the
-// other has yet to type; once both have, the exchange is done with and
-// goes, states and all.
-func (d *Den) SealKey(ctx context.Context, s *Session, channelID, keyID string, req denproto.KeySealRequest) (denproto.DMKey, error) {
-	_, cid, _, err := d.keyDM(ctx, s, channelID, true)
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	if len(req.Sealed) != denproto.SealedKeySize {
-		return denproto.DMKey{}, invalid("sealed: a sealed key is %d bytes", denproto.SealedKeySize)
-	}
-	d.keys.Lock()
-	defer d.keys.Unlock()
-	now := d.now().UnixMilli()
-	var id int64
-	err = d.tx(ctx, func(tx *sql.Tx) error {
-		live, err := dmKey(ctx, tx, cid, keyID)
-		if err != nil {
-			return err
-		}
-		if live.stage != denproto.StageRevealed {
-			return errKeyStage
-		}
-		id = live.id
-		res, err := tx.ExecContext(ctx, `UPDATE den_dm_key_members SET sealed = ?, checked_at = coalesce(checked_at, ?)
-			WHERE key_id = ? AND member_id = ?`, []byte(req.Sealed), now, id, s.MemberID)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n != 1 {
-			return errKeyNotFound
-		}
-		var both bool
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) = 2 FROM den_dm_key_members WHERE key_id = ? AND sealed IS NOT NULL`, id).Scan(&both); err != nil {
-			return err
-		}
-		if !both {
-			return nil
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE den_dm_keys SET offer = NULL, answer = NULL, reveal = NULL WHERE id = ?`, id); err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE den_dm_key_members SET state = NULL WHERE key_id = ?`, id)
-		return err
-	})
-	if err != nil {
-		return denproto.DMKey{}, err
-	}
-	return d.keyChanged(ctx, s, id)
-}
-
 // sendKey checks the key a DM message is sealed with: the DM's live key,
-// which its sender checked. Old keys stay for reading what they sealed.
+// which its sender holds a copy of, as a member who checked an M1.7 key
+// does, and both members of a signed key do. Old keys stay for reading
+// what they sealed.
 func sendKey(ctx context.Context, q querier, channel int64, keyID string, member int64) (int64, error) {
 	live, err := dmKey(ctx, q, channel, keyID)
 	if errors.Is(err, errKeyNotFound) {
@@ -478,16 +287,26 @@ func sendKey(ctx context.Context, q querier, channel int64, keyID string, member
 		return 0, err
 	}
 	if !checked {
-		return 0, invalid("key_id: compare the check code before sending with it")
+		return 0, invalid("key_id: a key the sender holds no copy of")
 	}
 	return live.id, nil
 }
 
 // resetSeal gives a member a new seal within tx: the live keys of their
 // DMs retire, and their sealed copies and states go, since nothing opens
-// them now. It returns the keys it retired.
+// them now; so do their identity, which came from the old seal, and their
+// record, which it sealed (M16.1). Their Dens publishes the new identity
+// as it signs in. It returns the keys it retired.
 func resetSeal(ctx context.Context, tx *sql.Tx, member int64, sealCheck []byte, now int64) ([]int64, error) {
-	if _, err := tx.ExecContext(ctx, `UPDATE den_members SET seal_check = ? WHERE id = ?`, sealCheck, member); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE den_members SET seal_check = ?, identity = NULL WHERE id = ?`, sealCheck, member); err != nil {
+		return nil, err
+	}
+	for _, stmt := range []string{`DELETE FROM den_identities WHERE member_id = ?`, `DELETE FROM den_records WHERE member_id = ?`} {
+		if _, err := tx.ExecContext(ctx, stmt, member); err != nil {
+			return nil, err
+		}
+	}
+	if err := logMember(ctx, tx, member, time.UnixMilli(now)); err != nil {
 		return nil, err
 	}
 	ids, err := retireKeys(ctx, tx, member, now, denproto.RetiredStartedOver, `k.channel_id IN (SELECT id FROM den_channels
@@ -531,5 +350,11 @@ func (d *Den) StartOver(ctx context.Context, s *Session, req denproto.StartOverR
 	d.log.Infof("Member %d started over with a new DM seal, which signed out %d devices", s.MemberID, len(gone))
 	d.cancelRequests(s.MemberID)
 	errs := []error{d.devicesGone(s.MemberID, gone, denproto.CloseReasonStartedOver), d.publishKeys(ctx, retired...)}
+	// Their identity went with the old seal.
+	if m, err := d.Member(ctx, s.MemberID); err != nil {
+		errs = append(errs, err)
+	} else {
+		errs = append(errs, d.Hub.Publish(denproto.EventMemberUpdated, m, Everyone))
+	}
 	return denproto.StartedOver{SignedOut: len(gone)}, errors.Join(errs...)
 }

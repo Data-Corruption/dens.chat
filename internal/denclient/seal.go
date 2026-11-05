@@ -15,8 +15,8 @@ import (
 // den keeps its own, which is the same one unless this device got it from
 // another of the member's, or the member started over there.
 
-// setSeal gives this device a den's seal, keeps it, and moves the den's
-// waiting exchanges on with it.
+// setSeal gives this device a den's seal, keeps it, and publishes the
+// identity it makes (M16.1).
 func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 	secret, err := vault.NewSecret(seal)
 	if err != nil {
@@ -36,13 +36,16 @@ func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 	c.mu.Lock()
 	old := c.j.seal
 	c.j.seal = secret
-	if c.den != nil {
-		c.markDueLocked(c.dueKeysLocked()...)
-	}
+	// The identity comes from the seal, and the keys opened here were kept
+	// sealed with the old one (M16.1).
+	c.ownHash = nil
+	clear(c.copies)
+	clear(c.verdicts)
 	c.mu.Unlock()
 	if old != nil {
 		old.Close()
 	}
+	c.wakeIdentities()
 	c.m.notify()
 	// Messages the page couldn't open may open now.
 	c.m.publish(PageEvent{DenID: c.j.denID.String(), Reset: true})

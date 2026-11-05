@@ -88,6 +88,10 @@ type Manager struct {
 	// connection lasted go by (M14.1); tests move it ahead, as a phone's
 	// goes ahead of its monotonic clock while it sleeps.
 	Now func() time.Time
+	// RecordEvery is how often each connected device writes the member's
+	// record of the identities they kept (M16.1): an hour, which tests and
+	// a development instance shorten.
+	RecordEvery time.Duration
 
 	joinMu sync.Mutex
 
@@ -210,6 +214,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 		RenewRetry:    30 * time.Second,
 		PingInterval:  20 * time.Second,
 		PingTimeout:   10 * time.Second,
+		RecordEvery:   DefaultRecordEvery,
 		Now:           time.Now,
 		watches:       map[chan struct{}]struct{}{},
 		streams:       map[chan PageEvent]struct{}{},
@@ -328,9 +333,14 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 
 // newConn makes a connection to a joined den, which runLocked starts.
 func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *conn {
+	ids := j.identities
+	if ids == nil {
+		ids = newKept()
+	}
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
-		due: map[string]bool{}, keysDue: make(chan struct{}, 1), dmFiles: map[string]dmFile{},
+		ids: ids, verdicts: map[string]string{}, copies: map[string]denproto.Bytes{}, idDue: make(chan struct{}, 1),
+		dmFiles: map[string]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1),
 		fillDue: make(chan struct{}, 1)}
@@ -353,7 +363,7 @@ func (m *Manager) runLocked(c *conn) {
 		work := make(chan struct{})
 		go func() {
 			defer close(work)
-			c.keyWork(ctx)
+			c.idWork(ctx)
 		}()
 		syncing := make(chan struct{})
 		go func() {

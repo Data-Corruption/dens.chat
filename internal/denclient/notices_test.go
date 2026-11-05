@@ -121,7 +121,7 @@ func TestNotices(t *testing.T) {
 
 	// A DM reaches the notices opened, which the den never could.
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	secret := sendDM(t, owner, denID, dm, "the secret is ||42||")
 	if m := heard.waitMessage(t, secret.ID); !m.DM || m.Text != "the secret is ||42||" || m.Author != "Alice" || m.Channel != dm {
 		t.Fatalf("the DM's notice is %+v", m)

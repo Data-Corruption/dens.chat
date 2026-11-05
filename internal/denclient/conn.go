@@ -96,12 +96,9 @@ type conn struct {
 	done chan struct{}      // closed when run has returned
 	wake chan struct{}      // cuts a wait between reconnects short
 
-	// DMs (M1.7): those whose exchange waits on this member, for keyWork;
-	// the keys of DM files this service opened; files uploaded for DMs,
-	// waiting to be sent; and sign-ins this device is approving, or
-	// approved, whose digits the new device may still be waiting for.
-	due       map[string]bool
-	keysDue   chan struct{}
+	// DMs (M1.7): the keys of DM files this service opened; files uploaded
+	// for DMs, waiting to be sent; and sign-ins this device is approving,
+	// or approved, whose digits the new device may still be waiting for.
 	dmFiles   map[string]dmFile
 	uploads   map[string]dmUpload
 	approvals map[string]*approval
@@ -133,6 +130,18 @@ type conn struct {
 	// its revision, reactions' (M15.3) and polls' (M15.4), which what the
 	// den sends of a message after a request they came during takes again.
 	tallies tallyRing
+
+	// Identities (M16.1), guarded by mu: the identities this member's Dens
+	// kept here, and the den's revision of their record this device last
+	// read or wrote; the hash of this member's own, which the seal makes;
+	// why each signed key can't be read, "" when it can, until what was
+	// kept changes; and the signed keys opened here, sealed with the seal.
+	// idDue wakes idWork.
+	ids      *keptIdentities
+	ownHash  denproto.Bytes
+	verdicts map[string]string
+	copies   map[string]denproto.Bytes
+	idDue    chan struct{}
 
 	// Only the run goroutine touches these, and sentMembers, the cursor
 	// this socket's upgrade named.
@@ -627,7 +636,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.mu.Unlock()
 		}
 		state := newState()
-		if err := state.load(r, prev); err != nil {
+		if err := state.load(c.j.denID, r, prev); err != nil {
 			return e, false, err
 		}
 		c.gen.Store(time.Now().UnixNano())
@@ -640,9 +649,15 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.remarkLocked()
 		c.members = &membersCursor{epoch: r.Sync.Epoch, version: r.Sync.Version}
 		c.stateDirty, c.membersDirty = true, true
-		c.markDueLocked(c.dueKeysLocked()...)
 		clear(c.dmFiles)
+		clear(c.verdicts)
+		// The identities the den gives now, against those kept (M16.1).
+		met := c.meetLocked()
 		c.mu.Unlock()
+		if met {
+			c.identitiesChanged(ctx)
+		}
+		c.wakeIdentities()
 		c.m.notify()
 		// What the member can see may have changed, so files cached in
 		// memory go too, those on disk as far as the den's changes say
@@ -684,6 +699,18 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		denproto.EventVoiceSounding:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(e)
+	case denproto.EventRecordUpdated:
+		// Another device of this member's wrote their record (M16.1).
+		var u denproto.RecordUpdated
+		if json.Unmarshal(e.D, &u) == nil {
+			c.mu.Lock()
+			newer := u.Revision > c.ids.Revision
+			c.mu.Unlock()
+			if newer {
+				c.wakeIdentities()
+			}
+		}
+		return e, false, nil
 	case denproto.EventAuthRenewed:
 		var r denproto.Renewed
 		if json.Unmarshal(e.D, &r) == nil {
@@ -705,7 +732,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.mu.Unlock()
 		return e, false, nil
 	}
-	out, ok, err := c.den.applyEvent(e, c.profile.Member)
+	out, ok, err := c.den.applyEvent(c.j.denID, e, c.profile.Member)
 	me := c.profile.Member.ID
 	gone := c.den.gone
 	c.den.gone = nil
@@ -747,10 +774,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 				notice = c.noticeLocked(opened.Message, opened.Locked != "")
 			}
 		}
-	case e.T == denproto.EventDMKey:
-		var k denproto.DMKey
-		if json.Unmarshal(e.D, &k) == nil && needsMe(k, me) {
-			c.markDueLocked(k.ChannelID)
+	case e.T == denproto.EventDMSignedKey:
+		var k denproto.SignedKey
+		if json.Unmarshal(e.D, &k) == nil {
+			delete(c.verdicts, k.ID)
 		}
 	case !ok:
 	case e.T == denproto.EventDMReactions:
@@ -775,8 +802,31 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			tallied = r.MessageID
 		}
 	}
+	// A member's identity the den gives now is checked against the one
+	// kept for them, and a new DM keeps its other member's (M16.1); this
+	// member's own, if the den holds another, is published again.
+	met, republish := false, false
+	if err == nil && ok {
+		switch e.T {
+		case denproto.EventMemberJoined, denproto.EventMemberUpdated:
+			var m denproto.Member
+			if json.Unmarshal(out.D, &m) == nil {
+				met = c.meetLocked(m.ID)
+				own := c.ownHashLocked()
+				republish = m.ID == me && c.den.identities && own != nil && m.Identity != denproto.Bytes(own).String()
+			}
+		case denproto.EventChannelCreated:
+			met = c.meetLocked()
+		}
+	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
+	if met {
+		c.identitiesChanged(ctx)
+	}
+	if republish {
+		c.wakeIdentities()
+	}
 	if err == nil && tallied != "" {
 		c.tallies.add(e)
 		c.cacheTally(e, tallied)
@@ -948,7 +998,7 @@ func (c *conn) follow(ctx context.Context, url string) {
 func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	username, err := denproto.NormalizeUsername(m.Username)
 	if err != nil || !validID(m.ID) || m.JoinedAt < 0 || m.LeftAt < 0 || denproto.CheckBio(m.Bio) != nil ||
-		denproto.CheckImage(m.Avatar) != nil || denproto.CheckImage(m.Banner) != nil {
+		denproto.CheckImage(m.Avatar) != nil || denproto.CheckImage(m.Banner) != nil || (m.Identity != "" && m.IdentityHash() == nil) {
 		return m, false
 	}
 	display, err := denproto.CleanName(m.DisplayName, denproto.MaxNameRunes)

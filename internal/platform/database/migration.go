@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/types"
@@ -460,6 +461,54 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 			) STRICT;
 		`); err != nil {
 			return fmt.Errorf("create the polls' tables: %w", err)
+		}
+		return nil
+	})
+
+	// M16.1: identities and codes. A member's identity is the hash of the
+	// two public keys their Dens published, which are kept beside the
+	// member; a DM key sealed to its members' identities keeps the
+	// statement its maker signed, with the maker's keys, and the
+	// signature, and each member's copy where M1.7's keys keep theirs; and
+	// a member's record is what their devices write every hour, sealed
+	// with their seal. On the client, each joined den keeps the record of
+	// the identities this member kept there, sealed with the data key.
+	// The den starts no exchange any more, so those still running, or
+	// checked by one member alone, retire as restarted, by whoever started
+	// them, their states going as a retired key's do; what the member who
+	// checked sent under one stays theirs to read.
+	m.Add("Identities", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_members ADD COLUMN identity BLOB;
+			CREATE TABLE den_identities (
+				member_id INTEGER PRIMARY KEY REFERENCES den_members (id) ON DELETE CASCADE,
+				kem       BLOB NOT NULL, -- the X-Wing public key
+				sig       BLOB NOT NULL  -- the Ed25519 public key
+			) STRICT;
+
+			ALTER TABLE den_dm_keys ADD COLUMN statement BLOB; -- JSON
+			ALTER TABLE den_dm_keys ADD COLUMN signature BLOB;
+
+			CREATE TABLE den_records (
+				member_id  INTEGER PRIMARY KEY REFERENCES den_members (id) ON DELETE CASCADE,
+				revision   INTEGER NOT NULL,
+				sealed     BLOB NOT NULL,
+				updated_at INTEGER NOT NULL -- unix milliseconds
+			) STRICT;
+
+			ALTER TABLE joined_dens ADD COLUMN identities BLOB;
+		`); err != nil {
+			return fmt.Errorf("add identities: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE den_dm_keys SET retired_at = ?, retired_by = started_by, retired = 'restarted', offer = NULL, answer = NULL, reveal = NULL
+			WHERE retired IS NULL AND
+				(SELECT count(*) FROM den_dm_key_members m WHERE m.key_id = den_dm_keys.id AND m.sealed IS NOT NULL) < 2`,
+			time.Now().UnixMilli()); err != nil {
+			return fmt.Errorf("retire the exchanges still running: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE den_dm_key_members SET state = NULL WHERE state IS NOT NULL`); err != nil {
+			return fmt.Errorf("drop the exchanges' states: %w", err)
 		}
 		return nil
 	})

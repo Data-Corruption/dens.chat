@@ -165,7 +165,7 @@ func TestReactionsWhileAway(t *testing.T) {
 func TestDMReactionsStaySealed(t *testing.T) {
 	h, owner, member, denID, _ := chatDen(t)
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	msg := sendDM(t, owner, denID, dm, "a DM to react to")
 	stream, done := owner.Stream()
 	defer done()

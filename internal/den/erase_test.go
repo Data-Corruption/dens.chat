@@ -29,7 +29,8 @@ func TestEraseLeavesNoDen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.exchange(owner, member, mustID(dm.ID), false)
+	f.keyFor(owner.MemberID, member.MemberID, mustID(dm.ID))
+	f.writeRecord(member, 0)
 	if _, err := f.askSignIn("bob", "password", newDevice()); err != nil {
 		t.Fatal(err)
 	}

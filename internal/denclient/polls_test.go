@@ -117,7 +117,7 @@ func TestPolls(t *testing.T) {
 	})
 
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	good := denproto.PollRequest{Choices: []string{"a", "b"}, Hours: 1, ShowVoters: denproto.VotersNever, ShowTotals: denproto.TotalsLive}
 	for what, req := range map[string]denproto.SendRequest{
 		"in a DM":          {Nonce: denproto.Random(16), Text: "In a DM?", Poll: &good},

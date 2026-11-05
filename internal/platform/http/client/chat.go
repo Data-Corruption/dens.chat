@@ -26,9 +26,6 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Post("/api/dens/{den}/messages/{message}/reactions/clear", rt.handleClearReaction)
 	r.Post("/api/dens/{den}/messages/{message}/poll/vote", rt.handleVote)
 	r.Post("/api/dens/{den}/messages/{message}/poll/end", rt.handleEndPoll)
-	r.Get("/api/dens/{den}/dms/{channel}/check", rt.handleCheckState)
-	r.Post("/api/dens/{den}/dms/{channel}/check", rt.handleCheckDM)
-	r.Post("/api/dens/{den}/dms/{channel}/key", rt.handleStartKey)
 	for _, kind := range []string{"channels", "groups"} {
 		r.Post("/api/dens/{den}/"+kind, rt.handleManage(kind, http.MethodPost))
 		r.Patch("/api/dens/{den}/"+kind+"/{id}", rt.handleManage(kind, http.MethodPatch))
@@ -225,46 +222,4 @@ func (rt *router) handleManage(kind, method string) http.HandlerFunc {
 		}
 		writeJSON(w, map[string]bool{"ok": true})
 	}
-}
-
-// handleCheckState says where a DM's check stands: the digits this member
-// reads out, once both Dens can work them out.
-func (rt *router) handleCheckState(w http.ResponseWriter, r *http.Request) {
-	st, err := rt.a.Dens.CheckState(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"))
-	if err != nil {
-		rt.denError(w, r, err)
-		return
-	}
-	writeJSON(w, st)
-}
-
-// handleCheckDM takes the digits the other member read out.
-func (rt *router) handleCheckDM(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Digits string `json:"digits"`
-	}
-	if !decodeJSON(w, r, &body) {
-		return
-	}
-	if err := rt.a.Dens.CheckDM(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"), body.Digits); err != nil {
-		rt.denError(w, r, err)
-		return
-	}
-	writeJSON(w, map[string]bool{"ok": true})
-}
-
-// handleStartKey starts a DM's key, or with restart, starts its check
-// again.
-func (rt *router) handleStartKey(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Restart bool `json:"restart"`
-	}
-	if !decodeJSON(w, r, &body) {
-		return
-	}
-	if err := rt.a.Dens.StartDMKey(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"), body.Restart); err != nil {
-		rt.denError(w, r, err)
-		return
-	}
-	writeJSON(w, map[string]bool{"ok": true})
 }

@@ -292,6 +292,9 @@ const (
 // Member is an account on a den. A member who left or was removed keeps
 // their record, with LeftAt set, so their messages still have a name. Bio
 // comes only with GET /api/members/{id}, to keep snapshots small.
+// Identity is the hash of the identity their Dens published (M16.1), as
+// base64url, which a change to it reaches everyone with; none before it
+// published one, as from an older Dens.
 type Member struct {
 	ID          string `json:"id"`
 	Username    string `json:"username"`
@@ -302,6 +305,20 @@ type Member struct {
 	Bio         string `json:"bio,omitempty"`
 	Avatar      Image  `json:"avatar,omitzero"`
 	Banner      Image  `json:"banner,omitzero"`
+	Identity    string `json:"identity,omitempty"`
+}
+
+// IdentityHash returns the hash of the member's identity, or nil when they
+// have none or it's malformed.
+func (m Member) IdentityHash() Bytes {
+	if m.Identity == "" {
+		return nil
+	}
+	b, err := ParseBytes(m.Identity, IdentityHashSize)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // Requests and responses ------------------------------------------------------
@@ -415,6 +432,10 @@ type Ready struct {
 	Sounds []Sound `json:"sounds"`
 	// M15.2: the den's emoji, by name.
 	Emoji []Emoji `json:"emoji"`
+	// M16.1: the keys of the member's DMs sealed to identities, each with
+	// their own copy. A den older than M16.1 sends none, which tells a
+	// client it keeps no identities.
+	SignedKeys []SignedKey `json:"signed_keys"`
 }
 
 type Renew struct {

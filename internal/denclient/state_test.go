@@ -18,7 +18,7 @@ func TestMessagesExpired(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.applyEvent(e, denproto.Member{ID: "7"}); !ok || err != nil {
+	if _, ok, err := s.applyEvent(nil, e, denproto.Member{ID: "7"}); !ok || err != nil {
 		t.Fatalf("applied: %t %v", ok, err)
 	}
 	if r := s.reads["1"]; r.LastMessage != "" || r.MentionCount != 0 || r.ReadPosition != "4" {
@@ -31,7 +31,7 @@ func TestMessagesExpired(t *testing.T) {
 		t.Errorf("touched: %+v", touched)
 	}
 	bad, _ := denproto.NewEvent(denproto.EventMessagesExpired, 2, denproto.MessagesExpired{Through: "x"})
-	if _, _, err := s.applyEvent(bad, denproto.Member{ID: "7"}); err != errMalformed {
+	if _, _, err := s.applyEvent(nil, bad, denproto.Member{ID: "7"}); err != errMalformed {
 		t.Errorf("a malformed event: %v", err)
 	}
 
@@ -61,14 +61,14 @@ func TestDeletedDMFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok, err := s.applyEvent(e, denproto.Member{ID: "7"}); !ok || err != nil {
+	if _, ok, err := s.applyEvent(nil, e, denproto.Member{ID: "7"}); !ok || err != nil {
 		t.Fatalf("a DM message's delete: %t %v", ok, err)
 	}
 	if len(s.gone) != denproto.MaxDMFiles {
 		t.Fatalf("%d files gone, want %d", len(s.gone), denproto.MaxDMFiles)
 	}
 	e, _ = denproto.NewEvent(denproto.EventMessageDeleted, 2, denproto.MessageDeleted{ID: "51", ChannelID: "9", Files: append(files, "999")})
-	if _, _, err := s.applyEvent(e, denproto.Member{ID: "7"}); err != errMalformed {
+	if _, _, err := s.applyEvent(nil, e, denproto.Member{ID: "7"}); err != errMalformed {
 		t.Fatalf("a delete listing more files than a message holds: %v", err)
 	}
 }

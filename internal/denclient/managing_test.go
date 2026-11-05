@@ -111,7 +111,7 @@ func TestManagingDMFiles(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	photo := gpsJPEG(t)
 	up, err := owner.Upload(ctx, denID, dm, "IMG_2001.jpg", int64(len(photo)), bytes.NewReader(photo))
 	if err != nil {

@@ -192,7 +192,7 @@ func TestDMVideoGoesSmaller(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
 	dm := openDM(t, owner, member, denID)
-	checkDM(t, owner, member, denID, dm)
+	readyDM(t, owner, member, denID, dm)
 	up := uploadVersions(t, owner, denID, dm, "IMG_0001.MOV", mediaFile(t, "with-gps.mov"), denclient.SendSmaller)
 	if up.Versions == nil || up.Versions.Sent != denclient.SendSmaller || up.Type != "video/mp4" || up.Thumb == nil ||
 		up.Width != 320 || up.Height != 568 {
