@@ -25,10 +25,11 @@
 # At their limit, the member swaps a file for a smaller one and deletes
 # another. A HEIC sent smaller must arrive as an upright copy in its own
 # colors, and another switched to full size, full size, and a video over a
-# lowered limit as an AV1 copy that fits, with its preview. The owner opens
-# a DM, which takes no message until both members type each other's check
-# digits, and then carries text, a photo, a photo's and a video's smaller
-# copies and a video the den stores only sealed. The owner shares a checklist with the member, and the
+# lowered limit as an AV1 copy that fits, with its preview. The owner and
+# the member write in a DM at the same moment, neither typing a digit, and
+# compare codes, which asks nothing of the den (M16.1); it carries text, a
+# photo, a photo's and a video's smaller copies and a video the den stores
+# only sealed. The owner shares a checklist with the member, and the
 # two tick different boxes at the same moment, all of which must stay. A
 # second instance on the member's machine stands in for a fresh one: it
 # signs in by the den's address with a recovery code, whose new password
@@ -552,24 +553,34 @@ run() {
   guest "$CLIENT" wait-connected "$started" >/dev/null
   echo ">> The deleted photo left the member's cache as they came back, an edit and a delete reached their history, and the video and the channel read from the cache with the den stopped"
 
-  echo ">> A private DM, once both members compare check codes"
-  local bob dm owner_half member_half refusal
+  echo ">> A private DM, written at once, and the members' codes compared"
+  local alice bob dm owner_code member_code refusal owner_send member_send
   bob=$(guest "$DEN" member-id "$den_id" bob)
+  alice=$(member member-id "$den_id" alice)
   dm=$(guest "$DEN" dm "$den_id" "$bob")
   [[ "$(member wait-dm "$den_id")" == "$dm" ]] || { echo "error: the DM didn't reach the member" >&2; return 1; }
-  refusal=$(guest "$DEN" send-refused "$den_id" "$dm" "too soon")
-  [[ "$refusal" == *"compare check codes"* ]] || { echo "error: sending before the check: $refusal" >&2; return 1; }
-  guest "$DEN" start-key "$den_id" "$dm"
-  owner_half=$(guest "$DEN" dm-half "$den_id" "$dm")
-  member_half=$(member dm-half "$den_id" "$dm")
-  [[ "$owner_half" != "$member_half" ]] || { echo "error: both members see the same digits" >&2; return 1; }
-  refusal=$(guest "$DEN" check-dm-refused "$den_id" "$dm" "0000 0000 0000 0000")
-  [[ "$refusal" == *"don't match"* ]] || { echo "error: the wrong digits: $refusal" >&2; return 1; }
-  guest "$DEN" check-dm "$den_id" "$dm" "$member_half"
-  member check-dm "$den_id" "$dm" "$owner_half"
-  guest "$DEN" send "$den_id" "$dm" "a private word" >/dev/null
+  guest "$DEN" wait-identity "$den_id" "$bob"
+  member wait-identity "$den_id" "$alice"
+  # Both write at the same moment, neither typing a digit: each Dens makes
+  # the DM a key as it sends, and the slower takes the den's.
+  guest "$DEN" send "$den_id" "$dm" "a private word" >/dev/null &
+  owner_send=$!
+  member send "$den_id" "$dm" "a word back" >/dev/null &
+  member_send=$!
+  wait "$owner_send" || { echo "error: the owner's DM wasn't sent" >&2; return 1; }
+  wait "$member_send" || { echo "error: the member's DM wasn't sent" >&2; return 1; }
   history=$(member history "$den_id" "$dm")
-  [[ "$history" == "a private word" ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
+  [[ "$history" == *"a private word"* && "$history" == *"a word back"* ]] || { echo "error: the member's DM reads: $history" >&2; return 1; }
+  history=$(guest "$DEN" history "$den_id" "$dm")
+  [[ "$history" == *"a private word"* && "$history" == *"a word back"* ]] || { echo "error: the owner's DM reads: $history" >&2; return 1; }
+  # Each types the code the other reads out.
+  owner_code=$(guest "$DEN" own-code "$den_id" "$bob")
+  member_code=$(member own-code "$den_id" "$alice")
+  [[ "$owner_code" != "$member_code" ]] || { echo "error: both members have the same code" >&2; return 1; }
+  refusal=$(guest "$DEN" compare-refused "$den_id" "$bob" "0000 0000 0000 0000 0000")
+  [[ "$refusal" == *"don't match"* ]] || { echo "error: the wrong digits: $refusal" >&2; return 1; }
+  guest "$DEN" compare "$den_id" "$bob" "$member_code"
+  member compare "$den_id" "$alice" "$owner_code"
   # The den can't read a DM, so the sender's Dens takes the tracking out.
   linked=$(guest "$DEN" send "$den_id" "$dm" "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42")
   linked_text=$(member text-of "$den_id" "$dm" "$linked")
@@ -616,7 +627,7 @@ run() {
   [[ "$kind" == image/jpeg ]] || { echo "error: the DM video's copy has a preview of $kind" >&2; return 1; }
   guest "$DEN" dm-sealed "a private word"
   stored=$(guest "$DEN" sealed)
-  echo ">> The DM took messages only after both typed each other's digits; its text, a link without its tracking, a photo, a photo's and a video's smaller copies and a video reached the other side, and the den holds ${stored} sealed files"
+  echo ">> The DM opened at once, written by both at the same moment, and the members compared codes; its text, a link without its tracking, a photo, a photo's and a video's smaller copies and a video reached the other side, and the den holds ${stored} sealed files"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text
@@ -679,7 +690,7 @@ run() {
   history=$(guest "$DEN" history "$den_id" "$channel")
   [[ "$history" == "$before" ]] || { echo "error: the owner's history at the den's address: $history" >&2; return 1; }
   history=$(guest "$DEN" history "$den_id" "$dm")
-  [[ "$history" == "a private word"* ]] || { echo "error: the owner's DM at the den's address: $history" >&2; return 1; }
+  [[ "$history" == *"a private word"* ]] || { echo "error: the owner's DM at the den's address: $history" >&2; return 1; }
   echo ">> The first host removed its copy, and reaches the den at its address as its owner, with its history and DMs"
   refusal=$(guest "$DEN" restore-refused /root/den.backup)
   [[ "$refusal" == *"has an account in 1 den; restoring a den's export replaces all"* ]] ||
@@ -731,14 +742,14 @@ run() {
   [[ -n "$seal" ]] || { echo "error: joining showed no new DM seal" >&2; return 1; }
   fresh type-seal "$den_id" "$seal"
   history=$(fresh history "$den_id" "$dm")
-  [[ "$history" == "a private word"* ]] || { echo "error: with the seal typed, the DM reads: $history" >&2; return 1; }
+  [[ "$history" == *"a private word"* ]] || { echo "error: with the seal typed, the DM reads: $history" >&2; return 1; }
   echo ">> The fresh install reads the DM once the member typed their seal"
   refusal=$(member sign-in-refused https://den.test bob "bob password")
   [[ "$refusal" == *"don't match"* ]] || { echo "error: signing in with the old password: $refusal" >&2; return 1; }
   approve_sign_in member fresh "$den_id" "new bob password"
   member wait-connected 0 >/dev/null
   history=$(member history "$den_id" "$dm")
-  [[ "$history" == "a private word"* ]] || { echo "error: the approved install's DM reads: $history" >&2; return 1; }
+  [[ "$history" == *"a private word"* ]] || { echo "error: the approved install's DM reads: $history" >&2; return 1; }
   echo ">> The old password is gone; the new one signs the first install in again once the fresh one approves it, and hands it the seal"
 
   echo ">> Signing the first install out from the fresh one"

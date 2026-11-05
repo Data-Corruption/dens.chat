@@ -111,6 +111,9 @@ try {
     const visible = await waitFor(() => B.b.eval(`getComputedStyle(${smiley}.parentElement).opacity === '1'`), 'the smiley under the pointer').catch(() => false);
     report(visible, 'the smiley shows beside the ⋯ under the pointer');
     await clickOn(B, smiley);
+    // The picker takes the focus as Preact runs its effects, after the
+    // frame that shows it.
+    await waitFor(() => B.b.eval(`document.activeElement === ${PICKER}?.querySelector('input[type=search]')`), "the picker's search focused", 2000).catch(() => {});
     const placed = JSON.parse(await waitFor(() => B.b.eval(`(() => { const p = ${PICKER}; if (!p) return null; const r = p.getBoundingClientRect();
         return JSON.stringify({ top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right),
             vw: document.documentElement.clientWidth, vh: innerHeight, search: document.activeElement === p.querySelector('input[type=search]') }); })()`), 'the picker'));

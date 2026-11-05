@@ -49,7 +49,7 @@ const cut = args.indexOf('--');
 const modes = (cut < 0 ? args : args.slice(0, cut)).filter(Boolean);
 const parts = cut < 0 ? [] : args.slice(cut + 1);
 const want = (p) => parts.length === 0 || parts.includes(p);
-const { DEN: den, GENERAL: general, RANDOM_ID: random, LOUNGE: lounge, DM: dm, DM_CHECK: dm2 } = process.env;
+const { DEN: den, GENERAL: general, RANDOM_ID: random, LOUNGE: lounge, DM: dm } = process.env;
 const SIZE = [390, 844];
 const { report, fail, finish } = checks();
 
@@ -257,7 +257,7 @@ function driver(mode, b, h) {
     };
 }
 
-const ctx = { den, general, random, dm, dm2, lounge, photo: `${HOME}/photos/pixel-2.jpg` };
+const ctx = { den, general, random, dm, lounge, photo: `${HOME}/photos/pixel-2.jpg` };
 let port = 9490;
 for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse']) {
     const out = `${HOME}/shot-phone/${mode}`;

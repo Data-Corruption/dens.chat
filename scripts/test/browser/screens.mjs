@@ -18,7 +18,7 @@
 //   keys, desktop, notify    the settings, each tab
 //   hosting, move, cache     the System tab, as an owner
 //   retention, files         Manage, each section, as a member and as an owner
-//   history, hostile         the den's list, its DMs, a DM, a DM's check codes
+//   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
 //   (M8.3, M11)              Home, adding a den, a member's profile, editing one's own,
 //                            removing a member, a channel's and a group's settings
 //   (M9, M10)                unpaired, setting the local password, joining a den,
@@ -291,10 +291,10 @@ async function openSection(h, frame, name) {
 const sections = (h, frame) => h.ev(`[...document.querySelectorAll(${JSON.stringify(`${frame} [role=tab], ${frame} nav button`)})].map((b) => b.textContent.trim())`);
 
 // memberScreens are the screens every member reaches, in a den with
-// general (text, with a description and every kind of message), a DM
-// checked (dm) and maybe one waiting for its check (dm2).
+// general (text, with a description and every kind of message) and a DM
+// (dm), whose codes they compare (M16.1).
 export async function memberScreens(h, ctx) {
-    const { den, general, dm, dm2 } = ctx;
+    const { den, general, dm } = ctx;
     await h.step('home', async () => {
         await h.go('/');
         await h.wait(HOME, 'home');
@@ -435,13 +435,6 @@ export async function memberScreens(h, ctx) {
         await h.snap('edit-profile', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
         await h.escape();
     });
-    if (dm2) {
-        await h.step('dm-check', async () => {
-            await h.go(`/den/${den}/${dm2}`);
-            await sleep(2500);
-            await h.snap('dm-check');
-        });
-    }
     if (dm) {
         await h.step('dm', async () => {
             await h.go(`/den/${den}/${dm}`);
@@ -450,6 +443,15 @@ export async function memberScreens(h, ctx) {
             await h.snap('dm');
             await h.click(h.label('Profile'));
             await h.snap('dm-profile');
+        });
+        // The lock in the DM's header opens comparing codes (M16.1).
+        await h.step('dm-codes', async () => {
+            await h.go(`/den/${den}/${dm}`);
+            await h.wait(COMPOSER, 'the DM');
+            await h.click(h.label('End-to-end encrypted: compare codes'));
+            await h.wait(`document.querySelector('[data-codes]')`, 'comparing codes');
+            await h.snap('dm-codes', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
+            await h.escape();
         });
     }
 }

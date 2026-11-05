@@ -27,9 +27,10 @@ reach the member and outlive the restart. At their limit, the member swaps
 a file for a smaller one and deletes another. A HEIC sent smaller must
 arrive as a copy at 1920x2560, and another switched to full size, full
 size, and a video over a lowered limit as an AV1 copy that fits, with its
-preview. The owner opens a DM, which takes no message until both members
-type each other's check digits, and then carries text, a photo, a photo's
-and a video's smaller copies and a video the den stores only sealed. The
+preview. The owner and the member write in a DM at the same moment,
+neither typing a digit, and compare codes, which asks nothing of the den
+(M16.1); it carries text, a photo, a photo's and a video's smaller copies
+and a video the den stores only sealed. The
 owner shares a checklist with the member, and the two tick different boxes
 at the same moment, all of which must stay. Instance fresh stands in for
 the member's new machine: it signs in by the den's address with a recovery
@@ -238,14 +239,27 @@ function Wait-Value([scriptblock]$Get, [string]$What) {
     Fail "timed out waiting for $What"
 }
 
-# Get-DMHalf returns the digits a member reads out for a DM, once both
-# Dens moved its exchange on. Until then the check leaves half out, and
-# strict mode refuses a property that isn't there.
-function Get-DMHalf($Browser, [string]$DenID, [string]$DM) {
-    return Wait-Value {
-        $check = Invoke-Api $Browser GET "/api/dens/$DenID/dms/$DM/check"
-        if ($check.PSObject.Properties["half"]) { $check.half }
-    } "the DM's digits"
+# Wait-Identity waits until an instance's Dens has published its member's
+# identity and kept another member's (M16.1). Until then the member's
+# record leaves identity out, and strict mode refuses a property that
+# isn't there.
+function Wait-Identity($Browser, [string]$DenID, [string]$Member) {
+    Wait-Value {
+        $state = Invoke-Api $Browser GET "/api/dens/$DenID/state"
+        if ($state.me.PSObject.Properties["identity"] -and $state.identities.PSObject.Properties[$Member]) { $true }
+    } "member $Member's identity kept" | Out-Null
+}
+
+# Send-Async sends a message and returns the request still in flight, so
+# messages from two instances can go at once.
+function Send-Async($Browser, [string]$DenID, [string]$Channel, [string]$Text) {
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler.CookieContainer = $Browser.Session.Cookies
+    $client = New-Object System.Net.Http.HttpClient($handler)
+    $client.DefaultRequestHeaders.Add("Origin", $Browser.Origin)
+    $body = @{ nonce = New-Nonce; text = $Text } | ConvertTo-Json -Compress
+    $content = New-Object System.Net.Http.StringContent($body, [Text.Encoding]::UTF8, "application/json")
+    return $client.PostAsync("$($Browser.Origin)/api/dens/$DenID/channels/$Channel/messages", $content)
 }
 
 # Get-Requests returns the sign-ins an instance shows for a den: those
@@ -954,24 +968,35 @@ den.test:$HttpsPort {
     Wait-Connected $member $restarted | Out-Null
     Write-Host "The deleted photo left the member's cache as they came back, an edit and a delete reached their history, and the video and the channel read from the cache with the den stopped."
 
-    Step "a private DM, once both members compare check codes"
+    Step "a private DM, written at once, and the members' codes compared"
     $state = Invoke-Api $owner GET "/api/dens/$denID/state"
     $bob = (@($state.members) | Where-Object { $_.username -eq "bob" }).id
+    $alice = $state.me.id
     $dm = (Invoke-Api $owner POST "/api/dens/$denID/dms" @{ member_id = $bob }).id
     Wait-Value { @((Invoke-Api $member GET "/api/dens/$denID/state").channels) | Where-Object { $_.id -eq $dm } } "the DM on the member's side" | Out-Null
-    $refused = Invoke-Refused $owner "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = "too soon" }
-    if ($refused -notmatch "compare check codes") { Fail "sending before the check: $refused" }
-    Invoke-Api $owner POST "/api/dens/$denID/dms/$dm/key" @{ restart = $false } | Out-Null
-    $ownerHalf = Get-DMHalf $owner $denID $dm
-    $memberHalf = Get-DMHalf $member $denID $dm
-    if ($ownerHalf -eq $memberHalf) { Fail "both members see the same digits" }
-    $refused = Invoke-Refused $owner "/api/dens/$denID/dms/$dm/check" @{ digits = "0000 0000 0000 0000" }
+    Wait-Identity $owner $denID $bob
+    Wait-Identity $member $denID $alice
+    # Both write at the same moment, neither typing a digit: each Dens makes
+    # the DM a key as it sends, and the slower takes the den's.
+    $sends = @((Send-Async $owner $denID $dm "a private word"), (Send-Async $member $denID $dm "a word back"))
+    [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$sends)
+    foreach ($sent in $sends) {
+        if (-not $sent.Result.IsSuccessStatusCode) { Fail "a DM sent at the same moment was refused with $([int]$sent.Result.StatusCode)" }
+    }
+    foreach ($side in @($owner, $member)) {
+        $history = Get-History $side $denID $dm
+        if (-not $history.Contains("a private word") -or -not $history.Contains("a word back")) { Fail "the DM reads: $history" }
+    }
+    # Each types the code the other reads out.
+    $ownerCode = (Invoke-Api $owner GET "/api/dens/$denID/members/$bob/code").mine
+    $memberCode = (Invoke-Api $member GET "/api/dens/$denID/members/$alice/code").mine
+    if ($ownerCode -eq $memberCode) { Fail "both members have the same code" }
+    $refused = Invoke-Refused $owner "/api/dens/$denID/members/$bob/compare" @{ digits = "0000 0000 0000 0000 0000" }
     if ($refused -notmatch "don't match") { Fail "the wrong digits: $refused" }
-    Invoke-Api $owner POST "/api/dens/$denID/dms/$dm/check" @{ digits = $memberHalf } | Out-Null
-    Invoke-Api $member POST "/api/dens/$denID/dms/$dm/check" @{ digits = $ownerHalf } | Out-Null
-    Send-Message $owner $denID $dm "a private word"
-    $history = Get-History $member $denID $dm
-    if ($history -ne "a private word") { Fail "the member's DM reads: $history" }
+    $compared = Invoke-Api $owner POST "/api/dens/$denID/members/$bob/compare" @{ digits = $memberCode }
+    if (-not $compared.PSObject.Properties["verified"] -or -not $compared.verified) { Fail "alice's comparison didn't mark bob verified" }
+    $compared = Invoke-Api $member POST "/api/dens/$denID/members/$alice/compare" @{ digits = $ownerCode }
+    if (-not $compared.PSObject.Properties["verified"] -or -not $compared.verified) { Fail "bob's comparison didn't mark alice verified" }
     # The den can't read a DM, so the sender's Dens takes the tracking out.
     $linked = Invoke-Api $owner POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = "watch https://youtu.be/dQw4w9WgXcQ?si=Xa1B2c3D4e5F6g7H&t=42" }
     $linkedText = Get-MessageText $member $denID $dm $linked.id
@@ -1044,7 +1069,7 @@ den.test:$HttpsPort {
     foreach ($f in $dbFiles) {
         if ($latin1.GetString((Read-Shared $f.FullName)).Contains("a private word")) { Fail "$($f.Name) holds the DM's text" }
     }
-    Write-Host "The DM took messages only after both typed each other's digits; its text, a link without its tracking, its photo, a photo's and a video's smaller copies and a video reached the other side sealed."
+    Write-Host "The DM opened at once, written by both at the same moment, and the members compared codes; its text, a link without its tracking, its photo, a photo's and a video's smaller copies and a video reached the other side sealed."
 
     Step "two members tick one checklist at the same moment"
     $text = (0..5 | ForEach-Object { "[ ] item $_" }) -join "`n"
@@ -1088,14 +1113,14 @@ den.test:$HttpsPort {
     if (-not $joined.seal_new) { Fail "joining showed no new DM seal" }
     Invoke-Api $fresh POST "/api/dens/$denID/seal" @{ seal = $joined.seal } | Out-Null
     $history = Get-History $fresh $denID $dm
-    if (-not $history.StartsWith("a private word")) { Fail "with the seal typed, the DM reads: $history" }
+    if (-not $history.Contains("a private word")) { Fail "with the seal typed, the DM reads: $history" }
     Write-Host "Instance fresh reads the DM once the member typed their seal."
     $refused = Invoke-Refused $member "/api/dens/signin" @{ den = $DenURL; username = "bob"; password = "bob password" }
     if ($refused -notmatch "don't match") { Fail "signing in with the old password: $refused" }
     Approve-SignIn $member $fresh $denID "new bob password"
     Wait-Connected $member 0 | Out-Null
     $history = Get-History $member $denID $dm
-    if (-not $history.StartsWith("a private word")) { Fail "the approved instance's DM reads: $history" }
+    if (-not $history.Contains("a private word")) { Fail "the approved instance's DM reads: $history" }
     Write-Host "The old password is gone; the new one signs instance second in again once fresh approves it, and hands it the seal."
 
     Step "sign instance second out from instance fresh"

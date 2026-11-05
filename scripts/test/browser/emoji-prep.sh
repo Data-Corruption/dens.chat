@@ -7,7 +7,7 @@
 source "$(dirname "$0")/lib.sh"
 fresh
 general=$(channel general)
-dm=$(checked_dm alice bob)
+dm=$(open_dm alice bob)
 ./node browser/make-emoji.mjs "Party Face.png" 256 160
 ./node browser/make-emoji.mjs dance.gif 160 160
 echo "DEN=$DEN"

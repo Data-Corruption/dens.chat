@@ -6,6 +6,7 @@
 #   m2a  alice, who hosts the den: page 18484, den 18485, media 17881/17882
 #   m2b  bob, a member: page 18486
 #   m2c  carol, a member when a check needs one: page 18487
+#   m2e  bob's laptop, his second device when a check needs one: page 18490
 #
 # The instances run in the background with their PIDs in ~/<instance>.pid
 # and their output in ~/<instance>.log.
@@ -14,8 +15,8 @@ set -euo pipefail
 cd "$HOME"
 export XDG_RUNTIME_DIR=/run/user/$UID
 
-declare -A PORT=([alice]=18484 [bob]=18486 [carol]=18487)
-declare -A INSTANCE=([alice]=m2a [bob]=m2b [carol]=m2c)
+declare -A PORT=([alice]=18484 [bob]=18486 [carol]=18487 [laptop]=18490)
+declare -A INSTANCE=([alice]=m2a [bob]=m2b [carol]=m2c [laptop]=m2e)
 DEN_URL=${DEN_URL:-http://127.0.0.1:18485}
 
 # api WHO METHOD PATH [JSON] calls WHO's page API as their paired browser.
@@ -85,7 +86,7 @@ join() {
 # channel Lounge, and bob in it. It sets DEN and LOUNGE.
 fresh() {
     local name
-    for name in m2a m2b m2c; do stop "$name"; done
+    for name in m2a m2b m2c m2d m2e; do stop "$name"; done
     rm -rf "$HOME/.local/share/dens-dev"/m2? "$HOME"/jar-m2?
     pgrep -u "$(id -u)" -x Xvfb >/dev/null || { nohup Xvfb :99 -screen 0 1600x900x24 >xvfb.log 2>&1 & }
     pulseaudio --check 2>/dev/null || pulseaudio --start --exit-idle-time=-1
@@ -149,30 +150,56 @@ send() {
         "{\"nonce\":\"$(nonce)\",\"text\":\"$text\",\"attachments\":[$files]}" | json 'd["id"]'
 }
 
-# checked_dm A B opens a DM from A to B, has both their Dens make its key
-# and each check the other's digits, as members comparing codes do, and
-# prints its ID.
-checked_dm() {
-    local other dm a="" b=""
-    other=$(api "$2" GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
-    dm=$(api "$1" POST "/api/dens/$DEN/dms" "{\"member_id\":\"$other\"}" | json 'd["id"]')
-    if [[ $(api "$1" GET "/api/dens/$DEN/dms/$dm/check" | json 'd["stage"]') == none ]]; then
-        api "$1" POST "/api/dens/$DEN/dms/$dm/key" '{}' >/dev/null
-    fi
-    for _ in $(seq 60); do
-        a=$(api "$1" GET "/api/dens/$DEN/dms/$dm/check" | json 'd.get("half", "")')
-        b=$(api "$2" GET "/api/dens/$DEN/dms/$dm/check" | json 'd.get("half", "")')
+# open_dm A B opens a DM from A to B, and prints its ID once both their
+# Dens have published their identities and kept each other's, so either's
+# first message makes its key, with nothing to type (M16.1).
+open_dm() {
+    local a b dm
+    a=$(api "$1" GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
+    b=$(api "$2" GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
+    dm=$(api "$1" POST "/api/dens/$DEN/dms" "{\"member_id\":\"$b\"}" | json 'd["id"]')
+    for _ in $(seq 80); do
+        if [[ $(api "$1" GET "/api/dens/$DEN/state" | json "'$b' in (d.get('identities') or {}) and d['me'].get('identity', '') != ''") == True &&
+            $(api "$2" GET "/api/dens/$DEN/state" | json "'$a' in (d.get('identities') or {}) and '$dm' in [c['id'] for c in d['channels']]") == True ]]; then
+            echo "$dm"
+            return 0
+        fi
+        sleep 0.25
+    done
+    echo "the DM's members never kept each other's identities" >&2
+    return 1
+}
+
+# laptop signs bob in on his laptop, m2e, with his den password, and has
+# his first device approve it, each typing the other's digits as he would
+# (M1.7), so the laptop holds his seal.
+laptop() {
+    local id req="" a="" b=""
+    start m2e --port "${PORT[laptop]}"
+    pair laptop
+    id=$(api laptop POST /api/dens/signin "{\"den\":\"$DEN_URL\",\"username\":\"bob\",\"password\":\"bob password\"}" | json 'd["pending"]["id"]')
+    for _ in $(seq 80); do
+        req=$(api bob GET /api/dens | json "next((r['id'] for x in d['dens'] if x['den_id'] == '$DEN' for r in x.get('requests') or [] if not r.get('approved')), '')")
+        [[ -n $req ]] && break
+        sleep 0.25
+    done
+    [[ -n $req ]] || { echo "bob's first device never heard of the sign-in" >&2; return 1; }
+    api bob POST "/api/dens/$DEN/requests/$req/answer" >/dev/null
+    for _ in $(seq 80); do
+        a=$(api laptop GET /api/dens | json "next((s.get('half', '') for s in d.get('sign_ins') or [] if s['id'] == '$id'), '')")
+        b=$(api bob GET /api/dens | json "next((r.get('half', '') for x in d['dens'] if x['den_id'] == '$DEN' for r in x.get('requests') or [] if r['id'] == '$req'), '')")
         [[ -n $a && -n $b ]] && break
-        sleep 0.5
+        sleep 0.25
     done
-    [[ -n $a && -n $b ]] || { echo "the DM's check code never came" >&2; return 1; }
-    api "$1" POST "/api/dens/$DEN/dms/$dm/check" "{\"digits\":\"$b\"}" >/dev/null
-    api "$2" POST "/api/dens/$DEN/dms/$dm/check" "{\"digits\":\"$a\"}" >/dev/null
-    for _ in $(seq 20); do
-        [[ $(api "$2" GET "/api/dens/$DEN/dms/$dm/check" | json 'd["checked"] and d["partner"]') == True ]] && break
-        sleep 0.5
+    [[ -n $a && -n $b ]] || { echo "the sign-in's digits never came" >&2; return 1; }
+    api bob POST "/api/dens/$DEN/requests/$req/approve" "{\"digits\":\"$a\"}" >/dev/null
+    api laptop POST "/api/dens/signin/$id/check" "{\"digits\":\"$b\"}" >/dev/null
+    for _ in $(seq 80); do
+        [[ $(api laptop GET /api/dens | json "any(x['den_id'] == '$DEN' and x['state'] == 'connected' for x in d['dens'])") == True ]] && return 0
+        sleep 0.25
     done
-    echo "$dm"
+    echo "bob's laptop never connected" >&2
+    return 1
 }
 
 # restart_den restarts alice's instance in place, as an update would.

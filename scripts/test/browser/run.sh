@@ -59,6 +59,11 @@
 #                               and one changed and taken back, ended early, its voters in a count's tip; and
 #                               each pair of rules, the totals and voters reaching each page only as allowed,
 #                               by every frame and answer the page receives
+#   codes BROWSER               M16.1: a DM opened at once and written at the same moment from both pages;
+#                               codes compared both ways, from the DM's lock and the profile beside it, own
+#                               digits and wrong ones refused; the mark on bob's laptop within its shortened
+#                               hour; and bob starting over: the line where his keys changed, his mark gone,
+#                               the hold, Send anyway, and his new code compared
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
@@ -74,7 +79,8 @@
 #                               at its top as it scrolls, and :par and @al completed by taps (M15.2); and a
 #                               message's sheet with its quick reactions, a tap reacting, the chip's tip by
 #                               a long press, and the picker's sheet (M15.3); and the composer's + as a sheet,
-#                               a poll written in it and sent, voted on by taps, and its count's tip (M15.4).
+#                               a poll written in it and sent, voted on by taps, and its count's tip (M15.4);
+#                               and comparing codes from a DM's lock (M16.1).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, owner
 #                               or before; all unless given
 # BROWSER is chromium or firefox.
@@ -82,7 +88,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,81p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,87p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
