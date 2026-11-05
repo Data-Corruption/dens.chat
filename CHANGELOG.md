@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.9.0] - 2026-11-05
+
+### Added
+
+- Codes, to be sure nobody sits between you and the people you DM. Everyone has one in each den, 20 digits: compare yours with theirs, in person or on a call, from the lock in your DM with them, their profile, or a call's lock. A check then shows beside their name, on your other devices too, and the den never learns whether you compared; under Appearance, Verified status says whether it shows in lists always, only under the pointer, or not at all. If someone's keys change, as when they reset their DM recovery key, the DM says so, and one where you'd compared waits until you compare again or choose Send anyway.
+- Calls are end-to-end encrypted: voices, screens and a shared screen's sound are sealed in your browser or the app before they leave, so the den carries them without hearing or seeing them. The soundboard still plays. A lock beside the call says so, and lists who's in it, to compare codes with.
+- Group DMs, of three to ten people, end-to-end encrypted as DMs are: from + New group above your DMs, or Add people on the profile beside a DM. Give one a name if you like; only its members ever see it. Anyone in it can add people, rename it or leave, and whoever made it can remove people. Each change is signed by whoever made it, so the den can't add anyone, and someone added reads the group from when they joined.
+- Disappearing messages: anyone in a DM or a group DM can have its messages disappear 1 hour, 1 day, 1 week or 4 weeks after they're sent. When its time comes, a message is gone from the den and from everyone's devices, even ones that are offline.
+
+### Changed
+
+- A new DM opens at once, with no check digits to type. DMs where you both typed them go on as before.
+- In a den running v1.9.0, calls need v1.9.0 too, since an older Dens can't encrypt them. On Android, joining one needs Android System WebView 141 or newer; the app says so, with a link to update it.
+- A device whose Dens hasn't been updated yet doesn't show your group DMs until it is.
+- Staff-only channels show a shield, since a lock now means end-to-end encryption.
+
+### Fixed
+
+- A DM whose unread messages were deleted stayed marked unread until Dens next reconnected, and a deleted message that mentioned you still counted as an unread mention. Both clear as the message goes now.
+- The Direct messages tab showed + Channel and + Group too. They're in the Den tab alone now.
+
 ## [v1.8.0] - 2026-11-03
 
 ### Added
