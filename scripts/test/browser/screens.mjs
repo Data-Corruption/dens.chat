@@ -60,9 +60,10 @@ export async function waitFor(fn, what, ms = 15000) {
 // controls whose middle another control's room for a finger covers
 // (covered); and whether a channel's message list scrolls sideways
 // (listSideways). Panes off screen are inert, and left out, as are
-// controls under a dialog, a link within a line of text, which WCAG leaves
-// to the text's size, and a disabled control's hiding. A list's row is a
-// menu's item, or a control across most of its list item or its list.
+// controls under a dialog, a control whose middle its list scrolled out
+// of view, a link within a line of text, which WCAG leaves to the text's
+// size, and a disabled control's hiding. A list's row is a menu's item, or
+// a control across most of its list item or its list.
 export const AUDIT = `(() => {
     const vw = document.documentElement.clientWidth, vh = innerHeight;
     const shown = (e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0; };
@@ -90,6 +91,17 @@ export const AUDIT = `(() => {
     const faded = (e) => { for (let p = e; p; p = p.parentElement) if (getComputedStyle(p).opacity === '0') return true; return false; };
     const disabled = (e) => e.disabled || e.getAttribute('aria-disabled') === 'true' || !!e.closest('fieldset:disabled');
     const hits = (e, x, y) => { const at = document.elementFromPoint(x, y); return !!at && (at === e || e.contains(at)); };
+    // A point outside a box that clips e, as a list scrolled past it does,
+    // shows something else there, whatever is at it.
+    const clipped = (e, x, y) => {
+        for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
+            const s = getComputedStyle(p);
+            if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+            const b = p.getBoundingClientRect();
+            if (x < b.left || x > b.right || y < b.top || y > b.bottom) return true;
+        }
+        return false;
+    };
     // Words that are a link or a button, as a line of text has them, or
     // a box of them in a line of other words.
     const inline = (e) => {
@@ -131,7 +143,7 @@ export const AUDIT = `(() => {
             // that's a dialog's, over this one, covers it as the dialog.
             const top = document.elementFromPoint(cx, cy);
             const layer = top?.closest('[role=dialog]');
-            if (layer && !layer.contains(e)) continue;
+            if ((layer && !layer.contains(e)) || clipped(e, cx, cy)) continue;
             const over = top?.closest(TARGETS);
             const o = over?.getBoundingClientRect();
             // A point within a pixel of its box is in it, as hit testing
