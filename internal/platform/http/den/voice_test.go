@@ -144,7 +144,7 @@ func (v *voiceSocket) send(t string, data any) {
 }
 
 func (v *voiceSocket) join(channel string) {
-	v.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: channel})
+	v.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: channel, Sealed: true})
 }
 
 // wait reads events until one matches.
@@ -281,7 +281,7 @@ func TestCallRidesOutItsSocket(t *testing.T) {
 
 	again := f.voiceSocket(bobToken, bobCaller)
 	again.version, again.answer = bob.version, bob.answer
-	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
 	again.wait("the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed })
 	carol := f.voiceSocket(carolToken, carolCaller)
 	carol.join(lounge.ID)
@@ -306,10 +306,10 @@ func TestResumeAfterTheHold(t *testing.T) {
 	bob.c.Close(websocket.StatusGoingAway, "")
 	alice.wait(inCall(lounge.ID))
 	again := f.voiceSocket(bobToken, nil)
-	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
 	again.wait(ended(lounge.ID, denproto.VoiceFailed))
 	// Nothing to resume at all gets the same answer.
-	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
 	again.wait(ended(lounge.ID, denproto.VoiceFailed))
 }
 

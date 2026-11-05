@@ -59,6 +59,19 @@ type CallStats struct {
 	SendRate        int64  `json:"send_rate"`
 	TargetRate      int64  `json:"target_rate"`
 	Behind          *int64 `json:"behind,omitempty"`
+	// Frames counts what a sealed call's page did with its frames
+	// (M16.2), by count alone.
+	Frames *FrameCounts `json:"frames,omitempty"`
+}
+
+// FrameCounts are a sealed call's frames since its page joined it: those
+// it sealed and sent, those it opened, and those it dropped, which didn't
+// open, came again, named a key it lacks, or came in the clear on a
+// member's track.
+type FrameCounts struct {
+	Sealed  int64 `json:"sealed"`
+	Opened  int64 `json:"opened"`
+	Dropped int64 `json:"dropped"`
 }
 
 // The words a note's fields may hold: the states of a browser's connection
@@ -123,6 +136,9 @@ func (n CallNote) line() (string, bool) {
 		}
 		if x.Behind != nil {
 			s += fmt.Sprintf("; its voice processor %d ms behind", count(*x.Behind))
+		}
+		if f := x.Frames; f != nil {
+			s += fmt.Sprintf("; frames sealed %d, opened %d, dropped %d", count(f.Sealed), count(f.Opened), count(f.Dropped))
 		}
 	default:
 		return "", false

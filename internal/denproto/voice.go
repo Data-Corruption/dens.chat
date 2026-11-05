@@ -139,12 +139,15 @@ const (
 )
 
 // VoiceJoin starts a call, or with Resume takes back the call the den holds
-// for this device (M3).
+// for this device (M3). Sealed says the member's page seals what it sends,
+// frame by frame, under keys their Dens makes and seals to the call's
+// other members (M16.2): a den that seals calls takes no join without it.
 type VoiceJoin struct {
 	ChannelID string `json:"channel_id"`
 	Muted     bool   `json:"muted,omitempty"`
 	Deafened  bool   `json:"deafened,omitempty"` // M3.3
 	Resume    bool   `json:"resume,omitempty"`
+	Sealed    bool   `json:"sealed,omitempty"`
 }
 
 // VoiceResumed says the den moved a held call to this socket.

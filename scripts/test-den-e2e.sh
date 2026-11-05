@@ -282,7 +282,14 @@ run() {
       return 1
     fi
     wait "$owner" || { cat "$RUN_LOG_DIR/call-owner-$network.log" >&2; return 1; }
-    echo ">> The owner and the member heard each other, the member over $network"
+    # Each probe got the call's keys with the other's, which their services
+    # sealed to each other's identity and passed through the den (M16.2).
+    local side
+    for side in member owner; do
+      grep -q "the call's keys: this member's numbered" "$RUN_LOG_DIR/call-$side-$network.log" ||
+        { echo "error: the call's keys didn't pass between the services" >&2; return 1; }
+    done
+    echo ">> The owner and the member heard each other, the member over $network, their services passing their keys for the sealed call"
   done
 
   # The member's install reaches the den through Caddy, so restarting Caddy

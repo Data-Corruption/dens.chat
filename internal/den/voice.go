@@ -24,6 +24,12 @@ import (
 // and makes the offers. A call belongs to the socket that joined it. When
 // that socket closes, the den holds the call for its device to take back
 // on another (M3), unless the den closed the socket for good.
+//
+// From M16.2 every call is sealed end to end: each member's page seals
+// what it sends under a key their Dens makes, which the den passes to each
+// other member of the call sealed to their identity, and keeps the latest
+// of while the call lasts. The SFU forwards what it can't open, as it
+// always did, and the den takes no join that doesn't say it seals.
 
 type call struct {
 	member  int64
@@ -45,6 +51,10 @@ type call struct {
 	// talking is whether the member holds push to talk, as the call's
 	// members hear (M11).
 	talking bool
+	// sealKey is the member's latest key for the call, as their Dens sent
+	// it (M16.2), which each member it holds a copy for gets as their call
+	// starts or is taken back. It goes with the call.
+	sealKey *denproto.VoiceKey
 }
 
 // callRoom is a voice channel's call, and the sound that plays in it, if
@@ -163,6 +173,13 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	refuse := func(reason string) {
 		sock.voice(denproto.EventVoiceEnded, denproto.VoiceEnded{ChannelID: req.ChannelID, Reason: reason})
 	}
+	// A page that doesn't seal would send in the clear what every other
+	// page drops, and hear nothing (M16.2). A resume takes back only a call
+	// the den holds, which was joined sealed.
+	if !req.Sealed && !req.Resume {
+		refuse(denproto.VoiceUpdateNeeded)
+		return
+	}
 	// A resume makes no peer, so only joins count against the limit.
 	if !req.Resume && d.Allow(LimitCall, strconv.FormatInt(s.MemberID, 10)) != nil {
 		refuse(denproto.VoiceRateLimited)
@@ -245,6 +262,9 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	d.publishCallsLocked(changed...)
 	d.publishTalkingLocked(cid, sock)
 	d.publishSoundingLocked(cid, sock)
+	// As when they move their call to another device, the others' keys may
+	// hold a copy for them already (M16.2).
+	d.passKeysLocked(nc)
 	d.log.Infof("Member %d joined the call in channel %d", s.MemberID, cid)
 }
 
@@ -266,9 +286,10 @@ func (d *Den) resumeCall(sock *socket, cid int64, channel string) {
 		sock.voice(denproto.EventVoiceResumed, denproto.VoiceResumed{ChannelID: channel})
 		c.peer.Resume()
 		// Who held push to talk, and what sound plays, may have changed
-		// while the socket was away.
+		// while the socket was away, and the others' keys (M16.2).
 		d.publishTalkingLocked(c.channel, sock)
 		d.publishSoundingLocked(c.channel, sock)
+		d.passKeysLocked(c)
 		d.log.Infof("The call of member %d in channel %d resumed", c.member, c.channel)
 		return
 	}
@@ -380,6 +401,77 @@ func (d *Den) publishTalkingLocked(cid int64, to *socket) {
 	}
 	if err := d.Hub.Ephemeral(denproto.EventVoiceTalking, t, func(sub *Sub) bool { return subs[sub] }); err != nil {
 		d.log.Errorf("announce push to talk: %v", err)
+	}
+}
+
+// relayKey passes a member's key for their call to each other member of
+// it the key holds a copy for, each their copy alone, and keeps it as the
+// member's latest while the call lasts (M16.2). A key for a call the
+// socket doesn't hold, or past the member's limit, goes nowhere. The den
+// checks its shape alone: each member's Dens checks the rest against the
+// identity it kept.
+func (d *Den) relayKey(s *Session, sock *socket, req denproto.VoiceKey) {
+	if d.Allow(LimitVoiceKey, strconv.FormatInt(s.MemberID, 10)) != nil {
+		return
+	}
+	info, _ := d.Info()
+	if err := denproto.CheckVoiceKey(info.ID, denproto.FormatID(s.MemberID), req); err != nil {
+		d.log.Debugf("A key from member %d for a call was refused: %v", s.MemberID, err)
+		return
+	}
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c := r.byMember[sock.member]
+	if c == nil || c.sock.Load() != sock || denproto.FormatID(c.channel) != req.ChannelID {
+		return
+	}
+	c.sealKey = &req
+	passed := 0
+	if room := r.rooms[c.channel]; room != nil {
+		for _, x := range room.members {
+			if x != c && d.passKeyLocked(c, x) {
+				passed++
+			}
+		}
+	}
+	d.log.Debugf("Member %d's key %s for the call in channel %d went to %d of its members", c.member, req.KID, c.channel, passed)
+}
+
+// passKeyLocked sends a member of a call their copy of another member's
+// latest key, if it holds one for them, on the socket that holds their
+// call, and reports whether it did. A held call gets it as it's taken back.
+// The caller holds the registry's lock.
+func (d *Den) passKeyLocked(from, to *call) bool {
+	if from.sealKey == nil {
+		return false
+	}
+	sock := to.sock.Load()
+	copied := from.sealKey.Copy(denproto.FormatID(to.member))
+	if sock == nil || copied == nil {
+		return false
+	}
+	sub := sock.sub
+	e := from.sealKey.Event(denproto.FormatID(from.member), copied)
+	if err := d.Hub.Ephemeral(denproto.EventVoiceKey, e, func(x *Sub) bool { return x == sub }); err != nil {
+		d.log.Errorf("pass a call's key: %v", err)
+		return false
+	}
+	return true
+}
+
+// passKeysLocked sends a member whose call starts or is taken back each
+// other member's latest key that holds a copy for them. The caller holds
+// the registry's lock.
+func (d *Den) passKeysLocked(c *call) {
+	room := d.calls.rooms[c.channel]
+	if room == nil {
+		return
+	}
+	for _, x := range room.members {
+		if x != c {
+			d.passKeyLocked(x, c)
+		}
 	}
 }
 

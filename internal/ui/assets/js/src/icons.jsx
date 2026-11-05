@@ -36,12 +36,12 @@ export function SpeakerIcon({ size = 'h-[18px] w-[18px]' }) {
 }
 
 // LockIcon marks what not everyone sees: a staff-only channel, and a DM,
-// which is end-to-end encrypted.
-export function LockIcon({ size = 'h-3.5 w-3.5' }) {
+// which is end-to-end encrypted; open, a call that isn't (M16.2).
+export function LockIcon({ size = 'h-3.5 w-3.5', open = false }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
             <rect x="3" y="7" width="10" height="7" rx="1.5" />
-            <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+            <path d={open ? 'M5.5 7V5a2.5 2.5 0 0 1 4.9-.7' : 'M5.5 7V5a2.5 2.5 0 0 1 5 0v2'} />
         </svg>
     );
 }

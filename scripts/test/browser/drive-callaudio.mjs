@@ -62,7 +62,9 @@ const LOUDEST = `(async () => {
     }
     return Math.round(most);
 })()`;
-const ELEMENTS = `JSON.stringify(window.__audios.filter((a) => a.srcObject).map((a) => (a.paused ? 'paused' : a.muted ? 'muted' : 'playing')))`;
+// The members' elements: the call's soundboard track (M14.3) plays in one
+// of its own, which isn't a member's.
+const ELEMENTS = `JSON.stringify(window.__audios.filter((a) => a.srcObject && a.srcObject.id !== 'soundboard').map((a) => (a.paused ? 'paused' : a.muted ? 'muted' : 'playing')))`;
 const button = (label) => `[...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(label)})`;
 const sides = [
     { ...ALICE, browser: aName, debug: 9333, other: 'Bob' },

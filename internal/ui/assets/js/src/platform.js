@@ -31,6 +31,14 @@ export function canCall(win = globalThis) {
     return typeof win.RTCPeerConnection === 'function';
 }
 
+// canSeal says whether the browser can seal a call's frames end to end,
+// which takes WebRTC's Encoded Transform in a worker, as a den that seals
+// its calls requires (M16.2): Firefox from 117, and Chromium, Android's
+// WebView among them, from 141.
+export function canSeal(win = globalThis) {
+    return canCall(win) && typeof win.RTCRtpScriptTransform === 'function';
+}
+
 // canShare says whether the browser can share a screen in a call, which
 // Android's WebView can't.
 export function canShare(win = globalThis) {

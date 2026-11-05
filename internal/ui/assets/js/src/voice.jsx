@@ -7,17 +7,22 @@
 // bar across the top of the channel's pane, and a touch screen holds the
 // microphone on the call's button, by the thumb. From M14.3 the block,
 // the bar and the box open the den's soundboard, and the channel's row in
-// the list shows how the call stands, where the block's speaker did.
+// the list shows how the call stands, where the block's speaker did. From
+// M16.2 the call's lock stands beside how it stands, and the list marks
+// each member verified, and one whose keys changed.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
+import { CallLock, KeysChangedMark, keysChanged } from './calllock.jsx';
 import { Tip } from './components.jsx';
+import { openManage } from './dialogs.js';
 import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
 import { nav, useNarrow } from './nav.js';
 import { rank } from './people.jsx';
 import { canShare } from './platform.js';
+import { VerifiedMark } from './private.jsx';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import { Sheet, SheetRow } from './sheet.jsx';
@@ -87,8 +92,13 @@ export function callState(status) {
     return { joining: 'joining', connecting: 'connecting', connected: 'connected', reconnecting: 'reconnecting' }[status] || '';
 }
 
+// WEBVIEW is Android System WebView's page in the store, which a call's
+// notice links where the app's WebView can't seal calls (M16.2).
+const WEBVIEW = 'https://play.google.com/store/apps/details?id=com.google.android.webview';
+
 // notices are what the member should know of their call: why the last one
-// ended, that it waits for the microphone, that staff muted them in this
+// ended, or didn't start, with what to do about it where there's something
+// (M16.2); that it waits for the microphone, that staff muted them in this
 // den's, or that push to talk has no key yet, where the call's button
 // isn't there to hold (M13.4).
 function notices(call, notice, denID, staffMuted, shareNotice, holds) {
@@ -96,8 +106,22 @@ function notices(call, notice, denID, staffMuted, shareNotice, holds) {
     const lines = [];
     if (!call && notice) {
         lines.push(
-            <div key="notice" role="status" class="flex items-start gap-2">
-                <span class="min-w-0 flex-1 text-warning">{notice.text}</span>
+            <div key="notice" role="status" class="flex items-start gap-2" data-call-notice>
+                <span class="min-w-0 flex-1 text-warning">
+                    {notice.text}
+                    {notice.seal && (
+                        <>
+                            {' '}
+                            <button type="button" class="link link-primary" onClick={() => openManage(notice.den, 'password')}>Enter it</button>
+                        </>
+                    )}
+                    {notice.update && (
+                        <>
+                            {' '}
+                            <a class="link link-primary" href={WEBVIEW} target="_blank" rel="noopener noreferrer">Update it</a>
+                        </>
+                    )}
+                </span>
                 <button type="button" class="btn btn-ghost btn-xs" aria-label="Dismiss" onClick={clearNotice}>✕</button>
             </div>,
         );
@@ -136,7 +160,7 @@ export function CallBlock({ denID, staffMuted, roomy }) {
     return (
         <div class={`flex flex-col gap-1 border-t border-base-300 bg-bar py-1.5 pl-2 ${roomy && call ? 'pr-10' : 'pr-2'}`}>
             {lines.length > 0 && <div class="flex flex-col gap-1 px-1 py-0.5 text-xs">{lines}</div>}
-            {call && <StatusLine denID={denID} call={call} />}
+            {call && <StatusLine denID={denID} call={call} den={den} />}
             {call && share && <ShareRow call={call} share={share} den={den} />}
             {call && <CallControls denID={denID} call={call} share={share} den={den} sounding={sounding} board={board} />}
         </div>
@@ -146,7 +170,7 @@ export function CallBlock({ denID, staffMuted, roomy }) {
 // StatusLine says how the call stands, in the list's block, only while it
 // isn't connected, or while it's in another den, which it names, a tap on
 // it going there (M14.3); the channel's row shows the rest.
-function StatusLine({ denID, call }) {
+function StatusLine({ denID, call, den }) {
     const elsewhere = call.den !== denID;
     if (call.status === 'connected' && !elsewhere) return null;
     const said = STATUS[call.status](elsewhere ? `${call.label.channel} in ${call.label.den}` : call.label.channel);
@@ -156,11 +180,14 @@ function StatusLine({ denID, call }) {
         return <p role="status" class={`${line} ${color}`} data-call-status><SpeakerIcon size="h-4 w-4" /><span class="truncate text-base-content/80">{said}</span></p>;
     }
     return (
-        <button type="button" class={`${line} rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().den(call.den, '', 'list')}>
-            <SpeakerIcon size="h-4 w-4" />
-            <span role="status" class="truncate text-base-content/80">{said}</span>
-            <span class="sr-only">Go to its den</span>
-        </button>
+        <div class="flex items-center gap-1">
+            <button type="button" class={`${line} min-w-0 flex-1 rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().den(call.den, '', 'list')}>
+                <SpeakerIcon size="h-4 w-4" />
+                <span role="status" class="truncate text-base-content/80">{said}</span>
+                <span class="sr-only">Go to its den</span>
+            </button>
+            <CallLock call={call} den={den} />
+        </div>
     );
 }
 
@@ -199,6 +226,7 @@ export function CallBar({ denID }) {
                 <span role="status" class="truncate text-sm">{said}</span>
                 <span class="sr-only">Show the call</span>
             </button>
+            <CallLock call={call} den={den} />
             <SoundboardButton call={call} den={den} board={board} sounding={sounding} where="bar" />
             <IconButton label={call.muted ? 'Unmute' : 'Mute'} pressed={call.muted} danger={call.muted} onClick={() => setMuted(!call.muted)}>
                 <MicIcon off={call.muted} size="h-[18px] w-[18px]" />
@@ -391,6 +419,7 @@ function CallControls({ denID, call, share, den, sounding, board, labeled }) {
                 <span class={`flex min-w-0 items-center gap-2 px-1.5 ${color}`}>
                     <SpeakerIcon />
                     <span role="status" class="truncate text-xs text-base-content/80">{said}</span>
+                    <CallLock call={call} den={den} />
                 </span>
                 <span class="flex shrink-0 items-center gap-1">{buttons}</span>
             </div>
@@ -546,8 +575,10 @@ function LeaveIcon() {
 // disconnect those they rank above. A member who shares their screen has a
 // LIVE mark (M4.2), which watches or stops watching in the page's own call,
 // inCall, and elsewhere joins the call as label names it and watches;
-// watched holds the members whose shares the page watches.
-export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing }) {
+// watched holds the members whose shares the page watches. From M16.2 the
+// identities this member's Dens kept mark those they verified, and those
+// whose keys changed since, or since the page's call began, since.
+export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since }) {
     const [menu, setMenu] = useState('');
     const [error, setError] = useState('');
     const narrow = useNarrow();
@@ -626,6 +657,10 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                 </span>
                                 <span class="truncate">{name}</span>
                             </button>
+                            {other && identities?.[m.id]?.verified && <VerifiedMark id={`call-verified-${m.id}`} name={name} />}
+                            {other && keysChanged(identities?.[m.id], inCall ? since : Infinity) && (
+                                <KeysChangedMark id={`call-changed-${m.id}`} name={name} kept={identities[m.id]} />
+                            )}
                             {talking && <span class="sr-only">speaking</span>}
                             {/* Deafening mutes too, so it shows both (M11). Each mark's
                                 tip says what it means (M13.2). */}

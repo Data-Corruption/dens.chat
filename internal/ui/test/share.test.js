@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     CALL_PRESETS, MAX_WATCHING, SHARE_DEFAULTS, displayOptions, fitPixels, mbps, presetOf, readShare, receivingSections, refusalText, screenOwner,
-    shareAudio, shareBlocked, shareCost, shareQuality, sharersIn, sharingAcross, uploadNeeded, watchersOf,
+    SEALING, shareAudio, shareBlocked, shareCost, shareQuality, sharersIn, sharingAcross, uploadNeeded, watchersOf,
 } from '../assets/js/src/share.js';
 
 const limits = { members: 15, callers: 30, shares: 1, share_viewers: 8, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 };
@@ -111,9 +111,10 @@ test('each refusal says why', () => {
 test("the limits' cost at most", () => {
     const cost = shareCost(limits, 96000);
     assert.equal(Math.round(cost.video), 16_800_000);
-    assert.equal(Math.round(cost.voice), Math.round(2 * 14 * 96000 * 1.2));
+    // Two talking to the call's 14 others, each sealed (M16.2).
+    assert.equal(Math.round(cost.voice), Math.round(2 * 14 * (96000 * 1.2 + SEALING)));
     assert.equal(mbps(cost.video), '17 Mbps');
-    assert.equal(mbps(3_225_600), '3.2 Mbps');
+    assert.equal(mbps(cost.voice), '3.5 Mbps');
 });
 
 test('a small group is a new den\'s limits, and both presets are within what a den takes', () => {

@@ -58,19 +58,20 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 - **Den ID as shown:** the first 10 bytes of `den_id`, written like a recovery code. Members compare it to check they reached the same den, as after signing in by address.
 - **DM seal (M1.7):** 32 random bytes a member's clients hold and never send to a den. `seal_check = HMAC-SHA-256(key = HKDF-SHA-256(seal, salt = den_id, info = "dens-dm-seal-v1"), "dens-dm-seal-check-v1")` identifies it at one den without revealing it. Members see it written like a recovery code, in 13 groups of four.
 - **Identity (M16.1):** two key pairs made from the DM seal for one den. The HPKE key is X-Wing's (`MLKEM768X25519`, KEM 0x647a): `DeriveKeyPair(HKDF-SHA-256(seal, salt = den_id, info = "dens-identity-kem-v1"), 32 bytes)`, a 1,216-byte public key. The signing key is Ed25519's, whose seed is `HKDF-SHA-256(seal, salt = den_id, info = "dens-identity-sig-v1")`, 32 bytes. `identity = SHA-256("dens-identity-v1" ‖ SHA-256(kem) ‖ sig)` names it.
+- **Call key (M16.2):** 16 random bytes, SFrame's base key for AES_128_GCM_SHA256_128, with a random 16-byte ID. Its copy is HPKE as an identity's DM key copy is, with `info = "dens-call-key-copy-v1" ‖ den_id ‖ channel ‖ kid ‖ member`, 1,152 bytes; its commitment `SHA-256("dens-call-key-commit-v1" ‖ kid ‖ key)`. SFrame derives each track's AES key and salt from it with RFC 9605's labels, under the key ID `4 × n + track`, where `n` is the ID's first two bytes, big-endian.
 - **Code (M16.1):** a member's, 20 digits. `h = SHA-512("dens-code-v1" ‖ den_id ‖ member ‖ identity)`, then 5,200 times `h = SHA-512(h ‖ identity)`; the first 20 bytes, as four big-endian 40-bit numbers, each modulo 100,000, make five digits each. Members see it in groups of four. A client compares it with nothing from the den but the identity's hash.
 
 ## Objects
 
 ```
 den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3),
-          "emoji_limits"? (M15.2)}
+          "emoji_limits"? (M15.2), "sealed_calls"? (M16.2)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?, "identity"? (M16.1)}
 image  = {"id", "width", "height", "animated"? (M15.1)}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), and `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), and `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
 
 ```
 PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?, "emoji_limits"?}   200 den   (owner only)
@@ -766,11 +767,11 @@ call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_mu
                                    "sharing"? (M4.2), "sound"? (M4.2), "watching"? (M4.2)}, …]}
 ```
 
-Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voice.watch` from M4.2, `voice.talk` from M11, and `voice.sound` from M14.3:
+Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voice.watch` from M4.2, `voice.talk` from M11, `voice.sound` from M14.3, and `sealed` and `voice.key` from M16.2:
 
 ```json
-[{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false}}]
-[{"t": "voice.join", "d": {"channel_id": "41", "resume": true}}]
+[{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false, "sealed": true}}]
+[{"t": "voice.join", "d": {"channel_id": "41", "resume": true, "sealed": true}}]
 [{"t": "voice.answer", "d": {"version": 1, "sdp": "v=0…"}}]
 [{"t": "voice.mute", "d": {"muted": true, "deafened": true}}]
 [{"t": "voice.restart", "d": {}}]
@@ -778,10 +779,12 @@ Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voi
 [{"t": "voice.watch", "d": {"member_id": "7", "on": true}}]
 [{"t": "voice.talk", "d": {"on": true}}]
 [{"t": "voice.sound", "d": {"sound_id": "3"}}]
+[{"t": "voice.key", "d": {"channel_id": "41", "kid": "…", "commit": "…", "members": [{"member_id": "7", "identity": "…"}],
+                          "maker": {"kem_hash": "…", "sig": "…"}, "signature": "…", "copies": [{"member_id": "7", "copy": "…"}]}}]
 [{"t": "voice.leave", "d": {}}]
 ```
 
-Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2, `voice.talking` from M11 and `voice.sounding` from M14.3:
+Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2, `voice.talking` from M11, `voice.sounding` from M14.3 and `voice.key` from M16.2:
 
 ```json
 {"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
@@ -789,6 +792,7 @@ Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4
 {"t": "voice.refused", "d": {"channel_id": "41", "what": "watch", "member_id": "7", "reason": "full"}}
 {"t": "voice.talking", "d": {"channel_id": "41", "members": ["7"]}}
 {"t": "voice.sounding", "d": {"channel_id": "41", "member_id": "7"}}
+{"t": "voice.key", "d": {"channel_id": "41", "member_id": "7", "kid": "…", "commit": "…", "members": […], "maker": {…}, "signature": "…", "copy": "…"}}
 {"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
 {"t": "voice.state", "d": {"calls": [call, …]}}
 ```
@@ -796,7 +800,7 @@ Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4
 ### Joining and leaving
 
 - `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` and `deafened` (M3.3) are optional and set the member's marks from the start. With `"resume": true` (M3), the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection-m3)).
-- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds as many members as the den allows, or the den's calls do; see [Limits for calls](#limits-for-calls-m42)), `rate_limited`, or `failed` when the den couldn't set the call up.
+- A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds as many members as the den allows, or the den's calls do; see [Limits for calls](#limits-for-calls-m42)), `rate_limited`, `failed` when the den couldn't set the call up, or from M16.2 `update_needed`, for a join that doesn't say `"sealed": true` (see [Sealed calls](#sealed-calls-m162)). An older client takes `update_needed` for `failed`.
 - `voice.leave` ends the member's call. When the socket a call started on closes, the den holds the call (see below), unless the den closed that socket for good with 4003 or after a logout. So removals, bans, revoked devices, new passwords, starting over, leaving and logging out end calls at once, and a den restart ends every call.
 - The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; with `failed` when its connection doesn't come up or breaks (below); and with `disconnected_by_staff` when staff disconnect its member (M3).
 
@@ -876,6 +880,16 @@ call_limits = {"members", "callers", "shares", "share_viewers", "share_bitrate",
 - `share_height` is a share's size, as the height of a 16:9 picture: 720, 1080, 1440 or 2160. A share may have as many pixels as that picture, whatever its shape. `share_fps` is its frame rate, 5 to 60. A new den allows 1080 and 30. The client keeps its member's shares to them, since the den can't see either.
 - The owner changes them with `PATCH /api/den`, all together. A lower limit applies to what starts afterwards: nobody leaves a call or a share for it.
 - Clients check `call_limits` as they arrive, as they check `limits`, and refuse a den whose limits are out of range.
+
+### Sealed calls (M16.2)
+
+A den with M16.2 seals every call end to end: each member's page seals its frames with SFrame (RFC 9605, AES_128_GCM_SHA256_128) under a key of the member's own for the call, which their Dens makes, seals to each other member's identity and sends as `voice.key` (see the design doc's End-to-end encryption, Calls). The den forwards frames it can't open.
+
+- The den's info, in `ready` and `den.updated`, says `"sealed_calls": true`; an older den says nothing, and its calls go unsealed. A den that seals calls refuses a `voice.join` without `"sealed": true` with `voice.ended` and `update_needed`: an older page would send in the clear, which every other page drops. A resume takes back only a call the den holds, every one of which was joined sealed. A page that joined while its den didn't seal, which ended the call as it updated, joins again sealed.
+- `voice.key` from a member's Dens carries their key for the call this socket holds, in `channel_id`: its random 16-byte ID (`kid`), a commitment to it (`commit`, SHA-256 of `"dens-call-key-commit-v1"`, the ID and the key), each member it was sealed to with the hash of the identity it was sealed to, in the order of their IDs and its maker not among them, its maker's identity as the hash of its X-Wing key and its Ed25519 key (`maker`), the maker's signature over `"dens-call-key-v1"` ‖ den ID ‖ channel ‖ kid ‖ commit ‖ maker ‖ how many members ‖ each member and identity hash, and a copy for each member named, 1,152 bytes of HPKE (X-Wing, HKDF-SHA-256, ChaCha20-Poly1305), bound to `"dens-call-key-copy-v1"`, the den's ID, the channel, the key's ID and the member. The den checks its shape alone, and that the socket holds a call in that channel: one that doesn't, or past the limit, goes nowhere.
+- The den passes each member the copy it holds for them alone, as `voice.key` with the maker's `member_id`, the statement, the signature and `copy`, on the socket that holds their call, while both are in it. It keeps each member's latest while their call lasts, and passes each a member holds a copy for to them as their call starts, as when they move it to another device, or as they take a held call back.
+- A client takes another's key only once its statement names the member's own identity, the signature checks against the identity it kept for the maker, and its copy opens to the key `commit` names; it closes the connection, as the den breaking the protocol, on a `voice.key` of the wrong shape, and refuses one that fails a check. A key's number in its frames' SFrame headers is its ID's first two bytes; each track's key ID is four times the number and the track's, 0 the voice, 1 the screen and 2 the share's sound.
+- `voice.key` has a limit of its own, 30 in 10 seconds a member (see [Rate limits](#rate-limits)). Additive: no version bump.
 
 ### The soundboard (M14.3)
 
@@ -994,4 +1008,5 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Joining a call | 10 per minute per member |
 | Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, and from M16.1 publishing an identity, making a DM's key and writing the record | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
+| A member's keys for calls (M16.2) | 30 per 10 seconds per member; the rest are dropped |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

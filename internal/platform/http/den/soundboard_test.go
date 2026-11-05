@@ -302,7 +302,7 @@ func TestASoundReachesWhoJoinsPartway(t *testing.T) {
 	bob.c.Close(websocket.StatusGoingAway, "")
 	again := f.voiceSocket(bobToken, bobCaller)
 	again.version, again.answer = bob.version, bob.answer
-	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true})
+	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
 	again.wait("the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed })
 	again.wait(sounding(lounge.ID, alice.me))
 

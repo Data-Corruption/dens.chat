@@ -11,7 +11,7 @@ import { Dialog } from './manage.jsx';
 import { sameDigits } from './private.js';
 
 // Digits shows the digits a screen reads out, large and in groups.
-function Digits({ value }) {
+export function Digits({ value }) {
     return <p class="select-all font-mono text-2xl tracking-wider" aria-label={value.replace(/ /g, ', ')}>{value}</p>;
 }
 

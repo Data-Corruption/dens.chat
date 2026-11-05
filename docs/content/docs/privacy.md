@@ -14,7 +14,7 @@ protect you from.
 | --- | --- |
 | Messages and files in a channel | Members who can see the channel, and the den |
 | Staff-only channels | Moderators, the owner, and the den |
-| Calls and screen shares | Everyone in the call. The den could listen in or watch, since calls pass through it |
+| Calls and screen shares | Only everyone in the call: they're end-to-end encrypted. The den carries them but can't hear or see them; it sees who's in a call, and when. On a den running an older Dens, calls aren't, and the den could listen in or watch: the lock beside the call says which |
 | Who plays which sound on the soundboard | Everyone in the call hears it and sees who played it, and the den knows who played which, as it knows who's in a call |
 | DMs, and the photos and files in them | Only the two of you: they're end-to-end encrypted |
 | Reactions | In a channel, its members and the den. In a DM, only the two of you, like its messages; the den sees only that someone's reactions changed, and when |
@@ -25,7 +25,10 @@ protect you from.
 | Your email or phone number | Nobody: Dens never asks for them |
 
 How DMs stay between the two of you, and the code you compare to be sure of it,
-is in [Join a den](../join/#direct-messages).
+is in [Join a den](../join/#direct-messages). Calls use the same codes: the
+lock beside a call shows yours, and each member's, to compare with them.
+The den decides who's in a call, so only the people listed there can hear
+it.
 
 ## What leaves your computer
 

@@ -81,6 +81,7 @@ const (
 	LimitPasswordName        // per username: anything that checks a password or recovery code
 	LimitCall                // per member: joining a call
 	LimitTalk                // per member: lighting the push-to-talk ring (M11)
+	LimitVoiceKey            // per member: their keys for calls (M16.2)
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -110,6 +111,8 @@ func (d *Den) Allow(kind int, key string) error {
 		l = d.limits.call
 	case LimitTalk:
 		l = d.limits.talk
+	case LimitVoiceKey:
+		l = d.limits.voiceKey
 	default:
 		l = d.limits.write
 	}
@@ -138,7 +141,7 @@ func (d *Den) AllowMessage(member int64, size int) error {
 // RelaxLimits lifts the rate limits, for development instances, where a
 // developer seeds thousands of messages to test the message list.
 func (d *Den) RelaxLimits() {
-	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload, &d.limits.password, &d.limits.passwordName, &d.limits.call, &d.limits.talk, &d.limits.messages} {
+	for _, l := range []**limiter{&d.limits.challenge, &d.limits.join, &d.limits.login, &d.limits.socket, &d.limits.write, &d.limits.send, &d.limits.typing, &d.limits.upload, &d.limits.password, &d.limits.passwordName, &d.limits.call, &d.limits.talk, &d.limits.voiceKey, &d.limits.messages} {
 		*l = newLimiter(1_000_000, time.Microsecond, 1000)
 	}
 	d.limits.messageBytes = newLimiter(1<<40, time.Nanosecond, 1000)

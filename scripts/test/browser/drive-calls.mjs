@@ -4,10 +4,16 @@
 // sends, by voice activity or push to talk; staff mute and disconnect; a
 // call that rides out its member's service restarting and its UDP path
 // breaking; deafen; and the page around the call: the composer, the
-// member's panel, the themes, and the home page.
+// member's panel, the themes, and the home page. From M16.2 the call is
+// sealed end to end: each page seals its microphone and opens every
+// member's track, so each hears the other only by opening their frames;
+// the call's lock opens the members' codes; a third member joining and
+// leaving, the voice probe as carol, changes both pages' keys; and a page
+// denied a member's keys, by a development build's hook, receives their
+// packets and hears nothing.
 //
 //   run.sh calls chromium|firefox chromium|firefox
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 import { HOME, checks, launch, lib, token, waitFor } from './browsers.mjs';
@@ -60,7 +66,7 @@ const STATS = `(async () => {
 // M3: speaking rings, RNNoise, staff mute and disconnect, and a call that
 // rides out its member's service restarting.
 const [, , aName, bName] = process.argv;
-const { DEN: den } = process.env;
+const { DEN: den, LOUNGE: loungeID } = process.env;
 const sides = [
     { browser: aName, instance: 'm2a', port: 18484, debug: 9333 },
     { browser: bName, instance: 'm2b', port: 18486, debug: 9334 },
@@ -135,6 +141,91 @@ try {
             `${s.browser}'s rings are round and apart: ${ring}, gaps ${JSON.stringify(gaps)}`);
         await s.b.shot(`${HOME}/shot-calls-${s.browser}-call.png`).catch((e) => console.log('shot', e.message));
     }
+
+    // Sealed (M16.2): each page's microphone went on under Encoded
+    // Transform, and every receiver's frames go through the worker, so the
+    // rings above came from frames each page opened; the call's lock says
+    // so, beside the call's channel.
+    const TRANSFORMS = `(() => {
+        const ts = window.__pcs.at(-1).getTransceivers();
+        const receiving = ts.slice(1).filter((t) => t.receiver.track && /recv/.test(t.currentDirection || ''));
+        return JSON.stringify({ voice: ts[0].sender.transform instanceof RTCRtpScriptTransform, receivers: receiving.length,
+            opened: receiving.every((t) => t.receiver.transform instanceof RTCRtpScriptTransform),
+            lock: document.querySelector('[data-call-lock]')?.dataset.callLock || '' });
+    })()`;
+    for (const s of sides) {
+        const x = JSON.parse(await s.b.eval(TRANSFORMS));
+        report(x.voice && x.receivers >= 1 && x.opened && x.lock === 'sealed', `${s.browser} seals its microphone and opens every member's track: ${JSON.stringify(x)}`);
+    }
+    const logOf = (s) => s.b.eval(`fetch('/api/logs').then((r) => r.text())`);
+    const madeKeys = (log) => [...log.matchAll(/: made key (\S+), sealed to (\d+) of its (\d+) other members/g)].map((m) => ({ kid: m[1], to: Number(m[2]), of: Number(m[3]) }));
+    const ids = {};
+    for (const [s, who] of [[A, 'alice'], [B, 'bob']]) ids[who] = await s.b.eval(`(async () => (await (await fetch('/api/dens/${den}/state')).json()).me.id)()`);
+    const keysBefore = { alice: madeKeys(await logOf(A)), bob: madeKeys(await logOf(B)) };
+    // Carol, the voice probe, joins, hears alice, waits for the call's
+    // keys, among them alice's, stays a few seconds, and leaves.
+    const carol = { instance: 'm2c', port: 18487 };
+    const jar = fs.readFileSync(`${HOME}/jar-${carol.instance}`, 'utf8').split('\n').map((l) => l.split('\t')).find((f) => f[5]?.startsWith('dens_session_'));
+    let probeOut = '';
+    const probe = spawn(`${HOME}/voice-probe`, ['-test.run', '^TestVoiceProbe$', '-test.v', '-test.count=1'], { env: { ...process.env,
+        DENS_VOICE_PROBE: `http://127.0.0.1:${carol.port}`, DENS_PROBE_COOKIE: `${jar[5]}=${jar[6]}`, DENS_PROBE_DEN: den, DENS_PROBE_CHANNEL: loungeID,
+        DENS_PROBE_HEAR: ids.alice, DENS_PROBE_NETWORK: 'udp', DENS_PROBE_STAY: '6' } });
+    probe.stdout.on('data', (d) => (probeOut += d));
+    probe.stderr.on('data', (d) => (probeOut += d));
+    const joinedThree = await waitFor(async () => JSON.parse(await A.b.eval(STATS)).members.length === 3, 'carol in the call', 60000).catch((e) => e.message);
+    const probeCode = await new Promise((resolve) => probe.on('exit', resolve));
+    const leftThree = await waitFor(async () => JSON.parse(await A.b.eval(STATS)).members.length === 2, 'carol gone', 20000).catch((e) => e.message);
+    await sleep(2000);
+    const keysAfter = { alice: madeKeys(await logOf(A)), bob: madeKeys(await logOf(B)) };
+    for (const who of ['alice', 'bob']) {
+        const fresh = keysAfter[who].slice(keysBefore[who].length);
+        // A key for the three of them as carol joined, and one for the two
+        // as she left, each new.
+        const kids = new Set(fresh.map((k) => k.kid));
+        report(joinedThree === true && leftThree === true && probeCode === 0 && fresh.some((k) => k.of === 2 && k.to === 2) && fresh.at(-1)?.of === 1 &&
+            kids.size === fresh.length && !keysBefore[who].some((k) => kids.has(k.kid)),
+            `${who}'s key changed as carol joined and as she left: ${JSON.stringify(fresh)} (carol in ${joinedThree}, gone ${leftThree}, probe ${probeCode})`);
+    }
+    const passed = probeOut.includes("the call's keys: this member's numbered");
+    report(passed, `the services passed their keys through the den, which carol's probe got with alice's: ${passed ? 'yes' : probeOut.slice(-600)}`);
+
+    // The call's lock opens the member's code to read out, and each other
+    // member to compare with in place.
+    const LOCK_DIALOG = `document.querySelector('[data-call-lock-dialog]')`;
+    await B.b.eval(`document.querySelector('[data-call-lock]').click(), true`);
+    const lockShown = await waitFor(() => B.b.eval(`(() => {
+        const d = ${LOCK_DIALOG};
+        if (!d || !/[0-9]{4} [0-9]{4} [0-9]{4} [0-9]{4} [0-9]{4}/.test(d.textContent)) return false;
+        const row = [...d.querySelectorAll('li')].find((li) => li.textContent.includes('Alice'));
+        return JSON.stringify({ sealed: d.dataset.callLockDialog, compare: !!row && [...row.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Compare') });
+    })()`), `${B.browser} shows the call's lock`, 10000).then(JSON.parse, (e) => e.message);
+    await B.b.shot(`${HOME}/shot-calls-${B.browser}-lock.png`).catch((e) => console.log('shot', e.message));
+    await B.b.eval(`[...${LOCK_DIALOG}.querySelectorAll('li button')].find((b) => b.textContent.trim() === 'Compare').click(), true`);
+    const comparing = await waitFor(() => B.b.eval(`!!document.querySelector('form[data-codes]')`), `${B.browser} compares with Alice`, 10000).catch((e) => e.message);
+    await B.b.eval(`document.querySelector('[role=dialog] button[aria-label=Close]').click(), true`);
+    report(lockShown?.sealed === 'sealed' && lockShown.compare && comparing === true, `${B.browser}'s call lock: ${JSON.stringify(lockShown)}, comparing ${comparing}`);
+
+    // Denied alice's keys, by the development build's hook, bob's page
+    // receives her packets and opens none of her frames once her last key
+    // passes, so nothing of her rings; given them again, it hears her.
+    const withhold = (on) => B.b.eval(`fetch('/api/dens/${den}/members/${ids.alice}/withhold', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: ${on} }) }).then((r) => r.status)`);
+    const ALICE_RINGS = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes('Alice') && li.textContent.includes('speaking'))`;
+    const denied = await withhold(true);
+    await sleep(12000);
+    let rang = false;
+    const deniedFlow = await flowing(B, 'bob receives alice while denied her keys', 1000);
+    for (let i = 0; i < 20; i++) {
+        rang ||= await B.b.eval(ALICE_RINGS);
+        await sleep(200);
+    }
+    const given = await withhold(false);
+    const heardAgain = await waitFor(() => B.b.eval(ALICE_RINGS), `${B.browser} hears Alice again`, 20000).catch((e) => e.message);
+    report(denied === 204 && given === 204 && deniedFlow.moving && !rang && heardAgain === true,
+        `${B.browser} denied Alice's keys receives her packets ${deniedFlow.before}->${deniedFlow.after}, rang for her ${rang}; given them again, hears her ${heardAgain} (${denied}, ${given})`);
+    const notes = await logOf(B);
+    const counted = [...notes.matchAll(/frames sealed (\d+), opened (\d+), dropped (\d+)/g)].map((m) => m.slice(1).map(Number));
+    report(counted.length > 0 && counted.at(-1)[0] > 0 && counted.at(-1)[1] > 0 && counted.at(-1)[2] > 0,
+        `${B.browser}'s notes count its frames, the denied ones dropped: ${JSON.stringify(counted.at(-1))}`);
 
     // Volume: Bob turns Alice down on his side. Her audio element follows,
     // the list shows the level, and the browser keeps it.
@@ -244,7 +335,8 @@ try {
     // A level nothing reaches holds it all back, one everything passes lets
     // it through, and push to talk sends only while its key is held, and
     // nothing once the page loses focus mid-push. Held back, DTX sends
-    // almost nothing.
+    // almost nothing, sealed too: the empty frames it leaves between its
+    // packets of silence go on empty, unsent (M16.2).
     const RATE = `(async () => {
         const read = async () => {
             let b = 0;

@@ -56,8 +56,8 @@ func TestResumeTakesOnlyTheDevice(t *testing.T) {
 			t.Fatalf("ended %s, want %s", e.D, reason)
 		}
 	}
-	join := denproto.VoiceJoin{ChannelID: lounge.ID}
-	resume := denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true}
+	join := denproto.VoiceJoin{ChannelID: lounge.ID, Sealed: true}
+	resume := denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true}
 
 	first := sock(member.KeyID)
 	f.d.joinCall(ctx, member, first, sub, join)

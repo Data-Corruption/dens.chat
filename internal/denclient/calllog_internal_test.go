@@ -37,6 +37,12 @@ func TestCallNotesLogTheirFieldsAlone(t *testing.T) {
 		{`{"what": "stats", "stats": {"protocol": "secret", "local": "192.0.2.5", "remote": "relay", "packets_sent": -5, "bytes_sent": 99999999999999999,
 			"packets_received": 0, "bytes_received": 0, "packets_lost": 0, "jitter": 0, "rtt": 0, "address": "192.0.2.5", "send_rate": -3}}`,
 			"over ?, from a ? candidate to a relay one: sent 0 packets, 9007199254740992 bytes; received 0 packets, 0 bytes, 0 lost; jitter 0 ms, round trip 0 ms; sending 0 kbit/s"},
+		// A sealed call's frames, by count alone (M16.2).
+		{`{"what": "stats", "stats": {"protocol": "udp", "local": "host", "remote": "host", "packets_sent": 10, "bytes_sent": 1000,
+			"packets_received": 5, "bytes_received": 500, "packets_lost": 0, "jitter": 1, "rtt": 2, "send_rate": 40, "target_rate": 0,
+			"frames": {"sealed": 500, "opened": 480, "dropped": -7, "key": "secret"}}}`,
+			"over udp, from a host candidate to a host one: sent 10 packets, 1000 bytes; received 5 packets, 500 bytes, 0 lost; jitter 1 ms, round trip 2 ms; " +
+				"sending 40 kbit/s; frames sealed 500, opened 480, dropped 0"},
 		{`{"what": "state", "state": "disconnected", "ice": "disconnected", "ago": 1500}`, "its connection is disconnected, its ICE disconnected (noted 1.5s before)"},
 		{`{"what": "state", "state": "failed", "ice": "failed", "ago": 3600000}`, "its connection is failed, its ICE failed"},
 		{`{"what": "state", "state": "failed", "ice": "failed", "ago": -20}`, "its connection is failed, its ICE failed"},

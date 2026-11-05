@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { LOCKED, dividerText, dmGate, keyChanges, keysChangedAt, sameDigits } from '../assets/js/src/private.js';
 import { Codes, DMGate, KeysChanged } from '../assets/js/src/private.jsx';
+import { keysChanged } from '../assets/js/src/calllock.jsx';
 
 const names = (id) => ({ 1: 'Alice', 2: 'Bob' })[id] || 'Unknown member';
 const day = Date.UTC(2026, 8, 1);
@@ -217,4 +218,16 @@ test('a DM held since the other\'s keys changed offers Compare and Send anyway',
     click(find(root, button('Compare')));
     assert.equal(compared, 2);
     mount(null, root);
+});
+
+// A call's list marks a member whose keys changed since this member
+// compared codes with them, or since the call began (M16.2).
+test("a call shows a member's keys changed since they were verified, or in the call", () => {
+    const began = day;
+    assert.equal(keysChanged(undefined, began), false);
+    assert.equal(keysChanged({ changes: [] }, began), false);
+    assert.equal(keysChanged({ changes: [day - 1000] }, began), false, 'a change before the call, never verified');
+    assert.equal(keysChanged({ changes: [day - 1000], held: true }, began), true, 'held since they were verified');
+    assert.equal(keysChanged({ changes: [day + 5000] }, began), true, 'a change in the call');
+    assert.equal(keysChanged({ changes: [day + 5000] }, Infinity), false, "outside the page's call, only the hold shows");
 });

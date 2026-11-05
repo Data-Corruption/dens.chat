@@ -704,7 +704,13 @@ den.test:$HttpsPort {
         $memberSide = Start-Probe $member $denID $lounge $aliceID $network
         Wait-Probe $memberSide "the member, over $network,"
         Wait-Probe $ownerSide "the owner"
-        Write-Host "The owner and the member heard each other, the member over $network."
+        # Each probe got the call's keys with the other's, which their
+        # services sealed to each other's identity and passed through the den
+        # (M16.2).
+        foreach ($side in @($memberSide, $ownerSide)) {
+            if (-not ($side.Out.Result + $side.Err.Result).Contains("the call's keys: this member's numbered")) { Fail "the call's keys didn't pass between the services" }
+        }
+        Write-Host "The owner and the member heard each other, the member over $network, their services passing their keys for the sealed call."
     }
 
     # The member's instance reaches the den through Caddy, so restarting
