@@ -1,13 +1,13 @@
-// Private DMs and device approval (M1.7) on the page: comparing a DM's
-// check code, approving a new device, and the DM seal, which the page calls
-// the DM recovery key (M8.3). The keys stay in the local service; the page
-// only shows digits, and passes on what the member types.
+// Private DMs and device approval (M1.7) on the page: comparing codes
+// with a member (M16.1), approving a new device, and the DM seal, which the
+// page calls the DM recovery key (M8.3). The keys stay in the local
+// service; the page only shows digits, and passes on what the member types.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { onEvent } from './events.js';
-import { CopyButton, DocsTip, ErrorText, Field, PLAIN, SubmitButton, TextInput, clock, day, useAction } from './components.jsx';
+import { CopyButton, DocsTip, ErrorText, Field, PLAIN, SubmitButton, TextInput, Tip, clock, day, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
+import { Dialog } from './manage.jsx';
 import { sameDigits } from './private.js';
 
 // Digits shows the digits a screen reads out, large and in groups.
@@ -16,17 +16,17 @@ function Digits({ value }) {
 }
 
 // DigitsInput takes the digits the other side reads out.
-function DigitsInput({ value, onInput, label }) {
+function DigitsInput({ value, onInput, label, placeholder = '0000 0000 0000 0000' }) {
     return (
         <Field label={label}>
-            <TextInput value={value} onInput={onInput} inputmode="numeric" autocomplete="off" placeholder="0000 0000 0000 0000"
+            <TextInput value={value} onInput={onInput} inputmode="numeric" autocomplete="off" placeholder={placeholder}
                 class="input w-full font-mono text-lg tracking-wider" required />
         </Field>
     );
 }
 
-// WhereToCompare says where a check code is worth comparing, best first,
-// and why.
+// WhereToCompare says where codes are worth comparing, best first, and
+// why.
 function WhereToCompare({ name }) {
     return (
         <details class="text-sm">
@@ -54,73 +54,122 @@ function WhereToCompare({ name }) {
     );
 }
 
-// CheckPanel stands in for the composer in a DM while this member can't
-// send in it: until its key exists, until both Dens have been online, and
-// until this member types the digits the other reads out. After that it
-// says whether the other member has checked too.
-export function CheckPanel({ denID, channel, dm, keyID }) {
-    const [st, setSt] = useState(null);
-    const [digits, setDigits] = useState('');
+// VerifiedMark is the green circled check beside a member this member
+// verified by comparing codes (M16.1), which says so in its tip.
+export function VerifiedMark({ id, name }) {
+    return (
+        <Tip id={id} label={`You verified ${name}`} trigger={
+            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-success" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                stroke-linejoin="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.5" />
+                <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
+            </svg>
+        }>
+            You compared codes with {name}, so nobody sits between you. It goes if their keys change.
+        </Tip>
+    );
+}
+
+// CodesDialog compares codes with a member (M16.1).
+export function CodesDialog({ denID, member, onClose }) {
+    return (
+        <Dialog title={`Compare codes with ${member.display_name}`} onClose={onClose}>
+            <Codes denID={denID} member={member} />
+        </Dialog>
+    );
+}
+
+// Codes is comparing codes with a member: this member's own, to read out,
+// and a box for the other's, typed as they read it out, so a check can't
+// pass by copying one's own screen. Comparing asks nothing of the den: the
+// local service makes the code from the identity it kept.
+export function Codes({ denID, member }) {
+    const [view, setView] = useState(null);
     const [error, setError] = useState('');
+    const [digits, setDigits] = useState('');
+    const [matched, setMatched] = useState(false);
     const act = useAction();
-    const starting = useRef(false);
-    const name = dm ? dm.display_name : 'the other member';
-
-    async function load() {
-        try {
-            const next = await api.get(`/api/dens/${denID}/dms/${channel.id}/check`);
-            setSt(next);
-            setError('');
-            // A DM with no key to use starts one: the first, or the next
-            // after someone started over. If both members' Dens start at
-            // once, the den keeps one and the other answers it.
-            if (next.stage === 'none' && next.seal && !dm?.left_at && !starting.current) {
-                starting.current = true;
-                try {
-                    await api.post(`/api/dens/${denID}/dms/${channel.id}/key`, { restart: false });
-                    setSt(await api.get(`/api/dens/${denID}/dms/${channel.id}/check`));
-                } finally {
-                    starting.current = false;
-                }
-            }
-        } catch (e) {
-            setError(e.message);
-        }
-    }
-
+    const name = member.display_name;
     useEffect(() => {
-        load();
-        return onEvent((msg) => {
-            if (msg.t === 'reconnected' || (msg.t === 'den' && msg.d.den === denID && msg.d.reset)) return load();
-            if (msg.t !== 'den' || msg.d.den !== denID) return;
-            if ((msg.d.events || []).some((e) => e.t === 'dm.key' && e.d.channel_id === channel.id)) load();
-        });
-    }, [denID, channel.id, keyID]);
+        api.get(`/api/dens/${denID}/members/${member.id}/code`).then(setView, (e) => setError(e.message));
+    }, [denID, member.id]);
 
-    function check(e) {
+    function compare(e) {
         e.preventDefault();
-        if (st?.half && sameDigits(digits, st.half)) {
+        if (view && sameDigits(digits, view.mine)) {
             return act.setError(`Those are your own digits. Type the ones ${name} reads out to you.`);
         }
         act.run(async () => {
-            await api.post(`/api/dens/${denID}/dms/${channel.id}/check`, { digits });
+            const next = await api.post(`/api/dens/${denID}/members/${member.id}/compare`, { digits });
+            setView((v) => ({ ...v, ...next }));
             setDigits('');
-            await load();
+            setMatched(true);
         });
     }
 
-    function restart() {
-        act.run(async () => {
-            await api.post(`/api/dens/${denID}/dms/${channel.id}/key`, { restart: true });
-            setDigits('');
-            await load();
-        });
-    }
+    return (
+        <>
+            {!view ? (
+                error ? <ErrorText message={error} /> : <span class="loading loading-dots loading-sm"></span>
+            ) : (
+                <form class="flex flex-col gap-3" onSubmit={compare} data-codes>
+                    {view.verified && (
+                        <p role="status" class="flex items-center gap-1 text-success" data-verified>
+                            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="8" cy="8" r="6.5" />
+                                <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
+                            </svg>
+                            {matched ? `The codes match: you verified ${name}.` : `You verified ${name}.`}
+                        </p>
+                    )}
+                    {view.held && (
+                        <p class="text-sm text-warning">{name}'s keys changed since you compared codes. Compare again to check it's really them.</p>
+                    )}
+                    <p class="text-sm">
+                        Read your code out to {name}, and type theirs as they read it out. If both match, nobody sits between you.{' '}
+                        <DocsTip id={`docs-codes-${member.id}`} page="join/#direct-messages">Why you compare codes, and where it's safe to.</DocsTip>
+                    </p>
+                    <div>
+                        <p class="text-xs text-base-content/60">Your code</p>
+                        <Digits value={view.mine} />
+                    </div>
+                    <DigitsInput value={digits} onInput={setDigits} label={`Type the code ${name} reads out to you`} placeholder="0000 0000 0000 0000 0000" />
+                    <ErrorText message={act.error} />
+                    <div><SubmitButton busy={act.busy}>Compare</SubmitButton></div>
+                    <p class="text-xs text-base-content/60">
+                        Digits that really don't match mean someone may be in the middle. Compare somewhere else before you trust this DM.
+                    </p>
+                    <WhereToCompare name={name} />
+                </form>
+            )}
+        </>
+    );
+}
 
+// KeysChanged is the line in a DM where the other member's keys changed
+// (M16.1), with Compare.
+export function KeysChanged({ name, at, onCompare }) {
+    return (
+        <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs text-warning" data-keys-changed>
+            <span class="flex max-w-[80%] shrink-0 flex-wrap items-center justify-center gap-x-2 whitespace-normal text-center">
+                <span>{name}'s keys changed{at ? ` on ${day(at)}` : ''}.</span>
+                <button type="button" class="btn btn-ghost btn-xs" onClick={onCompare}>Compare</button>
+            </span>
+        </div>
+    );
+}
+
+// DMGate stands in a DM's composer's place while it can't take messages
+// (M16.1): this device lacks the member's DM recovery key; the den, or the
+// other member's Dens, runs a version too old to seal the DM's new keys;
+// or the other's keys changed since this member verified them, which
+// holds the DM until they compare again or send anyway.
+export function DMGate({ denID, gate, dm, onCompare }) {
+    const act = useAction();
+    const name = dm ? dm.display_name : 'the other member';
     let body;
-    if (!st) {
-        body = error ? <ErrorText message={error} /> : <span class="loading loading-dots loading-sm"></span>;
-    } else if (!st.seal) {
+    if (gate === 'no_seal') {
         body = (
             <div class="flex flex-wrap items-center gap-2">
                 <p class="min-w-0 flex-1">
@@ -129,51 +178,25 @@ export function CheckPanel({ denID, channel, dm, keyID }) {
                 <button type="button" class="btn btn-sm" onClick={() => openManage(denID, 'password')}>Enter it</button>
             </div>
         );
-    } else if (st.checked) {
-        if (st.partner) return null;
-        // Whoever checks first still has their digits to read out.
-        return (
-            <div class="border-t border-base-300 px-4 py-3 text-sm">
-                {st.half && (
-                    <>
-                        <p class="text-base-content/70">{name} still has to type your digits. Read these out to them:</p>
-                        <Digits value={st.half} />
-                    </>
-                )}
-                <p class="text-xs text-base-content/60">
-                    You typed {name}'s digits, so you can send now. {name} reads what you send once they've typed yours.
-                </p>
-            </div>
-        );
-    } else if (st.stage === 'none' || st.stage === 'offered' || st.stage === 'answered') {
+    } else if (gate === 'den') {
+        body = <p class="text-base-content/70">This den runs an older Dens, which can't set up this DM's encryption. Its owner can update it.</p>;
+    } else if (gate === 'update') {
+        body = <p class="text-base-content/70">{name}'s Dens needs an update before you can write here.</p>;
+    } else if (gate === 'held') {
         body = (
-            <p class="text-base-content/70">
-                Setting up this DM's encryption. It needs {name}'s Dens to be online once; then you'll both see digits to
-                compare.
-            </p>
-        );
-    } else {
-        body = (
-            <form class="flex flex-col gap-2" onSubmit={check}>
-                <p class="font-medium">
-                    Compare check codes with {name} before you talk here.{' '}
-                    <DocsTip id={`docs-check-${channel.id}`} page="join/#direct-messages">Why you compare digits, and where it's safe to.</DocsTip>
+            <div class="flex flex-col gap-2" data-hold>
+                <p>
+                    {name}'s keys changed since you compared codes. Compare again to check it's really them, or send anyway if you know why they
+                    changed.
                 </p>
-                <p class="text-sm text-base-content/70">Read these digits out to {name}. They stay here until {name} has typed them.</p>
-                <Digits value={st.half} />
-                <DigitsInput value={digits} onInput={setDigits} label={`Type the digits ${name} reads out to you`} />
                 <ErrorText message={act.error} />
-                <div class="flex flex-wrap items-center gap-2">
-                    <SubmitButton busy={act.busy}>Check</SubmitButton>
-                    <button type="button" class="btn btn-ghost btn-sm" disabled={act.busy} onClick={restart}>
-                        The digits don't match: start again
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" onClick={onCompare}>Compare</button>
+                    <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => act.run(() => api.post(`/api/dens/${denID}/members/${dm.id}/send-anyway`))}>
+                        Send anyway
                     </button>
                 </div>
-                <p class="text-xs text-base-content/60">
-                    Digits that really don't match mean someone may be in the middle. Start again, and compare somewhere else.
-                </p>
-                <WhereToCompare name={name} />
-            </form>
+            </div>
         );
     }
     return <div class="border-t border-base-300 px-4 py-3 text-sm">{body}</div>;
@@ -479,8 +502,8 @@ export function ResetKey({ den, onDone, onBack }) {
         }}>
             <p class="text-sm">
                 Resetting makes a new DM recovery key, for a lost key or a stolen device that holds it. Your DMs in {den.name} before now
-                become unreadable to you, though not to the people you talked with, and each DM needs its check codes compared again. Your
-                other devices there are signed out, since they hold the old key.
+                become unreadable to you, though not to the people you talked with, and your code changes, so they see your keys changed and
+                anyone who compared codes with you does again. Your other devices there are signed out, since they hold the old key.
             </p>
             <Field label="Den password">
                 <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
@@ -558,11 +581,4 @@ export function KeyDivider({ text }) {
             <span class="max-w-[80%] shrink-0 whitespace-normal text-center">{text}</span>
         </div>
     );
-}
-
-// checkedOn says when two members last compared a DM's codes, for its
-// header.
-export function checkedOn(key) {
-    const checks = key?.checks || [];
-    return checks.length === 2 ? day(Math.max(...checks.map((c) => c.at))) : '';
 }

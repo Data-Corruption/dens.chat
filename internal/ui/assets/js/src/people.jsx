@@ -10,6 +10,7 @@ import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
+import { VerifiedMark } from './private.jsx';
 
 const MAX_BIO = 300;
 
@@ -70,7 +71,7 @@ export function MemberList({ members, online, onProfile }) {
 // how long they've been in the den, and their bio. In a panel the bio runs
 // its full length, which the panel scrolls. Its pictures play while it
 // shows, since the member opened it (M15.1).
-function Profile({ denID, member, me, online, panel = false }) {
+function Profile({ denID, member, me, online, panel = false, verified = false }) {
     const [bio, setBio] = useState(null);
     const [error, setError] = useState('');
     // A bio usually arrives at once; the dots show only if it's slow.
@@ -85,7 +86,10 @@ function Profile({ denID, member, me, online, panel = false }) {
             <div class="flex items-center gap-4">
                 <Avatar member={member} size="lg" online={left ? undefined : online} />
                 <div class="flex min-w-0 flex-col items-start gap-1">
-                    <p class="max-w-full truncate text-lg font-semibold">{member.display_name}</p>
+                    <p class="flex max-w-full items-center gap-1 text-lg font-semibold">
+                        <span class="truncate">{member.display_name}</span>
+                        {verified && <VerifiedMark id={`profile-verified-${member.id}${panel ? '-panel' : ''}`} name={member.display_name} />}
+                    </p>
                     <p class="max-w-full truncate text-sm text-base-content/70">@{member.username}</p>
                     <RoleBadge role={member.role} />
                 </div>
@@ -103,17 +107,33 @@ function Profile({ denID, member, me, online, panel = false }) {
 }
 
 // ProfilePanel shows the other member of a DM beside it, in the member
-// list's place (M11).
-export function ProfilePanel({ denID, member, me, online }) {
+// list's place (M11), and from M16.1 whether this member verified them,
+// with Compare codes. kept is what this member's Dens kept of their
+// identity, null on a den that keeps none.
+export function ProfilePanel({ denID, member, me, online, kept, onCompare }) {
     return (
         <div class="flex flex-col gap-3 p-3">
-            <Profile denID={denID} member={member} me={me} online={online} panel />
+            <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified} />
+            <CompareCodes member={member} kept={kept} onCompare={onCompare} />
+        </div>
+    );
+}
+
+// CompareCodes offers to compare codes with a member whose Dens publishes
+// an identity (M16.1), saying where their keys changed since this member
+// verified them.
+function CompareCodes({ member, kept, onCompare }) {
+    if (!kept || !member.identity || member.left_at) return null;
+    return (
+        <div class="flex flex-col items-start gap-1">
+            {kept.held && <p class="text-sm text-warning">Their keys changed since you compared codes.</p>}
+            <button type="button" class="btn btn-sm" onClick={() => onCompare(member)}>{kept.verified ? 'Compare codes again' : 'Compare codes'}</button>
         </div>
     );
 }
 
 // ProfileCard shows a member, and what the viewer can do with them.
-export function ProfileCard({ denID, member, me, role, online, onClose, onMessage, onEdit, onRemove }) {
+export function ProfileCard({ denID, member, me, role, online, kept, onClose, onMessage, onCompare, onEdit, onRemove }) {
     const act = useAction();
     const self = member.id === me.id;
     const left = !!member.left_at;
@@ -125,11 +145,14 @@ export function ProfileCard({ denID, member, me, role, online, onClose, onMessag
 
     return (
         <Dialog title="Profile" onClose={onClose}>
-            <Profile denID={denID} member={member} me={me} online={online} />
+            <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} />
             <ErrorText message={act.error} />
             <div class="flex flex-wrap gap-2">
                 {self && <button type="button" class="btn btn-sm" onClick={onEdit}>Edit profile</button>}
                 {!self && !left && <button type="button" class="btn btn-primary btn-sm" onClick={() => onMessage(member)}>Message</button>}
+                {!self && kept && member.identity && !left && (
+                    <button type="button" class="btn btn-sm" onClick={() => onCompare(member)}>{kept.verified ? 'Compare codes again' : 'Compare codes'}</button>
+                )}
                 {role === 'owner' && !self && !left && member.role === 'member' && (
                     <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => setRole('moderator')}>Make moderator</button>
                 )}
