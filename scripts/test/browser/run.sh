@@ -93,9 +93,11 @@
 #                               a poll written in it and sent, voted on by taps, and its count's tip (M15.4);
 #                               comparing codes from a DM's lock (M16.1); and a DM's time from its header (M16.4);
 #                               and Compact picked by a tap, a channel's messages a line each, a long press
-#                               on one, and a spoiler covered until a tap shows it (M17.2).
+#                               on one, and a spoiler covered until a tap shows it (M17.2); and the notes
+#                               opened from the top of the Direct messages list, a note sent with nothing
+#                               marked unread, and the own profile card's Notes (M17.3).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
-#                               owner or before; all unless given
+#                               notes, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
 #                               platform's page holding its own steps alone, its folds closed until opened,
 #                               the Flatpak's old link landing on the choice, and the links into the guides
@@ -108,12 +110,18 @@
 #                               and bob, in the second, in a call, muted, dragged onto another voice
 #                               channel, whose call his page joins, sealed and still muted, and Move to in
 #                               his menu taking him back
+#   notes BROWSER               M17.3: bob's notes opened from the top of his Direct messages tab, the den
+#                               making them then; a note with a photo written on his phone, the composer
+#                               offering no one else's editing, poll or Spoiler; his laptop opening them from
+#                               his own profile card's Notes, reading both and writing back, nothing marked
+#                               unread; and the den's database holding neither in the clear, alice's Dens
+#                               nothing of them
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,111p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,119p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
