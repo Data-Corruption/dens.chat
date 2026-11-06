@@ -25,7 +25,7 @@ The client sends `Dens-Protocol: <n>` on every request and on the WebSocket upgr
 - If `n` is above the range, the client retries once at the den's `max` if its own minimum allows it, and goes at it from then on, until a response's range says the den speaks a newer one, as once it updates. A socket keeps the version its upgrade went at, so a client whose upgrade's answer shows another version they share opens the socket again at it, once.
 - Otherwise the den answers `426` with the error code `protocol_unsupported`, and the client shows "this den needs a newer or older Dens" with both ranges.
 
-This document describes version 2, which M16.3 brought with group DMs (see [Group DMs](#group-dms-m163)). A den serves 1 and 2 (`Dens-Protocol-Range: 1-2`): to a request or socket at version 1, it sends nothing of group DMs, in `ready`, events or answers, and their routes answer `404 not_found`, since an older client takes a channel of more than two members, or a message with more than two members' sets of reactions, for the den breaking the protocol. Everything else is as at version 1.
+This document describes version 3, which M17.3 brought with notes to self (see [Notes to self](#notes-to-self-m173)), after version 2, which M16.3 brought with group DMs (see [Group DMs](#group-dms-m163)). A den serves 1 to 3 (`Dens-Protocol-Range: 1-3`): to a request or socket at version 1, it sends nothing of group DMs or notes, and at version 2 nothing of notes, in `ready`, events or answers, and their routes answer `404 not_found`, since an older client takes a channel of more than two members, or of a kind it doesn't know, or a message with more than two members' sets of reactions, for the den breaking the protocol. Everything else is as at version 1.
 
 ## Errors
 
@@ -763,6 +763,25 @@ POST /api/me/seal   {"verifier", "seal_check"}   200 {"signed_out": 1}
 - The live keys of their DMs retire (`"retired": "started_over"`), and their copies of every DM key, and their exchange states, go: nothing opens them any more. What those keys sealed stays unreadable to them, while the other members keep their copies. Their identity and record go too, so others see their identity change as their client publishes the new seal's (M16.1); each DM gets a new key, sealed to the new identity, with its next message.
 - Every other device of theirs is signed out with 4003 `started over`, since it holds the old seal, and their sign-ins waiting for approval are cancelled.
 - A former member who joins again with another seal than the one they left with starts over the same way.
+
+## Notes to self (M17.3)
+
+```
+channel = {"id", "kind": "notes", "members": [member id], "group_id": null, "name": "", "position": 0, "staff_only": false}
+
+POST /api/notes   200 channel
+```
+
+A member's notes are a channel of their own in the den, which only they see, at version 3 of the protocol alone. Their clients seal its messages as a DM's, under a key the den never holds.
+
+- `POST /api/notes` answers with the member's notes, making them the first time, which sends `channel.created` to the member; after that it answers with the same channel. A member has one in each den. It counts toward the member's other writes.
+- **The key** is `HKDF-SHA-256(seal, salt = den_id, info = "dens-notes-v1")`, 32 bytes, which each client holding the member's seal makes as it needs it and never sends.
+- **Messages** go as a DM's (see [DM messages](#dm-messages)), sealed under the notes' key, with `key_id` the notes' channel ID, which the den takes in place of a DM key's and requires, or answers `400 invalid_field`. Their files go as a DM's (see [DM files](#dm-files)), each sealed under a key of its own that the sealed text carries.
+- Replies, edits, deletes, ticks as edits, and read state work as in a DM, and sending a note reads the notes up to it; nothing in them counts toward an unread count. The den refuses reactions, polls, other editors, disappearing times and closing (`400 invalid_field`), and a spoiler outside the seal, as in a DM.
+- The den's retention deletes notes as any message, and their files count toward the member's upload limits.
+- A member who leaves the den, or is removed, takes their notes with them: the den deletes the channel, with its messages and files.
+- A member who starts over (see [Starting over](#starting-over)) has a new seal, and so a new key: the notes from before no longer open, and a client shows them as lost, for the member to delete.
+- At version 1 or 2 the den sends nothing of notes, in `ready`, events, history or the change log, and `POST /api/notes` answers `404 not_found`, since an older client closes its connection on a channel of a kind it doesn't know.
 
 ## Approving new devices (M1.7)
 
