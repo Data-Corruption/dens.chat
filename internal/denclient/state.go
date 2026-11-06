@@ -55,6 +55,9 @@ type denState struct {
 	// sealedCalls says the den seals every call end to end, and takes no
 	// join that doesn't (M16.2).
 	sealedCalls bool
+	// disappearing says the den deletes a DM's and a group's messages at
+	// the time their members set (M16.4).
+	disappearing bool
 	// groupDMs says the snapshot came on a socket speaking the protocol's
 	// version with group DMs (M16.3).
 	groupDMs bool
@@ -93,6 +96,9 @@ type View struct {
 	// SealedCalls says the den seals its calls end to end, so the page
 	// joins one only sealing what it sends (M16.2).
 	SealedCalls bool `json:"sealed_calls"`
+	// Disappearing says the den deletes a DM's and a group's messages at
+	// the time their members set, which the page offers only then (M16.4).
+	Disappearing bool `json:"disappearing"`
 	// HasGroupDMs says the den has group DMs for this Dens, and GroupDMs
 	// are this member's, as their changes make them (M16.3).
 	HasGroupDMs bool                 `json:"has_group_dms"`
@@ -124,7 +130,8 @@ func (s *denState) view(status Status, me denproto.Member) View {
 	v := View{Status: status, Me: me, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
-		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls}
+		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
+		Disappearing: s.disappearing}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -211,7 +218,7 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	if c.Kind == denproto.KindDM {
 		ok := len(c.Members) == 2 && validID(c.Members[0]) && validID(c.Members[1]) && c.Members[0] != c.Members[1] &&
 			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && c.Bitrate == 0 && c.Changes == 0 && c.SealedName == nil
-		return c, ok
+		return c, ok && cleanExpiry(c)
 	}
 	if c.Kind == denproto.KindGroupDM {
 		// Its members as the den holds them, which only its changes, checked
@@ -221,9 +228,9 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 		for i, m := range c.Members {
 			ok = ok && validID(m) && !slices.Contains(c.Members[:i], m)
 		}
-		return c, ok
+		return c, ok && cleanExpiry(c)
 	}
-	if c.Changes != 0 || c.SealedName != nil {
+	if c.Changes != 0 || c.SealedName != nil || c.ExpiresAfter != 0 || c.ExpiresSet != nil {
 		return c, false
 	}
 	name, err := denproto.CleanName(c.Name, denproto.MaxNameRunes)
@@ -238,6 +245,14 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	}
 	c.Name = name
 	return c, true
+}
+
+// cleanExpiry checks a DM's or a group's time (M16.4): up to four weeks, in
+// any whole number of seconds, which a development instance's den takes,
+// and who set it, and when.
+func cleanExpiry(c denproto.Channel) bool {
+	return c.ExpiresAfter >= 0 && c.ExpiresAfter <= denproto.MaxExpiresAfter &&
+		(c.ExpiresSet == nil || validID(c.ExpiresSet.By) && c.ExpiresSet.At > 0)
 }
 
 // hasMessages reports whether a channel holds messages, as text channels,
@@ -328,7 +343,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		maps.Copy(next.members, prev)
 	}
 	next.limits, next.callLimits, next.retention, next.soundLimits = r.Den.Limits, r.Den.CallLimits, r.Den.Retention, r.Den.SoundLimits
-	next.sealedCalls = r.Den.SealedCalls
+	next.sealedCalls, next.disappearing = r.Den.SealedCalls, r.Den.Disappearing
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
 		return errMalformed
@@ -458,7 +473,7 @@ type keptState struct {
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
 	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
-		EmojiLimits: s.emojiLimits, SealedCalls: s.sealedCalls},
+		EmojiLimits: s.emojiLimits, SealedCalls: s.sealedCalls, Disappearing: s.disappearing},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
@@ -498,7 +513,7 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		return nil, errMalformed
 	}
 	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
-	s.soundLimits, s.sealedCalls = k.Den.SoundLimits, k.Den.SealedCalls
+	s.soundLimits, s.sealedCalls, s.disappearing = k.Den.SoundLimits, k.Den.SealedCalls, k.Den.Disappearing
 	sounds, ok := cleanSounds(k.Sounds)
 	if !ok {
 		return nil, errMalformed

@@ -98,17 +98,19 @@ func (s *Store) txLocked(fn func(*sql.Tx) error) error {
 // them at the revision the cache holds too, as their reactions change
 // without changing it (M15.3). A DM's sets of reactions each have a
 // revision of their own, and the newer of each stays, whichever copy held
-// it. A message deleted lately, or one retention reached, stays out. It
-// returns the bytes this added to each channel.
+// it. A message deleted lately, one retention reached, or one past its
+// time to disappear (M16.4) stays out. It returns the bytes this added to
+// each channel.
 func (s *Store) putLocked(tx *sql.Tx, den int64, denID []byte, g *guards, ms []denproto.Message, fresh bool) (map[int64]int64, error) {
 	added := map[int64]int64{}
+	now := s.now().UnixMilli()
 	for _, m := range ms {
 		id, err := denproto.ParseID(m.ID)
 		if err != nil {
 			continue
 		}
 		channel, _ := denproto.ParseID(m.ChannelID)
-		if g.deleted[id] || id <= g.expired {
+		if g.deleted[id] || id <= g.expired || (m.ExpiresAt != 0 && m.ExpiresAt <= now) {
 			continue
 		}
 		var revision int
@@ -128,13 +130,17 @@ func (s *Store) putLocked(tx *sql.Tx, den int64, denID []byte, g *guards, ms []d
 		if err != nil {
 			return nil, err
 		}
-		var reply any
+		var reply, expires any
 		if r, err := denproto.ParseID(m.ReplyTo); err == nil {
 			reply = r
 		}
-		if _, err := tx.Exec(`INSERT INTO messages (den, id, channel, revision, reply_to, body) VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT (den, id) DO UPDATE SET revision = excluded.revision, body = excluded.body`,
-			den, id, channel, m.Revision, reply, body); err != nil {
+		if m.ExpiresAt != 0 {
+			expires = m.ExpiresAt
+			s.dueLocked(m.ExpiresAt)
+		}
+		if _, err := tx.Exec(`INSERT INTO messages (den, id, channel, revision, reply_to, body, expires) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (den, id) DO UPDATE SET revision = excluded.revision, body = excluded.body, expires = excluded.expires`,
+			den, id, channel, m.Revision, reply, body, expires); err != nil {
 			return nil, err
 		}
 		added[channel] += int64(len(body) - len(old))
@@ -832,14 +838,16 @@ func (s *Store) Page(denID []byte, channel int64, q Query, gen int64, offline, e
 }
 
 // rangeLocked reads a channel's messages from lo to hi, at most limit,
-// oldest first; with fromTop, the newest of them.
+// oldest first; with fromTop, the newest of them. One past its time to
+// disappear, which the timer is about to let go, is left out (M16.4).
 func (s *Store) rangeLocked(den int64, denID []byte, channel, lo, hi int64, limit int, fromTop bool) ([]denproto.Message, error) {
 	order := "ASC"
 	if fromTop {
 		order = "DESC"
 	}
-	rows, err := s.db.Query(`SELECT id, body FROM messages WHERE den = ? AND channel = ? AND id BETWEEN ? AND ? ORDER BY id `+order+` LIMIT ?`,
-		den, channel, lo, hi, limit)
+	rows, err := s.db.Query(`SELECT id, body FROM messages WHERE den = ? AND channel = ? AND id BETWEEN ? AND ?
+		AND (expires IS NULL OR expires > ?) ORDER BY id `+order+` LIMIT ?`,
+		den, channel, lo, hi, s.now().UnixMilli(), limit)
 	if err != nil {
 		return nil, err
 	}

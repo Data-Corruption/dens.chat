@@ -21,6 +21,7 @@ protect you from.
 | Reactions | In a channel, its members and the den. In a DM or a group DM, only its members, like its messages; the den sees only that someone's reactions changed, and when |
 | Who voted for what in a poll | The den, always: it counts each vote. Members, as the poll's author chose: never, once it ends, or always |
 | Who DMs whom, who's in which group DMs, when, and how much | The den |
+| How long a DM's or a group DM's messages last before they disappear | Its members, and the den, which deletes them when their time comes |
 | Your IP address | Each den you're connected to, while you're connected. Other members never see it, even in calls |
 | Your profile | Members of that den. You have a separate one in each den, and no den can link it to your others |
 | Your email or phone number | Nobody: Dens never asks for them |
@@ -55,6 +56,12 @@ caches once they next connect. A den can also be set to delete messages after a
 number of days, which its members see in its settings. A backup keeps what it
 held until the backup itself is deleted.
 
+In a DM or a group DM, anyone in it can have its messages disappear an hour, a
+day, a week or four weeks after they're sent. Each is then deleted as if its
+sender had deleted it: from the den, and from every member's devices, even
+those offline at the time. The den knows the time, since it does the deleting,
+and still sees that the messages were sent, and when.
+
 ## What Dens doesn't protect you from
 
 - **The den**, which can read channels and their files, could listen to calls,
@@ -62,7 +69,7 @@ held until the backup itself is deleted.
   your own.
 - **A tampered den, with people who never compare codes.** It could hand each
   of you keys of its own and read your DMs. Comparing codes, even once, shows
-  it: see [Join a den](../join/#direct-messages).
+  it: see [Join a den](../join/#comparing-codes).
 - **Members** screenshotting or repeating what you say.
 - **Whoever sees your screen.** A notification shows the start of a message, a
   DM's included. Turn off **Show the message**, in the settings under

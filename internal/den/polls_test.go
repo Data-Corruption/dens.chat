@@ -358,8 +358,8 @@ func TestPollsEndByTimer(t *testing.T) {
 	sub, _, _, _ := f.d.Hub.Subscribe(bob.MemberID, false, "", 0)
 	defer f.d.Hub.Unsubscribe(sub)
 	f.clock = f.clock.Add(2 * time.Hour)
-	f.d.StartPolls()
-	defer f.d.StopPolls()
+	f.d.StartTimer()
+	defer f.d.StopTimer()
 	if x := nextEvent[denproto.PollEnded](t, sub, denproto.EventPollEnded); x.MessageID != m.ID || tallied(x.Tally) != "voted 0 totals [0 0]" {
 		t.Errorf("the timer ended it as %+v", x)
 	}

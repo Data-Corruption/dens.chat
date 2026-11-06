@@ -32,7 +32,8 @@ import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } fro
 import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
-import { useHoldsButton } from './touch.js';
+import { useCoarse, useHoldsButton } from './touch.js';
+import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
     callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
     keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise, setShareSettings, setVoice,
@@ -80,9 +81,10 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    // Animations comes first, its two choices above the themes' grid,
-    // where a long list of themes would push it out of sight.
-    else panel = <><AnimationsPicker /><ThemePicker /></>;
+    // Animations and verified marks come first, their few choices above
+    // the themes' grid, where a long list of themes would push them out of
+    // sight.
+    else panel = <><AnimationsPicker /><VerifiedMarksPicker /><ThemePicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -206,6 +208,30 @@ function AnimationsPicker() {
                             <span class="block">{label}</span>
                             <span class="block text-sm text-base-content/70">{hint}</span>
                         </span>
+                    </label>
+                ))}
+            </div>
+        </Card>
+    );
+}
+
+// VerifiedMarksPicker chooses whether the check beside a member this
+// member compared codes with shows beside their name (M16.4): always, on
+// hover or never, and on a touch screen, which has no hover, shown or not.
+// This browser keeps it, as it keeps the theme.
+function VerifiedMarksPicker() {
+    const touch = useCoarse();
+    const choice = useVerifiedMarks();
+    const choices = touch ? [[MARKS_ALWAYS, 'Yes'], [MARKS_NEVER, 'No']] : [[MARKS_ALWAYS, 'Always'], [MARKS_HOVER, 'On hover'], [MARKS_NEVER, 'No']];
+    return (
+        <Card title="Verified status">
+            <p class="text-sm text-base-content/70">Show it beside people in lists, once you've compared codes with them.</p>
+            <div role="radiogroup" aria-label="Show verified status in lists" class="flex flex-wrap gap-x-6 gap-y-2" data-verified-marks>
+                {choices.map(([value, label]) => (
+                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
+                        <input type="radio" class="radio radio-sm" name="verified-marks" value={value} checked={choice === value}
+                            onChange={() => setVerifiedMarks(value)} />
+                        <span>{label}</span>
                     </label>
                 ))}
             </div>

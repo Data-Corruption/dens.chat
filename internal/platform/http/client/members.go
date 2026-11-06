@@ -22,6 +22,7 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Delete("/api/dens/{den}/bans/{member}", rt.handleUnban)
 	r.Post("/api/dens/{den}/dms", rt.handleOpenDM)
 	r.Post("/api/dens/{den}/dms/{channel}/close", rt.handleCloseDM)
+	r.Put("/api/dens/{den}/dms/{channel}/expiry", rt.handleSetExpiry)
 	r.Post("/api/dens/{den}/leave", rt.handleLeave)
 	r.Delete("/api/dens/{den}", rt.handleForget)
 }
@@ -124,6 +125,20 @@ func (rt *router) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 
 func (rt *router) handleCloseDM(w http.ResponseWriter, r *http.Request) {
 	if err := rt.a.Dens.CloseDM(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSetExpiry sets how long a DM's or a group's messages stay after
+// they're sent (M16.4).
+func (rt *router) handleSetExpiry(w http.ResponseWriter, r *http.Request) {
+	var req denproto.ExpiryRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.a.Dens.SetExpiry(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"), req.ExpiresAfter); err != nil {
 		rt.denError(w, r, err)
 		return
 	}

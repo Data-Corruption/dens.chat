@@ -603,6 +603,25 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M16.4: disappearing messages. A DM or a group keeps how long its
+	// messages stay after they're sent, in seconds, 0 while they stay, and
+	// who last set it and when; a message sent under a time keeps when it
+	// goes, which the den's timer finds by the index, and which an edit
+	// leaves as it was.
+	m.Add("Disappearing messages", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_channels ADD COLUMN expires_after INTEGER NOT NULL DEFAULT 0 CHECK (expires_after >= 0);
+			ALTER TABLE den_channels ADD COLUMN expires_by INTEGER REFERENCES den_members (id);
+			ALTER TABLE den_channels ADD COLUMN expires_set_at INTEGER; -- unix milliseconds
+
+			ALTER TABLE den_messages ADD COLUMN expires_at INTEGER; -- unix milliseconds
+			CREATE INDEX den_messages_expiring ON den_messages (expires_at) WHERE expires_at IS NOT NULL;
+		`); err != nil {
+			return fmt.Errorf("add disappearing messages: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

@@ -40,18 +40,22 @@ import { useNarrow } from './nav.js';
 import { isStaff, rank } from './people.jsx';
 import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js';
 import { Poll, PollEditor } from './polls.jsx';
-import { LOCKED, isPrivate, keyChanges, placeAt } from './private.js';
+import { LOCKED, dueBy, isPrivate, keyChanges, nextDue, placeAt } from './private.js';
 import { DMGate, KeyDivider, KeysChanged } from './private.jsx';
 import { GroupGate, GroupLine } from './groups.jsx';
+import { ExpiryLine } from './disappearing.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
-import { SmileyIcon } from './icons.jsx';
+import { SmileyIcon, TimerIcon } from './icons.jsx';
 import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
 
 const EDGE = 600; // px from an end at which the next page loads
 const READ_EVERY = 2000; // ms between read position updates
 const GROUP_GAP = 5 * 60 * 1000;
+// DUE_WAIT is the longest the list waits to look again for messages whose
+// time to disappear came (M16.4), well within what a timer holds.
+const DUE_WAIT = 24 * 60 * 60 * 1000;
 
 // MAX_EDITORS is how many others may edit a message with its author.
 const MAX_EDITORS = 20;
@@ -472,11 +476,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             setViewing((v) => (v && v.message === d.id ? viewed(d, v.files[v.index]) : v));
             setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
-            setViewing((v) => (v && v.message === d.id ? null : v));
-            setDeleting((m) => (m && m.id === d.id ? null : m));
-            setReacting((r) => (r && r.id === d.id ? null : r));
-            setRemoving((id) => (id === d.id ? null : id));
-            setList((cur) => withDelete(cur, d));
+            gone([d.id]);
         } else if (REACTIONS.has(e.t)) {
             holdView();
             setList((cur) => withReaction(cur, e.t, d));
@@ -485,6 +485,39 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             setList((cur) => withPoll(cur, e.t, d));
         }
     }
+
+    // gone takes deleted messages out of the list, with the file the viewer
+    // shows, the reply being written and the edit under way, if they were
+    // among them, and their quotes out of the replies to them.
+    function gone(ids) {
+        const out = new Set(ids);
+        setViewing((v) => (v && out.has(v.message) ? null : v));
+        setDeleting((m) => (m && out.has(m.id) ? null : m));
+        setReacting((r) => (r && out.has(r.id) ? null : r));
+        setRemoving((id) => (out.has(id) ? null : id));
+        setReplyTo((r) => (r && out.has(r.id) ? null : r));
+        setEditing((id) => (out.has(id) ? null : id));
+        setMenu((id) => (out.has(id) ? null : id));
+        setList((cur) => ids.reduce((l, id) => withDelete(l, { id, channel_id: channel.id }), cur));
+    }
+
+    // A message that disappears leaves the list as its time comes, by this
+    // computer's clock, as the den and the local service take it too
+    // (M16.4): a page doesn't wait on them to stop showing it, as while
+    // the den is offline.
+    const [looked, setLooked] = useState(0);
+    useEffect(() => {
+        const now = Date.now();
+        const due = dueBy(list.messages, now);
+        const next = nextDue(list.messages, now);
+        if (!due.length && !next) return undefined;
+        const timer = setTimeout(() => {
+            const ids = dueBy(listRef.current.messages, Date.now()).map((m) => m.id);
+            if (ids.length) gone(ids);
+            else setLooked((n) => n + 1);
+        }, due.length ? 0 : Math.min(next - now, DUE_WAIT));
+        return () => clearTimeout(timer);
+    }, [list.messages, looked]);
 
     // holdView keeps what the member reads where it is as a message above
     // it changes size, as a reaction's row comes or goes, or wraps (M15.3).
@@ -682,6 +715,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     };
     const groupLines = group ? placeAt(list.messages, group.changes || [], (c) => c.at, list) : { before: new Map(), after: [] };
     const groupLine = (c) => <GroupLine key={`group-${c.n}`} change={c} me={me.id} nameOf={(id) => name(members.get(id))} />;
+    // In a DM or a group, the line that says who last set its time, and
+    // when (M16.4).
+    const expiry = sealed && channel.expires_set ? placeAt(list.messages, [channel.expires_set], (x) => x.at, list) : { before: new Map(), after: [] };
+    const expiryLine = (x) => <ExpiryLine key={`expiry-${x.at}`} channel={channel} me={me.id} nameOf={(id) => name(members.get(id))} />;
     for (const m of list.messages) {
         const day = new Date(m.created_at).toDateString();
         if (!prev || new Date(prev.created_at).toDateString() !== day) {
@@ -690,6 +727,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (dividers.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={dividers.get(m.id)} />);
         for (const x of changed.before.get(m.id) || []) rows.push(changeLine(x));
         for (const c of groupLines.before.get(m.id) || []) rows.push(groupLine(c));
+        for (const x of expiry.before.get(m.id) || []) rows.push(expiryLine(x));
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
             rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
@@ -746,6 +784,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }
     rows.push(...changed.after.map(changeLine));
     rows.push(...groupLines.after.map(groupLine));
+    rows.push(...expiry.after.map(expiryLine));
 
     // Files dragged over the pane attach to the message being written.
     const withFiles = (e) => !closed && [...(e.dataTransfer?.types || [])].includes('Files');
@@ -1019,6 +1058,7 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                         <div class="flex items-baseline gap-2">
                             <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
                             <span class="text-xs text-base-content/50" title={new Date(m.created_at).toLocaleString()}>{clock(m.created_at)}</span>
+                            {m.expires_at ? <Disappears at={m.expires_at} /> : null}
                         </div>
                     )}
                     {m.locked ? (
@@ -1091,8 +1131,19 @@ function MessageHeading({ m, author, editorNames }) {
         <>
             <p class="truncate"><span class="font-semibold">{name(author)}</span> <span class="text-base-content/60">{dayTime(m.created_at)}</span></p>
             {m.edited_at ? <p class="text-xs text-base-content/60">Edited {dayTime(m.edited_at)}</p> : null}
+            {m.expires_at ? <p class="text-xs text-base-content/60">Disappears {dayTime(m.expires_at)}</p> : null}
             {editorNames.length > 0 && <p class="text-xs text-base-content/60">{joinNames(editorNames)} can edit this too</p>}
         </>
+    );
+}
+
+// Disappears marks a message that disappears (M16.4), and says when.
+function Disappears({ at }) {
+    const when = `Disappears ${new Date(at).toLocaleString()}`;
+    return (
+        <span class="self-center text-base-content/50" role="img" title={when} aria-label={when} data-disappears>
+            <TimerIcon size="h-3 w-3" />
+        </span>
     );
 }
 

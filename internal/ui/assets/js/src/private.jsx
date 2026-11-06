@@ -5,7 +5,9 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { CopyButton, DocsTip, ErrorText, Field, PLAIN, SubmitButton, TextInput, Tip, clock, day, useAction } from './components.jsx';
+import { CopyButton, DocsLink, DocsTip, ErrorText, Field, PLAIN, SubmitButton, TextInput, Tip, clock, day, useAction } from './components.jsx';
+import { useOver } from './animations.js';
+import { MARKS_HOVER, MARKS_NEVER, useVerifiedMarks } from './verified.js';
 import { openManage } from './dialogs.js';
 import { Dialog } from './manage.jsx';
 import { sameDigits } from './private.js';
@@ -25,55 +27,41 @@ function DigitsInput({ value, onInput, label, placeholder = '0000 0000 0000 0000
     );
 }
 
-// WhereToCompare says where codes are worth comparing, best first, and
-// why.
-function WhereToCompare({ name }) {
+// VerifiedMark is the circled check beside a member this member verified
+// by comparing codes (M16.1), which says so in its tip. Beside a name it
+// shows as Appearance's Verified marks says: always, while the pointer is
+// over its row, or never, and on a touch screen, shown or not (M16.4);
+// always shows it regardless, as where comparing is the subject.
+export function VerifiedMark({ id, name, always = false }) {
+    const marks = useVerifiedMarks();
+    const over = useOver();
+    if (!always && marks === MARKS_NEVER) return null;
+    const hidden = !always && marks === MARKS_HOVER && !over;
     return (
-        <details class="text-sm">
-            <summary class="min-h-6 cursor-pointer select-none py-0.5 text-base-content/70">Where should we compare?</summary>
-            <div class="mt-1 flex flex-col gap-1 text-base-content/70">
-                <p>Best first:</p>
-                <ol class="list-decimal pl-6">
-                    <li>In person.</li>
-                    <li>On a voice or video call, where you know it's really {name}.</li>
-                    <li>In another den that one of you owns. Not this one, even if it's yours.</li>
-                    <li>On several other services where you know the accounts are really {name}'s.</li>
-                    <li>In a den neither of you owns, whose owner could change what you see there.</li>
-                </ol>
-                <p>
-                    Keys pass through this den, so if it were tampered with, it could sit between you and hand each of you keys of
-                    its own. The digits only match if nobody did. Whoever tampered with it could also change the digits you send
-                    each other here, so this den can't vouch for itself, whoever owns it: compare somewhere it can't reach.
-                </p>
-                <p>
-                    It could also pretend to be {name} somewhere else ("I'm @them over there, let's compare there"), so compare where
-                    you know who you're talking to. Hosting your own den narrows that risk, but nothing removes it.
-                </p>
-            </div>
-        </details>
+        <span class={hidden ? 'invisible' : ''} data-verified-mark>
+            <Tip id={id} label={`You verified ${name}`} trigger={<CheckIcon />}>
+                Verified: you compared codes with {name}.
+            </Tip>
+        </span>
     );
 }
 
-// VerifiedMark is the green circled check beside a member this member
-// verified by comparing codes (M16.1), which says so in its tip.
-export function VerifiedMark({ id, name }) {
+// CheckIcon is a check in a circle, as verified members have.
+function CheckIcon() {
     return (
-        <Tip id={id} label={`You verified ${name}`} trigger={
-            <svg viewBox="0 0 16 16" class="h-3.5 w-3.5 text-success" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-                stroke-linejoin="round" aria-hidden="true">
-                <circle cx="8" cy="8" r="6.5" />
-                <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
-            </svg>
-        }>
-            You compared codes with {name}, so nobody sits between you. It goes if their keys change.
-        </Tip>
+        <svg viewBox="0 0 16 16" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
+        </svg>
     );
 }
 
-// CodesDialog compares codes with a member (M16.1).
+// CodesDialog compares codes with a member (M16.1). It doesn't name them,
+// whose name could read as part of its words.
 export function CodesDialog({ denID, member, onClose }) {
     return (
-        <Dialog title={`Compare codes with ${member.display_name}`} onClose={onClose}>
+        <Dialog title="Compare codes" onClose={onClose}>
             <Codes denID={denID} member={member} />
         </Dialog>
     );
@@ -89,7 +77,6 @@ export function Codes({ denID, member }) {
     const [digits, setDigits] = useState('');
     const [matched, setMatched] = useState(false);
     const act = useAction();
-    const name = member.display_name;
     useEffect(() => {
         api.get(`/api/dens/${denID}/members/${member.id}/code`).then(setView, (e) => setError(e.message));
     }, [denID, member.id]);
@@ -97,7 +84,7 @@ export function Codes({ denID, member }) {
     function compare(e) {
         e.preventDefault();
         if (view && sameDigits(digits, view.mine)) {
-            return act.setError(`Those are your own digits. Type the ones ${name} reads out to you.`);
+            return act.setError('Those are your own digits. Type theirs.');
         }
         act.run(async () => {
             const next = await api.post(`/api/dens/${denID}/members/${member.id}/compare`, { digits });
@@ -115,32 +102,22 @@ export function Codes({ denID, member }) {
                 <form class="flex flex-col gap-3" onSubmit={compare} data-codes>
                     {view.verified && (
                         <p role="status" class="flex items-center gap-1 text-success" data-verified>
-                            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-                                stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="8" cy="8" r="6.5" />
-                                <path d="M5.2 8.3l1.9 1.9 3.8-4.1" />
-                            </svg>
-                            {matched ? `The codes match: you verified ${name}.` : `You verified ${name}.`}
+                            <CheckIcon />
+                            {matched ? 'The codes match.' : 'Verified.'}
                         </p>
                     )}
-                    {view.held && (
-                        <p class="text-sm text-warning">{name}'s keys changed since you compared codes. Compare again to check it's really them.</p>
-                    )}
+                    {view.held && <p class="text-sm text-warning">Their keys changed since you compared codes.</p>}
                     <p class="text-sm">
-                        Read your code out to {name}, and type theirs as they read it out. If both match, nobody sits between you.{' '}
-                        <DocsTip id={`docs-codes-${member.id}`} page="join/#direct-messages">Why you compare codes, and where it's safe to.</DocsTip>
+                        Read out your code, and type theirs as they read it out.{' '}
+                        <DocsLink icon page="join/#comparing-codes" label="Where to compare codes, and why" />
                     </p>
                     <div>
                         <p class="text-xs text-base-content/60">Your code</p>
                         <Digits value={view.mine} />
                     </div>
-                    <DigitsInput value={digits} onInput={setDigits} label={`Type the code ${name} reads out to you`} placeholder="0000 0000 0000 0000 0000" />
+                    <DigitsInput value={digits} onInput={setDigits} label="Their code" placeholder="0000 0000 0000 0000 0000" />
                     <ErrorText message={act.error} />
                     <div><SubmitButton busy={act.busy}>Compare</SubmitButton></div>
-                    <p class="text-xs text-base-content/60">
-                        Digits that really don't match mean someone may be in the middle. Compare somewhere else before you trust this DM.
-                    </p>
-                    <WhereToCompare name={name} />
                 </form>
             )}
         </>
@@ -185,10 +162,7 @@ export function DMGate({ denID, gate, dm, onCompare }) {
     } else if (gate === 'held') {
         body = (
             <div class="flex flex-col gap-2" data-hold>
-                <p>
-                    {name}'s keys changed since you compared codes. Compare again to check it's really them, or send anyway if you know why they
-                    changed.
-                </p>
+                <p>{name}'s keys changed since you compared codes.</p>
                 <ErrorText message={act.error} />
                 <div class="flex flex-wrap gap-2">
                     <button type="button" class="btn btn-primary btn-sm" onClick={onCompare}>Compare</button>

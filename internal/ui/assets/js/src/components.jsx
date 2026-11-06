@@ -182,6 +182,21 @@ export function DocsTip({ id, page, side = 'bottom', children }) {
     );
 }
 
+// DocsLink opens the guide to its subject in a new tab, where a dialog
+// needs nothing more than the way there: label says where it leads, as a
+// link of words or, with icon, the i alone, named by label.
+export function DocsLink({ page, label, icon = false }) {
+    const props = { href: DOCS + page, target: '_blank', rel: 'noopener noreferrer' };
+    if (icon) {
+        return (
+            <a {...props} class={`${TRIGGER} align-middle`} aria-label={label} title={label} data-docs-link>
+                <InfoIcon />
+            </a>
+        );
+    }
+    return <a {...props} class="link link-primary" data-docs-link>{label}</a>;
+}
+
 export function Field({ label, hint, children }) {
     return (
         <fieldset class="fieldset">

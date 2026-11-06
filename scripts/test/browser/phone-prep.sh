@@ -2,7 +2,8 @@
 # The phone check's den (M13): alice's install hosts it; bob and carol
 # join; dave's, which the driver starts new for each browser, shows the
 # screens before a den. Alice, bob and carol share a group DM, which
-# carol renames (M16.3). Its soundboard holds a sound (M14.3), and it has
+# carol renames (M16.3) and sets to disappear after a week, as bob sets
+# the DM after a day (M16.4). Its soundboard holds a sound (M14.3), and it has
 # an emoji of its own (M15.2). general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
@@ -75,6 +76,10 @@ done
 say bob "$group" "who's bringing what on saturday?"
 say carol "$group" "I'll bring the board games, and something for the grill"
 api carol PUT "/api/dens/$DEN/group-dms/$group/name" '{"name":"Saturday at the lake"}' >/dev/null
+api carol PUT "/api/dens/$DEN/dms/$group/expiry" '{"expires_after":604800}' >/dev/null
+say carol "$group" "this one goes in a week"
+api bob PUT "/api/dens/$DEN/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null
+say bob "$dm" "and this one goes tomorrow"
 
 echo "DEN=$DEN"
 echo "GENERAL=$general"

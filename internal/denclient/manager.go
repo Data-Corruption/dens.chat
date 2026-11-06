@@ -315,7 +315,14 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 	m.notify()
+	// The cache lets disappearing messages go at their time (M16.4).
+	if m.Cache != nil {
+		m.Cache.OnDisappear(m.disappeared)
+	}
 	<-ctx.Done()
+	if m.Cache != nil {
+		m.Cache.OnDisappear(nil)
+	}
 	m.wg.Wait()
 	m.mu.Lock()
 	for _, c := range m.conns {

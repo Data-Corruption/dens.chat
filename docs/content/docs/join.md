@@ -156,34 +156,46 @@ the den. To start one, open someone's profile and choose **Message**, and
 write: it opens at once.
 
 The den passes your keys between you, so if it were tampered with, it could
-slip in keys of its own. To be sure it didn't, compare **codes**. Each of you
-has one in each den, 20 digits, the same for everyone who compares with you.
-Open the lock beside the person's name in the DM, or **Compare codes** on their
-profile, read your code out to them, and type theirs as they read it out. If
-both match, nobody sits between you, and a green check shows beside their name,
-on your other devices too within the hour. Comparing is up to you, any time,
-and the den never learns whether you did. Your own code is in the den's
-**Manage**, under **Your code**.
+slip in keys of its own. To be sure it didn't, compare codes.
+
+### Comparing codes
+
+Each of you has a code in each den, 20 digits, the same for everyone who
+compares with you. Open the lock beside the person's name in the DM, or
+**Compare codes** on their profile, read your code out to them, and type
+theirs as they read it out. If both match, nobody sits between you, and a
+check shows beside their name, on your other devices too within the hour.
+Comparing is up to you, any time, and the den never learns whether you did.
+Your own code is in the den's **Manage**, under **Your code**.
 
 Calls are end-to-end encrypted too, with the same codes: the lock beside a call
 shows yours, and everyone in the call, to compare with right there. A
-comparison holds wherever you meet them after, in DMs and calls.
+comparison holds wherever you meet them after, in DMs, groups and calls.
 
 Compare somewhere the den can't reach, best first:
 
 1. In person.
 2. On a voice or video call, where you know it's really them.
-3. In another den that one of you owns. Not this one, even if it's yours.
+3. In another den that one of you owns. Not this one, even if it's yours:
+   whoever tampered with it could change the digits you send each other
+   there too, so a den can't vouch for itself.
 4. On several other services where you know the accounts are really theirs.
 5. In a den neither of you owns, which could change what you see there.
 
-Be wary of "I'm @them over there, let's compare there": compare where you know
-who you're talking to. If the digits don't match, someone may be in the middle:
-don't trust the DM until you've compared somewhere else.
+Be wary of "I'm @them over there, let's compare there": a tampered den can
+pretend to be someone elsewhere too, so compare where you know who you're
+talking to. Hosting your own den narrows that risk, but nothing removes it.
+If the digits don't match, someone may be in the middle: don't trust the DM
+until you've compared somewhere else.
 
 If someone's keys change, as when they reset their DM recovery key, the DM says
-so where it happened, and their green check goes. If you'd compared codes with
+so where it happened, and their check goes. If you'd compared codes with
 them, the DM waits until you compare again, or choose **Send anyway**.
+
+Whether the check shows beside people in lists is up to you, under
+**Settings** → **Appearance** → **Verified status**: always, only while the
+pointer is over them, which is how it starts, or not at all; on a phone, shown
+or not, which is how it starts.
 
 A DM with someone whose Dens hasn't been updated waits until it is. DMs where
 you both typed each other's check digits, as Dens once asked, go on as they
@@ -199,7 +211,7 @@ as it is. Give it a name if you like; without one, it's named by its members.
 Only its members ever see the name: the den keeps it sealed.
 
 The group's members show beside it, where a DM shows the other person's
-profile, each with their green check or **Compare**. Anyone in it can add
+profile, each with their check or **Compare**. Anyone in it can add
 people, rename it or leave. Whoever made it can remove people, and once they've
 left, whoever has been in it longest can. Each change shows in the group as a
 line, such as "Alice added Carol".
@@ -215,6 +227,21 @@ again or choose **Send anyway**.
 Group DMs notify you, and count as unread, as DMs do. They have no polls and no
 @everyone, and no calls. A device whose Dens hasn't been updated yet doesn't
 see your groups until it is; your other devices go on as before.
+
+### Disappearing messages
+
+Anyone in a DM or a group DM can have its messages disappear 1 hour, 1 day, 1
+week or 4 weeks after they're sent: pick a time under **Disappearing
+messages**, on the profile beside a DM or below a group's members. It applies
+to messages sent from then on, and a line in the conversation says who set it,
+and when. The time shows beside the lock at the top, and a small clock beside
+each message that will disappear, which says when.
+
+When its time comes, a message is gone from the den and from everyone's
+devices, with its photos and files, even on a device that's offline at the
+time. Anyone in the conversation can still copy or screenshot it before then,
+and a device whose Dens hasn't been updated yet only lets it go once it's back
+in touch with the den.
 
 ## Notifications and sounds
 

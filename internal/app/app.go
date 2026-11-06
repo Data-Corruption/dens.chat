@@ -418,6 +418,8 @@ func (a *App) unlock(key []byte) error {
 	}
 	if l.Form == layout.Development {
 		a.Den.RelaxLimits()
+		// The browser checks see messages disappear in seconds (M16.4).
+		a.Den.ShortTimes = true
 	}
 
 	cfg, err := config.View(a.DB)

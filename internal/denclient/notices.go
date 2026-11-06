@@ -23,12 +23,13 @@ type Notices interface {
 }
 
 // noticeLocked is what a message that just arrived may notify the member
-// of, or nil for one of their own, or one already read, as when the den
-// sends it again after the connection drops. locked is a DM's message this
-// device couldn't open. The caller holds c.mu.
+// of, or nil for one of their own, one already read, as when the den sends
+// it again after the connection drops, or one whose time to disappear came
+// (M16.4). locked is a DM's message this device couldn't open. The caller
+// holds c.mu.
 func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 	me := c.profile.Member
-	if c.m.Notices == nil || c.den == nil || m.AuthorID == me.ID {
+	if c.m.Notices == nil || c.den == nil || m.AuthorID == me.ID || c.m.pastTime(m) {
 		return nil
 	}
 	ch, ok := c.den.channels[m.ChannelID]

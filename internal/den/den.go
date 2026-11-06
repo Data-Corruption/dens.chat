@@ -94,9 +94,10 @@ type Den struct {
 	// pruner forgets changes older than clients may ask for (M6).
 	expiry expiry
 	pruner pruner
-	// pollTimer ends polls at their time, and pollBatch gathers the polls
-	// whose votes changed for the next batch of totals (M15.4).
-	pollTimer pollTimer
+	// timer ends polls at their time (M15.4) and deletes disappearing
+	// messages at theirs (M16.4), and pollBatch gathers the polls whose
+	// votes changed for the next batch of totals.
+	timer     dueTimer
 	pollBatch pollBatch
 
 	// PresenceDelay is how long presence changes gather before they're
@@ -111,6 +112,10 @@ type Den struct {
 	// a sleeping phone, whose client checks its session's renewal then
 	// (M14.1); tests shorten it.
 	PingInterval time.Duration
+	// ShortTimes lets members set a DM's or a group's messages to
+	// disappear after a few seconds, which a development instance's den
+	// takes for the browser checks, as tests do (M16.4).
+	ShortTimes bool
 }
 
 // Session is an authenticated session.
@@ -204,7 +209,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
-		SoundLimits: sounds, EmojiLimits: &emoji, SealedCalls: true}
+		SoundLimits: sounds, EmojiLimits: &emoji, SealedCalls: true, Disappearing: true}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -229,7 +234,8 @@ func (d *Den) holdKey(seed, pub []byte) error {
 
 // Start runs the den as hosting starts (M9.1): calls on its media ports,
 // the sockets the den listener takes, deleting messages past the
-// retention period and forgetting old changes. The caller serves the den
+// retention period, forgetting old changes, and its timer, which ends
+// polls and deletes disappearing messages. The caller serves the den
 // listener once it returns.
 func (d *Den) Start(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) error {
 	if err := d.StartCalls(udp, tcp, cfg); err != nil {
@@ -238,7 +244,7 @@ func (d *Den) Start(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) error {
 	d.openSockets()
 	d.StartRetention()
 	d.StartPruning()
-	d.StartPolls()
+	d.StartTimer()
 	return nil
 }
 
@@ -254,18 +260,18 @@ func (d *Den) Stop(timeout time.Duration) {
 	}
 	d.StopRetention()
 	d.StopPruning()
-	d.StopPolls()
+	d.StopTimer()
 }
 
-// Close ends calls, stops sweeping uploads, deleting old messages and
-// ending polls, and releases the identity key.
+// Close ends calls, stops sweeping uploads, deleting old messages, ending
+// polls and deleting disappearing ones, and releases the identity key.
 func (d *Den) Close() {
 	if err := d.StopCalls(); err != nil {
 		d.log.Warnf("stop calls: %v", err)
 	}
 	d.StopRetention()
 	d.StopPruning()
-	d.StopPolls()
+	d.StopTimer()
 	d.pollBatch.close()
 	d.files.stop()
 	d.mu.Lock()
@@ -341,7 +347,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
-		EmojiLimits: &emoji, SealedCalls: true}
+		EmojiLimits: &emoji, SealedCalls: true, Disappearing: true}
 	d.log.Infof("Den created")
 	return code, nil
 }

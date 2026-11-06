@@ -160,9 +160,7 @@ func TestCallKeysReachTheirMembersAlone(t *testing.T) {
 	again := f.voiceSocket(bobToken, bob.caller)
 	again.version, again.answer = bob.version, bob.answer
 	again.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: lounge.ID, Resume: true, Sealed: true})
-	again.wait("the call to resume", func(e denproto.Event) bool { return e.T == denproto.EventVoiceResumed })
-	again.wait(keyFrom(alice.me, second.KID, 'B'))
-	again.wait(keyFrom(carol.me, fromCarol.KID, 'k'))
+	again.waitEach(expect(resumed()), expect(keyFrom(alice.me, second.KID, 'B')), expect(keyFrom(carol.me, fromCarol.KID, 'k')))
 
 	// Carol leaves and joins again: alice's latest key, still holding a
 	// copy for her, reaches her as her call starts, as when a member moves

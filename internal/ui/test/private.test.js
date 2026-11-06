@@ -196,7 +196,13 @@ test("comparing codes shows this member's code and takes the other's as they rea
     const posted = asked.filter((a) => a.method === 'POST');
     assert.equal(posted.length, 2);
     assert.equal(posted[1].body.digits, theirs.replace(/ /g, '-'));
-    assert.match(root.textContent, /The codes match: you verified Bob\./);
+    assert.match(root.textContent, /The codes match\./);
+    // The dialog doesn't name the other member, whose name could read as
+    // part of its words, and leads to the guide for where to compare.
+    assert.ok(!root.textContent.includes('Bob'));
+    const guide = find(root, (n) => n.attributes?.['data-docs-link'] !== undefined);
+    assert.equal(guide.attributes.href, 'https://dens.chat/docs/join/#comparing-codes');
+    assert.equal(guide.attributes.target, '_blank');
     mount(null, root);
 });
 

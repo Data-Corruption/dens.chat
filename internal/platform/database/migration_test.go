@@ -50,7 +50,8 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // empty. M16.1 retires the DM keys whose exchanges hadn't finished, and
 // keeps every row of them. M16.3 makes den_channels again, with foreign
 // keys off, which keeps every row that refers to a channel, and its
-// counter where a restore moved it.
+// counter where a restore moved it. M16.4 adds each DM's time, which
+// starts off, and each message's, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -151,6 +152,16 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				var channel int64
 				if err := db.QueryRow(`SELECT max(id) FROM den_channels`).Scan(&channel); err != nil || channel != 1700000000000001 {
 					t.Errorf("%s gave a new channel ID %d, %v, not one past the counter", what, channel, err)
+				}
+				// Nothing disappears until a member sets a time (M16.4).
+				var timed, expiring int
+				if err := db.QueryRow(`SELECT
+					(SELECT count(*) FROM den_channels WHERE expires_after != 0 OR expires_by IS NOT NULL OR expires_set_at IS NOT NULL),
+					(SELECT count(*) FROM den_messages WHERE expires_at IS NOT NULL)`).Scan(&timed, &expiring); err != nil || timed+expiring != 0 {
+					t.Errorf("%s holds %d timed DMs and %d messages that disappear after the migration, %v", what, timed, expiring, err)
+				}
+				if _, err := db.Exec(`UPDATE den_channels SET expires_after = -1 WHERE id = 3`); err == nil {
+					t.Errorf("%s takes a DM's time below 0", what)
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {

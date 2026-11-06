@@ -286,6 +286,9 @@ type Den struct {
 	// SealedCalls says the den seals every call end to end (M16.2), and
 	// takes no join that doesn't; a den older than it doesn't say so.
 	SealedCalls bool `json:"sealed_calls,omitempty"`
+	// Disappearing says the den deletes a DM's and a group's messages at
+	// the time their members set (M16.4); a den older than it doesn't.
+	Disappearing bool `json:"disappearing,omitempty"`
 }
 
 // Roles.

@@ -95,6 +95,7 @@ func New(a *app.App) http.Handler {
 			r.Delete("/bans/{id}", h.unban)
 			r.Post("/dms", h.openDM)
 			r.Post("/dms/{id}/close", h.closeDM)
+			r.Put("/dms/{id}/expiry", h.setExpiry)
 			r.Get("/dms/{id}/keys", h.dmKeys)
 			r.Post("/dms/{id}/keys", h.startKey)
 			r.Get("/dms/{id}/signed-keys", h.signedKeys)

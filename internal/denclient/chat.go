@@ -78,6 +78,10 @@ func (m *Manager) History(ctx context.Context, denID, channelID string, q Histor
 	}
 	out := PageHistory{Messages: make([]PageMessage, 0, len(h.Messages)), HasOlder: h.HasOlder, HasNewer: h.HasNewer}
 	for _, msg := range h.Messages {
+		// One whose time to disappear came is about to go (M16.4).
+		if m.pastTime(msg) {
+			continue
+		}
 		pm := c.open(msg)
 		// The page matches a nonce only with its own sends, as it arrives.
 		pm.Nonce = nil

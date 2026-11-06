@@ -20,6 +20,7 @@
 //   retention, files         Manage, each section, as a member and as an owner
 //   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
 //   groups                   a group DM, its members beside it, a new group (M16.3)
+//   disappearing             a DM's time, from its header to its setting beside it (M16.4)
 //   (M8.3, M11)              Home, adding a den, a member's profile, editing one's own,
 //                            removing a member, a channel's and a group's settings
 //   (M9, M10)                unpaired, setting the local password, joining a den,
@@ -59,9 +60,10 @@ export async function waitFor(fn, what, ms = 15000) {
 // controls whose middle another control's room for a finger covers
 // (covered); and whether a channel's message list scrolls sideways
 // (listSideways). Panes off screen are inert, and left out, as are
-// controls under a dialog, a link within a line of text, which WCAG leaves
-// to the text's size, and a disabled control's hiding. A list's row is a
-// menu's item, or a control across most of its list item or its list.
+// controls under a dialog, a control whose middle its list scrolled out
+// of view, a link within a line of text, which WCAG leaves to the text's
+// size, and a disabled control's hiding. A list's row is a menu's item, or
+// a control across most of its list item or its list.
 export const AUDIT = `(() => {
     const vw = document.documentElement.clientWidth, vh = innerHeight;
     const shown = (e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getClientRects().length > 0; };
@@ -89,6 +91,17 @@ export const AUDIT = `(() => {
     const faded = (e) => { for (let p = e; p; p = p.parentElement) if (getComputedStyle(p).opacity === '0') return true; return false; };
     const disabled = (e) => e.disabled || e.getAttribute('aria-disabled') === 'true' || !!e.closest('fieldset:disabled');
     const hits = (e, x, y) => { const at = document.elementFromPoint(x, y); return !!at && (at === e || e.contains(at)); };
+    // A point outside a box that clips e, as a list scrolled past it does,
+    // shows something else there, whatever is at it.
+    const clipped = (e, x, y) => {
+        for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
+            const s = getComputedStyle(p);
+            if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+            const b = p.getBoundingClientRect();
+            if (x < b.left || x > b.right || y < b.top || y > b.bottom) return true;
+        }
+        return false;
+    };
     // Words that are a link or a button, as a line of text has them, or
     // a box of them in a line of other words.
     const inline = (e) => {
@@ -130,7 +143,7 @@ export const AUDIT = `(() => {
             // that's a dialog's, over this one, covers it as the dialog.
             const top = document.elementFromPoint(cx, cy);
             const layer = top?.closest('[role=dialog]');
-            if (layer && !layer.contains(e)) continue;
+            if ((layer && !layer.contains(e)) || clipped(e, cx, cy)) continue;
             const over = top?.closest(TARGETS);
             const o = over?.getBoundingClientRect();
             // A point within a pixel of its box is in it, as hit testing
@@ -446,6 +459,17 @@ export async function memberScreens(h, ctx) {
             await h.click(h.label('Profile'));
             await h.snap('dm-profile');
         });
+        // The time in the DM's header opens what's beside it, where it's
+        // set (M16.4).
+        await h.step('dm-disappearing', async () => {
+            await h.go(`/den/${den}/${dm}`);
+            await h.wait(`document.querySelector('[data-expiry-line]')`, "the line where the DM's time was set");
+            await h.click(`document.querySelector('[data-expiry-badge]')`, "the DM's time in its header");
+            await h.wait(`document.querySelector('[data-expiry-setting]')`, "the DM's time beside it");
+            await h.ev(`document.querySelector('[data-expiry-setting]').scrollIntoView({ block: 'center' }), true`);
+            await sleep(400);
+            await h.snap('dm-disappearing');
+        });
         // The lock in the DM's header opens comparing codes (M16.1).
         await h.step('dm-codes', async () => {
             await h.go(`/den/${den}/${dm}`);
@@ -467,7 +491,7 @@ export async function memberScreens(h, ctx) {
             await h.snap('group');
             await h.click(h.label("The group's members"));
             await h.wait(`document.querySelector('[data-group-members]')`, "the group's members");
-            await h.snap('group-members', { scroll: `document.querySelector('[data-pane=side]')`, max: 2 });
+            await h.snap('group-members', { scroll: `document.querySelector('[data-pane=side]')`, max: 3 });
         });
         await h.step('new-group', async () => {
             await h.go(`/den/${den}/dms`);

@@ -69,6 +69,11 @@
 #                               its members, reading from his joining on; renamed, the name only sealed in the
 #                               den's database; bob removed by alice, who made it, his page reading nothing
 #                               after; and carol and alice leaving
+#   disappearing BROWSER        M16.4: a DM's time set from the profile beside it, its line and its header;
+#                               a message under a time of seconds marked, then gone from both pages, bob's
+#                               cache and the den's database, into its change log; a group's time set from
+#                               its members, and its message gone from both pages; and with the den stopped,
+#                               a message gone from bob's page and cache all the same
 #   phone [MODE...] [-- PART...]  M13: every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
@@ -85,7 +90,7 @@
 #                               message's sheet with its quick reactions, a tap reacting, the chip's tip by
 #                               a long press, and the picker's sheet (M15.3); and the composer's + as a sheet,
 #                               a poll written in it and sent, voted on by taps, and its count's tip (M15.4);
-#                               and comparing codes from a DM's lock (M16.1).
+#                               comparing codes from a DM's lock (M16.1); and a DM's time from its header (M16.4).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, owner
 #                               or before; all unless given
 # BROWSER is chromium or firefox.
@@ -93,7 +98,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,92p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,96p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

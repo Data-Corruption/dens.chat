@@ -210,6 +210,23 @@ func (m *Manager) CloseDM(ctx context.Context, denID, channelID string) error {
 	return c.call(ctx, http.MethodPost, "/api/dms/"+channelID+"/close", nil, nil)
 }
 
+// SetExpiry sets how long a DM's or a group's messages stay after they're
+// sent, for those sent from now on, or with 0 keeps them (M16.4). The den
+// says which times it takes.
+func (m *Manager) SetExpiry(ctx context.Context, denID, channelID string, after int) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("channel", channelID); err != nil {
+		return err
+	}
+	if after < 0 || after > denproto.MaxExpiresAfter {
+		return inputError(errors.New("messages disappear at most four weeks after they're sent, or not at all"))
+	}
+	return c.call(ctx, http.MethodPut, "/api/dms/"+channelID+"/expiry", denproto.ExpiryRequest{ExpiresAfter: after}, nil)
+}
+
 // Leave takes this member out of a den and forgets it here.
 func (m *Manager) Leave(ctx context.Context, denID string) error {
 	c, err := m.find(denID)

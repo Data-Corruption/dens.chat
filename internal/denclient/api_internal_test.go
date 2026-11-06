@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/coder/websocket"
 )
 
 // fakeDen answers as a den speaking the versions lo to hi, recording the
@@ -25,6 +26,12 @@ func fakeDen(t *testing.T, lo, hi int) (*httptest.Server, func() []int) {
 		w.Header().Set(denproto.HeaderRange, strconv.Itoa(lo)+"-"+strconv.Itoa(hi))
 		if v < lo || v > hi {
 			denproto.WriteError(w, denproto.Errorf(http.StatusUpgradeRequired, denproto.CodeProtocolUnsupported, "no"))
+			return
+		}
+		if r.URL.Path == "/api/ws" {
+			if ws, err := websocket.Accept(w, r, nil); err == nil {
+				ws.Close(websocket.StatusNormalClosure, "")
+			}
 			return
 		}
 		denproto.WriteJSON(w, http.StatusOK, map[string]int{"version": v})
@@ -70,5 +77,35 @@ func TestVersionsNegotiated(t *testing.T) {
 	}
 	if v := seenNewer(); len(v) != 1 {
 		t.Errorf("a den speaking only newer versions was asked %d times", len(v))
+	}
+}
+
+// A socket opens at the version the den and this build share: one dialed
+// at an older version than a den that updated since speaks dials again at
+// the newer, rather than going without group DMs until it reconnects, and
+// one a den older than this build refuses dials again at the den's (M16.3).
+func TestSocketDialsAtTheSharedVersion(t *testing.T) {
+	ctx := context.Background()
+	updated, seen := fakeDen(t, 1, denproto.Version)
+	a := &api{base: updated.URL, client: updated.Client()}
+	a.version.Store(1) // as last heard, from the den before it updated
+	ws, _, speaking, err := dialSocket(ctx, a, updated.URL+"/api/ws", nil, websocket.DialOptions{HTTPClient: updated.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.CloseNow()
+	if v := seen(); speaking != denproto.Version || len(v) != 2 || v[0] != 1 || v[1] != denproto.Version {
+		t.Errorf("the socket went at %d, after upgrades at %v", speaking, v)
+	}
+
+	old, seenOld := fakeDen(t, 1, 1)
+	b := &api{base: old.URL, client: old.Client()}
+	ws, _, speaking, err = dialSocket(ctx, b, old.URL+"/api/ws", nil, websocket.DialOptions{HTTPClient: old.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.CloseNow()
+	if v := seenOld(); speaking != 1 || len(v) != 2 || v[0] != denproto.Version || v[1] != 1 {
+		t.Errorf("the socket to an older den went at %d, after upgrades at %v", speaking, v)
 	}
 }

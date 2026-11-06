@@ -26,8 +26,9 @@ import (
 // Format is the cache's format, kept as its database's user_version. A
 // cache of another format starts again from empty: it holds nothing that
 // can't be fetched again. Format 3 keeps the files of the den's named
-// files, as its emoji's images (M15.2).
-const Format = 3
+// files, as its emoji's images (M15.2), and format 4 when a disappearing
+// message goes (M16.4).
+const Format = 4
 
 // The cache's size, which the member chooses in the settings.
 const (
@@ -65,6 +66,8 @@ type Store struct {
 	dens    map[string]int64
 	guards  map[int64]*guards
 	closed  bool
+	// dis lets disappearing messages go at their time (M16.4).
+	dis disappearing
 }
 
 // Open opens the cache in dir, emptying it first if it's of another
@@ -184,7 +187,8 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 			expired         INTEGER NOT NULL DEFAULT 0
 		) STRICT;
 
-		-- Messages, each as the den sent it, as JSON, sealed (M6.2).
+		-- Messages, each as the den sent it, as JSON, sealed (M6.2), and
+		-- when one that disappears goes, in the den's milliseconds (M16.4).
 		CREATE TABLE messages (
 			den      INTEGER NOT NULL,
 			id       INTEGER NOT NULL,
@@ -192,10 +196,12 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 			revision INTEGER NOT NULL,
 			reply_to INTEGER,
 			body     BLOB NOT NULL,
+			expires  INTEGER,
 			PRIMARY KEY (den, id)
 		) STRICT, WITHOUT ROWID;
 		CREATE INDEX messages_channel ON messages (den, channel, id);
 		CREATE INDEX messages_reply ON messages (den, reply_to) WHERE reply_to IS NOT NULL;
+		CREATE INDEX messages_expires ON messages (expires) WHERE expires IS NOT NULL;
 
 		-- Ranges of a channel's IDs for which the cache holds every message:
 		-- first says nothing comes before lo, and gen is the connection in
@@ -323,6 +329,10 @@ func (s *Store) tidy() error {
 func (s *Store) Close() error {
 	s.mu.Lock()
 	s.closed = true
+	if s.dis.timer != nil {
+		s.dis.timer.Stop()
+		s.dis.timer = nil
+	}
 	s.mu.Unlock()
 	return s.db.Close()
 }

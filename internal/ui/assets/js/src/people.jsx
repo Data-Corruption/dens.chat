@@ -11,6 +11,7 @@ import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.j
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
 import { VerifiedMark } from './private.jsx';
+import { ExpirySetting } from './disappearing.jsx';
 
 const MAX_BIO = 300;
 
@@ -109,8 +110,9 @@ function Profile({ denID, member, me, online, panel = false, verified = false })
 // ProfilePanel shows the other member of a DM beside it, in the member
 // list's place (M11), and from M16.1 whether this member verified them,
 // with Compare codes. kept is what this member's Dens kept of their
-// identity, null on a den that keeps none.
-export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAddPeople }) {
+// identity, null on a den that keeps none. expiry is the DM, whose time
+// either member sets (M16.4), where the den keeps one.
+export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAddPeople, expiry }) {
     return (
         <div class="flex flex-col gap-3 p-3">
             <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified} />
@@ -122,6 +124,7 @@ export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAdd
                     <button type="button" class="btn btn-sm" data-add-people onClick={onAddPeople}>Add people</button>
                 </div>
             )}
+            {expiry && <ExpirySetting denID={denID} channel={expiry} />}
         </div>
     );
 }

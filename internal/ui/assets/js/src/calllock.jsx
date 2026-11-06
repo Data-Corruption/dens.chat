@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
-import { DocsTip, ErrorText, Tip, day } from './components.jsx';
+import { DocsLink, ErrorText, Tip, day } from './components.jsx';
 import { LockIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { Codes, Digits, VerifiedMark } from './private.jsx';
@@ -61,7 +61,7 @@ export function CallLockDialog({ call, den, onClose }) {
     }
     if (comparing) {
         return (
-            <Dialog title={`Compare codes with ${comparing.display_name}`} onClose={onClose}>
+            <Dialog title="Compare codes" onClose={onClose}>
                 <div>
                     <button type="button" class="btn btn-ghost btn-sm -ml-2" onClick={() => setComparing(null)}>← The call</button>
                 </div>
@@ -75,9 +75,8 @@ export function CallLockDialog({ call, den, onClose }) {
         <Dialog title="End-to-end encrypted" onClose={onClose}>
             <div class="flex flex-col gap-3" data-call-lock-dialog="sealed">
                 <p class="text-sm">
-                    Your voice, your screen and its sound are sealed in this page before they leave it, with keys only the call's members get, so
-                    the den carries the call but can't hear or see it. Compare codes to check nobody sits between you.{' '}
-                    <DocsTip id="docs-call-codes" page="join/#direct-messages">Why you compare codes, and where it's safe to.</DocsTip>
+                    Only the call's members can hear and see it.{' '}
+                    <DocsLink icon page="join/#comparing-codes" label="Where to compare codes, and why" />
                 </p>
                 <div>
                     <p class="text-xs text-base-content/60">Your code</p>
@@ -94,8 +93,8 @@ export function CallLockDialog({ call, den, onClose }) {
                                     <span class="min-w-0 flex-1 truncate">{member.display_name}</span>
                                     {keysChanged(kept, call.since) && <KeysChangedMark id={`lock-changed-${m.id}`} name={member.display_name} kept={kept} />}
                                     {kept?.verified ? (
-                                        <span class="flex items-center gap-1 text-sm text-success">
-                                            <VerifiedMark id={`lock-verified-${m.id}`} name={member.display_name} />
+                                        <span class="flex items-center gap-1 text-sm text-base-content/70">
+                                            <VerifiedMark always id={`lock-verified-${m.id}`} name={member.display_name} />
                                             Verified
                                         </span>
                                     ) : (
@@ -126,7 +125,7 @@ export function KeysChangedMark({ id, name, kept }) {
                 <circle cx="8" cy="12" r="0.4" fill="currentColor" />
             </svg>
         }>
-            {name}'s keys changed{at ? ` on ${day(at)}` : ''}{kept?.held ? ', since you compared codes' : ''}. Compare codes to check it's really them.
+            {name}'s keys changed{at ? ` on ${day(at)}` : ''}{kept?.held ? ', since you compared codes' : ''}.
         </Tip>
     );
 }
