@@ -154,3 +154,70 @@ func TestManagingDMFiles(t *testing.T) {
 		t.Fatalf("the list after: %+v %v", page, err)
 	}
 }
+
+// A photo sent as a spoiler shows as one to the other member, in a channel
+// from the den's word on the file and in a DM from inside the seal, where
+// the den keeps nothing of it; a file swapped into its place is one too,
+// and a spoiler names one of the message's files (M17.2).
+func TestSpoilersReachTheOtherMember(t *testing.T) {
+	h, owner, member, denID, channelID := chatDen(t)
+	ctx := context.Background()
+	photo := gpsJPEG(t)
+	spoiled := func(m denclient.PageMessage) []bool {
+		var out []bool
+		for _, f := range m.Attachments {
+			out = append(out, f.Spoiler)
+		}
+		return out
+	}
+
+	up, err := owner.Upload(ctx, denID, channelID, "ending.jpg", int64(len(photo)), bytes.NewReader(photo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Send(ctx, denID, channelID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "x", Spoilers: []string{up.ID}}); err == nil {
+		t.Fatal("a spoiler that isn't among the message's files went")
+	}
+	sent, err := owner.Send(ctx, denID, channelID, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{up.ID}, Spoilers: []string{up.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen, _ := messageIn(t, member, denID, channelID, sent.ID); !slices.Equal(spoiled(seen), []bool{true}) {
+		t.Fatalf("the other member sees the channel's photo as %+v", seen.Attachments)
+	}
+
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	up, err = owner.Upload(ctx, denID, dm, "ending.jpg", int64(len(photo)), bytes.NewReader(photo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := owner.Upload(ctx, denID, dm, "credits.jpg", int64(len(photo)), bytes.NewReader(photo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sent, err = owner.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{up.ID, plain.ID}, Spoilers: []string{up.ID}})
+	if err != nil || !slices.Equal(spoiled(sent), []bool{true, false}) {
+		t.Fatalf("sending the DM's spoiler: %+v %v", sent, err)
+	}
+	if seen, _ := messageIn(t, member, denID, dm, sent.ID); !slices.Equal(spoiled(seen), []bool{true, false}) {
+		t.Fatalf("the other member sees the DM's photos as %+v", seen.Attachments)
+	}
+	var marked int
+	if err := h.s.db.QueryRow(`SELECT count(*) FROM den_files WHERE spoiler != 0 AND sealed != 0`).Scan(&marked); err != nil || marked != 0 {
+		t.Fatalf("the den keeps %d of the DM's spoilers, %v", marked, err)
+	}
+
+	other := gpsJPEG(t)
+	next, err := owner.Replace(ctx, denID, dm, up.ID, "ending, again.jpg", int64(len(other)), bytes.NewReader(other))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.SwapFile(ctx, denID, dm, sent.ID, up.ID, next.ID); err != nil {
+		t.Fatal(err)
+	}
+	if seen, _ := messageIn(t, member, denID, dm, sent.ID); len(seen.Attachments) != 2 || seen.Attachments[0].ID != next.ID ||
+		!slices.Equal(spoiled(seen), []bool{true, false}) {
+		t.Fatalf("the other member sees the swap as %+v", seen.Attachments)
+	}
+}

@@ -209,7 +209,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
-		SoundLimits: sounds, EmojiLimits: &emoji, SealedCalls: true, Disappearing: true}
+		SoundLimits: sounds, EmojiLimits: &emoji, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -347,7 +347,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
-		EmojiLimits: &emoji, SealedCalls: true, Disappearing: true}
+		EmojiLimits: &emoji, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true}
 	d.log.Infof("Den created")
 	return code, nil
 }

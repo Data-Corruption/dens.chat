@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"net"
+	"net/http"
 	"slices"
 	"strconv"
 	"sync"
@@ -72,6 +73,18 @@ type sounding struct {
 	stop   func()
 }
 
+// pendingMove is a move staff made of a member's call (M17.2): the
+// channel their page was told to join, and until when its join doesn't
+// count toward their limit on joining.
+type pendingMove struct {
+	channel int64
+	until   time.Time
+}
+
+// moveWindow is how long the den waits for the page of a member staff
+// moved to join the channel it was told of.
+const moveWindow = 30 * time.Second
+
 // endedCall is why a held call ended, for its device's resume.
 type endedCall struct {
 	channel int64
@@ -96,11 +109,14 @@ type callRegistry struct {
 	// waits holds, by member, when they may next play a sound, once their
 	// last ended (M14.3), across calls.
 	waits map[int64]time.Time
+	// moves holds, by member, the move staff made of their call whose join
+	// hasn't come yet (M17.2).
+	moves map[int64]pendingMove
 }
 
 func newCallRegistry() callRegistry {
 	return callRegistry{byMember: map[int64]*call{}, rooms: map[int64]*callRoom{},
-		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}, waits: map[int64]time.Time{}}
+		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}, waits: map[int64]time.Time{}, moves: map[int64]pendingMove{}}
 }
 
 // StartCalls runs calls on the den's media ports. The SFU's notes on each
@@ -140,6 +156,7 @@ func (d *Den) StopCalls() error {
 	clear(r.staffMuted)
 	clear(r.ended)
 	clear(r.waits)
+	clear(r.moves)
 	r.mu.Unlock()
 	if s == nil {
 		return nil
@@ -180,8 +197,9 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		refuse(denproto.VoiceUpdateNeeded)
 		return
 	}
-	// A resume makes no peer, so only joins count against the limit.
-	if !req.Resume && d.Allow(LimitCall, strconv.FormatInt(s.MemberID, 10)) != nil {
+	// A resume makes no peer, so only joins count against the limit, and
+	// not the join a move asked for (M17.2).
+	if !req.Resume && !d.takeMove(s.MemberID, req.ChannelID) && d.Allow(LimitCall, strconv.FormatInt(s.MemberID, 10)) != nil {
 		refuse(denproto.VoiceRateLimited)
 		return
 	}
@@ -266,6 +284,24 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	// hold a copy for them already (M16.2).
 	d.passKeysLocked(nc)
 	d.log.Infof("Member %d joined the call in channel %d", s.MemberID, cid)
+}
+
+// takeMove reports whether staff moved the member to a channel whose
+// join hasn't come yet, and forgets the move, which the join answers.
+func (d *Den) takeMove(member int64, channel string) bool {
+	cid, err := denproto.ParseID(channel)
+	if err != nil {
+		return false
+	}
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	mv, ok := r.moves[member]
+	if !ok || mv.channel != cid {
+		return false
+	}
+	delete(r.moves, member)
+	return d.now().Before(mv.until)
 }
 
 // resumeCall moves the call the den holds for this socket's device, in
@@ -1027,6 +1063,62 @@ func (d *Den) DisconnectFromCall(ctx context.Context, s *Session, id string) err
 		d.publishCallsLocked(c.channel)
 		d.log.Infof("Member %d disconnected member %d from the call in channel %d", s.MemberID, mid, c.channel)
 	}
+	return nil
+}
+
+// MoveMember moves a member's call to another voice channel at staff's
+// word (M17.2). The den checks what disconnecting checks, that staff rank
+// above them, and what joining checks, that the member sees the channel
+// and its call has room; then it tells the socket holding their call,
+// whose page joins the channel as if they'd picked it, which ends the old
+// call. A call held while its socket is away has nothing to tell, so it's
+// refused. A member in no call, or in that channel's already, stays as
+// they are.
+func (d *Den) MoveMember(ctx context.Context, s *Session, id string, req denproto.MoveRequest) error {
+	mid, err := d.staffOver(ctx, s, id)
+	if err != nil {
+		return err
+	}
+	cid, err := denproto.ParseID(req.ChannelID)
+	if err != nil {
+		return errChannelNotFound
+	}
+	c, err := d.channel(ctx, d.db, cid)
+	if err != nil {
+		return err
+	}
+	if c.Kind != denproto.KindVoice || !visible(c, s.MemberID, IsStaff(s.Role)) {
+		return errChannelNotFound
+	}
+	r := &d.calls
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	mc := r.byMember[mid]
+	if mc == nil || mc.channel == cid {
+		return nil
+	}
+	if !visible(c, mid, mc.staff) {
+		return errChannelNotFound
+	}
+	sock := mc.sock.Load()
+	if sock == nil {
+		return denproto.Errorf(http.StatusConflict, denproto.CodeCallHeld, "their call is held while their connection is away")
+	}
+	// The member leaves one call for the other, so the den's calls hold as
+	// many as before.
+	info, _ := d.Info()
+	if room := r.rooms[cid]; room != nil && len(room.members) >= info.CallLimits.Members {
+		return denproto.Errorf(http.StatusConflict, denproto.CodeCallFull, "that call is full")
+	}
+	now := d.now()
+	for member, mv := range r.moves {
+		if !now.Before(mv.until) {
+			delete(r.moves, member)
+		}
+	}
+	r.moves[mid] = pendingMove{channel: cid, until: now.Add(moveWindow)}
+	sock.voice(denproto.EventVoiceMove, denproto.VoiceMove{ChannelID: denproto.FormatID(mc.channel), To: denproto.FormatID(cid)})
+	d.log.Infof("Member %d moved member %d from the call in channel %d to channel %d", s.MemberID, mid, mc.channel, cid)
 	return nil
 }
 

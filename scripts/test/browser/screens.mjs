@@ -33,6 +33,8 @@
 //   emoji, reactions         the emoji picker's sheet, completion; a message's sheet
 //   (M15.2, M15.3)           with its quick reactions, its chips and a chip's tip, the
 //                            picker's sheet to react
+//   files (M17.2)            Compact's messages a line each, and a spoiler covered,
+//                            then shown
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 
@@ -1396,4 +1398,55 @@ export async function polling(h, ctx, d, report) {
     did(tip === 'You', `a tap on the count says who voted for it: ${JSON.stringify(tip)}`);
     await h.snap('poll-tip');
     await h.escape();
+}
+
+// compact walks Appearance's Message density and spoilers (M17.2): Compact
+// picked by a tap, a channel's messages a line each, every one named and
+// none with a picture, a long press opening a message's sheet there too;
+// then a photo bob sent as a spoiler in random, covered, and shown by a tap;
+// and Default picked again, for whatever comes after.
+export async function compact(h, ctx, d, report) {
+    const { den, general, random } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const pick = async (choice) => {
+        await h.go('/');
+        await settingsTab(h, 'Appearance');
+        await d.tap(h.withText('[data-density] label', choice));
+        return h.ev(`localStorage.getItem('DENS_DENSITY')`);
+    };
+    const picked = await pick('Compact');
+    await h.snap('settings-compact');
+    did(picked === 'compact', `a tap on Compact picks it, which the browser keeps: ${picked}`);
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    const ROWS = `[...document.querySelectorAll('[data-scroller] [data-id]')]`;
+    const lines = await h.ev(`JSON.stringify({ rows: ${ROWS}.length, lines: ${ROWS}.filter((r) => 'line' in r.dataset).length,
+        named: ${ROWS}.filter((r) => r.querySelector('.float-left button')).length,
+        pictures: ${ROWS}.filter((r) => r.querySelector('[aria-label$="s profile"]')).length })`);
+    const c = JSON.parse(lines);
+    did(c.rows > 5 && c.lines === c.rows && c.named === c.rows && c.pictures === 0, `Compact shows each message as a named line, with no picture: ${lines}`);
+    await h.snap('compact-channel', { scroll: SCROLLER, up: true, max: 3 });
+    if (d.touch) {
+        const last = `${ROWS}.at(-1)`;
+        await d.press(last);
+        const sheet = await waitFor(() => h.has(SHEET), "the message's sheet", 5000).then(() => true, () => false);
+        await h.snap('compact-sheet');
+        did(sheet, "a long press on a line opens the message's sheet");
+        await h.escape();
+    }
+    await h.go(`/den/${den}/${random}`);
+    const COVER = `document.querySelector('[data-scroller] [data-spoiler]')`;
+    const covered = await waitFor(() => h.has(COVER), 'the spoiler covered', 10000).then(() => true, () => false);
+    await h.snap('spoiler-covered');
+    did(covered, 'a photo sent as a spoiler shows covered');
+    if (covered) {
+        await d.tap(COVER);
+        const shown = await waitFor(async () => !(await h.has(COVER)) && (await h.has(`document.querySelector('[data-scroller] button[aria-label="Open plot-twist.jpg"]')`)),
+            'the spoiler shown', 5000).then(() => true, () => false);
+        await h.snap('spoiler-shown');
+        did(shown, 'a tap on its cover shows it');
+    }
+    const back = await pick('Default');
+    await h.escape();
+    did(back === 'default', `a tap on Default picks it again: ${back}`);
 }

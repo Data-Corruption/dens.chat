@@ -87,6 +87,23 @@ func (h *handler) disconnectMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// moveMember moves a member's call to another voice channel at staff's
+// word (M17.2).
+func (h *handler) moveMember(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	var req denproto.MoveRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	if err := h.d.MoveMember(r.Context(), session(r), chi.URLParam(r, "id"), req); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // voiceMute mutes a member in calls, or lifts it, at staff's word (M3).
 func (h *handler) voiceMute(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {

@@ -482,6 +482,9 @@ type DMFile struct {
 	Animated bool     `json:"animated,omitempty"`
 	Duration int64    `json:"duration_ms,omitempty"`
 	Thumb    *DMThumb `json:"thumb,omitempty"`
+	// Spoiler marks a file its sender sent as a spoiler (M17.2), which
+	// only the DM's members learn.
+	Spoiler bool `json:"spoiler,omitempty"`
 }
 
 // DMThumb is a DM file's preview: its own sealed blob, under the file's
@@ -569,7 +572,7 @@ func CheckDMPayload(p DMPayload) error {
 			thumb = &Thumb{Width: t.Width, Height: t.Height}
 		}
 		file := File{ID: f.ID, Name: f.Name, Type: f.Type, Size: f.Size, Width: f.Width, Height: f.Height, Animated: f.Animated,
-			Duration: f.Duration, Thumb: thumb}
+			Duration: f.Duration, Thumb: thumb, Spoiler: f.Spoiler}
 		if err := CheckFile(file); err != nil {
 			return err
 		}

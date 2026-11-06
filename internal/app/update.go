@@ -115,7 +115,7 @@ func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 			}
 			// A download cut off tries again within the hour.
 			if android {
-				a.readyAndroidUpdate(ctx)
+				_ = a.readyAndroidUpdate(ctx, false)
 			}
 		}
 		timer := time.NewTimer(delay)

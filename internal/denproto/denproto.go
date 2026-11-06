@@ -77,7 +77,7 @@ var codes = map[string]bool{
 	CodeEditConflict: true, CodeInviteInvalid: true, CodeTooLarge: true, CodeProtocolUnsupported: true,
 	CodeRateLimited: true, CodeDenNotCreated: true, CodeWrongPassword: true, CodeUnsupportedType: true,
 	CodeQuotaExceeded: true, CodeDenFull: true, CodeKeyExists: true, CodeNoOtherDevice: true, CodeChangesGone: true,
-	CodeSoundNameTaken: true, CodeEmojiNameTaken: true,
+	CodeSoundNameTaken: true, CodeEmojiNameTaken: true, CodeCallHeld: true, CodeCallFull: true,
 }
 
 // KnownCode reports whether code is one of the protocol's error codes. A
@@ -289,6 +289,11 @@ type Den struct {
 	// Disappearing says the den deletes a DM's and a group's messages at
 	// the time their members set (M16.4); a den older than it doesn't.
 	Disappearing bool `json:"disappearing,omitempty"`
+	// Spoilers says the den keeps which of a channel's files went as
+	// spoilers, and MoveMembers that staff move members from one call to
+	// another (M17.2); a den older than them says neither.
+	Spoilers    bool `json:"spoilers,omitempty"`
+	MoveMembers bool `json:"move_members,omitempty"`
 }
 
 // Roles.

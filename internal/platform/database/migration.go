@@ -622,6 +622,18 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M17.2: spoilers. A channel's file keeps whether its sender sent it
+	// as a spoiler; a DM's keeps it inside its seal, where the den can't
+	// read it.
+	m.Add("Spoilers", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_files ADD COLUMN spoiler INTEGER NOT NULL DEFAULT 0 CHECK (spoiler IN (0, 1));
+		`); err != nil {
+			return fmt.Errorf("add spoilers: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

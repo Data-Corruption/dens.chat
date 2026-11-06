@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -169,6 +170,9 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 			return PageMessage{}, err
 		}
 	}
+	if err := checkSpoilers(req.Spoilers, req.Attachments); err != nil {
+		return PageMessage{}, err
+	}
 	if err := checkEditors(req.Editors); err != nil {
 		return PageMessage{}, err
 	}
@@ -190,10 +194,15 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		if p.Files, blobs, err = c.takeUploads(channelID, req.Attachments); err != nil {
 			return PageMessage{}, err
 		}
+		// A DM's spoilers go inside its seal, where the den can't read
+		// them (M17.2).
+		for i := range p.Files {
+			p.Files[i].Spoiler = slices.Contains(req.Spoilers, p.Files[i].ID)
+		}
 		if req.KeyID, req.Sealed, err = c.sealMessage(ctx, channelID, c.memberID(), req.Nonce, 1, p); err != nil {
 			return PageMessage{}, err
 		}
-		req.Text, req.Attachments = "", blobs
+		req.Text, req.Attachments, req.Spoilers = "", blobs, nil
 	}
 	var msg denproto.Message
 	if err := c.call(ctx, http.MethodPost, "/api/channels/"+channelID+"/messages", req, &msg); err != nil {
@@ -204,6 +213,17 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 	}
 	c.sentUploads(req.Attachments)
 	return c.open(msg), nil
+}
+
+// checkSpoilers checks a send's spoilers (M17.2): each one of its uploads,
+// once.
+func checkSpoilers(spoilers, uploads []string) error {
+	for i, id := range spoilers {
+		if !slices.Contains(uploads, id) || slices.Contains(spoilers[:i], id) {
+			return inputError(errors.New("a spoiler is each one of the message's files, once"))
+		}
+	}
+	return nil
 }
 
 // memberID is this member's ID.

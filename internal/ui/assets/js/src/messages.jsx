@@ -20,6 +20,7 @@ import { copyText } from './clipboard.js';
 import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
+import { DENSITY_COMPACT, useDensity } from './density.js';
 import { completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
@@ -90,9 +91,19 @@ export function openAt(denID, channelID, messageID) {
     pendingJump = { denID, channelID, messageID };
 }
 
-// viewed is what the viewer shows from a message: its images, and which.
-function viewed(m, file) {
-    const files = (m.attachments || []).filter((f) => attachmentKind(f) === 'image');
+// continues says whether a message shows under the name of the one before
+// it, as a run's later message: by the same author, on the same day,
+// within GROUP_GAP and not a reply; in Compact never, as each message
+// shows its own name (M17.2).
+export function continues(prev, m, line) {
+    return !line && !!prev && prev.author_id === m.author_id && !m.reply_to && m.created_at - prev.created_at < GROUP_GAP &&
+        new Date(prev.created_at).toDateString() === new Date(m.created_at).toDateString();
+}
+
+// viewed is what the viewer shows from a message: its images, and which,
+// but for spoilers still covered (M17.2).
+export function viewed(m, file, covered = new Set()) {
+    const files = (m.attachments || []).filter((f) => attachmentKind(f) === 'image' && !covered.has(f.id));
     const index = files.findIndex((f) => f.id === file.id);
     return index < 0 ? null : { message: m.id, files, index };
 }
@@ -111,7 +122,7 @@ export function dividerAt(readPosition, lastMessage) {
 // the channel's newest, as its read state has it, and denURL the den's
 // address, which links to its messages start with (M11).
 export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, group, groupTitle, keys, gate = '', changes, identities,
-    typing, closed, limits, retention, offline, onProfile, onCompare, onTyping }) {
+    typing, closed, limits, retention, offline, spoilers, onProfile, onCompare, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -134,6 +145,11 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const polls = reactions && channel.kind === 'text';
     // A DM's and a group's (M16.3) messages are sealed by their members.
     const sealed = isPrivate(channel);
+    // Compact shows each message as a line (M17.2).
+    const line = useDensity() === DENSITY_COMPACT;
+    // A photo or video goes as a spoiler in a DM, inside its seal, and in a
+    // channel where the den keeps which files are (M17.2).
+    const canSpoil = sealed || !!spoilers;
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
@@ -656,6 +672,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (listRef.current.hasNewer) loadNewest();
         const entry = pendingEntry || {
             nonce: newNonce(), text, reply_to: replyTo?.id || '', attachments: files.map((f) => f.result), editors, poll, failed: false,
+            spoilers: canSpoil ? files.filter((f) => f.spoiler && f.result).map((f) => f.result.id) : [],
         };
         setPending((p) => [...p.filter((x) => x.nonce !== entry.nonce), { ...entry, failed: false }]);
         if (!pendingEntry) {
@@ -670,6 +687,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 attachments: entry.attachments.length ? entry.attachments.map((f) => f.id) : undefined,
                 editors: entry.editors.length ? entry.editors : undefined,
                 poll: entry.poll || undefined,
+                spoilers: entry.spoilers?.length ? entry.spoilers : undefined,
             });
             setPending((p) => p.filter((x) => x.nonce !== entry.nonce));
             if (compareIds(m.id, readUpTo.current) > 0) readUpTo.current = m.id;
@@ -731,8 +749,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
             rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
-        const compact = prev && prev.author_id === m.author_id && !m.reply_to && m.created_at - prev.created_at < GROUP_GAP &&
-            new Date(prev.created_at).toDateString() === day;
+        const compact = continues(prev, m, line);
         // The loaded copy is newer than the den's preview, if there is one.
         const replied = m.reply_to ? byId.get(m.reply_to) || m.reply : null;
         rows.push(
@@ -740,6 +757,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 key={m.id}
                 m={m}
                 compact={compact}
+                line={line}
                 author={members.get(m.author_id)}
                 replied={replied}
                 repliedAuthor={replied ? members.get(replied.author_id) : null}
@@ -774,7 +792,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 onEditDone={() => setEditing(null)}
                 onDelete={() => setDeleting(m)}
                 onJump={jumpTo}
-                onView={(f) => setViewing(viewed(m, f))}
+                onView={(f, covered) => setViewing(viewed(m, f, covered))}
                 onToggle={toggled}
                 denID={denID}
                 channelID={channel.id}
@@ -848,7 +866,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     {list.hasOlder && !offline && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                     {!list.loaded && !error && <span class="loading loading-spinner"></span>}
                     {rows}
-                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} onToggle={toggled} onRetry={() => send(p.text, p.poll, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
+                    {!list.hasNewer && pending.map((p) => <PendingRow key={p.nonce} p={p} me={me} line={line} onToggle={toggled} onRetry={() => send(p.text, p.poll, p)} onDiscard={() => setPending((ps) => ps.filter((x) => x.nonce !== p.nonce))} />)}
                     {list.hasNewer && <div class="py-3 text-center"><span class="loading loading-dots loading-sm"></span></div>}
                 </div>
             </div>
@@ -885,6 +903,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         files={files}
                         onAddFiles={addFiles}
                         onRemoveFile={removeFile}
+                        canSpoil={canSpoil}
+                        onSpoiler={(key, on) => updateFile(key, { spoiler: on })}
                         onCompare={setComparing}
                         onCancelReply={() => setReplyTo(null)}
                         candidates={candidates}
@@ -953,8 +973,10 @@ function Quoted({ text, locked, me }) {
 // MessageRow is a message in the list, with its ⋯ menu of what the member
 // may do with it: link is the link to it, for Copy link (M11). A finger's
 // long press opens the menu in the ⋯'s place, which a touch screen has
-// none of, and on the phone layout, narrow, it's a sheet (M13.2).
-function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+// none of, and on the phone layout, narrow, it's a sheet (M13.2). compact
+// is a run's later message, under its first's name; line is Compact's row,
+// each a line of its own (M17.2).
+export function MessageRow({ m, compact, line, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1012,12 +1034,58 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
         onPointerCancel: () => press.current.cancel(),
         onContextMenu: (e) => e.preventDefault(),
     } : {};
+    // In Compact, each message is a line of its time, its author's name and
+    // its text (M17.2): the name floats at the text's start, so the text
+    // wraps under it, and the rest goes below, from the name's start.
+    const lead = line ? (
+        <span class="float-left mr-2 flex items-baseline gap-1">
+            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
+            {m.expires_at ? <Disappears at={m.expires_at} /> : null}
+        </span>
+    ) : null;
+    let body = lead;
+    if (m.locked) {
+        body = <div>{lead}<p class="cursor-default select-none text-sm italic text-base-content/60">{LOCKED[m.locked] || LOCKED.broken}</p></div>;
+    } else if (editing) {
+        body = (
+            <>
+                {lead}
+                <div class={line ? 'clear-both' : ''}>
+                    <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} touch={touch} onDone={onEditDone} />
+                </div>
+            </>
+        );
+    } else if (m.text.trim() || m.edited_at) {
+        body = (
+            <Fold onToggle={onToggle}>
+                {/* A quote beside the name starts past it, its bar too. */}
+                <div class={`wrap-break-word ${line ? '[&_blockquote]:flow-root' : ''}`}>
+                    {lead}
+                    {m.text.trim() && <Markdown text={m.text} me={me} everyone={m.everyone} onTask={canEdit ? tick : undefined} big />}
+                    {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
+                    {editorNames.length > 0 && (
+                        <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
+                    )}
+                </div>
+            </Fold>
+        );
+    }
+    const below = (
+        <>
+            {m.poll && !m.locked && !editing && <Poll m={m} me={me} denID={denID} nameOf={nameOf} onPolled={onPolled} />}
+            {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
+            {!m.locked && !editing && m.text && <Videos text={m.text} />}
+            <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
+            {error && <p class="text-xs text-error">{error}</p>}
+        </>
+    );
     // Its pictures, and that of the message it replies to, play under the
     // pointer (M15.1).
     return (
         <HoverRow
             data-id={m.id}
-            class={`group relative rounded px-2 ${compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'} ${pressing ? 'select-none' : ''}`}
+            data-line={line ? '' : undefined}
+            class={`group relative rounded px-2 ${line ? 'py-0.5' : compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'} ${pressing ? 'select-none' : ''}`}
             {...presses}
             onClickCapture={(e) => {
                 if (!press.current.click()) return;
@@ -1025,64 +1093,53 @@ function MessageRow({ m, compact, author, replied, repliedAuthor, me, highlighte
                 e.stopPropagation();
             }}
         >
+            {/* In Compact the quote sits over the name, past the time. */}
             {m.reply_to && replied && (
-                <button type="button" class="flex w-full min-w-0 items-center gap-1 pl-2 text-left text-xs text-base-content/60 hover:text-base-content" onClick={() => onJump(m.reply_to)}>
+                <button type="button" class={`flex w-full min-w-0 items-center gap-1 text-left text-xs text-base-content/60 hover:text-base-content ${line ? 'pl-14' : 'pl-2'}`}
+                    onClick={() => onJump(m.reply_to)}>
                     <Spine />
-                    <Avatar member={repliedAuthor} size="sm" />
+                    {!line && <Avatar member={repliedAuthor} size="sm" />}
                     <span class="shrink-0 font-medium">{name(repliedAuthor)}</span>
                     <span class="truncate"><Quoted text={replied.text} locked={replied.locked} me={me} /></span>
                 </button>
             )}
             {m.reply_to && !replied && (
-                <div class="flex items-center gap-1 pl-2 text-xs italic text-base-content/50">
+                <div class={`flex items-center gap-1 text-xs italic text-base-content/50 ${line ? 'pl-14' : 'pl-2'}`}>
                     <Spine />
                     The original message was deleted.
                 </div>
             )}
-            <div class="flex gap-3">
-                <div class="relative w-9 shrink-0">
-                    {compact ? (
-                        // Out of the flow, so the time never makes a row taller.
-                        // A touch screen has it in the long press's sheet.
-                        <span class="invisible absolute -inset-x-1 top-1 cursor-default select-none whitespace-nowrap text-center text-[10px] text-base-content/50 group-hover:visible pointer-coarse:hidden">
-                            {clock(m.created_at)}
-                        </span>
-                    ) : (
-                        <button type="button" class="mt-0.5 rounded-full" onClick={() => author && onProfile(author)} aria-label={`${name(author)}'s profile`}>
-                            <Avatar member={author} />
-                        </button>
-                    )}
-                </div>
+            <div class={`flex ${line ? 'gap-2' : 'gap-3'}`}>
+                {line ? (
+                    <span class="w-14 shrink-0 cursor-default select-none whitespace-nowrap text-xs leading-6 tabular-nums text-base-content/50"
+                        title={new Date(m.created_at).toLocaleString()}>
+                        {clock(m.created_at)}
+                    </span>
+                ) : (
+                    <div class="relative w-9 shrink-0">
+                        {compact ? (
+                            // Out of the flow, so the time never makes a row taller.
+                            // A touch screen has it in the long press's sheet.
+                            <span class="invisible absolute -inset-x-1 top-1 cursor-default select-none whitespace-nowrap text-center text-[10px] text-base-content/50 group-hover:visible pointer-coarse:hidden">
+                                {clock(m.created_at)}
+                            </span>
+                        ) : (
+                            <button type="button" class="mt-0.5 rounded-full" onClick={() => author && onProfile(author)} aria-label={`${name(author)}'s profile`}>
+                                <Avatar member={author} />
+                            </button>
+                        )}
+                    </div>
+                )}
                 <div class="min-w-0 flex-1">
-                    {!compact && (
+                    {!line && !compact && (
                         <div class="flex items-baseline gap-2">
                             <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
                             <span class="text-xs text-base-content/50" title={new Date(m.created_at).toLocaleString()}>{clock(m.created_at)}</span>
                             {m.expires_at ? <Disappears at={m.expires_at} /> : null}
                         </div>
                     )}
-                    {m.locked ? (
-                        <p class="cursor-default select-none text-sm italic text-base-content/60">{LOCKED[m.locked] || LOCKED.broken}</p>
-                    ) : editing ? (
-                        <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} touch={touch} onDone={onEditDone} />
-                    ) : (
-                        (m.text.trim() || m.edited_at) && (
-                            <Fold onToggle={onToggle}>
-                                <div class="wrap-break-word">
-                                    {m.text.trim() && <Markdown text={m.text} me={me} everyone={m.everyone} onTask={canEdit ? tick : undefined} big />}
-                                    {m.edited_at ? <span class="cursor-default select-none text-xs text-base-content/50" title={new Date(m.edited_at).toLocaleString()}> (edited)</span> : null}
-                                    {editorNames.length > 0 && (
-                                        <span class="cursor-default select-none text-xs text-base-content/50" title={`${joinNames(editorNames)} can edit this too`}> (shared)</span>
-                                    )}
-                                </div>
-                            </Fold>
-                        )
-                    )}
-                    {m.poll && !m.locked && !editing && <Poll m={m} me={me} denID={denID} nameOf={nameOf} onPolled={onPolled} />}
-                    {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
-                    {!m.locked && !editing && m.text && <Videos text={m.text} />}
-                    <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
-                    {error && <p class="text-xs text-error">{error}</p>}
+                    {body}
+                    {line ? <div class="clear-both">{below}</div> : below}
                 </div>
             </div>
             {!editing && actions.length > 0 && (
@@ -1358,39 +1415,52 @@ function Spine() {
     return <span aria-hidden="true" class="ml-2 mt-1.5 h-2 w-5 shrink-0 self-start rounded-tl border-l-2 border-t-2 border-base-content/30"></span>;
 }
 
-function PendingRow({ p, me, onToggle, onRetry, onDiscard }) {
+function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
+    const status = <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>;
+    // In Compact, a line as the sent ones are (M17.2).
+    const lead = line ? <span class="float-left mr-2 flex items-baseline gap-2"><span class="font-semibold">{me.display_name}</span>{status}</span> : null;
+    const below = (
+        <>
+            {p.attachments?.length > 0 && (
+                <ul class="text-xs text-base-content/70">
+                    {p.attachments.map((f) => <li key={f.id} class="truncate">{f.name} · {formatSize(f.size)}</li>)}
+                </ul>
+            )}
+            {p.poll && (
+                <ul class="text-xs text-base-content/70" aria-label="Choices">
+                    {p.poll.choices.map((c, i) => <li key={i} class="truncate">○ {c}</li>)}
+                </ul>
+            )}
+            {p.failed && (
+                <div class="flex items-center gap-2 text-xs text-error">
+                    <span>{p.error}</span>
+                    <button type="button" class="btn btn-ghost btn-xs" onClick={onRetry}>Retry</button>
+                    <button type="button" class="btn btn-ghost btn-xs" onClick={onDiscard}>Discard</button>
+                </div>
+            )}
+        </>
+    );
     return (
-        <HoverRow class="mt-2 flex gap-3 rounded px-2 py-0.5 opacity-60">
-            <div class="w-9 shrink-0">
-                <Avatar member={me} />
+        <HoverRow class={`flex rounded px-2 py-0.5 opacity-60 ${line ? 'gap-2' : 'mt-2 gap-3'}`}>
+            <div class={`shrink-0 ${line ? 'w-14' : 'w-9'}`}>
+                {!line && <Avatar member={me} />}
             </div>
             <div class="min-w-0 flex-1">
-                <div class="flex items-baseline gap-2">
-                    <span class="font-semibold">{me.display_name}</span>
-                    <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>
-                </div>
-                {p.text.trim() && (
-                    <Fold onToggle={onToggle}>
-                        <Markdown text={p.text} me={me} big />
-                    </Fold>
-                )}
-                {p.attachments?.length > 0 && (
-                    <ul class="text-xs text-base-content/70">
-                        {p.attachments.map((f) => <li key={f.id} class="truncate">{f.name} · {formatSize(f.size)}</li>)}
-                    </ul>
-                )}
-                {p.poll && (
-                    <ul class="text-xs text-base-content/70" aria-label="Choices">
-                        {p.poll.choices.map((c, i) => <li key={i} class="truncate">○ {c}</li>)}
-                    </ul>
-                )}
-                {p.failed && (
-                    <div class="flex items-center gap-2 text-xs text-error">
-                        <span>{p.error}</span>
-                        <button type="button" class="btn btn-ghost btn-xs" onClick={onRetry}>Retry</button>
-                        <button type="button" class="btn btn-ghost btn-xs" onClick={onDiscard}>Discard</button>
+                {!line && (
+                    <div class="flex items-baseline gap-2">
+                        <span class="font-semibold">{me.display_name}</span>
+                        {status}
                     </div>
                 )}
+                {p.text.trim() ? (
+                    <Fold onToggle={onToggle}>
+                        <div>
+                            {lead}
+                            <Markdown text={p.text} me={me} big />
+                        </div>
+                    </Fold>
+                ) : lead}
+                {line ? <div class="clear-both">{below}</div> : below}
             </div>
         </HoverRow>
     );
@@ -1536,7 +1606,7 @@ function EditorList({ candidates, selected, onChange }) {
 // the members a mention may name, none in a DM, and with everyone, staff's
 // @everyone first (M15.4). With polls, the + makes the message a poll,
 // whose question is its text (M15.4).
-function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, editors, onEditors, onAddFiles, onRemoveFile, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
+function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
     // poll is the poll being written, which goes without files or other
     // editors, and problem what kept it from going.
@@ -1757,7 +1827,8 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                 {files.length > 0 && (
                     <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
                         {files.map((f) => (
-                            <FileChip key={f.key} denID={denID} f={f} limits={limits} onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
+                            <FileChip key={f.key} denID={denID} f={f} limits={limits} canSpoil={canSpoil} onSpoiler={(on) => onSpoiler(f.key, on)}
+                                onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
                         ))}
                     </ul>
                 )}
@@ -2096,6 +2167,13 @@ function MetadataRemoved({ id }) {
     );
 }
 
+// spoilable is a file waiting to go that may go as a spoiler: a photo or a
+// video (M17.2).
+export function spoilable(f) {
+    const type = f.result?.type || f.file?.type || '';
+    return type.startsWith('image/') || type.startsWith('video/');
+}
+
 // FileChip is a file waiting to go with the message: its preview or icon,
 // how far its upload is, the size it will send, whether its metadata came
 // out, and whether a photo browsers can't show was turned into one they
@@ -2104,8 +2182,10 @@ function MetadataRemoved({ id }) {
 // comparison (M5). While a video's copy is made, by the local service or
 // this browser, it says how far that is, as the upload's socket tells it
 // (following), and offers to send the video full size instead when the den
-// takes it (M5.4, M5.5).
-function FileChip({ denID, f, limits, onRemove, onCompare }) {
+// takes it (M5.4, M5.5). A photo or video has Spoiler, where the message
+// may carry one, canSpoil, which blurs its preview here as it'll show
+// covered (M17.2).
+function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }) {
     const done = !!f.result;
     const name = f.result?.name || f.name;
     const versions = f.result?.versions;
@@ -2127,13 +2207,15 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
     }
     return (
         <li class={`flex w-60 max-w-full items-center gap-2 rounded border bg-base-200 p-1.5 ${f.error ? 'border-error' : 'border-base-300'}`}>
-            {isImageFile(f.file) ? (
-                <Thumb file={f.file} size={40} />
-            ) : f.result?.thumb ? (
-                <img src={thumbURL(denID, f.result.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" draggable={false} />
-            ) : (
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
-            )}
+            <span class={`shrink-0 overflow-hidden rounded ${f.spoiler ? '[&>*]:blur-sm' : ''}`}>
+                {isImageFile(f.file) ? (
+                    <Thumb file={f.file} size={40} />
+                ) : f.result?.thumb ? (
+                    <img src={thumbURL(denID, f.result.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" draggable={false} />
+                ) : (
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
+                )}
+            </span>
             <div class="min-w-0 flex-1 text-xs">
                 <p class="truncate font-medium" title={name}>{name}</p>
                 {f.error ? (
@@ -2173,6 +2255,12 @@ function FileChip({ denID, f, limits, onRemove, onCompare }) {
                     <progress class="progress progress-primary h-1.5 w-full"></progress>
                 ) : (
                     <progress class="progress progress-primary h-1.5 w-full" value={Math.round(f.progress * 100)} max="100"></progress>
+                )}
+                {canSpoil && !f.error && spoilable(f) && (
+                    <button type="button" class={`btn btn-xs mt-0.5 ${f.spoiler ? 'btn-active' : 'btn-ghost'}`} aria-pressed={!!f.spoiler}
+                        title="Covered until it's clicked" onClick={() => onSpoiler(!f.spoiler)} data-spoiler-toggle>
+                        Spoiler
+                    </button>
                 )}
             </div>
             <button type="button" class="btn btn-ghost btn-xs btn-square relative touch-room" onClick={onRemove} aria-label={`Remove ${f.name}`}>✕</button>

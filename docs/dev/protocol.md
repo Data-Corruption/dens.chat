@@ -37,7 +37,7 @@ Failures use HTTP status codes with a body of `{"error": {"code": "…", "messag
 | 401 | `unauthorized` (missing, unknown or expired token), `bad_signature`, `bad_nonce` |
 | 403 | `forbidden`, `banned`, `key_revoked`, `wrong_password` (a signed-in member's password or recovery code), `no_other_device` (a password sign-in with no other device to approve it) |
 | 404 | `not_found` |
-| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` (an edit, a tick, or from M15.3 a DM's set of reactions, made against another revision, and from M16.1 a member's record written over another), `key_exists` (a DM has a live key both its members can use, or a sign-in waiting for approval isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3), `emoji_name_taken` (another of the den's emoji has the name; M15.2) |
+| 409 | `username_taken` (checked only after the invite, so only invite holders can test names), `edit_conflict` (an edit, a tick, or from M15.3 a DM's set of reactions, made against another revision, and from M16.1 a member's record written over another), `key_exists` (a DM has a live key both its members can use, or a sign-in waiting for approval isn't at that step), `sound_name_taken` (another of the den's sounds has the name, in any case; M14.3), `emoji_name_taken` (another of the den's emoji has the name; M15.2), `call_held` (a move of a call held while its socket is away; M17.2), `call_full` (a move to a call that holds as many members as the den allows; M17.2) |
 | 410 | `invite_invalid` (unknown, expired or used; one code so invites can't be probed), `changes_gone` (a version the den no longer has the changes since; M6) |
 | 413 | `too_large` |
 | 415 | `unsupported_type` |
@@ -65,13 +65,13 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 
 ```
 den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3),
-          "emoji_limits"? (M15.2), "sealed_calls"? (M16.2), "disappearing"? (M16.4)}
+          "emoji_limits"? (M15.2), "sealed_calls"? (M16.2), "disappearing"? (M16.4), "spoilers"? (M17.2), "move_members"? (M17.2)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?, "identity"? (M16.1)}
 image  = {"id", "width", "height", "animated"? (M15.1)}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)), and `disappearing` that it deletes a DM's and a group's messages at the time their members set (see [Disappearing messages](#disappearing-messages-m164)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)), `disappearing` that it deletes a DM's and a group's messages at the time their members set (see [Disappearing messages](#disappearing-messages-m164)), `spoilers` that it keeps which of a channel's files went as spoilers (see [Attachments](#attachments)), and `move_members` that staff move members from one call to another (see [Staff in calls](#staff-in-calls-m3)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
 
 ```
 PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?, "emoji_limits"?}   200 den   (owner only)
@@ -510,7 +510,7 @@ A member is online while they have an open socket. `ready` carries `online`, a l
 ## Files (M1.4, M1.8)
 
 ```
-file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"width", "height"}}
+file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"width", "height"}, "spoiler"? (M17.2)}
 image = {"id", "width", "height"}
 ```
 
@@ -571,7 +571,7 @@ POST /api/uploads/{id}/thumb   (body: a JPEG or PNG)   200 file
 ### Attachments
 
 ```
-POST   /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …]}
+POST   /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …], "spoilers"?: ["<upload id>", …] (M17.2)}
 PATCH  /api/messages/{id}            {"revision", "text", "attachments"?: ["<file or upload id>", …]}   (M5)
 DELETE /api/uploads/{id}             204                                                         (M5)
 GET    /api/files/{id}               200 the file's bytes
@@ -581,6 +581,7 @@ GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "messages"?: [me
 ```
 
 - A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent.
+- `spoilers` (M17.2) names which of them go as spoilers, each one of the message's uploads, once; anything else gets `400 invalid_field`. The den keeps it on the file, which says `"spoiler": true` to everyone who sees it, and clients show it covered until it's clicked. Once sent it stays: an edit keeps it, and an upload that takes a file's place (`Dens-Replaces`) is a spoiler if the file was. A DM's spoilers go inside its sealed text, never to the den: a DM's send naming any gets `400 invalid_field`. A den older than them, which doesn't say `spoilers` in its info, ignores the field, so a client offers spoilers in a channel only where the den says it keeps them; an older client shows a spoiler uncovered.
 - An edit changes the text. From M5, the author's edit can change the files too: `attachments` lists them afterward, in order, as files the message already has and the author's waiting uploads. Files it leaves out are deleted, and `message.updated` lists them in `files`. A change of files marks the message edited. An edit can't leave a message with neither text nor files; a client deletes the message instead.
 - An upload made to take a file's place names it, as `Dens-Replaces: <file id>` (M5): one of the member's files, on a message or their profile. The den counts the upload against the member's space less that file's, and it can only take that file's place, in an edit that drops the file or as a picture replacing it. A file has one replacement waiting at most; a newer one drops the older.
 - `DELETE /api/uploads/{id}` drops one of the member's uploads waiting to be used, and frees its space at once (M5).
@@ -724,7 +725,7 @@ POST /api/uploads/sealed   (body: the sealed file)   201 {"id", "name": "", "typ
 
 - A DM's file goes up sealed by the sender's client, which first takes an image's metadata out and makes its preview, as the den does for a channel's. Each file gets a random key of its own. The file and its preview are sealed with it as streams, in the format files at rest use, bound to `"dens-dm-file-v1" ‖ den_id ‖ channel ‖ "file"` or `"thumb"`, and go up as two blobs.
 - The sender's client strips a DM's video and audio, and makes a video's preview, as a den does for a channel's. For a video the module can't decode, the sender's page draws the preview, and the client seals and uploads it as it does its own.
-- The message's sealed text lists each file: `{"id", "key", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"id", "width", "height"}}`. Its `attachments` name every blob, each file's and its preview's, at most 20.
+- The message's sealed text lists each file: `{"id", "key", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"id", "width", "height"}, "spoiler"? (M17.2)}`. Its `attachments` name every blob, each file's and its preview's, at most 20. A file sent as a spoiler says so here alone, and a file swapped into its place is one too.
 - From M5, a DM's edit can change its files as a channel's does: the sealed text lists the files afterward, and `attachments` names every blob, as a send's does. Blobs it leaves out are deleted.
 - A sealed file answers byte ranges like any other, and a client opens the chunks a range covers with the file's key, so a DM's video seeks the same way.
 - A DM's message takes only sealed uploads, and a channel's none. The den counts a sealed blob against the upload limits, and serves it like any file, with no preview of its own.
@@ -823,7 +824,7 @@ Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voi
 [{"t": "voice.leave", "d": {}}]
 ```
 
-Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2, `voice.talking` from M11, `voice.sounding` from M14.3 and `voice.key` from M16.2:
+Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4.2, `voice.talking` from M11, `voice.sounding` from M14.3, `voice.key` from M16.2 and `voice.move` from M17.2:
 
 ```json
 {"t": "voice.offer", "d": {"channel_id": "41", "version": 1, "sdp": "v=0…", "udp_port": 7881, "tcp_port": 7882}}
@@ -832,6 +833,7 @@ Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4
 {"t": "voice.talking", "d": {"channel_id": "41", "members": ["7"]}}
 {"t": "voice.sounding", "d": {"channel_id": "41", "member_id": "7"}}
 {"t": "voice.key", "d": {"channel_id": "41", "member_id": "7", "kid": "…", "commit": "…", "members": […], "maker": {…}, "signature": "…", "copy": "…"}}
+{"t": "voice.move", "d": {"channel_id": "41", "to": "42"}}
 {"t": "voice.ended", "d": {"channel_id": "41", "reason": "moved"}}
 {"t": "voice.state", "d": {"calls": [call, …]}}
 ```
@@ -888,13 +890,15 @@ A member who sends by push to talk rings for everyone in their call while they h
 ### Staff in calls (M3)
 
 ```
-POST /api/members/{id}/disconnect                    204
-POST /api/members/{id}/voice-mute  {"muted": true}   204
+POST /api/members/{id}/disconnect                        204
+POST /api/members/{id}/voice-mute  {"muted": true}       204
+POST /api/members/{id}/move        {"channel_id": "42"}  204   (M17.2)
 ```
 
 - Staff disconnect and mute members of a lower rank, as they remove them: moderators act on members, and the owner on anyone else. Anyone else gets `403 forbidden`, and an ID that isn't a member in the den gets `404 not_found`.
 - Disconnecting ends the member's call, held or not, with `voice.ended` and `disconnected_by_staff`. It leaves a member in no call as they are. They can join again at once.
 - A staff mute makes the den forward nothing from the member, in their call and in any they join, until staff lift it with `"muted": false`, the member leaves the den, or the den restarts. It ends their share, and they can't share while it lasts (M4.2). It can be set whether or not they're in a call. Calls show it as `"staff_muted": true` on the member, beside their own `muted`.
+- Moving (M17.2) moves a member's call to another voice channel, with the rank rule disconnecting takes. The den checks what joining does: a channel that isn't a voice channel the member can see gets `404 not_found`, and one whose call holds the den's `members` already `409 call_full`. A call held while its socket is away has nothing to tell, and gets `409 call_held`. Otherwise the den sends `voice.move {"channel_id", "to"}` to the socket holding the call, the call's channel and the one to join, and answers 204; the member's client joins `to` as if they'd picked it, with `voice.join`, sealed, muted and deafened as they were, which ends the old call. That join, within 30 seconds, doesn't count toward the member's limit on joining. A member in no call, or in that channel's already, stays as they are, with 204. A den that moves members says `"move_members": true` in its info, so a client offers it only then; a client older than it ignores `voice.move`, and stays where it is.
 
 ### Screen share (M4.2)
 
@@ -1044,8 +1048,8 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Typing notices | 1 per 2 seconds per member, per channel; the rest are dropped |
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
-| Joining a call | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting and muting, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, and from M16.4 setting a DM's or a group's time | 30 per 10 seconds per member |
+| Joining a call, but for the join a move asked for (M17.2) | 10 per minute per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting, muting and from M17.2 moving, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, and from M16.4 setting a DM's or a group's time | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | A member's keys for calls (M16.2) | 30 per 10 seconds per member; the rest are dropped |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

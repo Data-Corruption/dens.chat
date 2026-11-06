@@ -233,7 +233,7 @@ func dmFit(limits denproto.Limits) int64 {
 // channel's.
 func dmUploaded(file denproto.DMFile) Uploaded {
 	up := Uploaded{File: denproto.File{ID: file.ID, Name: file.Name, Type: file.Type, Size: file.Size,
-		Width: file.Width, Height: file.Height, Animated: file.Animated, Duration: file.Duration}}
+		Width: file.Width, Height: file.Height, Animated: file.Animated, Duration: file.Duration, Spoiler: file.Spoiler}}
 	if file.Thumb != nil {
 		up.Thumb = &denproto.Thumb{Width: file.Thumb.Width, Height: file.Thumb.Height}
 	}

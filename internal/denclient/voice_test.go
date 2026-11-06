@@ -46,6 +46,7 @@ type page struct {
 	refused  chan denclient.CallRefusal
 	talking  chan []string
 	sounding chan string
+	moved    chan string
 	stop     chan struct{}
 	// The last offer answered, and its answer, which goes again if the den
 	// sends that offer again after a resume, as the page does.
@@ -64,7 +65,7 @@ func newPage(t *testing.T, m *denclient.Manager, id string) *page {
 	}
 	p := &page{t: t, m: m, id: id, caller: caller, events: make(chan denclient.CallEvent, 16),
 		ended: make(chan string, 16), resumed: make(chan struct{}, 16), refused: make(chan denclient.CallRefusal, 16),
-		talking: make(chan []string, 16), sounding: make(chan string, 16), stop: make(chan struct{})}
+		talking: make(chan []string, 16), sounding: make(chan string, 16), moved: make(chan string, 16), stop: make(chan struct{})}
 	t.Cleanup(func() {
 		close(p.stop)
 		_ = caller.Close()
@@ -99,6 +100,8 @@ func (p *page) run() {
 				p.talking <- *e.Talking
 			case e.Sounding != nil:
 				p.sounding <- *e.Sounding
+			case e.MoveTo != "":
+				p.moved <- e.MoveTo
 			case e.Keys != nil:
 				p.keysMu.Lock()
 				p.keys = e.Keys
@@ -341,6 +344,57 @@ func TestCallRefusalsReachThePage(t *testing.T) {
 	a.waitEnded(denproto.VoiceNotFound)
 	if err := owner.JoinCall(context.Background(), "page-a", "not a den", general, denclient.JoinOptions{Sealed: true}, a.deliver); err == nil {
 		t.Error("joined a call in a den this install hasn't joined")
+	}
+}
+
+// TestMovesThroughTheClient checks staff moving a member's call through
+// both installs (M17.2): the den's info says it can, so the page offers it,
+// staff's install asks, and the member's page hears the channel to join,
+// which it joins as it would any other; and a refusal comes back as the
+// den's.
+func TestMovesThroughTheClient(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.startCalls()
+	ctx := context.Background()
+	voice := func(name string) string {
+		t.Helper()
+		if err := owner.Manage(ctx, denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+			t.Fatal(err)
+		}
+		var id string
+		viewOf(t, member, denID, "the voice channel "+name, func(v denclient.View) bool {
+			for _, c := range v.Channels {
+				if c.Name == name {
+					id = c.ID
+				}
+			}
+			return id != ""
+		})
+		return id
+	}
+	lounge, games := voice("Lounge"), voice("Games")
+	viewOf(t, member, denID, "the den's word that it moves members and keeps spoilers",
+		func(v denclient.View) bool { return v.MoveMembers && v.Spoilers })
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	b := newPage(t, member, "page-b")
+	b.join(denID, lounge)
+	viewOf(t, owner, denID, "bob in the call", showsCall(lounge, bob))
+	if err := owner.MoveMember(ctx, denID, bob, games); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case to := <-b.moved:
+		if to != games {
+			t.Fatalf("bob's page was moved to %s, not %s", to, games)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("bob's page never heard of the move")
+	}
+	b.join(denID, games)
+	viewOf(t, owner, denID, "bob in the other call", showsCall(games, bob))
+	viewOf(t, owner, denID, "the first call empty", showsCall(lounge))
+	if err := member.MoveMember(ctx, denID, alice, lounge); !denproto.IsCode(err, denproto.CodeForbidden) {
+		t.Fatalf("bob moving the owner: %v", err)
 	}
 }
 

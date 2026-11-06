@@ -160,17 +160,25 @@ export function attachmentKind(f) {
 
 // Attachments shows a message's files: images as previews that open the
 // viewer, video and audio as players, anything else as a card to download.
+// A photo or video sent as a spoiler shows covered until it's clicked or
+// tapped, each time its message shows, and nothing of it plays before
+// (M17.2); onOpen opens the viewer at an image with the spoilers still
+// covered, which the viewer leaves out.
 export function Attachments({ denID, files, onOpen }) {
+    const [shown, setShown] = useState(() => new Set());
     const tiles = files.filter((f) => ['image', 'video'].includes(attachmentKind(f)));
     const others = files.filter((f) => !tiles.includes(f));
     const box = tiles.length > 1 ? SEVERAL : ONE;
+    const covered = new Set(tiles.filter((f) => covers(f, shown)).map((f) => f.id));
     return (
         <div class="mt-1 flex flex-col gap-1">
             {tiles.length > 0 && (
                 <div class="flex flex-wrap gap-1">
-                    {tiles.map((f) => attachmentKind(f) === 'video'
-                        ? <VideoTile key={f.id} denID={denID} file={f} box={box} />
-                        : <ImageTile key={f.id} denID={denID} file={f} box={box} onOpen={() => onOpen(f)} />)}
+                    {tiles.map((f) => covered.has(f.id)
+                        ? <Covered key={f.id} denID={denID} file={f} box={box} onShow={() => setShown((s) => new Set(s).add(f.id))} />
+                        : attachmentKind(f) === 'video'
+                            ? <VideoTile key={f.id} denID={denID} file={f} box={box} />
+                            : <ImageTile key={f.id} denID={denID} file={f} box={box} onOpen={() => onOpen(f, covered)} />)}
                 </div>
             )}
             {others.map((f) => attachmentKind(f) === 'audio'
@@ -424,6 +432,37 @@ function ImageTile({ denID, file, box, onOpen }) {
             <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
                 class="h-full w-full object-cover" />
             {file.animated && <span class="badge badge-neutral badge-sm absolute bottom-1 left-1 select-none opacity-90">GIF</span>}
+        </button>
+    );
+}
+
+// covers says whether a file shows covered: a spoiler the member hasn't
+// clicked yet, of those shown (M17.2).
+export function covers(file, shown) {
+    return !!file.spoiler && !shown.has(file.id);
+}
+
+// Covered is a spoiler's photo or video before it's clicked or tapped
+// (M17.2): its preview, blurred past telling, under Spoiler, at the size
+// the file takes once shown, and nothing that names it.
+function Covered({ denID, file, box, onShow }) {
+    const size = fitBox(file.width, file.height, box.w, box.h);
+    return (
+        <button
+            type="button"
+            class="relative block max-w-full overflow-hidden rounded bg-base-300"
+            style={{ width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}
+            onClick={onShow}
+            aria-label="Show spoiler"
+            data-spoiler
+        >
+            {file.thumb && (
+                <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
+                    class="h-full w-full scale-125 object-cover blur-2xl" />
+            )}
+            <span class="absolute inset-0 flex items-center justify-center">
+                <span class="badge badge-neutral select-none font-semibold uppercase tracking-wide">Spoiler</span>
+            </span>
         </button>
     );
 }

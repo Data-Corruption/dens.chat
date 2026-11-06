@@ -753,6 +753,10 @@ func denMessage(e *denproto.Error) string {
 		return "This den is out of space for uploads. Its owner can make room."
 	case denproto.CodeWrongPassword:
 		return "That password or recovery code isn't right."
+	case denproto.CodeCallHeld:
+		return "Their connection just dropped, so their call can't be moved yet. Try again in a moment."
+	case denproto.CodeCallFull:
+		return "That call is full."
 	}
 	if msg, ok := denclient.ExplainStatus(e); ok {
 		return msg

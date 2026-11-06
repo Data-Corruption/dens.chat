@@ -227,6 +227,10 @@ type SendRequest struct {
 	// Poll makes the message a poll, its text the question (M15.4): in a
 	// channel, without files or editors.
 	Poll *PollRequest `json:"poll,omitempty"`
+	// Spoilers are the uploads among Attachments that go as spoilers
+	// (M17.2): in a channel, which the den keeps on each file. A DM's
+	// spoilers go inside its seal, so the den never learns them.
+	Spoilers []string `json:"spoilers,omitempty"`
 }
 
 // EditRequest replaces a message's text, and its editors when set, which

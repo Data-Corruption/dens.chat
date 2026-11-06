@@ -32,6 +32,7 @@ import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
 import { applyCalls, joinCall } from './voice.js';
 import { CallLock } from './calllock.jsx';
+import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, groupDrop, moveTargets } from './drag.js';
 import { CallBar, CallBlock, CallMembers, callState, useCall, useCallButton } from './voice.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
@@ -631,6 +632,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     limits={view.limits}
                                     retention={view.retention}
                                     offline={showsOffline(live, view.state)}
+                                    spoilers={!!view.spoilers}
                                     onProfile={(m) => setDialog({ kind: 'profile', member: m })}
                                     onTyping={() => sendTyping(denID, channel.id)}
                                 />
@@ -954,6 +956,115 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         onPointerCancel: () => press.current.cancel(),
         onContextMenu: (e) => e.preventDefault(),
     } : {});
+    // With a mouse, staff drag channels and groups into order, and members
+    // from one call onto another voice channel (M17.2); touch screens and
+    // keyboards keep the settings' Move up and Move down, and Move to in
+    // the member's menu. held is what this list's drag carries, which only
+    // a drag it started does, and drop where it would land.
+    const drags = staff && !gone && !touch;
+    const moves = staff && !gone && !!view.move_members;
+    const held = useRef(null);
+    const [drop, setDrop] = useState(null);
+    const [dragging, setDragging] = useState('');
+    const [dragError, setDragError] = useState('');
+    function lift(e, type, what, id, from = '') {
+        e.dataTransfer.setData(type, id);
+        e.dataTransfer.effectAllowed = 'move';
+        held.current = { what, id, from };
+        setDragging(what);
+        setDragError('');
+    }
+    function letGo() {
+        held.current = null;
+        setDrop(null);
+        setDragging('');
+    }
+    function land(e, send) {
+        e.preventDefault();
+        e.stopPropagation();
+        letGo();
+        if (!send) return;
+        send().catch((err) => setDragError(err.message));
+    }
+    // over takes a drag over a row where it can land, there, and with half
+    // says whether it's past the row's middle.
+    function over(e, key, half) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        const r = e.currentTarget.getBoundingClientRect();
+        const after = half ? e.clientY > r.top + r.height / 2 : undefined;
+        setDrop((d) => (d?.key === key && d.after === after ? d : { key, after }));
+    }
+    const leave = (key) => (e) => !e.currentTarget.contains(e.relatedTarget) && setDrop((d) => (d?.key === key ? null : d));
+    const pastMiddle = (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        return e.clientY > r.top + r.height / 2;
+    };
+    const moveTo = (member, channel) => api.post(`/api/dens/${denID}/members/${member}/move`, { channel_id: channel });
+    // A member's drag lands on a voice channel Move to would list for them.
+    const takes = (h, c) => h?.what === 'member' && moveTargets(view, members.get(h.id), h.from).some((t) => t.id === c.id);
+    // A channel's row takes a channel dropped beside it, and a voice
+    // channel's a member dropped on it, from another call.
+    const rowDrag = (c) => (drags ? {
+        draggable: true,
+        onDragStart: (e) => lift(e, DRAG_CHANNEL, 'channel', c.id),
+        onDragEnd: letGo,
+        onDragOver: (e) => {
+            const h = held.current;
+            if (h?.what === 'channel' && h.id !== c.id) over(e, c.id, true);
+            else if (takes(h, c)) over(e, c.id, false);
+        },
+        onDragLeave: leave(c.id),
+        onDrop: (e) => {
+            const h = held.current;
+            if (h?.what === 'channel') {
+                const body = channelDrop(view, h.id, { group: c.group_id || '', near: c.id, after: pastMiddle(e) });
+                land(e, body && (() => api.patch(`/api/dens/${denID}/channels/${h.id}`, body)));
+            } else if (takes(h, c)) {
+                land(e, () => moveTo(h.id, c.id));
+            }
+        },
+    } : {});
+    // A group's heading takes a group dropped beside it, and a channel
+    // dropped on it, which goes first in the group.
+    const headDrag = (g) => (drags ? {
+        draggable: true,
+        onDragStart: (e) => lift(e, DRAG_GROUP, 'group', g.id),
+        onDragEnd: letGo,
+        onDragOver: (e) => {
+            const h = held.current;
+            if (h?.what === 'group' && h.id !== g.id) over(e, `group-${g.id}`, true);
+            else if (h?.what === 'channel') over(e, `group-${g.id}`, false);
+        },
+        onDragLeave: leave(`group-${g.id}`),
+        onDrop: (e) => {
+            const h = held.current;
+            const body = h?.what === 'group' ? groupDrop(view, h.id, { near: g.id, after: pastMiddle(e) })
+                : h?.what === 'channel' ? channelDrop(view, h.id, { group: g.id }) : null;
+            const path = h?.what === 'group' ? 'groups' : 'channels';
+            land(e, body && (() => api.patch(`/api/dens/${denID}/${path}/${h.id}`, body)));
+        },
+    } : {});
+    // The channels in no group take a channel dropped past their last.
+    const looseDrag = drags ? {
+        onDragOver: (e) => held.current?.what === 'channel' && over(e, 'ungrouped', false),
+        onDragLeave: leave('ungrouped'),
+        onDrop: (e) => {
+            const h = held.current;
+            if (h?.what !== 'channel') return;
+            const last = ungrouped.filter((c) => c.id !== h.id).at(-1);
+            const body = channelDrop(view, h.id, last ? { group: '', near: last.id, after: true } : { group: '' });
+            land(e, body && (() => api.patch(`/api/dens/${denID}/channels/${h.id}`, body)));
+        },
+    } : {};
+    // dropMark marks where a drop would land: a line above or below a row,
+    // or a ring round what it'd go into.
+    const dropMark = (key) => {
+        if (drop?.key !== key) return '';
+        if (drop.after === undefined) return 'ring-2 ring-inset ring-primary';
+        return drop.after ? 'shadow-[inset_0_-2px_0_0_var(--color-primary)]' : 'shadow-[inset_0_2px_0_0_var(--color-primary)]';
+    };
     const item = (c) => {
         const r = reads.get(c.id);
         const isUnread = c.kind === 'text' && unread(r) && c.id !== open;
@@ -970,8 +1081,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
             <li key={c.id}>
                 {/* The row's button reaches across it, under its marks, whose
                     tips say on a tap what they mean (M13.2). */}
-                <div class={`group relative flex min-h-8 select-none items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11 ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
-                    {...presses({ kind: 'channel', channel: c })}>
+                <div class={`group relative flex min-h-8 select-none items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11 ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'} ${dropMark(c.id)}`}
+                    data-channel-row={c.id} {...presses({ kind: 'channel', channel: c })} {...rowDrag(c)}>
                     <button
                         type="button"
                         class="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded"
@@ -1001,14 +1112,19 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 {voice && (
                     <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
                         sounding={inCall ? sounding : ''} deafened={inCall && !!call?.deafened} volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} inCall={inCall} label={label}
-                        watched={watching} previewing={!!share?.preview} identities={view.keeps_identities ? view.identities : null} since={call?.since} />
+                        watched={watching} previewing={!!share?.preview} identities={view.keeps_identities ? view.identities : null} since={call?.since}
+                        moving={moves ? {
+                            targets: (member) => moveTargets(view, member, c.id),
+                            lift: drags ? (e, m) => lift(e, DRAG_MEMBER, 'member', m.id, c.id) : null,
+                            letGo,
+                        } : null} />
                 )}
             </li>
         );
     };
     return (
         <nav aria-label="Channels" class="flex flex-col gap-2 p-2">
-            <ul class="flex flex-col">{ungrouped.map(item)}</ul>
+            <ul class={`flex flex-col rounded ${dragging === 'channel' ? 'min-h-4' : ''} ${dropMark('ungrouped')}`} data-ungrouped {...looseDrag}>{ungrouped.map(item)}</ul>
             {groups.map(({ group: g, channels }) => {
                 // A folded group keeps what's open or busy in sight, and its
                 // row says what waits in the rest (M11).
@@ -1017,8 +1133,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 const marks = isFolded ? hiddenMarks(channels.filter((c) => !shown.includes(c)), reads) : null;
                 return (
                     <div key={g.id}>
-                        <div class="group flex min-h-6 select-none items-center justify-between gap-1 px-2 text-xs font-semibold uppercase text-base-content/60 pointer-coarse:min-h-11"
-                            {...presses({ kind: 'group', group: g })}>
+                        <div class={`group flex min-h-6 select-none items-center justify-between gap-1 rounded px-2 text-xs font-semibold uppercase text-base-content/60 pointer-coarse:min-h-11 ${dropMark(`group-${g.id}`)}`}
+                            data-group-row={g.id} {...presses({ kind: 'group', group: g })} {...headDrag(g)}>
                             <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch text-left uppercase hover:text-base-content"
                                 aria-expanded={!isFolded} onClick={() => fold(g.id)}>
                                 <ChevronIcon folded={isFolded} />
@@ -1037,6 +1153,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     </div>
                 );
             })}
+            {dragError && <p class="px-2 text-xs text-error" role="alert">{dragError}</p>}
         </nav>
     );
 }

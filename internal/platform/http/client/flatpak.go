@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
@@ -14,9 +15,11 @@ import (
 // mountFlatpak serves what only the Flatpak's page asks of its service
 // (M9.3): installing an update through Flatpak, restarting into the newest
 // build installed, quitting, and starting at sign-in. The Android app's
-// page installs its update at the same address (M12.4).
+// page installs its update at the same address (M12.4), and checks for one
+// beside it (M17.2).
 func (rt *router) mountFlatpak(r chi.Router) {
 	r.Post("/api/update", rt.handleUpdate)
+	r.Post("/api/update/check", rt.handleCheckUpdate)
 	r.Post("/api/restart", rt.handleRestart)
 	r.Post("/api/quit", rt.handleQuit)
 	r.Post("/api/start-at-sign-in", rt.handleStartAtSignIn)
@@ -70,6 +73,26 @@ func (rt *router) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rt.stopAfter(w, "restarting into the update")
+}
+
+// handleCheckUpdate checks for an update at once, as the member asks from
+// the Android app's settings (M17.2), and answers once a newer one is
+// downloaded and checked, ready to install, or that there's none.
+func (rt *router) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
+	if rt.a.Layout.Form != layout.Android || !rt.a.ChecksForUpdates() {
+		http.Error(w, "only the Android app checks from its settings", http.StatusNotFound)
+		return
+	}
+	ready, err := rt.a.CheckNow(r.Context())
+	switch {
+	case errors.Is(err, app.ErrUpdateRefused):
+		jsonError(w, http.StatusBadGateway, "The update doesn't check out against its signed checksums, so Dens won't install it.")
+	case err != nil:
+		rt.a.Log.Warnf("The member's update check failed: %v", err)
+		jsonError(w, http.StatusBadGateway, "Couldn't check for an update. Check your connection, then try again.")
+	default:
+		writeJSON(w, map[string]string{"update": ready})
+	}
 }
 
 // handleRestart starts the newest build installed, which takes over once

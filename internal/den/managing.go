@@ -207,6 +207,8 @@ func setAttachments(ctx context.Context, tx *sql.Tx, message, author int64, file
 	for _, id := range had {
 		on[id] = true
 	}
+	// An upload taking a file's place is a spoiler if the file was (M17.2).
+	carried := map[int64]int64{}
 	for _, id := range files {
 		if on[id] {
 			continue
@@ -223,6 +225,15 @@ func setAttachments(ctx context.Context, tx *sql.Tx, message, author int64, file
 		}
 		if replaces.Valid && (!on[replaces.Int64] || keep[replaces.Int64]) {
 			return nil, false, nil, invalid("attachments: an upload made to replace a file takes only that file's place")
+		}
+		if replaces.Valid {
+			carried[id] = replaces.Int64
+		}
+	}
+	for upload, file := range carried {
+		if _, err := tx.ExecContext(ctx, `UPDATE den_files SET spoiler = (SELECT spoiler FROM den_files WHERE id = ?) WHERE id = ?`,
+			file, upload); err != nil {
+			return nil, false, nil, err
 		}
 	}
 	for _, id := range had {

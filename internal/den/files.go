@@ -625,7 +625,7 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	return r, nil
 }
 
-const fileColumns = `id, message_id, name, type, size, width, height, animated, thumb_width, thumb_height, duration_ms`
+const fileColumns = `id, message_id, name, type, size, width, height, animated, thumb_width, thumb_height, duration_ms, spoiler`
 
 // scanFile reads a file's description, and the message it's on.
 func (d *Den) scanFile(scan func(...any) error) (denproto.File, int64, error) {
@@ -633,7 +633,7 @@ func (d *Den) scanFile(scan func(...any) error) (denproto.File, int64, error) {
 	var id int64
 	var message, w, h, tw, th, duration sql.NullInt64
 	var sealed []byte
-	if err := scan(&id, &message, &sealed, &f.Type, &f.Size, &w, &h, &f.Animated, &tw, &th, &duration); err != nil {
+	if err := scan(&id, &message, &sealed, &f.Type, &f.Size, &w, &h, &f.Animated, &tw, &th, &duration, &f.Spoiler); err != nil {
 		return f, 0, err
 	}
 	f.Duration = duration.Int64

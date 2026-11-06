@@ -469,6 +469,121 @@ func TestStaffInCalls(t *testing.T) {
 	alice.wait(inCall(lounge.ID, alice.me, bob.me))
 }
 
+// moved matches the den telling a socket that staff moved its member's
+// call to another channel (M17.2).
+func moved(from, to string) (string, func(denproto.Event) bool) {
+	return "a move from " + from + " to " + to, func(e denproto.Event) bool {
+		var x denproto.VoiceMove
+		return e.T == denproto.EventVoiceMove && json.Unmarshal(e.D, &x) == nil && x.ChannelID == from && x.To == to
+	}
+}
+
+// TestStaffMoveMembers checks staff moving a member's call to another
+// voice channel (M17.2): by the rank disconnecting takes; only to a voice
+// channel the member can see, whose call has room; told to the socket
+// holding the call, whose join of that channel doesn't count toward the
+// member's limit on joining; and refused while the call is held, which
+// nothing can tell. A member in no call, or in that channel's already,
+// stays as they are.
+func TestStaffMoveMembers(t *testing.T) {
+	f := newFixture(t)
+	f.startCalls(sfu.Config{})
+	ctx := context.Background()
+	aliceToken, _ := f.owner()
+	owner := f.session(aliceToken)
+	bobToken := f.member(aliceToken, "bob")
+	carolToken := f.member(aliceToken, "carol")
+	daveToken := f.member(aliceToken, "dave")
+	limits := denproto.DefaultCallLimits
+	limits.Members = 2
+	if _, err := f.d.Update(ctx, owner, denproto.DenUpdateRequest{CallLimits: &limits}); err != nil {
+		t.Fatal(err)
+	}
+	general := f.channel(owner, "general", denproto.KindText, false)
+	lounge := f.channel(owner, "Lounge", denproto.KindVoice, false)
+	games := f.channel(owner, "Games", denproto.KindVoice, false)
+	staff := f.channel(owner, "Staff", denproto.KindVoice, true)
+	alice := f.voiceSocket(aliceToken, newCaller(t))
+	bob := f.voiceSocket(bobToken, newCaller(t))
+	dave := f.voiceSocket(daveToken, newCaller(t))
+	carol := f.voiceSocket(carolToken, nil)
+	if _, err := f.d.SetRole(ctx, owner, carol.me, denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	move := func(token denproto.Bytes, member, channel string) *http.Response {
+		return f.post("/api/members/"+member+"/move", denproto.MoveRequest{ChannelID: channel},
+			http.Header{"Authorization": {"Bearer " + token.String()}})
+	}
+	moves := func(token denproto.Bytes, member, channel string) {
+		t.Helper()
+		resp := move(token, member, channel)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("moving member %s to %s: %d", member, channel, resp.StatusCode)
+		}
+	}
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, bob.me))
+
+	wantError(t, move(bobToken, alice.me, games.ID), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, move(carolToken, alice.me, games.ID), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, move(carolToken, "999999", games.ID), http.StatusNotFound, denproto.CodeNotFound)
+	for _, id := range []string{general.ID, staff.ID, "999999", "not an id"} {
+		wantError(t, move(carolToken, bob.me, id), http.StatusNotFound, denproto.CodeNotFound)
+	}
+	alice.join(games.ID)
+	bob.wait(inCall(games.ID, alice.me))
+	dave.join(games.ID)
+	bob.wait(inCall(games.ID, alice.me, dave.me))
+	wantError(t, move(carolToken, bob.me, games.ID), http.StatusConflict, denproto.CodeCallFull)
+	dave.send(denproto.EventVoiceLeave, struct{}{})
+	bob.wait(inCall(games.ID, alice.me))
+
+	// Bob spends his joins: ten, of which his first was one, leave none.
+	for range 9 {
+		bob.join(lounge.ID)
+		bob.wait(inCall(lounge.ID, bob.me))
+	}
+	bob.join(lounge.ID)
+	bob.wait(ended(lounge.ID, denproto.VoiceRateLimited))
+	moves(carolToken, bob.me, games.ID)
+	bob.wait(moved(lounge.ID, games.ID))
+	bob.join(games.ID)
+	alice.wait(inCall(games.ID, alice.me, bob.me))
+	// The move's join was one alone.
+	bob.join(lounge.ID)
+	bob.wait(ended(lounge.ID, denproto.VoiceRateLimited))
+
+	// Where the member is already, or in no call, nothing changes.
+	moves(carolToken, bob.me, games.ID)
+	moves(carolToken, dave.me, lounge.ID)
+	// A moderator sees the staff-only channel, so the owner moves them there.
+	if _, err := f.d.SetRole(ctx, owner, dave.me, denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	dave = f.voiceSocket(daveToken, newCaller(t))
+	dave.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, dave.me))
+	moves(aliceToken, dave.me, staff.ID)
+	dave.wait(moved(lounge.ID, staff.ID))
+
+	// A held call has no page to tell.
+	bob.c.Close(websocket.StatusGoingAway, "")
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp := move(carolToken, bob.me, lounge.ID)
+		err := denproto.ReadError(resp)
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusConflict && denproto.IsCode(err, denproto.CodeCallHeld) {
+			break
+		}
+		if resp.StatusCode != http.StatusNoContent || time.Now().After(deadline) {
+			t.Fatalf("moving bob's held call: %d %v", resp.StatusCode, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 func TestCallRefusals(t *testing.T) {
 	f := newFixture(t)
 	f.startCalls(sfu.Config{})

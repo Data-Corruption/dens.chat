@@ -27,14 +27,18 @@ var releasedSchema = []struct {
 	{"v1.7.0", 3, append([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables...)},
 	// v1.8.0 added M15.2's emoji, M15.3's reactions and M15.4's polls.
 	{"v1.8.0", 6, m16Tables},
+	// v1.9.0 added M16.1's identities, M16.3's group DMs and M16.4's
+	// disappearing messages.
+	{"v1.9.0", 9, nil},
 }
 
 // m16Tables are the tables M16's steps add: M16.1's identities and
 // records, and M16.3's group DMs.
 var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_group_members", "den_group_changes"}
 
-// retiredKeys are the tables of DM keys, which M16.1's step changes: an
-// exchange still running, or checked by one member alone, retires.
+// retiredKeys are the tables of DM keys, which M16.1's step changes for a
+// release before it: an exchange still running, or checked by one member
+// alone, retires.
 var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 
 // A database a release left, with a row in every table, migrates to this
@@ -51,7 +55,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // keeps every row of them. M16.3 makes den_channels again, with foreign
 // keys off, which keeps every row that refers to a channel, and its
 // counter where a restore moved it. M16.4 adds each DM's time, which
-// starts off, and each message's, which none has.
+// starts off, and each message's, which none has; a database v1.9.0 left,
+// with identities, a group DM and a time set, keeps them all. M17.2 adds a
+// file's spoiler, which none is.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -105,14 +111,16 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					t.Fatalf("%s migrated to schema %d, %v; want %d", what, v, err, SchemaVersion(bi))
 				}
 				for _, table := range tables {
-					if slices.Contains(retiredKeys, table) {
+					if released.version < 7 && slices.Contains(retiredKeys, table) {
 						continue
 					}
 					if after := dumpColumns(t, db, table, columns[table]); after != before[table] {
 						t.Errorf("%s's %s changed in the migration: before\n%s\nafter\n%s", what, table, before[table], after)
 					}
 				}
-				checkRetired(t, db, what)
+				if released.version < 7 {
+					checkRetired(t, db, what)
+				}
 				now, err := Tables(ctx, db)
 				if err != nil {
 					t.Fatal(err)
@@ -142,7 +150,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if err := db.QueryRow(`SELECT (SELECT count(*) FROM den_members WHERE identity IS NOT NULL),
 					(SELECT count(*) FROM den_dm_keys WHERE statement IS NOT NULL OR signature IS NOT NULL),
 					(SELECT count(*) FROM joined_dens WHERE identities IS NOT NULL)`).Scan(&identities, &statements, &kept); err != nil ||
-					identities+statements+kept != 0 {
+					(released.version < 7 && identities+statements+kept != 0) {
 					t.Errorf("%s holds %d identities, %d signed keys and %d kept records after the migration, %v", what, identities, statements, kept, err)
 				}
 				// den_channels was made again, with group DMs among its kinds.
@@ -157,11 +165,20 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				var timed, expiring int
 				if err := db.QueryRow(`SELECT
 					(SELECT count(*) FROM den_channels WHERE expires_after != 0 OR expires_by IS NOT NULL OR expires_set_at IS NOT NULL),
-					(SELECT count(*) FROM den_messages WHERE expires_at IS NOT NULL)`).Scan(&timed, &expiring); err != nil || timed+expiring != 0 {
+					(SELECT count(*) FROM den_messages WHERE expires_at IS NOT NULL)`).Scan(&timed, &expiring); err != nil ||
+					(released.version < 9 && timed+expiring != 0) {
 					t.Errorf("%s holds %d timed DMs and %d messages that disappear after the migration, %v", what, timed, expiring, err)
 				}
 				if _, err := db.Exec(`UPDATE den_channels SET expires_after = -1 WHERE id = 3`); err == nil {
 					t.Errorf("%s takes a DM's time below 0", what)
+				}
+				// No file went as a spoiler before M17.2.
+				var spoilers int
+				if err := db.QueryRow(`SELECT count(*) FROM den_files WHERE spoiler != 0`).Scan(&spoilers); err != nil || spoilers != 0 {
+					t.Errorf("%s holds %d spoilers after the migration, %v", what, spoilers, err)
+				}
+				if _, err := db.Exec(`UPDATE den_files SET spoiler = 2 WHERE id = 1`); err == nil {
+					t.Errorf("%s takes a spoiler other than 0 or 1", what)
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
@@ -236,7 +253,10 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 // the first step wrote. From version 3, v1.7.0's, a sound of the member's
 // own and one on the den's soundboard, its limits not at their defaults;
 // from version 6, v1.8.0's, an emoji, reactions in a channel and a DM, and
-// a poll with @everyone and a vote.
+// a poll with @everyone and a vote; from version 9, v1.9.0's, a member's
+// identity and record, a signed DM key, the identities a joined den kept,
+// a group DM with its members and its first change, and a DM's time with a
+// message sent under it.
 func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 	rows := []string{
@@ -298,6 +318,21 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 			`INSERT INTO den_messages (id, channel_id, author_id, created_at, text, nonce, everyone) VALUES (3, 1, 1, 6, x'35', x'36', 1)`,
 			`INSERT INTO den_polls (message_id, choices, multiple, show_voters, show_totals, ends_at, ended) VALUES (3, x'63', 1, 'end', 'voted', 7, 0)`,
 			`INSERT INTO den_poll_votes (message_id, member_id, choice, voted_at) VALUES (3, 2, 0, 6)`,
+		)
+	}
+	if version >= 9 {
+		rows = append(rows,
+			`UPDATE den_members SET identity = x'71' WHERE id = 1`,
+			`INSERT INTO den_identities (member_id, kem, sig) VALUES (1, x'72', x'73')`,
+			`UPDATE den_dm_keys SET statement = x'74', signature = x'75' WHERE id = 2`,
+			`INSERT INTO den_records (member_id, revision, sealed, updated_at) VALUES (1, 1, x'76', 7)`,
+			`UPDATE joined_dens SET identities = x'77'`,
+			`INSERT INTO den_channels (id, name, kind, position, created_at) VALUES (5, '', 'group_dm', 0, 7)`,
+			`INSERT INTO den_group_dms (channel_id, made_by, made_at, name, name_kid) VALUES (5, 1, 7, x'78', x'79')`,
+			`INSERT INTO den_group_members (channel_id, member_id, position, joined, since) VALUES (5, 1, 0, 1, 0), (5, 3, 1, 1, 0)`,
+			`INSERT INTO den_group_changes (channel_id, n, made_by, made_at, statement) VALUES (5, 1, 1, 7, x'7a')`,
+			`UPDATE den_channels SET expires_after = 3600, expires_by = 1, expires_set_at = 7 WHERE id = 4`,
+			`INSERT INTO den_messages (id, channel_id, author_id, created_at, text, nonce, key_id, expires_at) VALUES (4, 4, 1, 8, x'37', x'38', 2, 3600008)`,
 		)
 	}
 	for _, q := range rows {
