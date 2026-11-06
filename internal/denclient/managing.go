@@ -218,7 +218,11 @@ func (c *conn) changeDMFile(ctx context.Context, channelID, messageID, fileID st
 			return false, inputError(errors.New("that file isn't on that message any more"))
 		}
 		if with != nil {
-			p.Files[i] = *with
+			// The file in its place is a spoiler if it was (M17.2), as the
+			// den keeps a channel's.
+			replacing := *with
+			replacing.Spoiler = p.Files[i].Spoiler
+			p.Files[i] = replacing
 		} else {
 			p.Files = slices.Delete(p.Files, i, i+1)
 		}

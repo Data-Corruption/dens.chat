@@ -116,6 +116,22 @@ func (m *Manager) DisconnectFromCall(ctx context.Context, denID, memberID string
 	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/disconnect", struct{}{}, nil)
 }
 
+// MoveMember moves a member's call to another voice channel, as staff
+// (M17.2): the den tells their page, which joins it.
+func (m *Manager) MoveMember(ctx context.Context, denID, memberID, channelID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("member", memberID); err != nil {
+		return err
+	}
+	if err := checkID("channel", channelID); err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/move", denproto.MoveRequest{ChannelID: channelID}, nil)
+}
+
 // SetStaffMute mutes a member in calls, as staff, or lifts it (M3).
 func (m *Manager) SetStaffMute(ctx context.Context, denID, memberID string, muted bool) error {
 	c, err := m.find(denID)

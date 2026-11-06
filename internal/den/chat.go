@@ -1292,6 +1292,10 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
+	spoilers, err := parseSpoilers(req.Spoilers, files, dm)
+	if err != nil {
+		return denproto.Message{}, err
+	}
 	if err := checkSealedText(dm, req.Text, req.Sealed, req.KeyID); err != nil {
 		return denproto.Message{}, err
 	}
@@ -1399,6 +1403,11 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		if err := attach(ctx, tx, id, s.MemberID, files, dm, now); err != nil {
 			return err
 		}
+		for _, f := range spoilers {
+			if _, err := tx.ExecContext(ctx, `UPDATE den_files SET spoiler = 1 WHERE id = ?`, f); err != nil {
+				return err
+			}
+		}
 		if poll != nil {
 			if posted, err = d.insertPoll(ctx, tx, id, poll, now); err != nil {
 				return err
@@ -1452,6 +1461,26 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		}
 	}
 	return m, d.publishReadState(ctx, s.MemberID, cid)
+}
+
+// parseSpoilers checks a send's spoilers (M17.2): each one of its
+// uploads, once, in a channel, since a DM's go inside its seal.
+func parseSpoilers(ids []string, files []int64, dm bool) ([]int64, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if dm {
+		return nil, invalid("spoilers: a DM's go inside its sealed text")
+	}
+	out := make([]int64, 0, len(ids))
+	for _, s := range ids {
+		id, err := denproto.ParseID(s)
+		if err != nil || !slices.Contains(files, id) || slices.Contains(out, id) {
+			return nil, invalid("spoilers: each one of the message's uploads, once")
+		}
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 // checkSealedText checks that a DM message's text comes sealed, with the

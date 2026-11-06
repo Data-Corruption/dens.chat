@@ -37,6 +37,9 @@ const (
 	// the den tells the call's members whose sound plays.
 	EventVoiceSound    = "voice.sound" // a client frame
 	EventVoiceSounding = "voice.sounding"
+	// From M17.2: staff moved the member to another voice channel's call,
+	// which their page joins.
+	EventVoiceMove = "voice.move"
 )
 
 // MaxSDP bounds an offer or an answer, in bytes.
@@ -229,6 +232,28 @@ type VoiceSounding struct {
 type VoiceMuteRequest struct {
 	Muted bool `json:"muted"`
 }
+
+// MoveRequest is staff moving a member in a call to another voice
+// channel's (M17.2).
+type MoveRequest struct {
+	ChannelID string `json:"channel_id"`
+}
+
+// VoiceMove tells the socket holding a member's call in ChannelID that
+// staff moved them to To, which their page joins as if they'd picked it
+// (M17.2). That join doesn't count toward their limit on joining.
+type VoiceMove struct {
+	ChannelID string `json:"channel_id"`
+	To        string `json:"to"`
+}
+
+// Refusals of a move (M17.2): the member's call is held while its socket
+// is away, so nothing can tell their page; or the call they'd move to holds
+// as many members as the den allows.
+const (
+	CodeCallHeld = "call_held"
+	CodeCallFull = "call_full"
+)
 
 type VoiceAnswer struct {
 	Version int    `json:"version"`

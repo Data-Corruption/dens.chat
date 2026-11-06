@@ -28,7 +28,8 @@ const CallDisconnected = "disconnected"
 // after its connection dropped (M3); that it refused a share or a watch
 // (M4.2), or a sound (M14.3); who in the call holds push to talk (M11);
 // whose sound plays in it, "" for none (M14.3); the call's keys, whole,
-// as one changes (M16.2); or the call's end and why.
+// as one changes (M16.2); the voice channel staff moved the member to,
+// which the page joins (M17.2); or the call's end and why.
 type CallEvent struct {
 	DenID    string       `json:"den"`
 	Channel  string       `json:"channel"`
@@ -38,6 +39,7 @@ type CallEvent struct {
 	Talking  *[]string    `json:"talking,omitempty"`
 	Sounding *string      `json:"sounding,omitempty"`
 	Keys     *CallKeys    `json:"keys,omitempty"`
+	MoveTo   string       `json:"move_to,omitempty"`
 	Ended    string       `json:"ended,omitempty"`
 }
 
@@ -463,6 +465,20 @@ func (c *conn) callEvent(ctx context.Context, e denproto.Event) error {
 			return errMalformed
 		}
 		c.takeKey(ctx, k)
+	case denproto.EventVoiceMove:
+		// Staff moved the member: the page joins the channel as if they'd
+		// picked it (M17.2).
+		var x denproto.VoiceMove
+		if json.Unmarshal(e.D, &x) != nil || !validID(x.To) {
+			return errMalformed
+		}
+		m.callMu.Lock()
+		call := m.call
+		m.callMu.Unlock()
+		if call != nil && call.den == denID && call.channel == x.ChannelID {
+			m.note(call, "staff moved it to channel %s", x.To)
+			call.deliver(CallEvent{DenID: denID, Channel: x.ChannelID, MoveTo: x.To})
+		}
 	case denproto.EventVoiceEnded:
 		var x denproto.VoiceEnded
 		if json.Unmarshal(e.D, &x) != nil {

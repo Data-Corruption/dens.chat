@@ -175,6 +175,10 @@ type File struct {
 	// Sealed marks an upload sealed by the member's client for a DM
 	// (M1.7), which the den can't open: it has no name or type of its own.
 	Sealed bool `json:"sealed,omitempty"`
+	// Spoiler marks a channel's file its sender sent as a spoiler, which
+	// clients show covered until it's clicked (M17.2). A DM's carries it
+	// inside the seal instead.
+	Spoiler bool `json:"spoiler,omitempty"`
 }
 
 // Thumb is the size of a file's preview.
@@ -268,7 +272,7 @@ func CheckFile(f File) error {
 	}
 	if f.Sealed {
 		if f.Name != "" || f.Type != SealedType || f.Size < 0 || f.Size > MaxFileSize || f.Width != 0 || f.Height != 0 || f.Animated ||
-			f.Duration != 0 || f.Thumb != nil {
+			f.Duration != 0 || f.Thumb != nil || f.Spoiler {
 			return errors.New("sealed file has details it can't have")
 		}
 		return nil

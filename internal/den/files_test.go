@@ -15,6 +15,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -315,6 +316,83 @@ func TestAttachments(t *testing.T) {
 	}
 	if files, _ := f.stored(); len(files) != 1 {
 		t.Fatalf("stored after deleting the channel: %v", files)
+	}
+}
+
+// A channel's file sent as a spoiler keeps it on the den, for everyone
+// who sees the message, through its edits and in the file that takes its
+// place; only the message's own uploads go as spoilers, and a DM's go
+// inside its seal, never to the den (M17.2).
+func TestSpoilers(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	c := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	carol := f.member(owner, "carol")
+	photo := f.mustUpload(member, "plot twist.jpg", testJPEG(t, 64, 48))
+	notes := f.mustUpload(member, "notes.txt", []byte("hello"))
+	other := f.mustUpload(member, "other.txt", []byte("x"))
+	send := func(spoilers ...string) (denproto.Message, error) {
+		return f.d.Send(ctx, member, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "look",
+			Attachments: []string{photo.ID, notes.ID}, Spoilers: spoilers})
+	}
+	for _, bad := range [][]string{{other.ID}, {photo.ID, photo.ID}, {"not an id"}} {
+		if _, err := send(bad...); !denproto.IsCode(err, denproto.CodeInvalidField) {
+			t.Fatalf("spoilers %v: %v", bad, err)
+		}
+	}
+	m, err := send(photo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spoilers := func(files []denproto.File) []bool {
+		var out []bool
+		for _, f := range files {
+			out = append(out, f.Spoiler)
+		}
+		return out
+	}
+	if got := spoilers(m.Attachments); !slices.Equal(got, []bool{true, false}) {
+		t.Fatalf("the sent message's spoilers: %v", got)
+	}
+	page, err := f.d.History(ctx, carol, c.ID, HistoryQuery{})
+	if err != nil || len(page.Messages) != 1 || !slices.Equal(spoilers(page.Messages[0].Attachments), []bool{true, false}) {
+		t.Fatalf("carol's history: %+v %v", page, err)
+	}
+
+	// An edit keeps the files' spoilers, and the file that takes the
+	// photo's place is a spoiler too.
+	edited, err := f.d.Edit(ctx, member, m.ID, denproto.EditRequest{Revision: 1, Text: "look again"})
+	if err != nil || !slices.Equal(spoilers(edited.Attachments), []bool{true, false}) {
+		t.Fatalf("an edit's spoilers: %+v %v", edited, err)
+	}
+	data := testJPEG(t, 32, 24)
+	swap, err := f.d.Upload(ctx, member, "plot twist, smaller.jpg", int64(len(data)), bytes.NewReader(data), false, photo.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []string{swap.ID, notes.ID}
+	swapped, err := f.d.Edit(ctx, member, m.ID, denproto.EditRequest{Revision: 2, Text: "look again", Attachments: &files})
+	if err != nil || len(swapped.Attachments) != 2 || swapped.Attachments[0].ID != swap.ID ||
+		!slices.Equal(spoilers(swapped.Attachments), []bool{true, false}) {
+		t.Fatalf("the swap's spoilers: %+v %v", swapped, err)
+	}
+
+	// A DM's spoilers go inside its seal.
+	dm, err := f.d.OpenDM(ctx, member, denproto.DMRequest{MemberID: denproto.FormatID(carol.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := []byte("sealed by the client")
+	sealed, err := f.d.Upload(ctx, member, "", int64(len(blob)), bytes.NewReader(blob), true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.d.Send(ctx, member, dm.ID, f.sealedSend(member, dm.ID, denproto.SendRequest{Nonce: denproto.Random(16),
+		Attachments: []string{sealed.ID}, Spoilers: []string{sealed.ID}}))
+	wantCode(t, err, denproto.CodeInvalidField)
+	f.mustSendFiles(member, dm.ID, sealed.ID)
+	if info, _ := f.d.Info(); !info.Spoilers || !info.MoveMembers {
+		t.Fatalf("the den's info doesn't say it keeps spoilers and moves members: %+v", info)
 	}
 }
 

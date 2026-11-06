@@ -14,6 +14,7 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Put("/api/dens/{den}/members/{member}/role", rt.handleSetRole)
 	r.Post("/api/dens/{den}/members/{member}/remove", rt.handleRemoveMember)
 	r.Post("/api/dens/{den}/members/{member}/disconnect", rt.handleDisconnectFromCall)
+	r.Post("/api/dens/{den}/members/{member}/move", rt.handleMoveMember)
 	r.Post("/api/dens/{den}/members/{member}/voice-mute", rt.handleStaffMute)
 	r.Get("/api/dens/{den}/members/{member}/code", rt.handleCode)
 	r.Post("/api/dens/{den}/members/{member}/compare", rt.handleCompare)
@@ -67,6 +68,20 @@ func (rt *router) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rt.a.Dens.RemoveMember(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"), req); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMoveMember moves a member's call to another voice channel, as
+// staff (M17.2).
+func (rt *router) handleMoveMember(w http.ResponseWriter, r *http.Request) {
+	var req denproto.MoveRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.a.Dens.MoveMember(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"), req.ChannelID); err != nil {
 		rt.denError(w, r, err)
 		return
 	}

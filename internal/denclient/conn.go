@@ -726,6 +726,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			retained = c.den.retention != d.Retention
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
+			c.den.spoilers, c.den.moveMembers = d.Spoilers, d.MoveMembers
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -740,7 +741,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits, SealedCalls: d.SealedCalls})
 		return out, err == nil, err
 	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking,
-		denproto.EventVoiceSounding, denproto.EventVoiceKey:
+		denproto.EventVoiceSounding, denproto.EventVoiceKey, denproto.EventVoiceMove:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(ctx, e)
 	case denproto.EventGroupChange:
