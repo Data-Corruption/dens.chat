@@ -1450,3 +1450,61 @@ export async function compact(h, ctx, d, report) {
     await h.escape();
     did(back === 'default', `a tap on Default picks it again: ${back}`);
 }
+
+// noting is the member's notes at 390 pixels (M17.3): their row at the top
+// of the Direct messages list, opened by a tap, their header with nothing
+// beside it, and a note written and sent, by the send button with a finger
+// and Enter with a mouse, which nothing marks unread; and the notes opened
+// again from the member's own profile card, which a tap on their name in
+// a channel's members opens.
+export async function noting(h, ctx, d, report) {
+    const { den, general } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const NOTES = `document.querySelector('textarea[placeholder="Write a note"]')`;
+    const ROW = `document.querySelector('[data-pane=list] [data-notes-row] button')`;
+    // The den's list, at its own address on the phone layout, and its
+    // Direct messages tab.
+    await h.go(`/den/${den}`);
+    const tab = h.byText('[data-pane=list] [role=tab]', 'Direct messages');
+    await h.wait(tab, "the list's tabs");
+    await d.tap(tab);
+    await h.wait(ROW, "the notes' row");
+    await h.snap('notes-list');
+    did(await h.has(`document.querySelector('[data-pane=list] nav[aria-label="Direct messages"] li')?.hasAttribute('data-notes-row')`),
+        "the notes are the first row of the Direct messages list");
+    await d.tap(ROW);
+    const opened = await waitFor(() => h.has(`${NOTES} && document.querySelector('[data-notes-header]')`), 'the notes', 10000).then(() => true, () => false);
+    did(opened, "a tap on the notes' row opens them");
+    if (!opened) return;
+    const side = await h.has(`document.querySelector('[data-pane=chan] header button[aria-label="Members"], [data-pane=chan] header button[aria-label="Profile"]')`);
+    did(!side, 'the notes have no members beside them to open');
+    const line = `9 ${Date.now().toString(36)}`;
+    const notes = await h.ev(`fetch('/api/dens/${den}/state').then((r) => r.json()).then((v) => v.channels.find((c) => c.kind === 'notes')?.id || '')`);
+    const newest = () => h.ev(`fetch('/api/dens/${den}/channels/${notes}/messages?limit=1').then((r) => r.json()).then((p) => p.messages.at(-1)?.text || '')`);
+    await d.tap(NOTES);
+    await d.type(line);
+    if (d.touch) await d.tap(SEND);
+    else await d.enter();
+    const sent = await waitFor(async () => (await newest()) === line, 'the note sent', 10000).then(() => true, () => false);
+    did(sent, `${d.touch ? 'the send button' : 'Enter'} sends a note`);
+    await h.ev(`${NOTES}.blur(), true`);
+    await h.snap('notes', { scroll: SCROLLER, up: true, max: 2 });
+    const marked = await h.has(`document.querySelector('[data-notes-row] [data-unread]') || [...document.querySelectorAll('[role=tab]')].some((t) => !!t.querySelector('[aria-label=unread]'))`);
+    did(!marked, 'nothing marks the note unread');
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(COMPOSER, 'the composer');
+    await d.tap(`document.querySelector('[data-pane=chan] header button[aria-label="Members"]')`);
+    const me = await h.ev(`fetch('/api/dens/${den}/state').then((r) => r.json()).then((v) => v.me.display_name)`);
+    const mine = h.withText('[data-pane=side] nav[aria-label="Members"] button', me);
+    await h.wait(mine, 'the member list');
+    await sleep(600);
+    await d.tap(mine);
+    const card = await waitFor(() => h.has(`document.querySelector('[data-own-notes]')`), "Notes on the member's own profile card", 10000).then(() => true, () => false);
+    await h.snap('notes-card');
+    did(card, "the member's own profile card offers Notes");
+    if (!card) return;
+    await d.tap(`document.querySelector('[data-own-notes]')`);
+    const again = await waitFor(() => h.has(`${NOTES} && !document.querySelector('[role=dialog]')`), 'the notes again', 10000).then(() => true, () => false);
+    did(again, "a tap on Notes on the profile card opens the notes");
+}
+

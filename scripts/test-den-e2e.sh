@@ -3,9 +3,10 @@
 # Den e2e on Linux: a second machine joins a den through Caddy, chats,
 # stays connected across a den restart, and calls the owner through the
 # den's media ports, over UDP and over TCP alone; the two start a private
-# DM; the member recovers their account on a fresh install and signs the
-# old one out; then a ban shuts them out, and an owner invite from the den's
-# machine hands the den on.
+# DM, and the member writes a note to self; the member recovers their
+# account on a fresh install, which reads the DM and the notes once it has
+# the seal, and signs the old one out; then a ban shuts them out, and an
+# owner invite from the den's machine hands the den on.
 #
 # One Incus container hosts the den behind the pinned Caddy, serving
 # https://den.test with Caddy's internal certificate authority. Another, on
@@ -29,12 +30,15 @@
 # the member write in a DM at the same moment, neither typing a digit, and
 # compare codes, which asks nothing of the den (M16.1); it carries text, a
 # photo, a photo's and a video's smaller copies and a video the den stores
-# only sealed. The owner shares a checklist with the member, and the
+# only sealed. The member opens their notes and writes one, which they
+# read back, the owner can't, and the den holds sealed (M17.3). The owner
+# shares a checklist with the member, and the
 # two tick different boxes at the same moment, all of which must stay. A
 # second instance on the member's machine stands in for a fresh one: it
 # signs in by the den's address with a recovery code, whose new password
 # must sign the first install out at once, and reads the DM only once the
-# member types their DM seal. The new password alone doesn't sign the first
+# member types their DM seal, and their notes then too, the seal making
+# their key. The new password alone doesn't sign the first
 # install in again: the fresh one approves it, the two comparing digits, and
 # hands it the seal, with which it reads the DM. Signed out once more from
 # the fresh one's device list, it signs in again the same way, with the
@@ -636,6 +640,18 @@ run() {
   stored=$(guest "$DEN" sealed)
   echo ">> The DM opened at once, written by both at the same moment, and the members compared codes; its text, a link without its tracking, a photo, a photo's and a video's smaller copies and a video reached the other side, and the den holds ${stored} sealed files"
 
+  echo ">> The member's notes, through Caddy"
+  local notes
+  notes=$(member notes "$den_id")
+  [[ "$(member notes "$den_id")" == "$notes" ]] || { echo "error: the member's notes opened as another channel the second time" >&2; return 1; }
+  member send "$den_id" "$notes" "a note to self" >/dev/null
+  history=$(member history "$den_id" "$notes")
+  [[ "$history" == "a note to self" ]] || { echo "error: the member's notes read: $history" >&2; return 1; }
+  history=$(guest "$DEN" history "$den_id" "$notes" 2>&1 || :)
+  [[ "$history" != *"a note to self"* ]] || { echo "error: the owner read the member's notes" >&2; return 1; }
+  guest "$DEN" dm-sealed "a note to self"
+  echo ">> The member's notes opened, the den making them once, and took a note the member reads back, which the owner can't and the den's database holds sealed"
+
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text
   list=$(guest "$DEN" send-shared "$den_id" "$channel" "$bob" '[ ] item 0\n[ ] item 1\n[ ] item 2\n[ ] item 3\n[ ] item 4\n[ ] item 5')
@@ -747,10 +763,16 @@ run() {
   [[ "$history" != *"a private word"* ]] || { echo "error: the fresh install read the DM without the seal" >&2; return 1; }
   seal=$(member seal)
   [[ -n "$seal" ]] || { echo "error: joining showed no new DM seal" >&2; return 1; }
+  history=$(fresh history "$den_id" "$notes")
+  [[ "$history" != *"a note to self"* ]] || { echo "error: the fresh install read the notes without the seal" >&2; return 1; }
   fresh type-seal "$den_id" "$seal"
   history=$(fresh history "$den_id" "$dm")
   [[ "$history" == *"a private word"* ]] || { echo "error: with the seal typed, the DM reads: $history" >&2; return 1; }
-  echo ">> The fresh install reads the DM once the member typed their seal"
+  # The notes' key comes from the seal, so the fresh install reads what the
+  # first wrote, through the server the den moved to (M17.3).
+  history=$(fresh history "$den_id" "$notes")
+  [[ "$history" == "a note to self" ]] || { echo "error: with the seal typed, the notes read: $history" >&2; return 1; }
+  echo ">> The fresh install reads the DM and the member's notes once the member typed their seal"
   refusal=$(member sign-in-refused https://den.test bob "bob password")
   [[ "$refusal" == *"don't match"* ]] || { echo "error: signing in with the old password: $refusal" >&2; return 1; }
   approve_sign_in member fresh "$den_id" "new bob password"

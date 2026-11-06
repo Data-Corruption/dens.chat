@@ -198,6 +198,9 @@ func (m *Manager) React(ctx context.Context, denID, channelID, messageID string,
 	if err := checkID("channel", channelID); err != nil {
 		return nil, err
 	}
+	if c.isNotes(channelID) {
+		return nil, inputError(errors.New("notes take no reactions"))
+	}
 	if c.private(channelID) {
 		return c.reactDM(ctx, channelID, messageID, req)
 	}

@@ -121,9 +121,28 @@ export function partnerOf(channel, me) {
 }
 
 // isPrivate reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, or a group DM's (M16.3).
+// members' Dens: a DM's, a group DM's (M16.3), or the member's notes
+// (M17.3), all of which the Direct messages tab lists.
 export function isPrivate(channel) {
-    return channel?.kind === 'dm' || channel?.kind === 'group_dm';
+    return channel?.kind === 'dm' || channel?.kind === 'group_dm' || channel?.kind === 'notes';
+}
+
+// isNotes reports whether a channel is the member's notes (M17.3).
+export function isNotes(channel) {
+    return channel?.kind === 'notes';
+}
+
+// ownNotes is the member's notes in a den, once the den made them as they
+// first opened them, or null (M17.3).
+export function ownNotes(view) {
+    return (view?.channels || []).find(isNotes) || null;
+}
+
+// notesGate says what stands in the notes' composer's place (M17.3):
+// no_seal, on a device without the member's DM recovery key, which their
+// key comes from; or '' when they take notes.
+export function notesGate(view) {
+    return view.seal ? '' : 'no_seal';
 }
 
 // groupTitle is what a group DM is called (M16.3): its name, or its other

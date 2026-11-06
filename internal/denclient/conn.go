@@ -549,7 +549,8 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		return time.Time{}, -1, unreached(err), err
 	}
 	defer ws.CloseNow()
-	// Group DMs come only on a socket speaking a version with them (M16.3).
+	// Group DMs come only on a socket speaking a version with them (M16.3),
+	// and notes on one speaking a version with those (M17.3).
 	c.speaking = speaking
 	ws.SetReadLimit(denproto.MaxBody)
 	c.mu.Lock()
@@ -674,7 +675,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if err := state.load(c.j.denID, r, prev); err != nil {
 			return e, false, err
 		}
-		state.groupDMs = c.speaking >= denproto.GroupsVersion
+		state.groupDMs, state.notes = c.speaking >= denproto.GroupsVersion, c.speaking >= denproto.NotesVersion
 		c.gen.Store(time.Now().UnixNano())
 		c.epoch, c.seq = r.Epoch, r.Seq
 		if err := c.updateProfile(ctx, r.Den, &r.Me); err != nil {

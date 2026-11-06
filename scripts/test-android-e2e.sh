@@ -17,7 +17,9 @@
 # the call ends. A DM from the den's owner while the app is behind the
 # others posts its notification (M12.3), whose tap opens the page at the
 # message, in place on the page that shows (M13.1), and reading it takes
-# the next back. Dens killed under the shell
+# the next back. The member's notes open at version 3 of the protocol, and
+# a note written there reads back, sealed on the den (M17.3). Dens killed
+# under the shell
 # starts again, and the
 # app force-stopped and opened again keeps its page's session; Back leaves
 # the page, and a link opens outside it. At 390 CSS pixels (M13.1), by
@@ -384,6 +386,26 @@ den say "$group" "a group message for the phone" >/dev/null
 reads() { [[ $(pagejson "/api/dens/$den_id/channels/$group/messages" "v.messages.some((m) => m.text === 'a group message for the phone' && !m.locked)") == true ]]; }
 waitfor 30 "desk's message in the group, on the phone" reads
 ok "the phone reads desk's message in a group of three, its changes, keys and desk's signature checked"
+# The member's notes (M17.3), at version 3 of the protocol, which the
+# phone's Dens and desk's den both speak: the phone opens them, which the
+# den makes, writes one, and reads it back opened under the key its seal
+# makes; desk's den holds it, sealed, in the member's notes alone.
+[[ $(pagejson "/api/dens/$den_id/state" 'v.has_notes') == true ]] || fail "the phone's Dens has no notes at desk's den"
+phone drive api POST "/api/dens/$den_id/notes" | grep -q '^200' || fail "opening the notes"
+notes=$(pagejson "/api/dens/$den_id/state" "(v.channels.find((c) => c.kind === 'notes') || {}).id || ''")
+[[ -n "$notes" ]] || fail "the notes never reached the phone's Dens"
+nonce=$(python3 -c 'import secrets; print(secrets.token_urlsafe(16))')
+phone drive api POST "/api/dens/$den_id/channels/$notes/messages" "{\"nonce\":\"$nonce\",\"text\":\"a note on the phone\"}" | grep -q '^200' ||
+  fail "writing a note"
+noted() { [[ $(pagejson "/api/dens/$den_id/channels/$notes/messages" "v.messages.some((m) => m.text === 'a note on the phone' && !m.locked)") == true ]]; }
+waitfor 20 "the note read back on the phone" noted
+held=$(incus exec dens-browsers --user 1000 --group 1000 -- python3 -c '
+import sqlite3, sys
+db = sqlite3.connect("/home/tester/.local/share/dens-dev/sden/data/db/app.db")
+print(*db.execute("SELECT count(*), sum(instr(text, CAST(? AS BLOB)) > 0) FROM den_messages WHERE channel_id = ?", ("a note on the phone", int(sys.argv[1]))).fetchone())
+' "$notes")
+[[ "$held" == "1 0" ]] || fail "desk's den holds the notes as $held: one note, none in the clear, was wanted"
+ok "the phone opened its member's notes at version 3 of the protocol, wrote one and read it back, which desk's den holds sealed"
 phone drive api POST /api/settings '{"notifications":{"dms":true}}' | grep -q '^200' || fail "turning DMs on"
 adb shell input keyevent KEYCODE_HOME
 sleep 2

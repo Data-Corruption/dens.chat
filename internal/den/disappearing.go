@@ -32,7 +32,7 @@ func (d *Den) SetExpiry(ctx context.Context, s *Session, channelID string, req d
 	if err != nil {
 		return c, err
 	}
-	if !isPrivate(c) {
+	if !isPrivate(c) || isNotes(c) {
 		return c, invalid("only a DM's or a group's messages disappear")
 	}
 	if err := denproto.CheckExpiresAfter(req.ExpiresAfter, d.ShortTimes); err != nil {

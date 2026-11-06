@@ -18,6 +18,7 @@ protect you from.
 | Who plays which sound on the soundboard | Everyone in the call hears it and sees who played it, and the den knows who played which, as it knows who's in a call |
 | DMs, and the photos and files in them | Only the two of you: they're end-to-end encrypted |
 | Group DMs, their photos and files, and their names | Only their members, each from when they joined: they're end-to-end encrypted. The den sees who's in each group, and who changed it, but can't add anyone |
+| Your notes to self, and the files in them | Only your own devices: they're end-to-end encrypted. The den sees that you write in them, and when |
 | Reactions | In a channel, its members and the den. In a DM or a group DM, only its members, like its messages; the den sees only that someone's reactions changed, and when |
 | Who voted for what in a poll | The den, always: it counts each vote. Members, as the poll's author chose: never, once it ends, or always |
 | Who DMs whom, who's in which group DMs, when, and how much | The den |
@@ -53,8 +54,9 @@ That's all. There's no analytics or telemetry.
 
 Deleting a message deletes it for real: from the den, and from members'
 caches once they next connect. A den can also be set to delete messages after a
-number of days, which its members see in its settings. A backup keeps what it
-held until the backup itself is deleted.
+number of days, which its members see in its settings. Leaving a den deletes
+your notes there. A backup keeps what it held until the backup itself is
+deleted.
 
 In a DM or a group DM, anyone in it can have its messages disappear an hour, a
 day, a week or four weeks after they're sent. Each is then deleted as if its

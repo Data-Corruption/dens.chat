@@ -29,6 +29,7 @@ func (m *Manager) View(denID string) (View, error) {
 	v := state.view(status, c.profile.Member)
 	v.Identities = c.pageIdentitiesLocked()
 	v.HasGroupDMs, v.GroupDMs = c.groupsOnLocked(), c.pageGroupsLocked()
+	v.HasNotes = c.den != nil && c.den.notes
 	return v, nil
 }
 

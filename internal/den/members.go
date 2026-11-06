@@ -229,7 +229,7 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // again if they come back. The sounds and emoji they added are the den's, and
 // stay (M14.3, M15.2).
 // They leave their group DMs too, each by a change of the den's own
-// (M16.3).
+// (M16.3), and their notes go, with their files (M17.3).
 // It returns those files' blobs, to remove once tx commits, and the
 // groups' changes, to tell their members of.
 func depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) ([][]byte, []groupDone, error) {
@@ -254,8 +254,12 @@ func depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) ([][]b
 	if err != nil {
 		return nil, nil, err
 	}
+	notes, err := deleteNotes(ctx, tx, id)
+	if err != nil {
+		return nil, nil, err
+	}
 	blobs, err := deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL AND NOT `+named, id)
-	return blobs, groups, err
+	return append(blobs, notes...), groups, err
 }
 
 // publishDeparted tells the members of a member's groups that the den

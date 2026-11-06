@@ -518,6 +518,11 @@ dm)
     # dm DEN_ID MEMBER_ID: open the DM with a member; print its ID.
     api POST "/api/dens/$1/dms" "{\"member_id\":\"$2\"}" | json 'd["id"]'
     ;;
+notes)
+    # notes DEN_ID: open this member's notes, which the den makes the first
+    # time (M17.3); print their ID.
+    api POST "/api/dens/$1/notes" | json 'd["id"]'
+    ;;
 wait-identity)
     # wait-identity DEN_ID MEMBER_ID: wait until this member's Dens has
     # published their identity and kept the other member's (M16.1).

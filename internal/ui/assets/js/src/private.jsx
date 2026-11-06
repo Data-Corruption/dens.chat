@@ -142,15 +142,18 @@ export function KeysChanged({ name, at, onCompare }) {
 // other member's Dens, runs a version too old to seal the DM's new keys;
 // or the other's keys changed since this member verified them, which
 // holds the DM until they compare again or send anyway.
-export function DMGate({ denID, gate, dm, onCompare }) {
+export function DMGate({ denID, gate, dm, notes = false, onCompare }) {
     const act = useAction();
     const name = dm ? dm.display_name : 'the other member';
     let body;
     if (gate === 'no_seal') {
+        // The member's notes (M17.3) open with a key their recovery key makes.
         body = (
             <div class="flex flex-wrap items-center gap-2">
                 <p class="min-w-0 flex-1">
-                    This device doesn't have your DM recovery key for this den, so it can't read or send direct messages here.
+                    {notes
+                        ? "This device doesn't have your DM recovery key for this den, so it can't read or write your notes here."
+                        : "This device doesn't have your DM recovery key for this den, so it can't read or send direct messages here."}
                 </p>
                 <button type="button" class="btn btn-sm" onClick={() => openManage(denID, 'password')}>Enter it</button>
             </div>

@@ -43,7 +43,7 @@ things most apps don't.
 | **Local password** | Protects Dens on this computer: backups, and seeing your keys | It never leaves this computer |
 | **Den password** | Signing in to a den from another device | One per den. The den never sees it, so reusing one across dens is safe |
 | **Recovery codes** | Signing in when you've forgotten your den password, or have no other device | Ten per den, and each works once. You can make new ones in **Manage** |
-| **DM recovery key** | Reading your DMs if you lose every device | The same for every den on this computer. Keep it secret: it opens your DMs |
+| **DM recovery key** | Reading your DMs and notes if you lose every device | The same for every den on this computer. Keep it secret: it opens your DMs |
 
 You'll find the last three again under the den's **Manage**, in **You in this
 den**, and the local password in **Settings**, under **System**.
@@ -335,6 +335,29 @@ den.
 
 {{% /details %}}
 
+### Notes to self
+
+Your notes are a conversation with yourself, at the top of your direct
+messages, and under **Notes** on your own profile: links, lists, drafts and
+files you want on each of your devices. They're end-to-end encrypted with a
+key made from your DM recovery key, so only your devices can read them, not
+the den.
+
+{{% details title="More on notes" closed="true" %}}
+
+Write, reply, edit and delete in your notes as in a DM, and send files there.
+They don't notify you or count as unread, since everything in them is yours,
+and they have no reactions, polls or disappearing messages. If the den deletes
+messages after a number of days, it deletes notes too, and their files count
+toward your limit.
+
+If you reset your DM recovery key, your notes from before can't be opened any
+more, as with your DMs: delete them. Leaving the den deletes your notes there.
+A device whose Dens hasn't been updated yet doesn't show your notes until it
+is.
+
+{{% /details %}}
+
 ## Notifications and sounds
 
 Dens can tell you about a DM, or a message that mentions your username, but
@@ -453,6 +476,7 @@ yourself: join with your old username and den password.
 {{% details title="Coming back, and a den that's gone" closed="true" %}}
 
 Coming back, your history comes back with you, along with new recovery codes.
+Your notes don't: leaving deleted them.
 
 Leaving needs the den to answer. If Dens can't reach it, because its server
 is gone for good, say, **Leave den** offers **Remove from this computer**

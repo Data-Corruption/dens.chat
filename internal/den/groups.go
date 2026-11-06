@@ -42,9 +42,9 @@ var (
 const reservedFor = time.Hour
 
 // isPrivate reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, or a group's.
+// members' Dens: a DM's, a group's, or a member's notes (M17.3).
 func isPrivate(c denproto.Channel) bool {
-	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM
+	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM || c.Kind == denproto.KindNotes
 }
 
 // group is a group DM as the den keeps it: who reserved it, its members in

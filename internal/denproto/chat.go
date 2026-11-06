@@ -80,7 +80,8 @@ type RetentionPreview struct {
 // a bitrate, in bits a second, for its call's Opus (M4.2). A group DM
 // (M16.3) names its members as the den holds them, in the order they
 // joined, the number of its latest change, and its name sealed; a Dens
-// knows its members from its changes alone.
+// knows its members from its changes alone. A member's notes (M17.3) name
+// that member alone, and have no name, group or position either.
 type Channel struct {
 	ID          string   `json:"id"`
 	GroupID     *string  `json:"group_id"`

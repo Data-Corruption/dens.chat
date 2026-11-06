@@ -261,6 +261,19 @@ func (h *handler) reserveGroup(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusCreated, g)
 }
 
+// openNotes answers with the member's notes, made the first time (M17.3).
+func (h *handler) openNotes(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	c, err := h.d.OpenNotes(r.Context(), session(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, c)
+}
+
 func (h *handler) groupChanges(w http.ResponseWriter, r *http.Request) {
 	after := 0
 	if v := r.URL.Query().Get("after"); v != "" {

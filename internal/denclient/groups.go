@@ -110,15 +110,18 @@ func (c *conn) isGroup(channel string) bool {
 }
 
 // private reports whether a channel is one of this member's DMs or group
-// DMs, whose messages, files and reactions are sealed here.
+// DMs, or their notes (M17.3), whose messages and files are sealed here.
 func (c *conn) private(channel string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.den == nil {
-		return false
-	}
-	k := c.den.channels[channel].Kind
-	return k == denproto.KindDM || k == denproto.KindGroupDM
+	return c.den != nil && isSealed(c.den.channels[channel])
+}
+
+// isNotes reports whether a channel is this member's notes (M17.3).
+func (c *conn) isNotes(channel string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.den != nil && c.den.channels[channel].Kind == denproto.KindNotes
 }
 
 // groupsOnLocked reports whether the den has group DMs for this Dens: its

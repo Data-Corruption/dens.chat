@@ -48,17 +48,18 @@ type membersCursor struct {
 	version int64
 }
 
-// snapshot is the state a member's client starts from, speaking the
-// protocol's version with group DMs. With a cursor the den can still
-// answer from, its members are only those changed since.
+// snapshot is the state a member's client starts from, speaking this
+// build's version of the protocol. With a cursor the den can still answer
+// from, its members are only those changed since.
 func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64, mc *membersCursor) (denproto.Ready, error) {
-	return d.snapshotAt(ctx, member, staff, true, seq, mc)
+	return d.snapshotAt(ctx, member, staff, denproto.Version, seq, mc)
 }
 
 // snapshotAt is snapshot for a client that speaks a version of the
-// protocol with group DMs or, without groups, one before them, which gets
-// nothing of them (M16.3).
-func (d *Den) snapshotAt(ctx context.Context, member int64, staff, groups bool, seq uint64, mc *membersCursor) (denproto.Ready, error) {
+// protocol, which gets nothing of group DMs before 2 (M16.3), nor of notes
+// before 3 (M17.3).
+func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version int, seq uint64, mc *membersCursor) (denproto.Ready, error) {
+	groups := version >= denproto.GroupsVersion
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
 	// The version comes first: a change made while the rest is read has a
@@ -120,7 +121,14 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff, groups bool, 
 		}
 		r.Channels = append(r.Channels, gs...)
 	}
-	last, err := d.lastMessages(ctx, member, staff, groups)
+	if version >= denproto.NotesVersion {
+		notes, err := d.notes(ctx, d.db, member)
+		if err != nil {
+			return r, err
+		}
+		r.Channels = append(r.Channels, notes...)
+	}
+	last, err := d.lastMessages(ctx, member, staff, version)
 	if err != nil {
 		return r, err
 	}
@@ -189,17 +197,19 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff, groups bool, 
 }
 
 // lastMessages returns the newest message in each channel and DM a member
-// sees that has any, by channel, and with groups in each group DM they're
-// in, of those since they joined (M16.3). Each is a lookup of the
+// sees that has any, by channel, at a version of the protocol: with
+// groups, in each group DM they're in, of those since they joined (M16.3),
+// and with notes, in their notes (M17.3). Each is a lookup of the
 // (channel_id, id) index, where max(id) GROUP BY channel_id would read
 // every message in the den, for each of the hundreds of snapshots a den
 // restart sends at once (M8).
-func (d *Den) lastMessages(ctx context.Context, member int64, staff, groups bool) (map[string]string, error) {
+func (d *Den) lastMessages(ctx context.Context, member int64, staff bool, version int) (map[string]string, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT c.id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id
 			AND m.id > coalesce((SELECT g.since FROM den_group_members g WHERE g.channel_id = c.id AND g.member_id = ?2), 0)) FROM den_channels c
 		WHERE (c.kind = 'text' AND (c.staff_only = 0 OR ?1)) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))
-			OR (?3 AND c.kind = 'group_dm' AND c.id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2))`, staff, member, groups)
+			OR (?3 AND c.kind = 'group_dm' AND c.id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2))
+			OR (?4 AND c.kind = 'notes' AND c.notes_of = ?2)`, staff, member, version >= denproto.GroupsVersion, version >= denproto.NotesVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -243,18 +253,22 @@ func (d *Den) groups(ctx context.Context, q querier) ([]denproto.Group, error) {
 }
 
 const channelColumns = `id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, bitrate,
-	expires_after, expires_by, expires_set_at`
+	expires_after, expires_by, expires_set_at, notes_of`
 
 func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	var c denproto.Channel
 	var id int64
-	var group, low, high, bitrate, expiresBy, expiresSet sql.NullInt64
+	var group, low, high, bitrate, expiresBy, expiresSet, notesOf sql.NullInt64
 	err := scan(&id, &group, &c.Name, &c.Description, &c.Kind, &c.Position, &c.StaffOnly, &low, &high, &bitrate,
-		&c.ExpiresAfter, &expiresBy, &expiresSet)
+		&c.ExpiresAfter, &expiresBy, &expiresSet, &notesOf)
 	c.ID = denproto.FormatID(id)
 	c.Bitrate = int(bitrate.Int64)
 	if low.Valid && high.Valid {
 		c.Members = []string{denproto.FormatID(low.Int64), denproto.FormatID(high.Int64)}
+	}
+	// A member's notes name them alone (M17.3).
+	if notesOf.Valid {
+		c.Members = []string{denproto.FormatID(notesOf.Int64)}
 	}
 	if group.Valid {
 		g := denproto.FormatID(group.Int64)
@@ -325,8 +339,8 @@ func (d *Den) visibleChannel(ctx context.Context, s *Session, id string) (denpro
 }
 
 // visible reports whether a member can see a channel: a DM only its two
-// members, a group DM only its members (M16.3), a staff-only channel only
-// staff, and any other channel anyone.
+// members, a group DM only its members (M16.3), notes only their member
+// (M17.3), a staff-only channel only staff, and any other channel anyone.
 func visible(c denproto.Channel, member int64, staff bool) bool {
 	switch {
 	case isPrivate(c):
@@ -338,15 +352,24 @@ func visible(c denproto.Channel, member int64, staff bool) bool {
 }
 
 // sees reports whether a session sees a channel: one its member can see,
-// and a group DM only in a version of the protocol with them (M16.3).
+// and a group DM (M16.3) or notes (M17.3) only in a version of the
+// protocol with them.
 func sees(c denproto.Channel, s *Session) bool {
-	return visible(c, s.MemberID, IsStaff(s.Role)) && (c.Kind != denproto.KindGroupDM || s.groups())
+	return visible(c, s.MemberID, IsStaff(s.Role)) && s.Version >= kindVersion(c.Kind)
 }
 
 func audienceOf(c denproto.Channel) Audience {
 	switch {
 	case c.Kind == denproto.KindGroupDM:
 		return audienceOfGroup(c)
+	case c.Kind == denproto.KindNotes:
+		// Their member alone; notes naming nobody, which the den never
+		// makes, reach nobody rather than falling through to everyone.
+		if len(c.Members) != 1 {
+			return nobody
+		}
+		member, _ := denproto.ParseID(c.Members[0])
+		return notesOf(member)
 	case c.Kind == denproto.KindDM && len(c.Members) == 2:
 		a, _ := denproto.ParseID(c.Members[0])
 		b, _ := denproto.ParseID(c.Members[1])
@@ -1357,7 +1380,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		if dm {
 			// Checked here, so a start-over that retires the key can't slip
 			// in between.
-			k, err := sendKey(ctx, tx, cid, req.KeyID, s.MemberID)
+			k, err := sealedKey(ctx, tx, c, cid, req.KeyID, s.MemberID)
 			if err != nil {
 				return err
 			}
@@ -1504,6 +1527,10 @@ func checkSealedText(dm bool, text string, sealed denproto.Bytes, keyID string) 
 // With everyone, staff's @everyone (M15.4), it's every member who can see
 // the channel, a row each, so the unread mention counts need nothing new.
 func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Channel, author int64, everyone bool) ([]int64, error) {
+	// Everything in a member's notes is their own (M17.3).
+	if isNotes(c) {
+		return nil, nil
+	}
 	if c.Kind == denproto.KindDM {
 		if other, ok := dmPartner(c, author); ok {
 			return []int64{other}, nil
@@ -1621,7 +1648,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	}
 	var keyID *int64
 	if dm {
-		k, err := sendKey(ctx, d.db, cid, req.KeyID, s.MemberID)
+		k, err := sealedKey(ctx, d.db, c, cid, req.KeyID, s.MemberID)
 		if err != nil {
 			return m, err
 		}
@@ -1997,9 +2024,7 @@ func (d *Den) publishReadState(ctx context.Context, member, channel int64) error
 		coalesce((SELECT kind FROM den_channels WHERE id = ?2), '')`, member, channel, pos.Int64).Scan(&st.MentionCount, &kind); err != nil {
 		return err
 	}
-	audience := OnlyMember(member)
-	if kind == denproto.KindGroupDM {
-		audience = audience.aboutGroups()
-	}
-	return d.Hub.Publish(denproto.EventReadStateUpdated, st, audience)
+	// A group's (M16.3) and the member's notes' (M17.3) reach only the
+	// sockets that see them.
+	return d.Hub.Publish(denproto.EventReadStateUpdated, st, OnlyMember(member).needs(kindVersion(kind)))
 }
