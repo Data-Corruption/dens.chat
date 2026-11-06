@@ -48,3 +48,51 @@
     text-align: center;
   }
 }
+
+/* A fold holds the why, or what to check, under a step that says what to
+   do, so its title reads quieter than the steps around it. */
+.content details > summary > strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Without a hover, Hextra's copy buttons never show and its heading
+   anchors are links nobody can see: show the one, and drop the other. */
+@media (hover: none) {
+  .hextra-code-copy-btn-container {
+    opacity: 1;
+  }
+
+  .content .subheading-anchor {
+    display: none;
+  }
+}
+
+/* A card without a picture starts its title at its top, as a row's cards
+   with and without a subtitle then line up. */
+.content .hextra-card:not(:has(.hextra-card-image)) > .hx\:mt-auto {
+  margin-top: 0;
+}
+
+/* What a reader taps or clicks is at least 24 pixels each way, WCAG 2.2's
+   minimum, which a few of Hextra's links and buttons miss: the breadcrumb's
+   links, the table of contents and its Scroll to top, a section's chevron
+   in the sidebar, and the footer's links. */
+#content > div:first-child a,
+.hextra-toc li > a,
+.dens-footer a {
+  display: inline-block;
+  padding-block: 2px;
+}
+
+#backToTop {
+  min-height: 24px;
+}
+
+.hextra-sidebar-collapsible-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+}
