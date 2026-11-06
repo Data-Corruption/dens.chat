@@ -22,6 +22,7 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Get("/api/dens/{den}/bans", rt.handleBans)
 	r.Delete("/api/dens/{den}/bans/{member}", rt.handleUnban)
 	r.Post("/api/dens/{den}/dms", rt.handleOpenDM)
+	r.Post("/api/dens/{den}/notes", rt.handleOpenNotes)
 	r.Post("/api/dens/{den}/dms/{channel}/close", rt.handleCloseDM)
 	r.Put("/api/dens/{den}/dms/{channel}/expiry", rt.handleSetExpiry)
 	r.Post("/api/dens/{den}/leave", rt.handleLeave)
@@ -131,6 +132,17 @@ func (rt *router) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := rt.a.Dens.OpenDM(r.Context(), chi.URLParam(r, "den"), req.MemberID)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, c)
+}
+
+// handleOpenNotes answers with the member's notes, which the den makes
+// the first time (M17.3).
+func (rt *router) handleOpenNotes(w http.ResponseWriter, r *http.Request) {
+	c, err := rt.a.Dens.OpenNotes(r.Context(), chi.URLParam(r, "den"))
 	if err != nil {
 		rt.denError(w, r, err)
 		return

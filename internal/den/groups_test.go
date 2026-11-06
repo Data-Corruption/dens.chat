@@ -229,7 +229,7 @@ func TestGroupDMs(t *testing.T) {
 	ctx := context.Background()
 	carolSub, _, _, _ := f.d.Hub.Subscribe(carol.MemberID, false, "", 0)
 	daveSub, _, _, _ := f.d.Hub.Subscribe(dave.MemberID, false, "", 0)
-	oldBob, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, false, "", 0)
+	oldBob, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, 1, "", 0)
 
 	if _, err := f.makeGroup(bob, carol); err == nil {
 		t.Fatal("a group of two was made")
@@ -384,7 +384,7 @@ func TestGroupsUnseenAtVersion1(t *testing.T) {
 	ctx := context.Background()
 	old := *bob
 	old.Version = 1
-	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, false, "", 0)
+	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, 1, "", 0)
 	g, err := f.makeGroup(owner, bob, carol)
 	if err != nil {
 		t.Fatal(err)
@@ -399,7 +399,7 @@ func TestGroupsUnseenAtVersion1(t *testing.T) {
 	if got := drain(oldSub); len(got) != 0 {
 		t.Errorf("an older Dens heard %v", got)
 	}
-	snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, false, 0, nil)
+	snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, 1, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

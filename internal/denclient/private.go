@@ -82,11 +82,22 @@ const maxDMFiles = 20_000
 func (c *conn) meLocked() string { return c.profile.Member.ID }
 
 // dmKeyLocked opens the key of a DM a message or set of reactions names,
-// M1.7's or a signed one, or says why it can't. The caller holds c.mu,
-// and clears the key once it's used.
+// M1.7's or a signed one, or says why it can't; in the member's notes
+// (M17.3), the key their seal makes, which a message names by the notes'
+// channel. The caller holds c.mu, and clears the key once it's used.
 func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
 	if c.j.seal == nil {
 		return nil, lockedNoSeal
+	}
+	if c.den.channels[channel].Kind == denproto.KindNotes {
+		if keyID != channel {
+			return nil, lockedBroken
+		}
+		key, err := c.notesKeyLocked()
+		if err != nil {
+			return nil, lockedBroken
+		}
+		return key, ""
 	}
 	if k, ok := c.den.keys[keyID]; ok {
 		if k.ChannelID != channel {
@@ -132,9 +143,15 @@ func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, re
 	id, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(author)
 	ad := denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}
-	if c.den.channels[channel].Kind != denproto.KindGroupDM {
+	if kind := c.den.channels[channel].Kind; kind != denproto.KindGroupDM {
 		p, err := denproto.OpenDMMessage(key, ad, sealed)
-		if err != nil {
+		switch {
+		case err != nil && kind == denproto.KindNotes:
+			// A note that doesn't open under the key the seal makes was
+			// sealed under the seal before the member started over, as far
+			// as anyone can tell, and is gone for good either way (M17.3).
+			return denproto.DMPayload{}, "", lockedLost
+		case err != nil:
 			return denproto.DMPayload{}, "", lockedBroken
 		}
 		return p, author, ""
@@ -248,6 +265,13 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			c.mu.Unlock()
 			return "", nil, errNoSeal
 		}
+		// The member's notes go under the key their seal makes, named by
+		// the notes' channel (M17.3).
+		if c.den.channels[channel].Kind == denproto.KindNotes {
+			key, err := c.notesKeyLocked()
+			c.mu.Unlock()
+			return channel, key, err
+		}
 		if k, ok := c.den.liveKey(channel); ok && c.den.channels[channel].Kind == denproto.KindDM && len(k.Checks) == 2 && k.Sealed != nil {
 			key, locked := c.dmKeyLocked(channel, k.ID)
 			c.mu.Unlock()
@@ -326,4 +350,17 @@ func (c *conn) useSeal(fn func(seal []byte) error) error {
 		return errNoSeal
 	}
 	return s.Use(fn)
+}
+
+// notesKeyLocked makes the key the member's notes here are sealed with,
+// from their seal (M17.3). The caller holds c.mu, and clears the key once
+// it's used.
+func (c *conn) notesKeyLocked() ([]byte, error) {
+	var key []byte
+	err := c.j.seal.Use(func(seal []byte) error {
+		var err error
+		key, err = denproto.NotesKey(seal, c.j.denID)
+		return err
+	})
+	return key, err
 }

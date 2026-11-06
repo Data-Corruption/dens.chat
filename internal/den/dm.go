@@ -71,7 +71,7 @@ func (d *Den) CloseDM(ctx context.Context, s *Session, channelID string) error {
 	if err != nil {
 		return err
 	}
-	if !isPrivate(c) {
+	if !isPrivate(c) || isNotes(c) {
 		return invalid("only DMs close")
 	}
 	if _, err := d.db.ExecContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (?, ?, 0, 1)

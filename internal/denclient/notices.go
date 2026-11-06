@@ -32,8 +32,10 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 	if c.m.Notices == nil || c.den == nil || m.AuthorID == me.ID || c.m.pastTime(m) {
 		return nil
 	}
+	// Nothing in the member's notes notifies them, being all their own
+	// (M17.3).
 	ch, ok := c.den.channels[m.ChannelID]
-	if !ok {
+	if !ok || ch.Kind == denproto.KindNotes {
 		return nil
 	}
 	if r, ok := c.den.reads[m.ChannelID]; ok && r.ReadPosition != "" && compareIDs(m.ID, r.ReadPosition) <= 0 {

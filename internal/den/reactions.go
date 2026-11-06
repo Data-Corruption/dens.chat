@@ -137,6 +137,10 @@ func (d *Den) reactable(ctx context.Context, s *Session, messageID string) (denp
 	if since, err := groupSince(ctx, d.db, c, cid, s.MemberID); err != nil || mid <= since {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}
+	// Nobody else reads a member's notes, to react to them (M17.3).
+	if isNotes(c) {
+		return denproto.Channel{}, 0, 0, invalid("notes take no reactions")
+	}
 	return c, cid, mid, nil
 }
 

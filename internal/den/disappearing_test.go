@@ -252,7 +252,7 @@ func TestDisappearingInGroups(t *testing.T) {
 	old.Version = 1
 	_, err = f.d.SetExpiry(ctx, &old, g.id, denproto.ExpiryRequest{ExpiresAfter: denproto.ExpiresHour})
 	wantCode(t, err, denproto.CodeNotFound)
-	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, false, "", 0)
+	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, 1, "", 0)
 	defer f.d.Hub.Unsubscribe(oldSub)
 	sub, _, _, _ := f.d.Hub.Subscribe(carol.MemberID, false, "", 0)
 	defer f.d.Hub.Unsubscribe(sub)

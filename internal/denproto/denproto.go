@@ -16,12 +16,15 @@ import (
 )
 
 // Protocol versions this build speaks. Version 2 (M16.3) brings group
-// DMs, which a den sends nothing of to a client speaking 1.
+// DMs, which a den sends nothing of to a client speaking 1, and version 3
+// (M17.3) notes to self, which it sends nothing of to one speaking 1 or 2.
 const (
-	Version    = 2
+	Version    = 3
 	MinVersion = 1
 	// GroupsVersion is the first version with group DMs.
 	GroupsVersion = 2
+	// NotesVersion is the first version with notes to self.
+	NotesVersion = 3
 )
 
 // Headers.

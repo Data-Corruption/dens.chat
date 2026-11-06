@@ -127,13 +127,26 @@ type Session struct {
 	ExpiresAt time.Time
 	// Version is the protocol version the request speaks, which the den's
 	// router sets; a session that speaks one before group DMs sees nothing
-	// of them (M16.3).
+	// of them (M16.3), and one before notes nothing of those (M17.3).
 	Version int
 }
 
 // groups reports whether the session speaks a version of the protocol
 // with group DMs.
 func (s *Session) groups() bool { return s.Version >= denproto.GroupsVersion }
+
+// kindVersion is the protocol's version a session or socket speaks, at
+// least, to see a channel of a kind: 2 for a group DM (M16.3), 3 for notes
+// (M17.3), and 0, any, for the kinds every version has.
+func kindVersion(kind string) int {
+	switch kind {
+	case denproto.KindGroupDM:
+		return denproto.GroupsVersion
+	case denproto.KindNotes:
+		return denproto.NotesVersion
+	}
+	return 0
+}
 
 // Storage is where the den keeps uploads: Dir holds them sealed, and
 // Temp, on the same filesystem, holds uploads still arriving. Media runs

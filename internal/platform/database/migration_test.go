@@ -57,7 +57,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // counter where a restore moved it. M16.4 adds each DM's time, which
 // starts off, and each message's, which none has; a database v1.9.0 left,
 // with identities, a group DM and a time set, keeps them all. M17.2 adds a
-// file's spoiler, which none is.
+// file's spoiler, which none is. M17.3 makes den_channels again to take
+// notes, keeping every row, M16.4's times among them, and the counter, as
+// M16.3's step did.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -160,6 +162,23 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				var channel int64
 				if err := db.QueryRow(`SELECT max(id) FROM den_channels`).Scan(&channel); err != nil || channel != 1700000000000001 {
 					t.Errorf("%s gave a new channel ID %d, %v, not one past the counter", what, channel, err)
+				}
+				// And again with a member's notes among them (M17.3), one each,
+				// and naming their member alone.
+				if _, err := db.Exec(`INSERT INTO den_channels (name, kind, position, created_at, notes_of) VALUES ('', 'notes', 0, 9, 1)`); err != nil {
+					t.Errorf("%s takes no notes after the migration: %v", what, err)
+				}
+				if err := db.QueryRow(`SELECT max(id) FROM den_channels`).Scan(&channel); err != nil || channel != 1700000000000002 {
+					t.Errorf("%s gave the notes' channel ID %d, %v, not the next past the counter", what, channel, err)
+				}
+				for _, q := range []string{
+					`INSERT INTO den_channels (name, kind, position, created_at, notes_of) VALUES ('', 'notes', 0, 9, 1)`,
+					`INSERT INTO den_channels (name, kind, position, created_at) VALUES ('', 'notes', 0, 9)`,
+					`INSERT INTO den_channels (name, kind, position, created_at, notes_of) VALUES ('x', 'text', 0, 9, 3)`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
 				}
 				// Nothing disappears until a member sets a time (M16.4).
 				var timed, expiring int

@@ -19,9 +19,9 @@ type Audience struct {
 	// audience is made, since the ring keeps the audience for replays.
 	set   map[int64]bool
 	staff bool
-	// groups marks an event about a group DM, which a socket speaking
-	// version 1 of the protocol never gets (M16.3).
-	groups bool
+	// version is the protocol's version a socket speaks to get the event:
+	// one about a group DM needs 2 (M16.3), and one about notes 3 (M17.3).
+	version int
 }
 
 type audienceKind uint8
@@ -66,18 +66,31 @@ func NonVoters(voters map[int64]bool, staffOnly bool) Audience {
 // version 1 of the protocol never gets (M16.3). members mustn't change
 // once it's passed.
 func Members(members map[int64]bool) Audience {
-	return Audience{kind: toSet, set: members, groups: true}
+	return Audience{kind: toSet, set: members, version: denproto.GroupsVersion}
+}
+
+// notesOf is the audience of a member's notes: the member, on sockets
+// speaking version 3 of the protocol (M17.3).
+func notesOf(member int64) Audience {
+	return Audience{kind: toMembers, a: member, b: member, version: denproto.NotesVersion}
 }
 
 // aboutGroups is the audience with events about a group DM, which a socket
 // speaking version 1 of the protocol never gets.
-func (a Audience) aboutGroups() Audience {
-	a.groups = true
+func (a Audience) aboutGroups() Audience { return a.needs(denproto.GroupsVersion) }
+
+// needs is the audience on sockets speaking a version of the protocol at
+// least, as an event about a channel of a kind newer than the protocol's
+// first needs (see kindVersion).
+func (a Audience) needs(version int) Audience {
+	a.version = max(a.version, version)
 	return a
 }
 
-func (a Audience) includes(member int64, staff, groups bool) bool {
-	if a.groups && !groups {
+// includes reports whether the audience holds a member, staff or not, on
+// a socket speaking a version of the protocol.
+func (a Audience) includes(member int64, staff bool, version int) bool {
+	if version < a.version {
 		return false
 	}
 	switch a.kind {
@@ -144,13 +157,13 @@ type ringEntry struct {
 
 // Sub is one socket's subscription. Events arrive in order; the channel is
 // closed when the socket falls too far behind (Slow) or unsubscribes.
-// groups says its socket speaks a version of the protocol with group DMs
-// (M16.3).
+// version is the protocol's version its socket speaks, which decides
+// whether it gets group DMs (M16.3) and notes (M17.3).
 type Sub struct {
-	member int64
-	groups bool
-	Events chan denproto.Event
-	slow   bool
+	member  int64
+	version int
+	Events  chan denproto.Event
+	slow    bool
 
 	// Guarded by Hub.mu.
 	staff bool
@@ -192,7 +205,7 @@ func (h *Hub) Publish(t string, data any, audience Audience) error {
 	}
 	h.record(event, audience)
 	for sub := range h.subs {
-		if audience.includes(sub.member, sub.staff, sub.groups) {
+		if audience.includes(sub.member, sub.staff, sub.version) {
 			h.send(sub, event)
 		}
 	}
@@ -342,29 +355,29 @@ func (h *Hub) forget() {
 	clear(h.memberRefresh)
 }
 
-// Subscribe registers a socket for a member, speaking the protocol's
-// version with group DMs. When the client's resume point (epoch and seq)
-// is still covered by the ring, it returns the events the member missed
-// and resumed is true; otherwise the client needs a fresh snapshot, taken
-// after this call, and seq is where that snapshot starts. Events published
-// after Subscribe arrive on the subscription either way.
+// Subscribe registers a socket for a member, speaking this build's version
+// of the protocol. When the client's resume point (epoch and seq) is still
+// covered by the ring, it returns the events the member missed and resumed
+// is true; otherwise the client needs a fresh snapshot, taken after this
+// call, and seq is where that snapshot starts. Events published after
+// Subscribe arrive on the subscription either way.
 func (h *Hub) Subscribe(member int64, staff bool, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
-	return h.SubscribeAt(member, staff, true, epoch, after)
+	return h.SubscribeAt(member, staff, denproto.Version, epoch, after)
 }
 
 // SubscribeAt subscribes as Subscribe does, for a socket that speaks a
-// version of the protocol with group DMs or, without groups, one before
-// them (M16.3), which gets nothing of them.
-func (h *Hub) SubscribeAt(member int64, staff, groups bool, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
+// version of the protocol, which gets nothing of group DMs before 2
+// (M16.3), nor of notes before 3 (M17.3).
+func (h *Hub) SubscribeAt(member int64, staff bool, version int, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.trim(h.now())
-	sub = &Sub{member: member, groups: groups, staff: staff, Events: make(chan denproto.Event, h.subSize)}
+	sub = &Sub{member: member, version: version, staff: staff, Events: make(chan denproto.Event, h.subSize)}
 	h.subs[sub] = struct{}{}
 	stale := (!staff && after < h.nonStaffRefresh) || after < h.memberRefresh[member]
 	if epoch == h.epoch && !stale && after <= h.seq && after+1 >= h.first {
 		for _, e := range h.ring[h.head+int(after+1-h.first):] {
-			if e.audience.includes(member, staff, groups) {
+			if e.audience.includes(member, staff, version) {
 				missed = append(missed, e.event)
 			}
 		}

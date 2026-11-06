@@ -104,6 +104,7 @@ func New(a *app.App) http.Handler {
 			r.Post("/group-dms", h.reserveGroup)
 			r.Get("/group-dms/{id}/changes", h.groupChanges)
 			r.Post("/group-dms/{id}/changes", h.changeGroup)
+			r.Post("/notes", h.openNotes)
 			r.Put("/me/identity", h.publishIdentity)
 			r.Get("/identities", h.identities)
 			r.Get("/me/record", h.record)

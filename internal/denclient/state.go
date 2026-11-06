@@ -63,8 +63,9 @@ type denState struct {
 	// (M17.2).
 	spoilers, moveMembers bool
 	// groupDMs says the snapshot came on a socket speaking the protocol's
-	// version with group DMs (M16.3).
-	groupDMs bool
+	// version with group DMs (M16.3), and notes the one with notes to self
+	// (M17.3).
+	groupDMs, notes bool
 }
 
 // View is a joined den as the page sees it.
@@ -112,6 +113,9 @@ type View struct {
 	// are this member's, as their changes make them (M16.3).
 	HasGroupDMs bool                 `json:"has_group_dms"`
 	GroupDMs    map[string]PageGroup `json:"group_dms"`
+	// HasNotes says the den has notes to self for this Dens, which the page
+	// offers only then (M17.3).
+	HasNotes bool `json:"has_notes"`
 }
 
 func newState() *denState {
@@ -229,6 +233,12 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && c.Bitrate == 0 && c.Changes == 0 && c.SealedName == nil
 		return c, ok && cleanExpiry(c)
 	}
+	if c.Kind == denproto.KindNotes {
+		// A member's notes name them alone (M17.3), whom the state checks.
+		ok := len(c.Members) == 1 && validID(c.Members[0]) && c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly &&
+			c.Bitrate == 0 && c.Changes == 0 && c.SealedName == nil && c.ExpiresAfter == 0 && c.ExpiresSet == nil
+		return c, ok
+	}
 	if c.Kind == denproto.KindGroupDM {
 		// Its members as the den holds them, which only its changes, checked
 		// here, make (M16.3).
@@ -265,15 +275,31 @@ func cleanExpiry(c denproto.Channel) bool {
 }
 
 // hasMessages reports whether a channel holds messages, as text channels,
-// DMs and group DMs (M16.3) do.
+// DMs, group DMs (M16.3) and notes (M17.3) do.
 func hasMessages(c denproto.Channel) bool {
 	return c.Kind == denproto.KindText || isSealed(c)
 }
 
 // isSealed reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, or a group's (M16.3).
+// members' Dens: a DM's, a group's (M16.3), or the member's notes (M17.3).
 func isSealed(c denproto.Channel) bool {
-	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM
+	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM || c.Kind == denproto.KindNotes
+}
+
+// ownNotes checks the notes among a den's channels: those of the member
+// whose ID is me, once at most (M17.3). With me empty, as the cache's
+// state restores before the connection knows, only that there's one.
+func ownNotes(channels map[string]denproto.Channel, me string) bool {
+	n := 0
+	for _, c := range channels {
+		if c.Kind == denproto.KindNotes {
+			n++
+			if me != "" && c.Members[0] != me {
+				return false
+			}
+		}
+	}
+	return n <= 1
 }
 
 func cleanGroup(g denproto.Group) (denproto.Group, bool) {
@@ -401,12 +427,15 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	channels, groups := 0, 0
 	for _, c := range next.channels {
 		switch c.Kind {
-		case denproto.KindDM:
+		case denproto.KindDM, denproto.KindNotes:
 		case denproto.KindGroupDM:
 			groups++
 		default:
 			channels++
 		}
+	}
+	if !ownNotes(next.channels, r.Me.ID) {
+		return errMalformed
 	}
 	if groups > denproto.MaxGroupDMs {
 		return errMalformed
@@ -478,6 +507,8 @@ type keptState struct {
 	// and whether the den has them for this Dens.
 	GroupStates map[string]*groupState `json:"group_states,omitempty"`
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
+	// M17.3: whether the den has notes to self for this Dens.
+	Notes bool `json:"notes,omitempty"`
 }
 
 // kept returns the state as the cache keeps it, and its members.
@@ -487,7 +518,7 @@ func (s *denState) kept() (keptState, []denproto.Member) {
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
-		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, GroupDMs: s.groupDMs}
+		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, GroupDMs: s.groupDMs, Notes: s.notes}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -556,6 +587,9 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		}
 		s.channels[c.ID] = c
 	}
+	if !ownNotes(s.channels, "") {
+		return nil, errMalformed
+	}
 	for _, r := range k.Reads {
 		r, ok := cleanRead(r)
 		if !ok {
@@ -569,7 +603,7 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		}
 		s.keys[key.ID] = key
 	}
-	s.identities, s.groupDMs = k.Identities, k.GroupDMs
+	s.identities, s.groupDMs, s.notes = k.Identities, k.GroupDMs, k.Notes
 	for _, key := range k.SignedKeys {
 		if !s.cleanSigned(denID, key) {
 			return nil, errMalformed
@@ -710,6 +744,14 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		c, ok := cleanChannel(c)
 		if !ok {
 			return e, false, errMalformed
+		}
+		// The member's own notes alone, and one (M17.3).
+		if c.Kind == denproto.KindNotes {
+			next := maps.Clone(s.channels)
+			next[c.ID] = c
+			if !ownNotes(next, me.ID) {
+				return e, false, errMalformed
+			}
 		}
 		s.channels[c.ID] = c
 		if _, ok := s.reads[c.ID]; !ok && hasMessages(c) {
@@ -1014,11 +1056,12 @@ type marks struct {
 }
 
 // marks counts what the member hasn't read, as the page's list marks it:
-// text channels and DMs, the DMs they closed aside.
+// text channels and DMs, the DMs they closed aside, and nothing in their
+// notes, which are all their own (M17.3).
 func (s *denState) marks() marks {
 	var m marks
 	for id, r := range s.reads {
-		if !hasMessages(s.channels[id]) || r.Closed {
+		if c := s.channels[id]; !hasMessages(c) || r.Closed || c.Kind == denproto.KindNotes {
 			continue
 		}
 		if compareIDs(r.LastMessage, r.ReadPosition) > 0 {
@@ -1056,7 +1099,8 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	if dm {
 		r.Closed = false // a new message reopens a closed DM, as on the den
 	}
-	if m.AuthorID == me.ID {
+	// Everything in the member's notes is their own (M17.3).
+	if m.AuthorID == me.ID || s.channels[m.ChannelID].Kind == denproto.KindNotes {
 		r.ReadPosition = m.ID
 	} else if dm || m.Everyone || slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {
 		r.MentionCount++

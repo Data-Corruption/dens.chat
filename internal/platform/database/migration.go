@@ -634,7 +634,74 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M17.3: notes to self, a fifth kind of channel, which names the one
+	// member whose notes it holds; a member has one in the den at most.
+	// den_channels is made again to take the kind, as M16.3's step made it,
+	// its counter staying where it was.
+	m.AddRemaking("Notes", func(ctx context.Context, tx *sql.Tx) error {
+		var seq sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT seq FROM sqlite_sequence WHERE name = 'den_channels'`).Scan(&seq)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("read the channels' counter: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_channels_new (
+				id             INTEGER PRIMARY KEY AUTOINCREMENT,
+				group_id       INTEGER REFERENCES den_groups (id) ON DELETE SET NULL,
+				name           TEXT NOT NULL,
+				description    TEXT NOT NULL DEFAULT '',
+				kind           TEXT NOT NULL CHECK (kind IN ('text', 'voice', 'dm', 'group_dm', 'notes')),
+				position       INTEGER NOT NULL,
+				staff_only     INTEGER NOT NULL DEFAULT 0,
+				dm_low         INTEGER REFERENCES den_members (id),
+				dm_high        INTEGER REFERENCES den_members (id),
+				created_at     INTEGER NOT NULL,
+				bitrate        INTEGER,
+				expires_after  INTEGER NOT NULL DEFAULT 0 CHECK (expires_after >= 0),
+				expires_by     INTEGER REFERENCES den_members (id),
+				expires_set_at INTEGER, -- unix milliseconds
+				notes_of       INTEGER REFERENCES den_members (id),
+				CHECK ((kind = 'dm') = (dm_low IS NOT NULL AND dm_high IS NOT NULL AND dm_low < dm_high)),
+				CHECK ((kind = 'voice') = (bitrate IS NOT NULL)),
+				CHECK ((kind = 'notes') = (notes_of IS NOT NULL))
+			) STRICT;
+			INSERT INTO den_channels_new (id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, created_at, bitrate,
+					expires_after, expires_by, expires_set_at)
+				SELECT id, group_id, name, description, kind, position, staff_only, dm_low, dm_high, created_at, bitrate,
+					expires_after, expires_by, expires_set_at FROM den_channels;
+			DROP TABLE den_channels;
+			ALTER TABLE den_channels_new RENAME TO den_channels;
+			CREATE UNIQUE INDEX den_channels_dm ON den_channels (dm_low, dm_high) WHERE kind = 'dm';
+			CREATE INDEX den_channels_dm_high ON den_channels (dm_high) WHERE kind = 'dm';
+			CREATE UNIQUE INDEX den_channels_notes ON den_channels (notes_of) WHERE kind = 'notes';
+		`); err != nil {
+			return fmt.Errorf("add notes: %w", err)
+		}
+		return keepChannelCounter(ctx, tx, seq)
+	})
+
 	return m
+}
+
+// keepChannelCounter puts back the channels' counter as it was before
+// den_channels was made again, since a channel's ID is never given out
+// twice, even past the channels a restore moved it beyond (M11).
+func keepChannelCounter(ctx context.Context, tx *sql.Tx, seq sql.NullInt64) error {
+	if !seq.Valid {
+		return nil
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE sqlite_sequence SET seq = ? WHERE name = 'den_channels'`, seq.Int64)
+	if err != nil {
+		return fmt.Errorf("keep the channels' counter: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sqlite_sequence (name, seq) VALUES ('den_channels', ?)`, seq.Int64); err != nil {
+			return fmt.Errorf("keep the channels' counter: %w", err)
+		}
+	}
+	return nil
 }
 
 // SchemaVersion is the schema version this build migrates to.
