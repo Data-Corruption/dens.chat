@@ -566,6 +566,55 @@ export async function ownerScreens(h, ctx) {
         await h.click(`[...document.querySelectorAll('[role=dialog] button')].find((b) => /Remove/.test(b.textContent))`);
         await h.snap('remove-member', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
     });
+    // The den's events, with + Event, the form as a sheet, and a card's
+    // Edit, Cancel and End now (M17.4).
+    await h.step('owner-events', async () => {
+        await h.go(`/den/${den}/events`);
+        await h.wait(`document.querySelector('[data-event]') && document.querySelector('[data-new-event]')`, 'the events, with + Event');
+        await h.snap('owner-events', { scroll: `document.querySelector('[data-pane=chan] .overflow-y-auto')`, max: 2 });
+        await h.click(`document.querySelector('[data-new-event]')`, '+ Event');
+        await h.wait(`document.querySelector('[data-event-form]')`, 'the event form');
+        await h.snap('event-form', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
+        await h.escape();
+        await h.click(`[...document.querySelectorAll('[data-event] button')].find((b) => b.textContent.trim() === 'Cancel…')`, 'Cancel…');
+        await h.snap('event-cancel');
+        await h.escape();
+    });
+}
+
+// eventing walks the den's events on the phone layout (M17.4): the Events
+// row atop the Den tab's list, opening them by a tap; a card's Interested
+// marked by a tap and taken back by another; and the header's Channels
+// back to the list.
+export async function eventing(h, ctx, d, report) {
+    const { den } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const ROW = `document.querySelector('[data-pane=list] [data-events-row] button')`;
+    const MARK = `document.querySelector('[data-pane=chan] [data-event] [data-interested]')`;
+    await h.go(`/den/${den}`);
+    const tab = h.byText('[data-pane=list] [role=tab]', 'Den');
+    await h.wait(tab, "the list's tabs");
+    await d.tap(tab);
+    await h.wait(ROW, 'the Events row');
+    did(await h.has(`document.querySelector('[data-pane=list] nav[aria-label="Channels"] li')?.hasAttribute('data-events-row')`),
+        'Events is the first row of the Den tab');
+    await d.tap(ROW);
+    const opened = await waitFor(() => h.has(`location.pathname === '/den/${den}/events' && document.querySelector('[data-pane=chan] [data-events-header]') && ${MARK}`),
+        'the events', 10000).then(() => true, () => false);
+    did(opened, "a tap on the Events row opens the den's events");
+    if (!opened) return;
+    await h.snap('events', { scroll: `document.querySelector('[data-pane=chan] .overflow-y-auto')`, max: 2 });
+    const pressed = () => h.ev(`${MARK}.getAttribute('aria-pressed')`);
+    const before = await pressed();
+    await d.tap(MARK);
+    const marked = await waitFor(async () => (await pressed()) !== before, 'the mark', 10000).then(() => true, () => false);
+    did(marked, 'a tap marks Interested');
+    await d.tap(MARK);
+    const back = await waitFor(async () => (await pressed()) === before, 'the mark taken back', 10000).then(() => true, () => false);
+    did(back, 'another takes it back');
+    await d.tap(`document.querySelector('[data-pane=chan] header button[aria-label="Channels"]')`);
+    const listed = await waitFor(() => h.has(`!document.querySelector('[data-pane=list]').inert`), 'the list', 10000).then(() => true, () => false);
+    did(listed, "the events' Channels goes back to the list");
 }
 
 // CALL is what a page shows of its call on the phone layout (M13.4): the

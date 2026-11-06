@@ -85,6 +85,12 @@ say carol "$group" "this one goes in a week"
 api bob PUT "/api/dens/$DEN/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null
 say bob "$dm" "and this one goes tomorrow"
 
+# Two events to come (M17.4): one in Lounge, with a description, and one
+# somewhere else, a day on.
+at=$(($(date +%s) * 1000))
+api alice POST "/api/dens/$DEN/events" "{\"name\":\"Game night\",\"description\":\"Bring **snacks**, and a game for four or more.\",\"starts_at\":$((at + 3600000)),\"ends_at\":$((at + 3 * 3600000)),\"channel_id\":\"$LOUNGE\"}" >/dev/null
+api alice POST "/api/dens/$DEN/events" "{\"name\":\"Picnic at the lake, if the weather holds\",\"starts_at\":$((at + 86400000)),\"ends_at\":$((at + 86400000 + 4 * 3600000)),\"place\":\"The big oak by the north shore\"}" >/dev/null
+
 echo "DEN=$DEN"
 echo "GENERAL=$general"
 echo "RANDOM_ID=$random"

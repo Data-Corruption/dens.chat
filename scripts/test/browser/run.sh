@@ -95,9 +95,11 @@
 #                               and Compact picked by a tap, a channel's messages a line each, a long press
 #                               on one, and a spoiler covered until a tap shows it (M17.2); and the notes
 #                               opened from the top of the Direct messages list, a note sent with nothing
-#                               marked unread, and the own profile card's Notes (M17.3).
+#                               marked unread, and the own profile card's Notes (M17.3); and the events
+#                               opened from the top of the Den tab, Interested marked and taken back by taps,
+#                               and the owner's events, their form as a sheet and Cancel's dialog (M17.4).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
-#                               notes, owner or before; all unless given
+#                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
 #                               platform's page holding its own steps alone, its folds closed until opened,
 #                               the Flatpak's old link landing on the choice, and the links into the guides
@@ -116,12 +118,20 @@
 #                               his own profile card's Notes, reading both and writing back, nothing marked
 #                               unread; and the den's database holding neither in the clear, alice's Dens
 #                               nothing of them
+#   events BROWSER              M17.4: the Events row atop each Den tab, + Event for alice alone; an event she
+#                               makes through the form reaching bob's page, his Interested counted on hers;
+#                               one in a staff-only channel never reaching him; members let make events in
+#                               Limits, bob making one somewhere else and canceling it; the event starting in seconds,
+#                               his background tab's notification of it, whose click opens his events at it;
+#                               Live on both pages, its end moved from the form, its start kept, then End now
+#                               taking it off both and his notification back; one of seconds ending by the
+#                               den's timer; and the den's database holding no name in the clear
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,119p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,129p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

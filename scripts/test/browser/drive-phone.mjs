@@ -35,19 +35,22 @@
 // a line each, a long press opening a message's sheet, and a photo sent as
 // a spoiler, covered until a tap shows it; and notes (M17.3): their row at
 // the top of the Direct messages list opening them by a tap, a note sent
-// with nothing marked unread, and the member's own profile card's Notes.
+// with nothing marked unread, and the member's own profile card's Notes;
+// and events (M17.4): the Events row atop the Den tab opening them by a
+// tap, Interested marked and taken back by taps, the header's way back to
+// the list, and the owner's pane, its form as a sheet and Cancel's dialog.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
 // The parts are member, around, touch, pages, call, emoji, reactions,
-// polls, compact, notes, owner and before; all by default.
+// polls, compact, notes, events, owner and before; all by default.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, token } from './browsers.mjs';
 import {
-    audits, callScreens, compact, emojiPicking, gettingAround, helpers, memberScreens, noting, ownerScreens, pages, polling, quickReacting, staffPress, touching,
-    waitFor,
+    audits, callScreens, compact, emojiPicking, eventing, gettingAround, helpers, memberScreens, noting, ownerScreens, pages, polling, quickReacting, staffPress,
+    touching, waitFor,
 } from './screens.mjs';
 
 const args = process.argv.slice(2);
@@ -271,7 +274,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
     fs.mkdirSync(out, { recursive: true });
     const log = [];
     if (want('member') || want('around') || want('touch') || want('pages') || want('call') || want('emoji') || want('reactions') || want('polls') ||
-        want('compact') || want('notes')) {
+        want('compact') || want('notes') || want('events')) {
         const b = await browser(mode, port++, { media: mode === 'chromium' ? true : 'pulse', screen: mode === 'chromium' });
         try {
             await pair(b, BOB);
@@ -285,6 +288,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             if (want('polls')) await polling(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('compact')) await compact(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('notes')) await noting(h, ctx, driver(mode, b, h), report).catch(fail);
+            if (want('events')) await eventing(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('call')) {
                 // Carol, the voice probe, hears bob and shares, for the player.
                 const jar = fs.readFileSync(`${HOME}/jar-${CAROL.instance}`, 'utf8').split('\n').map((l) => l.split('\t'));

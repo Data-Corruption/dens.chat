@@ -32,6 +32,9 @@
 # photo, a photo's and a video's smaller copies and a video the den stores
 # only sealed. The member opens their notes and writes one, which they
 # read back, the owner can't, and the den holds sealed (M17.3). The owner
+# makes an event in the voice channel, which the member marks Interested:
+# as it starts the den tells the member's service, and not the owner's,
+# and End now takes it off (M17.4). The owner
 # shares a checklist with the member, and the
 # two tick different boxes at the same moment, all of which must stay. A
 # second instance on the member's machine stands in for a fresh one: it
@@ -651,6 +654,27 @@ run() {
   [[ "$history" != *"a note to self"* ]] || { echo "error: the owner read the member's notes" >&2; return 1; }
   guest "$DEN" dm-sealed "a note to self"
   echo ">> The member's notes opened, the den making them once, and took a note the member reads back, which the owner can't and the den's database holds sealed"
+
+  echo ">> An event's start, through Caddy"
+  local event
+  # Each install logs at info for it, which says what reached its service.
+  member log-level info
+  guest "$DEN" log-level info
+  event=$(guest "$DEN" event "$den_id" "Game night" "$lounge" 20)
+  guest "$CLIENT" wait-event "$den_id" "$event" coming
+  [[ "$(member interested "$den_id" "$event")" == 1 ]] || { echo "error: the member's mark wasn't counted" >&2; return 1; }
+  guest "$CLIENT" wait-event "$den_id" "$event" "coming mine"
+  # The den tells the interested member alone that it started, and the
+  # owner, who isn't, that it's live.
+  guest "$CLIENT" wait-event "$den_id" "$event" "live mine"
+  member started "$event"
+  guest "$DEN" wait-event "$den_id" "$event" live
+  ! guest "$DEN" started "$event" 6 2>/dev/null || { echo "error: the owner's service, not interested, heard the event start" >&2; return 1; }
+  guest "$DEN" end-event "$den_id" "$event"
+  guest "$CLIENT" wait-event "$den_id" "$event" gone
+  member log-level warn
+  guest "$DEN" log-level warn
+  echo ">> An event the member marked Interested started, which the den told their service alone, and End now took it off"
 
   echo ">> Two members tick one checklist at the same moment"
   local list owner_ticks member_ticks text
