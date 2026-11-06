@@ -55,9 +55,9 @@ type Configuration struct {
 }
 
 // Notifications are the member's choices for what notifies them (M12.3):
-// each kind stays off until they turn it on, a notification carries the
-// start of its message unless they hide it, and a den or channel they
-// muted notifies nothing.
+// each kind of message stays off until they turn it on, a notification
+// carries the start of its message unless they hide it, and a den or
+// channel they muted notifies nothing.
 type Notifications struct {
 	DMs      bool `json:"dms,omitempty"`
 	Mentions bool `json:"mentions,omitempty"`
@@ -65,6 +65,9 @@ type Notifications struct {
 	// EveryoneOff silences staff's @everyone (M15.4), which notifies as a
 	// mention does unless the member turns it off.
 	EveryoneOff bool `json:"everyoneOff,omitempty"`
+	// EventsOff silences the events the member is interested in as they
+	// start (M17.4), which notify unless the member turns them off.
+	EventsOff bool `json:"eventsOff,omitempty"`
 	// Muted holds what the member muted, by den ID.
 	Muted map[string]Muted `json:"muted,omitempty"`
 	// Sounds are the member's choices for the page's sounds (M14.2), by

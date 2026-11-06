@@ -131,6 +131,12 @@ func New(a *app.App) http.Handler {
 			r.Post("/emoji", h.addEmoji)
 			r.Patch("/emoji/{id}", h.renameEmoji)
 			r.Delete("/emoji/{id}", h.deleteEmoji)
+			r.Post("/events", h.createEvent)
+			r.Patch("/events/{id}", h.updateEvent)
+			r.Delete("/events/{id}", h.cancelEvent)
+			r.Post("/events/{id}/end", h.endEvent)
+			r.Put("/events/{id}/interest", h.markInterest(true))
+			r.Delete("/events/{id}/interest", h.markInterest(false))
 		})
 	})
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {

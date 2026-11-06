@@ -51,6 +51,7 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountDevices(r)
 	rt.mountSoundboard(r)
 	rt.mountEmoji(r)
+	rt.mountEvents(r)
 	// A development build's browser checks deny a page a member's keys for
 	// calls, to show it then hears nothing of them (M16.2); no other form
 	// offers it.

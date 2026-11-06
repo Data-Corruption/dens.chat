@@ -727,7 +727,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			retained = c.den.retention != d.Retention
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
-			c.den.spoilers, c.den.moveMembers = d.Spoilers, d.MoveMembers
+			c.den.spoilers, c.den.moveMembers, c.den.eventLimits = d.Spoilers, d.MoveMembers, d.EventLimits
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -813,9 +813,11 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	// sealed (M6.2).
 	var kept *denproto.Message
 	// What it may notify the member of, or, for their own, the channel
-	// they read by sending it (M12.3).
+	// they read by sending it (M12.3); or an event they're interested in
+	// that started, which the den tells them alone (M17.4).
 	var notice *notify.Message
 	var own *denproto.Message
+	var start *notify.Start
 	// The message whose tallies an event changes, its reactions (M15.3) or
 	// its poll's (M15.4), for the cache.
 	var tallied string
@@ -870,6 +872,11 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			out, err = denproto.NewEvent(out.T, out.Seq, PageDMReactions{MessageID: d.MessageID, ChannelID: d.ChannelID, PageReactionSet: set})
 			tallied = d.MessageID
 		}
+	case e.T == denproto.EventEventStarted:
+		var ev denproto.DenEvent
+		if json.Unmarshal(out.D, &ev) == nil {
+			start = c.startNoticeLocked(ev.ID)
+		}
 	case e.T == denproto.EventReactionAdded || e.T == denproto.EventReactionRemoved || e.T == denproto.EventReactionCleared ||
 		e.T == denproto.EventPollUpdated || e.T == denproto.EventPollEnded:
 		var r struct {
@@ -908,6 +915,11 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
+	// The den tells only the members interested in an event that it
+	// started (M17.4), which the logs say, as they say a call's turns.
+	if start != nil {
+		c.logf(true, "event %s, which the member is interested in, started", start.Event)
+	}
 	// Who is in the install's call may have changed, or a member's identity,
 	// which changes the member's key for it (M16.2).
 	if err == nil && ok && (e.T == denproto.EventVoiceState || e.T == denproto.EventMemberUpdated) {
@@ -937,7 +949,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.requestChanged(e)
 	}
 	if err == nil && ok {
-		c.tellNotices(e, out, notice, own)
+		c.tellNotices(e, out, notice, own, start)
 	}
 	if err == nil {
 		c.cacheMessageEvent(e, kept)

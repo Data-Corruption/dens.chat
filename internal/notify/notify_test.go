@@ -691,3 +691,99 @@ func TestEveryoneHiddenText(t *testing.T) {
 		t.Fatalf("a hidden @everyone shows %q, %q", n.Title, n.Text)
 	}
 }
+
+func start(event string) Start {
+	return Start{Den: "d1", DenName: "Voice Den", Event: event, Name: "Game night", Channel: "Lounge"}
+}
+
+// TestEventsStart checks an event's start (M17.4): it notifies by default,
+// with nothing turned on, where a message would show, once though the den
+// says it again, naming the event, that it's live and where, and opening
+// the events at it; it's taken back as the event ends, and neither reading
+// a channel nor a retention pass takes it; and turning events off, or
+// muting the den, silences it and takes back what showed.
+func TestEventsStart(t *testing.T) {
+	helper := &place{can: true}
+	h, _ := newHub(t, types.Notifications{}, helper, false)
+	h.Started(start("7"))
+	h.Started(start("7"))
+	if len(helper.shown) != 1 {
+		t.Fatalf("the helper showed %d notifications, want 1", len(helper.shown))
+	}
+	n := helper.shown[0]
+	want := Notification{Key: "d1/event-7", Den: "d1", DenName: "Voice Den", Event: "7", Title: "Game night", Text: "Live now in Lounge",
+		Path: "/den/d1/events#event=7"}
+	if n != want {
+		t.Fatalf("the event's notification is %+v, want %+v", n, want)
+	}
+	if got := n.URL("http://localhost:1", "tok"); got != "http://localhost:1/den/d1/events#token=tok&event=7" {
+		t.Errorf("its link with a pairing token is %s", got)
+	}
+	h.Cleared("d1", "", "999999")
+	h.Cleared("d1", "5", "999999")
+	if len(helper.withdrawn) != 0 {
+		t.Fatalf("reading channels took back %v", helper.withdrawn)
+	}
+	h.EventOver("d1", "7")
+	if !slices.Equal(helper.withdrawn, []string{"d1/event-7"}) {
+		t.Fatalf("its end took back %v", helper.withdrawn)
+	}
+
+	// Its place, written by its maker, hides with the text; a channel's
+	// name doesn't.
+	h2, _ := newHub(t, types.Notifications{HideText: true}, helper, false)
+	written := start("8")
+	written.Channel, written.Place = "", "The back room"
+	h2.Started(written)
+	h2.Started(start("9"))
+	if a, b := helper.shown[1], helper.shown[2]; a.Text != "Live now" || b.Text != "Live now in Lounge" {
+		t.Errorf("with the text hidden, the events say %q and %q", a.Text, b.Text)
+	}
+	h3, _ := newHub(t, types.Notifications{}, helper, false)
+	h3.Started(written)
+	if n := helper.shown[3]; n.Text != "Live now: The back room" {
+		t.Errorf("the event in a place written out says %q", n.Text)
+	}
+
+	// Off, it takes back what showed and shows nothing more; a den muted
+	// silences its events too.
+	h4, _ := newHub(t, types.Notifications{}, helper, false)
+	h4.Started(start("10"))
+	if err := h4.SetKinds(Kinds{Events: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if s := h4.Settings(); !s.EventsOff {
+		t.Fatalf("turning events off left the settings %+v", s)
+	}
+	if !slices.Contains(helper.withdrawn, "d1/event-10") {
+		t.Fatalf("turning events off took back %v", helper.withdrawn)
+	}
+	shown := len(helper.shown)
+	h4.Started(start("11"))
+	if err := h4.SetKinds(Kinds{Events: ptr(true)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h4.Mute("d1", "", true); err != nil {
+		t.Fatal(err)
+	}
+	h4.Started(start("12"))
+	if len(helper.shown) != shown {
+		t.Fatalf("events off, then the den muted, showed %v", helper.shown[shown:])
+	}
+
+	// Through a page the browser lets notify, as a message's would, and
+	// with nothing to show it, its sound alone.
+	h5, _ := newHub(t, types.Notifications{}, nil, false)
+	p, stop := h5.Watch("a")
+	defer stop()
+	h5.SetPage("a", true, true)
+	h5.Started(start("13"))
+	if shows, _, _ := events(drain(p)); len(shows) != 1 || shows[0].Event != "13" {
+		t.Fatalf("the page was given %+v", shows)
+	}
+	h5.SetPage("a", false, false)
+	h5.Started(start("14"))
+	if alone, _ := sounds(p); len(alone) != 1 {
+		t.Fatalf("with nothing to show it, the event played %v", alone)
+	}
+}

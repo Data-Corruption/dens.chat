@@ -274,18 +274,20 @@ type Den struct {
 	ID   Bytes  `json:"id"`
 	Name string `json:"name"`
 	URL  string `json:"url"`
-	// Limits, CallLimits, Retention, SoundLimits and EmojiLimits come to
-	// members, in ready and den.updated, and not in a join preview.
-	// CallLimits are from M4.2, Retention, the days a message is kept, 0 for
-	// ever, from M5, SoundLimits, the soundboard's, from M14.3, and
-	// EmojiLimits from M15.2. Emoji turned off are a count of 0, which a
-	// den sends as it is, so it needs telling from a den older than emoji,
-	// which sends none.
+	// Limits, CallLimits, Retention, SoundLimits, EmojiLimits and
+	// EventLimits come to members, in ready and den.updated, and not in a
+	// join preview. CallLimits are from M4.2, Retention, the days a message
+	// is kept, 0 for ever, from M5, SoundLimits, the soundboard's, from
+	// M14.3, EmojiLimits from M15.2 and EventLimits from M17.4. Emoji turned
+	// off are a count of 0, which a den sends as it is, so it needs telling
+	// from a den older than emoji, which sends none; and a den sends
+	// EventLimits to say it has events at all.
 	Limits      Limits       `json:"limits,omitzero"`
 	CallLimits  CallLimits   `json:"call_limits,omitzero"`
 	Retention   int          `json:"retention,omitempty"`
 	SoundLimits SoundLimits  `json:"sound_limits,omitzero"`
 	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
+	EventLimits *EventLimits `json:"event_limits,omitempty"`
 	// SealedCalls says the den seals every call end to end (M16.2), and
 	// takes no join that doesn't; a den older than it doesn't say so.
 	SealedCalls bool `json:"sealed_calls,omitempty"`
@@ -421,6 +423,7 @@ type DenUpdateRequest struct {
 	Retention   *int         `json:"retention,omitempty"`
 	SoundLimits *SoundLimits `json:"sound_limits,omitempty"` // M14.3
 	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"` // M15.2
+	EventLimits *EventLimits `json:"event_limits,omitempty"` // M17.4
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's
@@ -453,6 +456,9 @@ type Ready struct {
 	// their own copy. A den older than M16.1 sends none, which tells a
 	// client it keeps no identities.
 	SignedKeys []SignedKey `json:"signed_keys"`
+	// M17.4: the den's events to come and live that the member sees, live
+	// first and then by their start, each with the member's own mark.
+	Events []DenEvent `json:"events"`
 }
 
 type Renew struct {

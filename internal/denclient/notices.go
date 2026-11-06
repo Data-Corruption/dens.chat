@@ -12,12 +12,15 @@ import (
 // Notices hears what the dens' events say of the member's notifications
 // (M12.3): each message another member sends, as it arrives, and what
 // takes a notification back, the member reading the channel, from any of
-// their devices, or the message, its channel or its den going. It's
-// notify.Hub, or nil, as in most tests.
+// their devices, or the message, its channel or its den going; and from
+// M17.4 each event the member is interested in as it starts, and its end.
+// It's notify.Hub, or nil, as in most tests.
 type Notices interface {
 	Message(notify.Message)
+	Started(notify.Start)
 	Cleared(den, channel, through string)
 	Deleted(den, channel, message string)
+	EventOver(den, event string)
 	ChannelGone(den, channel string)
 	Forgot(den string)
 }
@@ -62,9 +65,10 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 }
 
 // tellNotices passes on what an event the den sent, now applied, says of
-// the member's notifications: notice, a message that may notify them, and
-// what takes one back.
-func (c *conn) tellNotices(e denproto.Event, out denproto.Event, notice *notify.Message, own *denproto.Message) {
+// the member's notifications: notice, a message that may notify them,
+// start, an event they're interested in that started (M17.4), and what
+// takes one back.
+func (c *conn) tellNotices(e denproto.Event, out denproto.Event, notice *notify.Message, own *denproto.Message, start *notify.Start) {
 	n := c.m.Notices
 	if n == nil {
 		return
@@ -72,6 +76,9 @@ func (c *conn) tellNotices(e denproto.Event, out denproto.Event, notice *notify.
 	den := c.j.denID.String()
 	if notice != nil {
 		n.Message(*notice)
+	}
+	if start != nil {
+		n.Started(*start)
 	}
 	if own != nil {
 		// The member's own message, from another of their devices, reads
@@ -98,6 +105,11 @@ func (c *conn) tellNotices(e denproto.Event, out denproto.Event, notice *notify.
 		var x denproto.MessagesExpired
 		if json.Unmarshal(out.D, &x) == nil {
 			n.Cleared(den, "", x.Through)
+		}
+	case denproto.EventEventCanceled, denproto.EventEventEnded:
+		var x denproto.EventID
+		if json.Unmarshal(out.D, &x) == nil {
+			n.EventOver(den, x.ID)
 		}
 	}
 }

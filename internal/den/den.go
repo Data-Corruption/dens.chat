@@ -78,6 +78,9 @@ type Den struct {
 	changes sync.Mutex
 	// keys orders changes to DM keys, and their events.
 	keys sync.Mutex
+	// calendar orders changes to events, the timer's among them, and their
+	// events (M17.4).
+	calendar sync.Mutex
 	// requests are sign-ins waiting for approval (M1.7).
 	requests requests
 
@@ -94,9 +97,10 @@ type Den struct {
 	// pruner forgets changes older than clients may ask for (M6).
 	expiry expiry
 	pruner pruner
-	// timer ends polls at their time (M15.4) and deletes disappearing
-	// messages at theirs (M16.4), and pollBatch gathers the polls whose
-	// votes changed for the next batch of totals.
+	// timer ends polls at their time (M15.4), deletes disappearing
+	// messages at theirs (M16.4), and starts and ends events (M17.4), and
+	// pollBatch gathers the polls whose votes changed for the next batch of
+	// totals.
 	timer     dueTimer
 	pollBatch pollBatch
 
@@ -113,8 +117,9 @@ type Den struct {
 	// (M14.1); tests shorten it.
 	PingInterval time.Duration
 	// ShortTimes lets members set a DM's or a group's messages to
-	// disappear after a few seconds, which a development instance's den
-	// takes for the browser checks, as tests do (M16.4).
+	// disappear after a few seconds (M16.4), and make events of a few
+	// seconds (M17.4), which a development instance's den takes for the
+	// browser checks, as tests do.
 	ShortTimes bool
 }
 
@@ -195,13 +200,14 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	var calls denproto.CallLimits
 	var sounds denproto.SoundLimits
 	var emoji denproto.EmojiLimits
+	var events denproto.EventLimits
 	var retention int
 	err := db.QueryRowContext(ctx, `SELECT name, url, public_key, private_key, file_size, member_storage, den_storage,
 		call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, retention,
-		sounds, sound_longest, sound_wait, emojis FROM den WHERE id = 1`).
+		sounds, sound_longest, sound_wait, emojis, member_events FROM den WHERE id = 1`).
 		Scan(&name, &url, &pub, &sealed, &limits.FileSize, &limits.MemberStorage, &limits.DenStorage,
 			&calls.Members, &calls.Callers, &calls.Shares, &calls.ShareViewers, &calls.ShareBitrate, &calls.ShareHeight, &calls.ShareFPS,
-			&retention, &sounds.Sounds, &sounds.Longest, &sounds.Wait, &emoji.Emojis)
+			&retention, &sounds.Sounds, &sounds.Longest, &sounds.Wait, &emoji.Emojis, &events.MemberEvents)
 	if errors.Is(err, sql.ErrNoRows) {
 		// A den erased here may have left files, had the service stopped
 		// before they went (M10).
@@ -222,7 +228,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
-		SoundLimits: sounds, EmojiLimits: &emoji, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true}
+		SoundLimits: sounds, EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -248,7 +254,7 @@ func (d *Den) holdKey(seed, pub []byte) error {
 // Start runs the den as hosting starts (M9.1): calls on its media ports,
 // the sockets the den listener takes, deleting messages past the
 // retention period, forgetting old changes, and its timer, which ends
-// polls and deletes disappearing messages. The caller serves the den
+// polls, deletes disappearing messages, and starts and ends events. The caller serves the den
 // listener once it returns.
 func (d *Den) Start(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) error {
 	if err := d.StartCalls(udp, tcp, cfg); err != nil {
@@ -277,7 +283,8 @@ func (d *Den) Stop(timeout time.Duration) {
 }
 
 // Close ends calls, stops sweeping uploads, deleting old messages, ending
-// polls and deleting disappearing ones, and releases the identity key.
+// polls, deleting disappearing ones, and starting and ending events, and
+// releases the identity key.
 func (d *Den) Close() {
 	if err := d.StopCalls(); err != nil {
 		d.log.Warnf("stop calls: %v", err)
@@ -337,15 +344,16 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	calls := denproto.DefaultCallLimits
 	sounds := denproto.DefaultSoundLimits
 	emoji := denproto.DefaultEmojiLimits
+	events := denproto.DefaultEventLimits
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO den (id, name, url, public_key, private_key, created_at, file_size, member_storage, den_storage,
 				call_members, den_callers, shares, share_viewers, share_bitrate, share_height, share_fps, sync_epoch,
-				sounds, sound_longest, sound_wait, emojis)
-			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				sounds, sound_longest, sound_wait, emojis, member_events)
+			VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			name, url, []byte(pub), sealed, now.UnixMilli(), limits.FileSize, limits.MemberStorage, limits.DenStorage,
 			calls.Members, calls.Callers, calls.Shares, calls.ShareViewers, calls.ShareBitrate, calls.ShareHeight, calls.ShareFPS,
-			denproto.Random(denproto.SyncEpochSize), sounds.Sounds, sounds.Longest, sounds.Wait, emoji.Emojis); err != nil {
+			denproto.Random(denproto.SyncEpochSize), sounds.Sounds, sounds.Longest, sounds.Wait, emoji.Emojis, events.MemberEvents); err != nil {
 			return fmt.Errorf("store den: %w", err)
 		}
 		_, err := tx.ExecContext(ctx,
@@ -360,7 +368,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
-		EmojiLimits: &emoji, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true}
+		EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true}
 	d.log.Infof("Den created")
 	return code, nil
 }
@@ -506,8 +514,8 @@ func (d *Den) forget() {
 }
 
 // Update changes the den's name, address, upload limits, limits for calls,
-// retention period, or limits for its soundboard or its emoji. Only the
-// owner may.
+// retention period, or limits for its soundboard, its emoji or its events.
+// Only the owner may.
 func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequest) (denproto.Den, error) {
 	if s.Role != denproto.RoleOwner {
 		return denproto.Den{}, denproto.Errorf(http.StatusForbidden, denproto.CodeForbidden, "only the owner changes the den")
@@ -562,17 +570,30 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		l := *req.EmojiLimits
 		info.EmojiLimits = &l
 	}
+	// Lowering a member's limit leaves the events they made already, which
+	// they still change and cancel (M17.4).
+	if req.EventLimits != nil {
+		if err := denproto.CheckEventLimits(*req.EventLimits); err != nil {
+			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "event_limits: %v", err)
+		}
+		l := *req.EventLimits
+		info.EventLimits = &l
+	}
 	c, sl := info.CallLimits, info.SoundLimits
 	el := denproto.DefaultEmojiLimits
 	if info.EmojiLimits != nil {
 		el = *info.EmojiLimits
 	}
+	vl := denproto.DefaultEventLimits
+	if info.EventLimits != nil {
+		vl = *info.EventLimits
+	}
 	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
 		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ?,
-		retention = ?, sounds = ?, sound_longest = ?, sound_wait = ?, emojis = ? WHERE id = 1`,
+		retention = ?, sounds = ?, sound_longest = ?, sound_wait = ?, emojis = ?, member_events = ? WHERE id = 1`,
 		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
 		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS, info.Retention,
-		sl.Sounds, sl.Longest, sl.Wait, el.Emojis); err != nil {
+		sl.Sounds, sl.Longest, sl.Wait, el.Emojis, vl.MemberEvents); err != nil {
 		return denproto.Den{}, err
 	}
 	d.mu.Lock()
@@ -695,6 +716,7 @@ func (d *Den) Preview(ctx context.Context, code []byte) (denproto.Den, error) {
 	info.Retention = 0
 	info.SoundLimits = denproto.SoundLimits{}
 	info.EmojiLimits = nil
+	info.EventLimits = nil
 	return info, nil
 }
 

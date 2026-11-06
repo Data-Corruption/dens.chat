@@ -22,9 +22,10 @@ import (
 const ownFilesBudget = 600 << 10
 
 // OwnFiles lists a page of the member's files, largest first by the space
-// each takes, previews included, with what uses each. after is the cursor
-// the page before gave, or empty for the first. A named file's file is
-// the den's (M14.3), so it isn't among them.
+// each takes, previews included, with what uses each: an event's banner
+// among them (M17.4). after is the cursor the page before gave, or empty
+// for the first. A named file's file is the den's (M14.3), so it isn't
+// among them.
 func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.OwnFiles, error) {
 	page := denproto.OwnFiles{Files: []denproto.OwnFile{}}
 	space, last := int64(math.MaxInt64), int64(math.MaxInt64)
@@ -40,7 +41,8 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 	rows, err := d.db.QueryContext(ctx, `SELECT f.id, f.message_id, f.name, f.type, f.size, f.width, f.height, f.animated,
 		f.thumb_width, f.thumb_height, f.duration_ms, f.sealed, f.created_at, f.size + coalesce(f.thumb_size, 0) AS space,
 		m.channel_id, CASE WHEN EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id) THEN 'avatar'
-			WHEN EXISTS (SELECT 1 FROM den_members WHERE banner_id = f.id) THEN 'banner' ELSE '' END
+			WHEN EXISTS (SELECT 1 FROM den_members WHERE banner_id = f.id) THEN 'banner' ELSE '' END,
+		(SELECT id FROM den_events WHERE banner_id = f.id)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id
 		WHERE f.uploader_id = ? AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
 			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?, ?)
@@ -57,10 +59,10 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 	for rows.Next() {
 		var l listed
 		f := &l.file
-		var message, channel, w, h, tw, th, duration sql.NullInt64
+		var message, channel, w, h, tw, th, duration, event sql.NullInt64
 		var name []byte
 		if err := rows.Scan(&l.id, &message, &name, &f.Type, &f.Size, &w, &h, &f.Animated, &tw, &th, &duration, &f.Sealed,
-			&f.CreatedAt, &l.space, &channel, &f.Profile); err != nil {
+			&f.CreatedAt, &l.space, &channel, &f.Profile, &event); err != nil {
 			rows.Close()
 			return page, err
 		}
@@ -70,6 +72,9 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 			return page, err
 		}
 		f.ID, f.Name, f.Width, f.Height, f.Duration = denproto.FormatID(l.id), string(plain), int(w.Int64), int(h.Int64), duration.Int64
+		if event.Valid {
+			f.Event = denproto.FormatID(event.Int64)
+		}
 		if tw.Valid && th.Valid {
 			f.Thumb = &denproto.Thumb{Width: int(tw.Int64), Height: int(th.Int64)}
 		}

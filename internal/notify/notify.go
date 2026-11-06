@@ -15,6 +15,11 @@
 // to the page on screen most lately. It keeps the member's choices for the
 // page's sounds beside their notifications', and knows which sounds they
 // replaced with files of their own, which the pages hear with the status.
+//
+// From M17.4 an event the member is interested in notifies them as it
+// starts, where a message would show, unless they turned events off or
+// muted its den, and goes as the event ends. Events notify by default:
+// each is one the member marked.
 package notify
 
 import (
@@ -64,19 +69,33 @@ type Message struct {
 
 // Notification is what a place shows for a channel: its newest message
 // that notifies, by its den, channel and ID, with the den's name, a title
-// naming who sent it and where, and the start of what it says.
+// naming who sent it and where, and the start of what it says. An event's
+// start names the event in place of a channel and message (M17.4).
 type Notification struct {
 	// Key names the channel's notification, which a newer message's
-	// replaces, and which reading the channel takes back.
+	// replaces, and which reading the channel takes back; or the event's.
 	Key     string `json:"key"`
 	Den     string `json:"den"`
 	DenName string `json:"denName"`
 	Channel string `json:"channel"`
 	Message string `json:"message"`
+	Event   string `json:"event,omitempty"`
 	Title   string `json:"title"`
 	Text    string `json:"text"`
-	// Path is where the page shows the message, from its origin.
+	// Path is where the page shows the message, or the event, from its
+	// origin.
 	Path string `json:"path"`
+}
+
+// Start is an event that started, which the member is interested in
+// (M17.4), with its den's name, and its place: a voice channel's name, or
+// the line of text its maker wrote.
+type Start struct {
+	Den, DenName string
+	Event        string
+	Name         string
+	Channel      string
+	Place        string
 }
 
 // Heading is the notification's title, with its den's name where it has
@@ -193,8 +212,10 @@ type page struct {
 // shown is a notification out: its message, whether it's for a DM, and
 // where it shows, a page's ID, or the helper or the shell, or "" for a page
 // that's gone, or a message whose sound played alone, which shows nowhere.
+// An event's start names the event alone (M17.4).
 type shown struct {
 	den, channel, message string
+	event                 string
 	dm                    bool
 	// everyone is a notification staff's @everyone made alone (M15.4),
 	// which turning @everyone off takes back.
@@ -206,6 +227,18 @@ const (
 	atHelper = "helper"
 	atShell  = "shell"
 )
+
+// key is the key a notification shows under: its channel's, or its
+// event's.
+func (s shown) key() string {
+	if s.event != "" {
+		return eventKey(s.den, s.event)
+	}
+	return s.den + "/" + s.channel
+}
+
+// eventKey is the key an event's start shows under (M17.4).
+func eventKey(den, event string) string { return den + "/event-" + event }
 
 // New returns a hub with the member's settings, which keep stores as they
 // change, and the desktop's helper.
@@ -278,11 +311,14 @@ type Kinds struct {
 	// Everyone is staff's @everyone (M15.4), on unless the member turns it
 	// off.
 	Everyone *bool
+	// Events are the events the member is interested in, as they start
+	// (M17.4), on unless the member turns them off.
+	Events *bool
 }
 
-// SetKinds turns DMs' and mentions' notifications on or off, and staff's
-// @everyone, and shows or hides their messages' text, as the settings ask.
-// What a kind turned off showed is taken back.
+// SetKinds turns DMs' and mentions' notifications on or off, staff's
+// @everyone, and events, and shows or hides their messages' text, as the
+// settings ask. What a kind turned off showed is taken back.
 func (h *Hub) SetKinds(k Kinds) error {
 	return h.change(func(s *types.Notifications) {
 		if k.DMs != nil {
@@ -296,6 +332,9 @@ func (h *Hub) SetKinds(k Kinds) error {
 		}
 		if k.Everyone != nil {
 			s.EveryoneOff = !*k.Everyone
+		}
+		if k.Events != nil {
+			s.EventsOff = !*k.Events
 		}
 	})
 }
@@ -396,7 +435,11 @@ func (h *Hub) change(f func(*types.Notifications)) error {
 	var gone []shown
 	for _, key := range slices.Clone(h.order) {
 		s := h.shown[key]
-		if !h.notifiesLocked(Message{Den: s.den, Channel: s.channel, DM: s.dm, Mention: !s.dm && !s.everyone, Everyone: s.everyone}) {
+		still := h.notifiesLocked(Message{Den: s.den, Channel: s.channel, DM: s.dm, Mention: !s.dm && !s.everyone, Everyone: s.everyone})
+		if s.event != "" {
+			still = h.eventNotifiesLocked(s.den)
+		}
+		if !still {
 			gone = append(gone, h.forgetLocked(key))
 		}
 	}
@@ -422,6 +465,12 @@ func (h *Hub) notifiesLocked(m Message) bool {
 		return false
 	}
 	return !h.mutedLocked(m.Den, m.Channel)
+}
+
+// eventNotifiesLocked is whether an event's start in a den notifies: unless
+// the member turned events off, or muted the den (M17.4).
+func (h *Hub) eventNotifiesLocked(den string) bool {
+	return !h.settings.EventsOff && !h.settings.Muted[den].Den
 }
 
 // mutedLocked is whether the member muted a den, or its channel.
@@ -619,6 +668,28 @@ func (h *Hub) Message(m Message) {
 	}
 	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM, everyone: m.Everyone && !m.Mention}
 	n := compose(m, h.settings.HideText)
+	switch at := h.deliverLocked(key, rec, n, last, had); at {
+	case atSound:
+		h.log.Debugf("Nothing here shows a notification for message %s in den %s's channel %s; a page sounded it", m.ID, m.Den, m.Channel)
+	case "":
+		h.log.Debugf("Nothing here shows a notification for message %s in den %s's channel %s", m.ID, m.Den, m.Channel)
+	default:
+		h.log.Debugf("Notified the member of message %s in den %s's channel %s, through %s", m.ID, m.Den, m.Channel, at)
+	}
+}
+
+// atSound says deliverLocked played a notification's sound alone.
+const atSound = "its sound alone"
+
+// deliverLocked shows a notification under its key where it should: in the
+// page the browser lets notify that was on screen now or most lately, else
+// through the helper or the shell, and where none can, its sound alone in
+// the page on screen most lately. last is what showed under the key
+// before, if had, which a newer one replaces where it shows, and takes
+// back where it moved from. It returns where it showed, "a page", "the
+// helper" or "the shell", atSound, or "" for nowhere. The caller holds
+// h.mu, which it unlocks.
+func (h *Hub) deliverLocked(key string, rec shown, n Notification, last shown, had bool) string {
 	if id, p := h.pageLocked(); p != nil {
 		rec.at = id
 		h.rememberLocked(key, rec)
@@ -627,13 +698,12 @@ func (h *Hub) Message(m Message) {
 		if had && last.at != id {
 			h.withdraw([]shown{last})
 		}
-		h.log.Debugf("Notified the member of message %s in den %s's channel %s, through a page", m.ID, m.Den, m.Channel)
-		return
+		return "a page"
 	}
 	helper, shell := h.helper, h.shell
 	h.mu.Unlock()
-	// The channel's notification moves only where it must: a newer one
-	// replaces it where it shows.
+	// A key's notification moves only where it must: a newer one replaces
+	// it where it shows.
 	switch {
 	case helper != nil && helper.Show(n):
 		rec.at = atHelper
@@ -646,25 +716,46 @@ func (h *Hub) Message(m Message) {
 	// With nothing to show it, its sound goes alone to the page on screen
 	// most lately.
 	h.mu.Lock()
-	sounded := false
+	defer h.mu.Unlock()
 	switch {
 	case rec.at != "":
 		h.rememberLocked(key, rec)
+		return "the " + rec.at
 	case h.soundLocked(rec):
-		sounded = true
 		h.rememberLocked(key, rec)
-	default:
-		h.forgetLocked(key)
+		return atSound
 	}
-	h.mu.Unlock()
-	switch {
-	case sounded:
-		h.log.Debugf("Nothing here shows a notification for message %s in den %s's channel %s; a page sounded it", m.ID, m.Den, m.Channel)
-	case rec.at == "":
-		h.log.Debugf("Nothing here shows a notification for message %s in den %s's channel %s", m.ID, m.Den, m.Channel)
-	default:
-		h.log.Debugf("Notified the member of message %s in den %s's channel %s, through the %s", m.ID, m.Den, m.Channel, rec.at)
+	h.forgetLocked(key)
+	return ""
+}
+
+// Started notifies the member of an event that started, which they're
+// interested in (M17.4), where a message would show, unless they turned
+// events off or muted its den. It shows once, though a socket that
+// resumes may hear of it again; a page showing the den doesn't keep it
+// from showing, since the event may be off its screen.
+func (h *Hub) Started(st Start) {
+	key := eventKey(st.Den, st.Event)
+	h.mu.Lock()
+	if _, had := h.shown[key]; had || !h.eventNotifiesLocked(st.Den) {
+		h.mu.Unlock()
+		return
 	}
+	rec := shown{den: st.Den, event: st.Event}
+	n := composeStart(st, h.settings.HideText)
+	switch at := h.deliverLocked(key, rec, n, shown{}, false); at {
+	case atSound:
+		h.log.Debugf("Nothing here shows a notification for event %s in den %s; a page sounded it", st.Event, st.Den)
+	case "":
+		h.log.Debugf("Nothing here shows a notification for event %s in den %s", st.Event, st.Den)
+	default:
+		h.log.Infof("Notified the member of event %s in den %s starting, through %s", st.Event, st.Den, at)
+	}
+}
+
+// EventOver takes back an event's notification, as it ends or goes.
+func (h *Hub) EventOver(den, event string) {
+	h.clear(func(s shown) bool { return s.den == den && s.event == event })
 }
 
 // placeOf is the place named at, or one that does nothing.
@@ -730,7 +821,7 @@ func (h *Hub) withdraw(gone []shown) {
 	byPlace := map[string][]string{}
 	for _, s := range gone {
 		if s.at != "" {
-			byPlace[s.at] = append(byPlace[s.at], s.den+"/"+s.channel)
+			byPlace[s.at] = append(byPlace[s.at], s.key())
 		}
 	}
 	for at, keys := range byPlace {
@@ -748,10 +839,10 @@ func (h *Hub) withdraw(gone []shown) {
 
 // Cleared takes back the notifications of a den's channel, or with channel
 // "" all of the den's, for messages up to through: the member read them, or
-// the den no longer keeps them.
+// the den no longer keeps them. An event's stays.
 func (h *Hub) Cleared(den, channel, through string) {
 	h.clear(func(s shown) bool {
-		return s.den == den && (channel == "" || s.channel == channel) && compareIDs(s.message, through) <= 0
+		return s.den == den && s.event == "" && (channel == "" || s.channel == channel) && compareIDs(s.message, through) <= 0
 	})
 }
 
@@ -834,6 +925,21 @@ func compose(m Message, hideText bool) Notification {
 		n.Text = "Sent " + strconv.Itoa(m.Files) + " files"
 	default:
 		n.Text = "Sent you a message"
+	}
+	return n
+}
+
+// composeStart is an event's notification as it starts: its name, and
+// that it's live, and where, unless the member hides the text and its
+// maker wrote the place, which a voice channel's name isn't.
+func composeStart(st Start, hideText bool) Notification {
+	n := Notification{Key: eventKey(st.Den, st.Event), Den: st.Den, DenName: st.DenName, Event: st.Event,
+		Title: st.Name, Text: "Live now", Path: "/den/" + st.Den + "/events#event=" + st.Event}
+	switch {
+	case st.Channel != "":
+		n.Text = "Live now in " + st.Channel
+	case st.Place != "" && !hideText:
+		n.Text = "Live now: " + denproto.Plain(st.Place, TextLimit)
 	}
 	return n
 }

@@ -16,6 +16,7 @@ import (
 type notices struct {
 	mu       sync.Mutex
 	messages []notify.Message
+	starts   []notify.Start
 	said     []string
 }
 
@@ -23,6 +24,12 @@ func (n *notices) Message(m notify.Message) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.messages = append(n.messages, m)
+}
+
+func (n *notices) Started(st notify.Start) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.starts = append(n.starts, st)
 }
 
 func (n *notices) note(format string, args ...any) {
@@ -33,6 +40,7 @@ func (n *notices) note(format string, args ...any) {
 
 func (n *notices) Cleared(den, channel, through string) { n.note("cleared %s %s", channel, through) }
 func (n *notices) Deleted(den, channel, message string) { n.note("deleted %s %s", channel, message) }
+func (n *notices) EventOver(den, event string)          { n.note("over %s", event) }
 func (n *notices) ChannelGone(den, channel string)      { n.note("gone %s", channel) }
 func (n *notices) Forgot(den string)                    { n.note("forgot") }
 

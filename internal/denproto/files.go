@@ -83,14 +83,17 @@ const (
 
 // OwnFile is one of a member's files on a den, as they manage them (M5):
 // the file and what uses it. That's a message, with its channel and, in a
-// channel, the start of its text; a picture on their profile; or nothing
-// while it waits to be used. A DM's file is a sealed blob, whose message
-// comes in the page's Messages for the member's client to open.
+// channel, the start of its text; a picture on their profile; an event's
+// banner, by the event's ID (M17.4), which a Dens older than events takes
+// for a file waiting to be used; or nothing while it waits to be used. A
+// DM's file is a sealed blob, whose message comes in the page's Messages
+// for the member's client to open.
 type OwnFile struct {
 	File
 	MessageID string `json:"message_id,omitempty"`
 	ChannelID string `json:"channel_id,omitempty"`
 	Profile   string `json:"profile,omitempty"`
+	Event     string `json:"event,omitempty"`
 	Excerpt   string `json:"excerpt,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 }
@@ -126,6 +129,11 @@ func CheckOwnFiles(p OwnFiles) error {
 		}
 		if f.Profile != "" && (onMessage || f.Profile != ProfileAvatar && f.Profile != ProfileBanner) {
 			return errors.New("a file is used in two places")
+		}
+		if f.Event != "" {
+			if _, err := ParseID(f.Event); err != nil || onMessage || f.Profile != "" {
+				return errors.New("a file names an invalid event")
+			}
 		}
 		if f.Excerpt != "" && (!onMessage || utf8.RuneCountInString(f.Excerpt) > ReplyExcerpt) {
 			return errors.New("a file has an invalid excerpt")
