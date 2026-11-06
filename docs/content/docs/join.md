@@ -12,17 +12,26 @@ starting with `dens1:`.
 
 1. Open Dens (`dens open`) and choose **Add a den**.
 2. Paste the invite, and choose **Join as someone new**.
-3. Pick a username, a display name and a password for this den.
+3. Pick a username, a display name and a password for this den. The username
+   can't change, so pick one you'll keep.
 4. Save your recovery codes and your DM recovery key somewhere safe, such as a
    password manager. The next section says what they're for.
 
-Your **username** is how people mention you, and it can't change, so pick one
-you'll keep: 2 to 32 characters, from lowercase letters, numbers and `_`. Your
-**display name** is what people see, and you can change it any time. You have a
-separate profile in each den, and no den can link it to your others.
+{{% details title="Usernames, display names and profiles" closed="true" %}}
 
-Each den has a **Den ID**, which everyone in it sees the same. Comparing it with
-someone already in the den tells you that you both joined the same one.
+Your **username** is how people mention you: 2 to 32 characters, from
+lowercase letters, numbers and `_`. Your **display name** is what people see,
+and you can change it any time. You have a separate profile in each den, and
+no den can link it to your others.
+
+{{% /details %}}
+
+{{% details title="Checking it's the den you meant" closed="true" %}}
+
+Each den has a **Den ID**, which everyone in it sees the same. Comparing it
+with someone already in the den tells you that you both joined the same one.
+
+{{% /details %}}
 
 ## Your passwords and keys
 
@@ -47,16 +56,21 @@ Every computer runs its own Dens. To use a den from a second one:
 2. Paste an invite to the den, even a used one, or the den's address. Choose
    **Sign in to my account there**.
 3. Enter your username and den password.
-4. Approve the sign-in from a device that's already in. Both screens show
-   digits, and you type each one's into the other. That proves the new device
-   is the one in front of you, and it hands over what the new device needs to
-   read your DMs.
+4. Approve the sign-in from a device that's already in: type the digits each
+   screen shows into the other.
 
 No other device at hand? Use a recovery code instead, then enter your DM
 recovery key to read your DMs.
 
 If a sign-in you didn't start asks for approval, refuse it, and change your den
 password: whoever asked has it.
+
+{{% details title="Why your devices approve each other" closed="true" %}}
+
+Typing each screen's digits into the other proves the new device is the one in
+front of you, and it hands over what the new device needs to read your DMs.
+
+{{% /details %}}
 
 **Forgot your den password?** Choose **Forgot your password? Use a recovery
 code** when signing in. You'll set a new password, and your other devices are
@@ -66,8 +80,12 @@ signed out.
 
 Each den has your profile in it: your display name, a few lines about you, a
 picture and a banner. Open it from your name at the foot of the den's channel
-list. Drag a picture around its frame and zoom it to choose what shows; what
-the file carries besides its pixels, such as where a photo was taken, stays on
+list.
+
+{{% details title="Pictures, and when they move" closed="true" %}}
+
+Drag a picture around its frame and zoom it to choose what shows; what the
+file carries besides its pixels, such as where a photo was taken, stays on
 your computer.
 
 A GIF or a WebP that moves keeps moving. Dens on your computer makes it into a
@@ -81,23 +99,29 @@ is over someone's message or name, and in a profile you open. It starts at On
 hover if your system asks for less motion. On a phone, On hover plays them only
 in profiles.
 
+{{% /details %}}
+
 ## Emoji
 
-The smiley in the message box picks an emoji. The ones you use most come
-first, then the den's own, then the usual ones by group, with a search over
-their names. ✋ at the top picks a skin tone, which your browser remembers.
+The smiley in the message box picks an emoji, or type a colon and two letters,
+like `:th`, for a list of those that match. A den's own emoji, which its
+moderators add, go by name between colons, like `:party_parrot:`.
 
-A den can have emoji of its own, which its moderators add. Write one by its
-name between colons, like `:party_parrot:`, and everyone sees the picture. In
-code, in a link, or with a name the den doesn't have, it stays as you typed it.
-If a moderator renames or deletes an emoji, the messages that used it show its
-name instead.
+{{% details title="More on emoji" closed="true" %}}
 
-Type a colon and two letters, like `:th`, and Dens lists the emoji that match.
-In a channel, `@` lists the people who can see it, and for moderators and the
-owner, `@everyone`, which lets everyone who can see the channel know. Up and
-down choose, Enter or Tab puts one in, and Esc closes the list; on a phone, tap
-one.
+In the picker, the ones you use most come first, then the den's own, then the
+usual ones by group, with a search over their names. ✋ at the top picks a skin
+tone, which your browser remembers.
+
+Write a den's emoji by its name and everyone sees the picture. In code, in a
+link, or with a name the den doesn't have, it stays as you typed it. If a
+moderator renames or deletes an emoji, the messages that used it show its name
+instead.
+
+In the list of matches, up and down choose, Enter or Tab puts one in, and Esc
+closes it; on a phone, tap one. In a channel, `@` lists the people who can see
+it, and for moderators and the owner, `@everyone`, which lets everyone who can
+see the channel know.
 
 A message of nothing but emoji, up to ten, shows them large, and the den's
 moving ones play as **Animations** says. Dens on your computer keeps a copy of
@@ -107,27 +131,37 @@ DM or anywhere else.
 The usual emoji are your system's, so they look the way they do everywhere else
 on your computer or phone. A phone too old for a newer one shows a box.
 
+{{% /details %}}
+
 ## Reactions
 
-React to a message with an emoji: point at it and click the smiley beside its
-**⋯**, or choose **Add reaction** from the **⋯** menu. Reactions show under the
-message, each emoji with how many picked it, yours highlighted. Click one to add
-yours or take it back, and point at it to see who reacted. **+** at the end of
-the row picks another. A message holds up to 20 different emoji, and reacting
-doesn't notify anyone.
+Point at a message and click the smiley beside its **⋯**, or choose **Add
+reaction** from the **⋯** menu; on a phone, press and hold the message. Click a
+reaction under a message to add yours or take it back.
 
-On a phone, press and hold a message: the six emoji you use most sit at the top
-of its menu, with **+** for the rest. Tap a reaction to add or take back yours,
-and press and hold it to see who reacted.
+{{% details title="More on reactions" closed="true" %}}
+
+Reactions show under the message, each emoji with how many picked it, yours
+highlighted. Point at one to see who reacted. **+** at the end of the row picks
+another. A message holds up to 20 different emoji, and reacting doesn't notify
+anyone.
+
+On a phone, the six emoji you use most sit at the top of a message's menu, with
+**+** for the rest. Tap a reaction to add or take back yours, and press and
+hold it to see who reacted.
 
 Moderators can take an emoji's reactions off a message in a channel. Reactions
 in a DM are end-to-end encrypted, like its messages: the den sees that yours
 changed, and when, but not what they are.
 
+{{% /details %}}
+
 ## Polls
 
 In a channel, **+** beside the message box has **Poll**. Write the question in
-the box, and 2 to 10 choices above it, then pick:
+the box and 2 to 10 choices above it, pick its rules, and send it.
+
+{{% details title="Its rules" closed="true" %}}
 
 - **Members may pick more than one**, or only one choice each.
 - **Runs for**: an hour to two weeks, a day at first. It can't be changed once
@@ -139,6 +173,10 @@ the box, and 2 to 10 choices above it, then pick:
   the poll**, so it shows once the poll ends; or **No**, so it shows beside
   the totals.
 
+{{% /details %}}
+
+{{% details title="Voting, and who sees what" closed="true" %}}
+
 A poll can't be edited, so nobody's vote ends up under a question they didn't
 answer. Vote by picking a choice and **Vote**. Where the totals show as votes
 come in, **Change vote** and **Remove vote** work until it ends. Where the poll
@@ -148,6 +186,8 @@ picked it.
 Anonymous voting keeps who voted for what from everyone in the den, its owner
 and the person who asked included. The den itself still knows, since it counts
 each person's vote once and lets them change it. DMs have no polls.
+
+{{% /details %}}
 
 ## Direct messages
 
@@ -160,17 +200,9 @@ slip in keys of its own. To be sure it didn't, compare codes.
 
 ### Comparing codes
 
-Each of you has a code in each den, 20 digits, the same for everyone who
-compares with you. Open the lock beside the person's name in the DM, or
-**Compare codes** on their profile, read your code out to them, and type
-theirs as they read it out. If both match, nobody sits between you, and a
-check shows beside their name, on your other devices too within the hour.
-Comparing is up to you, any time, and the den never learns whether you did.
-Your own code is in the den's **Manage**, under **Your code**.
-
-Calls are end-to-end encrypted too, with the same codes: the lock beside a call
-shows yours, and everyone in the call, to compare with right there. A
-comparison holds wherever you meet them after, in DMs, groups and calls.
+Open the lock beside the person's name in the DM, or **Compare codes** on their
+profile. Read your code out to them, and type theirs as they read it out. If
+both match, nobody sits between you, and a check shows beside their name.
 
 Compare somewhere the den can't reach, best first:
 
@@ -182,82 +214,117 @@ Compare somewhere the den can't reach, best first:
 4. On several other services where you know the accounts are really theirs.
 5. In a den neither of you owns, which could change what you see there.
 
-Be wary of "I'm @them over there, let's compare there": a tampered den can
-pretend to be someone elsewhere too, so compare where you know who you're
-talking to. Hosting your own den narrows that risk, but nothing removes it.
 If the digits don't match, someone may be in the middle: don't trust the DM
 until you've compared somewhere else.
 
-If someone's keys change, as when they reset their DM recovery key, the DM says
-so where it happened, and their check goes. If you'd compared codes with
-them, the DM waits until you compare again, or choose **Send anyway**.
+{{% details title="Beware of “let's compare over there”" closed="true" %}}
+
+Be wary of "I'm @them over there, let's compare there": a tampered den can
+pretend to be someone elsewhere too, so compare where you know who you're
+talking to. Hosting your own den narrows that risk, but nothing removes it.
+
+{{% /details %}}
+
+{{% details title="Your code, calls and the check" closed="true" %}}
+
+Each of you has a code in each den, 20 digits, the same for everyone who
+compares with you. Your own code is in the den's **Manage**, under **Your
+code**. Comparing is up to you, any time, and the den never learns whether you
+did. A check shows on your other devices too, within the hour.
+
+Calls are end-to-end encrypted too, with the same codes: the lock beside a call
+shows yours, and everyone in the call, to compare with right there. A
+comparison holds wherever you meet them after, in DMs, groups and calls.
 
 Whether the check shows beside people in lists is up to you, under
 **Settings** → **Appearance** → **Verified status**: always, only while the
 pointer is over them, which is how it starts, or not at all; on a phone, shown
 or not, which is how it starts.
 
+{{% /details %}}
+
+{{% details title="When someone's keys change" closed="true" %}}
+
+If someone's keys change, as when they reset their DM recovery key, the DM says
+so where it happened, and their check goes. If you'd compared codes with
+them, the DM waits until you compare again, or choose **Send anyway**.
+
 A DM with someone whose Dens hasn't been updated waits until it is. DMs where
 you both typed each other's check digits, as Dens once asked, go on as they
 did.
+
+{{% /details %}}
 
 ### Group DMs
 
 A group DM is a DM of three to ten people, end-to-end encrypted as a DM is:
 only its members can read it, not the den. Start one from **+ New group** above
-your DMs, picking the others, or from **Add people** on the profile beside a
-DM, which starts a group of the two of you and those you add and leaves the DM
-as it is. Give it a name if you like; without one, it's named by its members.
-Only its members ever see the name: the den keeps it sealed.
+your DMs, or from **Add people** on the profile beside a DM. Someone added
+reads it from when they joined, not before, and someone removed, or who left,
+reads nothing written after.
+
+{{% details title="Who can change a group" closed="true" %}}
 
 The group's members show beside it, where a DM shows the other person's
-profile, each with their check or **Compare**. Anyone in it can add
-people, rename it or leave. Whoever made it can remove people, and once they've
-left, whoever has been in it longest can. Each change shows in the group as a
-line, such as "Alice added Carol".
+profile, each with their check or **Compare**. Anyone in it can add people,
+rename it or leave. Whoever made it can remove people, and once they've left,
+whoever has been in it longest can. Each change shows in the group as a line,
+such as "Alice added Carol".
 
-Someone added reads the group from when they joined, not before, and someone
-removed, or who left, reads nothing written after. Each change is signed by the
-member who made it, and every member's Dens checks it, so the den can't add
-anyone on its own. If a change doesn't check out, the group says someone may be
-in the middle, and nothing more is sent there. If someone's keys changed since
-you compared codes with them, the group waits, as a DM does, until you compare
-again or choose **Send anyway**.
+Each change is signed by the member who made it, and every member's Dens checks
+it, so the den can't add anyone on its own. If a change doesn't check out, the
+group says someone may be in the middle, and nothing more is sent there. If
+someone's keys changed since you compared codes with them, the group waits, as
+a DM does, until you compare again or choose **Send anyway**.
+
+{{% /details %}}
+
+{{% details title="Names, and what groups don't have" closed="true" %}}
+
+**Add people** starts a group of the two of you and those you add, and leaves
+the DM as it is. Give a group a name if you like; without one, it's named by its
+members. Only its members ever see the name: the den keeps it sealed.
 
 Group DMs notify you, and count as unread, as DMs do. They have no polls and no
 @everyone, and no calls. A device whose Dens hasn't been updated yet doesn't
 see your groups until it is; your other devices go on as before.
 
+{{% /details %}}
+
 ### Disappearing messages
 
 Anyone in a DM or a group DM can have its messages disappear 1 hour, 1 day, 1
 week or 4 weeks after they're sent: pick a time under **Disappearing
-messages**, on the profile beside a DM or below a group's members. It applies
-to messages sent from then on, and a line in the conversation says who set it,
-and when. The time shows beside the lock at the top, and a small clock beside
-each message that will disappear, which says when.
+messages**, on the profile beside a DM or below a group's members. When its
+time comes, a message is gone from the den and from everyone's devices, with
+its photos and files. Anyone in the conversation can still copy or screenshot
+it before then.
 
-When its time comes, a message is gone from the den and from everyone's
-devices, with its photos and files, even on a device that's offline at the
-time. Anyone in the conversation can still copy or screenshot it before then,
-and a device whose Dens hasn't been updated yet only lets it go once it's back
-in touch with the den.
+{{% details title="More on disappearing messages" closed="true" %}}
+
+The time applies to messages sent from then on, and a line in the conversation
+says who set it, and when. It shows beside the lock at the top, and a small
+clock beside each message that will disappear says when.
+
+A message goes even from a device that's offline at the time. A device whose
+Dens hasn't been updated yet only lets it go once it's back in touch with the
+den.
+
+{{% /details %}}
 
 ## Notifications and sounds
 
-Dens can tell you about a DM, or a message that mentions you by your username.
-Nothing notifies you until you turn it on: open **Settings**, then
+Dens can tell you about a DM, or a message that mentions your username, but
+nothing notifies you until you turn it on: open **Settings**, then
 **Notifications & sounds**, and turn on **Direct messages**, **Mentions**, or
-both. The settings live in Dens on your computer, so every browser you use it
-with shares them.
+both. Then the bell beside a den's name mutes the whole den, and the bell at
+the top of a channel or DM mutes just that one.
 
-Moderators and the owner can write `@everyone` in a channel, which notifies
-everyone who can see it, as a mention does. If that's too much, turn off
-**@everyone**, under **Mentions**: it stops the notifications and their sound,
-though those messages still count among your mentions. Muting the den or the
-channel silences it too.
+A notification shows the start of the message, a DM's too, to anyone who can
+see your screen, or your phone's lock screen. Turn off **Show the message** and
+it says only who sent one. Spoilers never show.
 
-Where they show depends on what's open:
+{{% details title="Where they show" closed="true" %}}
 
 - **A Dens tab, anywhere in your browser.** Turning one on asks the browser to
   let Dens show notifications; say yes. Clicking one brings the tab forward at
@@ -274,22 +341,32 @@ Where they show depends on what's open:
 
 Nothing shows for a channel Dens has open on your screen, and reading a channel
 on any of your devices clears its notification everywhere. A busy DM is one
-notification, with its newest message.
+notification, with its newest message. The settings live in Dens on your
+computer, so every browser you use it with shares them.
 
-Once they're on, the bell beside a den's name mutes the whole den, and the bell
-at the top of a channel or DM mutes just that one.
+{{% /details %}}
 
-A notification shows the start of the message, a DM's too, to anyone who can
-see your screen, or your phone's lock screen. Turn off **Show the message** and
-it says only who sent one. Spoilers never show.
+{{% details title="@everyone" closed="true" %}}
+
+Moderators and the owner can write `@everyone` in a channel, which notifies
+everyone who can see it, as a mention does. If that's too much, turn off
+**@everyone**, under **Mentions**: it stops the notifications and their sound,
+though those messages still count among your mentions. Muting the den or the
+channel silences it too.
+
+{{% /details %}}
 
 ### Sounds
 
 Dens plays a short sound for a DM or a mention, and in a call as someone joins
-or leaves, you included, as someone starts or stops sharing their screen, and
-as your microphone turns on and off, whether you mute, push to talk, deafen, or
-a moderator mutes you. Each is on until you turn it off, under **Sounds** in the
-same settings, where ▶ plays it and the slider sets how loud it is.
+or leaves, starts or stops sharing their screen, and as your microphone turns
+on and off. Each is on until you turn it off, under **Sounds** in the same
+settings, where ▶ plays it and the slider sets how loud it is.
+
+{{% details title="How they play" closed="true" %}}
+
+Your microphone's sounds play whether you mute, push to talk, deafen, or a
+moderator mutes you, and the call's play as you join or leave too.
 
 - **A message makes one sound.** With a notification in your browser, Dens's
   sound plays and the browser's own stays quiet. Turning off **Direct
@@ -305,18 +382,27 @@ same settings, where ▶ plays it and the slider sets how loud it is.
 - A browser lets a page play sound only once you've clicked in it, so a Dens tab
   you haven't touched since it opened plays none.
 
+{{% /details %}}
+
+{{% details title="Sounds of your own" closed="true" %}}
+
 **Replace…** swaps a sound for a file of your own: audio that plays in your
 browser, such as an MP3, Ogg or WAV file, of at most 1 MiB and 10 seconds.
 **Reset** brings back Dens's. Your file stays in Dens on your computer, for
 every browser you use it with; it never goes to a den, and a backup holds it.
 
+{{% /details %}}
+
 ## The soundboard
 
 A den can have a soundboard: short sounds its moderators add, which anyone in a
 call plays for everyone in it. In a call, the pads button beside the call's
-other buttons opens it, at the foot of the den's channel list, on your home
-page, or in the bar at the top of a channel on a phone. Search for a sound by
-name, and tap one to play it.
+other buttons opens it. Search for a sound by name, and tap one to play it.
+
+{{% details title="How it plays" closed="true" %}}
+
+The pads button is at the foot of the den's channel list, on your home page,
+and in the bar at the top of a channel on a phone.
 
 - **Everyone in the call hears it at once,** through the call, as they hear
   you, and someone joining partway hears the rest. Your ring lights up while
@@ -330,15 +416,20 @@ name, and tap one to play it.
 - **A long sound can't be stopped**, except by the person who played it
   leaving the call. Turn the slider down if you'd rather not hear it.
 
+{{% /details %}}
+
 Moderators and the owner add sounds from the den's **Manage**, under
 **Soundboard**; see [Host a den](../host/#running-the-den).
 
 ## Leaving
 
 Open the den's **Manage**, from the den's name at the top of its channel list,
-and choose **Leave den** at the bottom. You can come
-back with a new invite, as yourself: join with your old username and den
-password, and your history comes back with you, along with new recovery codes.
+and choose **Leave den** at the bottom. You can come back with a new invite, as
+yourself: join with your old username and den password.
+
+{{% details title="Coming back, and a den that's gone" closed="true" %}}
+
+Coming back, your history comes back with you, along with new recovery codes.
 
 Leaving needs the den to answer. If Dens can't reach it, because its server
 is gone for good, say, **Leave den** offers **Remove from this computer**
@@ -346,3 +437,5 @@ instead. That deletes your keys for the den on this computer, and the
 messages and files it kept, without the den hearing of it: your account
 stays there. If the den comes back, sign in again from **Add a den**, with its
 address, your username and your den password.
+
+{{% /details %}}

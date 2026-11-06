@@ -14,7 +14,7 @@ the den from your own computer, as its owner.
 ## What you need
 
 - **A Linux machine that stays on**, running one of the distributions
-  [Dens installs on](../install/#what-it-runs-on). Debian 13 is a good pick
+  [Dens installs on](../install/linux/#what-it-needs). Debian 13 is a good pick
   for a server. A container on Proxmox or Incus works too.
 - **SSH access** to it, with an account that can use `sudo`, or as root.
 - **Your domain and your router**, as in [Host a den](../host/). On a rented
@@ -25,7 +25,7 @@ the den from your own computer, as its owner.
 ### Install Dens on the server
 
 Over SSH, as your own account, download the installer and run it with
-`sudo`, as on any Linux ([Install](../install/)):
+`sudo`, as on any Linux ([Install](../install/linux/)):
 
 ```sh
 curl -fsSLO https://releases.dens.chat/install.sh
@@ -273,4 +273,4 @@ home that's in the den.
 - **Logs.** `dens logs` saves the newest logs into the folder you're in, to
   send with a problem, and `dens logs --level debug` has them say the most,
   calls in detail, until you set it back with `--level warn`
-  ([Sending logs](../install/#sending-logs)).
+  ([Sending logs](../logs/)).

@@ -91,8 +91,9 @@ Dens runs on both, but Linux locks it down further.
   root can read. On Windows, only file permissions protect it, so anything
   running as admin can read it.
 - Dens's Windows files aren't signed with a certificate Windows recognizes.
-  The signature check in [Install](../install/) is what proves they're Dens's.
-- [The Flatpak](../install/#the-flatpak) runs as you, not as an account of
+  The signature check in [Install](../install/windows/) is what proves they're
+  Dens's.
+- [The Flatpak](../install/flatpak/) runs as you, not as an account of
   its own, so programs you run can read its files, and the key it keeps if you
   tick **Remember on this computer**. Without that key, its data opens only
   with your local password. Other Flatpak apps can't reach any of it.
