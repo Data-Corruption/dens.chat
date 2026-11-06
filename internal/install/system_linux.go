@@ -80,9 +80,11 @@ func (linuxSystem) Preflight() error {
 	return checkLXCDropIn("/")
 }
 
-// flatpakGuide is the install guide's section on the Flatpak, which runs
-// on the distributions the installer refuses (M9.4).
-const flatpakGuide = "https://dens.chat/docs/install/#the-flatpak"
+// flatpakGuide is the install guide's page for the Flatpak, which runs on
+// the distributions the installer refuses (M9.4). Releases before M17.1
+// link /docs/install/#the-flatpak, which lands on the guide's choice of
+// platform, the Flatpak among them.
+const flatpakGuide = "https://dens.chat/docs/install/flatpak/"
 
 // checkDistribution refuses the distributions an install would fail on
 // halfway, on a path it writes that they keep read-only, before anything

@@ -1,8 +1,9 @@
 name: Docs
 
-# Builds the Hugo docs site and deploys it to Cloudflare Workers
-# Static Assets when DOCS_ENABLED is true. Pushes run for the paths below;
-# workflow_dispatch also allows manual deployment.
+# Builds the Hugo docs site and tests it (scripts/test.sh -docs) on pushes to
+# main and on PRs that change it, and deploys it from main to Cloudflare
+# Workers Static Assets, when DOCS_ENABLED is true. workflow_dispatch also
+# builds it, and deploys it when run on main.
 # Set the worker name in docs/wrangler.jsonc and site URL in docs/hugo.yaml.
 # Follow docs/DEPLOYMENT.md before enabling deployment.
 
@@ -12,6 +13,16 @@ on:
     paths:
       - 'docs/**'
       - '!docs/dev/**'
+      - 'scripts/test.sh'
+      - 'scripts/vendor.sh'
+      - 'scripts/build/common.sh'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - '!docs/dev/**'
+      - 'scripts/test.sh'
       - 'scripts/vendor.sh'
       - 'scripts/build/common.sh'
       - '.github/workflows/docs.yml'
@@ -21,8 +32,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: docs
-  cancel-in-progress: false
+  # Deploys from main wait their turn, never canceled. Each PR's runs are a
+  # group of their own, so a PR never cancels a deploy waiting to start,
+  # and its newer commit replaces its older run.
+  group: docs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci-gate:
@@ -44,7 +58,7 @@ jobs:
             echo "::notice::Documentation deployment is disabled. Set the DOCS_ENABLED repository variable to true to build and deploy the documentation."
           fi
 
-  deploy:
+  site:
     needs: ci-gate
     if: ${{ needs.ci-gate.outputs.enabled == 'true' }}
     runs-on: ubuntu-latest
@@ -53,34 +67,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
+      # The site's module and the app's share a Go version; the test of the
+      # site's icon is the app's.
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version-file: docs/go.mod
-          cache-dependency-path: docs/go.sum
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            docs/go.sum
 
-      # Version and hash live in scripts/vendor.sh with every other pin.
-      - name: Install Hugo
-        run: |
-          set -euo pipefail
-          hugo_bin=$(./scripts/vendor.sh hugo | sed -n 's/^hugo=//p')
-          [[ -n "$hugo_bin" && -x "$hugo_bin" ]] || {
-            echo "vendor.sh returned no executable Hugo path" >&2
-            exit 1
-          }
-          dirname "$hugo_bin" >> "$GITHUB_PATH"
-
-      - name: Build site
-        working-directory: docs
-        env:
-          HUGO_ENV: production
-          HUGO_ENVIRONMENT: production
-        run: |
-          go mod download
-          go mod verify
-          hugo --gc --minify --panicOnWarning
+      # Hugo's version and hash live in scripts/vendor.sh with every other
+      # pin. The build fails on any warning, and the site's icon must be
+      # the app's mark.
+      - name: Build and test the site
+        run: ./scripts/test.sh -docs
 
       - name: Deploy to Cloudflare
+        if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
         working-directory: docs
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

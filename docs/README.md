@@ -44,17 +44,22 @@ Documentation is under `content/docs/`; directory structure and front-matter
 weights define the Hextra sidebar. Site configuration and top navigation is in
 `hugo.yaml`, and small theme overrides belong in `assets/css/custom.css`.
 
-Run the production build before publishing:
+Run the production build before publishing, from the repository root, as the
+Docs workflow does:
 
 ```sh
-go mod verify
-HUGO_ENV=production HUGO_ENVIRONMENT=production \
-  hugo --gc --minify --panicOnWarning
+./scripts/test.sh -docs
 ```
 
-The build writes to `out/`. `refLinksErrorLevel: ERROR` and
+It verifies the modules and builds with the pinned Hugo into a cleared `out/`,
+as `hugo --gc --minify --panicOnWarning` in production, and fails on code the
+highlighter marks as an error, as it does an unquoted URL in PowerShell; then
+it checks the site's icon is the app's mark. `refLinksErrorLevel: ERROR` and
 `--panicOnWarning` make unresolved Hugo references and build warnings fail.
-Hugo does not check arbitrary external links.
+Hugo does not check arbitrary external links; the browser checks' `site`
+check walks the install guide at a phone's width and a desktop's, and checks
+the links on its pages and those the app carries into the guides
+(`scripts/test/browser/drive-site.mjs`).
 
 Hextra is pinned in `go.mod` and verified by `go.sum`. To update it, choose a
 released version, run `hugo mod get github.com/imfing/hextra@<version>`, verify
@@ -62,10 +67,11 @@ the modules, inspect the diff, and rebuild.
 
 ## Deployment
 
-[`.github/workflows/docs.yml`](../.github/workflows/docs.yml) builds and deploys
-`out/` to Cloudflare Workers Static Assets when the repository variable
-`DOCS_ENABLED` is exactly `true`. It runs on pushes to `main` that change the
-site, workflow, or listed build dependencies, and can also be run manually.
+[`.github/workflows/docs.yml`](../.github/workflows/docs.yml) builds the site
+with `./scripts/test.sh -docs` on pushes to `main` and on pull requests that
+change the site, workflow, or listed build dependencies, and deploys `out/` to
+Cloudflare Workers Static Assets from `main` alone, when the repository
+variable `DOCS_ENABLED` is exactly `true`. It can also be run manually.
 
 Before enabling it, add the Cloudflare repository secrets.
 [DEPLOYMENT.md](DEPLOYMENT.md) gives the complete setup, local deployment and

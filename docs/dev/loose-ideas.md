@@ -13,10 +13,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - Bookmarks, per member and per den, so a den's bookmarks always resolve against that den. Maybe bookmarks bypass the cache limit cause opening them and missing could result in non contiguous random reads across a channels.
 - Search (a different algorithm than Discord's. Exact match + fuzzy? Future AI metadata generation?)
 - Custom themes, image backgrounds, etc.
-- Marking uploaded media as a spoiler.
-- Onboarding in the page's own first steps, with simple, careful explanations tried on people who haven't seen Dens.
-- Moderators can drag other members from one voice channel into another with mouse (desktop).
-- Den channels can be reordered via dragging with mouse (desktop).
+- Onboarding in the page's own first steps: a few screens the first time someone uses Dens, each saying in a line what's unusual about it (the local password and den passwords, recovery codes, the DM recovery key, approving a device, who can read what) and linking the guide, their words tried on people who haven't seen Dens. Until then the page's links to the guides stand in for it (design.md's Public site).
 - x.com and reddit embeds
 - TPM binding for the Windows data key.
 - Optional TOTP on the password fallback.

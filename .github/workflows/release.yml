@@ -4,9 +4,12 @@ name: Release
 # tests pass, ci.sh --execute publishes the release or finishes an interrupted
 # attempt, in the android environment, whose key signs the Android app's APK,
 # and then ci.sh --flatpak publishes the promoted release's Flatpak, in the
-# flatpak environment. PRs always run validation and never publish. Before the first
-# release (no CHANGELOG.md heading and no version tag), pushes to main get the
-# same validation as PRs and publish nothing.
+# flatpak environment. On PRs, ci.sh --plan-pr picks the test jobs by the
+# files the PR changes: none for docs alone, every job for the media
+# module's inputs or CI's own files, and all but the media module's two for
+# anything else. PRs never publish. Before the first release (no
+# CHANGELOG.md heading and no version tag), pushes to main get every test job
+# and publish nothing.
 #
 # A version that already has a Git tag skips the broad test suites. Changed
 # installers still get tested before publication. Retrying an older release
@@ -75,12 +78,15 @@ jobs:
       contents: read
     outputs:
       e2e_required: ${{ steps.plan.outputs.e2e_required }}
+      media_required: ${{ steps.plan.outputs.media_required }}
       installer_tests_required: ${{ steps.plan.outputs.installer_tests_required }}
       release_required: ${{ steps.plan.outputs.release_required }}
     steps:
       - name: Checkout
-        if: ${{ github.event_name == 'push' }}
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # A PR's merge commit and its parents, which its plan compares.
+          fetch-depth: 2
 
       - name: Install pinned rclone
         if: ${{ github.event_name == 'push' }}
@@ -104,10 +110,10 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: |
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # PRs need neither release credentials nor a changelog heading.
-            echo "e2e_required=true" >> "$GITHUB_OUTPUT"
-            echo "installer_tests_required=false" >> "$GITHUB_OUTPUT"
-            echo "release_required=false" >> "$GITHUB_OUTPUT"
+            # A PR's plan reads only the files it changes, so it gets
+            # neither the release credentials nor a changelog heading.
+            env -u R2_ACCESS_KEY_ID -u R2_SECRET_ACCESS_KEY -u R2_ACCOUNT_ID -u R2_BUCKET \
+              ./scripts/ci.sh --plan-pr
           else
             ./scripts/ci.sh --plan
           fi
@@ -355,10 +361,11 @@ jobs:
 
   # The media module: regenerates it from its pinned inputs and fails if the
   # committed translation differs, and has exiftool look for anything
-  # personal left in stripped copies.
+  # personal left in stripped copies. A PR runs it only when it changes the
+  # module's inputs or CI's own files; a push, always.
   media-module:
     needs: release-plan
-    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    if: ${{ needs.release-plan.outputs.media_required == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -387,10 +394,11 @@ jobs:
   # Fuzzes the media driver in the module and natively under
   # AddressSanitizer, beside the other jobs, for long enough that it ends
   # about when they do. Inputs that fail are kept as an artifact; go test
-  # reruns them once they're in testdata/fuzz.
+  # reruns them once they're in testdata/fuzz. It runs when media-module
+  # does.
   media-fuzz:
     needs: release-plan
-    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    if: ${{ needs.release-plan.outputs.media_required == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

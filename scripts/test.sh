@@ -6,6 +6,7 @@
 #   ./scripts/test.sh                              # race-enabled Go tests
 #   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
 #   ./scripts/test.sh -js                          # the page's tests on the pinned Node
+#   ./scripts/test.sh -docs                        # the site built as the Docs workflow builds it, and its icon checked
 #   ./scripts/test.sh -release                     # release state machine
 #   ./scripts/test.sh -e2e [lifecycle options]     # Linux lifecycle E2E
 #   ./scripts/test.sh -den-e2e [options]           # Linux den E2E: join through Caddy
@@ -30,6 +31,7 @@ Usage: ./scripts/test.sh [mode]
 With no argument, run the race-enabled Go test suite.
   -lint     Run the pinned shellcheck over every shell script
   -js       Run the page's tests on the pinned Node
+  -docs     Build the site as the Docs workflow does, failing on any warning, and check its icon is the app's mark
 EOF
   cat <<'EOF'
   -release  Test the release publication state machine
@@ -188,6 +190,35 @@ run_release_tests() {
   bash scripts/test-release.sh
 }
 
+# run_docs_tests builds the site into docs/out as the Docs workflow does
+# before it deploys, with the pinned Hugo, failing on any warning or on code
+# its highlighter marks as an error, as an unquoted URL in PowerShell is; then
+# runs the one Go test that reads the site: its icon is the app's mark. The
+# build clears docs/out first, so a page since removed is neither checked
+# nor deployed.
+run_docs_tests() {
+  local hugo_bin
+  hugo_bin=$(./scripts/vendor.sh hugo | sed -n 's/^hugo=//p')
+  if [[ -z "$hugo_bin" || ! -x "$hugo_bin" ]]; then
+    printf "error: vendor.sh returned no executable Hugo path\n" >&2
+    exit 1
+  fi
+  (
+    cd docs
+    go mod download
+    go mod verify
+    HUGO_ENV=production HUGO_ENVIRONMENT=production "$hugo_bin" --gc --minify --panicOnWarning --cleanDestinationDir
+  )
+  local marked
+  marked=$(grep -rlE 'class="?err[" >]' docs/out --include='*.html' || true)
+  if [[ -n "$marked" ]]; then
+    printf "error: the highlighter marked code as an error in:\n%s\n" "$marked" >&2
+    exit 1
+  fi
+  go test -count=1 -run '^TestMarkCopiesAreTheMark$' ./internal/build
+  printf '🟢 Built the site, and its icon is the mark\n'
+}
+
 # run_android_build builds the Android app as CI's android-build job does,
 # with no emulator: Go vetted for Android, whose _android.go seams nothing
 # else compiles; the development APKs, which compile the shell and check its
@@ -224,6 +255,10 @@ case "$mode" in
     require_no_args "-js" "$@"
     run_js_tests
     ;;
+  -docs)
+    require_no_args "-docs" "$@"
+    run_docs_tests
+    ;;
   -release)
     require_no_args "-release" "$@"
     run_release_tests
@@ -254,6 +289,7 @@ case "$mode" in
     run_go_tests
     run_shell_lint
     run_js_tests
+    run_docs_tests
     run_release_tests
     run_android_build
     run_lifecycle_e2e

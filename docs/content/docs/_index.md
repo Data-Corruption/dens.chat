@@ -14,7 +14,7 @@ computer too, and opens it in their browser.
 
 ## The guides
 
-- [Install](install/): putting Dens on Linux or Windows, or its Flatpak on
+- [Install](install/): putting Dens on Windows or Linux, or its Flatpak on
   other Linux distributions, updating it and removing it.
 - [Android](android/): the app for your phone, installing it, keeping it
   connected, and its updates.
@@ -28,3 +28,4 @@ computer too, and opens it in their browser.
   computer, and handing a den on.
 - [Privacy](privacy/): who can read what, and what Dens doesn't protect you
   from.
+- [Sending logs](logs/): what to send when something goes wrong.
