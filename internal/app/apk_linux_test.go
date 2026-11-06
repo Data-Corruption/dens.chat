@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -180,7 +181,7 @@ func checkNow(t *testing.T, a *App) {
 	if err := a.CheckForUpdate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	a.readyAndroidUpdate(context.Background())
+	_ = a.readyAndroidUpdate(context.Background(), false)
 }
 
 // The Android app's updater downloads a newer release's APK, checked
@@ -362,7 +363,7 @@ func TestAndroidUpdaterRefuses(t *testing.T) {
 	host.set("v99.0.3-e2e", apkName(), []byte("not the APK the checksums name"))
 	refusing := androidApp(t, filepath.Join(t.TempDir(), "files"), "v99.0.1-e2e", server.URL, host.sigstore.Root())
 	checkNow(t, refusing)
-	refusing.readyAndroidUpdate(context.Background())
+	_ = refusing.readyAndroidUpdate(context.Background(), false)
 	host.mu.Lock()
 	apkFetches := 0
 	for _, p := range host.asked {
@@ -376,7 +377,7 @@ func TestAndroidUpdaterRefuses(t *testing.T) {
 	}
 	refusing.apk.refusedAt = time.Now().Add(-UpdateCheckInterval)
 	host.set("v99.0.3-e2e", apkName(), apk)
-	refusing.readyAndroidUpdate(context.Background())
+	_ = refusing.readyAndroidUpdate(context.Background(), false)
 	if r, ok := refusing.ReadyUpdate(); !ok || r.Version != "v99.0.3-e2e" {
 		t.Fatalf("a day later, the fixed release isn't ready: %+v, %v", r, ok)
 	}
@@ -387,6 +388,64 @@ func TestAndroidUpdaterRefuses(t *testing.T) {
 	checkNow(t, newer)
 	if r, ok := newer.ReadyUpdate(); ok {
 		t.Fatalf("an older release was offered: %+v", r)
+	}
+}
+
+// The member's Check now, from the Android app's settings (M17.2), asks
+// the release host whatever the daily checks are set to, answers that
+// there's no update where this build is the newest, and otherwise
+// answers once the newer release's APK is downloaded and checked, ready to
+// install; one that doesn't check out is refused, and tried again at the
+// member's next Check now rather than a day later.
+func TestCheckNowReadiesTheUpdateAtOnce(t *testing.T) {
+	host, server := newReleaseHost(t)
+	apk := []byte("the APK of v99.0.2")
+	host.publish("v99.0.1-e2e", apk, testSigner)
+	a := androidApp(t, filepath.Join(t.TempDir(), "files"), "v99.0.1-e2e", server.URL, host.sigstore.Root())
+	if _, err := config.Update(a.DB, func(c *types.Configuration) error {
+		c.BackgroundUpdateChecks = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	shell := &shellRecorder{}
+	a.SetUpdateShell(shell)
+	ctx := context.Background()
+	if ready, err := a.CheckNow(ctx); err != nil || ready != "" {
+		t.Fatalf("with this build the newest, Check now found %q, %v", ready, err)
+	}
+
+	host.publish("v99.0.2-e2e", apk, testSigner)
+	host.set("v99.0.2-e2e", apkName(), []byte("not the APK the checksums name"))
+	if ready, err := a.CheckNow(ctx); !errors.Is(err, ErrUpdateRefused) || ready != "" {
+		t.Fatalf("an APK unlike its checksums gave %q, %v", ready, err)
+	}
+	host.set("v99.0.2-e2e", apkName(), apk)
+	ready, err := a.CheckNow(ctx)
+	if err != nil || ready != "v99.0.2-e2e" {
+		t.Fatalf("Check now after the release was fixed found %q, %v", ready, err)
+	}
+	if r, ok := a.ReadyUpdate(); !ok || r.Version != "v99.0.2-e2e" {
+		t.Fatalf("the update isn't ready to install: %+v, %v", r, ok)
+	}
+	if told, _ := shell.told(); len(told) != 1 || told[0].Version != "v99.0.2-e2e" {
+		t.Fatalf("the shell was told of %+v", told)
+	}
+	// It's ready already: another Check now downloads nothing more.
+	host.mu.Lock()
+	host.asked = nil
+	host.mu.Unlock()
+	if ready, err := a.CheckNow(ctx); err != nil || ready != "v99.0.2-e2e" {
+		t.Fatalf("Check now with the update ready found %q, %v", ready, err)
+	}
+	if host.fetched(apkName()) {
+		t.Fatal("Check now downloaded the APK it had ready")
+	}
+
+	installed := New(build.BuildInfo{Name: "dens", Version: "v1.10.0"})
+	installed.Layout.Form = layout.Installed
+	if _, err := installed.CheckNow(ctx); err == nil {
+		t.Fatal("an installed Dens checks from its settings")
 	}
 }
 

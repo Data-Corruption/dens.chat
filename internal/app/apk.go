@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/instance"
+	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
 	"github.com/Data-Corruption/dens.chat/internal/platform/release"
 
@@ -75,6 +76,9 @@ type apkUpdate struct {
 	shell     UpdateShell
 	refused   string
 	refusedAt time.Time
+	// staging lets one download run at a time: the daily check's, or the
+	// one the member asked for from the settings (M17.2).
+	staging sync.Mutex
 }
 
 // errRefused is a release that doesn't check out, as against one the
@@ -200,24 +204,27 @@ func (a *App) setReady(u UpdateReady) {
 }
 
 // readyAndroidUpdate downloads and checks the newer release the last check
-// found, unless it's ready already.
-func (a *App) readyAndroidUpdate(ctx context.Context) {
+// found, unless it's ready already. A release that didn't check out waits
+// a day, unless the member asked: again lets them try it again (M17.2).
+func (a *App) readyAndroidUpdate(ctx context.Context, again bool) error {
 	cfg, err := config.View(a.DB)
 	if err != nil {
-		return
+		return err
 	}
 	latest, ok := a.LatestUpdate(cfg)
 	if !ok {
-		return
+		return nil
 	}
+	a.apk.staging.Lock()
+	defer a.apk.staging.Unlock()
 	if ready, ok := a.ReadyUpdate(); ok && semver.Compare(ready.Version, latest) >= 0 {
-		return
+		return nil
 	}
 	a.apk.mu.Lock()
-	wait := a.apk.refused == latest && time.Since(a.apk.refusedAt) < UpdateCheckInterval
+	wait := !again && a.apk.refused == latest && time.Since(a.apk.refusedAt) < UpdateCheckInterval
 	a.apk.mu.Unlock()
 	if wait {
-		return
+		return nil
 	}
 	if err := a.stageUpdate(ctx, latest); err != nil {
 		if errors.Is(err, errRefused) {
@@ -228,9 +235,44 @@ func (a *App) readyAndroidUpdate(ctx context.Context) {
 		if ctx.Err() == nil {
 			a.Log.Warnf("Couldn't ready the update to %s: %v", latest, quietNetError(err))
 		}
-		return
+		return err
 	}
 	a.Log.Infof("Downloaded %s's APK, which checks out against the release's signed checksums", latest)
+	return nil
+}
+
+// ErrUpdateRefused is a newer release that doesn't check out against its
+// signed checksums, which the Android app won't install (M17.2).
+var ErrUpdateRefused = errRefused
+
+// CheckNow checks for an update at once, as the member asks from the
+// Android app's settings (M17.2), whatever the daily checks are set to: it
+// asks the release host for the newest version, and downloads and checks
+// a newer one, as the daily check does, trying again even one that didn't
+// check out within the day. It returns the update ready to install, or ""
+// where this build is the newest.
+func (a *App) CheckNow(ctx context.Context) (string, error) {
+	if a.Layout.Form != layout.Android {
+		return "", errors.New("only the Android app checks from its settings")
+	}
+	if err := a.CheckForUpdate(ctx); err != nil {
+		return "", quietNetError(err)
+	}
+	if err := a.readyAndroidUpdate(ctx, true); err != nil {
+		return "", quietNetError(err)
+	}
+	cfg, err := config.View(a.DB)
+	if err != nil {
+		return "", err
+	}
+	latest, ok := a.LatestUpdate(cfg)
+	if !ok {
+		return "", nil
+	}
+	if ready, ok := a.ReadyUpdate(); ok && semver.Compare(ready.Version, latest) >= 0 {
+		return ready.Version, nil
+	}
+	return "", fmt.Errorf("%s isn't ready to install", latest)
 }
 
 // quietNetError is err without the address Go's network errors name,

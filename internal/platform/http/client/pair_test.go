@@ -109,3 +109,18 @@ func TestInstallingAnUpdateByForm(t *testing.T) {
 		}
 	}
 }
+
+// Check now is the Android app's alone, with a release host to ask
+// (M17.2): an installed Dens's page has no such address, and nor does an
+// app built without one.
+func TestCheckingForAnUpdateByForm(t *testing.T) {
+	for _, form := range []layout.Form{layout.Installed, layout.Flatpak, layout.Android} {
+		a := app.New(build.BuildInfo{Name: "dens", Version: "v1.10.0"})
+		a.Layout = layout.Layout{Form: form, Instance: "main"}
+		w := httptest.NewRecorder()
+		(&router{a: a}).handleCheckUpdate(w, httptest.NewRequest(http.MethodPost, "/api/update/check", nil))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s with no release host: %d %s, want 404", form, w.Code, w.Body)
+		}
+	}
+}
