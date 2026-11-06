@@ -1,6 +1,6 @@
 {{- /* Who sits between you and the people you talk to, app by app. A filled
    mark is the private answer, half is partly, hollow is no. Facts as of
-   October 2026, from each project's own pages; Matrix means Element, its
+   November 2026, from each project's own pages; Matrix means Element, its
    main app. */ -}}
 {{- $apps := slice "Dens" "Discord" "Signal" "Matrix" }}
 {{- $rows := slice
@@ -10,30 +10,30 @@
     (dict "v" "n" "t" "Signal")
     (dict "v" "y" "t" "You, or a host you pick")))
   (dict "q" "Who can read your group chats" "a" (slice
-    (dict "v" "n" "t" "The den: channels aren’t end-to-end encrypted")
+    (dict "v" "p" "t" "The den reads channels; a group DM, only its members")
     (dict "v" "n" "t" "Discord")
     (dict "v" "y" "t" "Only the group")
-    (dict "v" "p" "t" "The room, if it’s encrypted; otherwise the server")))
+    (dict "v" "p" "t" "The room, if encrypted; if not, every server in it")))
   (dict "q" "DMs end-to-end encrypted" "a" (slice
     (dict "v" "y" "t" "Yes")
     (dict "v" "n" "t" "No")
     (dict "v" "y" "t" "Yes")
     (dict "v" "y" "t" "Yes")))
   (dict "q" "Calls end-to-end encrypted" "a" (slice
-    (dict "v" "n" "t" "No: calls pass through the den")
+    (dict "v" "y" "t" "Yes")
     (dict "v" "y" "t" "Yes¹")
     (dict "v" "y" "t" "Yes")
     (dict "v" "y" "t" "Yes, Element Call")))
   (dict "q" "Signing up asks for" "a" (slice
     (dict "v" "y" "t" "An invite")
-    (dict "v" "n" "t" "Email, sometimes a phone")
+    (dict "v" "n" "t" "Email or a phone, and your birthday")
     (dict "v" "n" "t" "A phone number²")
     (dict "v" "p" "t" "Up to the server")))
   (dict "q" "Who sees your IP address" "a" (slice
     (dict "v" "p" "t" "The den, while you’re connected")
     (dict "v" "n" "t" "Discord")
-    (dict "v" "n" "t" "Signal")
-    (dict "v" "p" "t" "Your server")))
+    (dict "v" "n" "t" "Signal, and contacts you call")
+    (dict "v" "p" "t" "Your server; in calls, other members’ servers too")))
   (dict "q" "Open source" "a" (slice
     (dict "v" "y" "t" "Yes, MIT")
     (dict "v" "n" "t" "No")
@@ -43,7 +43,7 @@
     (dict "v" "y" "t" "Nobody: a member’s PC and a domain")
     (dict "v" "n" "t" "Nitro, and ads")
     (dict "v" "y" "t" "Donations")
-    (dict "v" "p" "t" "Donations; some hosts charge")))
+    (dict "v" "p" "t" "Memberships and donations; some hosts charge")))
 }}
 <div class="compare" tabindex="0" role="region" aria-labelledby="compare-cap">
   <table>
@@ -70,6 +70,6 @@
   <p class="compare-notes micro">
     1. Since March 2026, except Stage channels; text isn’t end-to-end encrypted.
     2. Signal is testing a paid sign-up without a phone number, on Android. Matrix here means Element, its main app.
-    Facts as of October 2026, from each project’s own pages.
+    Facts as of November 2026, from each project’s own pages.
   </p>
 </div>
