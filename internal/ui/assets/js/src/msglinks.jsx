@@ -10,6 +10,7 @@ import { useContext, useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { ICON } from './icons.jsx';
+import { isPrivate } from './private.js';
 
 // LinkContext is what a den's page gives the links on it: the den open
 // (denID, and view, its state), the dens joined (dens, as /api/dens lists
@@ -82,13 +83,13 @@ function denOf(link, links) {
 
 // place is where a link to a message points, as far as this page knows:
 // the den, if the member joined it; its state, null while that's fetched
-// and false when it couldn't be; and the channel, a text channel or DM
-// they can see.
+// and false when it couldn't be; and the channel, a text channel, DM or
+// the member's notes (M17.3) they can see.
 export function place(link, links, viewOf = otherView) {
     const den = denOf(link, links);
     if (!den) return { den: null, view: null, channel: null };
     const view = den.den_id === links.denID ? links.view : viewOf(den.den_id);
-    const channel = (view && view.channels.find((c) => c.id === link.channel && (c.kind === 'text' || c.kind === 'dm' || c.kind === 'group_dm'))) || null;
+    const channel = (view && view.channels.find((c) => c.id === link.channel && (c.kind === 'text' || isPrivate(c)))) || null;
     return { den, view, channel };
 }
 
@@ -103,6 +104,7 @@ export function chipLabel(link, { den, view, channel }, hereID) {
     else if (view && !channel) where = '#unknown';
     else if (channel?.kind === 'dm') where = `@${partner(view, channel)?.username || 'unknown'}`;
     else if (channel?.kind === 'group_dm') where = 'a group DM';
+    else if (channel?.kind === 'notes') where = 'your notes';
     else if (channel) where = `#${channel.name}`;
     if (den.den_id === hereID) return where;
     return where ? `${den.name} › ${where}` : den.name;

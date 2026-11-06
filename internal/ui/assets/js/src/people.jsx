@@ -143,7 +143,9 @@ function CompareCodes({ member, kept, onCompare }) {
 }
 
 // ProfileCard shows a member, and what the viewer can do with them.
-export function ProfileCard({ denID, member, me, role, online, kept, onClose, onMessage, onCompare, onEdit, onRemove }) {
+// onNotes, on the member's own card, opens their notes (M17.3), while the
+// den has them for this Dens.
+export function ProfileCard({ denID, member, me, role, online, kept, onClose, onMessage, onNotes, onCompare, onEdit, onRemove }) {
     const act = useAction();
     const self = member.id === me.id;
     const left = !!member.left_at;
@@ -159,6 +161,7 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
             <ErrorText message={act.error} />
             <div class="flex flex-wrap gap-2">
                 {self && <button type="button" class="btn btn-sm" onClick={onEdit}>Edit profile</button>}
+                {self && onNotes && <button type="button" class="btn btn-sm" data-own-notes onClick={onNotes}>Notes</button>}
                 {!self && !left && <button type="button" class="btn btn-primary btn-sm" onClick={() => onMessage(member)}>Message</button>}
                 {!self && kept && member.identity && !left && (
                     <button type="button" class="btn btn-sm" onClick={() => onCompare(member)}>{kept.verified ? 'Compare codes again' : 'Compare codes'}</button>

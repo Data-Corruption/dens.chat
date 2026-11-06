@@ -23,10 +23,11 @@ import { showsOffline } from './offline.js';
 import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from './people.jsx';
 import { NO_CALLS, canCall } from './platform.js';
-import { dmGate, groupGate, groupTitle, isPrivate, partnerOf } from './private.js';
+import { dmGate, groupGate, groupTitle, isNotes, isPrivate, notesGate, ownNotes, partnerOf } from './private.js';
 import { CodesDialog, SignInRequests, VerifiedMark } from './private.jsx';
 import { GroupIcon, GroupPanel, MAX_MEMBERS, PickPeople, RenameGroup } from './groups.jsx';
 import { ExpiryBadge } from './disappearing.jsx';
+import { NotesIcon, NotesRow } from './notes.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
@@ -107,10 +108,11 @@ export function denChannel(view, lastID) {
 
 // recentDMs is a den's DMs and group DMs (M16.3) as their list shows
 // them, the most recently active first: one closed since keeps out until
-// it has a new message, unless it's the one open.
+// it has a new message, unless it's the one open. The member's notes keep
+// a place of their own, above them (M17.3).
 export function recentDMs(view, reads, open) {
     return view.channels
-        .filter((c) => isPrivate(c) && (!reads.get(c.id)?.closed || c.id === open))
+        .filter((c) => isPrivate(c) && !isNotes(c) && (!reads.get(c.id)?.closed || c.id === open))
         .sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
 }
 
@@ -360,15 +362,18 @@ export function Chat({ denID, channelID, pane, navigate }) {
     // Opening a channel or a DM shows the list it's in.
     const openKind = channel?.kind;
     useEffect(() => {
-        if (openKind) setTab(openKind === 'dm' || openKind === 'group_dm' ? 'dms' : 'den');
+        if (openKind) setTab(isPrivate({ kind: openKind }) ? 'dms' : 'den');
         else if (noDM) setTab('dms');
     }, [channel?.id, channelID, noDM]);
     // shownID is the channel shown, for the page's history: its ID, NO_DM,
     // or '' for none.
     const shownID = channel ? channel.id : noDM ? NO_DM : '';
+    // The member's notes (M17.3), which have nobody else to show beside
+    // them.
+    const notes = isNotes(channel);
     // The members' place: the member list, or beside a DM the other
-    // member's profile (M11); with no DM open, there's none.
-    const hasSide = !noDM;
+    // member's profile (M11); with no DM open, or the notes, there's none.
+    const hasSide = !noDM && !notes;
     // at is the pane on screen on the phone layout, '' in a wider window.
     const at = !narrow ? '' : pane === 'side' && hasSide ? 'side' : pane === 'list' || (!pane && !channelID) ? 'list' : 'chan';
     const toPane = (next) => nav().den(denID, shownID, next);
@@ -447,6 +452,18 @@ export function Chat({ denID, channelID, pane, navigate }) {
         await load();
         setDialog(null);
         openChannel(opened.id);
+    }
+
+    // openNotes opens the member's notes, which the den makes the first
+    // time (M17.3).
+    async function openNotes() {
+        let mine = ownNotes(view);
+        if (!mine) {
+            mine = await api.post(`/api/dens/${denID}/notes`);
+            await load();
+        }
+        setDialog(null);
+        openChannel(mine.id);
     }
 
     // makeGroup makes a group DM of this member and those picked, and opens
@@ -555,7 +572,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     </div>
                                 )}
                                 <DMList dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
-                                    identities={view.identities || {}} muted={bells ? muted.channels : null} title={title} onOpen={openChannel} onClose={closeDM} />
+                                    identities={view.identities || {}} muted={bells ? muted.channels : null} title={title} onOpen={openChannel} onClose={closeDM}
+                                    notes={view.has_notes && (ownNotes(view) || !gone) ? { open: notes } : null} onNotes={openNotes} />
                             </>
                         ) : (
                             <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
@@ -623,7 +641,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     group={group}
                                     groupTitle={group ? title(channel) : ''}
                                     keys={isPrivate(channel) ? (view.dm_keys || []).filter((k) => k.channel_id === channel.id) : undefined}
-                                    gate={channel.kind === 'dm' ? dmGate(view, channel) : group ? groupGate(view, channel) : ''}
+                                    gate={channel.kind === 'dm' ? dmGate(view, channel) : group ? groupGate(view, channel) : notes ? notesGate(view) : ''}
                                     changes={channel.kind === 'dm' ? view.identities?.[partnerOf(channel, view.me.id)]?.changes : undefined}
                                     identities={view.identities}
                                     onCompare={(m) => setDialog({ kind: 'codes', member: m })}
@@ -634,7 +652,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     offline={showsOffline(live, view.state)}
                                     spoilers={!!view.spoilers}
                                     onProfile={(m) => setDialog({ kind: 'profile', member: m })}
-                                    onTyping={() => sendTyping(denID, channel.id)}
+                                    onTyping={notes ? () => {} : () => sendTyping(denID, channel.id)}
                                 />
                             </>
                         ) : noDM ? (
@@ -691,6 +709,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                         online={online.has(dialog.member.id)}
                         onClose={() => setDialog(null)}
                         onMessage={message}
+                        onNotes={view.has_notes && !gone ? openNotes : null}
                         kept={view.keeps_identities ? view.identities?.[dialog.member.id] || {} : null}
                         onCompare={(m) => setDialog({ kind: 'codes', member: m })}
                         onEdit={() => setDialog({ kind: 'edit' })}
@@ -730,10 +749,11 @@ function withKey(view, key) {
 }
 
 // ListTabs switches the sidebar between the den's channels and DMs, and
-// shows whether the other has anything waiting: a channel or DM unread.
+// shows whether the other has anything waiting: a channel or DM unread,
+// which nothing in the member's own notes is (M17.3).
 function ListTabs({ tab, onTab, view, reads, open }) {
     const waits = (c) => unread(reads.get(c.id));
-    const waiting = (dms) => view.channels.some((c) => isPrivate(c) === dms && c.id !== open && hasMessages(c) && waits(c) && !reads.get(c.id)?.closed);
+    const waiting = (dms) => view.channels.some((c) => isPrivate(c) === dms && !isNotes(c) && c.id !== open && hasMessages(c) && waits(c) && !reads.get(c.id)?.closed);
     const tabs = [['den', 'Den', waiting(false)], ['dms', 'Direct messages', waiting(true)]];
     return (
         <div role="tablist" class="tabs tabs-border px-2 pt-1">
@@ -1164,17 +1184,28 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
 // dms are as recentDMs lists them.
 // muted holds the DMs the member muted, or is null while no kind of
 // notification is on (M12.3).
-function DMList({ dms, reads, open, partner, online, identities, muted, title, onOpen, onClose }) {
+// notes, while the den has notes for this Dens, puts the member's at the
+// list's top (M17.3), open while they show, which onNotes opens.
+function DMList({ dms, notes, reads, open, partner, online, identities, muted, title, onOpen, onClose, onNotes }) {
+    const notesRow = notes && <NotesRow open={notes.open} onOpen={onNotes} />;
     if (dms.length === 0) {
         return (
-            <p class="cursor-default select-none p-4 text-sm text-base-content/60">
-                No direct messages yet. Open someone's profile to message them; it's end-to-end encrypted.
-            </p>
+            <>
+                {notesRow && (
+                    <nav aria-label="Direct messages" class="flex flex-col p-2 pb-0">
+                        <ul class="flex flex-col">{notesRow}</ul>
+                    </nav>
+                )}
+                <p class="cursor-default select-none p-4 text-sm text-base-content/60">
+                    No direct messages yet. Open someone's profile to message them; it's end-to-end encrypted.
+                </p>
+            </>
         );
     }
     return (
         <nav aria-label="Direct messages" class="flex flex-col p-2">
             <ul class="flex flex-col">
+                {notesRow}
                 {dms.map((c) => {
                     if (c.kind === 'group_dm') {
                         return <GroupRow key={c.id} c={c} r={reads.get(c.id)} open={open} title={title(c)} muted={muted} onOpen={onOpen} onClose={onClose} />;
@@ -1301,6 +1332,19 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                         </button>
                         {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
                     </>
+                ) : channel.kind === 'notes' ? (
+                    <>
+                        <span class="flex min-w-0 items-center gap-2" data-notes-header>
+                            <NotesIcon />
+                            <span class="truncate font-semibold">Notes</span>
+                        </span>
+                        {/* Only the member's devices open them (M17.3). */}
+                        <Tip id={`header-notes-${channel.id}`} label="Encrypted" trigger={
+                            <span class="flex shrink-0 items-center gap-1 text-xs text-base-content/60"><LockIcon size="h-3 w-3" />Encrypted</span>
+                        }>
+                            End-to-end encrypted: only your devices can read your notes.
+                        </Tip>
+                    </>
                 ) : channel.kind === 'group_dm' ? (
                     <>
                         <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={onMembers}>
@@ -1344,18 +1388,20 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                     </button>
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
-                    {muted !== null && channel.kind !== 'voice' && (
+                    {muted !== null && channel.kind !== 'voice' && channel.kind !== 'notes' && (
                         <button type="button" class="btn btn-ghost btn-sm btn-square" aria-pressed={muted} onClick={() => onMute(!muted)}
                             aria-label={`${muted ? 'Unmute' : 'Mute'} ${channel.kind === 'dm' ? `the DM with ${dm ? dm.display_name : 'this member'}` : channel.kind === 'group_dm' ? grouped : `#${channel.name}`}`}
                             title={muted ? 'Unmute its notifications' : 'Mute its notifications'}>
                             <BellIcon off={muted} />
                         </button>
                     )}
-                    <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
-                        aria-label={channel.kind === 'dm' ? 'Profile' : channel.kind === 'group_dm' ? "The group's members" : 'Members'} aria-pressed={membersOpen}
-                        title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
-                        <PeopleIcon />
-                    </button>
+                    {channel.kind !== 'notes' && (
+                        <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
+                            aria-label={channel.kind === 'dm' ? 'Profile' : channel.kind === 'group_dm' ? "The group's members" : 'Members'} aria-pressed={membersOpen}
+                            title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
+                            <PeopleIcon />
+                        </button>
+                    )}
                 </div>
             </div>
             {expanded && channel.description && (

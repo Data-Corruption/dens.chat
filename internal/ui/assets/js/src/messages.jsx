@@ -141,15 +141,20 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // nor polls nor @everyone, which came with them (M15.4). Polls go in
     // channels, and staff send @everyone there.
     const emoji = useContext(EmojiContext);
-    const reactions = !!emoji?.known;
+    // The member's notes (M17.3) are theirs alone: nobody reacts to them,
+    // writes in them or shares their editing, and nothing in them goes as
+    // a spoiler.
+    const notes = channel.kind === 'notes';
+    const reactions = !!emoji?.known && !notes;
     const polls = reactions && channel.kind === 'text';
-    // A DM's and a group's (M16.3) messages are sealed by their members.
+    // A DM's, a group's (M16.3) and the notes' messages are sealed by their
+    // members.
     const sealed = isPrivate(channel);
     // Compact shows each message as a line (M17.2).
     const line = useDensity() === DENSITY_COMPACT;
     // A photo or video goes as a spoiler in a DM, inside its seal, and in a
     // channel where the den keeps which files are (M17.2).
-    const canSpoil = sealed || !!spoilers;
+    const canSpoil = !notes && (sealed || !!spoilers);
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
@@ -195,7 +200,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const base = `/api/dens/${denID}/channels/${channel.id}/messages`;
     // candidates could edit a message here with its author: the members
     // who can see the channel, besides this one.
-    const candidates = [...members.values()]
+    const candidates = notes ? [] : [...members.values()]
         .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : group ? group.members.includes(x.id) : !channel.staff_only || isStaff(x.role)))
         .sort((a, b) => name(a).localeCompare(name(b)));
 
@@ -837,7 +842,12 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 <div ref={content}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
-                            {group ? (
+                            {notes ? (
+                                <>
+                                    <p>{retention ? `Your notes are deleted after ${keptFor(retention)}.` : 'This is the start of your notes.'}</p>
+                                    <p class="text-xs">End-to-end encrypted: only your devices can read them.</p>
+                                </>
+                            ) : group ? (
                                 <>
                                     <p>{retention ? `Messages in ${groupTitle} are deleted after ${keptFor(retention)}.` : `This is the start of ${groupTitle}, as you can read it.`}</p>
                                     <p class="text-xs">End-to-end encrypted: only the group's members can read it, each from when they joined.</p>
@@ -884,8 +894,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     </div>
                 )}
                 {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
-                {!closed && channel.kind === 'dm' && gate !== '' && (
-                    <DMGate denID={denID} gate={gate} dm={dm} onCompare={() => dm && onCompare?.(dm)} />
+                {!closed && (channel.kind === 'dm' || notes) && gate !== '' && (
+                    <DMGate denID={denID} gate={gate} dm={dm} notes={notes} onCompare={() => dm && onCompare?.(dm)} />
                 )}
                 {!closed && group && gated !== '' && (
                     <GroupGate denID={denID} gate={gated} member={members.get(gate.member)} onCompare={(m) => onCompare?.(m)} />
@@ -896,7 +906,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     <Composer
                         denID={denID}
                         limits={limits}
-                        placeholder={dm ? `Message @${dm.username}` : group ? `Message ${groupTitle}` : `Message #${channel.name}`}
+                        placeholder={notes ? 'Write a note' : dm ? `Message @${dm.username}` : group ? `Message ${groupTitle}` : `Message #${channel.name}`}
                         replyTo={replyTo}
                         replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
                         typing={typing}
@@ -911,6 +921,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         mentionable={sealed ? null : candidates}
                         polls={polls}
                         everyone={polls && isStaff(role)}
+                        shares={!notes}
                         editors={editors}
                         onEditors={setEditors}
                         onSend={(text, poll) => send(text, poll)}
@@ -1606,7 +1617,7 @@ function EditorList({ candidates, selected, onChange }) {
 // the members a mention may name, none in a DM, and with everyone, staff's
 // @everyone first (M15.4). With polls, the + makes the message a poll,
 // whose question is its text (M15.4).
-function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
+function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, shares = true, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
     // poll is the poll being written, which goes without files or other
     // editors, and problem what kept it from going.
@@ -1869,12 +1880,14 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                                     Attach files
                                 </button>
                             </li>
-                            <li role="none">
-                                <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${editors.length ? 'text-primary' : ''}`} disabled={!!poll} onClick={share}>
-                                    <EditorsIcon />
-                                    Let others edit
-                                </button>
-                            </li>
+                            {shares && (
+                                <li role="none">
+                                    <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${editors.length ? 'text-primary' : ''}`} disabled={!!poll} onClick={share}>
+                                        <EditorsIcon />
+                                        Let others edit
+                                    </button>
+                                </li>
+                            )}
                             {polls && (
                                 <li role="none">
                                     <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${poll ? 'text-primary' : ''}`}
@@ -1893,10 +1906,12 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                             <AttachIcon />
                             Attach files
                         </SheetRow>
-                        <SheetRow disabled={!!poll} onClick={share}>
-                            <EditorsIcon />
-                            <span class={editors.length ? 'text-primary' : ''}>Let others edit</span>
-                        </SheetRow>
+                        {shares && (
+                            <SheetRow disabled={!!poll} onClick={share}>
+                                <EditorsIcon />
+                                <span class={editors.length ? 'text-primary' : ''}>Let others edit</span>
+                            </SheetRow>
+                        )}
                         {polls && (
                             <SheetRow disabled={files.length > 0 || editors.length > 0 || !!poll} onClick={startPoll}>
                                 <PollIcon />
