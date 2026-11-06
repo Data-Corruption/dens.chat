@@ -1,11 +1,14 @@
 // The M5.2 check: Bob, in Chromium, manages his files from home: the list,
 // a swap, a delete and Open, and drops an upload from the composer. Alice,
-// in Firefox, moves through a message's images in the viewer.
+// in Firefox, moves through a message's images in the viewer. From M17.2,
+// spoilers: bob sends a photo as one in #general, which alice's page shows
+// covered until she clicks it, and alice one in their DM, which bob's does,
+// each page clicking the other's.
 //
 //   run.sh files
 import { ALICE, BOB, HOME, MANAGE, checks, launch, lib, openManage, pair, waitFor } from './browsers.mjs';
 
-const { DEN: den, GENERAL: general, THREE: three, CLIP: clip } = process.env;
+const { DEN: den, GENERAL: general, THREE: three, CLIP: clip, DM: dm } = process.env;
 const c = checks();
 const ok = (what) => c.report(true, what);
 const api = (who, path) => JSON.parse(lib('api', who, 'GET', path));
@@ -97,6 +100,43 @@ try {
     await alice.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })), true`);
     await waitFor(() => alice.eval(`!document.querySelector('[role=dialog]')`), 'the viewer closed');
     ok('alice moved through the images with → and ‹, which stop at the ends');
+
+    // Spoilers (M17.2): each sends a photo as one, which the other's page
+    // shows covered, naming nothing of it, until it's clicked.
+    const spoil = async (from, to, channel, name) => {
+        await from.attach('input[type=file][multiple]', [`${HOME}/photo.jpg`]);
+        const toggle = `document.querySelector('[data-spoiler-toggle]')`;
+        await waitFor(() => from.eval(`!!${toggle} && !document.querySelector('form progress, li progress')`), `${from.name}'s upload done`);
+        await from.eval(`${toggle}.click(), true`);
+        await waitFor(() => from.eval(`${toggle}.getAttribute('aria-pressed') === 'true'`), `${from.name}'s Spoiler on`);
+        await from.shot(`${HOME}/shot-files-spoiler-${from.name}-chip.png`);
+        await from.eval(`(() => { const t = document.querySelector('textarea'); t.focus(); return true; })()`);
+        await from.key('Enter');
+        const sent = await waitFor(() => {
+            const page = api(name, `/api/dens/${den}/channels/${channel}/messages?limit=5`);
+            return page.messages.find((x) => (x.attachments || []).some((f) => f.spoiler));
+        }, `${name}'s copy of the spoiler`);
+        const message = `document.querySelector('[data-id="${sent.id}"]')`;
+        await waitFor(() => to.eval(`!!${message}?.querySelector('[data-spoiler]')`), `the spoiler covered on ${to.name}'s page`);
+        const cover = await to.eval(`(() => { const c = ${message}.querySelector('[data-spoiler]'); return JSON.stringify({ text: c.textContent.trim(), named: c.outerHTML.includes('photo.jpg'), open: !!${message}.querySelector('button[aria-label^="Open"]') }); })()`);
+        const shown = JSON.parse(cover);
+        if (shown.text !== 'Spoiler' || shown.named || shown.open) throw new Error(`the cover: ${cover}`);
+        await to.shot(`${HOME}/shot-files-spoiler-${to.name}-covered.png`);
+        await to.eval(`${message}.querySelector('[data-spoiler]').click(), true`);
+        await waitFor(() => to.eval(`!${message}.querySelector('[data-spoiler]') && !!${message}.querySelector('button[aria-label="Open photo.jpg"]')`), `the spoiler shown on ${to.name}'s page`);
+        await to.shot(`${HOME}/shot-files-spoiler-${to.name}-shown.png`);
+        return sent;
+    };
+    await bob.go(`http://localhost:18486/den/${den}/${general}`);
+    await waitFor(() => bob.eval(`!!document.querySelector('textarea')`), "bob's composer");
+    await spoil(bob, alice, general, 'alice');
+    ok("bob's photo, sent as a spoiler in #general, showed covered on alice's page until she clicked it");
+    for (const [b, port] of [[alice, 18484], [bob, 18486]]) {
+        await b.go(`http://localhost:${port}/den/${den}/${dm}`);
+        await waitFor(() => b.eval(`!!document.querySelector('textarea')`), `${b.name}'s DM`);
+    }
+    await spoil(alice, bob, dm, 'bob');
+    ok("alice's photo, sent as a spoiler in their DM, showed covered on bob's page until he clicked it");
 } catch (e) {
     c.fail(e);
 } finally {

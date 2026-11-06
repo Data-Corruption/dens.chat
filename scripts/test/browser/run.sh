@@ -11,7 +11,8 @@
 #   share                       M4.2: screen shares, Chromium and Firefox
 #   two-shares                  M4.2: two shares in a player, one the probe's
 #   retention                   M5.1: retention, Chromium and Firefox
-#   files                       M5.2: managing files, Chromium and Firefox
+#   files                       M5.2: managing files, Chromium and Firefox, and from M17.2 a photo
+#                               sent as a spoiler in a channel and a DM, covered until clicked
 #   photos BROWSER              M5.3: smaller photos and the viewer
 #   videos BROWSER              M5.4: smaller videos
 #   webcodecs BROWSER           M5.5: copies the page makes
@@ -90,9 +91,11 @@
 #                               message's sheet with its quick reactions, a tap reacting, the chip's tip by
 #                               a long press, and the picker's sheet (M15.3); and the composer's + as a sheet,
 #                               a poll written in it and sent, voted on by taps, and its count's tip (M15.4);
-#                               comparing codes from a DM's lock (M16.1); and a DM's time from its header (M16.4).
-#                               PART is member, around, touch, pages, call, emoji, reactions, polls, owner
-#                               or before; all unless given
+#                               comparing codes from a DM's lock (M16.1); and a DM's time from its header (M16.4);
+#                               and Compact picked by a tap, a channel's messages a line each, a long press
+#                               on one, and a spoiler covered until a tap shows it (M17.2).
+#                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
+#                               owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
 #                               platform's page holding its own steps alone, its folds closed until opened,
 #                               the Flatpak's old link landing on the choice, and the links into the guides
@@ -100,12 +103,17 @@
 #                               a mouse, with the phone check's audits (MODE chromium, firefox,
 #                               chromium-desktop or firefox-desktop; all four unless given). setup.sh builds
 #                               the site, so run it again after changing the site
+#   drag BROWSER BROWSER        M17.2: alice, in the first, dragging a channel out of its group and onto
+#                               another's heading, and a group above another, as the den then has them;
+#                               and bob, in the second, in a call, muted, dragged onto another voice
+#                               channel, whose call his page joins, sealed and still muted, and Move to in
+#                               his menu taking him back
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,103p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,111p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

@@ -52,12 +52,13 @@
 # hold Android's seams, run in the emulator as the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
 # updates itself (M12.4): its updater refuses a newer release whose
-# checksums another workflow signed, before downloading its APK, then
-# checks the release signed as it should be, and the tap on its
-# notification hands the APK to Android's installer, which updates the app
-# to it. Android 12's
+# checksums another workflow signed, before downloading its APK, then, at
+# the member's Check now in the page's settings (M17.2), checks the release
+# signed as it should be, and the tap on its notification hands the APK to
+# Android's installer, which updates the app to it. Android 12's
 # emulator, whose WebView is older than the page needs, runs Dens and says
-# to update the WebView, and the release's app updates itself there too.
+# to update the WebView, and the release's app updates itself there too,
+# checking again as Dens starts again.
 #
 # It runs in two persistent containers: dens-browsers, which
 # scripts/test/browser/setup.sh makes and the den runs in, and
@@ -106,12 +107,13 @@ shell_log() { adb shell run-as "$APP" cat files/shell/shell.log | tr -d '\r'; }
 # front is the app's activity on top.
 front() { [[ $(adb shell dumpsys activity activities) =~ topResumedActivity=[^$'\n']*$APP/ ]]; }
 # tap TRIES REGEX taps the first thing on screen whose text matches REGEX,
-# trying once a second, and keeps the screen's layout in the logs if it
-# never comes.
+# or its description, as Android's accessibility names a page's buttons in
+# a WebView, trying once a second, and keeps the screen's layout in the
+# logs if it never comes.
 tap() {
   local tries=$1 re=$2 bounds
   for _ in $(seq "$tries"); do
-    bounds=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE "text=\"($re)\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" |
+    bounds=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE "(text|content-desc)=\"($re)\"[^>]*bounds=\"\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]\"" |
       head -n 1 | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
     if [[ -n "$bounds" ]]; then
       read -r x1 y1 x2 y2 <<<"$bounds"
@@ -414,6 +416,10 @@ phone drive api PUT "/api/dens/$den_id/channels/$dm/read" "{\"message_id\":\"$se
 hidden() { ! shows "another DM for the phone"; }
 waitfor 20 "the notification taken back" hidden
 ok "read on the den, the DM's notification was taken back"
+# The DM's messages go after a day, as the phone check's DM's do, so the
+# walk finds the line where its time was set, and the time in its header
+# (M16.4).
+den api PUT "/api/dens/$den_id/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null || fail "setting the DM's time"
 
 adb shell run-as "$APP" sh -c "'kill -9 \$(pidof libdens.so)'"
 waitfor 30 "Dens started again" sh -c "scripts/test/android/phone.sh $serial log -s Dens:* | grep -q 'Dens ended (signal 9)'"
@@ -562,7 +568,10 @@ ok "the host package's tests passed as the app: $(grep -c '^--- PASS' "$RUN_LOG_
 # v99.0.1-e2e, installed as the browser would, finds v99.0.2-e2e on its
 # release host. Served first with checksums another workflow signed, the
 # updater refuses them before downloading the APK; served as signed, it
-# downloads the APK and checks it, and the shell posts that it's ready.
+# downloads the APK and checks it, once Dens starts again or, with
+# check-now, at the member's Check now in the page's settings (M17.2),
+# which the page reaches after its local password, set through its form:
+# the page then says the update is ready, and the shell posts that it is.
 # The tap hands it to Android's installer, which updates the app once the
 # member confirms, and Android starts the app's service again.
 update_from_fixtures() {
@@ -594,9 +603,42 @@ update_from_fixtures() {
   ok "the updater refused v99.0.2-e2e's checksums signed by another workflow, before downloading its APK"
 
   incus exec "$CONTAINER" -- cp "$host_dir/release.cosign.bundle" "$host_dir/checksums.txt.cosign.bundle"
-  adb shell input keyevent KEYCODE_HOME
-  adb shell am force-stop "$RELEASE_APP"
-  adb shell am start -n "$RELEASE_APP/chat.dens.shell.PageActivity" >/dev/null
+  if [[ ${1:-} == check-now ]]; then
+    shows_text() { adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -qE "(text|content-desc)=\"($1)\""; }
+    waitfor 60 "the page's form for a local password" shows_text 'Set password'
+    fields=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE '<node [^>]*password="true"[^>]*>' |
+      grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
+    [[ $(grep -c . <<<"$fields") -ge 2 ]] || fail "the page's form for a local password shows no two fields"
+    for n in 1 2; do
+      read -r x1 y1 x2 y2 <<<"$(sed -n "${n}p" <<<"$fields")"
+      adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+      sleep 1
+      adb shell input text 'local-password'
+    done
+    adb shell input keyevent KEYCODE_ENTER
+    tap 30 'App settings' || fail "Home shows no App settings"
+    tap 10 'System' || fail "the settings list no System"
+    for _ in 1 2 3 4 5 6; do
+      shows_text 'Check now' && break
+      adb shell input swipe 540 1700 540 700 300
+      sleep 1
+    done
+    tap 10 'Check now' || fail "System's Updates have no Check now"
+    said=false
+    for _ in $(seq 120); do
+      shows_text 'Dens v99\.0\.2-e2e is ready to install\.' && said=true && break
+      sleep 1
+    done
+    if ! $said; then
+      adb exec-out uiautomator dump /dev/tty >"$RUN_LOG_DIR/screen-$serial.xml" 2>/dev/null || :
+      fail "waited 120 s for the page's word that v99.0.2-e2e is ready"
+    fi
+    ok "Check now, in the page's settings, downloaded and checked v99.0.2-e2e at once, and the page says it's ready to install"
+  else
+    adb shell input keyevent KEYCODE_HOME
+    adb shell am force-stop "$RELEASE_APP"
+    adb shell am start -n "$RELEASE_APP/chat.dens.shell.PageActivity" >/dev/null
+  fi
   ready() { release_log | grep -q 'update: v99.0.2-e2e is ready'; }
   waitfor 120 "the update ready" ready
   [[ $(fetched android-amd64.apk) == 1 ]] || fail "the updater fetched the APK $(fetched android-amd64.apk) times"
@@ -627,7 +669,7 @@ update_from_fixtures() {
   adb reverse --remove "tcp:$RELEASES_PORT" >/dev/null 2>&1 || :
   adb uninstall "$RELEASE_APP" >/dev/null 2>&1 || :
 }
-update_from_fixtures
+update_from_fixtures check-now
 incus exec "$CONTAINER" -- /root/box.sh halt 5554
 
 echo ">> Android 12"

@@ -8,7 +8,8 @@
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
 # only. Alice and bob share a DM, which opens at once (M16.1), where alice
-# started over, so bob's page shows her keys changed.
+# started over, so bob's page shows her keys changed. Random ends in a
+# photo bob sent as a spoiler (M17.2).
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 stop m2d
@@ -56,6 +57,9 @@ say carol "$general" "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 say bob "$general" "party time :party:"
 say bob "$general" "Bob's last word"
 for i in 1 2 3; do say alice "$random" "random $i"; done
+spoiler=$(upload bob photo.jpg plot-twist.jpg)
+api bob POST "/api/dens/$DEN/channels/$random/messages" \
+    "{\"nonce\":\"$(nonce)\",\"text\":\"no peeking\",\"attachments\":[\"$spoiler\"],\"spoilers\":[\"$spoiler\"]}" >/dev/null
 
 dm=$(open_dm alice bob)
 say alice "$dm" "a DM for bob, end to end"
