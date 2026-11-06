@@ -13,8 +13,11 @@ No Worker script or separate Pages project is needed.
 - `../scripts/vendor.sh` pins Hugo Extended (including its archive checksum)
   and Wrangler. The workflow obtains Hugo through this script and uses its
   exact Wrangler version.
-- `../.github/workflows/docs.yml` verifies modules, builds with warnings treated
-  as errors, and deploys when `DOCS_ENABLED` is `true`.
+- `../.github/workflows/docs.yml` runs `../scripts/test.sh -docs`, which
+  verifies modules, builds with warnings treated as errors and checks the
+  site's icon is the app's mark, on pushes to `main` and on pull requests that
+  change the site, and deploys from `main` alone, when `DOCS_ENABLED` is
+  `true`.
 
 ## Worker name and site URL
 
@@ -45,7 +48,8 @@ output directory.
 5. **Deploy.** Push a site/config change to `main`, or open Actions → Docs →
    Run workflow. The first deployment creates the named Worker. Later
    deployments update it. If your default branch has another name, update
-   `on.push.branches` in `.github/workflows/docs.yml`.
+   `on.push.branches`, `on.pull_request.branches` and the deploy step's
+   `refs/heads/main` in `.github/workflows/docs.yml`.
 6. **For a custom domain**, open Workers & Pages → your Worker → Settings →
    Domains & Routes → Add → Custom domain, and enter the hostname used in
    `baseURL`. The zone must be active in your Cloudflare account. Cloudflare
@@ -73,7 +77,8 @@ Wrangler can prompt for browser login locally, or use the
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` environment variables.
 `--dry-run` packages and validates without deploying.
 
-There are no automatic pull-request previews. After the initial deployment,
+Pull requests that change the site get its build checked, but no preview
+deployment. After the initial deployment,
 run `npx --yes "wrangler@${WRANGLER_VERSION}" versions upload` from the same
 shell and directory to upload a version without changing production. Enable
 `preview_urls` in `wrangler.jsonc` if needed; see Cloudflare's

@@ -54,7 +54,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
 | `android/` | The Android app's shell (M12): Kotlin with no AndroidX, its manifest and resources, the newer framework calls it makes behind a version check, and the release key's certificate (`release.pem`), which a release's APK must be signed by |
 | `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers, and the Android app's APKs, built without Gradle, with the check that stands in for Android Lint's NewApi |
-| `scripts/ci.sh`, `scripts/ci/` | Release planning, publication and recovery, and the Flatpak's publication after each release |
+| `scripts/ci.sh`, `scripts/ci/` | Release planning, a pull request's test jobs chosen by the files it changes, publication and recovery, and the Flatpak's publication after each release |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
 | `scripts/rnnoise.sh` | Builds RNNoise's module for the page from its pinned inputs, and checks the committed one |
@@ -238,6 +238,7 @@ writes; CI writes them again and fails on any difference.
 ./scripts/test.sh              # go test -race ./... with embed placeholders; run constantly
 ./scripts/test.sh -lint        # pinned shellcheck over the shell scripts; run after touching them
 ./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts
+./scripts/test.sh -docs        # the site built as the Docs workflow builds it, failing on any warning, and its icon checked; run after touching the site
 ./scripts/test.sh -release     # release state machine against a local rclone backend
 ./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
 ./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
@@ -247,7 +248,7 @@ writes; CI writes them again and fails on any difference.
 scripts/test/android/phone.sh SERIAL COMMAND  # a phone through the Android container's adb: pair, connect, install, log, pull
 scripts/test/android/bg.sh SERIAL [SECONDS]   # a phone's call with its screen off, ten minutes unless given, watched and summed up
 ./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
-scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build in it
+scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build and the site's in it
 scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test
 ./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
 ./scripts/build.sh --prod      # production-mode binary for this architecture
