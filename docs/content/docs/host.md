@@ -197,6 +197,14 @@ name at the top of its channel list, or **Manage** on your home page.
   everyone who can see it know, as a mention does. From anyone else it's only
   text, or a mention of someone whose username is everyone from before, a name
   nobody new can take. Members can turn it off for themselves.
+- **Events.** Moderators and you make events from **Events**, at the top of
+  the channel list, and change or cancel anyone's of a lower rank. One in a
+  staff-only voice channel is the staff's alone. Deleting a voice channel
+  cancels the events in it.
+- **Events per member**, in **Limits**: off at first, so only staff make
+  events, or up to 10 each, counting those not yet over. A den holds 50 at
+  once. Lowering it leaves the events already made, and someone who leaves
+  the den takes theirs that haven't started.
 - **Auto-delete**, off unless you turn it on, deletes messages older than a
   number of days, in channels and DMs. Members see the setting. A
   [backup](../backups/) keeps what it held until you delete the backup.

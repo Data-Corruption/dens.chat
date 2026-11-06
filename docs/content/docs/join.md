@@ -212,6 +212,36 @@ spoilers sees it uncovered.
 
 {{% /details %}}
 
+## Events
+
+**Events**, at the top of a den's channel list, shows what's coming up and
+what's on now. Choose **☆ Interested** on one, and Dens tells you as it
+starts, on your phone too.
+
+To make one, choose **+ Event** there: give it a name, a time, how long it
+lasts, and a place, one of the den's voice channels or anywhere else. The
+den's moderators and owner make events; the owner can let everyone else make
+a few.
+
+{{% details title="More on events" closed="true" %}}
+
+- **Times** show in your own time zone, wherever whoever made it lives. An
+  event starts up to a year ahead and lasts 5 minutes to a week.
+- **While it's on**, its card says **Live**, and one in a voice channel has
+  **Join**. Whoever made it, and the den's staff, can end it early with
+  **End now**, or change when it ends. Before it starts they can change it or
+  cancel it.
+- **Who sees what.** Everyone who can see an event sees how many are
+  interested, and nobody sees who. The den keeps who's interested only to
+  tell them, and forgets it once the event ends. An event in a staff-only
+  channel is the staff's alone.
+- **The notification** comes as the event starts, while Dens is running on
+  your computer or phone; a Dens that was off doesn't catch up later. Turn
+  off **Events** under **Notifications & sounds** in **Settings** if you'd
+  rather not hear.
+
+{{% /details %}}
+
 ## Direct messages
 
 DMs are end-to-end encrypted: only you and the other person can read them, not
@@ -361,10 +391,11 @@ is.
 ## Notifications and sounds
 
 Dens can tell you about a DM, or a message that mentions your username, but
-nothing notifies you until you turn it on: open **Settings**, then
+no message notifies you until you turn it on: open **Settings**, then
 **Notifications & sounds**, and turn on **Direct messages**, **Mentions**, or
-both. Then the bell beside a den's name mutes the whole den, and the bell at
-the top of a channel or DM mutes just that one.
+both. An event you're interested in notifies you as it starts unless you turn
+off **Events** there. The bell beside a den's name mutes the whole den, and
+the bell at the top of a channel or DM mutes just that one.
 
 A notification shows the start of the message, a DM's too, to anyone who can
 see your screen, or your phone's lock screen. Turn off **Show the message** and
