@@ -1307,7 +1307,25 @@ function handle(msg) {
     else if (e.talking) talked(e.talking);
     else if (typeof e.sounding === 'string') sounded(e.sounding);
     else if (e.keys) gotKeys(e.keys);
+    else if (e.move_to) moved(e.move_to);
     else if (e.ended) ended(e.ended);
+}
+
+// moved joins the voice channel staff moved the member to (M17.2), as if
+// they'd picked it: sealed, as every join is, muted and deafened as they
+// were, which ends this call. The channel's name is the den's, for the
+// call's label.
+async function moved(to) {
+    const c = call;
+    let name = '';
+    try {
+        const v = await api.get(`/api/dens/${c.den}/state`);
+        name = v.channels.find((x) => x.id === to)?.name || '';
+    } catch {
+        // The label goes without it.
+    }
+    if (call !== c) return;
+    joinCall(c.den, to, { ...c.label, channel: name || 'Voice channel' });
 }
 
 // answerFor decides what an offer gets: an answer to a new one, the same

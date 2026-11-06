@@ -1,7 +1,8 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
 // a call stay in view (M3.3), in five tabs (M8.3, M14.2), or on the phone
 // layout a list of the five, each a page (M13.3). Appearance holds the
-// theme, and when animated pictures play (M15.1); Chat & media whether
+// theme, when animated pictures play (M15.1), and how dense messages show
+// (M17.2); Chat & media whether
 // photos and videos go compressed (M5), what
 // happens to links, and whether YouTube videos play in Dens (M4.1);
 // Notifications & sounds what notifies the member (M12.3) and the page's
@@ -9,8 +10,8 @@
 // suppression, how the member sends their voice, their shortcuts (M7) and
 // how they share their screen (M4.2); System hosting a den (M9.1) and
 // moving it to another computer (M10), the cache of other dens' files
-// (M6), update checks, the local password, logging, signing this browser
-// out, and the version.
+// (M6), update checks, and in the Android app a check at once (M17.2), the
+// local password, logging, signing this browser out, and the version.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
@@ -33,6 +34,7 @@ import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import { useCoarse, useHoldsButton } from './touch.js';
+import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
     callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
@@ -81,10 +83,10 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    // Animations and verified marks come first, their few choices above
-    // the themes' grid, where a long list of themes would push them out of
-    // sight.
-    else panel = <><AnimationsPicker /><VerifiedMarksPicker /><ThemePicker /></>;
+    // Density, animations and verified marks come first, their few choices
+    // above the themes' grid, where a long list of themes would push them
+    // out of sight.
+    else panel = <><DensityPicker /><AnimationsPicker /><VerifiedMarksPicker /><ThemePicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -184,6 +186,26 @@ function ThemePicker() {
                     ))}
                 </div>
             )}
+        </Card>
+    );
+}
+
+// DensityPicker chooses how messages show (M17.2): as they always have, or
+// Compact, a line each of the time, the name and the text. This browser
+// keeps it, as it keeps the theme.
+function DensityPicker() {
+    const choice = useDensity();
+    return (
+        <Card title="Message density">
+            <div role="radiogroup" aria-label="Message density" class="flex flex-wrap gap-x-6 gap-y-2" data-density>
+                {[[DENSITY_DEFAULT, 'Default'], [DENSITY_COMPACT, 'Compact']].map(([value, label]) => (
+                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
+                        <input type="radio" class="radio radio-sm" name="density" value={value} checked={choice === value}
+                            onChange={() => setDensity(value)} />
+                        <span>{label}</span>
+                    </label>
+                ))}
+            </div>
         </Card>
     );
 }
@@ -880,6 +902,7 @@ function SystemSettings({ instance, version, pair }) {
                             ? "A check asks the release host for the newest version, which sees this phone's IP address. Dens downloads a newer one as it finds it, checks it was signed by Dens's release process, and Android asks you before installing it."
                             : "A check asks the release host for the newest version, which sees this computer's IP address."}
                     </p>
+                    {settings.updatesDownload && <CheckNow />}
                 </Card>
             )}
             {settings.updatesThroughFlatpak && (
@@ -940,6 +963,42 @@ function SystemSettings({ instance, version, pair }) {
                 </p>
             </Card>
         </>
+    );
+}
+
+// CheckNow checks for an update at once, in the Android app (M17.2),
+// whatever the daily checks are set to: the service asks the release host,
+// and downloads and checks a newer version before it answers, which Install
+// then hands to Android's installer.
+function CheckNow() {
+    const check = useAction();
+    const install = useAction();
+    const [found, setFound] = useState(null);
+    const run = () => check.run(async () => {
+        setFound(null);
+        setFound(await api.post('/api/update/check'));
+    });
+    return (
+        <div class="flex flex-col gap-2" data-check-now>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <button type="button" class="btn btn-outline btn-sm" disabled={check.busy} onClick={run}>
+                    {check.busy && <span class="loading loading-spinner loading-sm"></span>}
+                    {check.busy ? 'Checking…' : 'Check now'}
+                </button>
+                {found && !found.update && <span class="text-sm">Dens is up to date.</span>}
+                {found?.update && (
+                    <>
+                        {/* One string, which a screen reader reads as one. */}
+                        <span class="text-sm">{`Dens ${found.update} is ready to install.`}</span>
+                        <button type="button" class="btn btn-primary btn-sm" disabled={install.busy}
+                            onClick={() => install.run(() => api.post('/api/update'))}>
+                            {install.busy ? 'Opening the installer…' : 'Install'}
+                        </button>
+                    </>
+                )}
+            </div>
+            <ErrorText message={check.error || install.error} />
+        </div>
     );
 }
 

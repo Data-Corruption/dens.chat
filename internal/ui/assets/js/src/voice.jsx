@@ -577,8 +577,11 @@ function LeaveIcon() {
 // inCall, and elsewhere joins the call as label names it and watches;
 // watched holds the members whose shares the page watches. From M16.2 the
 // identities this member's Dens kept mark those they verified, and those
-// whose keys changed since, or since the page's call began, since.
-export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since }) {
+// whose keys changed since, or since the page's call began, since. Where
+// the den moves members, moving gives staff Move to in the menu of those
+// they outrank, with the voice channels it lists, and with a mouse lets
+// them drag their row onto another (M17.2).
+export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since, moving }) {
     const [menu, setMenu] = useState('');
     const [error, setError] = useState('');
     const narrow = useNarrow();
@@ -612,8 +615,9 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
     // options are what the menu of a member other than this one holds: how
     // loud they play here, on the phone layout's sheet a slider a finger
     // can hold (M13.4), and for staff who outrank them, muting them for
-    // everyone and disconnecting them.
+    // everyone, moving them to another call (M17.2) and disconnecting them.
     function options(m, name, pct, moderate, Row) {
+        const targets = moderate && moving ? moving.targets(members.get(m.id)) : [];
         return (
             <>
                 <label class={`flex items-center ${narrow ? 'h-14 gap-3 px-4 text-sm' : 'min-h-6 gap-2 text-xs'}`} title="How loud they play for you">
@@ -628,6 +632,16 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                         <Row onClick={() => act(m.id, 'voice-mute', { muted: !m.staff_muted })}>
                             {m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone'}
                         </Row>
+                        {targets.length > 0 && (
+                            <div role="group" aria-label="Move to" class="flex flex-col" data-move-to>
+                                <p class={`cursor-default select-none text-base-content/60 ${narrow ? 'px-4 pb-1 pt-3 text-xs' : 'px-2 pt-1 text-xs'}`}>Move to</p>
+                                {targets.map((t) => (
+                                    <Row key={t.id} onClick={() => act(m.id, 'move', { channel_id: t.id })}>
+                                        <span class="flex min-w-0 items-center gap-2"><SpeakerIcon size="h-3.5 w-3.5" /><span class="truncate">{t.name}</span></span>
+                                    </Row>
+                                ))}
+                            </div>
+                        )}
                         <Row danger onClick={() => act(m.id, 'disconnect')}>Disconnect from the call</Row>
                     </>
                 )}
@@ -647,8 +661,13 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                     const other = me && m.id !== me.id;
                     const moderate = me && member && rank(me.role) > rank(member.role);
                     const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
+                    // Staff drag those they outrank onto another voice channel.
+                    const drags = moderate && moving?.lift ? {
+                        draggable: true, onDragStart: (e) => moving.lift(e, m), onDragEnd: moving.letGo,
+                    } : {};
                     return (
-                        <HoverRow as="li" key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11">
+                        <HoverRow as="li" key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11"
+                            data-call-member={m.id} {...drags}>
                             <button type="button" class="flex min-w-0 flex-1 items-center gap-1.5 self-stretch rounded pr-1 text-left hover:text-base-content disabled:cursor-default"
                                 disabled={!member} onClick={() => onProfile?.(member)}>
                                 {/* A block of the avatar's own size, so the ring is round. */}
@@ -695,7 +714,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                     onClick={() => setMenu(menu === m.id ? '' : m.id)}>⋯</button>
                             )}
                             {other && menu === m.id && !narrow && (
-                                <div class="absolute right-0 top-full z-10 flex w-52 flex-col gap-1 rounded-box bg-base-100 p-2 shadow" data-call-menu>
+                                <div class="absolute right-0 top-full z-10 flex max-h-96 w-52 flex-col gap-1 overflow-y-auto rounded-box bg-base-100 p-2 shadow" data-call-menu>
                                     {options(m, name, pct, moderate, CallMenuRow)}
                                 </div>
                             )}
