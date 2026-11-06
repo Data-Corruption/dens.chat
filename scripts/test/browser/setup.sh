@@ -3,8 +3,8 @@
 # to date: Debian 13 with Chromium, Firefox ESR, Xvfb, PulseAudio, and dunst
 # for the desktop's notifications (M12.3), a user tester, and in tester's
 # home this branch's development binary, the voice probe, the pinned
-# Node.js, the media the checks send, and this directory. Then run a check
-# with run.sh.
+# Node.js, the media the checks send, this directory, and the public site's
+# build (M17.1). Then run a check with run.sh.
 #
 # The checks drive real browsers through every milestone's page features,
 # from M2's calls on. CI doesn't run them: they're the check before each
@@ -93,6 +93,18 @@ push internal/media/ffmpeg/testdata/late-sound.mp4 videos/late-sound.mp4
 push internal/media/ffmpeg/testdata/with-gps.mp4 clip.mp4
 push internal/media/ffmpeg/testdata/tone.mp3 sounds/tone.mp3
 for file in scripts/test/browser/*; do push "$file" "browser/$(basename "$file")" 0755; done
+
+# The public site, for the site check (M17.1): built as the Docs workflow
+# builds it, but for the address site-prep.sh serves it at. It's quick, so
+# it's built each time, --no-build or not.
+hugo=$(./scripts/vendor.sh hugo | sed -n 's/^hugo=//p')
+rm -rf out/browser/site out/browser/site.tgz
+mkdir -p out/browser
+(cd docs && HUGO_ENVIRONMENT=production "$hugo" --quiet --minify --panicOnWarning \
+    --baseURL http://127.0.0.1:18313/ --destination ../out/browser/site)
+tar -C out/browser/site -czf out/browser/site.tgz .
+push out/browser/site.tgz site.tgz
+as_tester sh -c 'rm -rf site && mkdir site && tar -C site -xzf site.tgz && rm site.tgz'
 
 # Speech for the fake microphones, about a minute of it, and a photo that
 # isn't from a phone.

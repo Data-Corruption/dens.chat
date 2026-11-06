@@ -93,12 +93,19 @@
 #                               comparing codes from a DM's lock (M16.1); and a DM's time from its header (M16.4).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, owner
 #                               or before; all unless given
+#   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
+#                               platform's page holding its own steps alone, its folds closed until opened,
+#                               the Flatpak's old link landing on the choice, and the links into the guides
+#                               reaching their anchors; at 390 pixels by touch and at a desktop's width with
+#                               a mouse, with the phone check's audits (MODE chromium, firefox,
+#                               chromium-desktop or firefox-desktop; all four unless given). setup.sh builds
+#                               the site, so run it again after changing the site
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,96p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,103p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
