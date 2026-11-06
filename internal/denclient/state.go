@@ -66,6 +66,11 @@ type denState struct {
 	// version with group DMs (M16.3), and notes the one with notes to self
 	// (M17.3).
 	groupDMs, notes bool
+	// events are the den's events to come and live that the member sees,
+	// by ID, each with their own mark, and eventLimits its limits for them,
+	// nil from a den older than events (M17.4).
+	events      map[string]denproto.DenEvent
+	eventLimits *denproto.EventLimits
 }
 
 // View is a joined den as the page sees it.
@@ -116,6 +121,12 @@ type View struct {
 	// HasNotes says the den has notes to self for this Dens, which the page
 	// offers only then (M17.3).
 	HasNotes bool `json:"has_notes"`
+	// Events are the den's events to come and live that the member sees,
+	// live first and then by their start, each with their own mark, and
+	// EventLimits its limits for them, null from a den older than events,
+	// which the page offers them by (M17.4).
+	Events      []denproto.DenEvent   `json:"events"`
+	EventLimits *denproto.EventLimits `json:"event_limits"`
 }
 
 func newState() *denState {
@@ -123,7 +134,7 @@ func newState() *denState {
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
 		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{},
-		emoji: map[string]denproto.Emoji{}}
+		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -144,7 +155,8 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
-		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers}
+		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Events: sortedEvents(s.events),
+		EventLimits: s.eventLimits}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -318,15 +330,16 @@ func cleanRead(r denproto.ReadState) (denproto.ReadState, bool) {
 }
 
 // cleanLimits checks a den's upload limits, its limits for calls, its
-// retention period, its soundboard's limits and its limit for emoji, which
-// a den older than the soundboard (M14.3) or emoji (M15.2) doesn't send.
-// The den checked them when they were set, so any that don't check are the
-// den misbehaving.
+// retention period, its soundboard's limits and its limits for emoji and
+// events, which a den older than the soundboard (M14.3), emoji (M15.2) or
+// events (M17.4) doesn't send. The den checked them when they were set, so
+// any that don't check are the den misbehaving.
 func cleanLimits(d denproto.Den) bool {
 	return denproto.CheckLimits(d.Limits) == nil && denproto.CheckCallLimits(d.CallLimits) == nil &&
 		denproto.CheckRetention(d.Retention) == nil &&
 		(d.SoundLimits == denproto.SoundLimits{} || denproto.CheckSoundLimits(d.SoundLimits) == nil) &&
-		(d.EmojiLimits == nil || denproto.CheckEmojiLimits(*d.EmojiLimits) == nil)
+		(d.EmojiLimits == nil || denproto.CheckEmojiLimits(*d.EmojiLimits) == nil) &&
+		(d.EventLimits == nil || denproto.CheckEventLimits(*d.EventLimits) == nil)
 }
 
 // cleanEmoji checks a den's emoji, as many as a den keeps at most, each
@@ -390,6 +403,11 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		return errMalformed
 	}
 	next.emoji, next.emojiLimits = emoji, r.Den.EmojiLimits
+	events, ok := cleanEvents(r.Events, true)
+	if !ok {
+		return errMalformed
+	}
+	next.events, next.eventLimits = events, r.Den.EventLimits
 	for _, m := range r.Members {
 		m, ok := cleanMember(m)
 		if !ok || !validID(m.ID) {
@@ -509,16 +527,21 @@ type keptState struct {
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
 	// M17.3: whether the den has notes to self for this Dens.
 	Notes bool `json:"notes,omitempty"`
+	// M17.4: the den's events to come and live that the member saw, each
+	// with their own mark, as the connection last knew them.
+	Events []denproto.DenEvent `json:"events,omitempty"`
 }
 
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
 	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
-		EmojiLimits: s.emojiLimits, SealedCalls: s.sealedCalls, Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers},
+		EmojiLimits: s.emojiLimits, EventLimits: s.eventLimits, SealedCalls: s.sealedCalls, Disappearing: s.disappearing, Spoilers: s.spoilers,
+		MoveMembers: s.moveMembers},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
-		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, GroupDMs: s.groupDMs, Notes: s.notes}
+		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, GroupDMs: s.groupDMs, Notes: s.notes,
+		Events: sortedEvents(s.events)}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -566,6 +589,11 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		return nil, errMalformed
 	}
 	s.emoji, s.emojiLimits = emoji, k.Den.EmojiLimits
+	events, ok := cleanEvents(k.Events, false)
+	if !ok {
+		return nil, errMalformed
+	}
+	s.events, s.eventLimits = events, k.Den.EventLimits
 	for _, m := range members {
 		m, ok := cleanMember(m)
 		if !ok {
@@ -1011,6 +1039,52 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		}
 		delete(s.emoji, d.ID)
 		data = d
+	case denproto.EventEventCreated, denproto.EventEventUpdated, denproto.EventEventStarted:
+		var ev denproto.DenEvent
+		if json.Unmarshal(e.D, &ev) != nil || denproto.CheckDenEvent(ev) != nil {
+			return e, false, errMalformed
+		}
+		old, known := s.events[ev.ID]
+		if !known && len(s.events) >= denproto.MaxEvents {
+			return e, false, errMalformed
+		}
+		// The member's own mark comes only to their own sessions.
+		if ev.Mine == nil {
+			mine := known && old.Mine != nil && *old.Mine
+			ev.Mine = &mine
+		}
+		if known && old.Banner.ID != "" && old.Banner.ID != ev.Banner.ID {
+			s.gone = append(s.gone, old.Banner.ID) // replaced, so deleted
+		}
+		s.events[ev.ID] = ev
+		data = ev
+	case denproto.EventEventCanceled, denproto.EventEventEnded:
+		var x denproto.EventID
+		if json.Unmarshal(e.D, &x) != nil || !validID(x.ID) {
+			return e, false, errMalformed
+		}
+		// A canceled event's banner goes with it; an ended one's stays on
+		// the den, for its card (M17.5).
+		if old, ok := s.events[x.ID]; ok && old.Banner.ID != "" && e.T == denproto.EventEventCanceled {
+			s.gone = append(s.gone, old.Banner.ID)
+		}
+		delete(s.events, x.ID)
+		data = x
+	case denproto.EventEventInterest:
+		var in denproto.EventInterest
+		if json.Unmarshal(e.D, &in) != nil || in.Check() != nil {
+			return e, false, errMalformed
+		}
+		ev, ok := s.events[in.EventID]
+		if !ok {
+			return e, false, nil
+		}
+		ev.Interested = in.Interested
+		if in.Mine != nil {
+			ev.Mine = in.Mine
+		}
+		s.events[in.EventID] = ev
+		data = in
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState
 		if json.Unmarshal(e.D, &r) != nil {

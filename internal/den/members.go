@@ -229,10 +229,13 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // again if they come back. The sounds and emoji they added are the den's, and
 // stay (M14.3, M15.2).
 // They leave their group DMs too, each by a change of the den's own
-// (M16.3), and their notes go, with their files (M17.3).
-// It returns those files' blobs, to remove once tx commits, and the
-// groups' changes, to tell their members of.
-func depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) ([][]byte, []groupDone, error) {
+// (M16.3), their notes go, with their files (M17.3), and their events to
+// come, with their banners, and their marks on the rest (M17.4); their
+// live events go on to their end, banners and all.
+// It returns what's to be told once tx commits: those files' blobs, to
+// remove, the groups' changes, to tell their members of, and the events.
+func (d *Den) depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) (departure, error) {
+	var out departure
 	for _, stmt := range []string{
 		`UPDATE den_members SET left_at = ?1, role = 'member', identity = NULL WHERE id = ?2`,
 		`DELETE FROM den_identities WHERE member_id = ?2`,
@@ -244,31 +247,45 @@ func depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) ([][]b
 		`DELETE FROM den_invites WHERE created_by = ?2 AND role = 'member'`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, now, id); err != nil {
-			return nil, nil, err
+			return out, err
 		}
 	}
 	if err := logMember(ctx, tx, id, time.UnixMilli(now)); err != nil {
-		return nil, nil, err
+		return out, err
 	}
-	groups, err := departGroups(ctx, tx, denID, id, time.UnixMilli(now))
-	if err != nil {
-		return nil, nil, err
+	var err error
+	if out.groups, err = departGroups(ctx, tx, denID, id, time.UnixMilli(now)); err != nil {
+		return out, err
 	}
 	notes, err := deleteNotes(ctx, tx, id)
 	if err != nil {
-		return nil, nil, err
+		return out, err
 	}
-	blobs, err := deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL AND NOT `+named, id)
-	return append(blobs, notes...), groups, err
+	var banners [][]byte
+	if out.events, banners, err = d.departEvents(ctx, tx, id); err != nil {
+		return out, err
+	}
+	blobs, err := deleteFiles(ctx, tx, `uploader_id = ? AND message_id IS NULL AND NOT `+named+` AND NOT `+eventBanner, id)
+	out.blobs = slices.Concat(blobs, notes, banners)
+	return out, err
+}
+
+// departure is what a member's leaving takes, to tell once it commits.
+type departure struct {
+	blobs  [][]byte
+	groups []groupDone
+	events eventsGone
 }
 
 // publishDeparted tells the members of a member's groups that the den
-// took them out, as they left the den.
-func (d *Den) publishDeparted(ctx context.Context, groups []groupDone) error {
+// took them out, as they left the den, and everyone who saw them of the
+// events their leaving canceled and the counts it changed (M17.4).
+func (d *Den) publishDeparted(ctx context.Context, gone departure) error {
 	var errs []error
-	for _, g := range groups {
+	for _, g := range gone.groups {
 		errs = append(errs, d.publishGroup(ctx, g))
 	}
+	errs = append(errs, d.publishGone(ctx, gone.events))
 	return errors.Join(errs...)
 }
 
@@ -297,15 +314,18 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	var readers []reader
 	var unreacted []denproto.ReactionChange
 	var blobs [][]byte
-	var groups []groupDone
+	var gone departure
 	// The reactions a ban takes off wait their turn with edits (M15.3).
 	if req.DeleteMessages > 0 {
 		d.changes.Lock()
 		defer d.changes.Unlock()
 	}
-	// Their groups' keys retire with their leaving them (M16.3).
+	// Their groups' keys retire with their leaving them (M16.3), and their
+	// events to come go (M17.4).
 	d.keys.Lock()
 	defer d.keys.Unlock()
+	d.calendar.Lock()
+	defer d.calendar.Unlock()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var role string
 		var leftAt, bannedAt, inviteID sql.NullInt64
@@ -346,8 +366,8 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			return nil
 		}
 		left = true
-		kept, departed, err := depart(ctx, tx, info.ID, mid, now)
-		blobs, groups = append(blobs, kept...), departed
+		gone, err = d.depart(ctx, tx, info.ID, mid, now)
+		blobs = append(blobs, gone.blobs...)
 		return err
 	})
 	if err != nil {
@@ -374,7 +394,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	if err := d.publishReaders(ctx, readers); err != nil {
 		return err
 	}
-	if err := d.publishDeparted(ctx, groups); err != nil {
+	if err := d.publishDeparted(ctx, gone); err != nil {
 		return err
 	}
 	return d.publishUnreacted(ctx, unreacted)
@@ -463,24 +483,25 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 	}
 	now := d.now().UnixMilli()
 	info, _ := d.Info()
-	var blobs [][]byte
-	var groups []groupDone
+	var gone departure
 	d.keys.Lock()
 	defer d.keys.Unlock()
+	d.calendar.Lock()
+	defer d.calendar.Unlock()
 	err := d.tx(ctx, func(tx *sql.Tx) (err error) {
-		blobs, groups, err = depart(ctx, tx, info.ID, s.MemberID, now)
+		gone, err = d.depart(ctx, tx, info.ID, s.MemberID, now)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	d.files.remove(blobs)
+	d.files.remove(gone.blobs)
 	d.cancelRequests(s.MemberID)
 	d.CloseMemberSockets(s.MemberID, denproto.CloseRevoked, denproto.CloseReasonLeft)
 	d.memberGone(s.MemberID)
 	d.log.Infof("Member %d left", s.MemberID)
 	return errors.Join(d.Hub.Publish(denproto.EventMemberLeft, denproto.MemberLeft{ID: denproto.FormatID(s.MemberID), LeftAt: now}, Everyone),
-		d.publishDeparted(ctx, groups))
+		d.publishDeparted(ctx, gone))
 }
 
 // Bans lists the banned members, most recent first.

@@ -53,11 +53,11 @@ export function heading(n) {
 }
 
 // show shows a notification through the browser, replacing its channel's;
-// a click on it brings the page forward and opens the message, through
-// open. It shows silently, since the page plays the message's sound
-// (M14.2): Chromium and, from 132, Firefox keep the system's own quiet. It
-// returns the browser's notification, or null where the browser won't
-// show it.
+// a click on it brings the page forward and opens the message, or the
+// event (M17.4), through open, which it hands the notification. It shows
+// silently, since the page plays the message's sound (M14.2): Chromium
+// and, from 132, Firefox keep the system's own quiet. It returns the
+// browser's notification, or null where the browser won't show it.
 export function show(n, open, win = globalThis) {
     const N = win.Notification;
     if (permission(win) !== 'granted') return null;
@@ -74,7 +74,7 @@ export function show(n, open, win = globalThis) {
     note.onclick = () => {
         win.focus?.();
         note.close();
-        open(n.den, n.channel, n.message);
+        open(n);
     };
     note.onclose = () => {
         if (shown.get(n.key) === note) shown.delete(n.key);
@@ -99,7 +99,7 @@ export function tell(doc = globalThis.document, win = globalThis) {
 }
 
 // startNotifications shows what the service gives this page, opening a
-// clicked one's message through open(den, channel, message), and keeps the
+// clicked one's message or event through open(notification), and keeps the
 // service told what the page is.
 export function startNotifications(open) {
     if (started) return;
@@ -142,9 +142,10 @@ export function mutedIn(st, denID) {
     return { den: !!m?.den, channels: new Set(m?.channels || []) };
 }
 
-// notifying is whether the member turned any kind on.
+// notifying is whether any kind notifies: DMs or mentions, which the
+// member turns on, or events, on unless they turn them off (M17.4).
 export function notifying(st) {
-    return !!(st?.dms || st?.mentions);
+    return !!(st && (st.dms || st.mentions || !st.eventsOff));
 }
 
 // whereTheyShow says where the member's notifications show, for the
@@ -160,7 +161,7 @@ export function whereTheyShow(st, browser, helper) {
     const here = {
         granted: 'This browser shows them while a Dens tab is open, unless it shows that channel.',
         denied: "This browser blocks Dens's notifications: allow them for this site in its settings.",
-        default: 'This browser asks whether to show them once you turn one on.',
+        default: 'This browser asks whether to show them as you turn one on, or mark an event Interested.',
         unsupported: "This browser can't show notifications.",
     }[browser];
     const away = helper?.helper && helper.notifies

@@ -18,7 +18,10 @@
 # others posts its notification (M12.3), whose tap opens the page at the
 # message, in place on the page that shows (M13.1), and reading it takes
 # the next back. The member's notes open at version 3 of the protocol, and
-# a note written there reads back, sealed on the den (M17.3). Dens killed
+# a note written there reads back, sealed on the den (M17.3). An event the
+# member marked Interested posts its notification as it starts, the
+# phone's screen off, whose tap opens the page's events at it, and its end
+# takes it back (M17.4). Dens killed
 # under the shell
 # starts again, and the
 # app force-stopped and opened again keeps its page's session; Back leaves
@@ -442,6 +445,42 @@ ok "read on the den, the DM's notification was taken back"
 # walk finds the line where its time was set, and the time in its header
 # (M16.4).
 den api PUT "/api/dens/$den_id/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null || fail "setting the DM's time"
+
+# An event (M17.4): desk makes one in Lounge, starting within the minute,
+# which the phone's member marks Interested. With the phone's screen off,
+# desk's den tells the phone's Dens as it starts, which posts the
+# notification as a message's, in the Messages channel; awake, its tap
+# opens the page's events at it, in place.
+echo ">> An event's start, the screen off"
+lounge=$(den api GET "/api/dens/$den_id/state" | python3 -c 'import json, sys; print(next(c["id"] for c in json.load(sys.stdin)["channels"] if c["name"] == "Lounge"))')
+at=$(($(date +%s) * 1000 + 40000))
+event=$(den api POST "/api/dens/$den_id/events" "{\"name\":\"Game night on the phone\",\"starts_at\":$at,\"ends_at\":$((at + 3600000)),\"channel_id\":\"$lounge\"}" |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')
+listed() { [[ $(pagejson "/api/dens/$den_id/state" "(v.events || []).some((e) => e.id === '$event')") == true ]]; }
+waitfor 20 "the event on the phone" listed
+phone drive api PUT "/api/dens/$den_id/events/$event/interest" | grep -q '^200' || fail "marking the event Interested"
+adb shell input keyevent KEYCODE_SLEEP
+asleep() { [[ $(adb shell dumpsys power | tr -d '\r') =~ mWakefulness=(Asleep|Dozing) ]]; }
+waitfor 10 "the screen off" asleep
+waitfor 90 "the event's notification" shows "Game night on the phone"
+asleep || fail "the screen woke before the event's notification"
+[[ $(notifications) == *"pkg=$APP"*"channel=messages"* ]] || fail "the event's notification isn't the app's, in its Messages channel"
+shows "Live now in Lounge" || fail "the event's notification doesn't say it's live, in Lounge"
+ok "with the phone's screen off, the event it marked Interested posted its notification as it started"
+adb shell input keyevent KEYCODE_WAKEUP
+adb shell wm dismiss-keyguard >/dev/null 2>&1 || :
+phone drive eval 'window.heldOver = true' >/dev/null
+adb shell cmd statusbar expand-notifications
+sleep 2
+tap 10 'Game night on the phone' || fail "no event's notification to tap in the shade"
+waitfor 20 "the page in front" front
+opened() { [[ $(phone drive eval "location.pathname === '/den/$den_id/events' && !!document.querySelector('[data-event=\"$event\"]')") == true ]]; }
+waitfor 20 "the page's events open at the event" opened
+[[ $(phone drive eval 'window.heldOver === true') == true ]] || fail "the tap loaded the page again rather than opening the event on it"
+den api POST "/api/dens/$den_id/events/$event/end" >/dev/null || fail "ending the event"
+gone() { ! shows "Game night on the phone"; }
+waitfor 20 "the event's notification taken back" gone
+ok "its tap opened the page's events at it, in place, and ended, its notification was taken back"
 
 adb shell run-as "$APP" sh -c "'kill -9 \$(pidof libdens.so)'"
 waitfor 30 "Dens started again" sh -c "scripts/test/android/phone.sh $serial log -s Dens:* | grep -q 'Dens ended (signal 9)'"

@@ -22,19 +22,24 @@ var releasedSchema = []struct {
 	added []string
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
-	{"v1.6.0", 1, append([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables...)},
+	{"v1.6.0", 1, slices.Concat([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"},
+		m16Tables, m17Tables)},
 	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
-	{"v1.7.0", 3, append([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables...)},
+	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables)},
 	// v1.8.0 added M15.2's emoji, M15.3's reactions and M15.4's polls.
-	{"v1.8.0", 6, m16Tables},
+	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables)},
 	// v1.9.0 added M16.1's identities, M16.3's group DMs and M16.4's
 	// disappearing messages.
-	{"v1.9.0", 9, nil},
+	{"v1.9.0", 9, m17Tables},
 }
 
 // m16Tables are the tables M16's steps add: M16.1's identities and
 // records, and M16.3's group DMs.
 var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_group_members", "den_group_changes"}
+
+// m17Tables are the tables M17's steps add: M17.4's events and who's
+// interested in them.
+var m17Tables = []string{"den_events", "den_event_interest"}
 
 // retiredKeys are the tables of DM keys, which M16.1's step changes for a
 // release before it: an exchange still running, or checked by one member
@@ -59,7 +64,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // with identities, a group DM and a time set, keeps them all. M17.2 adds a
 // file's spoiler, which none is. M17.3 makes den_channels again to take
 // notes, keeping every row, M16.4's times among them, and the counter, as
-// M16.3's step did.
+// M16.3's step did. M17.4 adds events and who's interested in them, which
+// start empty, and the den's limit for members' events, which starts at 0,
+// leaving them to staff.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -198,6 +205,27 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				}
 				if _, err := db.Exec(`UPDATE den_files SET spoiler = 2 WHERE id = 1`); err == nil {
 					t.Errorf("%s takes a spoiler other than 0 or 1", what)
+				}
+				// Events are staff's until the owner says otherwise (M17.4),
+				// and each is to come, live or ended, ending no sooner than
+				// it starts.
+				var memberEvents int
+				if err := db.QueryRow(`SELECT member_events FROM den`).Scan(&memberEvents); err != nil || memberEvents != 0 {
+					t.Errorf("%s's den lets each member have %d events, %v, not 0", what, memberEvents, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_events (details, channel_id, made_by, made_at, starts_at, ends_at) VALUES (x'00', 1, 1, 9, 10, 20)`); err != nil {
+					t.Errorf("%s takes no event after the migration: %v", what, err)
+				} else if _, err := db.Exec(`INSERT INTO den_event_interest (event_id, member_id) VALUES (last_insert_rowid(), 1)`); err != nil {
+					t.Errorf("%s takes nobody's interest after the migration: %v", what, err)
+				}
+				for _, q := range []string{
+					`UPDATE den SET member_events = 11`,
+					`INSERT INTO den_events (details, made_by, made_at, starts_at, ends_at, state) VALUES (x'00', 1, 9, 10, 20, 'gone')`,
+					`INSERT INTO den_events (details, made_by, made_at, starts_at, ends_at) VALUES (x'00', 1, 9, 20, 10)`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {

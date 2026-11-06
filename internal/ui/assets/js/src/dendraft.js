@@ -1,8 +1,9 @@
 // The owner's edits to a den in its Manage dialog (M8.3): its name and
 // address, its upload limits, how long it keeps messages, its limits for
-// calls, from M14.3 for its soundboard and from M15.2 for its emoji. They
-// gather in one draft, kept as the fields' text, and go to the den as one
-// update of what changed.
+// calls, from M14.3 for its soundboard, from M15.2 for its emoji, and from
+// M17.4 how many events each member may have. They gather in one draft,
+// kept as the fields' text, and go to the den as one update of what
+// changed.
 
 import { HEIGHTS } from './share.js';
 
@@ -26,7 +27,19 @@ export function draftOf(den, view) {
         ...callFields(view.call_limits),
         ...soundFields(view.sound_limits),
         ...emojiFields(view.emoji_limits),
+        ...eventFields(view.event_limits),
     };
+}
+
+// eventFields are a den's limit for members' events as a draft's field, or
+// none for a den older than events (M17.4).
+export function eventFields(l) {
+    return l ? { memberEvents: String(l.member_events) } : {};
+}
+
+// hasEvents says whether a draft has the limit for members' events.
+export function hasEvents(d) {
+    return 'memberEvents' in d;
 }
 
 // emojiFields are a den's limit for its emoji as a draft's field, or none
@@ -136,6 +149,12 @@ export function changesOf(draft, base) {
         const emojis = Number(draft.emojis);
         if (!whole(emojis, 0, 500)) return refuse('Max emoji is 1 to 500.');
         body.emoji_limits = { emojis };
+    }
+
+    if (hasEvents(draft) && Number(draft.memberEvents) !== Number(base.memberEvents)) {
+        const memberEvents = Number(draft.memberEvents);
+        if (!whole(memberEvents, 0, 10)) return refuse('Events each member may have is 1 to 10.');
+        body.event_limits = { member_events: memberEvents };
     }
     return { body, problem: '' };
 }

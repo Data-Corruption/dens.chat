@@ -135,11 +135,16 @@ export async function uploadAnimated(denID, picture, file, rect, replaces) {
 }
 
 // fileWhere says what uses one of a member's files, as their list of them
-// shows it (M5): a channel or a DM, a picture on their profile, or nothing
-// while it waits to be sent. view is the den as the page has it.
+// shows it (M5): a channel or a DM, a picture on their profile, an event's
+// banner (M17.4), or nothing while it waits to be sent. view is the den as
+// the page has it.
 export function fileWhere(f, view) {
     if (f.profile === 'avatar') return 'Your profile picture';
     if (f.profile === 'banner') return 'Your profile banner';
+    if (f.event) {
+        const e = (view.events || []).find((x) => x.id === f.event);
+        return e ? `The banner of ${e.name}` : "An event's banner";
+    }
     if (!f.message_id) return 'Waiting to be sent';
     const c = view.channels.find((x) => x.id === f.channel_id);
     if (!c) return "In a channel you can't see";

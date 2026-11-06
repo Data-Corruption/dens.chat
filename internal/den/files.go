@@ -566,8 +566,9 @@ func (d *Den) preview(ctx context.Context, orig *part, blob []byte, kind media.K
 // OpenFile opens a file, or its preview, for a member who may see it:
 // anyone who can see the message it's on, anyone in the den for a picture
 // on a profile or an emoji (M15.2), which every page draws, staff alone for
-// a sound (M14.3), since only the den plays one, and only its uploader
-// while it waits to be used.
+// a sound (M14.3), since only the den plays one, anyone who sees its event
+// for an event's banner (M17.4), and only its uploader while it waits to
+// be used.
 func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (StoredFile, error) {
 	none := StoredFile{}
 	fid, err := denproto.ParseID(id)
@@ -579,11 +580,16 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	var thumbSize, channel sql.NullInt64
 	var profile bool
 	var named sql.NullString
+	// An event's banner: whether the file is one, and the staff-only
+	// channel its event is in, if any.
+	var event, staffEvent bool
 	err = d.db.QueryRowContext(ctx, `SELECT f.blob, f.size, f.thumb_size, f.uploader_id, m.channel_id,
 		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id),
-		(SELECT kind FROM den_named_files WHERE file_id = f.id)
+		(SELECT kind FROM den_named_files WHERE file_id = f.id),
+		EXISTS (SELECT 1 FROM den_events WHERE banner_id = f.id),
+		EXISTS (SELECT 1 FROM den_events e JOIN den_channels c ON c.id = e.channel_id WHERE e.banner_id = f.id AND c.staff_only = 1)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?`, fid).
-		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named)
+		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named, &event, &staffEvent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return none, errFileNotFound
 	}
@@ -598,6 +604,10 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	case channel.Valid:
 		c, err := d.channel(ctx, d.db, channel.Int64)
 		if err != nil || !sees(c, s) {
+			return none, errFileNotFound
+		}
+	case event:
+		if staffEvent && !IsStaff(s.Role) {
 			return none, errFileNotFound
 		}
 	case profile, uploader == s.MemberID:
@@ -756,9 +766,27 @@ func deleteFiles(ctx context.Context, q querier, where string, args ...any) ([][
 	return blobs, rows.Err()
 }
 
-// unused selects files no message, profile or name uses.
+// bannerShape checks a banner's shape and size, a profile's or an event's
+// (M17.4): three times as wide as high, give or take the rounding of a
+// crop, within the sides and size a still or an animated one takes.
+func bannerShape(width, height, size int64, animated bool) error {
+	shaped := width >= denproto.MinBannerWide && width*100 >= height*290 && width*100 <= height*310
+	switch {
+	case animated && (!shaped || width > denproto.MaxAnimatedBannerWide || size > denproto.MaxAnimatedBannerSize):
+		return invalid("an animated banner is %d to %d pixels wide and three times as wide as high, at most %d MiB",
+			denproto.MinBannerWide, denproto.MaxAnimatedBannerWide, denproto.MaxAnimatedBannerSize>>20)
+	case !shaped || width > denproto.MaxBannerWide:
+		return invalid("a banner is %d to %d pixels wide and three times as wide as high", denproto.MinBannerWide, denproto.MaxBannerWide)
+	}
+	return nil
+}
+
+// unused selects files no message, profile, name or event uses.
 const unused = `message_id IS NULL AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)
-	AND NOT ` + named
+	AND NOT ` + named + ` AND NOT ` + eventBanner
+
+// eventBanner selects files an event's banner uses (M17.4).
+const eventBanner = `EXISTS (SELECT 1 FROM den_events WHERE banner_id = den_files.id)`
 
 // named selects files one of the den's names uses, as a sound (M14.3) or
 // an emoji (M15.2).
@@ -889,14 +917,8 @@ func checkPicture(ctx context.Context, tx *sql.Tx, member int64, id string, bann
 	}
 	width, height := w.Int64, h.Int64
 	if banner {
-		// Three times as wide as high, give or take the rounding of a crop.
-		shaped := width >= denproto.MinBannerWide && width*100 >= height*290 && width*100 <= height*310
-		switch {
-		case animated && (!shaped || width > denproto.MaxAnimatedBannerWide || size > denproto.MaxAnimatedBannerSize):
-			return 0, invalid("an animated banner is %d to %d pixels wide and three times as wide as high, at most %d MiB",
-				denproto.MinBannerWide, denproto.MaxAnimatedBannerWide, denproto.MaxAnimatedBannerSize>>20)
-		case !shaped || width > denproto.MaxBannerWide:
-			return 0, invalid("a banner is %d to %d pixels wide and three times as wide as high", denproto.MinBannerWide, denproto.MaxBannerWide)
+		if err := bannerShape(width, height, size, animated); err != nil {
+			return 0, err
 		}
 		return fid, nil
 	}

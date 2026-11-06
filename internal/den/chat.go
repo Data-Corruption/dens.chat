@@ -192,7 +192,10 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 	if r.Sounds, err = d.sounds(ctx, d.db); err != nil {
 		return r, err
 	}
-	r.Emoji, err = d.emojis(ctx, d.db)
+	if r.Emoji, err = d.emojis(ctx, d.db); err != nil {
+		return r, err
+	}
+	r.Events, err = d.eventsFor(ctx, d.db, member, staff)
 	return r, err
 }
 
@@ -698,11 +701,15 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	if before.StaffOnly != after.StaffOnly {
 		d.channelChanged(after, false)
 		// Members who could see the channel lose it, or members who
-		// couldn't gain it with its history: a fresh snapshot covers both.
+		// couldn't gain it with its history: a fresh snapshot covers both,
+		// and its events (M17.4), which follow it.
 		if err := d.Hub.Publish(denproto.EventChannelUpdated, after, Staff); err != nil {
 			return after, err
 		}
 		if err := d.publishReorders(ctx, lists); err != nil {
+			return after, err
+		}
+		if err := d.publishChannelEvents(ctx, cid); err != nil {
 			return after, err
 		}
 		d.Hub.RefreshNonStaff()
@@ -714,7 +721,8 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	return after, d.publishReorders(ctx, lists)
 }
 
-// DeleteChannel removes a channel and all its messages.
+// DeleteChannel removes a channel and all its messages, and a voice
+// channel's events to come, its live one ending (M17.4).
 func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	if !IsStaff(s.Role) {
 		return errStaffOnly
@@ -737,10 +745,18 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	}
 	var order []int64
 	var blobs [][]byte
+	var events eventsGone
+	d.calendar.Lock()
+	defer d.calendar.Unlock()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if _, blobs, err = filesOf(ctx, tx, `m.channel_id = ?`, cid); err != nil {
 			return err
 		}
+		var banners [][]byte
+		if events, banners, err = d.channelEvents(ctx, tx, cid); err != nil {
+			return err
+		}
+		blobs = append(blobs, banners...)
 		if _, err := tx.ExecContext(ctx, `DELETE FROM den_channels WHERE id = ?`, cid); err != nil {
 			return err
 		}
@@ -756,6 +772,9 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	}
 	d.files.remove(blobs)
 	d.channelChanged(c, true)
+	if err := d.publishGone(ctx, events); err != nil {
+		return err
+	}
 	if err := d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: c.ID}, audienceOf(c)); err != nil {
 		return err
 	}

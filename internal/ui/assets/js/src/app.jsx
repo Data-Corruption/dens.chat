@@ -16,6 +16,8 @@ import { ManageDialog } from './manageden.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
 import { openAt } from './messages.jsx';
+import { EVENTS } from './denevents.js';
+import { showEvent } from './denevents.jsx';
 import { chatRoute, nav, paneOf, pathOf, useNarrow, useTrail } from './nav.js';
 import { startNotifications } from './notify.js';
 import { DockedPlayer, SharePlayer } from './player.jsx';
@@ -23,24 +25,27 @@ import { CallBox, CallButton } from './voice.jsx';
 
 // dens open opens the page with a one-time token in the URL fragment,
 // which never reaches the server in the request line, and a notification's
-// click with the message to open there too (M12.3), and the Android app's
-// shell, on a page that shows, where to open it (M13.1). The page reads
-// them before its history starts, which takes them out of the address.
+// click with the message to open there too (M12.3), or the event (M17.4),
+// and the Android app's shell, on a page that shows, where to open it
+// (M13.1). The page reads them before its history starts, which takes them
+// out of the address.
 function readFragment(loc = window.location) {
-    if (!loc.hash.startsWith('#')) return { token: '', message: '', open: '' };
+    if (!loc.hash.startsWith('#')) return { token: '', message: '', event: '', open: '' };
     const params = new URLSearchParams(loc.hash.slice(1));
-    const message = /^[0-9]+$/.test(params.get('message') || '') ? params.get('message') : '';
+    const id = (key) => (/^[0-9]+$/.test(params.get(key) || '') ? params.get(key) : '');
     const open = chatRoute(params.get('open') || '') ? params.get('open') : '';
-    return { token: params.get('token') || '', message, open };
+    return { token: params.get('token') || '', message: id('message'), event: id('event'), open };
 }
 
 // openThere opens a fragment's message: in the channel it names, or the
-// channel the address names, which it opens.
-function openThere({ message, open }) {
+// channel the address names, which it opens; or its event, in the den's
+// events.
+function openThere({ message, event, open }) {
     const to = open || window.location.pathname;
     if (open) nav().open(open);
     const at = chatRoute(to);
-    if (message && at?.channelID && at.channelID !== 'dms') openAt(at.denID, at.channelID, message);
+    if (event && at?.channelID === EVENTS) showEvent(at.denID, event);
+    else if (message && at?.channelID && at.channelID !== 'dms' && at.channelID !== EVENTS) openAt(at.denID, at.channelID, message);
 }
 
 // takeSettingsPath opens the settings over the home page for /settings,
@@ -96,7 +101,7 @@ export function App({ instance, version, pair, pairLink }) {
         const onHash = async () => {
             const fragment = readFragment();
             const next = fragment.token;
-            if (fragment.open || fragment.message) openThere(fragment);
+            if (fragment.open || fragment.message || fragment.event) openThere(fragment);
             if (!next) return;
             // A token works once: the reload mustn't find it again.
             history.replaceState(history.state, '', window.location.pathname);
@@ -131,9 +136,14 @@ export function App({ instance, version, pair, pairLink }) {
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
     useEffect(() => {
         if (!open) return;
-        startNotifications((den, channel, message) => {
-            openAt(den, channel, message);
-            navigate(`/den/${den}/${channel}`);
+        startNotifications((n) => {
+            if (n.event) {
+                showEvent(n.den, n.event);
+                navigate(`/den/${n.den}/${EVENTS}`);
+                return;
+            }
+            openAt(n.den, n.channel, n.message);
+            navigate(`/den/${n.den}/${n.channel}`);
         });
     }, [open]);
     // An update installed meanwhile, as in the software center, shows once

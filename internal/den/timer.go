@@ -8,12 +8,14 @@ import (
 )
 
 // The den's timer: set for whatever comes due next, it ends polls at their
-// time (M15.4) and deletes disappearing messages at theirs (M16.4). It's
-// set as the den starts, which catches up on what came due while it was
-// stopped, as for a den restored from a backup, and again as polls are
-// posted and ended and messages that disappear are sent.
+// time (M15.4), deletes disappearing messages at theirs (M16.4), and starts
+// and ends events at theirs (M17.4). It's set as the den starts, which
+// catches up on what came due while it was stopped, as for a den restored
+// from a backup, and again as polls are posted and ended, messages that
+// disappear are sent, and events are made, moved, canceled and ended.
 
-// dueTimer runs the passes that end polls and delete disappearing messages.
+// dueTimer runs the passes that end polls, delete disappearing messages,
+// and start and end events.
 type dueTimer struct {
 	// pass lets one pass run at a time, and Stop wait for one under way.
 	pass sync.Mutex
@@ -25,10 +27,11 @@ type dueTimer struct {
 	closed  bool
 }
 
-// StartTimer starts ending polls and deleting disappearing messages at
-// their time, beginning with those whose time passed while the den was
-// stopped. Without it, as in tests, they come due only when a pass is
-// called. It starts again after StopTimer, as hosting does (M9.1).
+// StartTimer starts ending polls, deleting disappearing messages, and
+// starting and ending events at their time, beginning with those whose
+// time passed while the den was stopped. Without it, as in tests, they
+// come due only when a pass is called. It starts again after StopTimer, as
+// hosting does (M9.1).
 func (d *Den) StartTimer() {
 	t := &d.timer
 	t.mu.Lock()
@@ -51,7 +54,8 @@ func (d *Den) StopTimer() {
 	t.pass.Unlock()
 }
 
-// planTimer sets the timer for the next poll to end or message to go.
+// planTimer sets the timer for the next poll to end, message to go, or
+// event to start or end.
 func (d *Den) planTimer() {
 	t := &d.timer
 	t.mu.Lock()
@@ -65,7 +69,9 @@ func (d *Den) planTimer() {
 	}
 	var next sql.NullInt64
 	if err := d.db.QueryRow(`SELECT min(at) FROM (SELECT min(ends_at) AS at FROM den_polls WHERE ended = 0
-		UNION ALL SELECT min(expires_at) FROM den_messages WHERE expires_at IS NOT NULL)`).Scan(&next); err != nil {
+		UNION ALL SELECT min(expires_at) FROM den_messages WHERE expires_at IS NOT NULL
+		UNION ALL SELECT min(starts_at) FROM den_events WHERE state = 'coming'
+		UNION ALL SELECT min(ends_at) FROM den_events WHERE state = 'live')`).Scan(&next); err != nil {
 		d.log.Errorf("plan the den's timer: %v", err)
 		next = sql.NullInt64{Int64: d.now().Add(time.Minute).UnixMilli(), Valid: true}
 	}
@@ -89,8 +95,8 @@ func (d *Den) dueAt(at int64) {
 	}
 }
 
-// runTimer ends the polls and deletes the messages whose time came, then
-// plans the next pass.
+// runTimer ends the polls, deletes the messages, and ends and starts the
+// events whose time came, then plans the next pass.
 func (d *Den) runTimer() {
 	t := &d.timer
 	t.pass.Lock()
@@ -107,6 +113,12 @@ func (d *Den) runTimer() {
 	}
 	if err := d.deleteDue(ctx); err != nil {
 		d.log.Errorf("delete disappearing messages: %v", err)
+	}
+	if err := d.endDueEvents(ctx); err != nil {
+		d.log.Errorf("end events: %v", err)
+	}
+	if err := d.startDue(ctx); err != nil {
+		d.log.Errorf("start events: %v", err)
 	}
 	d.planTimer()
 }

@@ -680,6 +680,48 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return keepChannelCounter(ctx, tx, seq)
 	})
 
+	// M17.4: events. An event keeps its name, description and place's line
+	// of text as JSON, sealed with the data key as a message's text is; its
+	// banner, an upload of its maker's; its place's voice channel, which an
+	// event that ended keeps as none once the channel goes; its maker, its
+	// times, and whether it's to come, live or ended, which the den's timer
+	// finds by the indexes. Who's interested is a row each, until the event
+	// ends. The den keeps how many events each member who isn't staff may
+	// have, 0 leaving them to staff.
+	m.Add("Events", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_events (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				details    BLOB NOT NULL, -- JSON, sealed with the data key
+				banner_id  INTEGER REFERENCES den_files (id) ON DELETE SET NULL,
+				channel_id INTEGER REFERENCES den_channels (id) ON DELETE SET NULL,
+				made_by    INTEGER NOT NULL REFERENCES den_members (id),
+				made_at    INTEGER NOT NULL, -- unix milliseconds
+				starts_at  INTEGER NOT NULL,
+				ends_at    INTEGER NOT NULL,
+				state      TEXT NOT NULL DEFAULT 'coming' CHECK (state IN ('coming', 'live', 'ended')),
+				CHECK (ends_at >= starts_at)
+			) STRICT;
+			CREATE INDEX den_events_coming ON den_events (starts_at) WHERE state = 'coming';
+			CREATE INDEX den_events_live ON den_events (ends_at) WHERE state = 'live';
+			CREATE INDEX den_events_maker ON den_events (made_by);
+			CREATE INDEX den_events_channel ON den_events (channel_id) WHERE channel_id IS NOT NULL;
+			CREATE INDEX den_events_banner ON den_events (banner_id) WHERE banner_id IS NOT NULL;
+
+			CREATE TABLE den_event_interest (
+				event_id  INTEGER NOT NULL REFERENCES den_events (id) ON DELETE CASCADE,
+				member_id INTEGER NOT NULL REFERENCES den_members (id),
+				PRIMARY KEY (event_id, member_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_event_interest_member ON den_event_interest (member_id);
+
+			ALTER TABLE den ADD COLUMN member_events INTEGER NOT NULL DEFAULT 0 CHECK (member_events BETWEEN 0 AND 10);
+		`); err != nil {
+			return fmt.Errorf("add events: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

@@ -364,6 +364,8 @@ function NotificationSettings() {
                 <Toggle id="notify-everyone" label="@everyone" hint="Staff's @everyone, in a channel you can see. Off, it notifies nothing and plays no sound, but still counts among your mentions."
                     checked={!status.everyoneOff} disabled={act.busy || !status.mentions} onChange={(on) => change('everyone', on)} />
             </div>
+            <Toggle id="notify-events" label="Events" hint="Events you're interested in, as they start."
+                checked={!status.eventsOff} disabled={act.busy} onChange={(on) => change('events', on)} />
             <Toggle id="notify-text" label="Show the message" hint="The start of each message, in its notification."
                 checked={!status.hideText} disabled={act.busy || !notifying(status)} onChange={(on) => change('hideText', !on)} />
             {notifying(status) && <p class="text-sm text-base-content/70">{whereTheyShow(status, browser, elsewhere)}</p>}

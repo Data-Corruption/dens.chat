@@ -10,10 +10,10 @@ import org.json.JSONObject
 
 // Notes posts the member's notifications (M12.3): each one Dens gives the
 // shell, in a Messages channel of their own, grouped by den, and a tap
-// opens the page at the message. Dens decides what notifies the member,
-// and takes a notification back as they read its channel, wherever they
-// read it. A channel's newer notification replaces its last, under the
-// channel's key.
+// opens the page at the message, or from M17.4 at an event that started.
+// Dens decides what notifies the member, and takes a notification back as
+// they read its channel, wherever they read it, or as its event ends. A
+// channel's newer notification replaces its last, under the channel's key.
 object Notes {
     private const val CHANNEL = "messages"
     // A den's summary, which groups its notifications, goes under its ID
@@ -23,8 +23,9 @@ object Notes {
     // the path in PATH.
     const val OPEN = "chat.dens.shell.OPEN"
     const val PATH = "path"
-    // The paths a tap opens: a den, or a channel's message there.
-    private val path = Regex("^/den/[A-Za-z0-9_-]+(/[0-9]+#message=[0-9]+)?$")
+    // The paths a tap opens: a den, a channel's message there, or one of
+    // its events (M17.4).
+    private val path = Regex("^/den/[A-Za-z0-9_-]+(/[0-9]+#message=[0-9]+|/events#event=[0-9]+)?$")
 
     private fun manager(ctx: Context) = ctx.getSystemService(NotificationManager::class.java)
 
@@ -53,7 +54,7 @@ object Notes {
         if (key.isEmpty() || den.isEmpty() || p == null) return
         val nm = manager(ctx)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Messages", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Direct messages and mentions, as you turn them on in Dens's settings"
+            description = "Direct messages, mentions and events, as you choose in Dens's settings"
         })
         if (!allowed(ctx)) {
             Dens.log(ctx, "notes: Android doesn't let the app post notifications")

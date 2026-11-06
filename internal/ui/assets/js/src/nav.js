@@ -23,9 +23,10 @@ export const HOME = { k: 'home' };
 const WIDE = '(min-width: 48rem)';
 
 // chatRoute reads /den/<den>[/<channel>] from a path, where the channel
-// may be dms, the Direct messages tab with no DM open (M11).
+// may be dms, the Direct messages tab with no DM open (M11), or events, the
+// den's events (M17.4).
 export function chatRoute(path) {
-    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms))?\/?$/);
+    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms|events))?\/?$/);
     return m ? { denID: m[1], channelID: m[2] || '' } : null;
 }
 
@@ -112,7 +113,7 @@ export function readTrail(state) {
 
 // A fragment the page reads, which a link from dens open or the Android
 // app's shell carries (see app.jsx).
-const READ = /^#(?:.*&)?(?:token|message|open)=/;
+const READ = /^#(?:.*&)?(?:token|message|event|open)=/;
 
 // createNav keeps the history of the window win.
 export function createNav(win) {

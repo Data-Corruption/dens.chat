@@ -12,7 +12,7 @@ import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import {
     CopyButton, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater,
 } from './components.jsx';
-import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf, hasBoard, hasEmoji } from './dendraft.js';
+import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf, hasBoard, hasEmoji, hasEvents } from './dendraft.js';
 import { ManageEmoji } from './emoji.jsx';
 import { onEvent } from './events.js';
 import { useLayer, useNarrow } from './nav.js';
@@ -518,7 +518,8 @@ const PRESET_NAMES = { small: 'Small group', large: 'Large group' };
 // Limits sets how large a file may be and how much space files take, how
 // long the den keeps messages, its limits for calls, from a preset or field
 // by field, with the upload they need as they change, from M14.3 for its
-// soundboard, and from M15.2 how many emoji it keeps.
+// soundboard, from M15.2 how many emoji it keeps, and from M17.4 how many
+// events each member may have.
 function Limits({ denID, view, draft, base, onEdit }) {
     const [custom, setCustom] = useState(() => presetOf(callLimitsOf(draft)) === 'custom');
     const [preview, setPreview] = useState(null);
@@ -679,6 +680,25 @@ function Limits({ denID, view, draft, base, onEdit }) {
                         </div>
                     )}
                     <p class="text-sm text-base-content/70">Lowering this leaves the emoji already added; turning emoji off keeps them.</p>
+                </section>
+            )}
+            {hasEvents(draft) && (
+                <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-events>
+                    <h4 class="font-medium">Events</h4>
+                    <p class="text-sm text-base-content/70">Staff make events. Members may too, each up to this many that haven't ended.</p>
+                    <label class="label gap-2">
+                        <input type="checkbox" class="toggle toggle-sm" checked={Number(draft.memberEvents) > 0} data-member-events
+                            onChange={(e) => onEdit({ memberEvents: e.currentTarget.checked ? String(Number(base.memberEvents) || 1) : '0' })} />
+                        Members make events
+                    </label>
+                    {Number(draft.memberEvents) > 0 && (
+                        <div class="grid gap-x-3 sm:grid-cols-3">
+                            <Field label="Events per member">
+                                <Unit unit="events" min="1" max="10" step="1" value={draft.memberEvents} onInput={field('memberEvents')} required />
+                            </Field>
+                        </div>
+                    )}
+                    <p class="text-sm text-base-content/70">Lowering this leaves the events already made.</p>
                 </section>
             )}
         </>

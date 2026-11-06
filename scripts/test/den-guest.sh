@@ -523,6 +523,49 @@ notes)
     # time (M17.3); print their ID.
     api POST "/api/dens/$1/notes" | json 'd["id"]'
     ;;
+event)
+    # event DEN_ID NAME CHANNEL_ID SECONDS: make an event in a voice
+    # channel, starting in SECONDS and lasting an hour (M17.4); print its ID.
+    now=$(date +%s%3N)
+    api POST "/api/dens/$1/events" \
+        "{\"name\":\"$2\",\"channel_id\":\"$3\",\"starts_at\":$((now + $4 * 1000)),\"ends_at\":$((now + $4 * 1000 + 3600000))}" | json 'd["id"]'
+    ;;
+interested)
+    # interested DEN_ID EVENT_ID: mark this member Interested in an event;
+    # print how many are.
+    api PUT "/api/dens/$1/events/$2/interest" | json 'd["interested"]'
+    ;;
+end-event)
+    # end-event DEN_ID EVENT_ID: end a live event now.
+    api POST "/api/dens/$1/events/$2/end" >/dev/null
+    ;;
+wait-event)
+    # wait-event DEN_ID EVENT_ID STATE: wait until this member's Dens holds
+    # an event as STATE: coming or live, with " mine" where they're
+    # interested, or gone.
+    got=""
+    for _ in $(seq 1 120); do
+        got=$(api GET "/api/dens/$1/state" |
+            json "next((('live' if e.get('live') else 'coming') + (' mine' if e.get('mine') else '') for e in d.get('events') or [] if e['id'] == '$2'), 'gone')")
+        [ "$got" = "$3" ] && exit 0
+        sleep 0.5
+    done
+    fail "this member's Dens holds event $2 as $got, not $3"
+    ;;
+log-level)
+    # log-level LEVEL: set this install's log level, as its settings do.
+    api POST /api/settings "{\"logLevel\":\"$1\"}" >/dev/null
+    ;;
+started)
+    # started EVENT_ID [TRIES]: wait, half a second at a time, until this
+    # install's logs, at info or below, say the event, which its member is
+    # interested in, started (M17.4).
+    for _ in $(seq 1 "${2:-60}"); do
+        api GET /api/logs | grep -q "event $1, which the member is interested in, started" && exit 0
+        sleep 0.5
+    done
+    fail "the service's logs never said event $1 started"
+    ;;
 wait-identity)
     # wait-identity DEN_ID MEMBER_ID: wait until this member's Dens has
     # published their identity and kept the other member's (M16.1).
