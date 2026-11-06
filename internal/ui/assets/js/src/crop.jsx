@@ -14,6 +14,8 @@ import { Dialog } from './manage.jsx';
 export const SHAPES = {
     avatar: { frame: [256, 256], out: [512, 512], round: true, title: 'Your picture', moving: '256 × 256 pixels and 2 MB' },
     banner: { frame: [384, 128], out: [1200, 400], round: false, title: 'Your banner', moving: '600 × 200 pixels and 4 MB' },
+    // An event's banner (M17.4), cut as a profile's is.
+    event: { frame: [384, 128], out: [1200, 400], round: false, title: "The event's banner", moving: '600 × 200 pixels and 4 MB' },
 };
 const MAX_ZOOM = 5;
 

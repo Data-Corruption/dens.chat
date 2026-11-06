@@ -67,7 +67,7 @@ test('turning a kind on asks the browser once, and what it answers stands', asyn
 test('a notification shows with its den, replaces its channel\'s, and a click opens its message', () => {
     const b = browser('granted');
     const opened = [];
-    const open = (...at) => opened.push(at);
+    const open = (n) => opened.push([n.den, n.channel, n.message]);
     const first = show(DM, open, b.win);
     assert.equal(first.title, 'Alice · Den');
     assert.equal(first.body, 'hello');
@@ -96,7 +96,8 @@ test('the service takes notifications back, and a browser that blocks them shows
 test('mutes and kinds, as the service says them', () => {
     const st = { dms: false, mentions: true, muted: { d1: { den: true, channels: ['7'] } } };
     assert.ok(notifying(st));
-    assert.ok(!notifying({ dms: false, mentions: false }));
+    assert.ok(notifying({ dms: false, mentions: false }), 'events notify unless turned off (M17.4)');
+    assert.ok(!notifying({ dms: false, mentions: false, eventsOff: true }));
     assert.ok(!notifying(null));
     const m = mutedIn(st, 'd1');
     assert.ok(m.den && m.channels.has('7') && !m.channels.has('8'));

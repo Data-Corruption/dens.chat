@@ -28,6 +28,8 @@ import { CodesDialog, SignInRequests, VerifiedMark } from './private.jsx';
 import { GroupIcon, GroupPanel, MAX_MEMBERS, PickPeople, RenameGroup } from './groups.jsx';
 import { ExpiryBadge } from './disappearing.jsx';
 import { NotesIcon, NotesRow } from './notes.jsx';
+import { EVENTS, withEvent } from './denevents.js';
+import { EventsPane, EventsRow } from './denevents.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
@@ -130,7 +132,7 @@ export function lastDM(view, reads, lastID) {
 // den last left there, whose list the phone layout shows at its own
 // address.
 function pick(view, denID, channelID) {
-    if (!view || channelID === NO_DM) return null;
+    if (!view || channelID === NO_DM || channelID === EVENTS) return null;
     const shown = view.channels.find((c) => c.id === channelID);
     if (hasMessages(shown)) return shown;
     const lastID = stored(LAST_CHANNEL + denID);
@@ -270,6 +272,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                     else if (e.t === 'identities') view = { ...view, identities: e.d };
                     else if (e.t === 'groups') view = { ...view, group_dms: e.d };
                     else if (e.t === 'dens') view = withStatus(view, e.d);
+                    else if (e.t.startsWith('event.')) view = { ...view, events: withEvent(view.events, e.t, e.d) };
                 }
                 setView(view);
                 setOnline(present);
@@ -313,7 +316,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
             if (msg.t !== 'den' || msg.d.den !== denID) return;
             if (msg.d.reset) return reloadSoon();
             for (const e of msg.d.events || []) {
-                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key' || e.t === 'identities' || e.t === 'groups') catchUp(e);
+                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key' || e.t === 'identities' || e.t === 'groups' || e.t.startsWith('event.')) catchUp(e);
                 if (STRUCTURAL.has(e.t)) reloadSoon();
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
                 else if (e.t === 'voice.state') setView((v) => (v ? { ...v, calls: applyCalls(v.calls, e.d) } : v));
@@ -325,6 +328,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                 else if (e.t === 'identities') setView((v) => (v ? { ...v, identities: e.d } : v));
                 // The member's groups, as their changes make them (M16.3).
                 else if (e.t === 'groups') setView((v) => (v ? { ...v, group_dms: e.d } : v));
+                // The den's events (M17.4).
+                else if (e.t.startsWith('event.')) setView((v) => (v ? { ...v, events: withEvent(v.events, e.t, e.d) } : v));
             }
             // The local service counts unread messages and mentions.
             if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
@@ -350,6 +355,9 @@ export function Chat({ denID, channelID, pane, navigate }) {
     // noDM is the Direct messages tab open with no DM, as the address says,
     // or the phone layout's list, at its own address, left it.
     const noDM = channelID === NO_DM || (!channelID && !!view && stored(LAST_CHANNEL + denID) === NO_DM);
+    // The den's events show in the channel's place (M17.4), from the Den
+    // tab's list, while the den has them.
+    const eventsOpen = channelID === EVENTS && !!view?.event_limits;
     // The den sends typing only where this member is looking, and the
     // service notifies them of nothing there (M12.3); this page takes back
     // its own notification of what it shows, which the service may have
@@ -364,16 +372,18 @@ export function Chat({ denID, channelID, pane, navigate }) {
     useEffect(() => {
         if (openKind) setTab(isPrivate({ kind: openKind }) ? 'dms' : 'den');
         else if (noDM) setTab('dms');
-    }, [channel?.id, channelID, noDM]);
+        else if (eventsOpen) setTab('den');
+    }, [channel?.id, channelID, noDM, eventsOpen]);
     // shownID is the channel shown, for the page's history: its ID, NO_DM,
-    // or '' for none.
-    const shownID = channel ? channel.id : noDM ? NO_DM : '';
+    // EVENTS, or '' for none.
+    const shownID = channel ? channel.id : noDM ? NO_DM : eventsOpen ? EVENTS : '';
     // The member's notes (M17.3), which have nobody else to show beside
     // them.
     const notes = isNotes(channel);
     // The members' place: the member list, or beside a DM the other
-    // member's profile (M11); with no DM open, or the notes, there's none.
-    const hasSide = !noDM && !notes;
+    // member's profile (M11); with no DM open, the notes or the events,
+    // there's none.
+    const hasSide = !noDM && !notes && !eventsOpen;
     // at is the pane on screen on the phone layout, '' in a wider window.
     const at = !narrow ? '' : pane === 'side' && hasSide ? 'side' : pane === 'list' || (!pane && !channelID) ? 'list' : 'chan';
     const toPane = (next) => nav().den(denID, shownID, next);
@@ -428,13 +438,14 @@ export function Chat({ denID, channelID, pane, navigate }) {
     // nobody writes in a channel thinking it's a DM (M11). Each opens what
     // was last open in it, so going to the den to copy something and back
     // returns to the same DM; Direct messages opens none when there's no
-    // DM to return to. The phone layout's list stays on screen, with what
-    // the tab opens behind it.
+    // DM to return to. The den's events, open in the Den tab, stay open as
+    // it's picked again (M17.4). The phone layout's list stays on screen,
+    // with what the tab opens behind it.
     function pickTab(next) {
         store(LIST_TAB + denID, next);
         setTab(next);
         let to = null;
-        if (next === 'den' && (isPrivate(channel) || !channel)) to = denChannel(view, stored(LAST_TEXT + denID))?.id || '';
+        if (next === 'den' && (isPrivate(channel) || (!channel && !eventsOpen))) to = denChannel(view, stored(LAST_TEXT + denID))?.id || '';
         else if (next === 'dms' && !isPrivate(channel)) to = lastDM(view, reads, stored(LAST_DM + denID))?.id || NO_DM;
         if (to === null) return;
         if (at === 'list') showInList(to);
@@ -577,7 +588,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                             </>
                         ) : (
                             <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
-                                muted={bells ? muted.channels : null} onOpen={openChannel} onDialog={setDialog} />
+                                muted={bells ? muted.channels : null} onOpen={openChannel} onDialog={setDialog}
+                                events={view.event_limits ? { open: eventsOpen, onOpen: () => openChannel(EVENTS) } : null} />
                         )}
                         <div class="mt-auto">
                             {/* Room for the call's button over the list's end, so
@@ -661,6 +673,12 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 <div class="flex flex-col items-start p-6">
                                     <button type="button" class="btn btn-ghost btn-sm md:hidden" onClick={() => toPane('list')}>Direct messages</button>
                                 </div>
+                            </>
+                        ) : eventsOpen ? (
+                            <>
+                                {callTop}
+                                <EventsPane denID={denID} view={view} members={members} onList={() => toPane('list')}
+                                    onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
                             </>
                         ) : (
                             <>
@@ -927,7 +945,9 @@ function applyReads(view, reads) {
 
 // muted holds the channels the member muted, or is null while no kind of
 // notification is on (M12.3).
-function ChannelList({ denID, view, reads, members, open, staff, gone, muted, onOpen, onDialog }) {
+// events, while the den has them, puts its events' row at the list's top
+// (M17.4), open while their pane shows, which events.onOpen opens.
+function ChannelList({ denID, view, reads, members, open, staff, gone, muted, onOpen, onDialog, events }) {
     const { ungrouped, groups } = listed(view);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
     const [folded, setFolded] = useState(() => readFolded(stored(FOLDED + denID)));
@@ -1144,6 +1164,11 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     };
     return (
         <nav aria-label="Channels" class="flex flex-col gap-2 p-2">
+            {events && (
+                <ul class="flex flex-col">
+                    <EventsRow events={view.events} open={events.open} onOpen={events.onOpen} />
+                </ul>
+            )}
             <ul class={`flex flex-col rounded ${dragging === 'channel' ? 'min-h-4' : ''} ${dropMark('ungrouped')}`} data-ungrouped {...looseDrag}>{ungrouped.map(item)}</ul>
             {groups.map(({ group: g, channels }) => {
                 // A folded group keeps what's open or busy in sight, and its

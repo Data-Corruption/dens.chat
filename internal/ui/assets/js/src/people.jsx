@@ -182,10 +182,11 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
     );
 }
 
-// Banner shows the wide picture on a profile, three times as wide as it
-// is high, at its final size before it loads. An animated one plays as an
-// avatar does (M15.1), which in a profile is while it shows.
-function Banner({ denID, image }) {
+// Banner shows the wide picture on a profile, or an event's (M17.4), three
+// times as wide as it is high, at its final size before it loads. An
+// animated one plays as an avatar does (M15.1), which in a profile is
+// while it shows.
+export function Banner({ denID, image }) {
     const how = usePicture(!!image.animated);
     const cover = 'h-full w-full select-none object-cover';
     return (
