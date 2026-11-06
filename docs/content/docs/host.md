@@ -203,6 +203,26 @@ name at the top of its channel list, or **Manage** on your home page.
 - **A new address.** Change it in **General**, and keep the old name pointing
   at the den for a while, so members who were offline find the new one.
 
+### Channels and calls
+
+Moderators and you make channels and groups with **+ Channel** and **+ Group**
+under the channel list, and change one from the **⋯** beside it. With a mouse,
+drag a channel to another place or into another group, and a group above or
+below another.
+
+In a call, the **⋯** beside someone's name mutes them for everyone, moves them
+to another voice channel with **Move to**, or disconnects them, for people of a
+lower rank than you. With a mouse, you can also drag their name onto another
+voice channel.
+
+{{% details title="More on moving people" closed="true" %}}
+
+Their Dens joins the other call for them, muted or deafened as they were.
+Someone whose connection just dropped can't be moved until they reconnect,
+and someone on a version of Dens from before moving stays where they are.
+
+{{% /details %}}
+
 ## What hosting costs you
 
 Mostly upload. Dens keeps it small: members pick up where they left off instead

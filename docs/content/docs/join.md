@@ -101,6 +101,12 @@ in profiles.
 
 {{% /details %}}
 
+## Compact messages
+
+**Settings** → **Appearance** → **Message density** → **Compact** shows each
+message as a line of its time, who sent it and the text, without pictures.
+Each browser keeps its own choice, as the Android app does.
+
 ## Emoji
 
 The smiley in the message box picks an emoji, or type a colon and two letters,
@@ -186,6 +192,23 @@ picked it.
 Anonymous voting keeps who voted for what from everyone in the den, its owner
 and the person who asked included. The den itself still knows, since it counts
 each person's vote once and lets them change it. DMs have no polls.
+
+{{% /details %}}
+
+## Spoilers
+
+To send a photo or video as a spoiler, choose **Spoiler** on it in the message
+box before you send it. Everyone sees it covered until they click or tap it.
+
+{{% details title="More on spoilers" closed="true" %}}
+
+For text, put the spoiler between two pairs of bars, like
+`||the butler did it||`.
+
+A photo stays a spoiler once it's sent, and covers itself again each time its
+message shows. In a DM or a group DM only its members know it's a spoiler; in
+a channel the den knows too. Someone on a version of Dens from before
+spoilers sees it uncovered.
 
 {{% /details %}}
 

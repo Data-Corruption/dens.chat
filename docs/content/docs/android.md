@@ -191,6 +191,7 @@ connected costs about 1% of the battery a night for each den, in our tests.
 
 Dens checks for an update once a day. When it finds one, it says so in a
 notification and on Dens's home: tap either, and Android asks you to confirm.
+To check at once, open **Settings** → **System** and tap **Check now**.
 
 {{% details title="More on updates" closed="true" %}}
 
