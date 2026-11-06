@@ -78,12 +78,12 @@ func TestCIRequiresExplicitAction(t *testing.T) {
 	if err != nil {
 		t.Skipf("bash unavailable: %v", err)
 	}
-	for _, args := range [][]string{nil, {"--plan", "--execute"}, {"--prod-all"}, {"--plan", "extra"}} {
+	for _, args := range [][]string{nil, {"--plan", "--execute"}, {"--prod-all"}, {"--plan", "extra"}, {"--plan-pr", "extra"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			command := exec.Command(bash, append([]string{filepath.Join(repoRoot(t), "scripts", "ci.sh")}, args...)...)
 			output, err := command.CombinedOutput()
 			exit, ok := err.(*exec.ExitError)
-			if !ok || exit.ExitCode() != 2 || !strings.Contains(string(output), "Usage: ./scripts/ci.sh --plan | --execute") {
+			if !ok || exit.ExitCode() != 2 || !strings.Contains(string(output), "Usage: ./scripts/ci.sh --plan | --plan-pr | --execute | --flatpak") {
 				t.Fatalf("expected usage error before release setup, got %v: %s", err, output)
 			}
 		})

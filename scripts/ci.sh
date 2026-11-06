@@ -9,6 +9,11 @@
 #     CHANGELOG.md heading and no version tag) it asks for full validation
 #     and no release, and needs no credentials.
 #
+#   ./scripts/ci.sh --plan-pr
+#     Report which test jobs a pull request needs, from the files it changes:
+#     its merge commit, which the workflow checks out, against the first
+#     parent. Needs no credentials, and never asks for a release.
+#
 #   ./scripts/ci.sh --execute
 #     Build and publish the CHANGELOG version, or finish an interrupted release.
 #     The workflow runs this only after the tests requested by --plan pass, in
@@ -21,8 +26,8 @@
 #     workflow runs this after --execute, in the flatpak environment, whose
 #     FLATPAK_GPG_KEY signs it, where flatpak and ostree are.
 #
-# Otherwise every command needs GITHUB_REPOSITORY, the R2 credentials, and
-# rclone on PATH.
+# Otherwise every command but --plan-pr needs GITHUB_REPOSITORY, the R2
+# credentials, and rclone on PATH.
 # Execution also needs the build toolchain and GitHub's signing/tag permissions.
 # Run from the repository root. Project settings stay in scripts/build.sh.
 
@@ -77,11 +82,12 @@ prepare_release_context() {
   vendor_cosign
 }
 
-# write_plan E2E INSTALLER_TESTS RELEASE reports the plan in the log and to
-# the workflow.
+# write_plan E2E MEDIA INSTALLER_TESTS RELEASE reports the plan in the log
+# and to the workflow. E2E asks for the test jobs, and MEDIA for the two of
+# them that check the media module alone, media-module and media-fuzz.
 write_plan() {
   local plan
-  plan=$(printf 'e2e_required=%s\ninstaller_tests_required=%s\nrelease_required=%s' "$1" "$2" "$3")
+  plan=$(printf 'e2e_required=%s\nmedia_required=%s\ninstaller_tests_required=%s\nrelease_required=%s' "$1" "$2" "$3" "$4")
   printf '%s\n' "$plan"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     printf '%s\n' "$plan" >> "$GITHUB_OUTPUT"
@@ -89,7 +95,9 @@ write_plan() {
 }
 
 # The workflow uses these decisions to schedule tests. An upload without a
-# Git tag needs E2E: the earlier attempt may not have passed its tests.
+# Git tag needs E2E: the earlier attempt may not have passed its tests. A
+# push asks for the media jobs with the rest, since a release waits for
+# every job.
 plan_release() {
   local e2e_required=false installer_tests_required=false
   if ! $RELEASE_TAG_ONLY; then
@@ -103,7 +111,79 @@ plan_release() {
     fi
   fi
 
-  write_plan "$e2e_required" "$installer_tests_required" true
+  write_plan "$e2e_required" "$e2e_required" "$installer_tests_required" true
+}
+
+# pr_changed_files prints the files a pull request changes, each ended by a
+# NUL: its merge commit, which the workflow checks out, against the first
+# parent, the base it merges into. A rename lists both its paths, so code
+# moved under docs/ still counts as a change to the code. It fails unless
+# HEAD is a merge, as a PR's checkout is: against a branch's own commit, the
+# first parent would show only that commit's part of the PR.
+pr_changed_files() {
+  git rev-parse --quiet --verify 'HEAD^2^{commit}' >/dev/null || return 1
+  git diff --no-renames --name-only -z 'HEAD^1' HEAD
+}
+
+# plan_pr_jobs [PATH...] reports the test jobs a pull request that changes
+# the PATHs needs. Docs alone need none: no test reads them but the site's
+# icon, which the Docs workflow's build checks (scripts/test.sh -docs). The
+# media module's inputs, and CI's own files, which decide what runs, need
+# every job. Anything else needs every job but the two that check the media
+# module alone. CHANGELOG.md isn't docs: releases are cut from it. No paths
+# at all prove nothing, so they get every job too.
+plan_pr_jobs() {
+  local e2e=false media=false path why=""
+  if [[ $# -eq 0 ]]; then
+    e2e=true media=true why="no changed files listed"
+  fi
+  # In order: a case pattern's * matches a slash too, so the root's
+  # markdown comes after everything in a directory.
+  for path in "$@"; do
+    case "$path" in
+      .github/* | scripts/ci.sh | scripts/ci/* | \
+        internal/media/* | scripts/ffmpeg.sh | scripts/rnnoise.sh | internal/ui/rnnoise/* | \
+        internal/ui/assets/wasm/rnnoise.wasm | scripts/vendor.sh | scripts/build/common.sh)
+        $media || why="$path is one of the media module's inputs or CI's own files"
+        e2e=true media=true
+        ;;
+      docs/*) ;;
+      CHANGELOG.md | */*)
+        $e2e || why="$path isn't docs"
+        e2e=true
+        ;;
+      *.md) ;;
+      *)
+        $e2e || why="$path isn't docs"
+        e2e=true
+        ;;
+    esac
+  done
+  if $media; then
+    printf 'Every job: %s.\n' "$why"
+  elif $e2e; then
+    printf "Every job but the media module's: %s.\n" "$why"
+  else
+    printf 'No test job: docs alone.\n'
+  fi
+  write_plan "$e2e" "$media" false false
+}
+
+# plan_pull_request plans a pull request's jobs from the files it changes,
+# or every job when they can't be listed.
+plan_pull_request() {
+  local list files=()
+  list=$(mktemp)
+  if pr_changed_files > "$list"; then
+    mapfile -d '' -t files < "$list"
+    rm -f "$list"
+    printf 'The PR changes %d files.\n' "${#files[@]}"
+    plan_pr_jobs "${files[@]}"
+  else
+    rm -f "$list"
+    printf "Can't list the files this PR changes: every job.\n"
+    write_plan true true false false
+  fi
 }
 
 # Publication order is shared by first attempts and retries. The remote probe
@@ -146,21 +226,27 @@ execute_release() {
 }
 
 ci_main() {
-  if [[ $# -ne 1 || ( "$1" != "--plan" && "$1" != "--execute" && "$1" != "--flatpak" ) ]]; then
-    printf 'Usage: ./scripts/ci.sh --plan | --execute | --flatpak\n' >&2
+  if [[ $# -ne 1 || ( "$1" != "--plan" && "$1" != "--plan-pr" && "$1" != "--execute" && "$1" != "--flatpak" ) ]]; then
+    printf 'Usage: ./scripts/ci.sh --plan | --plan-pr | --execute | --flatpak\n' >&2
     return 2
   fi
-  if [[ "$1" == --flatpak ]]; then
-    publish_flatpak
-    return
-  fi
+  case "$1" in
+    --flatpak)
+      publish_flatpak
+      return
+      ;;
+    --plan-pr)
+      plan_pull_request
+      return
+      ;;
+  esac
 
   # Before the first release there is nothing to publish, so a push to main
-  # gets the pull-request validation and no release job. Once a version tag
-  # exists, a missing heading is a mistake again and planning fails below.
+  # gets every test job and no release job. Once a version tag exists, a
+  # missing heading is a mistake again and planning fails below.
   if [[ "$1" == --plan && -z "$(changelog_version)" ]] && ! released_before; then
     echo "No release heading in CHANGELOG.md and no release yet: validating without publishing."
-    write_plan true false false
+    write_plan true true false false
     return
   fi
 
