@@ -231,7 +231,8 @@ func TestNotesUnseenBeforeVersion3(t *testing.T) {
 		if _, err := f.note(&old, notes, "from an older Dens", ""); err == nil {
 			t.Errorf("a request at version %d wrote in the notes", v)
 		}
-		if _, err := f.d.OpenFile(ctx, &old, file.ID, false); err == nil {
+		if r, err := f.d.OpenFile(ctx, &old, file.ID, false); err == nil {
+			r.Close()
 			t.Errorf("a request at version %d opened a note's file", v)
 		}
 		ch, err := f.d.Changes(ctx, &old, 0, 0)
@@ -248,9 +249,13 @@ func TestNotesUnseenBeforeVersion3(t *testing.T) {
 	if ch, err := f.d.Changes(ctx, bob, 0, 0); err != nil || !slices.ContainsFunc(ch.Deleted, func(d denproto.MessageDeleted) bool { return d.ID == gone.ID }) {
 		t.Errorf("changes at version 3 lack the note deleted: %+v, %v", ch, err)
 	}
-	if _, err := f.d.OpenFile(ctx, bob, file.ID, false); err != nil {
-		t.Errorf("bob's note's file at version 3: %v", err)
+	// Closed before the test's directory goes, which Windows won't remove
+	// while a file in it is open.
+	r, err := f.d.OpenFile(ctx, bob, file.ID, false)
+	if err != nil {
+		t.Fatalf("bob's note's file at version 3: %v", err)
 	}
+	r.Close()
 }
 
 // A member who leaves the den takes their notes with them, files and all:
