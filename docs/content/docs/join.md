@@ -80,7 +80,13 @@ signed out.
 
 Each den has your profile in it: your display name, a few lines about you, a
 picture and a banner. Open it from your name at the foot of the den's channel
-list. The badges you earn at events show on it too.
+list. The badges you earn at events show on it too. To hide one, click its
+eye there; click again to show it. Hiding only tidies your profile: the den
+still knows you earned it.
+
+Anyone's profile opens from their name. A crown beside a name marks the den's
+owner, and a shield a moderator. **Message** starts a DM; the rest of what you
+can do, such as comparing codes, is under **⋯**.
 
 {{% details title="Pictures, and when they move" closed="true" %}}
 
@@ -228,7 +234,7 @@ event's card there, with **☆ Interested** on it.
 
 An event in a voice channel can have a **badge**: be in its call for a minute
 while it's on, and the badge shows on your profile. Hover over or tap one to
-see what it was for.
+see what it was for. You can hide any of yours from your profile.
 
 {{% details title="More on events" closed="true" %}}
 
