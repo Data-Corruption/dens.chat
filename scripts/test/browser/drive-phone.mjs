@@ -266,7 +266,7 @@ function driver(mode, b, h) {
     };
 }
 
-const ctx = { den, general, random, dm, group, lounge, photo: `${HOME}/photos/pixel-2.jpg` };
+const ctx = { den, general, random, dm, group, lounge, photo: `${HOME}/photos/pixel-2.jpg`, eventCard: true };
 let port = 9490;
 for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse']) {
     const out = `${HOME}/shot-phone/${mode}`;

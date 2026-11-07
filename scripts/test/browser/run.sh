@@ -97,7 +97,9 @@
 #                               opened from the top of the Direct messages list, a note sent with nothing
 #                               marked unread, and the own profile card's Notes (M17.3); and the events
 #                               opened from the top of the Den tab, Interested marked and taken back by taps,
-#                               and the owner's events, their form as a sheet and Cancel's dialog (M17.4).
+#                               and the owner's events, their form as a sheet and Cancel's dialog (M17.4);
+#                               and an event's card under its link, Interested by taps, and a badge's tip
+#                               shown by a tap on a profile card, within the screen (M17.5).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -125,13 +127,18 @@
 #                               his background tab's notification of it, whose click opens his events at it;
 #                               Live on both pages, its end moved from the form, its start kept, then End now
 #                               taking it off both and his notification back; one of seconds ending by the
-#                               den's timer; and the den's database holding no name in the clear
+#                               den's timer; and the den's database holding no name in the clear. M17.5: the
+#                               event's badge from alice's form; its copied link in #general and their DM,
+#                               a chip and its card on bob's page, his Interested from the card; alice
+#                               earning the badge in its call, bob joining and leaving at once earning none;
+#                               the badge and its tip on alice's profile card; the card saying Ended; and the
+#                               den's database holding alice's award alone, the badge's title sealed
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,129p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,136p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

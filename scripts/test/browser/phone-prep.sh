@@ -9,7 +9,9 @@
 # holds a channel with a long name and a voice channel; staff is staff
 # only. Alice and bob share a DM, which opens at once (M16.1), where alice
 # started over, so bob's page shows her keys changed. Random ends in a
-# photo bob sent as a spoiler (M17.2).
+# photo bob sent as a spoiler (M17.2). Two events are to come (M17.4),
+# Game night with a badge, whose link #general holds, and two that passed
+# had badges, which bob earned, and alice the first of (M17.5).
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 stop m2d
@@ -35,6 +37,13 @@ api alice POST "/api/dens/$DEN/soundboard" "{\"name\":\"Ping\",\"upload\":\"$(up
 ./node browser/make-emoji.mjs party.png 96 96
 api alice POST "/api/dens/$DEN/emoji" "{\"name\":\"party\",\"upload\":\"$(upload alice party.png party.png)\"}" >/dev/null
 
+# Two events to come (M17.4): one in Lounge, with a description and a
+# badge (M17.5), and one somewhere else, a day on.
+./node browser/make-emoji.mjs badge.png 128 128
+at=$(($(date +%s) * 1000))
+night=$(api alice POST "/api/dens/$DEN/events" "{\"name\":\"Game night\",\"description\":\"Bring **snacks**, and a game for four or more.\",\"starts_at\":$((at + 3600000)),\"ends_at\":$((at + 3 * 3600000)),\"channel_id\":\"$LOUNGE\",\"badge\":\"$(upload alice badge.png badge.png)\",\"badge_title\":\"Game night regular\"}" | json 'd["id"]')
+api alice POST "/api/dens/$DEN/events" "{\"name\":\"Picnic at the lake, if the weather holds\",\"starts_at\":$((at + 86400000)),\"ends_at\":$((at + 86400000 + 4 * 3600000)),\"place\":\"The big oak by the north shore\"}" >/dev/null
+
 say() { send "$@" >/dev/null; }
 printf 'A file to attach.\n' >note.txt
 long=$(python3 -c 'print("\\n".join(f"Line {i} of a long message that folds, with some words to wrap it on a phone." for i in range(1, 25)))')
@@ -48,6 +57,7 @@ say carol "$general" "Here's the doc: https://example.com/a/very/long/path/that/
 say bob "$general" "@alice can you check these?\n[ ] buy milk\n[x] walk the dog\n[ ] a task with a description long enough to wrap onto another line on a phone"
 say alice "$general" "> a quoted line from earlier\nand **bold**, _italic_, ~~struck~~, \`inline code\` and ||a spoiler||"
 say alice "$general" "Link to Bob's message: $DEN_URL/#m/$DEN/$general/$first"
+say alice "$general" "Who's in for game night? $DEN_URL/#e/$DEN/$night"
 say bob "$general" "the view from here" "$(upload bob photo.jpg view.jpg)"
 say alice "$general" "two from my phone" "$(upload alice photos/iphone-5.jpg one.jpg)" "$(upload alice photos/pixel-2.jpg two.jpg)"
 say carol "$general" "a clip" "$(upload carol clip.mp4 clip.mp4)"
@@ -85,11 +95,30 @@ say carol "$group" "this one goes in a week"
 api bob PUT "/api/dens/$DEN/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null
 say bob "$dm" "and this one goes tomorrow"
 
-# Two events to come (M17.4): one in Lounge, with a description, and one
-# somewhere else, a day on.
-at=$(($(date +%s) * 1000))
-api alice POST "/api/dens/$DEN/events" "{\"name\":\"Game night\",\"description\":\"Bring **snacks**, and a game for four or more.\",\"starts_at\":$((at + 3600000)),\"ends_at\":$((at + 3 * 3600000)),\"channel_id\":\"$LOUNGE\"}" >/dev/null
-api alice POST "/api/dens/$DEN/events" "{\"name\":\"Picnic at the lake, if the weather holds\",\"starts_at\":$((at + 86400000)),\"ends_at\":$((at + 86400000 + 4 * 3600000)),\"place\":\"The big oak by the north shore\"}" >/dev/null
+# Two events that passed, of a second each, as a development instance's den
+# takes, each with a badge (M17.5); the den gives badges by calls, which
+# the events check makes, so with the den stopped bob gets both, and alice
+# the first, for their profile cards.
+passed=()
+for title in "Movie night" "Quiz night"; do
+    now=$(($(date +%s) * 1000))
+    passed+=("$(api alice POST "/api/dens/$DEN/events" "{\"name\":\"$title\",\"starts_at\":$now,\"ends_at\":$((now + 1000)),\"channel_id\":\"$LOUNGE\",\"badge\":\"$(upload alice badge.png badge.png)\",\"badge_title\":\"$title crew\"}" | json 'd["id"]')")
+done
+for _ in $(seq 80); do
+    [[ $(api alice GET "/api/dens/$DEN/state" | json "len([e for e in d['events'] if e['id'] in ('${passed[0]}', '${passed[1]}')])") == 0 ]] && break
+    sleep 0.25
+done
+stop m2a
+python3 - "$HOME/.local/share/dens-dev/m2a/data/db/app.db" "${passed[@]}" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+first, second = sys.argv[2], sys.argv[3]
+for event, who in ((first, 'bob'), (second, 'bob'), (first, 'alice')):
+    db.execute("""INSERT INTO den_badge_awards (event_id, member_id, earned_at)
+        SELECT e.id, m.id, e.starts_at + 500 FROM den_events e, den_members m WHERE e.id = ? AND m.username = ?""", (event, who))
+db.commit()
+PY
+start_den
 
 echo "DEN=$DEN"
 echo "GENERAL=$general"

@@ -17,13 +17,25 @@
 // den's timer, notifying nobody. The den's database holds no event's name
 // in the clear, and nobody's interest once they end.
 //
+// M17.5's cards and badges: alice gives Game night a badge in the form, a
+// picture she crops and a title, which bob's page shows on its card; her
+// Copy link gives the event's link, which she sends in #general and in
+// their DM, where bob's page shows it as a chip naming the event and as its
+// card under the message, from which bob marks Interested. Once it's live,
+// alice joins its call from her card and stays a stretch, the few seconds
+// a development instance's den takes, and earns its badge; bob joins and
+// leaves at once, and doesn't. Alice's profile card on bob's page shows
+// the badge, with its tip; once the event ends, bob's card in #general
+// says so. The den's database holds alice's award alone, and the badge's
+// title sealed.
+//
 //   run.sh events chromium|firefox
 import { execFileSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
-const { DEN: den, GENERAL: general, LOUNGE: lounge, BACKSTAGE: backstage } = process.env;
+const { DEN: den, GENERAL: general, LOUNGE: lounge, BACKSTAGE: backstage, DM: dm } = process.env;
 const c = checks();
 const report = c.report;
 const step = (what) => console.error(`.. ${what}`);
@@ -69,9 +81,30 @@ const card = (name) => `[...document.querySelectorAll('[data-event]')].find((x) 
 const cardText = (s, name) => s.b.eval(`${card(name)}?.innerText || ''`);
 const button = (scope, text) => `[...${scope}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)})`;
 const DIALOG = `document.querySelector('[role=dialog]')`;
+const CROP = `document.querySelector(${q(`[role=dialog][aria-label="The badge's picture"]`)})`;
+const linkCard = (id) => `document.querySelector('[data-event-card="${id}"]')`;
+const PROFILE = `document.querySelector('[role=dialog][aria-label="Profile"]')`;
 
-// openEvents opens a page's events from the row atop its Den tab.
+// openChannel opens a channel from a page's list, or a DM, which another
+// tab lists, at its address, waiting for its composer.
+async function openChannel(s, id) {
+    if (await s.b.eval(`!!document.querySelector('[data-channel-row="${id}"] button')`)) {
+        await s.b.eval(`document.querySelector('[data-channel-row="${id}"] button').click(), true`);
+    } else {
+        await s.b.go(`http://localhost:${s.port}/den/${den}/${id}`);
+    }
+    await waitFor(() => s.b.eval(`location.pathname === '/den/${den}/${id}' && !!document.querySelector('textarea')`), `${id} on ${s.name}'s page`);
+}
+
+// inCall says who the den has in Lounge's call, as bob's Dens hears.
+const inCall = () => (state('bob').calls || []).find((x) => x.channel_id === lounge)?.members.map((m) => m.id) || [];
+
+// openEvents opens a page's events from the row atop its Den tab, or at
+// their address from a DM, whose tab shows instead.
 async function openEvents(s) {
+    if (await s.b.eval(`location.pathname === '/den/${den}/${dm}'`)) {
+        await s.b.go(`http://localhost:${s.port}/den/${den}/events`);
+    }
     await waitFor(() => s.b.eval(`!!${ROW}`), `the Events row on ${s.name}'s page`);
     await s.b.eval(`${ROW}.click(), true`);
     await waitFor(() => s.b.eval(`location.pathname === '/den/${den}/events' && !!document.querySelector('[data-events-header]')`),
@@ -113,8 +146,8 @@ async function front() {
 }
 
 try {
-    A.b = await launch(which, which === 'chromium' ? 9611 : 9612, { hover: true });
-    B.b = await launch(which, which === 'chromium' ? 9613 : 9614, { hover: true, preload: RECORD, prefs: { 'permissions.default.desktop-notification': 1 } });
+    A.b = await launch(which, which === 'chromium' ? 9611 : 9612, { hover: true, media: true });
+    B.b = await launch(which, which === 'chromium' ? 9613 : 9614, { hover: true, media: true, preload: RECORD, prefs: { 'permissions.default.desktop-notification': 1 } });
     for (const s of [A, B]) {
         await pair(s.b, s);
         if (which === 'chromium') await s.b.cdp('Browser.grantPermissions', { permissions: ['notifications'], origin: `http://localhost:${s.port}` }, null);
@@ -142,24 +175,64 @@ try {
     await fill(A, '[data-event-length]', '120');
     const offered = JSON.parse(await A.b.eval(`JSON.stringify([...document.querySelectorAll('[data-event-channel] option')].map((o) => o.textContent))`));
     report(offered.join() === 'Lounge,Backstage', `alice's form offers the den's voice channels she sees: ${q(offered)}`);
+    step('alice gives it a badge: a picture she crops, and a title');
+    report(await A.b.eval(`!!document.querySelector('[data-event-badge-form]')`), "alice's form, staff's, offers a badge");
+    await A.b.attach('input[data-picture="event-badge"]', [`${HOME}/badge.png`]);
+    await waitFor(() => A.b.eval(`!!${CROP} && !${button(CROP, 'Save')}.disabled`), "the badge's crop dialog");
+    await A.b.eval(`${button(CROP, 'Save')}.click(), true`);
+    await waitFor(() => A.b.eval(`!${CROP} && !!document.querySelector('[data-badge-title]')`), "the badge's picture in the form");
+    await fill(A, '[data-badge-title]', 'Was there');
     await A.b.shot(`${HOME}/shot-events-form-${which}.png`);
     await A.b.eval(`${button('document.querySelector("[data-event-form]")', 'Make the event')}.click(), true`);
     await waitFor(() => A.b.eval(`!${DIALOG} && !!${card('Game night')}`), "the event on alice's page");
     const night = eventsOf('alice').find((e) => e.name === 'Game night');
     report(night && night.channel_id === lounge && night.ends_at - night.starts_at === 2 * 3600_000 && night.description === 'Bring **snacks**' && !night.live,
         `the den made the event as the form said: ${q(night)}`);
+    report(night?.badge?.title === 'Was there' && night.badge.image.width === 128 && night.badge.image.height === 128,
+        `with its badge, a picture of an emoji's size: ${q(night?.badge)}`);
+    report(await may(waitFor(() => B.b.eval(`${card('Game night')}?.querySelector('[data-event-badge]')?.textContent.includes('Was there')`),
+        "the badge on bob's card")), "bob's card of it shows its badge");
     report(await may(waitFor(() => cardText(B, 'Game night').then((t) => /Lounge/.test(t) && /Nobody interested yet/.test(t)), "the event on bob's page")),
         "bob's page shows it, in Lounge, nobody interested yet");
     report(await B.b.eval(`${card('Game night')}.querySelector('[data-description] strong')?.textContent === 'snacks'`),
         'its description shows in the markdown subset');
     report(await B.b.eval(`document.querySelector('[data-events-count]')?.textContent === '1'`), "bob's Events row says 1 to come");
 
-    step('bob marks Interested, which alice’s page counts');
-    await B.b.eval(`${card('Game night')}.querySelector('[data-interested]').click(), true`);
-    report(await may(waitFor(() => B.b.eval(`${card('Game night')}.querySelector('[data-interested]').getAttribute('aria-pressed') === 'true'`),
-        "bob's mark")), "bob's Interested shows pressed");
+    step('alice copies its link, and sends it in #general and in their DM');
+    await A.b.eval(`(() => { window.copied = []; navigator.clipboard.writeText = async (t) => { window.copied.push(t); }; return true; })()`);
+    await A.b.eval(`${card('Game night')}.querySelector('[data-copy-event-link]').click(), true`);
+    const [link] = await waitFor(async () => {
+        const copied = JSON.parse(await A.b.eval('JSON.stringify(window.copied || [])'));
+        return copied.length > 0 && copied;
+    }, 'the copied link');
+    const denURL = state('alice').url;
+    report(link === `${denURL}/#e/${den}/${night.id}`, `Copy link gave the event's link: ${link}`);
+    lib('send', 'alice', general, `Who's in? ${link}`);
+    lib('send', 'alice', dm, `Come along: ${link}`);
+
+    step('bob sees its chip and its card in #general, and marks Interested from the card, which alice’s page counts');
+    await openChannel(B, general);
+    report(await may(waitFor(() => B.b.eval(`${linkCard(night.id)}?.innerText.includes('Lounge')`), "the card in bob's #general")),
+        "bob's #general shows the event's card under the message, in Lounge");
+    const chip = await B.b.eval(`document.querySelector('[data-event-link="${night.id}"]')?.textContent || ''`);
+    report(chip === 'Game night', `the link shows as a chip naming the event: ${q(chip)}`);
+    const seen = JSON.parse(await B.b.eval(`(() => { const c = ${linkCard(night.id)}; return JSON.stringify({ text: c.innerText,
+        badge: !!c.querySelector('[data-event-badge]'), interested: !!c.querySelector('[data-interested]') }); })()`));
+    report(/Game night/.test(seen.text) && /Nobody interested yet/.test(seen.text) && seen.badge && seen.interested,
+        `the card shows its name, its badge, nobody interested yet, and Interested: ${q(seen)}`);
+    await B.b.shot(`${HOME}/shot-events-card-${which}.png`);
+    await B.b.eval(`${linkCard(night.id)}.querySelector('[data-interested]').click(), true`);
+    report(await may(waitFor(() => B.b.eval(`${linkCard(night.id)}.querySelector('[data-interested]').getAttribute('aria-pressed') === 'true'
+        && ${linkCard(night.id)}.innerText.includes('1 interested')`), "bob's mark on the card")), "bob's card shows his mark, 1 interested");
     report(await may(waitFor(() => cardText(A, 'Game night').then((t) => /1 interested/.test(t)), "alice's count")),
-        "alice's page counts 1 interested, as bob marked it");
+        "alice's page counts 1 interested, as bob marked it from the card");
+    step('and in their DM');
+    await openChannel(B, dm);
+    report(await may(waitFor(() => B.b.eval(`${linkCard(night.id)}?.querySelector('[data-interested]')?.getAttribute('aria-pressed') === 'true'`),
+        "the card in bob's DM")), "bob's DM shows the card too, his mark on it");
+    await openEvents(B);
+    report(await may(waitFor(() => B.b.eval(`${card('Game night')}.querySelector('[data-interested]').getAttribute('aria-pressed') === 'true'`),
+        "bob's mark in his events")), "bob's events show the mark he made from the card");
 
     step('an event in Backstage, staff’s alone, never reaches bob');
     const at = Date.now();
@@ -230,6 +303,36 @@ try {
     report(/^Live until /.test(await B.b.eval(`${card('Game night')}.querySelector('[data-when]').textContent`)), 'its time says it runs until its end');
     await B.b.shot(`${HOME}/shot-events-live-${which}.png`);
 
+    step('alice joins its call from her card and stays; bob joins and leaves at once');
+    await A.b.eval(`${button(card('Game night'), 'Join')}.click(), true`);
+    const alice = state('alice').me.id;
+    const bob = state('bob').me.id;
+    await waitFor(() => inCall().includes(alice), 'alice in the call', 30000);
+    await openChannel(B, general);
+    await waitFor(() => B.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), "bob's Join the call");
+    await B.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`);
+    await waitFor(() => inCall().includes(bob), 'bob in the call', 30000);
+    await B.b.eval(`document.querySelector('button[aria-label="Leave the call"]').click(), true`);
+    await waitFor(() => !inCall().includes(bob), 'bob out of the call');
+    report(await may(waitFor(() => count(`SELECT count(*) FROM den_badge_awards a JOIN den_members m ON m.id = a.member_id WHERE m.username = 'alice'`) === 1,
+        "alice's badge", 15000)), 'alice earned the badge by her stretch in its call');
+    await sleep(4000);
+    report(count(`SELECT count(*) FROM den_badge_awards`) === 1, 'bob, who left at once, earned nothing');
+    await A.b.eval(`document.querySelector('button[aria-label="Leave the call"]').click(), true`);
+
+    step("alice's profile card on bob's page shows her badge, with its tip");
+    const member = `[...document.querySelectorAll('nav[aria-label="Members"] button')].find((x) => x.textContent.includes('Alice'))`;
+    await waitFor(() => B.b.eval(`!!${member}`), "alice in bob's member list");
+    await B.b.eval(`${member}.click(), true`);
+    report(await may(waitFor(() => B.b.eval(`!!${PROFILE}?.querySelector('[data-badge="${night.id}"]')`), "the badge on alice's card")),
+        "alice's profile card shows her badge");
+    const tip = await B.b.eval(`${PROFILE}?.querySelector('[data-badge="${night.id}"] [role=tooltip]')?.textContent || ''`);
+    report(tip.startsWith('Was thereGame night, '), `its tip names it and its event, with the day: ${q(tip)}`);
+    await B.b.shot(`${HOME}/shot-events-badge-${which}.png`);
+    await B.b.eval(`${PROFILE}.querySelector('button[aria-label="Close"]').click(), true`);
+    await waitFor(() => B.b.eval(`!${PROFILE}`), "alice's card closed");
+    await openEvents(B);
+
     step('alice moves its end from the form, its start staying');
     await A.b.eval(`${button(card('Game night'), 'Edit')}.click(), true`);
     await waitFor(() => A.b.eval(`!!document.querySelector('[data-event-form]')`), 'the form for the live event');
@@ -251,6 +354,11 @@ try {
     report(await may(waitFor(async () => (await notes())[0]?.shut, 'the notification taken back', 10000)), "bob's notification of it was taken back");
     report(!(await B.b.eval(`!!document.querySelector('[data-events-live]') || !!document.querySelector('[data-events-count]')`)),
         "bob's Events row says nothing now");
+    step("bob's card in #general says it ended");
+    await openChannel(B, general);
+    report(await may(waitFor(() => B.b.eval(`!!${linkCard(night.id)}?.querySelector('[data-ended]') && !${linkCard(night.id)}.querySelector('[data-interested]')`),
+        "the ended card")), "bob's card in #general says Ended, with no Interested");
+    await openEvents(B);
 
     step('an event of seconds ends by the den’s timer, notifying nobody');
     const flash = Date.now() + 3000;
@@ -264,6 +372,9 @@ try {
     report(count(`SELECT count(*) FROM den_events WHERE instr(details, CAST(? AS BLOB)) > 0`, 'Game night') === 0 && count(`SELECT count(*) FROM den_events`) === 3,
         "the den's database holds the events, none of their names in the clear");
     report(count(`SELECT count(*) FROM den_event_interest`) === 0, 'and nobody’s interest in those that ended');
+    report(count(`SELECT count(*) FROM den_badges WHERE instr(title, CAST(? AS BLOB)) > 0`, 'Was there') === 0 && count(`SELECT count(*) FROM den_badges`) === 1,
+        "the badge's title sealed");
+    report(count(`SELECT count(*) FROM den_badge_awards`) === 1, "and of the call only alice's award");
     await A.b.shot(`${HOME}/shot-events-alice-${which}.png`);
 } catch (e) {
     c.fail(e);

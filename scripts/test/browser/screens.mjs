@@ -309,7 +309,8 @@ const sections = (h, frame) => h.ev(`[...document.querySelectorAll(${JSON.string
 // memberScreens are the screens every member reaches, in a den with
 // general (text, with a description and every kind of message) and a DM
 // (dm), whose codes they compare (M16.1), and a group DM (group), with its
-// members beside it (M16.3).
+// members beside it (M16.3); and where eventCard says general holds an
+// event's link, its card (M17.5).
 export async function memberScreens(h, ctx) {
     const { den, general, dm, group } = ctx;
     await h.step('home', async () => {
@@ -373,6 +374,18 @@ export async function memberScreens(h, ctx) {
         await h.click(`document.querySelector('header button[aria-expanded]')`, 'the description');
         await h.snap('description');
     });
+    // An event's link in #general, a chip, and its card under the message,
+    // with its badge (M17.5).
+    if (ctx.eventCard) {
+        await h.step('event-card', async () => {
+            await h.go(`/den/${den}/${general}`);
+            await h.wait(COMPOSER, 'the composer');
+            await h.wait(`document.querySelector('[data-event-card] [data-interested]')`, "the event's card");
+            await h.ev(`document.querySelector('[data-event-card]').scrollIntoView({ block: 'center' }), true`);
+            await sleep(800);
+            await h.snap('event-card');
+        });
+    }
     await h.step('message-menu', async () => {
         await h.go(`/den/${den}/${general}`);
         await h.wait(COMPOSER, 'the composer');
@@ -585,9 +598,11 @@ export async function ownerScreens(h, ctx) {
 // eventing walks the den's events on the phone layout (M17.4): the Events
 // row atop the Den tab's list, opening them by a tap; a card's Interested
 // marked by a tap and taken back by another; and the header's Channels
-// back to the list.
+// back to the list. Then (M17.5) the card under an event's link in
+// #general, its Interested the same; and a badge on a profile card, whose
+// tip a tap shows, within the screen.
 export async function eventing(h, ctx, d, report) {
-    const { den } = ctx;
+    const { den, general } = ctx;
     const did = (good, what) => report(good, `${d.name}: ${what}`);
     const ROW = `document.querySelector('[data-pane=list] [data-events-row] button')`;
     const MARK = `document.querySelector('[data-pane=chan] [data-event] [data-interested]')`;
@@ -615,6 +630,35 @@ export async function eventing(h, ctx, d, report) {
     await d.tap(`document.querySelector('[data-pane=chan] header button[aria-label="Channels"]')`);
     const listed = await waitFor(() => h.has(`!document.querySelector('[data-pane=list]').inert`), 'the list', 10000).then(() => true, () => false);
     did(listed, "the events' Channels goes back to the list");
+
+    const CARD = `document.querySelector('[data-pane=chan] [data-event-card] [data-interested]')`;
+    await h.go(`/den/${den}/${general}`);
+    await h.wait(CARD, "the event's card in #general");
+    await h.ev(`${CARD}.scrollIntoView({ block: 'center' }), true`);
+    await sleep(800);
+    const cardPressed = () => h.ev(`${CARD}.getAttribute('aria-pressed')`);
+    const was = await cardPressed();
+    await d.tap(CARD);
+    did(await waitFor(async () => (await cardPressed()) !== was, "the card's mark", 10000).then(() => true, () => false),
+        "a tap on the Interested of an event's card in #general marks it");
+    await d.tap(CARD);
+    did(await waitFor(async () => (await cardPressed()) === was, "the card's mark taken back", 10000).then(() => true, () => false),
+        'another takes it back');
+
+    await h.click(h.label('Members'));
+    await h.click(`[...document.querySelectorAll('nav[aria-label=Members] button')].find((b) => b.textContent.includes('Bob'))`, 'bob');
+    const BADGE = `document.querySelector('[role=dialog] [data-badge] button')`;
+    const hasBadges = await waitFor(() => h.has(BADGE), "bob's badges", 10000).then(() => true, () => false);
+    did(hasBadges, "bob's profile card shows his badges");
+    if (!hasBadges) return;
+    await d.tap(BADGE);
+    const TIP = `document.querySelector('[role=dialog] [data-badge] [role=tooltip]')`;
+    const tip = await waitFor(() => h.has(`(() => { const t = ${TIP}; if (!t || t.hidden) return false;
+        const r = t.getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; })()`),
+    "the badge's tip", 5000).then(() => true, () => false);
+    did(tip, "a tap on a badge shows its tip, within the screen");
+    await h.snap('badge-tip');
+    await h.escape();
 }
 
 // CALL is what a page shows of its call on the phone layout (M13.4): the
