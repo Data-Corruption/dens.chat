@@ -9,23 +9,19 @@ computer too, and opens it in their browser.
 
 {{< cards cols="2" >}}
   {{< card link="install/" title="I got an invite" subtitle="Install Dens, then join the den with your invite." icon="user-add" >}}
-  {{< card link="host/" title="I want to host a den" subtitle="Run a den for your friends on your own computer." icon="server" >}}
+  {{< card link="hosting/" title="I want to host a den" subtitle="Run a den for your friends on your own computer." icon="server" >}}
 {{< /cards >}}
 
 ## The guides
 
-- [Install](install/): putting Dens on Windows or Linux, or its Flatpak on
-  other Linux distributions, updating it and removing it.
-- [Android](android/): the app for your phone, installing it, keeping it
-  connected, and its updates.
-- [Join a den](join/): invites, your passwords and recovery codes, new devices,
-  DMs and notifications.
-- [Host a den](host/): a domain, your router and Caddy, step by step, then
-  running the den.
-- [Host on a server](server/): Dens on a Linux server or container, and moving
-  a den there from your own computer.
+- [Install](install/): putting Dens on Windows or Linux, its Flatpak on other
+  Linux distributions, or the app on your Android phone, updating it and
+  removing it.
+- [Usage](usage/): what's different about Dens: invites, your passwords and
+  recovery codes, new devices, DMs, and sending logs when something's wrong.
+- [Hosting](hosting/): a domain, your router and Caddy, step by step; running
+  the den, and on a server.
 - [Backups and moving](backups/): keeping your data safe, moving to another
   computer, and handing a den on.
 - [Privacy](privacy/): who can read what, and what Dens doesn't protect you
   from.
-- [Sending logs](logs/): what to send when something goes wrong.
