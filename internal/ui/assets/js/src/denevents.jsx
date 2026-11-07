@@ -207,8 +207,8 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                                 </Tip>
                             )}
                             {e.live && channel && (
-                                <button type="button" class="btn btn-xs" disabled={!canCall()} title={canCall() ? undefined : NO_CALLS}
-                                    onClick={() => joinCall(denID, channel.id, { den: view.name, channel: channel.name })}>Join</button>
+                                <button type="button" class="btn btn-primary btn-xs" disabled={!canCall()} title={canCall() ? undefined : NO_CALLS}
+                                    data-join-event onClick={() => joinCall(denID, channel.id, { den: view.name, channel: channel.name })}>Join</button>
                             )}
                         </>
                     ) : (
@@ -260,7 +260,7 @@ function EventBadge({ denID, badge, id }) {
         <div class="flex min-w-0 items-center gap-2 text-sm" data-event-badge>
             <BadgePicture denID={denID} image={badge.image} />
             <span class="min-w-0 break-words">{badge.title}</span>
-            <Tip id={id} label="About the badge">A minute in its call while it's live earns it.</Tip>
+            <Tip id={id} label="About the badge">Join during the event for a minute to earn this badge!</Tip>
         </div>
     );
 }

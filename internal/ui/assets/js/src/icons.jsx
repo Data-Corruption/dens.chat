@@ -141,3 +141,36 @@ export function ShieldIcon({ size = 'h-3.5 w-3.5' }) {
         </svg>
     );
 }
+
+// CrownIcon marks the den's owner (M17.6), beside their name in their
+// profile and the member list, where a shield marks a moderator.
+export function CrownIcon({ size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M2.5 5.25 5.25 8.5 8 3.25l2.75 5.25 2.75-3.25-1 7.5h-9z" />
+        </svg>
+    );
+}
+
+// EyeIcon is whether something shows: open while it does, struck through
+// while it's hidden, as a badge in the member's own Edit profile (M17.6).
+export function EyeIcon({ off, size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8z" />
+            <circle cx="8" cy="8" r="2" />
+            {off && <path d="M2.5 2.5l11 11" />}
+        </svg>
+    );
+}
+
+// CalendarIcon is a day: how long a member has been in the den, on their
+// profile (M17.6).
+export function CalendarIcon({ size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+            <path d="M2.5 6.75h11M5.5 2v3M10.5 2v3" />
+        </svg>
+    );
+}

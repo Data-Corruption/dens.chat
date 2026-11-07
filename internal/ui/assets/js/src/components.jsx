@@ -149,6 +149,23 @@ export function Tip({ id, side = 'bottom', label = 'More about this', trigger, c
     );
 }
 
+// HoverTip is a mark whose tip shows while a mouse is over it (M17.6), for
+// a mark inside a row or a tile that is itself a button, which a second
+// button can't sit in, and where a tap belongs to what it's in: a role's
+// mark in the member list, whose card says the same at a tap. label, if
+// given, is read with what it's in, as the mark's words; the tip itself is
+// for the eye alone.
+export function HoverTip({ side = 'bottom', label, tip: content, children }) {
+    const tip = useTip(side);
+    return (
+        <span {...tip.wrapProps} class={`${tip.wrapProps.class} inline-flex align-middle`}>
+            <span class={TIP} aria-hidden="true" {...tip.contentProps}>{content}</span>
+            {label && <span class="sr-only">{label}</span>}
+            <span class="inline-flex" aria-hidden="true">{children}</span>
+        </span>
+    );
+}
+
 // The public guides, which explain what few apps ask people to understand.
 export const DOCS = 'https://dens.chat/docs/';
 

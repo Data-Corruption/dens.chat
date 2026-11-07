@@ -11,8 +11,12 @@ import { Handle, useDragDown } from './sheet.jsx';
 // a click outside it (M13.1). On the phone layout it's a sheet from the
 // screen's foot, as tall as it needs up to the screen's, its title and ✕
 // staying at its top as the rest scrolls, and a swipe down from there
-// closes it too (M13.3).
-export function Dialog({ title, onClose, children }) {
+// closes it too (M13.3). A bare one, a profile card (M17.6), shows no
+// title, which still names it for screen readers: what it shows runs to
+// its edges, the ✕ standing over its top right, and on the phone layout
+// the handle over its top, both staying there as it scrolls; a swipe down
+// closes it from the handle, or from what it shows marked as its top.
+export function Dialog({ title, onClose, bare = false, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
     const narrow = useNarrow();
@@ -21,16 +25,31 @@ export function Dialog({ title, onClose, children }) {
         <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4" {...backdrop}>
             <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={title} style={drag.style} {...drag.handlers}
                 class="card max-h-[calc(100%-1.5rem)] w-full overflow-y-auto overscroll-contain bg-base-100 shadow-xl max-md:rounded-b-none max-md:pb-[env(safe-area-inset-bottom)] md:max-h-full md:max-w-md">
-                <div class="card-body gap-3 max-md:px-4 max-md:pt-0">
-                    <div data-sheet-top class="sticky top-0 z-10 -mx-1 bg-base-100 px-1 max-md:touch-none max-md:pb-1 md:static">
-                        <div class="md:hidden"><Handle /></div>
-                        <div class="flex items-center justify-between gap-2">
-                            <h2 class="card-title min-w-0">{title}</h2>
-                            <button type="button" class="btn btn-ghost btn-sm shrink-0" onClick={onClose} aria-label="Close">✕</button>
+                {bare ? (
+                    <>
+                        <div class="pointer-events-none sticky top-0 z-10 h-0">
+                            <div data-sheet-top class="pointer-events-auto absolute left-1/2 top-0 h-7 w-24 -translate-x-1/2 touch-none md:hidden">
+                                <div class="flex justify-center pt-2" aria-hidden="true">
+                                    <span class="h-1 w-10 rounded-full bg-base-100/90 shadow-[0_0_0_1px] shadow-base-content/25"></span>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-circle btn-sm pointer-events-auto absolute right-2 top-2 border-0 bg-base-100/85 shadow-sm"
+                                onClick={onClose} aria-label="Close">✕</button>
                         </div>
+                        {children}
+                    </>
+                ) : (
+                    <div class="card-body gap-3 max-md:px-4 max-md:pt-0">
+                        <div data-sheet-top class="sticky top-0 z-10 -mx-1 bg-base-100 px-1 max-md:touch-none max-md:pb-1 md:static">
+                            <div class="md:hidden"><Handle /></div>
+                            <div class="flex items-center justify-between gap-2">
+                                <h2 class="card-title min-w-0">{title}</h2>
+                                <button type="button" class="btn btn-ghost btn-sm shrink-0" onClick={onClose} aria-label="Close">✕</button>
+                            </div>
+                        </div>
+                        {children}
                     </div>
-                    {children}
-                </div>
+                )}
             </div>
         </div>
     );

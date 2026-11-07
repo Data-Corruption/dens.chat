@@ -1,18 +1,21 @@
 // Members: the member list, profile cards, editing your own profile, and
 // staff removing someone.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
+import { ErrorText, Field, HoverTip, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
+import { CalendarIcon, CrownIcon, EyeIcon, ShieldIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
+import { useNarrow } from './nav.js';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
 import { badgeTip, zone } from './denevents.js';
+import { Sheet, SheetRow } from './sheet.jsx';
 
 const MAX_BIO = 300;
 
@@ -25,9 +28,67 @@ export function isStaff(role) {
     return rank(role) > 0;
 }
 
-function RoleBadge({ role, size = 'badge-sm' }) {
-    if (!isStaff(role)) return null;
-    return <span class={`badge badge-role ${role === 'owner' ? 'badge-warning' : 'badge-info'} ${size}`}>{role === 'owner' ? 'Owner' : 'Moderator'}</span>;
+/** roleMark names the mark beside a staff member's name (M17.6): Owner, a
+    crown, or Moderator, a shield; a member has none */
+export function roleMark(role) {
+    return role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : '';
+}
+
+// MARK is a role mark's color: darker than the icons' 60% of the text's,
+// which falls under a graphic's 3:1 against the member list in some
+// themes, Retro's among them.
+export const MARK = 'text-base-content/80';
+
+function RoleIcon({ role }) {
+    return <span class={`inline-flex ${MARK}`}>{role === 'owner' ? <CrownIcon size="h-4 w-4" /> : <ShieldIcon size="h-4 w-4" />}</span>;
+}
+
+// RoleMark is a staff member's mark beside their name on their profile
+// (M17.6), with its tip, in place of a role's pill.
+function RoleMark({ role, id }) {
+    const label = roleMark(role);
+    if (!label) return null;
+    return (
+        <span data-role-mark={role}>
+            <Tip id={id} label={label} trigger={<RoleIcon role={role} />}>{label}</Tip>
+        </span>
+    );
+}
+
+// RowRoleMark is the same mark in the member list, whose row is a button
+// that opens the card: its tip shows on a mouse's hover, and its words are
+// read with the row's.
+function RowRoleMark({ role }) {
+    const label = roleMark(role);
+    if (!label) return null;
+    return (
+        <span data-role-mark={role}>
+            <HoverTip label={label} tip={label}><RoleIcon role={role} /></HoverTip>
+        </span>
+    );
+}
+
+/** shownBadges are the badges a profile card shows: all but those its
+    member hid, which their own copy of it alone carries (M17.6) */
+export function shownBadges(badges) {
+    return badges.filter((b) => !b.hidden);
+}
+
+/** cardMenu lists what a profile card's ⋯ offers (M17.6), each by key,
+    label and whether it's a danger: comparing codes with a member whose
+    Dens publishes an identity, where this member's keeps them; the
+    owner's promoting a member or demoting a moderator; and removing
+    someone of a lower rank, or banning one who left. One's own card offers
+    none of them */
+export function cardMenu({ self, role, member, kept }) {
+    if (self) return [];
+    const left = !!member.left_at;
+    const out = [];
+    if (kept && member.identity && !left) out.push({ key: 'compare', label: kept.verified ? 'Compare codes again' : 'Compare codes' });
+    if (role === 'owner' && !left && member.role === 'member') out.push({ key: 'promote', label: 'Promote to moderator' });
+    if (role === 'owner' && !left && member.role === 'moderator') out.push({ key: 'demote', label: 'Demote to member' });
+    if (rank(role) > rank(member.role)) out.push({ key: 'remove', label: left ? 'Ban…' : 'Remove from den…', danger: true });
+    return out;
 }
 
 const byName = (a, b) => a.display_name.localeCompare(b.display_name);
@@ -53,8 +114,10 @@ export function MemberList({ members, online, onProfile }) {
                                 onClick={() => onProfile(m)}
                             >
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />
-                                <span class="min-w-0 flex-1 truncate">{m.display_name}</span>
-                                <RoleBadge role={m.role} size="badge-xs" />
+                                <span class="flex min-w-0 flex-1 items-center gap-1">
+                                    <span class="truncate">{m.display_name}</span>
+                                    <RowRoleMark role={m.role} />
+                                </span>
                             </HoverRow>
                         </li>
                     ))}
@@ -69,12 +132,18 @@ export function MemberList({ members, online, onProfile }) {
     );
 }
 
-// Profile shows a member: their banner and picture, their names and role,
-// how long they've been in the den, the badges they earned (M17.5), and
-// their bio, the badges and the bio as the den sends them with the card. In
-// a panel the bio runs its full length, which the panel scrolls. Its
-// pictures play while it shows, since the member opened it (M15.1).
-function Profile({ denID, member, me, online, panel = false, verified = false }) {
+// Profile shows a member as a card (M17.6): their banner across its top,
+// to its edges, or a band of the theme's quiet color where they have none;
+// their picture across the banner's foot, ringed in the card's own color,
+// so the two read as one, with actions to its right; under it their
+// names, with a crown or a shield for staff, and the badges they show,
+// beside the names on a card wide enough and under them on a narrow one;
+// then, under a thin line, their bio as text and how long they've been in
+// the den. The bio and the badges come as the den sends them with the
+// card (M17.5). In a panel the bio runs its full length, which the panel
+// scrolls. Its pictures play while it shows, since the member opened it
+// (M15.1).
+function Profile({ denID, member, me, online, panel = false, verified = false, actions, children }) {
     const [bio, setBio] = useState(null);
     const [badges, setBadges] = useState([]);
     const [error, setError] = useState('');
@@ -87,51 +156,81 @@ function Profile({ denID, member, me, online, panel = false, verified = false })
         }, (e) => setError(e.message));
     }, [member.id, member.display_name]);
     const left = !!member.left_at;
+    const shown = shownBadges(badges);
+    const ring = panel ? 'bg-base-200' : 'bg-base-100';
+    const at = panel ? '-panel' : '';
     return (
         <Shown>
-            {member.banner?.id && <Banner denID={denID} image={member.banner} />}
-            <div class="flex items-center gap-4">
-                <Avatar member={member} size="lg" online={left ? undefined : online} />
-                <div class="flex min-w-0 flex-col items-start gap-1">
-                    <p class="flex max-w-full items-center gap-1 text-lg font-semibold">
-                        <span class="truncate">{member.display_name}</span>
-                        {verified && <VerifiedMark id={`profile-verified-${member.id}${panel ? '-panel' : ''}`} name={member.display_name} />}
-                    </p>
-                    <p class="max-w-full truncate text-sm text-base-content/70">@{member.username}</p>
-                    <RoleBadge role={member.role} />
+            <div class="@container flex flex-col" data-profile>
+                {/* In a card, a sheet on the phone layout, the banner drags it
+                    down; beside a DM it's the pane's, which swipes. */}
+                <div data-sheet-top={panel ? undefined : ''} class={panel ? '' : 'max-md:touch-none'}>
+                    {member.banner?.id ? <Banner denID={denID} image={member.banner} edge /> : <div class="h-16 bg-base-300 @min-[20rem]:h-20" data-no-banner></div>}
+                </div>
+                <div class={`flex flex-col gap-3 ${panel ? 'px-3 pb-3' : 'px-4 pb-4 md:px-6 md:pb-6'}`}>
+                    <div class="-mt-10 flex items-end justify-between gap-2">
+                        {/* Positioned, as the banner is, so its ring paints over it. */}
+                        <span class={`relative shrink-0 rounded-full p-1 ${ring}`}>
+                            <Avatar member={member} size="lg" online={left ? undefined : online} dotRing={panel ? 'ring-base-200' : 'ring-base-100'} />
+                        </span>
+                        {actions && <div class="flex min-w-0 flex-wrap justify-end gap-2" data-profile-actions>{actions}</div>}
+                    </div>
+                    <div class="flex flex-col gap-3 @min-[26rem]:flex-row @min-[26rem]:items-start @min-[26rem]:justify-between">
+                        <div class="flex min-w-0 flex-col items-start gap-0.5 @min-[26rem]:flex-1">
+                            <p class="flex max-w-full items-center gap-0.5 text-lg font-semibold">
+                                <span class="truncate">{member.display_name}</span>
+                                <RoleMark role={member.role} id={`profile-role-${member.id}${at}`} />
+                                {verified && <VerifiedMark id={`profile-verified-${member.id}${at}`} name={member.display_name} />}
+                            </p>
+                            <p class="max-w-full truncate text-sm text-base-content/70">@{member.username}</p>
+                        </div>
+                        {shown.length > 0 && (
+                            <div class="flex min-w-0 flex-col gap-1 @min-[26rem]:max-w-[55%]">
+                                <p class="cursor-default select-none text-xs font-semibold uppercase text-base-content/60">Badges</p>
+                                <Badges denID={denID} badges={shown} panel={panel} />
+                            </div>
+                        )}
+                    </div>
+                    <div class="flex flex-col gap-2 border-t border-base-300 pt-3">
+                        {slow && <span class="loading loading-dots loading-sm"></span>}
+                        {bio && (
+                            <div class={`break-words text-sm ${panel ? '' : 'max-h-48 overflow-y-auto'}`} data-bio>
+                                <Markdown text={bio} me={me} />
+                            </div>
+                        )}
+                        <p class="flex cursor-default select-none items-center gap-1.5 text-xs text-base-content/60" data-member-since>
+                            <CalendarIcon />
+                            {left ? `No longer in this den since ${day(member.left_at)}` : `Member since ${day(member.joined_at)}`}
+                        </p>
+                    </div>
+                    <ErrorText message={error} />
+                    {children}
                 </div>
             </div>
-            <p class="text-xs text-base-content/60">{left ? `No longer in this den since ${day(member.left_at)}` : `Member since ${day(member.joined_at)}`}</p>
-            {badges.length > 0 && <Badges denID={denID} badges={badges} panel={panel} />}
-            {slow && <span class="loading loading-dots loading-sm"></span>}
-            {bio && (
-                <div class={`rounded p-2 text-sm ${panel ? 'bg-base-100' : 'max-h-48 overflow-y-auto bg-base-200'}`}>
-                    <Markdown text={bio} me={me} />
-                </div>
-            )}
-            <ErrorText message={error} />
         </Shown>
     );
 }
 
 // ProfilePanel shows the other member of a DM beside it, in the member
-// list's place (M11), and from M16.1 whether this member verified them,
-// with Compare codes. kept is what this member's Dens kept of their
-// identity, null on a den that keeps none. expiry is the DM, whose time
-// either member sets (M16.4), where the den keeps one.
+// list's place (M11), as the profile card shows them (M17.6), and from
+// M16.1 whether this member verified them, with Compare codes. kept is
+// what this member's Dens kept of their identity, null on a den that keeps
+// none. expiry is the DM, whose time either member sets (M16.4), where the
+// den keeps one.
 export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAddPeople, expiry }) {
     return (
-        <div class="flex flex-col gap-3 p-3">
-            <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified} />
-            <CompareCodes member={member} kept={kept} onCompare={onCompare} />
-            {/* A group of the two and those added, which leaves the DM as it
-                is (M16.3). */}
-            {onAddPeople && (
-                <div>
-                    <button type="button" class="btn btn-sm" data-add-people onClick={onAddPeople}>Add people</button>
-                </div>
-            )}
-            {expiry && <ExpirySetting denID={denID} channel={expiry} />}
+        <div class="flex flex-col">
+            <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified}>
+                <CompareCodes member={member} kept={kept} onCompare={onCompare} />
+                {/* A group of the two and those added, which leaves the DM as it
+                    is (M16.3). */}
+                {onAddPeople && (
+                    <div>
+                        <button type="button" class="btn btn-sm" data-add-people onClick={onAddPeople}>Add people</button>
+                    </div>
+                )}
+                {expiry && <ExpirySetting denID={denID} channel={expiry} />}
+            </Profile>
         </div>
     );
 }
@@ -149,49 +248,143 @@ function CompareCodes({ member, kept, onCompare }) {
     );
 }
 
-// ProfileCard shows a member, and what the viewer can do with them.
-// onNotes, on the member's own card, opens their notes (M17.3), while the
-// den has them for this Dens.
+// ProfileCard shows a member, and what the viewer can do with them, with
+// one button standing out (M17.6): Message, or on the member's own card
+// Edit profile, with Notes beside it, which open their notes (M17.3) while
+// the den has them for this Dens. The rest is under ⋯.
 export function ProfileCard({ denID, member, me, role, online, kept, onClose, onMessage, onNotes, onCompare, onEdit, onRemove }) {
     const act = useAction();
     const self = member.id === me.id;
     const left = !!member.left_at;
-    const canManage = !self && rank(role) > rank(member.role);
 
     function setRole(next) {
         act.run(() => api.put(`/api/dens/${denID}/members/${member.id}/role`, { role: next }));
     }
 
+    const run = {
+        compare: () => onCompare(member),
+        promote: () => setRole('moderator'),
+        demote: () => setRole('member'),
+        remove: () => onRemove(member),
+    };
+    const more = cardMenu({ self, role, member, kept }).map((item) => ({ ...item, disabled: act.busy && item.key !== 'compare', run: run[item.key] }));
+    const actions = self ? (
+        <>
+            <button type="button" class="btn btn-primary btn-sm" onClick={onEdit}>Edit profile</button>
+            {onNotes && <button type="button" class="btn btn-sm" data-own-notes onClick={onNotes}>Notes</button>}
+        </>
+    ) : (
+        (!left || more.length > 0) && (
+            <>
+                {!left && <button type="button" class="btn btn-primary btn-sm" onClick={() => onMessage(member)}>Message</button>}
+                {more.length > 0 && <MoreMenu items={more} />}
+            </>
+        )
+    );
+
     return (
-        <Dialog title="Profile" onClose={onClose}>
-            <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} />
-            <ErrorText message={act.error} />
-            <div class="flex flex-wrap gap-2">
-                {self && <button type="button" class="btn btn-sm" onClick={onEdit}>Edit profile</button>}
-                {self && onNotes && <button type="button" class="btn btn-sm" data-own-notes onClick={onNotes}>Notes</button>}
-                {!self && !left && <button type="button" class="btn btn-primary btn-sm" onClick={() => onMessage(member)}>Message</button>}
-                {!self && kept && member.identity && !left && (
-                    <button type="button" class="btn btn-sm" onClick={() => onCompare(member)}>{kept.verified ? 'Compare codes again' : 'Compare codes'}</button>
-                )}
-                {role === 'owner' && !self && !left && member.role === 'member' && (
-                    <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => setRole('moderator')}>Make moderator</button>
-                )}
-                {role === 'owner' && !self && !left && member.role === 'moderator' && (
-                    <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => setRole('member')}>Remove moderator</button>
-                )}
-                {canManage && (
-                    <button type="button" class="btn btn-outline btn-error btn-sm" onClick={() => onRemove(member)}>
-                        {left ? 'Ban…' : 'Remove from den…'}
-                    </button>
-                )}
-            </div>
+        <Dialog title="Profile" bare onClose={onClose}>
+            <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} actions={actions}>
+                <ErrorText message={act.error} />
+            </Profile>
         </Dialog>
     );
 }
 
-// Badges shows the badges a member earned, latest first, in a row, each
-// with a tip saying what it's called, and what event it was for and when
-// (M17.5). Each takes a finger's 44 pixels on a touch screen.
+// MoreMenu is a profile card's ⋯ and the menu of the rest of what the
+// member may do (M17.6), as a message's is: under the ⋯, or over it where
+// the card has no room below, arrow keys moving through it, and Escape, Tab
+// or a press elsewhere closing it; on the phone layout, narrow, a sheet.
+// Each item has a label, a run, and maybe danger or disabled.
+function MoreMenu({ items }) {
+    const narrow = useNarrow();
+    const [open, setOpen] = useState(false);
+    const [up, setUp] = useState(false);
+    const box = useRef(null);
+    const button = useRef(null);
+    const list = useRef(null);
+    const dropdown = open && !narrow;
+    useLayoutEffect(() => {
+        if (!dropdown || !list.current) return;
+        const view = box.current.closest('[role=dialog]')?.getBoundingClientRect();
+        const at = box.current.getBoundingClientRect();
+        const below = view ? view.bottom - at.bottom : Infinity;
+        setUp(below < list.current.offsetHeight + 8 && at.top - view.top > below);
+    }, [dropdown]);
+    useEffect(() => {
+        if (!dropdown) return undefined;
+        list.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+        const away = (e) => !box.current?.contains(e.target) && setOpen(false);
+        document.addEventListener('pointerdown', away);
+        return () => document.removeEventListener('pointerdown', away);
+    }, [dropdown]);
+    // close gives the focus back to the ⋯, unless what was picked takes it.
+    function close() {
+        setOpen(false);
+        button.current?.focus();
+    }
+    function keys(e) {
+        const all = [...list.current.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+        const at = all.indexOf(document.activeElement);
+        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 }[e.key];
+        if (to !== undefined && all.length) {
+            e.preventDefault();
+            all[(to + all.length) % all.length].focus();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            close();
+        } else if (e.key === 'Tab') {
+            setOpen(false);
+        }
+    }
+    return (
+        <div ref={box} class="relative">
+            <button ref={button} type="button" class="btn btn-sm btn-square" aria-label="More actions" title="More" aria-haspopup="menu"
+                aria-expanded={open} data-profile-more onClick={() => setOpen(!open)}
+                onKeyDown={(e) => {
+                    if (e.key !== 'ArrowDown' || open) return;
+                    e.preventDefault();
+                    setOpen(true);
+                }}>
+                ⋯
+            </button>
+            {dropdown && (
+                <ul ref={list} role="menu" aria-label="More actions" onKeyDown={keys}
+                    class={`menu absolute right-0 z-20 w-52 rounded-box bg-base-100 p-1 shadow ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+                    {items.map((a) => (
+                        <li key={a.key} role="none">
+                            <button type="button" role="menuitem" tabIndex={-1} disabled={a.disabled} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
+                                onClick={() => {
+                                    close();
+                                    a.run();
+                                }}>
+                                {a.label}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {open && narrow && (
+                <Sheet label="More actions" onClose={() => setOpen(false)}>
+                    {items.map((a) => (
+                        <SheetRow key={a.key} danger={a.danger} disabled={a.disabled} onClick={() => {
+                            setOpen(false);
+                            a.run();
+                        }}>
+                            {a.label}
+                        </SheetRow>
+                    ))}
+                </Sheet>
+            )}
+        </div>
+    );
+}
+
+// Badges shows the badges a member earned and shows, latest first,
+// wrapping into as many rows as they take, each with a tip saying what
+// it's called, and what event it was for and when (M17.5). Each takes a
+// finger's 44 pixels on a touch screen.
 export function Badges({ denID, badges, panel = false }) {
     const tz = zone();
     return (
@@ -225,15 +418,34 @@ export function BadgePicture({ denID, image, size = 'h-8 w-8' }) {
     );
 }
 
+// BadgeToggle is one of the member's badges in Edit profile (M17.6): its
+// picture, with an eye at its top right, open while the badge shows on
+// their card and struck while it's hidden, which a click or a tap turns.
+// Its tip, on a mouse's hover, says what it is.
+export function BadgeToggle({ denID, badge, busy, onToggle }) {
+    const tip = badgeTip(badge, zone());
+    return (
+        <button type="button" class={`relative rounded-box p-1.5 hover:bg-base-200 ${badge.hidden ? 'opacity-60' : ''}`} aria-pressed={!badge.hidden}
+            aria-label={`Show ${badge.title} on your profile`} disabled={busy} data-badge-toggle={badge.event_id} onClick={() => onToggle(!badge.hidden)}>
+            <HoverTip side="top" tip={<><span class="block break-words font-semibold">{tip.title}</span><span class="block break-words text-xs opacity-80">{tip.line}</span></>}>
+                <BadgePicture denID={denID} image={badge.image} size="h-10 w-10" />
+            </HoverTip>
+            <span class="absolute right-0 top-0 rounded-full bg-base-100 p-0.5 text-base-content/80 shadow" data-eye={badge.hidden ? 'off' : 'on'}>
+                <EyeIcon off={badge.hidden} />
+            </span>
+        </button>
+    );
+}
+
 // Banner shows the wide picture on a profile, or an event's (M17.4), three
 // times as wide as it is high, at its final size before it loads. An
 // animated one plays as an avatar does (M15.1), which in a profile is
-// while it shows.
-export function Banner({ denID, image }) {
+// while it shows. One to its box's edges, edge, takes the box's corners.
+export function Banner({ denID, image, edge = false }) {
     const how = usePicture(!!image.animated);
     const cover = 'h-full w-full select-none object-cover';
     return (
-        <div class="relative aspect-[3/1] w-full overflow-hidden rounded bg-base-300">
+        <div class={`relative aspect-[3/1] w-full overflow-hidden bg-base-300 ${edge ? '' : 'rounded'}`}>
             <img src={how === 'file' ? fileURL(denID, image.id) : thumbURL(denID, image.id)} alt="" draggable={false} class={cover} />
             {how === 'hover' && <img src={fileURL(denID, image.id)} alt="" draggable={false} class={`absolute inset-0 ${cover}`} />}
         </div>
@@ -241,20 +453,34 @@ export function Banner({ denID, image }) {
 }
 
 // EditProfile changes the member's own display name, bio and pictures in
-// this den.
+// this den, and which of their badges their card shows (M17.6), which
+// takes at once, as a picture does.
 export function EditProfile({ denID, me, limits, onClose }) {
     const [name, setName] = useState(me.display_name);
     const [bio, setBio] = useState(null);
+    const [badges, setBadges] = useState([]);
     const [cropping, setCropping] = useState(null);
     const [storage, setStorage] = useState(null);
     const save = useAction();
     const picture = useAction();
+    const turn = useAction();
     const pickAvatar = useRef(null);
     const pickBanner = useRef(null);
     useEffect(() => {
-        api.get(`/api/dens/${denID}/members/${me.id}`).then((p) => setBio(p.bio || ''), () => setBio(''));
+        api.get(`/api/dens/${denID}/members/${me.id}`).then((p) => {
+            setBio(p.bio || '');
+            setBadges(p.badges || []);
+        }, () => setBio(''));
         api.get(`/api/dens/${denID}/storage`).then(setStorage, () => {});
     }, [me.id]);
+
+    // toggle hides a badge from the member's card, or shows it again.
+    function toggle(badge, hidden) {
+        turn.run(async () => {
+            await api.put(`/api/dens/${denID}/me/badges/${badge.event_id}`, { hidden });
+            setBadges((list) => list.map((b) => (b.event_id === badge.event_id ? { ...b, hidden } : b)));
+        });
+    }
     const length = [...(bio || '')].length;
 
     function pick(shape) {
@@ -324,6 +550,20 @@ export function EditProfile({ denID, me, limits, onClose }) {
                         <input ref={pickBanner} type="file" accept="image/*" class="hidden" data-picture="banner" onChange={pick('banner')} />
                         {!cropping && <ErrorText message={picture.error} />}
                     </fieldset>
+                    {badges.length > 0 && (
+                        <fieldset class="fieldset">
+                            <legend class="fieldset-legend">Badges</legend>
+                            <ul class="flex flex-wrap gap-1" data-edit-badges>
+                                {badges.map((b) => (
+                                    <li key={b.event_id} class="flex">
+                                        <BadgeToggle denID={denID} badge={b} busy={turn.busy} onToggle={(hidden) => toggle(b, hidden)} />
+                                    </li>
+                                ))}
+                            </ul>
+                            <p class="label whitespace-normal">Your profile shows those with the eye open.</p>
+                            <ErrorText message={turn.error} />
+                        </fieldset>
+                    )}
                     <Field label="Display name">
                         <TextInput value={name} onInput={setName} required maxlength="32" />
                     </Field>
