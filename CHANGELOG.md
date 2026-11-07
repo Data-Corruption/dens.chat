@@ -19,6 +19,10 @@
 - Make moderator and Remove moderator are Promote to moderator and Demote to member, under ⋯ on someone's profile.
 - A device whose Dens hasn't been updated yet doesn't show your notes to self until it is.
 
+### Fixed
+
+- On Windows, a command that talks to Dens's service, like `dens backup`, could stop partway with "Overlapped I/O event is not in a signaled state". Dens handed Windows memory that Go could move while Windows still wrote into it; it doesn't now.
+
 ## [v1.9.0] - 2026-11-05
 
 ### Added

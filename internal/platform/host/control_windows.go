@@ -82,6 +82,9 @@ type pipeListener struct {
 	sa         *windows.SecurityAttributes
 	closeEvent windows.Handle
 	acceptMu   sync.Mutex
+	// connecting is the OVERLAPPED of Accept's connect, which acceptMu
+	// guards; it lives here for the reason pipeConn's do.
+	connecting windows.Overlapped
 
 	mu        sync.Mutex
 	next      windows.Handle
@@ -156,7 +159,8 @@ func (l *pipeListener) connectOnce(h windows.Handle) error {
 		return err
 	}
 	defer windows.CloseHandle(event)
-	overlapped := &windows.Overlapped{HEvent: event}
+	overlapped := &l.connecting
+	*overlapped = windows.Overlapped{HEvent: event}
 	err = windows.ConnectNamedPipe(h, overlapped)
 	switch {
 	case err == nil, errors.Is(err, windows.ERROR_PIPE_CONNECTED):
@@ -208,6 +212,15 @@ type pipeConn struct {
 	closeOnce  sync.Once
 	readMu     sync.Mutex
 	writeMu    sync.Mutex
+	// reading and writing are the OVERLAPPED of the read and the write
+	// under way, which readMu and writeMu guard. The kernel writes into one
+	// until its I/O completes, so it lives here, on the heap, which Go
+	// never moves. On a goroutine's stack, where escape analysis would put
+	// a local one, a stack copied while the I/O was pending would leave the
+	// kernel writing into memory the goroutine left, and
+	// GetOverlappedResult reading a copy that still says pending
+	// (ERROR_IO_INCOMPLETE), which cut a backup's stream short.
+	reading, writing windows.Overlapped
 
 	deadlineMu    sync.Mutex
 	readDeadline  time.Time
@@ -267,7 +280,11 @@ func (c *pipeConn) io(b []byte, write bool, deadline time.Time) (int, error) {
 		return 0, err
 	}
 	defer windows.CloseHandle(event)
-	overlapped := &windows.Overlapped{HEvent: event}
+	overlapped := &c.reading
+	if write {
+		overlapped = &c.writing
+	}
+	*overlapped = windows.Overlapped{HEvent: event}
 	var done uint32
 	if write {
 		err = windows.WriteFile(c.h, b, &done, overlapped)
