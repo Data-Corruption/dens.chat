@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import {
-    EVENTS, LENGTHS, MAX_EVENTS, atZone, canMake, current, eventRequest, formOf, formProblem, inputsAt, interestedText, lengthsFor, mayChange,
-    newForm, ordered, rowMark, whenText, withEvent, zoneParts,
+    EVENTS, LENGTHS, MAX_EVENTS, atZone, badgeProblem, badgeRequest, badgeTip, canMake, cardWhen, current, eventRequest, formOf, formProblem,
+    inputsAt, interestedText, lengthsFor, mayChange, newForm, ordered, rowMark, whenText, willHaveBadge, withEvent, zoneParts,
 } from '../assets/js/src/denevents.js';
 import { EventsRow } from '../assets/js/src/denevents.jsx';
 import { changesOf, draftOf } from '../assets/js/src/dendraft.js';
@@ -83,11 +83,16 @@ test("when says the event's day, Today or Tomorrow, its time and its end, in the
 });
 
 test('a new form starts on the next whole hour after an hour from now, for an hour, in the first voice channel', () => {
-    assert.deepEqual(newForm(NOW, 'UTC', '7'), { name: '', description: '', date: '2026-11-06', time: '20:00', minutes: 60, where: 'channel', channel: '7', place: '' });
+    assert.deepEqual(newForm(NOW, 'UTC', '7'), {
+        name: '', description: '', date: '2026-11-06', time: '20:00', minutes: 60, where: 'channel', channel: '7', place: '', badgeTitle: '',
+    });
     assert.equal(newForm(NOW, 'Asia/Kolkata', '').time, '01:30');
     assert.equal(newForm(NOW, 'UTC', '').where, 'place', 'with no voice channel, somewhere else');
     const e = { name: 'Quiz', starts_at: Date.UTC(2026, 10, 7, 19), ends_at: Date.UTC(2026, 10, 7, 21, 30), place: 'Pub' };
-    assert.deepEqual(formOf(e, 'UTC'), { name: 'Quiz', description: '', date: '2026-11-07', time: '19:00', minutes: 150, where: 'place', channel: '', place: 'Pub' });
+    assert.deepEqual(formOf(e, 'UTC'), {
+        name: 'Quiz', description: '', date: '2026-11-07', time: '19:00', minutes: 150, where: 'place', channel: '', place: 'Pub', badgeTitle: '',
+    });
+    assert.equal(formOf({ ...e, place: '', channel_id: '7', badge: { title: 'Was there', image: { id: '9' } } }, 'UTC').badgeTitle, 'Was there');
 });
 
 test("the form keeps to the den's limits: a name, a place, a start from now to a year on, and 5 minutes to a week", () => {
@@ -226,4 +231,43 @@ test("the page opens a den's events at their address, and notifies of them by de
     const view = { me: { id: '1' }, members: [], channels: [], events: [{ id: '4', name: 'Game night' }] };
     assert.equal(fileWhere({ event: '4' }, view), 'The banner of Game night');
     assert.equal(fileWhere({ event: '5' }, view), "An event's banner");
+});
+
+test("a badge goes with an event in a voice channel: attached with a picture and a title of up to 40 characters, changed, or taken off", () => {
+    const f = (rest) => ({ ...newForm(NOW, 'UTC', '7'), name: 'Game night', ...rest });
+    const pic = { id: '30', width: 128, height: 128 };
+    const e = { id: '4', name: 'Game night', channel_id: '7', starts_at: NOW + HOUR, ends_at: NOW + 2 * HOUR, badge: { title: 'Was there', image: { id: '20' } } };
+    // A new event: none, then one with a picture and a title.
+    assert.equal(willHaveBadge(f(), undefined, undefined), false);
+    assert.deepEqual(badgeRequest(f(), undefined, undefined), {});
+    assert.equal(badgeProblem(f(), undefined, pic), 'A badge needs a title.');
+    assert.equal(badgeProblem(f({ badgeTitle: 'x'.repeat(41) }), undefined, pic), "A badge's title is at most 40 characters.");
+    assert.equal(badgeProblem(f({ badgeTitle: '🦉'.repeat(40) }), undefined, pic), '', 'emoji count as one each');
+    assert.deepEqual(badgeRequest(f({ badgeTitle: ' Night owl ' }), undefined, pic), { badge: '30', badge_title: 'Night owl' });
+    // Somewhere else, a badge goes nowhere.
+    assert.equal(willHaveBadge(f({ where: 'place', place: 'Pub' }), undefined, pic), false);
+    assert.deepEqual(badgeRequest(f({ where: 'place', place: 'Pub' }), undefined, pic), {});
+    // An event with one: kept as it is, a new title, a new picture, taken
+    // off, or taken off as it moves out of a voice channel.
+    const kept = formOf(e, 'UTC');
+    assert.deepEqual(badgeRequest(kept, e, undefined), {});
+    assert.deepEqual(badgeRequest({ ...kept, badgeTitle: 'Early bird' }, e, undefined), { badge_title: 'Early bird' });
+    assert.deepEqual(badgeRequest(kept, e, pic), { badge: '30' });
+    assert.deepEqual(badgeRequest(kept, e, null), { badge: '' });
+    assert.deepEqual(badgeRequest({ ...kept, where: 'place', place: 'Pub' }, e, undefined), { badge: '' });
+    assert.equal(badgeProblem({ ...kept, badgeTitle: ' ' }, e, undefined), 'A badge needs a title.');
+    assert.equal(badgeProblem({ ...kept, badgeTitle: ' ' }, e, null), '', 'one taken off needs no title');
+});
+
+test("a badge's tip says its title, and its event's name and day in the member's zone", () => {
+    const b = { event_id: '4', title: 'Was there', image: { id: '9' }, event: 'Game night', starts_at: Date.UTC(2026, 10, 6, 23, 30), earned_at: 1 };
+    assert.deepEqual(badgeTip(b, 'UTC', 'en-US'), { title: 'Was there', line: 'Game night, Nov 6, 2026' });
+    assert.deepEqual(badgeTip(b, 'Asia/Kolkata', 'en-US'), { title: 'Was there', line: 'Game night, Nov 7, 2026' });
+});
+
+test("a link's card says when an event is as the pane does, or that it ended and on what day", () => {
+    const e = { starts_at: Date.UTC(2026, 10, 7, 19), ends_at: Date.UTC(2026, 10, 7, 21) };
+    assert.equal(cardWhen(e, false, NOW, 'UTC', 'en-US'), whenText(e, NOW, 'UTC', 'en-US'));
+    assert.equal(cardWhen(e, true, NOW, 'UTC', 'en-US'), 'Ended · Sat, Nov 7');
+    assert.equal(cardWhen({ starts_at: Date.UTC(2025, 2, 1, 12), ends_at: Date.UTC(2025, 2, 1, 13) }, true, NOW, 'UTC', 'en-US'), 'Ended · Sat, Mar 1, 2025');
 });

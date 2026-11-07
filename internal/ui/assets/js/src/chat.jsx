@@ -29,7 +29,7 @@ import { GroupIcon, GroupPanel, MAX_MEMBERS, PickPeople, RenameGroup } from './g
 import { ExpiryBadge } from './disappearing.jsx';
 import { NotesIcon, NotesRow } from './notes.jsx';
 import { EVENTS, withEvent } from './denevents.js';
-import { EventsPane, EventsRow } from './denevents.jsx';
+import { EventsPane, EventsRow, showEvent } from './denevents.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
@@ -506,12 +506,17 @@ export function Chat({ denID, channelID, pane, navigate }) {
         api.post(`/api/dens/${denID}/notifications`, { channel, muted: on }).catch(() => {});
     }
 
-    // A link to a message opens it here, or in the den it points into (M11).
+    // A link to a message opens it here, or in the den it points into (M11),
+    // and a link to an event opens it in its den's events (M17.5).
     const links = {
         denID, view, dens,
         open: (den, channelID, messageID) => {
             openAt(den, channelID, messageID);
             navigate(`/den/${den}/${channelID}`);
+        },
+        openEvent: (den, eventID) => {
+            showEvent(den, eventID);
+            navigate(`/den/${den}/${EVENTS}`);
         },
     };
     // On the phone layout the call shows across the top of the channel's

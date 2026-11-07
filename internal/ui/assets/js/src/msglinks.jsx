@@ -14,7 +14,9 @@ import { isPrivate } from './private.js';
 
 // LinkContext is what a den's page gives the links on it: the den open
 // (denID, and view, its state), the dens joined (dens, as /api/dens lists
-// them), and open(denID, channelID, messageID), which shows a message.
+// them), open(denID, channelID, messageID), which shows a message, and
+// openEvent(denID, eventID), which shows an event in its den's events
+// (M17.5).
 export const LinkContext = createContext(null);
 
 export const CHANNEL_GONE = "That channel is gone, or you can't see it.";
@@ -76,7 +78,7 @@ function otherView(denID) {
 
 // denOf is the joined den a link points into, by its ID, or null. The
 // den open is known by its own state too, before the list of dens comes.
-function denOf(link, links) {
+export function denOf(link, links) {
     const { view } = links;
     return links.dens.find((d) => d.den_id === link.den) || (link.den === links.denID && view ? { den_id: links.denID, name: view.name, url: view.url } : null);
 }

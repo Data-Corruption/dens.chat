@@ -3,6 +3,7 @@ package denclient_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"slices"
 	"testing"
@@ -295,6 +296,15 @@ func TestProfilesAndBans(t *testing.T) {
 	p, err := owner.Profile(ctx, denID, bob)
 	if err != nil || p.Bio != bio || p.DisplayName != name {
 		t.Fatalf("profile: %+v %v", p, err)
+	}
+	// Hiding a badge asks the den, which has none of bob's (M17.6); an ID
+	// that isn't one asks nothing.
+	var perr *denproto.Error
+	if err := member.SetBadgeHidden(ctx, denID, "999", true); !errors.As(err, &perr) || perr.Status != http.StatusNotFound {
+		t.Errorf("hiding a badge bob didn't earn: %v", err)
+	}
+	if err := member.SetBadgeHidden(ctx, denID, "x", true); err == nil || errors.As(err, &perr) && perr.Status == http.StatusNotFound {
+		t.Errorf("hiding a badge by a malformed ID: %v", err)
 	}
 	viewOf(t, owner, denID, "the new name", func(v denclient.View) bool {
 		m, ok := memberIn(v, bob)

@@ -50,6 +50,7 @@ import { createPress, useCoarse } from './touch.js';
 import { SmileyIcon, TimerIcon } from './icons.jsx';
 import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
+import { EventCards } from './denevents.jsx';
 
 const EDGE = 600; // px from an end at which the next page loads
 const READ_EVERY = 2000; // ms between read position updates
@@ -1086,6 +1087,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
             {m.poll && !m.locked && !editing && <Poll m={m} me={me} denID={denID} nameOf={nameOf} onPolled={onPolled} />}
             {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
             {!m.locked && !editing && m.text && <Videos text={m.text} />}
+            {!m.locked && !editing && m.text && <EventCards text={m.text} />}
             <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
             {error && <p class="text-xs text-error">{error}</p>}
         </>

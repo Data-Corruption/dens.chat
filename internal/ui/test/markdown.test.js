@@ -6,9 +6,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { h, options, render as mount } from 'preact';
-import { Markdown, firstLine, inCodeBlock, parse, preview, sends } from '../assets/js/src/markdown.jsx';
+import { Markdown, eventsIn, firstLine, inCodeBlock, parse, preview, sends } from '../assets/js/src/markdown.jsx';
 import { setOldReddit, shownLink, trimLink } from '../assets/js/src/links.js';
 import { MessageLink } from '../assets/js/src/msglinks.jsx';
+import { EventLink } from '../assets/js/src/eventlinks.jsx';
 import mentions from '../../denproto/testdata/mentions.json';
 import taskCases from '../../denproto/testdata/tasks.json';
 import linkCases from '../../denproto/testdata/links.json';
@@ -54,13 +55,24 @@ test('mentions are highlighted exactly where the den counts them', () => {
     }
 });
 
-// A link to a message is a chip (M11), a link all the same.
-const linksIn = (tree) => nodes(tree).filter((n) => n.type === 'a' || n.type === MessageLink).map((n) => n.props.href || n.props.url);
+// A link to a message is a chip (M11), as is one to an event (M17.5), a
+// link all the same.
+const linksIn = (tree) => nodes(tree).filter((n) => n.type === 'a' || n.type === MessageLink || n.type === EventLink).map((n) => n.props.href || n.props.url);
 
 test('links end exactly where the den finds them to rewrite', () => {
     for (const c of linkCases.cases) {
         assert.deepEqual(linksIn(render(c.text)), c.links, JSON.stringify(c.text));
     }
+});
+
+test("links to events show their events' cards, none in code or a spoiler", () => {
+    let cases = 0;
+    for (const c of linkCases.cases) {
+        if (!c.events) continue;
+        cases++;
+        assert.deepEqual(eventsIn(c.text).map((e) => e.event), c.events, JSON.stringify(c.text));
+    }
+    assert.ok(cases >= 4, `only ${cases} cases of links to events`);
 });
 
 test("a link keeps a ) that closes its own (, and loses one that closes the sentence's", () => {

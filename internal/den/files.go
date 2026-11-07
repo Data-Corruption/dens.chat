@@ -580,16 +580,19 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	var thumbSize, channel sql.NullInt64
 	var profile bool
 	var named sql.NullString
-	// An event's banner: whether the file is one, and the staff-only
-	// channel its event is in, if any.
-	var event, staffEvent bool
+	// An event's banner: whether the file is one, and whether its event is
+	// staff's alone. A badge's picture, whether its event is (M17.5).
+	var event, staffEvent, staffBadge bool
 	err = d.db.QueryRowContext(ctx, `SELECT f.blob, f.size, f.thumb_size, f.uploader_id, m.channel_id,
 		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id),
 		(SELECT kind FROM den_named_files WHERE file_id = f.id),
 		EXISTS (SELECT 1 FROM den_events WHERE banner_id = f.id),
-		EXISTS (SELECT 1 FROM den_events e JOIN den_channels c ON c.id = e.channel_id WHERE e.banner_id = f.id AND c.staff_only = 1)
+		EXISTS (SELECT 1 FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
+			WHERE e.banner_id = f.id AND `+eventStaffOnly+` = 1),
+		EXISTS (SELECT 1 FROM den_named_files n JOIN den_badges b ON b.named_id = n.id JOIN den_events e ON e.id = b.event_id
+			LEFT JOIN den_channels c ON c.id = e.channel_id WHERE n.file_id = f.id AND `+eventStaffOnly+` = 1)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?`, fid).
-		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named, &event, &staffEvent)
+		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named, &event, &staffEvent, &staffBadge)
 	if errors.Is(err, sql.ErrNoRows) {
 		return none, errFileNotFound
 	}
@@ -598,7 +601,12 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	}
 	switch {
 	case named.Valid:
-		if named.String != kindEmoji && !IsStaff(s.Role) {
+		// An emoji's opens to everyone, as does a badge's, but for an event
+		// staff's alone; a sound's to staff.
+		switch {
+		case named.String == kindEmoji:
+		case named.String == kindBadge && (!staffBadge || IsStaff(s.Role)):
+		case !IsStaff(s.Role):
 			return none, errFileNotFound
 		}
 	case channel.Valid:

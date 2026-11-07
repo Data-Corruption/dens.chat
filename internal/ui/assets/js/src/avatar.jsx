@@ -47,11 +47,12 @@ const DOTS = {
     lg: 'h-4 w-4 ring-4',
 };
 
-// Avatar shows a member's picture. online, when given, adds a presence dot.
-// A picture that fails to load gives way to the default. An animated one
-// that isn't playing shows its preview, its first frame, which the
-// picture covers while it plays, so it never blinks out as it starts.
-export function Avatar({ member, size = 'md', online }) {
+// Avatar shows a member's picture. online, when given, adds a presence dot,
+// ringed in the color behind it, dotRing. A picture that fails to load
+// gives way to the default. An animated one that isn't playing shows its
+// preview, its first frame, which the picture covers while it plays, so it
+// never blinks out as it starts.
+export function Avatar({ member, size = 'md', online, dotRing = 'ring-base-200' }) {
     const denID = useContext(DenContext);
     const [failed, setFailed] = useState('');
     const picture = denID && member?.avatar?.id && member.avatar.id !== failed ? member.avatar.id : '';
@@ -72,7 +73,7 @@ export function Avatar({ member, size = 'md', online }) {
                 </span>
             )}
             {online !== undefined && (
-                <span class={`absolute -bottom-0.5 -right-0.5 rounded-full ring-base-200 ${DOTS[size]} ${online ? 'bg-success' : 'bg-base-content/30'}`}></span>
+                <span class={`absolute -bottom-0.5 -right-0.5 rounded-full ${dotRing} ${DOTS[size]} ${online ? 'bg-success' : 'bg-base-content/30'}`}></span>
             )}
         </span>
     );

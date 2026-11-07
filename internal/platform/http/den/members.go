@@ -9,7 +9,7 @@ import (
 )
 
 func (h *handler) member(w http.ResponseWriter, r *http.Request) {
-	m, err := h.d.Profile(r.Context(), chi.URLParam(r, "id"))
+	m, err := h.d.Profile(r.Context(), session(r), chi.URLParam(r, "id"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -31,6 +31,23 @@ func (h *handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	denproto.WriteJSON(w, http.StatusOK, m)
+}
+
+// setBadgeHidden hides a badge the member earned from their profile card,
+// or shows it again (M17.6).
+func (h *handler) setBadgeHidden(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	var req denproto.BadgeHiddenRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	if err := h.d.SetBadgeHidden(r.Context(), session(r), chi.URLParam(r, "id"), req.Hidden); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handler) leave(w http.ResponseWriter, r *http.Request) {

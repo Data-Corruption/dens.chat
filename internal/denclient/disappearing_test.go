@@ -68,8 +68,15 @@ func TestDisappearingMessages(t *testing.T) {
 			v.Channels[i].ExpiresSet.By == alice
 	})
 
-	// Connected: the den deletes it, and the cache lets it go.
+	// Connected: the den deletes it, and the cache lets it go. The cache's
+	// own timer can let it go a moment before the den's does, so the
+	// histories wait for the den's delete, which the owner's Dens, keeping
+	// no cache, hears from the den alone. A history read while the den's
+	// delete lands can leave carol's cache without the den's word that
+	// nothing lies before the DM's run, and once every message in it went
+	// the cache couldn't answer for the DM offline.
 	stream, stopStream := carol.Stream()
+	denSide, stopDenSide := owner.Stream()
 	sent := sendDM(t, owner, denID, dm, "gone soon")
 	if sent.ExpiresAt == 0 {
 		t.Fatalf("a message sent under a time: %+v", sent.Message)
@@ -82,6 +89,8 @@ func TestDisappearingMessages(t *testing.T) {
 	}
 	deletedOn(t, stream, sent.ID)
 	stopStream()
+	deletedOn(t, denSide, sent.ID)
+	stopDenSide()
 	heard.waitSaid(t, "deleted "+dm+" "+sent.ID)
 	for _, m := range []*denclient.Manager{owner, carol} {
 		if slices.ContainsFunc(history(t, m, denID, dm), func(m denclient.PageMessage) bool { return m.ID == sent.ID }) {

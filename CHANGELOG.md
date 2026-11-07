@@ -1,5 +1,28 @@
 # Changelog
 
+## [v1.10.0] - 2026-11-07
+
+### Added
+
+- Events, at the top of a den's channel list: a game night, a watch party or a meeting, each at a time and in a voice channel or anywhere else, with a description and a banner if you like. Mark ☆ Interested, and Dens tells you as it starts, on your phone too, even with its screen off; it shows Live until it ends, and Join takes you into its call. Moderators and the owner make events, and in Limits the owner can let everyone make a few. Its maker and the staff above them change it, cancel it before it starts, or end it early.
+- An event's Copy link gives a link that shows the event's card wherever you send it, in a channel or a DM, with Interested on it. Once the event is over, the card says it ended.
+- Badges: moderators and the owner can give an event in a voice channel a badge, a small picture and a title. Be in its call for a minute while it's on, and the badge shows on your profile, with what it was for on hover or a tap. The den keeps that you earned it, and when, not who else was in the call. Hide any of yours from your profile with its eye, where you edit your profile.
+- Notes to self, at the top of your DMs and on your own profile: a conversation with yourself in each den, with files, replies and edits, end-to-end encrypted so only your own devices read it.
+- Compact messages, under Appearance's Message density: each message a line of its time, name and text, on a phone too.
+- Moderators and the owner drag channels and groups into order, and a member in a call onto another voice channel, which moves them there; Move to in a call member's ⋯ does the same by touch or keyboard.
+- Send a photo or video as a spoiler: it shows covered until someone clicks or taps it, in a channel or a DM.
+- Check now, in the Android app's Updates settings, looks for a new version at once.
+
+### Changed
+
+- Profiles look like cards now: your banner across the top, your picture over its edge, your name under it, and your badges beside your name. A crown marks the den's owner and a shield a moderator, on profiles and in the member list, where colored labels were. One button stands out, Message, or Edit profile on your own, and the rest is under ⋯.
+- Make moderator and Remove moderator are Promote to moderator and Demote to member, under ⋯ on someone's profile.
+- A device whose Dens hasn't been updated yet doesn't show your notes to self until it is.
+
+### Fixed
+
+- On Windows, a command that talks to Dens's service, like `dens backup`, could stop partway with "Overlapped I/O event is not in a signaled state". Dens handed Windows memory that Go could move while Windows still wrote into it; it doesn't now.
+
 ## [v1.9.0] - 2026-11-05
 
 ### Added

@@ -1041,7 +1041,7 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		data = d
 	case denproto.EventEventCreated, denproto.EventEventUpdated, denproto.EventEventStarted:
 		var ev denproto.DenEvent
-		if json.Unmarshal(e.D, &ev) != nil || denproto.CheckDenEvent(ev) != nil {
+		if json.Unmarshal(e.D, &ev) != nil || denproto.CheckDenEvent(ev) != nil || ev.Ended {
 			return e, false, errMalformed
 		}
 		old, known := s.events[ev.ID]
@@ -1056,6 +1056,10 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if known && old.Banner.ID != "" && old.Banner.ID != ev.Banner.ID {
 			s.gone = append(s.gone, old.Banner.ID) // replaced, so deleted
 		}
+		// So is a badge's picture replaced, or the badge taken off (M17.5).
+		if known && old.Badge != nil && (ev.Badge == nil || old.Badge.Image.ID != ev.Badge.Image.ID) {
+			s.gone = append(s.gone, old.Badge.Image.ID)
+		}
 		s.events[ev.ID] = ev
 		data = ev
 	case denproto.EventEventCanceled, denproto.EventEventEnded:
@@ -1063,10 +1067,15 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if json.Unmarshal(e.D, &x) != nil || !validID(x.ID) {
 			return e, false, errMalformed
 		}
-		// A canceled event's banner goes with it; an ended one's stays on
-		// the den, for its card (M17.5).
-		if old, ok := s.events[x.ID]; ok && old.Banner.ID != "" && e.T == denproto.EventEventCanceled {
-			s.gone = append(s.gone, old.Banner.ID)
+		// A canceled event's banner and badge go with it; an ended one's stay
+		// on the den, for its card and its badge (M17.5).
+		if old, ok := s.events[x.ID]; ok && e.T == denproto.EventEventCanceled {
+			if old.Banner.ID != "" {
+				s.gone = append(s.gone, old.Banner.ID)
+			}
+			if old.Badge != nil {
+				s.gone = append(s.gone, old.Badge.Image.ID)
+			}
 		}
 		delete(s.events, x.ID)
 		data = x

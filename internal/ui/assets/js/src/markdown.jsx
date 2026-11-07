@@ -3,7 +3,8 @@
 // ||spoilers||, @mentions, bare http(s) links, task lines that start with
 // [ ] or [x], and the den's emoji by name, :name: (M15.2). There are no
 // [label](url) links, so a link always shows where it goes; a link to a
-// message shows the channel it's in, with its address on hover (M11).
+// message shows the channel it's in, with its address on hover (M11), and
+// a link to an event its name (M17.5).
 //
 // Every message comes from a den, and dens are other people's servers. The
 // renderer builds Preact nodes whose text is always text: nothing here
@@ -14,8 +15,9 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DenEmoji, EmojiContext } from './denemoji.jsx';
 import { emojiAlone, nameAt } from './emoji.js';
-import { messageLink, shownLink, trimLink, videoOf } from './links.js';
+import { eventLink, messageLink, shownLink, trimLink, videoOf } from './links.js';
 import { MessageLink } from './msglinks.jsx';
+import { EventLink } from './eventlinks.jsx';
 
 const NAME_CHAR = /[A-Za-z0-9_]/;
 const SPACE = /\s/;
@@ -87,6 +89,21 @@ export function videosIn(text) {
     blocks(text, ctx);
     const seen = new Set();
     return ctx.videos.filter((v) => !seen.has(v.id) && seen.add(v.id)).slice(0, MAX_VIDEOS);
+}
+
+// MAX_EVENT_CARDS is how many events' cards a message gets at most
+// (M17.5).
+export const MAX_EVENT_CARDS = 3;
+
+// eventsIn lists the events a message's links point to, for their cards
+// under it (M17.5): found exactly as the renderer finds links, so none in
+// code, and none in a spoiler, whose card would show what it hides. Each
+// event comes once.
+export function eventsIn(text) {
+    const ctx = { events: [] };
+    blocks(text, ctx);
+    const seen = new Set();
+    return ctx.events.filter((e) => !seen.has(`${e.den}/${e.event}`) && seen.add(`${e.den}/${e.event}`)).slice(0, MAX_EVENT_CARDS);
 }
 
 function blocks(text, ctx) {
@@ -248,14 +265,20 @@ function inline(line, marks, ctx, key, start, end) {
                 const shown = shownLink(url);
                 const video = ctx.videos && !ctx.spoiler && videoOf(url);
                 if (video) ctx.videos.push(video);
-                // A link to a message is a chip naming where it points (M11).
+                // A link to a message is a chip naming where it points (M11),
+                // and one to an event a chip naming it, with its card under
+                // the message (M17.5).
                 const message = !ctx.preview && messageLink(url);
+                const event = !ctx.preview && !message && eventLink(url);
+                if (event && ctx.events && !ctx.spoiler) ctx.events.push(event);
                 flush();
                 out.push(
                     ctx.preview ? (
                         <span key={`${key}-${n++}`} class="text-primary">{shown}</span>
                     ) : message ? (
                         <MessageLink key={`${key}-${n++}`} url={url} link={message} />
+                    ) : event ? (
+                        <EventLink key={`${key}-${n++}`} url={url} link={event} />
                     ) : (
                         <a key={`${key}-${n++}`} href={shown} target="_blank" rel="noopener noreferrer nofollow" class="link link-primary break-all">
                             {shown}

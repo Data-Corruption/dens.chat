@@ -327,6 +327,15 @@ type Member struct {
 	Identity    string `json:"identity,omitempty"`
 }
 
+// MemberProfile is a member as GET /api/members/{id} answers, for their
+// profile card: their record with their bio, and the badges they earned
+// whose events the asker sees, latest first (M17.5), which travel with the
+// card alone, as the bio does.
+type MemberProfile struct {
+	Member
+	Badges []MemberBadge `json:"badges,omitempty"`
+}
+
 // IdentityHash returns the hash of the member's identity, or nil when they
 // have none or it's malformed.
 func (m Member) IdentityHash() Bytes {

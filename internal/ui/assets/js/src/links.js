@@ -128,6 +128,27 @@ export function linkTo(denURL, denID, channelID, messageID) {
     return `${denURL}/#m/${denID}/${channelID}/${messageID}`;
 }
 
+// A link to an event (M17.5) is its den's address, then the den's ID and
+// the event's in the fragment, as an event's Copy link writes it:
+// https://den.example.com/#e/<den ID>/12. It opens by the den's ID, as a
+// link to a message does, and the den never learns from the address which
+// event it names.
+const EVENT_LINK = /^https?:\/\/([^/?#@\s]+)\/?#e\/([A-Za-z0-9_-]{43})\/([1-9][0-9]{0,18})$/;
+
+// eventLink reads a link to an event as { den, host, event }, where den is
+// the den's ID, or null for any other link.
+export function eventLink(url) {
+    const m = EVENT_LINK.exec(url);
+    if (!m || !fitsID(m[3])) return null;
+    return { den: m[2], host: m[1].toLowerCase(), event: m[3] };
+}
+
+// eventLinkTo is the link to an event in the den with ID denID at denURL,
+// as Copy link writes it.
+export function eventLinkTo(denURL, denID, eventID) {
+    return `${denURL}/#e/${denID}/${eventID}`;
+}
+
 // shownLink is a link as this browser shows it.
 export function shownLink(url, preferOld = oldReddit()) {
     return preferOld && url.startsWith(REDDIT_POST) ? 'https://old.reddit.com/' + url.slice('https://www.reddit.com/'.length) : url;

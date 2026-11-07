@@ -56,6 +56,10 @@ type call struct {
 	// it (M16.2), which each member it holds a copy for gets as their call
 	// starts or is taken back. It goes with the call.
 	sealKey *denproto.VoiceKey
+	// joined is when the call joined its channel, which a stretch toward a
+	// live event's badge counts from (M17.5); taking a held call back keeps
+	// it. It goes with the call.
+	joined time.Time
 }
 
 // callRoom is a voice channel's call, and the sound that plays in it, if
@@ -203,6 +207,15 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		refuse(denproto.VoiceRateLimited)
 		return
 	}
+	// A call that starts may earn a live event's badge once it's lasted a
+	// stretch (M17.5): the den's timer looks then, its lock taken once the
+	// registry's is let go.
+	var awardBy time.Time
+	defer func() {
+		if !awardBy.IsZero() {
+			d.dueAt(awardBy.Add(d.badgeStretch()).UnixMilli())
+		}
+	}()
 	cid, err := denproto.ParseID(req.ChannelID)
 	if err != nil {
 		refuse(denproto.VoiceNotFound)
@@ -255,7 +268,8 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		}
 		changed = append(changed, old.channel)
 	}
-	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened}
+	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened,
+		joined: d.now()}
 	nc.sock.Store(sock)
 	bitrate := c.Bitrate
 	if bitrate == 0 {
@@ -283,6 +297,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	// As when they move their call to another device, the others' keys may
 	// hold a copy for them already (M16.2).
 	d.passKeysLocked(nc)
+	awardBy = nc.joined
 	d.log.Infof("Member %d joined the call in channel %d", s.MemberID, cid)
 }
 

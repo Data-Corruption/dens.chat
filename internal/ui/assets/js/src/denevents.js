@@ -2,7 +2,9 @@
 // limits as the den holds them, the order the pane lists them in, what the
 // Events row says, an event's times in the member's time zone, which the
 // form takes in and the pane shows, what the form sends, who may change an
-// event, and the events the den sends, applied to the view.
+// event, and the events the den sends, applied to the view; and from M17.5
+// what the form sends of a badge, what a badge's tip says, and what a
+// link's card says of when.
 //
 // The page shows times in the member's own time zone, which the browser
 // knows, and sends the den Unix milliseconds. Each helper that reads or
@@ -31,6 +33,8 @@ export const MAX_LENGTH = 7 * DAY;
 // staff have up to 10, as its owner sets.
 export const MAX_EVENTS = 50;
 export const MAX_MEMBER_EVENTS = 10;
+// A badge's title is up to 40 characters (M17.5).
+export const MAX_BADGE_TITLE = 40;
 
 // LENGTHS are the lengths the form offers, in minutes, from 5 minutes to a
 // week.
@@ -144,7 +148,10 @@ export function zone() {
 // an hour, in the den's first voice channel the member sees, if any.
 export function newForm(now, tz, voice) {
     const next = Math.ceil((now + HOUR) / HOUR) * HOUR;
-    return { name: '', description: '', ...inputsAt(next, tz), minutes: 60, where: voice ? 'channel' : 'place', channel: voice || '', place: '' };
+    return {
+        name: '', description: '', ...inputsAt(next, tz), minutes: 60, where: voice ? 'channel' : 'place', channel: voice || '', place: '',
+        badgeTitle: '',
+    };
 }
 
 // formOf is the form for changing an event, as it stands.
@@ -152,7 +159,7 @@ export function formOf(e, tz) {
     const minutes = Math.round((e.ends_at - e.starts_at) / MINUTE);
     return {
         name: e.name, description: e.description || '', ...inputsAt(e.starts_at, tz), minutes, where: e.channel_id ? 'channel' : 'place',
-        channel: e.channel_id || '', place: e.place || '',
+        channel: e.channel_id || '', place: e.place || '', badgeTitle: e.badge?.title || '',
     };
 }
 
@@ -210,6 +217,55 @@ export function eventRequest(f, tz, e) {
     if (req.channel_id && req.channel_id !== e.channel_id) changed.channel_id = req.channel_id;
     if (req.place !== undefined && req.place !== (e.place || '')) changed.place = req.place;
     return changed;
+}
+
+// willHaveBadge says whether an event has a badge once the form goes:
+// picture is the picture it'll have, as the form left it, undefined for
+// the one it has, null for none. A badge goes only in a voice channel.
+export function willHaveBadge(f, e, picture) {
+    if (f.where !== 'channel' || picture === null) return false;
+    return !!picture || !!e?.badge;
+}
+
+// badgeProblem is what keeps the form's badge from going, or '': a badge
+// needs a title of up to 40 characters.
+export function badgeProblem(f, e, picture) {
+    if (!willHaveBadge(f, e, picture)) return '';
+    const title = f.badgeTitle.trim();
+    if (!title) return 'A badge needs a title.';
+    if (length(title) > MAX_BADGE_TITLE) return `A badge's title is at most ${MAX_BADGE_TITLE} characters.`;
+    return '';
+}
+
+// badgeRequest is what the form sends of an event's badge, which only
+// staff send: a new picture, or '' to take it off, as moving the event out
+// of a voice channel does; and the title, for a badge attached or one whose
+// title changed.
+export function badgeRequest(f, e, picture) {
+    const had = !!e?.badge;
+    if (!willHaveBadge(f, e, picture)) return had ? { badge: '' } : {};
+    const out = {};
+    const title = f.badgeTitle.trim();
+    if (picture) out.badge = picture.id;
+    if (!had || title !== e.badge.title) out.badge_title = title;
+    return out;
+}
+
+// badgeTip says what a badge on a profile was for: its title, its event's
+// name and the event's day, in a time zone and locale.
+export function badgeTip(b, tz, locale) {
+    const day = new Intl.DateTimeFormat(locale, { timeZone: tz, month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(b.starts_at));
+    return { title: b.title, line: `${b.event}, ${day}` };
+}
+
+// cardWhen is what a link's card says of when an event is: as the pane
+// says it, or for one that ended, that it ended, and on what day.
+export function cardWhen(e, ended, now, tz, locale) {
+    if (!ended) return whenText(e, now, tz, locale);
+    const year = zoneParts(e.starts_at, tz).year !== zoneParts(now, tz).year;
+    const day = new Intl.DateTimeFormat(locale, { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', ...(year ? { year: 'numeric' } : {}) })
+        .format(new Date(e.starts_at));
+    return `Ended · ${day}`;
 }
 
 const RANK = { member: 0, moderator: 1, owner: 2 };

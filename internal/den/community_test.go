@@ -397,7 +397,7 @@ func TestProfiles(t *testing.T) {
 	if bytes.Contains(raw, []byte("boats")) {
 		t.Fatal("the bio is stored in the clear")
 	}
-	if p, err := f.d.Profile(ctx, denproto.FormatID(member.MemberID)); err != nil || p.Bio != "I like **boats**." {
+	if p, err := f.d.Profile(ctx, member, denproto.FormatID(member.MemberID)); err != nil || p.Bio != "I like **boats**." {
 		t.Fatalf("profile: %+v %v", p, err)
 	}
 	if m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Bio: ptr("")}); err != nil || m.Bio != "" {

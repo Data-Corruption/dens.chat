@@ -49,7 +49,9 @@ func keyFrom(maker string, kid []byte, fill byte) (string, func(denproto.Event) 
 // keysAmong returns the keys among what a socket has received so far: by,
 // a member in the call, mutes and unmutes, and the den's word of it
 // reaches the socket after every key passed to it before, as both go
-// through its subscription.
+// through its subscription. The den reads each socket on its own, so a
+// key still on its way from another member's may come after: by is the
+// member whose keys are counted.
 func (v *voiceSocket) keysAmong(channel string, by *voiceSocket) []denproto.VoiceKeyEvent {
 	v.t.Helper()
 	by.send(denproto.EventVoiceMute, denproto.VoiceMute{Muted: true})
@@ -146,7 +148,7 @@ func TestCallKeysReachTheirMembersAlone(t *testing.T) {
 	bad := fakeKey(lounge.ID, map[string]byte{bob.me: 'y'})
 	bad.Copies[0].MemberID = carol.me
 	alice.send(denproto.EventVoiceKey, bad)
-	if got := bob.keysAmong(lounge.ID, bob); len(got) != 0 {
+	if got := bob.keysAmong(lounge.ID, alice); len(got) != 0 {
 		t.Errorf("bob got %d keys the den should have refused", len(got))
 	}
 
@@ -171,12 +173,14 @@ func TestCallKeysReachTheirMembersAlone(t *testing.T) {
 	carol.wait(keyFrom(alice.me, second.KID, 'C'))
 
 	// Past 30 keys in 10 seconds, alice's go nowhere: those she sent
-	// above count too.
+	// above count too. The round trip that counts what reached bob goes
+	// through alice's socket, after her keys: the den reads each socket on
+	// its own, so one through bob's could come back before it read any.
 	sent := denproto.VoiceKeysPer10s + 5
 	for range sent {
 		alice.send(denproto.EventVoiceKey, fakeKey(lounge.ID, map[string]byte{bob.me: 'r', carol.me: 'r'}))
 	}
-	if got := again.keysAmong(lounge.ID, again); len(got) == 0 || len(got) >= sent-4 {
+	if got := again.keysAmong(lounge.ID, alice); len(got) == 0 || len(got) >= sent-4 {
 		t.Errorf("of %d keys sent at once, %d reached bob", sent, len(got))
 	}
 }

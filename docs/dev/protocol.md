@@ -382,6 +382,7 @@ GET /                                           200 text/plain: a line saying th
 - A browser never sends a fragment, so a link opened outside a client tells the den nothing of which message. The den answers `GET /` with a line of plain text saying it's a den on Dens, whose links open in Dens.
 - Rewriting links leaves the fragment as it is (see [Links](#links-m3)), so a link to a message reads the same in a channel and in a DM.
 - Before opening one, the client checks that the channel is a text channel or DM the member can see, and that the message is there: `around` it with a `limit` of 1 answers it, or the message after it once it's gone (see [History](#history)).
+- A link to an event (M17.5) is the same with `/#e/`, `den_id`, `/` and the event's ID: `https://den.example.com/#e/<den ID>/12`. A client reads it as it reads a link to a message, and shows the event's card (see [Cards and badges](#cards-and-badges-m175)).
 
 ### History
 
@@ -456,14 +457,16 @@ PUT /api/channels/{id}/read   {"message_id"}   204
 Moderators and the owner are **staff**. Staff manage channels, groups and invites, see staff-only channels, and delete the messages of, remove and ban members of a lower rank: moderators act on members, and the owner on anyone else. The owner alone changes the den and roles.
 
 ```
-GET   /api/members/{id}                                     200 member, with "bio"
+GET   /api/members/{id}                                     200 member, with "bio" and "badges" (M17.5)
 PATCH /api/me              {"display_name"?, "bio"?}        200 member, with "bio"
 PATCH /api/members/{id}    {"role": "member" | "moderator"} 200 member          (owner only)
+PUT   /api/me/badges/{id}  {"hidden": bool}                 204                 (M17.6)
 ```
 
-- Any member may fetch anyone who has been in the den. `bio` is the markdown subset, up to 300 characters, and an empty one clears it. It comes only in these two responses, never in `ready` or events, which keeps both small.
+- Any member may fetch anyone who has been in the den. `bio` is the markdown subset, up to 300 characters, and an empty one clears it. It comes only in these two responses, never in `ready` or events, which keeps both small, as do the badges the member earned, in the first alone (see [Cards and badges](#cards-and-badges-m175)).
 - A profile or role change reaches everyone as `member.updated {member}`; a client showing a bio fetches it again.
 - A role change makes the member's sockets start over with a fresh `ready`, since what they can see changed, and their older resume points resync.
+- `PUT /api/me/badges/{id}` hides a badge the member earned from their profile card, named by its event's ID, or with `"hidden": false` shows it again (M17.6). It answers 204 whether or not that changed anything, and tells nobody. A badge the member didn't earn, or whose event they don't see, as a staff-only event's once they aren't staff, is `404 not_found` (see [Cards and badges](#cards-and-badges-m175)).
 
 ### Leaving, removal and bans
 
@@ -1058,11 +1061,14 @@ A den's events: each a name, a description, an optional banner, a start, an end 
 
 ```
 event        = {"id", "name", "description"?, "banner"?: image, "starts_at", "ends_at", "channel_id"? | "place"?, "made_by",
-                "live"?: true, "interested", "mine"?: bool}
+                "live"?: true, "interested", "mine"?: bool, "badge"?: {"title", "image": image}, "ended"?: true}
 event_limits = {"member_events"}
 
-POST   /api/events                {"name", "description"?, "banner"?, "starts_at", "ends_at", "channel_id"? | "place"?}   201 event
-PATCH  /api/events/{id}           {"name"?, "description"?, "banner"?, "starts_at"?, "ends_at"?, "channel_id"? | "place"?}   200 event
+POST   /api/events                {"name", "description"?, "banner"?, "starts_at", "ends_at", "channel_id"? | "place"?,
+                                   "badge"?, "badge_title"?}                                               201 event
+GET    /api/events/{id}                                                                                  200 event   (M17.5)
+PATCH  /api/events/{id}           {"name"?, "description"?, "banner"?, "starts_at"?, "ends_at"?, "channel_id"? | "place"?,
+                                   "badge"?, "badge_title"?}                                               200 event
 DELETE /api/events/{id}                                                                                  204   (to come)
 POST   /api/events/{id}/end                                                                              204   (live)
 PUT    /api/events/{id}/interest                                                                         200 {"event_id", "interested", "mine"}
@@ -1078,6 +1084,20 @@ DELETE /api/events/{id}/interest                                                
 - A member's events to come go as they leave the den, or are removed, with their banners, and their marks on the rest, whose counts everyone who sees them hears; their live events go on to their end.
 - A client checks each event as it arrives, refusing a den whose events don't fit: its IDs, its name and place as cleaning leaves them, one place, its end after its start and within a week of it, its banner's size, and how many are interested; and at most 50 of them in `ready`. It keeps the events with the den's state, so they show while the den is away.
 - Making, changing, canceling and ending an event, and marking Interested, count toward the member's other writes. An older client ignores the events and their routes; an older den sends no `event_limits`, and a client offers no events there.
+
+### Cards and badges (M17.5)
+
+```
+badge         = {"event_id", "title", "image": image, "event", "starts_at", "earned_at", "hidden"? (M17.6)}   in GET /api/members/{id}'s "badges"
+```
+
+- `GET /api/events/{id}` answers with one of the den's events the member sees, to come, live or ended, for a link's card: with `mine`, and for one that ended `ended`, nobody interested and no mark. An event the member doesn't see, or that's gone, gets `404 not_found`. A client answers a card from the events it keeps where it can, so the den hears of an event to come only as `ready` and its events tell it, and asks for the rest.
+- An ended event stays on the den, with its banner, out of `ready`, for its cards and its badge. Its place keeps who saw it: one whose voice channel was deleted has no place, and stays staff's alone if the channel was. A client takes an ended event only from this route.
+- `badge` and `badge_title`, which staff alone send, attach a badge to an event in a voice channel or change it; anyone else sending them gets `403 forbidden`. `badge` names an upload of the staff member's own, waiting to be used, a still image or an animated GIF at most 128 pixels on each side and 256 KiB, or 512 KiB animated, as an emoji's image is (see [Emoji](#emoji-m152)), or `""` takes the badge off; `badge_title` is 1 to 40 characters, cleaned as an event's name is. Attaching one takes both; changing one, either. An event with a badge stays in a voice channel: moving it to a `place` without taking the badge off in the same request, or attaching one to an event somewhere else, gets `400 invalid_field`. A picture replaced, or a badge taken off, goes, and so do the badges of events canceled, or that go with a member who leaves or a channel deleted. An ended event's badge stays as it was.
+- A badge's picture is one of the den's named files, of kind `badge`, so it stays the den's whoever added it, and opens with `GET /api/files/{id}` to everyone who sees its event.
+- A member earns an event's badge by a minute at a stretch in its call while it's live, their call held or not (see [Riding out a dropped connection](#riding-out-a-dropped-connection-m3)), counting from the event's start for one in the call before it; once each, and nothing for a stretch that reaches its minute only after the event ends. A development instance's den takes three seconds, for the browser checks. The den tells nobody: the badge shows on the member's profile.
+- `GET /api/members/{id}` carries the badges the member earned whose events the asker sees, latest first, up to 500, each with its event's ID and name and its start, and when they earned it. A client checks each: its IDs, its title and the event's name as cleaning leaves them, a picture of an emoji's size, its times, and each event once.
+- A badge its member hid (M17.6) is left out of everyone's answer but the member's own, where it carries `"hidden": true`; a client takes `hidden` on the member's own profile alone, and a profile card shows only the badges without it. Hiding one keeps a card tidy and no more: the den keeps the award as it was.
 
 ## Rate limits
 
@@ -1096,7 +1116,7 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call, but for the join a move asked for (M17.2) | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting, muting and from M17.2 moving, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, from M16.4 setting a DM's or a group's time, and from M17.4 making, changing, canceling and ending an event, and marking Interested | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting, muting and from M17.2 moving, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, from M16.4 setting a DM's or a group's time, from M17.4 making, changing, canceling and ending an event, and marking Interested, and from M17.6 hiding or showing a badge | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | A member's keys for calls (M16.2) | 30 per 10 seconds per member; the rest are dropped |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

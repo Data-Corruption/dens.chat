@@ -10,7 +10,16 @@ import (
 
 // Events (M17.4): members make events, as the den's limits allow, change,
 // cancel and end them, and mark Interested or take it back. Each counts
-// toward the member's writes.
+// toward the member's writes. A link's card reads one by its ID (M17.5).
+
+func (h *handler) event(w http.ResponseWriter, r *http.Request) {
+	e, err := h.d.Event(r.Context(), session(r), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, e)
+}
 
 func (h *handler) createEvent(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
