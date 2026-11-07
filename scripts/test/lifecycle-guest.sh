@@ -357,8 +357,10 @@ phase_install() {
         fail "unexpected refusal of --den: $(cat /tmp/den-option.out)"
     [ ! -e /var/lib/dens/main ] || fail "the refused install changed the system"
 
-    step "install as alice through sudo"
-    SUDO_UID=$(alice_uid) SUDO_USER=alice sh /release/install.sh --release-url file:///release/ --skip-verify
+    # The guide's line pipes the installer into sudo sh; -s passes the
+    # fixture's flags where the line passes none.
+    step "install as alice through sudo, the installer piped in as the guide's line pipes it"
+    SUDO_UID=$(alice_uid) SUDO_USER=alice sh -s -- --release-url file:///release/ --skip-verify </release/install.sh
     systemctl is-active --quiet dens@main || fail "dens@main is not running"
     expect_state main "$V1"
     # The shortcut helper starts at each desktop sign-in, and the .desktop
