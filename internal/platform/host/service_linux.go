@@ -25,6 +25,11 @@ func RunService(ctx context.Context, _ string, fn RunFunc) error {
 // AdminCommand phrases command the way an administrator runs it here.
 func AdminCommand(command string) string { return "sudo " + command }
 
+// InstallLine is the line that installs or updates Dens from releaseURL in
+// an ordinary terminal, where there is one. Linux has none: the installer
+// is downloaded, then run with sudo.
+func InstallLine(releaseURL string) string { return "" }
+
 // ServiceLogHint says where to find out why a service stopped: systemd's
 // journal has its error output, and its own log has the rest.
 func ServiceLogHint(service, logDir string) string {
