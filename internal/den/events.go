@@ -26,10 +26,11 @@ import (
 // interested in it with event.started, an audience fixed as it's made,
 // since the ring replays it, and the rest with event.updated; and ends it
 // at its end, forgetting who was interested. An ended event stays, out of
-// the list, for its link's card and its badge (M17.5).
+// the list, for its link's card and its badge (M17.5), and keeps whether
+// its voice channel was staff's alone once the channel goes.
 //
 // d.calendar keeps each event's changes, and their events, in order, the
-// timer's among them.
+// timer's among them, and the badges it gives (see badges.go).
 
 const (
 	eventComing = "coming"
@@ -41,6 +42,10 @@ var errEventNotFound = denproto.Errorf(http.StatusNotFound, denproto.CodeNotFoun
 
 func eventAD(id int64) []byte { return []byte("den_events.details:" + strconv.FormatInt(id, 10)) }
 
+func badgeTitleAD(event int64) []byte {
+	return []byte("den_badges.title:" + strconv.FormatInt(event, 10))
+}
+
 // eventDetails are what an event keeps sealed: what its maker, or staff,
 // wrote of it.
 type eventDetails struct {
@@ -50,8 +55,8 @@ type eventDetails struct {
 }
 
 // eventRow is an event as the den keeps it, with its banner's size, its
-// channel's visibility, its maker's role, and how many of those who see it
-// are interested.
+// channel's visibility, its maker's role, how many of those who see it are
+// interested, and its badge, if it has one (M17.5).
 type eventRow struct {
 	id         int64
 	details    eventDetails
@@ -65,6 +70,15 @@ type eventRow struct {
 	endsAt     int64
 	state      string
 	interested int
+	badge      *badgeRow
+}
+
+// badgeRow is an event's badge: its title, its picture, and the named file
+// that keeps the picture.
+type badgeRow struct {
+	title   string
+	image   denproto.Image
+	namedID int64
 }
 
 // view is the event as members see it; mine, where it's given, is the
@@ -72,9 +86,12 @@ type eventRow struct {
 func (e *eventRow) view(mine *bool) denproto.DenEvent {
 	v := denproto.DenEvent{ID: denproto.FormatID(e.id), Name: e.details.Name, Description: e.details.Description, Banner: e.banner,
 		StartsAt: e.startsAt, EndsAt: e.endsAt, Place: e.details.Place, MadeBy: denproto.FormatID(e.madeBy), Live: e.state == eventLive,
-		Interested: e.interested, Mine: mine}
+		Interested: e.interested, Mine: mine, Ended: e.state == eventEnded}
 	if e.channel != 0 {
 		v.ChannelID = denproto.FormatID(e.channel)
+	}
+	if e.badge != nil {
+		v.Badge = &denproto.EventBadge{Title: e.badge.title, Image: e.badge.image}
 	}
 	return v
 }
@@ -91,23 +108,30 @@ func (e *eventRow) audience() Audience {
 	return Everyone
 }
 
+// eventStaffOnly says, of an event aliased e and its voice channel aliased
+// c, whether it's staff's alone: as its channel is, or once the channel
+// went, as it was then (M17.5).
+const eventStaffOnly = `coalesce(c.staff_only, e.staff_only)`
+
 // eventColumns read an event, its banner's size, its channel's visibility,
-// its maker's role, and how many are interested of those who see it: in a
-// staff-only channel, staff alone.
-const eventColumns = `e.id, e.details, e.banner_id, f.width, f.height, f.animated, e.channel_id, coalesce(c.staff_only, 0),
+// its maker's role, how many are interested of those who see it, in a
+// staff-only channel staff alone, and its badge's title and picture.
+const eventColumns = `e.id, e.details, e.banner_id, f.width, f.height, f.animated, e.channel_id, ` + eventStaffOnly + `,
 	e.made_by, mk.role, e.starts_at, e.ends_at, e.state,
 	(SELECT count(*) FROM den_event_interest i JOIN den_members m ON m.id = i.member_id
-		WHERE i.event_id = e.id AND (coalesce(c.staff_only, 0) = 0 OR m.role IN ('moderator', 'owner')))
+		WHERE i.event_id = e.id AND (` + eventStaffOnly + ` = 0 OR m.role IN ('moderator', 'owner'))),
+	b.title, b.named_id, bf.id, bf.width, bf.height, bf.animated
 	FROM den_events e LEFT JOIN den_files f ON f.id = e.banner_id LEFT JOIN den_channels c ON c.id = e.channel_id
-	JOIN den_members mk ON mk.id = e.made_by`
+	JOIN den_members mk ON mk.id = e.made_by
+	LEFT JOIN den_badges b ON b.event_id = e.id LEFT JOIN den_named_files bn ON bn.id = b.named_id LEFT JOIN den_files bf ON bf.id = bn.file_id`
 
 func (d *Den) scanEvent(scan func(...any) error) (*eventRow, error) {
 	e := &eventRow{}
-	var sealed []byte
-	var banner, w, h, channel sql.NullInt64
-	var animated sql.NullBool
+	var sealed, title []byte
+	var banner, w, h, channel, named, badge, bw, bh sql.NullInt64
+	var animated, badgeAnimated sql.NullBool
 	if err := scan(&e.id, &sealed, &banner, &w, &h, &animated, &channel, &e.staffOnly, &e.madeBy, &e.makerRole,
-		&e.startsAt, &e.endsAt, &e.state, &e.interested); err != nil {
+		&e.startsAt, &e.endsAt, &e.state, &e.interested, &title, &named, &badge, &bw, &bh, &badgeAnimated); err != nil {
 		return nil, err
 	}
 	plain, err := d.v.Open(sealed, eventAD(e.id))
@@ -122,6 +146,14 @@ func (d *Den) scanEvent(scan func(...any) error) (*eventRow, error) {
 		e.banner = denproto.Image{ID: denproto.FormatID(banner.Int64), Width: int(w.Int64), Height: int(h.Int64), Animated: animated.Bool}
 	}
 	e.channel = channel.Int64
+	if named.Valid {
+		t, err := d.v.Open(title, badgeTitleAD(e.id))
+		if err != nil {
+			return nil, err
+		}
+		e.badge = &badgeRow{title: string(t), namedID: named.Int64,
+			image: denproto.Image{ID: denproto.FormatID(badge.Int64), Width: int(bw.Int64), Height: int(bh.Int64), Animated: badgeAnimated.Bool}}
+	}
 	return e, nil
 }
 
@@ -176,7 +208,7 @@ func (d *Den) visibleEvent(ctx context.Context, q querier, s *Session, id string
 // eventsFor lists the events to come and live a member sees, each with
 // their own mark, for their snapshot.
 func (d *Den) eventsFor(ctx context.Context, q querier, member int64, staff bool) ([]denproto.DenEvent, error) {
-	events, err := d.queryEvents(ctx, q, `e.state != 'ended' AND (coalesce(c.staff_only, 0) = 0 OR ?)`, staff)
+	events, err := d.queryEvents(ctx, q, `e.state != 'ended' AND (`+eventStaffOnly+` = 0 OR ?)`, staff)
 	if err != nil {
 		return nil, err
 	}
@@ -367,6 +399,10 @@ func (d *Den) CreateEvent(ctx context.Context, s *Session, req denproto.EventReq
 	if err := cleanEventFields(&req); err != nil {
 		return none, err
 	}
+	badge, err := cleanBadgeRequest(req, s)
+	if err != nil {
+		return none, err
+	}
 	switch {
 	case req.Name == nil:
 		return none, invalid("an event needs a name")
@@ -396,7 +432,7 @@ func (d *Den) CreateEvent(ctx context.Context, s *Session, req denproto.EventReq
 	d.calendar.Lock()
 	defer d.calendar.Unlock()
 	var e *eventRow
-	err := d.tx(ctx, func(tx *sql.Tx) error {
+	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var all, own int
 		if err := tx.QueryRowContext(ctx, `SELECT count(*), count(*) FILTER (WHERE made_by = ?) FROM den_events WHERE state != 'ended'`,
 			s.MemberID).Scan(&all, &own); err != nil {
@@ -426,6 +462,9 @@ func (d *Den) CreateEvent(ctx context.Context, s *Session, req denproto.EventReq
 			return err
 		}
 		if err := d.sealDetails(ctx, tx, id, details); err != nil {
+			return err
+		}
+		if _, err := d.setBadge(ctx, tx, id, nil, badge, channel.Valid, s, now); err != nil {
 			return err
 		}
 		e, err = d.event(ctx, tx, id)
@@ -467,6 +506,10 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 	if err := cleanEventFields(&req); err != nil {
 		return none, err
 	}
+	badge, err := cleanBadgeRequest(req, s)
+	if err != nil {
+		return none, err
+	}
 	var channel sql.NullInt64
 	if req.ChannelID != nil {
 		_, cid, err := d.eventChannel(ctx, s, *req.ChannelID)
@@ -480,7 +523,7 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 	now := d.now()
 	var before, after *eventRow
 	var blobs [][]byte
-	err := d.tx(ctx, func(tx *sql.Tx) error {
+	err = d.tx(ctx, func(tx *sql.Tx) error {
 		e, err := d.visibleEvent(ctx, tx, s, id)
 		if err != nil {
 			return err
@@ -538,6 +581,11 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 				return err
 			}
 		}
+		gone, err := d.setBadge(ctx, tx, e.id, e.badge, badge, place.Valid, s, now)
+		if err != nil {
+			return err
+		}
+		blobs = append(blobs, gone...)
 		after, err = d.event(ctx, tx, e.id)
 		return err
 	})
@@ -553,7 +601,9 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 	} else if err := d.Hub.Publish(denproto.EventEventUpdated, after.view(nil), after.audience()); err != nil {
 		return none, err
 	}
-	if after.startsAt != before.startsAt || after.endsAt != before.endsAt {
+	// A badge attached, or the event moved, may bring an award sooner
+	// (M17.5).
+	if after.startsAt != before.startsAt || after.endsAt != before.endsAt || badge.asked || after.channel != before.channel {
 		d.planTimer()
 	}
 	mine, err := markedBy(ctx, d.db, after.id, s.MemberID)
@@ -561,6 +611,29 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 		return none, err
 	}
 	return after.view(&mine), nil
+}
+
+// Event reads one of the den's events that the session sees, to come,
+// live or ended, with the member's own mark, for a link's card (M17.5).
+func (d *Den) Event(ctx context.Context, s *Session, id string) (denproto.DenEvent, error) {
+	eid, err := denproto.ParseID(id)
+	if err != nil {
+		return denproto.DenEvent{}, errEventNotFound
+	}
+	e, err := d.event(ctx, d.db, eid)
+	if err != nil {
+		return denproto.DenEvent{}, err
+	}
+	if !e.sees(IsStaff(s.Role)) {
+		return denproto.DenEvent{}, errEventNotFound
+	}
+	mine := false
+	if e.state != eventEnded {
+		if mine, err = markedBy(ctx, d.db, e.id, s.MemberID); err != nil {
+			return denproto.DenEvent{}, err
+		}
+	}
+	return e.view(&mine), nil
 }
 
 // markedBy reports whether a member marked an event Interested.
@@ -606,9 +679,13 @@ func (d *Den) CancelEvent(ctx context.Context, s *Session, id string) error {
 }
 
 // deleteEvents deletes the events a condition on den_events selects, with
-// their banners, within tx, and returns the banners' blobs to remove once
-// it commits.
+// their banners and badges, within tx, and returns the files' blobs to
+// remove once it commits.
 func deleteEvents(ctx context.Context, tx *sql.Tx, where string, args ...any) ([][]byte, error) {
+	badges, err := eventBadges(ctx, tx, where, args...)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := tx.QueryContext(ctx, `DELETE FROM den_events WHERE `+where+` RETURNING banner_id`, args...)
 	if err != nil {
 		return nil, err
@@ -631,6 +708,15 @@ func deleteEvents(ctx context.Context, tx *sql.Tx, where string, args ...any) ([
 	var blobs [][]byte
 	for _, id := range banners {
 		b, err := deleteFiles(ctx, tx, `id = ?`, id)
+		if err != nil {
+			return nil, err
+		}
+		blobs = append(blobs, b...)
+	}
+	// The events' going took their badges' rows and awards; their pictures
+	// go now.
+	for _, id := range badges {
+		b, err := deleteNamed(ctx, tx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -860,9 +946,14 @@ func (d *Den) departEvents(ctx context.Context, tx *sql.Tx, member int64) (event
 
 // channelEvents takes a voice channel's events out of the den within tx,
 // as it's deleted: those to come go, with their banners, and the live one
-// ends.
+// ends. Those that stay, ended, keep whether the channel was staff's alone
+// (M17.5).
 func (d *Den) channelEvents(ctx context.Context, tx *sql.Tx, channel int64) (eventsGone, [][]byte, error) {
 	var gone eventsGone
+	if _, err := tx.ExecContext(ctx, `UPDATE den_events SET staff_only = (SELECT staff_only FROM den_channels WHERE id = ?1)
+		WHERE channel_id = ?1`, channel); err != nil {
+		return gone, nil, err
+	}
 	events, err := d.queryEvents(ctx, tx, `e.state != 'ended' AND e.channel_id = ?`, channel)
 	if err != nil {
 		return gone, nil, err

@@ -722,6 +722,36 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M17.5: badges and their awards. A badge is an event's, one at most:
+	// its picture one of the den's named files, of kind badge, named by its
+	// file's ID, since titles repeat, and its title, sealed with the data
+	// key as the event's own text is. An award is a badge, the member who
+	// earned it and when, which is all the den keeps of who was in an
+	// event's call. An event keeps whether its voice channel was staff's
+	// alone as the channel goes, so an ended one stays where it was seen.
+	m.Add("Badges", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_badges (
+				event_id INTEGER PRIMARY KEY REFERENCES den_events (id) ON DELETE CASCADE,
+				named_id INTEGER NOT NULL UNIQUE REFERENCES den_named_files (id),
+				title    BLOB NOT NULL -- sealed with the data key
+			) STRICT;
+
+			CREATE TABLE den_badge_awards (
+				event_id  INTEGER NOT NULL REFERENCES den_badges (event_id) ON DELETE CASCADE,
+				member_id INTEGER NOT NULL REFERENCES den_members (id),
+				earned_at INTEGER NOT NULL, -- unix milliseconds
+				PRIMARY KEY (event_id, member_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_badge_awards_member ON den_badge_awards (member_id, earned_at);
+
+			ALTER TABLE den_events ADD COLUMN staff_only INTEGER NOT NULL DEFAULT 0 CHECK (staff_only IN (0, 1));
+		`); err != nil {
+			return fmt.Errorf("add badges: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

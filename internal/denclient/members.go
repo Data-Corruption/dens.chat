@@ -17,24 +17,45 @@ func gone(c *conn) bool {
 	return st == StateRemoved || st == StateRevoked
 }
 
-// Profile returns a member of a den with their bio.
-func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto.Member, error) {
+// Profile returns a member of a den with their bio, and the badges they
+// earned whose events this member sees (M17.5).
+func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto.MemberProfile, error) {
 	c, err := m.find(denID)
 	if err != nil {
-		return denproto.Member{}, err
+		return denproto.MemberProfile{}, err
 	}
 	if err := checkID("member", memberID); err != nil {
-		return denproto.Member{}, err
+		return denproto.MemberProfile{}, err
 	}
-	var member denproto.Member
-	if err := c.call(ctx, http.MethodGet, "/api/members/"+memberID, nil, &member); err != nil {
-		return denproto.Member{}, err
+	var p denproto.MemberProfile
+	if err := c.call(ctx, http.MethodGet, "/api/members/"+memberID, nil, &p); err != nil {
+		return denproto.MemberProfile{}, err
 	}
-	member, ok := cleanMember(member)
-	if !ok || member.ID != memberID {
-		return denproto.Member{}, errors.New("the den's answer is malformed")
+	member, ok := cleanMember(p.Member)
+	if !ok || member.ID != memberID || !cleanBadges(p.Badges) {
+		return denproto.MemberProfile{}, errors.New("the den's answer is malformed")
 	}
-	return member, nil
+	p.Member = member
+	if p.Badges == nil {
+		p.Badges = []denproto.MemberBadge{}
+	}
+	return p, nil
+}
+
+// cleanBadges checks the badges a den's answer gives a profile: as many as
+// one carries, each once.
+func cleanBadges(badges []denproto.MemberBadge) bool {
+	if len(badges) > denproto.MaxProfileBadges {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, b := range badges {
+		if denproto.CheckMemberBadge(b) != nil || seen[b.EventID] {
+			return false
+		}
+		seen[b.EventID] = true
+	}
+	return true
 }
 
 // UpdateProfile changes this member's display name, bio or pictures in a

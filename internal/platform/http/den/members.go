@@ -9,7 +9,7 @@ import (
 )
 
 func (h *handler) member(w http.ResponseWriter, r *http.Request) {
-	m, err := h.d.Profile(r.Context(), chi.URLParam(r, "id"))
+	m, err := h.d.Profile(r.Context(), session(r), chi.URLParam(r, "id"))
 	if err != nil {
 		h.fail(w, r, err)
 		return

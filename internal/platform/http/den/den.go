@@ -132,6 +132,7 @@ func New(a *app.App) http.Handler {
 			r.Patch("/emoji/{id}", h.renameEmoji)
 			r.Delete("/emoji/{id}", h.deleteEmoji)
 			r.Post("/events", h.createEvent)
+			r.Get("/events/{id}", h.event)
 			r.Patch("/events/{id}", h.updateEvent)
 			r.Delete("/events/{id}", h.cancelEvent)
 			r.Post("/events/{id}/end", h.endEvent)

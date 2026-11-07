@@ -18,6 +18,9 @@ import (
 // cancels and ends them, and marks Interested, through the den; what comes
 // back as the den's events changes the state. An event that starts, which
 // the den tells only the members interested in it, notifies the member.
+// From M17.5 a link's card reads an event by its ID: from the state when
+// it's among those to come, and otherwise from the den, which answers for
+// an ended one too.
 
 // cleanEvents checks the events a den sent in ready, or the cache kept: as
 // many as a den holds at most, each once. A den's carry the member's own
@@ -28,7 +31,7 @@ func cleanEvents(list []denproto.DenEvent, fromDen bool) (map[string]denproto.De
 	}
 	out := map[string]denproto.DenEvent{}
 	for _, e := range list {
-		if denproto.CheckDenEvent(e) != nil {
+		if denproto.CheckDenEvent(e) != nil || e.Ended {
 			return nil, false
 		}
 		if _, ok := out[e.ID]; ok || fromDen && e.Mine == nil {
@@ -129,6 +132,38 @@ func (m *Manager) eventCall(ctx context.Context, denID, method, path string, req
 		return denproto.DenEvent{}, err
 	}
 	if denproto.CheckDenEvent(e) != nil || e.Mine == nil {
+		return denproto.DenEvent{}, errMalformed
+	}
+	return e, nil
+}
+
+// Event returns one of a den's events, for a link's card (M17.5): one to
+// come or live as the state holds it, with the member's own mark, so the
+// den learns nothing of which they looked at, or else as the den answers,
+// an ended one among them.
+func (m *Manager) Event(ctx context.Context, denID, eventID string) (denproto.DenEvent, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return denproto.DenEvent{}, err
+	}
+	if err := checkID("event", eventID); err != nil {
+		return denproto.DenEvent{}, err
+	}
+	c.mu.Lock()
+	var kept denproto.DenEvent
+	ok := false
+	if c.den != nil {
+		kept, ok = c.den.events[eventID]
+	}
+	c.mu.Unlock()
+	if ok {
+		return kept, nil
+	}
+	var e denproto.DenEvent
+	if err := c.call(ctx, http.MethodGet, "/api/events/"+eventID, nil, &e); err != nil {
+		return denproto.DenEvent{}, err
+	}
+	if denproto.CheckDenEvent(e) != nil || e.ID != eventID || e.Mine == nil {
 		return denproto.DenEvent{}, errMalformed
 	}
 	return e, nil

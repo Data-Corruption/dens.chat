@@ -66,9 +66,22 @@ func (d *Den) Member(ctx context.Context, id int64) (denproto.Member, error) {
 	return m, err
 }
 
-// Profile returns a member with their bio. Any member may look at anyone
-// who has been in the den, so old messages can show who wrote them.
-func (d *Den) Profile(ctx context.Context, id string) (denproto.Member, error) {
+// Profile returns a member with their bio, and the badges they earned
+// whose events the session sees (M17.5). Any member may look at anyone who
+// has been in the den, so old messages can show who wrote them.
+func (d *Den) Profile(ctx context.Context, s *Session, id string) (denproto.MemberProfile, error) {
+	m, err := d.profileOf(ctx, id)
+	if err != nil {
+		return denproto.MemberProfile{}, err
+	}
+	p := denproto.MemberProfile{Member: m}
+	mid, _ := denproto.ParseID(m.ID)
+	p.Badges, err = d.profileBadges(ctx, mid, IsStaff(s.Role))
+	return p, err
+}
+
+// profileOf returns a member with their bio.
+func (d *Den) profileOf(ctx context.Context, id string) (denproto.Member, error) {
 	mid, err := denproto.ParseID(id)
 	if err != nil {
 		return denproto.Member{}, errMemberNotFound
@@ -168,7 +181,7 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 		return denproto.Member{}, err
 	}
 	d.files.remove(replaced)
-	m, err := d.Profile(ctx, denproto.FormatID(s.MemberID))
+	m, err := d.profileOf(ctx, denproto.FormatID(s.MemberID))
 	if err != nil || (len(sets) == 0 && req.Avatar == nil && req.Banner == nil) {
 		return m, err
 	}

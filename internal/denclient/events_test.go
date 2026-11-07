@@ -2,6 +2,7 @@ package denclient_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -163,3 +164,79 @@ func TestEvents(t *testing.T) {
 		t.Errorf("with the den away, carol's view keeps the limits %+v and %+v, %v", v.EventLimits, v.Events, err)
 	}
 }
+
+// A link's card reads an event by its ID (M17.5): one to come from the
+// view, with the member's mark and its badge, so the den hears nothing of
+// it; an ended one from the den, saying so with its badge; and one the
+// member can't see not at all.
+func TestEventCards(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	h.d.StartTimer()
+	ctx := context.Background()
+	staffOnly := true
+	for _, c := range []denproto.ChannelRequest{{Name: ptrTo("lounge"), Kind: denproto.KindVoice}, {Name: ptrTo("office"), Kind: denproto.KindVoice, StaffOnly: &staffOnly}} {
+		if err := owner.Manage(ctx, denID, "channels", http.MethodPost, "", c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var lounge, office string
+	eventually(t, "the channels on alice's view", func() bool {
+		v, err := owner.View(denID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range v.Channels {
+			switch c.Name {
+			case "lounge":
+				lounge = c.ID
+			case "office":
+				office = c.ID
+			}
+		}
+		return lounge != "" && office != ""
+	})
+	pic := upload(t, owner, denID, "badge.png", emojiPNG(t, 128, 128))
+	starts, ends := time.Now().Add(time.Hour).UnixMilli(), time.Now().Add(2*time.Hour).UnixMilli()
+	req := denproto.EventRequest{Name: ptrTo("Game night"), StartsAt: &starts, EndsAt: &ends, ChannelID: &lounge, Badge: &pic.ID, BadgeTitle: ptrTo("Was there")}
+	e, err := owner.CreateEvent(ctx, denID, req)
+	if err != nil || e.Badge == nil || e.Badge.Title != "Was there" {
+		t.Fatalf("alice made %+v, %v", e, err)
+	}
+	staff, err := owner.CreateEvent(ctx, denID, denproto.EventRequest{Name: ptrTo("Meeting"), StartsAt: &starts, EndsAt: &ends, ChannelID: &office})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the event on bob's view", func() bool { return eventsIn(t, member, denID) == "Game night:0" })
+
+	asked := h.requests.Load()
+	got, err := member.Event(ctx, denID, e.ID)
+	if err != nil || got.Badge == nil || got.Badge.Image.ID != pic.ID || got.Mine == nil || *got.Mine || got.Ended {
+		t.Fatalf("bob's card reads %+v, %v", got, err)
+	}
+	if n := h.requests.Load(); n != asked {
+		t.Errorf("reading an event to come asked the den %d times", n-asked)
+	}
+	if _, err := member.Event(ctx, denID, staff.ID); !denproto.IsCode(err, denproto.CodeNotFound) {
+		t.Errorf("bob's card read the staff meeting: %v", err)
+	}
+
+	now := time.Now().UnixMilli()
+	if _, err := owner.UpdateEvent(ctx, denID, e.ID, denproto.EventRequest{StartsAt: &now, EndsAt: &ends}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the event live on bob's view", func() bool { return eventsIn(t, member, denID) == "Game night:0+live" })
+	if err := owner.EndEvent(ctx, denID, e.ID); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the event gone from bob's view", func() bool { return eventsIn(t, member, denID) == "" })
+	got, err = member.Event(ctx, denID, e.ID)
+	if err != nil || !got.Ended || got.Live || got.Badge == nil || got.Badge.Image.ID != pic.ID {
+		t.Errorf("bob's card reads the ended event as %+v, %v", got, err)
+	}
+	var input *denclient.InputError
+	if _, err := member.Event(ctx, denID, "../x"); !errors.As(err, &input) {
+		t.Errorf("an ID no den writes: %v", err)
+	}
+}
+
+func ptrTo[T any](v T) *T { return &v }

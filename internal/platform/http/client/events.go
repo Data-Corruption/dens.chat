@@ -10,9 +10,10 @@ import (
 
 // Events (M17.4): the page makes, changes, cancels and ends a den's events,
 // and marks the member Interested, through the den; what changes comes
-// back as the den's events too.
+// back as the den's events too. A link's card reads one by its ID (M17.5).
 func (rt *router) mountEvents(r chi.Router) {
 	r.Post("/api/dens/{den}/events", rt.handleCreateEvent)
+	r.Get("/api/dens/{den}/events/{event}", rt.handleEvent)
 	r.Patch("/api/dens/{den}/events/{event}", rt.handleUpdateEvent)
 	r.Delete("/api/dens/{den}/events/{event}", rt.handleCancelEvent)
 	r.Post("/api/dens/{den}/events/{event}/end", rt.handleEndEvent)
@@ -26,6 +27,15 @@ func (rt *router) handleCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, err := rt.a.Dens.CreateEvent(r.Context(), chi.URLParam(r, "den"), req)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, e)
+}
+
+func (rt *router) handleEvent(w http.ResponseWriter, r *http.Request) {
+	e, err := rt.a.Dens.Event(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "event"))
 	if err != nil {
 		rt.denError(w, r, err)
 		return

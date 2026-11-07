@@ -9,10 +9,11 @@ import (
 )
 
 // TestEventsOverHTTP checks the events' routes (M17.4): staff make one,
-// answered with it and their own mark; a member marks Interested and takes
-// it back, answered with the count and their mark; a member who isn't its
-// maker or above them can't change, cancel or end it; and its maker
-// changes and cancels it.
+// answered with it and their own mark; a member reads it by its ID, as a
+// link's card does (M17.5), marks Interested and takes it back, answered
+// with the count and their mark; a member who isn't its maker or above
+// them can't change, cancel or end it; and its maker changes and cancels
+// it.
 func TestEventsOverHTTP(t *testing.T) {
 	f := newFixture(t)
 	alice, _ := f.owner()
@@ -31,6 +32,14 @@ func TestEventsOverHTTP(t *testing.T) {
 		t.Fatalf("alice making an event: %d, %+v", status, e)
 	}
 	path := "/api/events/" + e.ID
+	// A link's card reads it by its ID (M17.5), and nothing that isn't one.
+	var read denproto.DenEvent
+	if status := f.call(http.MethodGet, path, bob, nil, &read); status != http.StatusOK || read.ID != e.ID || read.Mine == nil || *read.Mine {
+		t.Fatalf("bob reading the event: %d, %+v", status, read)
+	}
+	if status := f.call(http.MethodGet, "/api/events/999999", bob, nil, nil); status != http.StatusNotFound {
+		t.Fatalf("bob reading no event: %d", status)
+	}
 	var in denproto.EventInterest
 	if status := f.call(http.MethodPut, path+"/interest", bob, nil, &in); status != http.StatusOK || in.Interested != 1 || !*in.Mine {
 		t.Fatalf("bob's mark: %d, %+v", status, in)

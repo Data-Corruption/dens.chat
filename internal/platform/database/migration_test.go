@@ -38,8 +38,8 @@ var releasedSchema = []struct {
 var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_group_members", "den_group_changes"}
 
 // m17Tables are the tables M17's steps add: M17.4's events and who's
-// interested in them.
-var m17Tables = []string{"den_events", "den_event_interest"}
+// interested in them, and M17.5's badges and their awards.
+var m17Tables = []string{"den_events", "den_event_interest", "den_badges", "den_badge_awards"}
 
 // retiredKeys are the tables of DM keys, which M16.1's step changes for a
 // release before it: an exchange still running, or checked by one member
@@ -66,7 +66,8 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // notes, keeping every row, M16.4's times among them, and the counter, as
 // M16.3's step did. M17.4 adds events and who's interested in them, which
 // start empty, and the den's limit for members' events, which starts at 0,
-// leaving them to staff.
+// leaving them to staff. M17.5 adds badges and their awards, which start
+// empty, and an event's staff-only mark, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -218,10 +219,34 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				} else if _, err := db.Exec(`INSERT INTO den_event_interest (event_id, member_id) VALUES (last_insert_rowid(), 1)`); err != nil {
 					t.Errorf("%s takes nobody's interest after the migration: %v", what, err)
 				}
+				// A badge is an event's, its picture a named file, and an award
+				// one member's, once (M17.5).
+				var event int64
+				if err := db.QueryRow(`SELECT max(id) FROM den_events`).Scan(&event); err != nil {
+					t.Fatal(err)
+				}
+				for _, q := range []string{
+					`INSERT INTO den_files (id, blob, uploader_id, name, type, size, width, height, created_at) VALUES (90, x'49', 1, x'4a', 'image/png', 500, 128, 128, 9)`,
+					`INSERT INTO den_named_files (id, kind, name, file_id, added_by, added_at) VALUES (90, 'badge', '` + fmt.Sprint(event) + `', 90, 1, 9)`,
+					`INSERT INTO den_badges (event_id, named_id, title) VALUES (` + fmt.Sprint(event) + `, 90, x'7b')`,
+					`INSERT INTO den_badge_awards (event_id, member_id, earned_at) VALUES (` + fmt.Sprint(event) + `, 1, 10)`,
+					`UPDATE den_events SET staff_only = 1 WHERE id = ` + fmt.Sprint(event),
+				} {
+					if _, err := db.Exec(q); err != nil {
+						t.Errorf("%s took no badge after the migration: %s: %v", what, q, err)
+					}
+				}
+				var staffEvents int
+				if err := db.QueryRow(`SELECT count(*) FROM den_events WHERE staff_only != 0 AND id != ?`, event).Scan(&staffEvents); err != nil || staffEvents != 0 {
+					t.Errorf("%s holds %d staff-only events of its own after the migration, %v", what, staffEvents, err)
+				}
 				for _, q := range []string{
 					`UPDATE den SET member_events = 11`,
 					`INSERT INTO den_events (details, made_by, made_at, starts_at, ends_at, state) VALUES (x'00', 1, 9, 10, 20, 'gone')`,
 					`INSERT INTO den_events (details, made_by, made_at, starts_at, ends_at) VALUES (x'00', 1, 9, 20, 10)`,
+					`INSERT INTO den_badge_awards (event_id, member_id, earned_at) VALUES (` + fmt.Sprint(event) + `, 1, 11)`,
+					`INSERT INTO den_badges (event_id, named_id, title) VALUES (` + fmt.Sprint(event) + `, 2, x'7c')`,
+					`UPDATE den_events SET staff_only = 2 WHERE id = ` + fmt.Sprint(event),
 				} {
 					if _, err := db.Exec(q); err == nil {
 						t.Errorf("%s took %s", what, q)
