@@ -617,36 +617,39 @@ try {
         // The themes' groups, not Appearance's others, as Animations (M15.1).
         const items = [...menu.querySelectorAll('[role=radiogroup][aria-label=Theme] label, [role=radiogroup][aria-label="More themes"] label')];
         const primaries = new Set(items.slice(1).map((i) => getComputedStyle(i.querySelector('[data-theme] > :nth-child(2)')).backgroundColor));
-        // Role badges, in every theme, against WCAG's 4.5:1 for small text.
+        // Role marks (M17.6), in their color, in every theme, against WCAG's
+        // 3:1 for a graphic, on the member list and on a card.
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
-        const lum = (c) => {
-            ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1);
+        const lum = (...layers) => {
+            ctx.clearRect(0, 0, 1, 1);
+            for (const c of layers) { ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); }
             const [r, g, b] = [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
             return 0.2126 * r + 0.7152 * g + 0.0722 * b;
         };
-        const contrast = (x, y) => { const [a, b] = [lum(x), lum(y)].sort((p, q) => q - p); return (a + 0.05) / (b + 0.05); };
-        const badges = [];
+        const contrast = (x, y) => { const [a, b] = [x, y].sort((p, q) => q - p); return (a + 0.05) / (b + 0.05); };
+        const marks = [];
         for (const theme of [...menu.querySelectorAll('[data-theme]')].map((s) => s.dataset.theme)) {
             const host = document.createElement('div');
             host.dataset.theme = theme;
-            for (const kind of ['warning', 'info']) {
-                const badge = document.createElement('span');
-                badge.className = 'badge badge-role badge-xs badge-' + kind;
-                badge.textContent = kind;
-                host.append(badge);
+            for (const ground of ['bg-base-200', 'bg-base-100']) {
+                const box = document.createElement('div');
+                box.className = ground;
+                const mark = document.createElement('span');
+                mark.className = 'text-base-content/80';
+                box.append(mark);
+                host.append(box);
             }
             document.body.append(host);
-            for (const badge of host.children) {
-                const style = getComputedStyle(badge);
-                const dot = getComputedStyle(badge, '::before');
-                badges.push({ at: theme + '/' + badge.textContent, c: contrast(style.color, style.backgroundColor), dot: dot.width === '6px' && dot.backgroundColor !== style.backgroundColor });
+            for (const box of host.children) {
+                const ground = getComputedStyle(box).backgroundColor;
+                marks.push({ at: theme + '/' + box.className, c: contrast(lum(ground), lum(ground, getComputedStyle(box.firstChild).color)) });
             }
             host.remove();
         }
-        badges.sort((a, b) => a.c - b.c);
+        marks.sort((a, b) => a.c - b.c);
         return JSON.stringify({ count: items.length, first: items[0].textContent.trim(),
             checked: items.filter((i) => i.querySelector('input').checked).map((i) => i.textContent.trim()).join('|'),
-            primaries: primaries.size, badges: badges.length, worstBadge: badges[0].at + ' ' + badges[0].c.toFixed(2), dots: badges.every((b) => b.dot) });
+            primaries: primaries.size, marks: marks.length, worstMark: marks[0].at + ' ' + marks[0].c.toFixed(2) });
     })()`));
     await pickTheme('Dracula');
     const dracula = { theme: await B.b.eval(`document.documentElement.dataset.theme`), kept: await B.b.eval(`localStorage.getItem('DENS_THEME')`), open: await B.b.eval(`!!${SETTINGS}`) };
@@ -676,7 +679,7 @@ try {
         kept: await B.b.eval(`localStorage.getItem('DENS_THEME')`),
         dark: await B.b.eval(`matchMedia('(prefers-color-scheme: dark)').matches`),
     };
-    // The member list's role badges, for a look in Light and in Winter.
+    // The member list's role marks, for a look in Light and in Winter.
     const MEMBERS = `document.querySelector('button[aria-label="Members"]')`;
     if ((await B.b.eval(`${MEMBERS}?.getAttribute('aria-pressed')`)) === 'false') await B.b.eval(`(${MEMBERS}.click(), true)`);
     await sleep(800);
@@ -690,7 +693,7 @@ try {
     await B.b.eval(`(${MEMBERS}.click(), true)`);
     await sleep(300);
     report(menu.count === 36 && menu.first === 'System' && menu.checked === 'System' && menu.primaries >= 25
-        && menu.badges === 70 && parseFloat(menu.worstBadge.split(' ')[1]) >= 4.5 && menu.dots
+        && menu.marks === 70 && parseFloat(menu.worstMark.split(' ')[1]) >= 3
         && dracula.theme === 'dracula' && dracula.kept === 'dracula' && dracula.open && dark.bar >= 15 && dark.block >= 15 && white.bar === 0 && white.block >= 15
         && system.theme === (system.dark ? 'dark' : 'light') && system.kept == null,
         `${B.browser} themes: picker ${JSON.stringify(menu)}, Dracula ${JSON.stringify(dracula)}, lighter in Dark ${JSON.stringify(dark)} and Light ${JSON.stringify(white)}, System ${JSON.stringify(system)}`);

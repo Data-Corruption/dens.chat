@@ -99,7 +99,8 @@
 #                               opened from the top of the Den tab, Interested marked and taken back by taps,
 #                               and the owner's events, their form as a sheet and Cancel's dialog (M17.4);
 #                               and an event's card under its link, Interested by taps, and a badge's tip
-#                               shown by a tap on a profile card, within the screen (M17.5).
+#                               shown by a tap on a profile card, within the screen (M17.5); and a profile
+#                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each

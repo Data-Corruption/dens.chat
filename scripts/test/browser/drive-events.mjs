@@ -25,9 +25,10 @@
 // alice joins its call from her card and stays a stretch, the few seconds
 // a development instance's den takes, and earns its badge; bob joins and
 // leaves at once, and doesn't. Alice's profile card on bob's page shows
-// the badge, with its tip; once the event ends, bob's card in #general
-// says so. The den's database holds alice's award alone, and the badge's
-// title sealed.
+// the badge, with its tip; once she hides it in her Edit profile, its eye
+// struck (M17.6), his card of her shows it no more. Once the event ends,
+// bob's card in #general says so. The den's database holds alice's award
+// alone, marked hidden, and the badge's title sealed.
 //
 //   run.sh events chromium|firefox
 import { execFileSync } from 'node:child_process';
@@ -331,6 +332,27 @@ try {
     await B.b.shot(`${HOME}/shot-events-badge-${which}.png`);
     await B.b.eval(`${PROFILE}.querySelector('button[aria-label="Close"]').click(), true`);
     await waitFor(() => B.b.eval(`!${PROFILE}`), "alice's card closed");
+
+    step("alice hides her badge in Edit profile, and bob's card of her shows it no more (M17.6)");
+    const TOGGLE = `document.querySelector('[data-badge-toggle="${night.id}"]')`;
+    const eye = (pressed, look) => `${TOGGLE}?.getAttribute('aria-pressed') === '${pressed}' && !!${TOGGLE}.querySelector('[data-eye="${look}"]')`;
+    await A.b.eval(`document.querySelector('button[aria-label="Edit your profile"]').click(), true`);
+    report(await may(waitFor(() => A.b.eval(eye('true', 'on')), 'the badge in Edit profile, its eye open')),
+        "alice's Edit profile lists her badge, its eye open");
+    await A.b.eval(`${TOGGLE}.click(), true`);
+    report(await may(waitFor(() => A.b.eval(eye('false', 'off')), 'its eye struck')), 'a click strikes its eye');
+    report(await may(waitFor(() => count(`SELECT count(*) FROM den_badge_awards WHERE hidden = 1`) === 1, 'the mark on the award', 5000)),
+        'the den keeps the mark on her award');
+    await A.b.shot(`${HOME}/shot-events-hidden-${which}.png`);
+    await A.b.eval(`${DIALOG}.querySelector('button[aria-label="Close"]').click(), true`);
+    await waitFor(() => A.b.eval(`!${DIALOG}`), "alice's Edit profile closed");
+    await B.b.eval(`${member}.click(), true`);
+    await waitFor(() => B.b.eval(`!!${PROFILE}?.querySelector('[data-member-since]')`), "alice's card again");
+    // The card shows its badges as its profile comes, which takes a moment.
+    await sleep(1500);
+    report(!(await B.b.eval(`!!${PROFILE}?.querySelector('[data-badge]')`)), "bob's card of alice shows her badge no more");
+    await B.b.eval(`${PROFILE}.querySelector('button[aria-label="Close"]').click(), true`);
+    await waitFor(() => B.b.eval(`!${PROFILE}`), "alice's card closed again");
     await openEvents(B);
 
     step('alice moves its end from the form, its start staying');

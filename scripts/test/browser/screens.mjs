@@ -23,6 +23,7 @@
 //   disappearing             a DM's time, from its header to its setting beside it (M16.4)
 //   (M8.3, M11)              Home, adding a den, a member's profile, editing one's own,
 //                            removing a member, a channel's and a group's settings
+//   (M17.6)                  a profile card's ⋯ as a sheet
 //   (M9, M10)                unpaired, setting the local password, joining a den,
 //                            the recovery codes
 //   (M13.2)                  a message's sheet, three lines sent, a tip opened by a tap
@@ -571,12 +572,18 @@ export async function ownerScreens(h, ctx) {
         await sleep(800);
         await h.snap('settings-system', { scroll: PANEL, max: 8 });
     });
+    // A member's card as staff see it (M17.6): Message, and the rest under
+    // ⋯, a sheet on a phone, from which Remove from den… asks first.
     await h.step('profile-staff', async () => {
         await h.go(`/den/${den}/${general}`);
         await h.click(h.label('Members'));
         await h.click(`[...document.querySelectorAll('nav[aria-label=Members] button')].find((b) => b.textContent.includes('Bob'))`);
+        await h.wait(`document.querySelector('[role=dialog] [data-member-since]')`, "bob's card");
         await h.snap('profile-card-staff');
-        await h.click(`[...document.querySelectorAll('[role=dialog] button')].find((b) => /Remove/.test(b.textContent))`);
+        await h.click(`document.querySelector('[role=dialog] [data-profile-more]')`, "the card's ⋯");
+        await h.wait(`document.querySelector('[data-sheet] [role=menuitem]')`, "the ⋯'s sheet");
+        await h.snap('profile-more');
+        await h.click(`[...document.querySelectorAll('[data-sheet] [role=menuitem]')].find((b) => /Remove/.test(b.textContent))`, 'Remove from den…');
         await h.snap('remove-member', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
     });
     // The den's events, with + Event, the form as a sheet, and a card's
