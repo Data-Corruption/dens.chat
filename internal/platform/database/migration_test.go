@@ -67,7 +67,8 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // M16.3's step did. M17.4 adds events and who's interested in them, which
 // start empty, and the den's limit for members' events, which starts at 0,
 // leaving them to staff. M17.5 adds badges and their awards, which start
-// empty, and an event's staff-only mark, which none has.
+// empty, and an event's staff-only mark, which none has; and M17.6 an
+// award's hidden mark, which an award starts without.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -240,6 +241,14 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if err := db.QueryRow(`SELECT count(*) FROM den_events WHERE staff_only != 0 AND id != ?`, event).Scan(&staffEvents); err != nil || staffEvents != 0 {
 					t.Errorf("%s holds %d staff-only events of its own after the migration, %v", what, staffEvents, err)
 				}
+				// An award starts shown, and its member hides it or not (M17.6).
+				var hidden int
+				if err := db.QueryRow(`SELECT hidden FROM den_badge_awards WHERE event_id = ?`, event).Scan(&hidden); err != nil || hidden != 0 {
+					t.Errorf("%s's award starts with hidden %d, %v", what, hidden, err)
+				}
+				if _, err := db.Exec(`UPDATE den_badge_awards SET hidden = 1 WHERE event_id = ?`, event); err != nil {
+					t.Errorf("%s hides no award after the migration: %v", what, err)
+				}
 				for _, q := range []string{
 					`UPDATE den SET member_events = 11`,
 					`INSERT INTO den_events (details, made_by, made_at, starts_at, ends_at, state) VALUES (x'00', 1, 9, 10, 20, 'gone')`,
@@ -247,6 +256,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					`INSERT INTO den_badge_awards (event_id, member_id, earned_at) VALUES (` + fmt.Sprint(event) + `, 1, 11)`,
 					`INSERT INTO den_badges (event_id, named_id, title) VALUES (` + fmt.Sprint(event) + `, 2, x'7c')`,
 					`UPDATE den_events SET staff_only = 2 WHERE id = ` + fmt.Sprint(event),
+					`UPDATE den_badge_awards SET hidden = 2 WHERE event_id = ` + fmt.Sprint(event),
 				} {
 					if _, err := db.Exec(q); err == nil {
 						t.Errorf("%s took %s", what, q)

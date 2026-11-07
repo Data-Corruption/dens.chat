@@ -1,6 +1,8 @@
 package den
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
@@ -66,5 +68,62 @@ func TestEventsOverHTTP(t *testing.T) {
 		if status := f.call(step.method, step.path, step.token, step.body, nil); status != step.want {
 			t.Fatalf("%s %s: %d, want %d", step.method, step.path, status, step.want)
 		}
+	}
+}
+
+// TestBadgeHiddenOverHTTP checks a member hides a badge they earned from
+// their card and shows it again (M17.6), answered with 204: their own
+// profile carries it marked, and another's leaves it out; and a badge they
+// didn't earn is 404.
+func TestBadgeHiddenOverHTTP(t *testing.T) {
+	f := newFixture(t)
+	alice, _ := f.owner()
+	bob := f.member(alice, "bob")
+	lounge := f.channel(f.session(alice), "lounge", denproto.KindVoice, false)
+	pic := emojiPNG(t, 128, 128)
+	resp := f.upload(alice, "badge.png", bytes.NewReader(pic), int64(len(pic)))
+	var up denproto.File
+	if resp.StatusCode != http.StatusCreated || json.NewDecoder(resp.Body).Decode(&up) != nil {
+		t.Fatalf("upload a badge's picture: %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	name, title := "Game night", "Was there"
+	starts, ends := time.Now().Add(time.Hour).UnixMilli(), time.Now().Add(2*time.Hour).UnixMilli()
+	var e denproto.DenEvent
+	if status := f.call(http.MethodPost, "/api/events", alice, denproto.EventRequest{Name: &name, StartsAt: &starts, EndsAt: &ends,
+		ChannelID: &lounge.ID, Badge: &up.ID, BadgeTitle: &title}, &e); status != http.StatusCreated || e.Badge == nil {
+		t.Fatalf("alice making a badged event: %d, %+v", status, e)
+	}
+	// Bob earned it, as his call would have given it.
+	bobID := f.session(bob).MemberID
+	if _, err := f.db.Exec(`INSERT INTO den_badge_awards (event_id, member_id, earned_at) VALUES (?, ?, ?)`, mustID(e.ID), bobID, starts); err != nil {
+		t.Fatal(err)
+	}
+	profile := func(token denproto.Bytes) []denproto.MemberBadge {
+		t.Helper()
+		var p denproto.MemberProfile
+		if status := f.call(http.MethodGet, "/api/members/"+denproto.FormatID(bobID), token, nil, &p); status != http.StatusOK {
+			t.Fatalf("reading bob's profile: %d", status)
+		}
+		return p.Badges
+	}
+	path := "/api/me/badges/" + e.ID
+	if status := f.call(http.MethodPut, path, alice, denproto.BadgeHiddenRequest{Hidden: true}, nil); status != http.StatusNotFound {
+		t.Fatalf("alice hiding a badge she didn't earn: %d", status)
+	}
+	if status := f.call(http.MethodPut, path, bob, denproto.BadgeHiddenRequest{Hidden: true}, nil); status != http.StatusNoContent {
+		t.Fatalf("bob hiding his badge: %d", status)
+	}
+	if own, other := profile(bob), profile(alice); len(own) != 1 || !own[0].Hidden || len(other) != 0 {
+		t.Fatalf("hidden, bob's badges read %+v to him and %+v to alice", own, other)
+	}
+	if status := f.call(http.MethodPut, path, bob, "hidden", nil); status != http.StatusBadRequest {
+		t.Fatalf("a malformed body: %d", status)
+	}
+	if status := f.call(http.MethodPut, path, bob, denproto.BadgeHiddenRequest{}, nil); status != http.StatusNoContent {
+		t.Fatalf("bob showing his badge: %d", status)
+	}
+	if own, other := profile(bob), profile(alice); len(own) != 1 || own[0].Hidden || len(other) != 1 || other[0].Hidden {
+		t.Fatalf("shown again, bob's badges read %+v to him and %+v to alice", own, other)
 	}
 }

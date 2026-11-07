@@ -67,8 +67,9 @@ func (d *Den) Member(ctx context.Context, id int64) (denproto.Member, error) {
 }
 
 // Profile returns a member with their bio, and the badges they earned
-// whose events the session sees (M17.5). Any member may look at anyone who
-// has been in the den, so old messages can show who wrote them.
+// whose events the session sees (M17.5), but those they hid, which their
+// own profile alone carries, marked (M17.6). Any member may look at anyone
+// who has been in the den, so old messages can show who wrote them.
 func (d *Den) Profile(ctx context.Context, s *Session, id string) (denproto.MemberProfile, error) {
 	m, err := d.profileOf(ctx, id)
 	if err != nil {
@@ -76,7 +77,7 @@ func (d *Den) Profile(ctx context.Context, s *Session, id string) (denproto.Memb
 	}
 	p := denproto.MemberProfile{Member: m}
 	mid, _ := denproto.ParseID(m.ID)
-	p.Badges, err = d.profileBadges(ctx, mid, IsStaff(s.Role))
+	p.Badges, err = d.profileBadges(ctx, mid, IsStaff(s.Role), mid == s.MemberID)
 	return p, err
 }
 

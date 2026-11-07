@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -28,7 +29,10 @@ import (
 //
 // A member's profile carries the badges they earned whose events the asker
 // sees, as it carries their bio, each with its event's name and start,
-// which say what it was for once the event left the list.
+// which say what it was for once the event left the list. A member hides
+// any of theirs from their card (M17.6), which only keeps it tidy: the den
+// still knows who earned what, and their own copy of their profile still
+// carries a hidden one, marked, for them to show again.
 
 // kindBadge is a named file's kind for a badge's picture.
 const kindBadge = "badge"
@@ -353,15 +357,44 @@ func (d *Den) awardDue(ctx context.Context) error {
 	return nil
 }
 
+// errBadgeNotFound is a badge the member didn't earn, or whose event they
+// don't see.
+var errBadgeNotFound = denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such badge")
+
+// SetBadgeHidden hides a badge the member earned from their profile card,
+// or shows it again (M17.6). One whose event they no longer see, as a
+// staff-only event's once they aren't staff, is no such badge, as their
+// profile leaves it out.
+func (d *Den) SetBadgeHidden(ctx context.Context, s *Session, eventID string, hidden bool) error {
+	event, err := denproto.ParseID(eventID)
+	if err != nil {
+		return errBadgeNotFound
+	}
+	res, err := d.db.ExecContext(ctx, `UPDATE den_badge_awards SET hidden = ? WHERE event_id = ? AND member_id = ?
+		AND event_id IN (SELECT e.id FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
+			WHERE e.id = ? AND (`+eventStaffOnly+` = 0 OR ?))`, hidden, event, s.MemberID, event, IsStaff(s.Role))
+	if err != nil {
+		return err
+	}
+	// SQLite counts the row an update matched, whether or not it changed.
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return errBadgeNotFound
+	}
+	return nil
+}
+
 // profileBadges lists the badges a member earned whose events a viewer,
-// staff or not, sees, latest first, as many as a profile carries.
-func (d *Den) profileBadges(ctx context.Context, member int64, staff bool) ([]denproto.MemberBadge, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT a.event_id, a.earned_at, b.title, f.id, f.width, f.height, f.animated, e.details, e.starts_at
+// staff or not, sees, latest first, as many as a profile carries: those
+// the member hid alone for the member's own, each marked.
+func (d *Den) profileBadges(ctx context.Context, member int64, staff, own bool) ([]denproto.MemberBadge, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT a.event_id, a.earned_at, a.hidden, b.title, f.id, f.width, f.height, f.animated, e.details, e.starts_at
 		FROM den_badge_awards a JOIN den_badges b ON b.event_id = a.event_id
 		JOIN den_named_files n ON n.id = b.named_id JOIN den_files f ON f.id = n.file_id
 		JOIN den_events e ON e.id = a.event_id LEFT JOIN den_channels c ON c.id = e.channel_id
-		WHERE a.member_id = ? AND (`+eventStaffOnly+` = 0 OR ?)
-		ORDER BY a.earned_at DESC, a.event_id DESC LIMIT ?`, member, staff, denproto.MaxProfileBadges)
+		WHERE a.member_id = ? AND (a.hidden = 0 OR ?) AND (`+eventStaffOnly+` = 0 OR ?)
+		ORDER BY a.earned_at DESC, a.event_id DESC LIMIT ?`, member, own, staff, denproto.MaxProfileBadges)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +405,7 @@ func (d *Den) profileBadges(ctx context.Context, member int64, staff bool) ([]de
 		var event, file int64
 		var w, h sql.NullInt64
 		var title, details []byte
-		if err := rows.Scan(&event, &b.EarnedAt, &title, &file, &w, &h, &b.Image.Animated, &details, &b.StartsAt); err != nil {
+		if err := rows.Scan(&event, &b.EarnedAt, &b.Hidden, &title, &file, &w, &h, &b.Image.Animated, &details, &b.StartsAt); err != nil {
 			return nil, err
 		}
 		t, err := d.v.Open(title, badgeTitleAD(event))

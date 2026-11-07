@@ -164,7 +164,9 @@ type EventRequest struct {
 // MemberBadge is a badge a member earned, as their profile carries it
 // (M17.5): its event's ID, its title and picture, its event's name and
 // start, which say what it was for once the event left the list, and when
-// the member earned it.
+// the member earned it. Hidden, on the member's own profile alone, says
+// they hid it from their card (M17.6); everyone else's copy of their
+// profile leaves it out.
 type MemberBadge struct {
 	EventID  string `json:"event_id"`
 	Title    string `json:"title"`
@@ -172,6 +174,13 @@ type MemberBadge struct {
 	Event    string `json:"event"`
 	StartsAt int64  `json:"starts_at"`
 	EarnedAt int64  `json:"earned_at"`
+	Hidden   bool   `json:"hidden,omitempty"`
+}
+
+// BadgeHiddenRequest hides a badge the member earned from their profile
+// card, or shows it again (M17.6).
+type BadgeHiddenRequest struct {
+	Hidden bool `json:"hidden"`
 }
 
 // EventID names an event the den canceled or ended.

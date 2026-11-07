@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ func TestMain(m *testing.M) {
 type fixture struct {
 	t   *testing.T
 	d   *dens.Den
+	db  *sql.DB
 	srv *httptest.Server
 	log *xlog.Logger
 }
@@ -72,7 +74,7 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fixture{t: t, d: d, srv: httptest.NewServer(New(&app.App{Den: d, Log: log})), log: log}
+	f := &fixture{t: t, d: d, db: db, srv: httptest.NewServer(New(&app.App{Den: d, Log: log})), log: log}
 	t.Cleanup(func() {
 		f.srv.Listener.Close()
 		d.CloseSockets(time.Second)

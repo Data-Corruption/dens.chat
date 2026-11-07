@@ -2,8 +2,10 @@ package den
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -401,6 +403,116 @@ func TestBadgesOnProfiles(t *testing.T) {
 	}
 	if got := badges(alice); got != "Staff meeting:Was there Game night:Was there" {
 		t.Errorf("once the office went alice sees her badges as %s", got)
+	}
+}
+
+// TestBadgeHidden checks a member hides a badge they earned from their
+// card and shows it again (M17.6): their own profile carries it marked,
+// everyone else's copy leaves it out, the den keeps the mark alone and
+// tells nobody, and a badge they didn't earn, or whose event they no
+// longer see, is no such badge.
+func TestBadgeHidden(t *testing.T) {
+	f, alice, bob := chatFixture(t)
+	ctx := context.Background()
+	carol := f.member(alice, "carol")
+	if _, err := f.d.SetRole(ctx, alice, carol.memberID(), denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	carol.Role = denproto.RoleModerator
+	f.startCalls()
+	lounge := f.newChannel(alice, "lounge", denproto.ChannelRequest{Kind: denproto.KindVoice})
+	office := f.newChannel(alice, "office", denproto.ChannelRequest{Kind: denproto.KindVoice, StaffOnly: ptr(true)})
+	night := f.makeEvent(alice, f.badged(alice, "Game night", lounge.ID, time.Minute, 10*time.Minute))
+	meeting := f.makeEvent(alice, f.badged(alice, "Staff meeting", office.ID, time.Minute, 10*time.Minute))
+	f.clock = f.clock.Add(time.Minute)
+	if err := f.d.startDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.inCall(bob, lounge.ID)
+	f.inCall(carol, office.ID)
+	f.clock = f.clock.Add(2 * time.Minute)
+	if err := f.d.awardDue(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	badges := func(viewer, of *Session) string {
+		t.Helper()
+		p, err := f.d.Profile(ctx, viewer, of.memberID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, b := range p.Badges {
+			mark := ""
+			if b.Hidden {
+				mark = " (hidden)"
+			}
+			out = append(out, b.Event+mark)
+		}
+		return strings.Join(out, ", ")
+	}
+	notFound := func(err error, what string) {
+		t.Helper()
+		var perr *denproto.Error
+		if !errors.As(err, &perr) || perr.Status != http.StatusNotFound || perr.Code != denproto.CodeNotFound {
+			t.Errorf("%s: %v, not 404 not_found", what, err)
+		}
+	}
+
+	alices, _, _, _ := f.d.Hub.Subscribe(alice.MemberID, true, "", 0)
+	defer f.d.Hub.Unsubscribe(alices)
+	drain(alices)
+	before := f.dumpDen("den_badge_awards")
+	if err := f.d.SetBadgeHidden(ctx, bob, night.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := badges(bob, bob); got != "Game night (hidden)" {
+		t.Errorf("bob's own profile carries his badges as %q", got)
+	}
+	for _, viewer := range []*Session{alice, carol} {
+		if got := badges(viewer, bob); got != "" {
+			t.Errorf("member %d sees bob's hidden badge: %q", viewer.MemberID, got)
+		}
+	}
+	if err := f.d.SetBadgeHidden(ctx, bob, night.ID, true); err != nil {
+		t.Errorf("hiding a hidden badge again: %v", err)
+	}
+	if after := f.dumpDen("den_badge_awards"); after != before {
+		t.Errorf("hiding a badge changed more than its award: before\n%s\nafter\n%s", before, after)
+	}
+	if got := drain(alices); len(got) != 0 {
+		t.Errorf("hiding a badge told alice %v", got)
+	}
+	if err := f.d.SetBadgeHidden(ctx, bob, night.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if got, other := badges(bob, bob), badges(alice, bob); got != "Game night" || other != "Game night" {
+		t.Errorf("shown again, bob's badges read %q to him and %q to alice", got, other)
+	}
+
+	notFound(f.d.SetBadgeHidden(ctx, bob, meeting.ID, true), "bob hiding a badge he didn't earn")
+	notFound(f.d.SetBadgeHidden(ctx, alice, night.ID, true), "alice hiding a badge she didn't earn")
+	notFound(f.d.SetBadgeHidden(ctx, bob, "x", true), "a malformed event ID")
+	notFound(f.d.SetBadgeHidden(ctx, bob, "99", true), "an event that isn't")
+
+	// Carol hides the staff meeting's badge while she's staff; once she
+	// isn't, it's no badge of hers to show or hide, and nobody sees it.
+	if err := f.d.SetBadgeHidden(ctx, carol, meeting.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := badges(carol, carol); got != "Staff meeting (hidden)" {
+		t.Errorf("carol's own profile carries her badges as %q", got)
+	}
+	if got := badges(alice, carol); got != "" {
+		t.Errorf("alice sees carol's hidden badge: %q", got)
+	}
+	if _, err := f.d.SetRole(ctx, alice, carol.memberID(), denproto.RoleRequest{Role: denproto.RoleMember}); err != nil {
+		t.Fatal(err)
+	}
+	carol.Role = denproto.RoleMember
+	notFound(f.d.SetBadgeHidden(ctx, carol, meeting.ID, false), "carol showing a staff-only badge once she isn't staff")
+	if got := badges(carol, carol); got != "" {
+		t.Errorf("once she isn't staff carol's own profile carries %q", got)
 	}
 }
 

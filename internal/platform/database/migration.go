@@ -752,6 +752,18 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// M17.6: an award keeps whether its member hid it from their profile
+	// card, where badges start shown. It's a step of its own, since test
+	// builds of M17.5 ran the one before.
+	m.Add("Hidden badges", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_badge_awards ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1));
+		`); err != nil {
+			return fmt.Errorf("add hidden badges: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

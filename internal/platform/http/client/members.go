@@ -11,6 +11,7 @@ import (
 func (rt *router) mountMembers(r chi.Router) {
 	r.Get("/api/dens/{den}/members/{member}", rt.handleProfile)
 	r.Patch("/api/dens/{den}/me", rt.handleUpdateProfile)
+	r.Put("/api/dens/{den}/me/badges/{event}", rt.handleSetBadgeHidden)
 	r.Put("/api/dens/{den}/members/{member}/role", rt.handleSetRole)
 	r.Post("/api/dens/{den}/members/{member}/remove", rt.handleRemoveMember)
 	r.Post("/api/dens/{den}/members/{member}/disconnect", rt.handleDisconnectFromCall)
@@ -49,6 +50,20 @@ func (rt *router) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, m)
+}
+
+// handleSetBadgeHidden hides a badge the member earned from their profile
+// card, or shows it again (M17.6).
+func (rt *router) handleSetBadgeHidden(w http.ResponseWriter, r *http.Request) {
+	var req denproto.BadgeHiddenRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if err := rt.a.Dens.SetBadgeHidden(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "event"), req.Hidden); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (rt *router) handleSetRole(w http.ResponseWriter, r *http.Request) {

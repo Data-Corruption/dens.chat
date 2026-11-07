@@ -91,6 +91,7 @@ func New(a *app.App) http.Handler {
 			r.Post("/members/{id}/move", h.moveMember)
 			r.Post("/members/{id}/voice-mute", h.voiceMute)
 			r.Patch("/me", h.updateProfile)
+			r.Put("/me/badges/{id}", h.setBadgeHidden)
 			r.Post("/me/leave", h.leave)
 			r.Get("/bans", h.bans)
 			r.Delete("/bans/{id}", h.unban)

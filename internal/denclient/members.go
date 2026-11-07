@@ -18,7 +18,8 @@ func gone(c *conn) bool {
 }
 
 // Profile returns a member of a den with their bio, and the badges they
-// earned whose events this member sees (M17.5).
+// earned whose events this member sees (M17.5): those they hid on this
+// member's own profile alone, marked (M17.6).
 func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto.MemberProfile, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -32,7 +33,7 @@ func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto
 		return denproto.MemberProfile{}, err
 	}
 	member, ok := cleanMember(p.Member)
-	if !ok || member.ID != memberID || !cleanBadges(p.Badges) {
+	if !ok || member.ID != memberID || !cleanBadges(p.Badges, memberID == c.memberID()) {
 		return denproto.MemberProfile{}, errors.New("the den's answer is malformed")
 	}
 	p.Member = member
@@ -43,19 +44,32 @@ func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto
 }
 
 // cleanBadges checks the badges a den's answer gives a profile: as many as
-// one carries, each once.
-func cleanBadges(badges []denproto.MemberBadge) bool {
+// one carries, each once, and hidden ones on the member's own alone.
+func cleanBadges(badges []denproto.MemberBadge, own bool) bool {
 	if len(badges) > denproto.MaxProfileBadges {
 		return false
 	}
 	seen := map[string]bool{}
 	for _, b := range badges {
-		if denproto.CheckMemberBadge(b) != nil || seen[b.EventID] {
+		if denproto.CheckMemberBadge(b) != nil || seen[b.EventID] || b.Hidden && !own {
 			return false
 		}
 		seen[b.EventID] = true
 	}
 	return true
+}
+
+// SetBadgeHidden hides a badge this member earned from their profile card
+// in a den, or shows it again (M17.6).
+func (m *Manager) SetBadgeHidden(ctx context.Context, denID, eventID string, hidden bool) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("event", eventID); err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPut, "/api/me/badges/"+eventID, denproto.BadgeHiddenRequest{Hidden: hidden}, nil)
 }
 
 // UpdateProfile changes this member's display name, bio or pictures in a
