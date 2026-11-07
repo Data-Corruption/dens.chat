@@ -93,6 +93,15 @@ type Helper struct {
 	Notifier Notifier
 	OpenPage func(instance string, n notify.Notification) error
 
+	// sourceMu keeps what the helper tells instances it covers in turn:
+	// each word is taken and sent before the next is taken, so the last an
+	// instance hears is the latest. Taken under mu and sent after it, two
+	// at once could arrive out of turn, as when the desktop's session ends
+	// and another opens: an instance would be left with the word taken as
+	// the session closed, that no desktop owns the keys. It's taken before
+	// mu.
+	sourceMu sync.Mutex
+
 	mu      sync.Mutex
 	remotes map[*remote]struct{}
 	wake    chan struct{}
@@ -322,7 +331,7 @@ func (h *Helper) serve(ctx context.Context, cancel context.CancelCauseFunc, name
 			if json.Unmarshal(msg.D, &st) != nil {
 				continue
 			}
-			if err := s.Send(msgSource, h.setState(r, st)); err != nil {
+			if err := h.sendState(r, st); err != nil {
 				return err
 			}
 			if st.Desktop {
@@ -493,8 +502,18 @@ func (h *Helper) sourceLocked(r *remote) Source {
 	return src
 }
 
+// sendState takes an instance's state and tells it what the helper covers,
+// in turn with sendSources.
+func (h *Helper) sendState(r *remote, st state) error {
+	h.sourceMu.Lock()
+	defer h.sourceMu.Unlock()
+	return r.stream.Send(msgSource, h.setState(r, st))
+}
+
 // sendSources tells every instance what the helper covers now.
 func (h *Helper) sendSources() {
+	h.sourceMu.Lock()
+	defer h.sourceMu.Unlock()
 	type sourceFor struct {
 		r   *remote
 		src Source
