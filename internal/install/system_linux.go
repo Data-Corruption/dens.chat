@@ -673,6 +673,11 @@ func run(name string, args ...string) error {
 
 func (linuxSystem) InstallerName() string { return "install.sh" }
 
+// TempDir makes the directory where root's own temporary files go: sudo
+// passes on no TMPDIR, so that's /tmp, whose sticky bit keeps others from
+// renaming what root makes in it, and MkdirTemp makes it private to root.
+func (linuxSystem) TempDir(prefix string) (string, error) { return os.MkdirTemp("", prefix) }
+
 func (linuxSystem) RunInstaller(ctx context.Context, script, instance, releaseURL string, skipVerify bool) error {
 	args := []string{script, "--update", "--instance", instance, "--release-url", releaseURL}
 	if skipVerify {

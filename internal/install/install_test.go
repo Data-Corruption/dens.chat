@@ -211,6 +211,7 @@ func (f *fakeSystem) PrepareRestore(l layout.Layout, _ host.Identity) (string, e
 }
 func (f *fakeSystem) AdoptRestored(layout.Layout, string, host.Identity) error { return nil }
 func (f *fakeSystem) InstallerName() string                                    { return "install.sh" }
+func (f *fakeSystem) TempDir(prefix string) (string, error)                    { return os.MkdirTemp(f.base, prefix) }
 func (f *fakeSystem) RunInstaller(context.Context, string, string, string, bool) error {
 	return errors.New("not in tests")
 }
