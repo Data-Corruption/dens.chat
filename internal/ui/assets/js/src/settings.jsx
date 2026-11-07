@@ -1231,7 +1231,7 @@ function Hosting() {
     const title = (
         <>
             Hosting
-            <DocsTip id="docs-hosting" page="host/" side="right">Everything a den needs, step by step: a domain, Caddy and your router.</DocsTip>
+            <DocsTip id="docs-hosting" page="hosting/" side="right">Everything a den needs, step by step: a domain, Caddy and your router.</DocsTip>
         </>
     );
     if (!hosting) {
@@ -1295,7 +1295,7 @@ function Hosting() {
                         <>
                             <p class="text-sm">
                                 You exported {moves.den} on {moves.exported}.{' '}
-                                <DocsTip id="docs-server" page="server/">Restoring the den on a server, hosting it there, and removing it from this computer.</DocsTip>
+                                <DocsTip id="docs-server" page="hosting/#on-a-server">Restoring the den on a server, hosting it there, and removing it from this computer.</DocsTip>
                             </p>
                             {asking !== 'remove' && (
                                 <p class="text-sm text-base-content/70">

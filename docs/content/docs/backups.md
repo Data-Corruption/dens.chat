@@ -1,6 +1,6 @@
 ---
 title: Backups and moving
-weight: 6
+weight: 4
 ---
 
 Everything Dens keeps is on your computer: the keys to your accounts, your
@@ -91,7 +91,7 @@ in again after a restore.
 If the backup has a den, it comes back with hosting off, so no copy of a den
 goes online by itself. Set up Caddy and the router for the new computer, point
 the domain at it, and turn hosting on in **Settings**, under **System**
-([Host a den](../host/)). Members' Dens find the den again by themselves.
+([Hosting](../hosting/)). Members' Dens find the den again by themselves.
 
 ## Moving a den
 
@@ -105,14 +105,14 @@ computer**, or run `dens den export` with hosting off.
 The other computer restores the export as it would a backup, and turns
 hosting on. Once it serves the den, **Remove from this computer** deletes the
 copy on yours, and your Dens reaches the den at its address like any
-member's. [Host on a server](../server/) goes through it step by step.
+member's. [Hosting](../hosting/#on-a-server) goes through it step by step.
 
 A restore replaces everything on the install it goes into, so an export
 goes only where Dens holds nothing else yet, as on a new server: restore
 refuses one over an install that hosts a den or has joined one, and says
 what it holds. On a computer whose Dens is in use, someone's who's in the den
 already, say, give the den an install of its own: a second instance, as the
-end of [Host a den](../host/#what-hosting-costs-you) describes, and restore
+end of [Hosting](../hosting/#a-second-den) describes, and restore
 into that one with `--instance`.
 
 ## Losing your password or your computer
@@ -122,7 +122,7 @@ into that one with `--instance`.
 - **Lost both** the computer and the local password: what was on it is gone, by
   design. Nobody can open it, including you. Your accounts in dens survive,
   though: on a new install, sign in with your username and a recovery code,
-  then your DM recovery key to read your DMs ([Join a den](../join/)).
+  then your DM recovery key to read your DMs ([Usage](../usage/)).
 
 ## Handing a den to someone else
 

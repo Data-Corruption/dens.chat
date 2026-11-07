@@ -54,7 +54,7 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
             </div>
             <p class="flex items-start gap-1 text-xs text-base-content/60">
                 <span class="mt-0.5"><LockIcon size="h-3 w-3" /></span>
-                <span>End-to-end encrypted: only its members can read it. <DocsLink icon page="join/#group-dms" label="How group DMs work" /></span>
+                <span>End-to-end encrypted: only its members can read it. <DocsLink icon page="usage/#group-dms" label="How group DMs work" /></span>
             </p>
             {group?.broken && <p role="alert" class="text-sm text-error">{BROKEN}</p>}
             <ul class="flex flex-col" aria-label="The group's members" data-group-members>

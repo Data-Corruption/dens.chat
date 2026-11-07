@@ -336,7 +336,7 @@ function SetPassword({ canRemember, onDone }) {
     }
 
     return (
-        <Card title={<>Set a local password <DocsTip id="docs-local-password" page="join/#your-passwords-and-keys">
+        <Card title={<>Set a local password <DocsTip id="docs-local-password" page="usage/#your-passwords-and-keys">
             How it differs from your den passwords, and what each one is for.</DocsTip></>}>
             <p>
                 The local password protects your backups and your keys. You'll need it to make a backup, restore one on another

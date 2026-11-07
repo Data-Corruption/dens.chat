@@ -201,7 +201,7 @@ test("comparing codes shows this member's code and takes the other's as they rea
     // part of its words, and leads to the guide for where to compare.
     assert.ok(!root.textContent.includes('Bob'));
     const guide = find(root, (n) => n.attributes?.['data-docs-link'] !== undefined);
-    assert.equal(guide.attributes.href, 'https://dens.chat/docs/join/#comparing-codes');
+    assert.equal(guide.attributes.href, 'https://dens.chat/docs/usage/#comparing-codes');
     assert.equal(guide.attributes.target, '_blank');
     mount(null, root);
 });
