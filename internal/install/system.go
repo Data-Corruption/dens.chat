@@ -95,6 +95,11 @@ type System interface {
 
 	// InstallerName is the file name of this platform's installer script.
 	InstallerName() string
+	// TempDir makes a new directory that only administrators can change,
+	// named prefix and a random suffix, for dens update to check the
+	// installer in and run it from: the member's programs mustn't be able
+	// to swap it in between.
+	TempDir(prefix string) (string, error)
 	// RunInstaller runs a verified installer script in the foreground to
 	// update instance from releaseURL, passing both, and whether to skip
 	// verifying the release, as its flags.

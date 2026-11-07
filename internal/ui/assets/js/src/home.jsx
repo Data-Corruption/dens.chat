@@ -437,7 +437,7 @@ function HostDen({ hosting, onJoined }) {
             <div class="card-body gap-3">
                 <h2 class="card-title">
                     {hosting.created ? `Finish setting up ${hosting.name}` : 'Create your den'}
-                    <DocsTip id="docs-host" page="host/">The whole setup, step by step: a domain, Caddy and your router.</DocsTip>
+                    <DocsTip id="docs-host" page="hosting/">The whole setup, step by step: a domain, Caddy and your router.</DocsTip>
                 </h2>
                 <p class="text-sm text-base-content/70">
                     {hosting.created

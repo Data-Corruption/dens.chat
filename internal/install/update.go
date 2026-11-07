@@ -73,7 +73,7 @@ func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) e
 			bi.Name, latest, bi.Version)
 	}
 
-	temp, err := os.MkdirTemp("", "dens-update-")
+	temp, err := sys.TempDir(bi.Name + "-update-")
 	if err != nil {
 		return err
 	}

@@ -76,7 +76,7 @@ export function CallLockDialog({ call, den, onClose }) {
             <div class="flex flex-col gap-3" data-call-lock-dialog="sealed">
                 <p class="text-sm">
                     Only the call's members can hear and see it.{' '}
-                    <DocsLink icon page="join/#comparing-codes" label="Where to compare codes, and why" />
+                    <DocsLink icon page="usage/#comparing-codes" label="Where to compare codes, and why" />
                 </p>
                 <div>
                     <p class="text-xs text-base-content/60">Your code</p>

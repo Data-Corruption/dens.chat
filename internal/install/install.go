@@ -340,7 +340,7 @@ var errNoDesktop = errors.New("no desktop session")
 
 // serverGuide is where the docs say how to host a den on a computer with
 // no desktop, from the command line.
-const serverGuide = "https://dens.chat/docs/server/"
+const serverGuide = "https://dens.chat/docs/hosting/#on-a-server"
 
 // transactionMembers is the target plus every installed instance, sorted
 // by name so concurrent transactions take locks in the same order.

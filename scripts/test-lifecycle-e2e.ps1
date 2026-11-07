@@ -1,11 +1,13 @@
 #Requires -Version 5.1
 <#
 Windows lifecycle e2e. Installs Dens as a service through install.ps1 from
-fixture releases and runs the flows the Linux harness runs: host a den with
-Dens's first release and update it to this one, which still hosts it (M9.1);
-then pair a browser, set the password, turn hosting on and off with dens
-den hosting, back up, refuse another account, restart the service, update,
-add a second instance that hosts a den, restore, and uninstall.
+fixture releases, once run as text, as the guide's line runs it, and
+otherwise as a file, as dens update runs it, and runs the flows the Linux
+harness runs: host a den with Dens's first release and update it to this
+one, which still hosts it (M9.1); then pair a browser, set the password,
+turn hosting on and off with dens den hosting, back up, refuse another
+account, restart the service, update, add a second instance that hosts a
+den, restore, and uninstall.
 
 It installs the real service and paths, so it refuses to run where Dens is
 installed. From an elevated PowerShell:
@@ -376,8 +378,17 @@ try {
     if ($refused.Output -notmatch "hosting is turned on and off in Dens's settings") { Fail "unexpected refusal of -Den" }
     if (Test-Installed) { Fail "the refused install changed the system" }
 
-    Step "install $V1"
-    Invoke-Installer $Release $mainArgs
+    # The guide's line runs the installer as text, through irm and iex.
+    # Elevated, as the harness is, it installs in place, and says to open
+    # Dens from the Start menu rather than open a browser as Administrator.
+    Step "install $V1 by the installer run as text, as the guide's line runs it"
+    $lineArgs = @{ ReleaseUrl = (ConvertTo-FileUrl $Release); SkipVerify = $true }
+    if ($userArgs.Count -gt 0) { $lineArgs.User = $me }
+    if ($ClientPort -ne 8484) { $lineArgs.ClientPort = $ClientPort }
+    $installer = [scriptblock]::Create([IO.File]::ReadAllText((Join-Path $Release "install.ps1")))
+    $said = (& $installer @lineArgs 6>&1 | ForEach-Object { "$_" }) -join "`n"
+    Write-Host $said
+    if ($said -notmatch "Open Dens from the Start menu\.") { Fail "the installer run as text didn't say to open Dens from the Start menu" }
     Assert-Running "dens-main"
     Assert-State "main" $V1
     $config = (Invoke-Native -FilePath "sc.exe" -Arguments @("qc", "dens-main")).Output

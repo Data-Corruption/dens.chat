@@ -2,8 +2,10 @@ package install
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -411,23 +413,23 @@ func (windowsSystem) RegisterHelper(l layout.Layout, user host.Identity) (func()
 	return func() error { return errors.Join(undo(), undoShortcut()) }, nil
 }
 
-// registerHelperTask creates or replaces the helper's scheduled task.
+// registerHelperTask creates or replaces the helper's scheduled task. Its
+// definition goes through a private directory, since the member's programs
+// could rewrite one in their own temporary directory before schtasks reads
+// it, as a task that runs something else, as someone else.
 func registerHelperTask(l layout.Layout, user host.Identity) (func() error, error) {
 	name := helperTask(l, user)
 	existed := schtasks("/Query", "/TN", name) == nil
-	file, err := os.CreateTemp("", "dens-task-*.xml")
+	dir, err := privateTempDir(l.App + "-task-")
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(file.Name())
-	_, err = file.Write(helperTaskXML(l.Binary, user, name))
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	defer os.RemoveAll(dir)
+	definition := filepath.Join(dir, "task.xml")
+	if err := os.WriteFile(definition, helperTaskXML(l.Binary, user, name), 0o600); err != nil {
 		return nil, err
 	}
-	if err := schtasks("/Create", "/TN", name, "/XML", file.Name(), "/F"); err != nil {
+	if err := schtasks("/Create", "/TN", name, "/XML", definition, "/F"); err != nil {
 		return nil, err
 	}
 	if existed {
@@ -793,6 +795,53 @@ func same(a, b string) bool {
 }
 
 func (windowsSystem) InstallerName() string { return "install.ps1" }
+
+func (windowsSystem) TempDir(prefix string) (string, error) { return privateTempDir(prefix) }
+
+// privateTempDir makes a new directory in ProgramData that only
+// Administrators and SYSTEM can open, for an elevated step to write a file
+// in and then run it or hand it on. The elevated shell's own temporary
+// directory is the member's, where their programs could swap the file
+// between its check and its use, and rename a directory made private there;
+// ProgramData lets users add to it, but not rename what's in it.
+func privateTempDir(prefix string) (string, error) {
+	programData, err := windows.KnownFolderPath(windows.FOLDERID_ProgramData, 0)
+	if err != nil {
+		return "", fmt.Errorf("resolve ProgramData: %w", err)
+	}
+	return privateDir(programData, prefix)
+}
+
+// privateDir makes a new directory in parent, named prefix and a random
+// suffix, that only Administrators and SYSTEM can open. It's made with that
+// DACL, so nothing gets in before it's set.
+func privateDir(parent, prefix string) (string, error) {
+	sd, err := windows.SecurityDescriptorFromString(rootSDDL)
+	if err != nil {
+		return "", err
+	}
+	sa := &windows.SecurityAttributes{SecurityDescriptor: sd}
+	sa.Length = uint32(unsafe.Sizeof(*sa))
+	for range 10 {
+		var suffix [8]byte
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return "", err
+		}
+		dir := filepath.Join(parent, prefix+hex.EncodeToString(suffix[:]))
+		name, err := windows.UTF16PtrFromString(dir)
+		if err != nil {
+			return "", err
+		}
+		err = windows.CreateDirectory(name, sa)
+		if err == nil {
+			return dir, nil
+		}
+		if !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+			return "", &os.PathError{Op: "mkdir", Path: dir, Err: err}
+		}
+	}
+	return "", fmt.Errorf("make a private directory in %s: every name tried exists", parent)
+}
 
 func (windowsSystem) RunInstaller(ctx context.Context, script, instance, releaseURL string, skipVerify bool) error {
 	args := []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",

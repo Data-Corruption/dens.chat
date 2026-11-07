@@ -3,14 +3,39 @@ title: Windows
 weight: 1
 ---
 
-Dens runs as a small background service that starts with Windows, and you
-use it in your browser, like a website.
+Windows 11, version 24H2 or later. Open **Terminal** and run:
 
-## What it needs
+```powershell
+irm 'https://releases.dens.chat/install.ps1' | iex
+```
 
-- Windows 11, version 24H2 or later, Home or Pro.
-- An up-to-date browser: Firefox, Chrome, Edge, or one built on them.
-- Admin rights, once, to install it.
+{{% details title="Why it asks for admin rights" closed="true" %}}
+
+The installer and updater need admin rights to give Dens an account of its
+own, so the programs you run can't read its memory or its keys. They're only
+needed during setup: Dens itself never runs with them.
+[Privacy](../../privacy/#linux-and-windows) has more.
+
+{{% /details %}}
+
+## Updating
+
+Re-run the install command to update.
+
+## Uninstalling
+
+This deletes Dens's data on this computer, a den it hosts included, so make a
+[backup](../../backups/) first if you might want it back. Right-click the
+Start button, choose **Terminal (Admin)**, and run:
+
+```powershell
+dens uninstall
+```
+
+To stop Dens without removing it, run `dens service stop` there instead. It
+stays stopped until the computer restarts.
+
+---
 
 {{% details title="Which browser works best" closed="true" %}}
 
@@ -19,37 +44,23 @@ Dens has had the fewest problems in it, its screen shares can carry a tab's
 sound, which Firefox and the browsers built on it can't, and it makes the
 smaller copies of videos you send several times faster.
 
-{{% /details %}}
-
-{{% details title="Why it needs admin rights" closed="true" %}}
-
-They're how Dens gets a locked-down account of its own to run as, so Dens
-itself never runs as admin. Linux locks it down more tightly than Windows can;
-[Privacy](../../privacy/#linux-and-windows) has the details.
+Waterfox can show a blank page for a link another program opens, as Dens
+opens itself. If it does, click the address bar and press Enter: the link
+still works.
 
 {{% /details %}}
 
-## Install it
-
-{{% steps %}}
-
-### Download the installer
-
-Right-click the Start button, choose **Terminal (Admin)**, and run:
-
-```powershell
-cd $HOME\Downloads
-Invoke-WebRequest 'https://releases.dens.chat/install.ps1' -OutFile install.ps1
-```
-
-{{% details title="To check it wasn't tampered with (optional)" closed="true" %}}
+{{% details title="To check the installer first, or give it options" closed="true" %}}
 
 Its signature proves it's the installer Dens's release process built, and not
 a copy someone swapped in on the way; the installer then checks everything it
 downloads the same way. You need
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/).
+Right-click the Start button, choose **Terminal (Admin)**, and run:
 
 ```powershell
+cd $HOME\Downloads
+Invoke-WebRequest 'https://releases.dens.chat/install.ps1' -OutFile install.ps1
 Invoke-WebRequest 'https://releases.dens.chat/install.ps1.cosign.bundle' -OutFile install.ps1.cosign.bundle
 cosign verify-blob install.ps1 `
   --bundle install.ps1.cosign.bundle `
@@ -57,85 +68,22 @@ cosign verify-blob install.ps1 `
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
 
-It prints `Verified OK`. Anything else means don't run it.
-
-{{% /details %}}
-
-### Run it
-
-In the same terminal:
+It prints `Verified OK`. Anything else means don't run it. Then run it in the
+same terminal, with any options after it, such as `-DryRun` to see what it
+would change, or `-DenPort` and a port to move the den:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-### Open Dens
-
-In a new, ordinary terminal, not an admin one, run this, or pick Dens from
-the Start menu:
-
-```powershell
-dens open
-```
-
-The first time, Dens asks you to set a **local password**. You'll need it to
-make a backup or to see your keys.
-
-{{% details title="More on opening it" closed="true" %}}
-
-`dens open` opens Dens in your default browser. Add `--print` and it prints
-the link instead, for whichever browser you like. The link works once, within
-two minutes.
-
-Waterfox can show a blank page for a link another program opens. If it does,
-click the address bar and press Enter: the link still works.
-
-Dens lives at `http://localhost:8484`, and your browser stays signed in to it
-for 30 days after you last used it. After that, or in another browser, run
-`dens open` again.
-
-The local password protects Dens on this computer, and never leaves it. It's
-separate from the passwords you'll pick for each den.
-
 {{% /details %}}
 
-{{% /steps %}}
+{{% details title="If Windows blocks it" closed="true" %}}
 
-Next: [join a den](../../join/) with your invite, or [host one](../../host/).
-
-## Updating
-
-Dens shows a notice when there's a new version, and never installs it by
-itself. In an admin terminal, run:
-
-```powershell
-dens update
-```
-
-{{% details title="How Dens finds updates" closed="true" %}}
-
-Dens asks its release site once a day for the latest version number. You can
-turn that off in **Settings**, under **System**. Running the installer again
-updates Dens too, and keeps your data.
-
-{{% /details %}}
-
-## Removing it
-
-This deletes Dens's data on this computer, a den it hosts included, so make a
-[backup](../../backups/) first if you might want it back. In an admin
-terminal, run:
-
-```powershell
-dens uninstall
-```
-
-It lists what it removes, then asks you to type `perm delete data`. Anything
-else cancels.
-
-{{% details title="To stop Dens without removing it" closed="true" %}}
-
-Run `dens service stop` in an admin terminal. It stays stopped until the
-computer restarts.
+That's **Smart App Control**, which blocks programs whose signature Windows
+doesn't recognize, Dens among them, and makes no exception for one app. To
+install Dens, turn it off: in **Windows Security**, open **App & browser
+control**, then **Smart App Control settings**, and choose **Off**. On some
+computers, turning it back on later means reinstalling Windows.
 
 {{% /details %}}

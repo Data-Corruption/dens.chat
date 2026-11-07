@@ -60,7 +60,7 @@ export function ExpiryConfirm({ denID, channel, from, to, onDone, onClose }) {
         <Dialog title={title} onClose={onClose}>
             <p class="text-sm" data-expiry-confirm>
                 {to ? `New messages disappear for everyone ${afterText(to)} after they're sent.` : 'New messages stay.'}{' '}
-                <DocsLink page="join/#disappearing-messages" label="How it works" />
+                <DocsLink page="usage/#disappearing-messages" label="How it works" />
             </p>
             <ErrorText message={act.error} />
             <div class="flex gap-2">

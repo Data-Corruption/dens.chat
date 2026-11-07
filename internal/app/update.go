@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/layout"
@@ -45,8 +46,19 @@ func (a *App) LatestUpdate(cfg *types.Configuration) (string, bool) {
 	return "", false
 }
 
-// UpdateCommand is what the notice tells the user to run.
+// UpdateCommand is what the notice tells the user to run: on Windows, for
+// the default instance of the build's own release host, the line the
+// install guide gives, which needs no elevated terminal; otherwise dens
+// update, as an administrator runs it. The line updates every instance, as
+// any install does, but installs the default one where it isn't, so another
+// instance's notice keeps dens update.
 func (a *App) UpdateCommand() string {
+	if a.Layout.Instance == layout.DefaultInstance && a.Instance.ReleaseURL != "" &&
+		strings.TrimRight(a.Instance.ReleaseURL, "/") == strings.TrimRight(a.buildInfo.ReleaseURL, "/") {
+		if line := host.InstallLine(a.Instance.ReleaseURL); line != "" {
+			return line
+		}
+	}
 	command := a.buildInfo.Name + " update"
 	if a.Layout.Instance != layout.DefaultInstance {
 		command += " --instance " + a.Layout.Instance

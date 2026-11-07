@@ -111,10 +111,11 @@ run_windows_tests() {
   done
   while IFS= read -r test_exe; do
     # The command registry's test, the notices', the Windows resource
-    # objects', the protocol's error codes' and the mark's copies' read the
-    # module's source, which the Windows side doesn't have.
+    # objects', the protocol's error codes', the mark's copies' and the
+    # emoji lists' read the module's source, which the Windows side doesn't
+    # have.
     if (cd "$(dirname "$test_exe")" && timeout 600 "$test_exe" -test.count=1 \
-      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule|TestCommittedObjects|TestKnownCodes|TestMarkCopiesAreTheMark' </dev/null >"$test_exe.log" 2>&1); then
+      -test.skip 'TestAllCommandConstructorsAreListed|TestNoticesNameEveryModule|TestCommittedObjects|TestKnownCodes|TestMarkCopiesAreTheMark|TestEmojiListsAgree' </dev/null >"$test_exe.log" 2>&1); then
       printf 'ok    %s\n' "$(basename "$test_exe" .test.exe)"
     else
       printf 'FAIL  %s\n' "$(basename "$test_exe" .test.exe)"

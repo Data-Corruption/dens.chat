@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"golang.org/x/sys/windows/svc"
@@ -110,6 +111,13 @@ func reportFailure(name string, err error) {
 
 // AdminCommand phrases command the way an administrator runs it here.
 func AdminCommand(command string) string { return command + "   (in an elevated terminal)" }
+
+// InstallLine is the line that installs or updates Dens from releaseURL in
+// an ordinary terminal, as the install guide gives it: install.ps1, run as
+// text, starts itself as Administrator once the member allows it.
+func InstallLine(releaseURL string) string {
+	return "irm '" + strings.TrimRight(releaseURL, "/") + "/install.ps1' | iex"
+}
 
 // ServiceLogHint says where to find out why a service stopped: the
 // Application event log has the reason, and its own log has the rest.

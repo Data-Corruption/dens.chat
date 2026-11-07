@@ -5,12 +5,12 @@
 // each opens its platform's page, which holds that platform's steps and
 // none of another's, its folds closed until one is opened; the link older
 // releases give for the Flatpak lands on the choice, the Flatpak's card in
-// view; every link on the pages walked, and every link into the guides
-// that the app and its releases carry, or that the other guides hold,
-// reaches a page holding its anchor; and each screen of every page, its
-// folds closed and open, holds to the phone check's audits, with nothing
-// making the page scroll sideways. The pictures and audits land in
-// ~/shot-site/<mode>.
+// view, and Android's old page leads to its new one; every link on the
+// pages walked, and every link into the guides that the app and its
+// releases carry, or that the other guides hold, reaches a page holding its
+// anchor; and each screen of every page, its folds closed and open, holds
+// to the phone check's audits, with nothing making the page scroll
+// sideways. The pictures and audits land in ~/shot-site/<mode>.
 //
 //   node drive-site.mjs [chromium|firefox|chromium-desktop|firefox-desktop]...
 import fs from 'node:fs';
@@ -26,13 +26,13 @@ const { report, fail, finish } = checks();
 const CARDS = [
     ['Windows', '/docs/install/windows/'],
     ['Linux', '/docs/install/linux/'],
-    ['Linux by the Flatpak', '/docs/install/flatpak/'],
-    ['Android', '/docs/android/'],
+    ['Flatpak (client only)', '/docs/install/flatpak/'],
+    ['Android (client only)', '/docs/install/android/'],
 ];
 // Each platform's page holds its own steps, and none of another's: what
 // marks each platform's steps.
 const MARKS = {
-    windows: ['install.ps1', 'Terminal (Admin)'],
+    windows: ["irm 'https://releases.dens.chat/install.ps1' | iex", 'Terminal (Admin)'],
     linux: ['install.sh', 'sudo sh install.sh'],
     flatpak: ['chat.dens.Dens.flatpakref', 'flatpak uninstall'],
     android: ['dens.apk', 'Allow from this source'],
@@ -41,20 +41,23 @@ const PAGES = {
     windows: '/docs/install/windows/',
     linux: '/docs/install/linux/',
     flatpak: '/docs/install/flatpak/',
-    android: '/docs/android/',
+    android: '/docs/install/android/',
 };
 // The guides the app links to: components.jsx's DOCS and each DocsTip's and
 // DocsLink's page, and the installer's and restore's links in
-// internal/install, as this tree and earlier releases carry them. A
-// released Dens's link to the Flatpak's old section is checked on its own.
+// internal/install, as this tree and earlier releases carry them: a page
+// that moved answers at its old path with a redirect that keeps the anchor
+// (layouts/alias.html), which the check follows. A released Dens's link to
+// the Flatpak's old section is checked on its own.
 const LINKED = [
-    '/docs/', '/docs/install/', '/docs/install/flatpak/', '/docs/host/', '/docs/server/', '/docs/backups/',
-    '/docs/backups/#moving-a-den', '/docs/join/#your-passwords-and-keys', '/docs/join/#comparing-codes',
+    '/docs/', '/docs/install/', '/docs/install/flatpak/', '/docs/hosting/', '/docs/hosting/#on-a-server', '/docs/backups/',
+    '/docs/backups/#moving-a-den', '/docs/usage/#your-passwords-and-keys', '/docs/usage/#comparing-codes',
+    '/docs/usage/#signing-in-from-another-computer', '/docs/usage/#group-dms', '/docs/usage/#disappearing-messages',
+    '/docs/host/', '/docs/server/', '/docs/join/#your-passwords-and-keys', '/docs/join/#comparing-codes',
     '/docs/join/#signing-in-from-another-computer', '/docs/join/#group-dms', '/docs/join/#disappearing-messages',
 ];
-// The guides besides the install guide and Android's, whose links the
-// check follows too.
-const GUIDES = ['/docs/', '/docs/join/', '/docs/host/', '/docs/server/', '/docs/backups/', '/docs/privacy/', '/docs/logs/'];
+// The guides besides the install guide, whose links the check follows too.
+const GUIDES = ['/docs/', '/docs/usage/', '/docs/hosting/', '/docs/backups/', '/docs/privacy/'];
 
 // browser launches a mode: a phone's 390 by 844, by touch, or a desktop's
 // 1400 by 900, with a mouse.
@@ -74,17 +77,25 @@ async function browser(mode, port) {
 }
 
 // LINKS checks the links it's given, or every link on the page into the
-// site: each reaches a page, and the page holds the link's anchor.
+// site: each reaches a page, through a moved page's redirect, and the page
+// holds the link's anchor.
 const LINKS = (list) => `(async () => {
     const urls = ${list ? JSON.stringify(list) + '.map((p) => location.origin + p)'
         : `[...new Set([...document.querySelectorAll('a[href]')].map((a) => a.href).filter((u) => u.startsWith(location.origin + '/')))]`};
     const pages = new Map(), bad = [];
+    const load = async (page) => {
+        const r = await fetch(page);
+        if (!r.ok) return { status: r.status };
+        const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+        const refresh = doc.querySelector('meta[http-equiv="refresh"]')?.content.match(/url=(.*)$/i);
+        return refresh ? load(new URL(refresh[1], page).href) : { doc };
+    };
     for (const u of urls) {
         const url = new URL(u), page = url.origin + url.pathname;
         if (!pages.has(page)) {
-            const r = await fetch(page);
-            pages.set(page, r.ok ? new DOMParser().parseFromString(await r.text(), 'text/html') : null);
-            if (!r.ok) bad.push(url.pathname + ': ' + r.status);
+            const r = await load(page);
+            pages.set(page, r.doc || null);
+            if (!r.doc) bad.push(url.pathname + ': ' + r.status);
         }
         const doc = pages.get(page);
         if (doc && url.hash.length > 1 && !doc.getElementById(decodeURIComponent(url.hash.slice(1)))) bad.push(url.pathname + url.hash + ': no such anchor');
@@ -152,6 +163,13 @@ async function walk(mode, b, h) {
         })()`);
         report(r.path === '/docs/install/' && r.inView, `${mode}: a released Dens's link to the Flatpak lands on the choice, the Flatpak's card in view: ${JSON.stringify(r)}`);
         await h.snap('old-flatpak-link');
+    });
+
+    // Android's page was /docs/android/ until it joined the install guide.
+    await h.step('old-android-link', async () => {
+        await h.go('/docs/android/');
+        await waitFor(() => h.ev(`location.pathname === '/docs/install/android/' && document.readyState === 'complete'`), "Android's page");
+        report(true, `${mode}: Android's old page leads to its new one`);
     });
 
     await h.step('linked', async () => {

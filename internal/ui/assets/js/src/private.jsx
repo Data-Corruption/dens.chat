@@ -109,7 +109,7 @@ export function Codes({ denID, member }) {
                     {view.held && <p class="text-sm text-warning">Their keys changed since you compared codes.</p>}
                     <p class="text-sm">
                         Read out your code, and type theirs as they read it out.{' '}
-                        <DocsLink icon page="join/#comparing-codes" label="Where to compare codes, and why" />
+                        <DocsLink icon page="usage/#comparing-codes" label="Where to compare codes, and why" />
                     </p>
                     <div>
                         <p class="text-xs text-base-content/60">Your code</p>
@@ -222,7 +222,7 @@ export function SignInRequests({ den }) {
                     <p>
                         A new device asks to sign in to {den.name} as you: <span class="font-medium">{r.label}</span>. If it isn't yours,
                         refuse it and change your den password.{' '}
-                        <DocsTip id={`docs-approve-${r.id}`} page="join/#signing-in-from-another-computer">
+                        <DocsTip id={`docs-approve-${r.id}`} page="usage/#signing-in-from-another-computer">
                             Why your devices approve each other, and what to do about one that isn't yours.</DocsTip>
                     </p>
                     {r.elsewhere ? (
@@ -300,7 +300,7 @@ export function SignInSteps({ p, onRecover, onDone }) {
         <div class="flex flex-col gap-3">
             <h3 class="text-lg font-semibold">
                 {title}
-                {going && <> <DocsTip id={`docs-signin-${p.id}`} page="join/#signing-in-from-another-computer">
+                {going && <> <DocsTip id={`docs-signin-${p.id}`} page="usage/#signing-in-from-another-computer">
                     Why a new device needs one of your others to let it in.</DocsTip></>}
             </h3>
             {p.stage === 'waiting' && (
@@ -398,7 +398,7 @@ export function RecoveryCodes({ denName, codes, seal, sealNew, onDone }) {
         <div class="flex flex-col gap-3">
             <h3 class="text-lg font-semibold">
                 Save your {what} for {denName}{' '}
-                <DocsTip id="docs-keys" page="join/#your-passwords-and-keys">What each of these is for, and how to keep them.</DocsTip>
+                <DocsTip id="docs-keys" page="usage/#your-passwords-and-keys">What each of these is for, and how to keep them.</DocsTip>
             </h3>
             {codes.length > 0 && (
                 <>

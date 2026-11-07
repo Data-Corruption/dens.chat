@@ -804,7 +804,7 @@ function PasswordAndRecovery({ den, onCodes, onKey }) {
         <>
             <Heading>
                 Password and recovery{' '}
-                <DocsTip id={`docs-recovery-${den.den_id}`} page="join/#your-passwords-and-keys">
+                <DocsTip id={`docs-recovery-${den.den_id}`} page="usage/#your-passwords-and-keys">
                     What your den password, recovery codes and DM recovery key are each for.</DocsTip>
             </Heading>
             <section class="flex flex-col gap-2">
@@ -840,7 +840,7 @@ function YourCode({ den, view }) {
         <>
             <Heading>
                 Your code{' '}
-                <DocsTip id={`docs-code-${den.den_id}`} page="join/#comparing-codes">Why members compare codes, and where it's safe to.</DocsTip>
+                <DocsTip id={`docs-code-${den.den_id}`} page="usage/#comparing-codes">Why members compare codes, and where it's safe to.</DocsTip>
             </Heading>
             {view && !view.keeps_identities ? (
                 <p class="text-sm">This den runs an older Dens, which keeps no identities, so there's no code to compare here yet.</p>

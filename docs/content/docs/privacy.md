@@ -1,6 +1,6 @@
 ---
 title: Privacy
-weight: 7
+weight: 5
 ---
 
 Dens keeps your conversations away from big platforms, data brokers and ad
@@ -30,7 +30,7 @@ protect you from.
 | Your email or phone number | Nobody: Dens never asks for them |
 
 How DMs stay between the two of you, and the code you compare to be sure of it,
-is in [Join a den](../join/#direct-messages). Calls use the same codes: the
+is in [Usage](../usage/#direct-messages). Calls use the same codes: the
 lock beside a call shows yours, and each member's, to compare with them.
 The den decides who's in a call, so only the people listed there can hear
 it.
@@ -73,7 +73,7 @@ and still sees that the messages were sent, and when.
   your own.
 - **A tampered den, with people who never compare codes.** It could hand each
   of you keys of its own and read your DMs. Comparing codes, even once, shows
-  it: see [Join a den](../join/#comparing-codes).
+  it: see [Usage](../usage/#comparing-codes).
 - **Members** screenshotting or repeating what you say.
 - **Whoever sees your screen.** A notification shows the start of a message, a
   DM's included. Turn off **Show the message**, in the settings under

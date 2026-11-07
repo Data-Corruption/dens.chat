@@ -105,7 +105,7 @@ test("a DM's time is set beside it, once the member confirms it, and the header 
     assert.equal(dialog()?.attributes['aria-label'], 'Turn on disappearing messages?');
     assert.match(dialog().textContent, /New messages disappear for everyone 1 day after they're sent\./);
     const guide = findAll(dialog(), (n) => n.attributes?.['data-docs-link'] !== undefined)[0];
-    assert.equal(guide.attributes.href, 'https://dens.chat/docs/join/#disappearing-messages');
+    assert.equal(guide.attributes.href, 'https://dens.chat/docs/usage/#disappearing-messages');
     assert.equal(guide.attributes.target, '_blank');
     button('Cancel').dispatch('click', {});
     await settle();
