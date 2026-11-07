@@ -10,12 +10,16 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { Dialog } from './manage.jsx';
 
 // The frame each kind of picture is cut to, as it shows here and as it's
-// saved, and an animated one at most, with the most it may take.
+// saved, whether it's square, and an animated one at most, with the most it
+// may take.
 export const SHAPES = {
-    avatar: { frame: [256, 256], out: [512, 512], round: true, title: 'Your picture', moving: '256 × 256 pixels and 2 MB' },
+    avatar: { frame: [256, 256], out: [512, 512], round: true, square: true, title: 'Your picture', moving: '256 × 256 pixels and 2 MB' },
     banner: { frame: [384, 128], out: [1200, 400], round: false, title: 'Your banner', moving: '600 × 200 pixels and 4 MB' },
     // An event's banner (M17.4), cut as a profile's is.
     event: { frame: [384, 128], out: [1200, 400], round: false, title: "The event's banner", moving: '600 × 200 pixels and 4 MB' },
+    // A badge's picture (M17.5), square at an emoji's size, which an animated
+    // one is made at too.
+    badge: { frame: [256, 256], out: [128, 128], round: false, square: true, title: "The badge's picture", moving: '128 × 128 pixels and 512 KB' },
 };
 const MAX_ZOOM = 5;
 
@@ -189,7 +193,7 @@ export function CropDialog({ file, shape, busy, error, onCrop, onClose }) {
 
     function save() {
         if (animated) {
-            onCrop(file, wholeRect(sourceRect(offset, fw, fh, scale), bitmap.width, bitmap.height, spec.round));
+            onCrop(file, wholeRect(sourceRect(offset, fw, fh, scale), bitmap.width, bitmap.height, !!spec.square));
             return;
         }
         const [ow, oh] = spec.out;

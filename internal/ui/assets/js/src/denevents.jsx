@@ -5,20 +5,28 @@
 // them alone as the event starts; its maker, and staff above them, change
 // it, cancel it while it's to come, and end it early while it's live, or
 // move its end. What they are, without a screen, lives in denevents.js.
+//
+// From M17.5 an event's Copy link gives a link that shows the event's card
+// under the message it's in, Interested and all, and staff attach a badge
+// to an event in a voice channel, which the card shows.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
+import { copyText } from './clipboard.js';
 import { ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useNotifications } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import {
-    canMake, current, eventRequest, formOf, formProblem, interestedText, lengthsFor, mayChange, newForm, ordered, rowMark, whenText, zone,
+    MAX_BADGE_TITLE, badgeProblem, badgeRequest, canMake, cardWhen, current, eventRequest, formOf, formProblem, interestedText, lengthsFor,
+    mayChange, newForm, ordered, rowMark, whenText, willHaveBadge, zone,
 } from './denevents.js';
+import { useLinkedEvent, markRead } from './eventlinks.jsx';
 import { upload, uploadAnimated } from './files.jsx';
 import { ShieldIcon, SpeakerIcon } from './icons.jsx';
+import { eventLinkTo } from './links.js';
 import { Dialog } from './manage.jsx';
-import { Markdown } from './markdown.jsx';
-import { Banner } from './people.jsx';
+import { Markdown, eventsIn } from './markdown.jsx';
+import { BadgePicture, Banner, isStaff } from './people.jsx';
 import { NO_CALLS, canCall } from './platform.js';
 import { joinCall } from './voice.js';
 import { askToNotify, permission, tell } from './notify.js';
@@ -146,6 +154,20 @@ export function EventsPane({ denID, view, members, onList, onProfile }) {
 function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile, onDialog }) {
     const ref = useRef(null);
     const mark = useAction();
+    const linking = useAction();
+    const [copied, setCopied] = useState(false);
+    const copiedTimer = useRef(null);
+    useEffect(() => () => clearTimeout(copiedTimer.current), []);
+    // Copy link gives the event's link, which shows its card where it's
+    // posted (M17.5).
+    function copyLink() {
+        linking.run(async () => {
+            await copyText(eventLinkTo(view.url, denID, e.id));
+            setCopied(true);
+            clearTimeout(copiedTimer.current);
+            copiedTimer.current = setTimeout(() => setCopied(false), 1500);
+        });
+    }
     const channel = e.channel_id ? voice.find((c) => c.id === e.channel_id) : null;
     const maker = members.get(e.made_by);
     // A den that no longer takes this device takes no mark or change.
@@ -160,11 +182,8 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
         const off = setTimeout(() => setLit(false), 2000);
         return () => clearTimeout(off);
     }, [focused]);
-    // Marking Interested asks the browser to show notifications, where it
-    // hasn't asked and events notify, since a browser asks only in answer
-    // to a click.
     function interested(on) {
-        if (on && notifications && !notifications.eventsOff && permission() === 'default') askToNotify().then(() => tell());
+        askOnInterest(on, notifications);
         mark.run(() => (on ? api.put : api.del)(`/api/dens/${denID}/events/${e.id}/interest`));
     }
     return (
@@ -198,6 +217,7 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                     )}
                 </div>
                 {e.description && <div class="text-sm" data-description><Markdown text={e.description} me={view.me} /></div>}
+                {e.badge && <EventBadge denID={denID} badge={e.badge} id={`event-badge-${e.id}`} />}
                 <p class="text-xs text-base-content/60">
                     By{' '}
                     {maker ? <button type="button" class="link-hover" onClick={() => onProfile(maker)}>{maker.display_name}</button> : 'a former member'}
@@ -208,17 +228,112 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                         {e.mine ? '★ Interested' : '☆ Interested'}
                     </button>
                     <span class="text-sm text-base-content/70" data-interest-count>{interestedText(e.interested)}</span>
-                    {changes && (
-                        <span class="ml-auto flex gap-1">
-                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDialog({ kind: 'edit', event: e })}>Edit</button>
-                            {e.live ? (
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDialog({ kind: 'end', event: e })}>End now</button>
-                            ) : (
-                                <button type="button" class="btn btn-ghost btn-sm text-error" onClick={() => onDialog({ kind: 'cancel', event: e })}>Cancel…</button>
-                            )}
-                        </span>
-                    )}
+                    <span class="ml-auto flex flex-wrap justify-end gap-1">
+                        {view.url && (
+                            <button type="button" class="btn btn-ghost btn-sm" data-copy-event-link onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</button>
+                        )}
+                        {changes && <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDialog({ kind: 'edit', event: e })}>Edit</button>}
+                        {changes && (e.live ? (
+                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDialog({ kind: 'end', event: e })}>End now</button>
+                        ) : (
+                            <button type="button" class="btn btn-ghost btn-sm text-error" onClick={() => onDialog({ kind: 'cancel', event: e })}>Cancel…</button>
+                        ))}
+                    </span>
                 </div>
+                <ErrorText message={mark.error || linking.error} />
+            </div>
+        </article>
+    );
+}
+
+// askOnInterest asks the browser to show notifications as a member marks
+// Interested, where it hasn't asked and events notify, since a browser asks
+// only in answer to a click.
+function askOnInterest(on, notifications) {
+    if (on && notifications && !notifications.eventsOff && permission() === 'default') askToNotify().then(() => tell());
+}
+
+// EventBadge shows an event's badge on its card (M17.5): its picture and
+// title, and how it's earned.
+function EventBadge({ denID, badge, id }) {
+    return (
+        <div class="flex min-w-0 items-center gap-2 text-sm" data-event-badge>
+            <BadgePicture denID={denID} image={badge.image} />
+            <span class="min-w-0 break-words">{badge.title}</span>
+            <Tip id={id} label="About the badge">A minute in its call while it's live earns it.</Tip>
+        </div>
+    );
+}
+
+// EventCards shows the cards of the events a message's links point to,
+// after its files (M17.5).
+export function EventCards({ text }) {
+    const linked = useMemo(() => eventsIn(text), [text]);
+    if (!linked.length) return null;
+    return (
+        <div class="mt-1 flex flex-col gap-1">
+            {linked.map((link) => <EventLinkCard key={`${link.den}/${link.event}`} link={link} />)}
+        </div>
+    );
+}
+
+// EventLinkCard is the card of an event a link points to (M17.5): its
+// banner, its name, which opens it in its den's events, Live or Ended,
+// when, in the member's time zone, where, its badge, and, until it ends,
+// how many are interested, with Interested. A link to an event in a den the
+// member hasn't joined, or one they can't see, gets no card.
+function EventLinkCard({ link }) {
+    const { links, den, event, state } = useLinkedEvent(link);
+    const mark = useAction();
+    const notifications = useNotifications();
+    const [now, setNow] = useState(Date.now);
+    useEffect(() => {
+        const tick = setInterval(() => setNow(Date.now()), 30_000);
+        return () => clearInterval(tick);
+    }, []);
+    if (!links || !event || (state !== 'shown' && state !== 'ended')) return null;
+    const ended = state === 'ended';
+    const here = den.den_id === links.denID;
+    const view = here ? links.view : null;
+    const channel = event.channel_id && view ? view.channels.find((c) => c.id === event.channel_id) : null;
+    const gone = view && (view.state === 'removed' || view.state === 'revoked');
+    function interested(on) {
+        askOnInterest(on, notifications);
+        mark.run(async () => markRead(den.den_id, event.id, await (on ? api.put : api.del)(`/api/dens/${den.den_id}/events/${event.id}/interest`)));
+    }
+    return (
+        <article class="card max-w-md overflow-hidden border border-base-300 bg-base-100" data-event-card={event.id} aria-label={event.name}>
+            {event.banner?.id && <Banner denID={den.den_id} image={event.banner} />}
+            <div class="card-body gap-1 p-3">
+                {!here && <p class="truncate text-xs text-base-content/60">{den.name}</p>}
+                <div class="flex flex-wrap items-center gap-2">
+                    {ended ? (
+                        <h4 class="min-w-0 break-words font-semibold">{event.name}</h4>
+                    ) : (
+                        <button type="button" class="link-hover min-h-6 min-w-0 break-words text-left font-semibold" onClick={() => links.openEvent(den.den_id, event.id)}>
+                            {event.name}
+                        </button>
+                    )}
+                    {event.live && !ended && <span class="badge badge-success badge-sm" data-live>Live</span>}
+                    {ended && <span class="badge badge-ghost badge-sm" data-ended>Ended</span>}
+                </div>
+                <p class="text-sm text-base-content/70" data-when>{cardWhen(event, ended, now, zone())}</p>
+                {(event.channel_id || event.place) && (
+                    <p class="flex min-w-0 items-center gap-1 text-sm">
+                        <span class="text-base-content/50">{event.channel_id ? <SpeakerIcon size="h-4 w-4" /> : <PlaceIcon />}</span>
+                        <span class={event.channel_id ? 'truncate' : 'break-words'}>{event.channel_id ? channel?.name || 'A voice channel' : event.place}</span>
+                    </p>
+                )}
+                {event.badge && <EventBadge denID={den.den_id} badge={event.badge} id={`card-badge-${den.den_id}-${event.id}`} />}
+                {!ended && (
+                    <div class="flex flex-wrap items-center gap-2">
+                        <button type="button" class={`btn btn-sm ${event.mine ? 'btn-primary' : ''}`} aria-pressed={!!event.mine} disabled={mark.busy || gone}
+                            data-interested onClick={() => interested(!event.mine)}>
+                            {event.mine ? '★ Interested' : '☆ Interested'}
+                        </button>
+                        <span class="text-sm text-base-content/70" data-interest-count>{interestedText(event.interested)}</span>
+                    </div>
+                )}
                 <ErrorText message={mark.error} />
             </div>
         </article>
@@ -254,26 +369,39 @@ function EndDialog({ denID, event, cancel, onClose }) {
 // EventDialog makes an event, or changes one: its name, description and
 // banner, cut three times as wide as it's high; its start, in the member's
 // time zone, which a live event keeps; how long it lasts; and where it is,
-// one of the den's voice channels or a line of text.
+// one of the den's voice channels or a line of text. Staff attach a badge
+// to one in a voice channel (M17.5): a square picture, which an emoji's
+// size takes, and a title.
 export function EventDialog({ denID, view, event, onClose }) {
     const tz = zone();
     const voice = view.channels.filter((c) => c.kind === 'voice');
     const [form, setForm] = useState(() => (event ? formOf(event, tz) : newForm(Date.now(), tz, voice[0]?.id)));
     // banner is the banner the event will have: as it is, a new upload, or
-    // none; undefined leaves it as it is.
+    // none; undefined leaves it as it is. badge is its badge's picture, the
+    // same way.
     const [banner, setBanner] = useState(undefined);
+    const [badge, setBadge] = useState(undefined);
     const [cropping, setCropping] = useState(null);
     const save = useAction();
     const picture = useAction();
     const pick = useRef(null);
+    const pickBadge = useRef(null);
     const set = (field) => (value) => setForm((f) => ({ ...f, [field]: value }));
     const live = !!event?.live;
+    const staff = isStaff(view.role);
     const shown = banner === undefined ? event?.banner : banner;
+    const shownBadge = willHaveBadge(form, event, badge) ? (badge === undefined ? event?.badge?.image : badge) : null;
 
+    // cropped takes a picture the crop dialog framed: the banner's, or the
+    // badge's, which goes as an emoji's would (M17.5).
     function cropped(blob, rect) {
+        const forBadge = cropping.shape === 'badge';
         picture.run(async () => {
-            const up = rect ? await uploadAnimated(denID, 'banner', blob, rect) : await upload(denID, '', blob, `banner.${blob.type === 'image/webp' ? 'webp' : 'png'}`).done;
-            setBanner({ id: up.id, width: up.width, height: up.height, animated: up.animated });
+            const name = `${forBadge ? 'badge' : 'banner'}.${blob.type === 'image/webp' ? 'webp' : 'png'}`;
+            const up = rect ? await uploadAnimated(denID, forBadge ? 'emoji' : 'banner', blob, rect) : await upload(denID, '', blob, name).done;
+            const image = { id: up.id, width: up.width, height: up.height, animated: up.animated };
+            if (forBadge) setBadge(image);
+            else setBanner(image);
             setCropping(null);
         });
     }
@@ -281,10 +409,11 @@ export function EventDialog({ denID, view, event, onClose }) {
     function submit(e) {
         e.preventDefault();
         save.run(async () => {
-            const why = formProblem(form, Date.now(), tz, event);
+            const why = formProblem(form, Date.now(), tz, event) || (staff ? badgeProblem(form, event, badge) : '');
             if (why) throw new Error(why);
             const req = eventRequest(form, tz, event);
             if (banner !== undefined) req.banner = banner?.id || '';
+            if (staff) Object.assign(req, badgeRequest(form, event, badge));
             if (event) await api.patch(`/api/dens/${denID}/events/${event.id}`, req);
             else await api.post(`/api/dens/${denID}/events`, req);
             onClose();
@@ -315,7 +444,7 @@ export function EventDialog({ denID, view, event, onClose }) {
                         e.currentTarget.value = '';
                         if (file) {
                             picture.setError('');
-                            setCropping(file);
+                            setCropping({ file, shape: 'event' });
                         }
                     }} />
                     {!cropping && <ErrorText message={picture.error} />}
@@ -355,13 +484,45 @@ export function EventDialog({ denID, view, event, onClose }) {
                         <TextInput value={form.place} onInput={set('place')} placeholder="Where it is" aria-label="Place" data-event-place />
                     )}
                 </fieldset>
+                {staff && form.where === 'channel' && (
+                    <fieldset class="fieldset" data-event-badge-form>
+                        <legend class="fieldset-legend">Badge</legend>
+                        {shownBadge?.id ? (
+                            <div class="flex items-center gap-2">
+                                <BadgePicture denID={denID} image={shownBadge} size="h-12 w-12" />
+                                <TextInput value={form.badgeTitle} onInput={set('badgeTitle')} placeholder="Its title" aria-label="The badge's title"
+                                    data-badge-title />
+                            </div>
+                        ) : (
+                            <p class="label whitespace-normal">For whoever's in its call a minute while it's live.</p>
+                        )}
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-sm" disabled={picture.busy} data-add-badge onClick={() => pickBadge.current?.click()}>
+                                {shownBadge?.id ? 'Change picture' : 'Add a badge'}
+                            </button>
+                            {shownBadge?.id && (
+                                <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => setBadge(null)}>Remove</button>
+                            )}
+                        </div>
+                        <input ref={pickBadge} type="file" accept="image/*" class="hidden" data-picture="event-badge" onChange={(e) => {
+                            const file = e.currentTarget.files[0];
+                            e.currentTarget.value = '';
+                            if (file) {
+                                picture.setError('');
+                                setCropping({ file, shape: 'badge' });
+                            }
+                        }} />
+                        {!cropping && <ErrorText message={picture.error} />}
+                    </fieldset>
+                )}
                 <ErrorText message={save.error} />
                 <div>
                     <SubmitButton busy={save.busy || picture.busy}>{event ? 'Save' : 'Make the event'}</SubmitButton>
                 </div>
             </form>
             {cropping && (
-                <CropDialog file={cropping} shape="event" busy={picture.busy} error={picture.error} onCrop={cropped} onClose={() => setCropping(null)} />
+                <CropDialog file={cropping.file} shape={cropping.shape} busy={picture.busy} error={picture.error} onCrop={cropped}
+                    onClose={() => setCropping(null)} />
             )}
         </Dialog>
     );

@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, SubmitButton, TextInput, day, useAction, useLater } from './components.jsx';
+import { ErrorText, Field, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
+import { badgeTip, zone } from './denevents.js';
 
 const MAX_BIO = 300;
 
@@ -69,16 +70,21 @@ export function MemberList({ members, online, onProfile }) {
 }
 
 // Profile shows a member: their banner and picture, their names and role,
-// how long they've been in the den, and their bio. In a panel the bio runs
-// its full length, which the panel scrolls. Its pictures play while it
-// shows, since the member opened it (M15.1).
+// how long they've been in the den, the badges they earned (M17.5), and
+// their bio, the badges and the bio as the den sends them with the card. In
+// a panel the bio runs its full length, which the panel scrolls. Its
+// pictures play while it shows, since the member opened it (M15.1).
 function Profile({ denID, member, me, online, panel = false, verified = false }) {
     const [bio, setBio] = useState(null);
+    const [badges, setBadges] = useState([]);
     const [error, setError] = useState('');
     // A bio usually arrives at once; the dots show only if it's slow.
     const slow = useLater(bio === null && !error, 1000);
     useEffect(() => {
-        api.get(`/api/dens/${denID}/members/${member.id}`).then((p) => setBio(p.bio || ''), (e) => setError(e.message));
+        api.get(`/api/dens/${denID}/members/${member.id}`).then((p) => {
+            setBio(p.bio || '');
+            setBadges(p.badges || []);
+        }, (e) => setError(e.message));
     }, [member.id, member.display_name]);
     const left = !!member.left_at;
     return (
@@ -96,6 +102,7 @@ function Profile({ denID, member, me, online, panel = false, verified = false })
                 </div>
             </div>
             <p class="text-xs text-base-content/60">{left ? `No longer in this den since ${day(member.left_at)}` : `Member since ${day(member.joined_at)}`}</p>
+            {badges.length > 0 && <Badges denID={denID} badges={badges} panel={panel} />}
             {slow && <span class="loading loading-dots loading-sm"></span>}
             {bio && (
                 <div class={`rounded p-2 text-sm ${panel ? 'bg-base-100' : 'max-h-48 overflow-y-auto bg-base-200'}`}>
@@ -179,6 +186,42 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
                 )}
             </div>
         </Dialog>
+    );
+}
+
+// Badges shows the badges a member earned, latest first, in a row, each
+// with a tip saying what it's called, and what event it was for and when
+// (M17.5). Each takes a finger's 44 pixels on a touch screen.
+export function Badges({ denID, badges, panel = false }) {
+    const tz = zone();
+    return (
+        <ul class="flex flex-wrap gap-1" aria-label="Badges" data-badges>
+            {badges.map((b) => {
+                const tip = badgeTip(b, tz);
+                return (
+                    <li key={b.event_id} class="flex" data-badge={b.event_id}>
+                        <Tip id={`badge-${b.event_id}${panel ? '-panel' : ''}`} side="top" label={`Badge: ${b.title}`}
+                            trigger={<BadgePicture denID={denID} image={b.image} size="h-8 w-8 pointer-coarse:h-9 pointer-coarse:w-9" />}>
+                            <span class="block break-words font-semibold">{tip.title}</span>
+                            <span class="block break-words text-xs opacity-80">{tip.line}</span>
+                        </Tip>
+                    </li>
+                );
+            })}
+        </ul>
+    );
+}
+
+// BadgePicture shows a badge's picture, square, at a size of the caller's.
+// An animated one plays as an emoji does (M15.1).
+export function BadgePicture({ denID, image, size = 'h-8 w-8' }) {
+    const how = usePicture(!!image.animated);
+    const fit = 'h-full w-full select-none rounded object-cover';
+    return (
+        <span class={`relative inline-block shrink-0 ${size}`}>
+            <img src={how === 'file' ? fileURL(denID, image.id) : thumbURL(denID, image.id)} alt="" draggable={false} class={fit} />
+            {how === 'hover' && <img src={fileURL(denID, image.id)} alt="" draggable={false} class={`absolute inset-0 ${fit}`} />}
+        </span>
     );
 }
 
