@@ -201,6 +201,10 @@ name at the top of its channel list, or **Manage** on your home page.
   the channel list, and change or cancel anyone's of a lower rank. One in a
   staff-only voice channel is the staff's alone. Deleting a voice channel
   cancels the events in it.
+- **Badges.** Moderators and you can give an event in a voice channel a
+  badge, a small square picture and a title, in its form. Whoever's in its
+  call for a minute while it's on earns it, and it shows on their profile.
+  Change it or take it off until the event ends; after that it stays.
 - **Events per member**, in **Limits**: off at first, so only staff make
   events, or up to 10 each, counting those not yet over. A den holds 50 at
   once. Lowering it leaves the events already made, and someone who leaves

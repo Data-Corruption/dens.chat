@@ -21,6 +21,8 @@ protect you from.
 | Your notes to self, and the files in them | Only your own devices: they're end-to-end encrypted. The den sees that you write in them, and when |
 | Reactions | In a channel, its members and the den. In a DM or a group DM, only its members, like its messages; the den sees only that someone's reactions changed, and when |
 | Who voted for what in a poll | The den, always: it counts each vote. Members, as the poll's author chose: never, once it ends, or always |
+| Who's interested in an event | The den, until the event ends, to tell them as it starts. Members see only how many |
+| The badges you earn at events | Everyone who can see the event, on your profile, and the den. It keeps when you earned each, not who else was in the call |
 | Who DMs whom, who's in which group DMs, when, and how much | The den |
 | How long a DM's or a group DM's messages last before they disappear | Its members, and the den, which deletes them when their time comes |
 | Your IP address | Each den you're connected to, while you're connected. Other members never see it, even in calls |

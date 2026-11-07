@@ -80,7 +80,7 @@ signed out.
 
 Each den has your profile in it: your display name, a few lines about you, a
 picture and a banner. Open it from your name at the foot of the den's channel
-list.
+list. The badges you earn at events show on it too.
 
 {{% details title="Pictures, and when they move" closed="true" %}}
 
@@ -223,6 +223,13 @@ lasts, and a place, one of the den's voice channels or anywhere else. The
 den's moderators and owner make events; the owner can let everyone else make
 a few.
 
+**Copy link** on an event gives a link to paste in a message, which shows the
+event's card there, with **☆ Interested** on it.
+
+An event in a voice channel can have a **badge**: be in its call for a minute
+while it's on, and the badge shows on your profile. Hover over or tap one to
+see what it was for.
+
 {{% details title="More on events" closed="true" %}}
 
 - **Times** show in your own time zone, wherever whoever made it lives. An
@@ -239,6 +246,13 @@ a few.
   your computer or phone; a Dens that was off doesn't catch up later. Turn
   off **Events** under **Notifications & sounds** in **Settings** if you'd
   rather not hear.
+- **A link's card** stays once the event is over, saying it ended. A link to
+  an event you can't see, or one that was canceled, shows no card.
+- **Badges** are the den's moderators' and owner's to give an event. A minute
+  at a stretch counts, whether or not your connection drops for a moment;
+  leave sooner and it doesn't. You earn each once, and the den keeps only that
+  you earned it, and when, not who else was in the call. A badge from a
+  staff-only event shows to the staff alone.
 
 {{% /details %}}
 
