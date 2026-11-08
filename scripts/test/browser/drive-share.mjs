@@ -1,13 +1,22 @@
 // The M4.2 check: Chromium (alice, the owner) shares its fake screen, and
 // Firefox (bob), headed on Xvfb, the X screen; each watches the other's in
 // the player. Then the share's limits, a staff mute, and a voice channel's
-// bitrate.
+// bitrate. From M18 it measures what arrives of alice's share's sound:
+// bob's Firefox and carol's Chromium each decode it, samples with energy in
+// them, their workers opening its frames and dropping none, as alice's
+// seals them; and with a preload that sets the sound's transform a task
+// late, as the page did before M18, alice's page stops the sound within a
+// second and says so.
 //
 //   run.sh share
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, openManage, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CAROL, HOME, MANAGE, SETTINGS, checks, launch, openManage, openSettings, pair, waitFor } from './browsers.mjs';
 
 const { DEN: den } = process.env;
+// The preload keeps each page's peer connections and workers, what it
+// asked of getDisplayMedia, when a track went on each sender and the
+// voice.share messages it sent; and while __lateSound holds, it sets the
+// share's sound's transform a task after the page did.
 const PRELOAD = `() => {
     const Orig = window.RTCPeerConnection;
     if (!Orig || window.__pcs) return;
@@ -18,11 +27,77 @@ const PRELOAD = `() => {
         const gdm = md.getDisplayMedia.bind(md);
         md.getDisplayMedia = (o) => { window.__gdm = JSON.stringify(o); return gdm(o).then((s) => (window.__display = s, s)); };
     }
+    const W = window.Worker;
+    window.__workers = [];
+    window.Worker = class extends W { constructor(...a) { super(...a); window.__workers.push(this); } };
+    const ST = window.RTCRtpScriptTransform;
+    const sender = window.RTCRtpSender?.prototype;
+    if (ST && sender) {
+        window.RTCRtpScriptTransform = class extends ST { constructor(w, o, ...r) { super(w, o, ...r); this.__options = o; } };
+        const transform = Object.getOwnPropertyDescriptor(sender, 'transform');
+        Object.defineProperty(sender, 'transform', {
+            configurable: true,
+            get() { return this.__late || transform.get.call(this); },
+            set(t) {
+                if (window.__lateSound && t?.__options?.side === 'send' && t.__options.track === 2) {
+                    this.__late = t;
+                    setTimeout(() => transform.set.call(this, t), 0);
+                    return;
+                }
+                transform.set.call(this, t);
+            },
+        });
+        const replace = sender.replaceTrack;
+        window.__attached = [];
+        sender.replaceTrack = function (track) {
+            const p = replace.call(this, track);
+            p.then(() => track && window.__attached.push({ kind: track.kind, track: this.transform?.__options?.track, at: performance.now() }), () => {});
+            return p;
+        };
+    }
+    const send = WebSocket.prototype.send;
+    window.__shares = [];
+    WebSocket.prototype.send = function (data) {
+        try { const m = JSON.parse(data); if (m.t === 'voice.share') window.__shares.push({ ...m.d, at: performance.now() }); } catch {}
+        return send.call(this, data);
+    };
 }`;
 const c = checks();
 const report = c.report;
 const A = ALICE;
 const B = BOB;
+const C = CAROL;
+// COUNTS is what a page's worker counted of its call's frames, as it says.
+const COUNTS = `(async () => {
+    const w = (window.__workers || []).at(-1);
+    if (!w) return 'null';
+    return new Promise((resolve) => {
+        const heard = (e) => { if (e.data?.t === 'counts') { w.removeEventListener('message', heard); resolve(JSON.stringify(e.data)); } };
+        w.addEventListener('message', heard);
+        w.postMessage({ t: 'counts' });
+        setTimeout(() => resolve('null'), 1500);
+    });
+})()`;
+const counts = async (s) => JSON.parse(await s.b.eval(COUNTS));
+const droppedOf = (track) => Object.values(track?.dropped || {}).reduce((n, x) => n + x, 0);
+// SOUND_RX is what a watcher's receiver of the share's sound in its player
+// received and decoded: its samples, those concealed in place of frames
+// that never came, and their energy.
+const SOUND_RX = `(async () => {
+    const v = document.querySelector('section[aria-label="Screen shares"] video:not([aria-label="Your screen"])');
+    const track = v?.srcObject?.getAudioTracks()[0];
+    const pc = (window.__pcs || []).at(-1);
+    const t = track && pc?.getTransceivers().find((x) => x.receiver.track === track);
+    if (!t) return JSON.stringify({ found: false });
+    const out = { found: true, mid: t.mid, muted: v.muted, volume: v.volume };
+    (await t.receiver.getStats()).forEach((s) => {
+        if (s.type !== 'inbound-rtp') return;
+        Object.assign(out, { packets: s.packetsReceived || 0, samples: s.totalSamplesReceived ?? s.jitterBufferEmittedCount ?? 0,
+            concealed: s.concealedSamples || 0, energy: s.totalAudioEnergy || 0 });
+    });
+    return JSON.stringify(out);
+})()`;
+const soundRx = async (s) => JSON.parse(await s.b.eval(SOUND_RX));
 const STATE = (s) => `(async () => JSON.stringify(await (await fetch('/api/dens/${den}/state')).json()))()`;
 const VIDEO = `(async () => {
     const pc = window.__pcs.at(-1); if (!pc) return '{}';
@@ -60,7 +135,8 @@ const prepare = `(async () => {
 try {
     A.b = await launch('chromium', 9433, { media: true, screen: true, preload: PRELOAD });
     B.b = await launch('firefox', 9434, { media: 'pulse', screen: true, preload: PRELOAD, size: [1400, 860] });
-    for (const s of [A, B]) {
+    C.b = await launch('chromium', 9435, { media: true, preload: PRELOAD });
+    for (const s of [A, B, C]) {
         await pair(s.b, s);
         await s.b.go(`http://localhost:${s.port}/den/${den}`);
         await waitFor(() => s.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), `${s.name} voice channel`);
@@ -71,7 +147,7 @@ try {
         s.me = JSON.parse(await s.b.eval(STATE(s))).me.id;
         await s.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
     }
-    for (const s of [A, B]) await waitFor(async () => (await s.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`)) && (await s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`)), `${s.name} in the call`, 30000);
+    for (const s of [A, B, C]) await waitFor(async () => (await s.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`)) && (await s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`)), `${s.name} in the call`, 30000);
     // The share button sits in the call's row, just before mute, after the
     // soundboard where the member has one (M14.3).
     const row = await A.b.eval(`(() => { const b = document.querySelector('button[aria-label="Share your screen"]'); const all = [...b.parentElement.children].map((x) => x.getAttribute('aria-label') || x.querySelector('button')?.getAttribute('aria-label') || x.tagName); return JSON.stringify(all); })()`);
@@ -129,9 +205,38 @@ try {
     await sleep(3000);
     const v1 = await video(B); const e1 = await video(A);
     report(v1.decoded > 10 && v1.w * v1.h <= 1920 * 1080 && v1.fps <= 31, `bob decodes alice's share: ${JSON.stringify(v1)}; alice encodes ${JSON.stringify(e1)}`);
-    const sound = await B.b.eval(`(() => { const v = ${PLAYER}.querySelector('video'); return JSON.stringify({ audio: v.srcObject?.getAudioTracks().length, video: v.srcObject?.getVideoTracks().length, muted: v.muted, volume: v.volume }); })()`);
-    report(JSON.parse(sound).audio === 1, `the share's sound comes with it: ${sound}`);
     await B.b.shot(`${HOME}/shot-share-bob-player.png`);
+
+    // What arrives of the share's sound (M18): carol's Chromium watches
+    // too, and both watchers decode it, samples with energy in them, while
+    // their workers open its frames and drop none, as alice's seals them.
+    await waitFor(() => C.b.eval(`[...document.querySelectorAll('button')].some((x) => x.textContent.trim() === 'LIVE')`), 'carol sees LIVE');
+    await C.b.eval(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'LIVE').click(), true`, true);
+    await waitFor(() => C.b.eval(`(() => { const v = ${PLAYER}?.querySelector('video'); return v && v.videoWidth > 0; })()`), 'carol sees alice', 15000);
+    await sleep(3000);
+    const watchers = [[B, 'Firefox'], [C, 'Chromium']];
+    const heard0 = await Promise.all(watchers.map(([s]) => soundRx(s)));
+    const opened0 = await Promise.all(watchers.map(([s]) => counts(s)));
+    const sealed0 = await counts(A);
+    await sleep(4000);
+    const heard1 = await Promise.all(watchers.map(([s]) => soundRx(s)));
+    const opened1 = await Promise.all(watchers.map(([s]) => counts(s)));
+    const sealed1 = await counts(A);
+    const sealedRate = Math.round((sealed1.sound.sealed - sealed0.sound.sealed) / 4);
+    report(sealedRate >= 40, `alice's worker seals her share's sound: ${sealedRate} frames a second, ${JSON.stringify(sealed1.sound)}`);
+    for (const [i, [s, browser]] of watchers.entries()) {
+        const [h0, h1, o0, o1] = [heard0[i], heard1[i], opened0[i], opened1[i]];
+        if (!h0.found || !h1.found) {
+            report(false, `${s.name}'s ${browser} has no share's sound in its player: ${JSON.stringify(h1)}, its worker ${JSON.stringify(o1?.sound)}`);
+            continue;
+        }
+        const decoded = h1.samples - h1.concealed - (h0.samples - h0.concealed);
+        const opened = Math.round((o1.sound.opened - o0.sound.opened) / 4);
+        report(h1.energy > h0.energy && decoded > 4 * 48000 * 0.8 && opened >= 40 && droppedOf(o1.sound) === 0,
+            `${s.name}'s ${browser} decodes the share's sound, ${decoded} samples in 4 s with energy ${h0.energy.toFixed(3)} -> ${h1.energy.toFixed(3)} (${JSON.stringify(h1)}), its worker opening ${opened} of its frames a second and dropping none: ${JSON.stringify(o1.sound)}`);
+    }
+    await C.b.eval(`document.querySelector('button[aria-label="Leave the call"]').click(), true`);
+    await waitFor(() => A.b.eval(`document.querySelector('[aria-label="Watching: Bob"]')?.textContent || ''`), 'carol gone', 10000).catch(() => {});
 
     // The player drags by its bar, and keeps its place across a reload.
     const before = JSON.parse(await B.b.eval(`JSON.stringify(${PLAYER}.getBoundingClientRect())`));
@@ -205,6 +310,41 @@ try {
     }, 'the call at 48 kbps', 15000).catch((e) => e.message);
     report(rates.startsWith('['), `both members' next offers ask for 48 kbps: ${rates}`);
 
+    // A browser that sends the share's sound around its seal (M18): alice
+    // stops sharing, leaves, and joins again, so her share's sections come
+    // afresh, with a preload that sets the sound's transform a task late, as
+    // the page did; her page stops the sound within a second of its track
+    // going on, and says so, while the share goes on without it.
+    await clickButton(A, 'Stop sharing your screen');
+    await waitFor(async () => A.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`), 'alice stopped sharing', 10000);
+    await A.b.eval(`document.querySelector('button[aria-label="Leave the call"]').click(), true`);
+    await waitFor(() => A.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), 'alice out of the call', 10000);
+    await A.b.eval(`window.__lateSound = true, window.__attached.length = 0, window.__shares.length = 0, true`);
+    await A.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
+    await waitFor(async () => (await A.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`)) && (await A.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`)), 'alice in the call again', 30000);
+    report(await clickButton(A, 'Share your screen', true) === 'clicked', 'alice shares again, her sound sealed a task late');
+    const UNSEALED = "This browser sent your share's sound unencrypted, so it was turned off.";
+    const said = await waitFor(async () => (await text(A)).includes(UNSEALED), "alice's notice", 15000).catch((e) => e.message);
+    const timing = JSON.parse(await A.b.eval(`(() => {
+        const on = window.__attached.find((a) => a.kind === 'audio' && a.track === 2);
+        const off = window.__shares.find((m) => m.on && m.sound === false);
+        return JSON.stringify({ on: on?.at, off: off?.at, shares: window.__shares.map((m) => ({ on: m.on, sound: m.sound })) });
+    })()`));
+    const within = timing.on && timing.off ? Math.round(timing.off - timing.on) : -1;
+    const late = await A.b.eval(`(() => { const t = window.__pcs.at(-1).getTransceivers().find((x) => x.sender.transform?.__options?.track === 2); return JSON.stringify({ track: t?.sender.track?.kind || null, live: !!document.querySelector('button[aria-label="Stop sharing your screen"]'), mark: !!document.querySelector('[aria-label="no sound"]') }); })()`);
+    const denSays = await waitFor(async () => {
+        const v = JSON.parse(await A.b.eval(STATE(A)));
+        const me = v.calls?.flatMap((x) => x.members).find((m) => m.id === A.me);
+        return me?.sharing && !me.sound ? JSON.stringify(me) : '';
+    }, "the den's word that alice's share has no sound", 10000).catch((e) => e.message);
+    report(said === true && within >= 0 && within <= 1500 && JSON.parse(late).track === null && JSON.parse(late).live && JSON.parse(late).mark && denSays.startsWith('{'),
+        `alice's page stopped the sound sent around its seal ${within} ms after it went on, and says so (${said}); the share goes on without it: ${late}; the den: ${denSays}; ${JSON.stringify(timing.shares)}`);
+    const warned = await waitFor(async () => (await A.b.eval(`fetch('/api/logs').then((r) => r.text())`)).match(/its browser sent its share's sound unsealed, \d+ packets, so it stopped the sound/)?.[0] || '', "alice's log", 10000).catch((e) => e.message);
+    report(warned.startsWith('its browser'), `alice's log notes it: ${warned}`);
+    await A.b.shot(`${HOME}/shot-share-alice-unsealed.png`);
+    await A.b.eval(`window.__lateSound = false, true`);
+    await clickButton(A, 'Stop sharing your screen');
+
     // The settings' card, and the den's call limits in its Manage dialog.
     await openSettings(A.b, 'Voice & video');
     await waitFor(async () => (await text(A)).includes('Screen share'), 'the share card');
@@ -219,12 +359,12 @@ try {
     await A.b.shot(`${HOME}/shot-share-den-settings.png`);
 } catch (e) {
     c.fail(e);
-    for (const s of [A, B]) {
+    for (const s of [A, B, C]) {
         try {
             await s.b?.shot(`${HOME}/shot-share-${s.name}-fail.png`);
         } catch {}
     }
 } finally {
-    for (const s of [A, B]) await s.b?.close().catch(() => {});
+    for (const s of [A, B, C]) await s.b?.close().catch(() => {});
     c.finish();
 }

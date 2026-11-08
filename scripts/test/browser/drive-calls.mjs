@@ -43,6 +43,9 @@ const PRELOAD = `() => {
     window.AudioContext = class extends AC {
         constructor(...args) { super(...args); window.__acs.push(this); }
     };
+    const W = window.Worker;
+    window.__workers = [];
+    window.Worker = class extends W { constructor(...args) { super(...args); window.__workers.push(this); } };
 }`;
 
 const STATS = `(async () => {
@@ -142,20 +145,32 @@ try {
         await s.b.shot(`${HOME}/shot-calls-${s.browser}-call.png`).catch((e) => console.log('shot', e.message));
     }
 
-    // Sealed (M16.2): each page's microphone went on under Encoded
-    // Transform, and every receiver's frames go through the worker, so the
-    // rings above came from frames each page opened; the call's lock says
-    // so, beside the call's channel.
-    const TRANSFORMS = `(() => {
-        const ts = window.__pcs.at(-1).getTransceivers();
-        const receiving = ts.slice(1).filter((t) => t.receiver.track && /recv/.test(t.currentDirection || ''));
-        return JSON.stringify({ voice: ts[0].sender.transform instanceof RTCRtpScriptTransform, receivers: receiving.length,
-            opened: receiving.every((t) => t.receiver.transform instanceof RTCRtpScriptTransform),
-            lock: document.querySelector('[data-call-lock]')?.dataset.callLock || '' });
+    // Sealed (M16.2): each page seals its voice and opens the other
+    // member's, so the rings above came from frames each page opened, as
+    // its worker counts them, dropping none while it holds the call's keys
+    // (M18); the call's lock says so, beside the call's channel.
+    const COUNTS = `(async () => {
+        const w = (window.__workers || []).at(-1);
+        if (!w) return 'null';
+        return new Promise((resolve) => {
+            const heard = (e) => { if (e.data?.t === 'counts') { w.removeEventListener('message', heard); resolve(JSON.stringify(e.data)); } };
+            w.addEventListener('message', heard);
+            w.postMessage({ t: 'counts' });
+            setTimeout(() => resolve('null'), 1500);
+        });
     })()`;
-    for (const s of sides) {
-        const x = JSON.parse(await s.b.eval(TRANSFORMS));
-        report(x.voice && x.receivers >= 1 && x.opened && x.lock === 'sealed', `${s.browser} seals its microphone and opens every member's track: ${JSON.stringify(x)}`);
+    const counts = async (s) => JSON.parse(await s.b.eval(COUNTS));
+    const droppedOf = (track) => Object.values(track?.dropped || {}).reduce((n, x) => n + x, 0);
+    const voices0 = await Promise.all(sides.map(counts));
+    await sleep(3000);
+    const voices1 = await Promise.all(sides.map(counts));
+    for (const [i, s] of sides.entries()) {
+        const [v0, v1] = [voices0[i]?.voice, voices1[i]?.voice];
+        const lock = await s.b.eval(`document.querySelector('[data-call-lock]')?.dataset.callLock || ''`);
+        const sealed = v1 && v1.seen > v0.seen && v1.sealed > 0;
+        const opened = v1 ? v1.opened - v0.opened : 0;
+        report(sealed && opened >= 30 && droppedOf(v1) === droppedOf(v0) && lock === 'sealed',
+            `${s.browser} seals its voice and opens the other's, ${opened} frames in 3 s, dropping none: ${JSON.stringify(v1)}, the lock ${lock}`);
     }
     const logOf = (s) => s.b.eval(`fetch('/api/logs').then((r) => r.text())`);
     const madeKeys = (log) => [...log.matchAll(/: made key (\S+), sealed to (\d+) of its (\d+) other members/g)].map((m) => ({ kid: m[1], to: Number(m[2]), of: Number(m[3]) }));
@@ -222,10 +237,13 @@ try {
     const heardAgain = await waitFor(() => B.b.eval(ALICE_RINGS), `${B.browser} hears Alice again`, 20000).catch((e) => e.message);
     report(denied === 204 && given === 204 && deniedFlow.moving && !rang && heardAgain === true,
         `${B.browser} denied Alice's keys receives her packets ${deniedFlow.before}->${deniedFlow.after}, rang for her ${rang}; given them again, hears her ${heardAgain} (${denied}, ${given})`);
+    // Its notes count each track's frames, and why it dropped those it
+    // dropped (M18).
     const notes = await logOf(B);
-    const counted = [...notes.matchAll(/frames sealed (\d+), opened (\d+), dropped (\d+)/g)].map((m) => m.slice(1).map(Number));
-    report(counted.length > 0 && counted.at(-1)[0] > 0 && counted.at(-1)[1] > 0 && counted.at(-1)[2] > 0,
-        `${B.browser}'s notes count its frames, the denied ones dropped: ${JSON.stringify(counted.at(-1))}`);
+    const counted = [...notes.matchAll(/voice frames sealed (\d+), opened (\d+)(?:, \d+ empty)?, dropped (\d+)(?: \(([^)]*)\))?/g)].map((m) => [...m.slice(1, 4).map(Number), m[4] || '']);
+    const last = counted.at(-1);
+    report(last && last[0] > 0 && last[1] > 0 && last[2] > 0 && /\d+ under a key it lacks/.test(last[3]),
+        `${B.browser}'s notes count its voice frames, the denied ones dropped under a key it lacks: ${JSON.stringify(last)}`);
 
     // Volume: Bob turns Alice down on his side. Her audio element follows,
     // the list shows the level, and the browser keeps it.
