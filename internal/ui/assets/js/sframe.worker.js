@@ -20,6 +20,12 @@
 // one under a key it lacks has it ask for the call's keys again. The
 // soundboard is the den's own track, which plays in the clear.
 //
+// The worker counts what it does on each of the tracks (M18): the frames
+// the page's sender hands it, empty ones too, which tell the page its
+// sender's transform runs, those it seals, those it opens, those that
+// reach a receiver empty, and those it drops, by why; and frames on a
+// receiver the page hasn't named yet.
+//
 // The page names each receiver's track to the worker by an ID of its own,
 // as its stream changes ({t: 'target'}), posts the call's keys ({t:
 // 'keys'}), asks for the frames counted ({t: 'counts'}), and ends the call
@@ -32,10 +38,27 @@ export const SUITE = 0x0004;
 const NK = 16;
 const NN = 12;
 
-// The tracks of a member's, as key IDs name them.
+// The tracks of a member's, as key IDs name them, and as the counts do.
 export const VOICE = 0;
 export const SCREEN = 1;
 export const SOUND = 2;
+export const TRACKS = ['voice', 'screen', 'sound'];
+
+// Why the worker drops a frame it receives, as its counts name it: it
+// comes in the clear, as a frame that doesn't start with a header it can
+// read; under a key the page lacks; under another track's key ID than the
+// page named its receiver's; at a counter its key had; or it doesn't open.
+export const DROPS = ['clear', 'lacking', 'track', 'replay', 'unopened'];
+
+// freshCounts are a call's counts before any frame: for each track, the
+// frames the page's sender handed the worker, those it sealed and opened,
+// those that reached a receiver empty, and those it dropped, by why; and
+// those on a receiver the page hadn't named.
+export function freshCounts() {
+    const counts = { unnamed: 0 };
+    for (const name of TRACKS) counts[name] = { seen: 0, sealed: 0, opened: 0, empty: 0, dropped: Object.fromEntries(DROPS.map((d) => [d, 0])) };
+    return counts;
+}
 
 export const SWITCH_AFTER = 1000;
 export const KEEP_OLD = 10 * 1000;
@@ -219,7 +242,7 @@ export class Frames {
         this.next = null;
         this.members = new Map();
         this.lacking = new Map();
-        this.counts = { sealed: 0, opened: 0, dropped: 0 };
+        this.counts = freshCounts();
     }
 
     // setKeys takes the call's keys, whole: the member's own, which frames
@@ -262,6 +285,9 @@ export class Frames {
     // packet for, as without a transform: sealed, it would cost every 20 ms
     // of silence a packet of SFrame's header and tag.
     async sealFrame(track, data) {
+        const counted = this.counts[TRACKS[track]];
+        if (!counted) return null;
+        counted.seen++;
         if (!data.length) return data;
         if (this.next && this.now() >= this.next.at) {
             this.own = this.next.entry;
@@ -273,41 +299,52 @@ export class Frames {
         const ctr = own.counters[track]++;
         const k = await derived(own, track);
         const out = await seal(k, own.n * 4 + track, ctr, data);
-        this.counts.sealed++;
+        counted.sealed++;
         return out;
     }
 
     // openFrame opens a frame that reached a receiver, for the member and
     // track the page named it, or returns null to drop it. A receiver of
-    // the soundboard, whose member is '', passes its frames as they are.
+    // the soundboard, whose member is '', passes its frames as they are. A
+    // frame with nothing in it, as a sender's DTX passes on and the browser
+    // sends a few of, holds nothing to open, and drops as empty rather than
+    // in the clear.
     async openFrame(target, data) {
         if (target?.member === '') return data;
-        const drop = () => {
-            this.counts.dropped++;
+        const counted = this.counts[TRACKS[target?.track]];
+        if (!counted) {
+            this.counts.unnamed++;
+            return null;
+        }
+        if (!data.length) {
+            counted.empty++;
+            return null;
+        }
+        const drop = (why) => {
+            counted.dropped[why]++;
             return null;
         };
-        if (!target) return drop();
         const h = decodeHeader(data);
-        if (!h || h.kid > BigInt(MAX_KID) || h.ctr > BigInt(Number.MAX_SAFE_INTEGER)) return drop();
+        if (!h || h.kid > BigInt(MAX_KID) || h.ctr > BigInt(Number.MAX_SAFE_INTEGER)) return drop('clear');
         const kid = Number(h.kid);
         const ctr = Number(h.ctr);
-        if ((kid & 3) !== target.track) return drop();
+        if ((kid & 3) !== target.track) return drop('track');
         const now = this.now();
         this.prune(now);
         const entry = (this.members.get(target.member) || []).find((e) => e.n === kid >> 2);
         if (!entry) {
             this.lack(target.member, now);
-            return drop();
+            return drop('lacking');
         }
         const w = seenWindow(entry, target.track);
-        if (seenBefore(w, ctr)) return drop();
+        if (seenBefore(w, ctr)) return drop('replay');
         try {
             const out = await open(await derived(entry, target.track), data, { ...h, ctr });
             markSeen(w, ctr);
-            this.counts.opened++;
+            counted.opened++;
             return out;
         } catch {
-            return drop();
+            return drop('unopened');
         }
     }
 

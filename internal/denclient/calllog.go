@@ -3,6 +3,7 @@ package denclient
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -22,7 +23,9 @@ type CallNote struct {
 	// the page asks for an ICE restart; "rejoin", it joins the call again;
 	// "ended", it gave the call up; "hidden", its tab was hidden or shown;
 	// "frozen" and "resumed", its browser froze the page and thawed it
-	// (M12); or "stats", a summary of the connection's statistics.
+	// (M12); "stats", a summary of the connection's statistics; or
+	// "unsealed", its browser sent one of its senders around its seal, and
+	// the page stopped it (M18).
 	What string `json:"what"`
 	// State and ICE are the connection's state and ICE's, and Why why the
 	// page restarts, joins again or gave up.
@@ -31,6 +34,11 @@ type CallNote struct {
 	Why    string     `json:"why,omitempty"`
 	Hidden bool       `json:"hidden,omitempty"`
 	Stats  *CallStats `json:"stats,omitempty"`
+	// Track is the track an unsealed sender carried, "voice", "screen" or
+	// "sound", and Sent what it sent around its seal before the page
+	// stopped it: a screen's frames, or a voice's or a sound's packets.
+	Track string `json:"track,omitempty"`
+	Sent  int64  `json:"sent,omitempty"`
 	// Ago is how long before it reached the service the page made the
 	// note, in milliseconds, for one it kept while its stream was down.
 	Ago int64 `json:"ago,omitempty"`
@@ -60,18 +68,41 @@ type CallStats struct {
 	TargetRate      int64  `json:"target_rate"`
 	Behind          *int64 `json:"behind,omitempty"`
 	// Frames counts what a sealed call's page did with its frames
-	// (M16.2), by count alone.
+	// (M16.2), by count alone, and from M18 on each track.
 	Frames *FrameCounts `json:"frames,omitempty"`
 }
 
-// FrameCounts are a sealed call's frames since its page joined it: those
-// it sealed and sent, those it opened, and those it dropped, which didn't
-// open, came again, named a key it lacks, or came in the clear on a
-// member's track.
+// FrameCounts are a sealed call's frames since its page joined it, on each
+// track (M18): the members' voices, their shares' screens, and the shares'
+// sound; and those that reached a receiver the page hadn't named yet,
+// which it dropped.
 type FrameCounts struct {
-	Sealed  int64 `json:"sealed"`
-	Opened  int64 `json:"opened"`
-	Dropped int64 `json:"dropped"`
+	Voice   TrackFrames `json:"voice"`
+	Screen  TrackFrames `json:"screen"`
+	Sound   TrackFrames `json:"sound"`
+	Unnamed int64       `json:"unnamed"`
+}
+
+// TrackFrames are a track's frames: those the page sealed and sent, those
+// it opened, those that came with nothing in them, as a sender's DTX passes
+// a few on, and those it dropped, by why.
+type TrackFrames struct {
+	Sealed  int64         `json:"sealed"`
+	Opened  int64         `json:"opened"`
+	Empty   int64         `json:"empty"`
+	Dropped DroppedFrames `json:"dropped"`
+}
+
+// DroppedFrames are why the page dropped a track's frames: they came in the
+// clear, as frames that don't start with a header it can read; under a key
+// it lacks; under another track's key ID; at a counter their key had; or
+// they didn't open.
+type DroppedFrames struct {
+	Clear    int64 `json:"clear"`
+	Lacking  int64 `json:"lacking"`
+	Track    int64 `json:"track"`
+	Replay   int64 `json:"replay"`
+	Unopened int64 `json:"unopened"`
 }
 
 // The words a note's fields may hold: the states of a browser's connection
@@ -95,6 +126,15 @@ var (
 		"never_connected": "its connection never came up",
 		"lost":            "it couldn't join again in time",
 		"browser":         "its browser couldn't set the call up",
+	}
+	// Why a page dropped a track's frames, as DroppedFrames lists them.
+	dropReasons = []string{"in the clear", "under a key it lacks", "on another track", "at a counter it had", "that didn't open"}
+	// What a page stopped as its browser sent it around its seal, and how,
+	// by the track the sender carried (M18).
+	unsealedTracks = map[string]string{
+		"voice":  "its voice unsealed, %d packets, so it left the call",
+		"screen": "its screen unsealed, %d frames, so it ended the share",
+		"sound":  "its share's sound unsealed, %d packets, so it stopped the sound",
 	}
 )
 
@@ -138,8 +178,15 @@ func (n CallNote) line() (string, bool) {
 			s += fmt.Sprintf("; its voice processor %d ms behind", count(*x.Behind))
 		}
 		if f := x.Frames; f != nil {
-			s += fmt.Sprintf("; frames sealed %d, opened %d, dropped %d", count(f.Sealed), count(f.Opened), count(f.Dropped))
+			s += f.line()
 		}
+	case "unsealed":
+		what, ok := unsealedTracks[n.Track]
+		if !ok {
+			s = "its browser sent ? unsealed"
+			break
+		}
+		s = "its browser sent " + fmt.Sprintf(what, count(n.Sent))
 	default:
 		return "", false
 	}
@@ -147,6 +194,46 @@ func (n CallNote) line() (string, bool) {
 		s += fmt.Sprintf(" (noted %s before)", ago.Round(100*time.Millisecond))
 	}
 	return s, true
+}
+
+// line is what the log says of a call's frames: each track's that the page
+// counted any of, with why it dropped those it dropped, and those on a
+// receiver it hadn't named.
+func (f FrameCounts) line() string {
+	var s string
+	for _, t := range []struct {
+		name string
+		n    TrackFrames
+	}{{"voice", f.Voice}, {"screen", f.Screen}, {"sound", f.Sound}} {
+		d := t.n.Dropped
+		var dropped int64
+		var reasons []string
+		for i, n := range []int64{d.Clear, d.Lacking, d.Track, d.Replay, d.Unopened} {
+			if n = count(n); n > 0 {
+				dropped += n
+				reasons = append(reasons, fmt.Sprintf("%d %s", n, dropReasons[i]))
+			}
+		}
+		sealed, opened, empty := count(t.n.Sealed), count(t.n.Opened), count(t.n.Empty)
+		if sealed == 0 && opened == 0 && empty == 0 && dropped == 0 {
+			continue
+		}
+		s += fmt.Sprintf("; %s frames sealed %d, opened %d", t.name, sealed, opened)
+		if empty > 0 {
+			s += fmt.Sprintf(", %d empty", empty)
+		}
+		s += fmt.Sprintf(", dropped %d", count(dropped))
+		if len(reasons) > 0 {
+			s += " (" + strings.Join(reasons, ", ") + ")"
+		}
+	}
+	if n := count(f.Unnamed); n > 0 {
+		s += fmt.Sprintf("; %d frames on a receiver it hadn't named", n)
+	}
+	if s == "" {
+		return "; no frames yet"
+	}
+	return s
 }
 
 // word is s if it's among the words, and "?" otherwise.
@@ -180,5 +267,11 @@ func (m *Manager) NoteCall(page, denID, channel string, n CallNote) {
 	if err != nil {
 		return
 	}
-	m.log.Debugf("Den %s, call in channel %s, page %s: %s", denproto.Fingerprint(c.j.denID), channel, page, s)
+	// A sender its browser sent around its seal sent part of the call in
+	// the clear, which the log keeps at warn (M18).
+	logf := m.log.Debugf
+	if n.What == "unsealed" {
+		logf = m.log.Warnf
+	}
+	logf("Den %s, call in channel %s, page %s: %s", denproto.Fingerprint(c.j.denID), channel, page, s)
 }

@@ -319,9 +319,11 @@ function ShareRow({ call, share, den }) {
     }
     const mine = den?.calls.find((c) => c.channel_id === call.channel);
     const viewers = watchersOf(mine, den?.me).map((id) => den.names.get(id) || 'Someone');
-    const soundless = share.wanted
-        ? "This share has no sound: this browser didn't share any. Chromium-based browsers share a tab's sound, and on Windows the whole system's."
-        : 'This share has no sound: sharing sound is off in the Voice settings.';
+    const soundless = share.unsealed
+        ? 'This share has no sound: this browser sent it unencrypted, so it was turned off.'
+        : share.wanted
+          ? "This share has no sound: this browser didn't share any. Chromium-based browsers share a tab's sound, and on Windows the whole system's."
+          : 'This share has no sound: sharing sound is off in the Voice settings.';
     // The sidebar is narrow, so who watches is a count, with their names in
     // its tip.
     const watching = viewers.length ? `Watching: ${viewers.join(', ')}` : 'Nobody is watching yet';

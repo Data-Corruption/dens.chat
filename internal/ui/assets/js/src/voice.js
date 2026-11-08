@@ -52,6 +52,13 @@
 // doesn't open is dropped. Where the browser has no Encoded Transform, or
 // the device no seal to open the call's keys with, the page says why
 // rather than join.
+//
+// From M18 the page seals every section it sends on in the task its offer
+// was applied in, before anything else awaits, which is when Chromium
+// takes a sender's transform, and puts tracks only on senders it sealed
+// then. It holds what each sender sent against the frames its worker saw
+// on that track, and stops one the browser sends around its seal, saying
+// why.
 
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
@@ -253,7 +260,10 @@ function snapshot() {
         notice,
         speaking,
         volumes,
-        share: share && { status: share.status, sound: !!share.audio, wanted: share.wanted, preview: !!share.preview, stream: share.stream || null },
+        share: share && {
+            status: share.status, sound: !!share.audio, wanted: share.wanted, unsealed: !!share.unsealed, preview: !!share.preview,
+            stream: share.stream || null,
+        },
         shareNotice,
         watched: [...watched.values()].map((w) => ({ ...w })),
         den: denView,
@@ -699,7 +709,7 @@ async function reopenMic() {
         opened = false;
     }
     const sender = pc?.getTransceivers()[0]?.sender;
-    if (opened && sender && call?.attached) await sender.replaceTrack(sent);
+    if (opened && sender && call?.attached && carries(call, sender)) await sender.replaceTrack(sent);
     old.getTracks().forEach((t) => t.stop());
     if (oldChain) oldChain.ctx.close().catch(() => {});
 }
@@ -1352,22 +1362,26 @@ async function answer(offer) {
     c.ports = [offer.udp_port, offer.tcp_port];
     try {
         await own.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
-        if (!c.attached) {
-            // The den's first section takes the microphone; each of the
-            // rest brings another member's audio, or a share's (M4.2).
-            const mine = own.getTransceivers()[0];
-            mine.direction = 'sendonly';
-            // Sealed before the microphone goes on, so nothing leaves in
-            // the clear (M16.2).
-            sealSender(mine.sender, VOICE_TRACK);
-            await mine.sender.replaceTrack(sent);
-            c.attached = true;
-        }
-        // The den receives the member's screen and its sound on sections it
-        // adds at their first share in the call.
+        // The den's first section takes the microphone, and the den receives
+        // the member's screen and its sound on sections it adds at their
+        // first share in the call; each of the rest brings another member's
+        // audio, or a share's (M4.2). Those the page sends on are sealed
+        // here, before anything else awaits, so nothing leaves in the clear
+        // (M16.2): Chromium sends a sender around a transform it gets any
+        // later, for good (M18). The task the offer was applied in ends
+        // before any task the page sets now.
+        const applying = { now: true };
+        setTimeout(() => (applying.now = false), 0);
         const sections = receivingSections(offer.sdp);
+        sealSections(c, own, sections, applying);
         c.screenMid = sections.screen;
         c.soundMid = sections.sound;
+        if (!c.attached) {
+            const mine = own.getTransceivers()[0].sender;
+            if (carries(c, mine)) await mine.replaceTrack(sent);
+            c.attached = true;
+            watchSeal(c, own, mine, VOICE_TRACK);
+        }
         await attachShare(own);
         await own.setLocalDescription();
         if (call !== c || pc !== own) return;
@@ -1645,6 +1659,8 @@ function closePeer() {
     clearInterval(statsTimer);
     statsTimer = null;
     sentBefore = null;
+    seals.clear();
+    stopSealChecks();
     if (pc) {
         pc.ontrack = null;
         pc.onconnectionstatechange = null;
@@ -1748,9 +1764,23 @@ async function noteStats() {
     if (call?.sealed) {
         const counts = await frameCounts();
         if (pc !== own) return;
-        if (counts) stats.frames = { sealed: counts.sealed, opened: counts.opened, dropped: counts.dropped };
+        if (counts) stats.frames = frameNotes(counts);
     }
     note({ what: 'stats', stats });
+    // Each of the page's senders, its seal checked again (M18).
+    checkSeals(own, true);
+}
+
+// frameNotes is what the call's notes say of the worker's counts (M18):
+// each track's frames sealed and opened, those that came empty, and those
+// dropped, by why, and those on a receiver the page hadn't named.
+export function frameNotes(counts) {
+    const out = { unnamed: Number(counts.unnamed) || 0 };
+    for (const name of TRACK_NAMES) {
+        const t = counts[name] || {};
+        out[name] = { sealed: Number(t.sealed) || 0, opened: Number(t.opened) || 0, empty: Number(t.empty) || 0, dropped: { ...t.dropped } };
+    }
+    return out;
 }
 
 // sendRate is the rate in kbit/s a call sent at from before, what it had
@@ -1813,10 +1843,11 @@ export function summarize(report) {
 
 // Sealing (M16.2) -------------------------------------------------------------
 
-// The tracks of a member's, as the worker names them.
+// The tracks of a member's, as the worker numbers and names them.
 export const VOICE_TRACK = 0;
 export const SCREEN_TRACK = 1;
 export const SOUND_TRACK = 2;
+export const TRACK_NAMES = ['voice', 'screen', 'sound'];
 
 // framesWorker is the worker that seals and opens a sealed call's frames,
 // made as the first one needs it.
@@ -1831,12 +1862,43 @@ function framesWorker() {
     return frames;
 }
 
-// sealSender seals what a sender of the page's call sends, on one of the
-// member's tracks: set before its track goes on, and kept as the track
-// changes.
-function sealSender(sender, track) {
-    if (!call?.sealed || sender.transform) return;
-    sender.transform = new RTCRtpScriptTransform(framesWorker(), { side: 'send', track });
+// sealSections readies the sections of the page's call that it sends on as
+// an offer is applied, each sending, and in a sealed call sealed: called in
+// the task the offer was applied in, while applying.now holds, before
+// anything awaits, since Chromium sends a sender it made for an offer
+// around a transform it gets any later, for good, taking it without an
+// error (M18). A sender sealed any later carries no track. A sender keeps
+// its transform as its track changes, and the den keeps the sections, so a
+// later share in the call finds its senders sealed.
+function sealSections(c, own, sections, applying) {
+    for (const [t, track] of sendingTransceivers(own.getTransceivers(), sections)) {
+        if (t.direction !== 'sendonly') t.direction = 'sendonly';
+        if (!c.sealed || t.sender.transform) continue;
+        t.sender.transform = new RTCRtpScriptTransform(framesWorker(), { side: 'send', track });
+        if (applying.now) sealedInTime.add(t.sender);
+    }
+}
+
+// sendingTransceivers are the transceivers of the page's call that it sends
+// on, each with the track it carries: the microphone's, the den's first,
+// and the screen's and its sound's once the den has added them, at the
+// member's first share in the call.
+export function sendingTransceivers(transceivers, sections) {
+    const out = transceivers.length ? [[transceivers[0], VOICE_TRACK]] : [];
+    for (const [mid, track] of [[sections.screen, SCREEN_TRACK], [sections.sound, SOUND_TRACK]]) {
+        const t = mid === null ? null : transceivers.find((x) => x.mid === mid);
+        if (t) out.push([t, track]);
+    }
+    return out;
+}
+
+// carries says whether a sender of the page's call may carry a track: any
+// in a call that isn't sealed, and in one that is, only a sender sealed as
+// its offer was applied, and never one the browser sent around its seal.
+// So a change that broke the order again would leave a sender silent
+// rather than in the clear (M18).
+function carries(c, sender) {
+    return !c.sealed || (sealedInTime.has(sender) && !unsealed.has(sender));
 }
 
 // openReceiver has the worker open what a receiver of the page's call
@@ -1884,14 +1946,171 @@ function askKeys() {
 }
 
 // frameCounts asks the worker what it did with the call's frames, for the
-// notes, or gives null if it doesn't say within a second.
+// notes and the senders' checks, or gives null if it doesn't say within a
+// second.
 function frameCounts() {
     if (!frames) return Promise.resolve(null);
     return new Promise((resolve) => {
-        countWaiters.push(resolve);
+        let timer = null;
+        const done = (m) => {
+            clearTimeout(timer);
+            resolve(m);
+        };
+        timer = setTimeout(() => {
+            const i = countWaiters.indexOf(done);
+            if (i >= 0) countWaiters.splice(i, 1);
+            resolve(null);
+        }, 1000);
+        countWaiters.push(done);
         frames.postMessage({ t: 'counts' });
-        setTimeout(() => resolve(null), 1000);
     });
+}
+
+// Each sender's seal (M18) ---------------------------------------------------
+
+// The page seals each of its senders in the task its offer was applied in,
+// when Chromium takes a transform, but a browser could still send one
+// around its seal, as Chromium does a sender whose transform came any
+// later: taken without an error, and never run. So the page checks each of
+// its senders as a track goes on it, every SEAL_EVERY until the worker has
+// seen frames of its track, and at each summary of the call's statistics
+// after. One that sent SEAL_LEAST packets, or a screen's frames, while the
+// worker saw no frame of its track since the page last looked was sent
+// around its seal, and stops, saying why: a voice leaves the call, a screen
+// ends its share, and a share's sound goes, the share going on without it.
+// A paused screen sends nothing, and a muted voice's frames of silence,
+// even those DTX leaves empty, reach the worker as its words do, so neither
+// stops anything. Up to about a second of what such a sender sends reaches
+// the den in the clear.
+const SEAL_EVERY = 1000;
+export const SEAL_LEAST = 3;
+// sealedInTime holds the senders the page sealed as their offer was
+// applied, which alone carry tracks in a sealed call, and unsealed those the
+// browser sent around their seal, which carry nothing more.
+const sealedInTime = new WeakSet();
+const unsealed = new WeakSet();
+// seals is each sender of the page's call it checks, by sender: the track
+// it carries, what it had sent and the worker seen of that track when the
+// page last looked, and whether the worker has seen frames of it.
+const seals = new Map();
+let sealTimer = null;
+
+export const UNSEALED_VOICE = 'This browser sent your voice unencrypted, so you left the call.';
+export const UNSEALED_SCREEN = 'This browser sent your screen unencrypted, which ended your share.';
+export const UNSEALED_SOUND = "This browser sent your share's sound unencrypted, so it was turned off.";
+export const UNSEALED_AGAIN = "This browser can't share your screen encrypted in this call. Leave and join again to share it.";
+
+// watchSeal starts checking a sender of the page's call as a track goes on
+// it, from what it had sent by then.
+function watchSeal(c, own, sender, track) {
+    if (!c.sealed || pc !== own || !sender.track) return;
+    seals.set(sender, { track, last: null, proven: false });
+    sealTimer ??= setInterval(() => checkSeals(own), SEAL_EVERY);
+    checkSeals(own);
+}
+
+function stopSealChecks() {
+    clearInterval(sealTimer);
+    sealTimer = null;
+}
+
+// checkSeals looks at each sender the page checks with a track on it whose
+// frames the worker hasn't seen yet, or with all at every one, as at each
+// summary of the call's statistics.
+async function checkSeals(own, all = false) {
+    const c = call;
+    if (!c?.sealed || pc !== own) return;
+    const due = [...seals].filter(([sender, e]) => sender.track && (all || !e.proven));
+    if (!due.length) {
+        if (!all) stopSealChecks();
+        return;
+    }
+    // The senders' statistics first, so that the worker's counts are the
+    // later, and hold every frame behind what was sent.
+    const sent = await Promise.all(due.map(([sender, e]) => statsOf(sender).then((r) => r && senderSent(r, e.track))));
+    const counts = await frameCounts();
+    if (!counts || call !== c || pc !== own) return;
+    for (const [i, [sender, e]] of due.entries()) {
+        const seen = counts[TRACK_NAMES[e.track]]?.seen;
+        if (typeof sent[i] !== 'number' || typeof seen !== 'number' || seals.get(sender) !== e || !sender.track) continue;
+        const now = { sent: sent[i], seen };
+        const before = e.last;
+        if (before && now.seen === before.seen && now.sent >= before.sent) {
+            // While the worker sees nothing of its track, what the sender
+            // sends adds up, as a voice's packets of silence do.
+            if (sentAround(before, now)) stopUnsealed(c, sender, e, now.sent - before.sent);
+            continue;
+        }
+        if (before && now.seen > before.seen) e.proven = true;
+        e.last = now;
+    }
+}
+
+// statsOf is a sender's statistics, or null where it has none to give.
+async function statsOf(sender) {
+    try {
+        return await sender.getStats();
+    } catch {
+        return null;
+    }
+}
+
+// senderSent is what a sender's statistics say it has sent: a screen's
+// frames, which many packets may carry each, and otherwise its packets,
+// each of which carries one of a voice's or a sound's frames; 0 before it
+// sent any.
+export function senderSent(report, track) {
+    for (const s of report.values()) {
+        if (s.type !== 'outbound-rtp') continue;
+        return Number(track === SCREEN_TRACK ? (s.framesEncoded ?? s.packetsSent) : s.packetsSent) || 0;
+    }
+    return 0;
+}
+
+// sentAround says whether a sender was sent around its seal between two
+// looks at it: it sent SEAL_LEAST or more while the worker saw no frame of
+// its track.
+export function sentAround(before, now, least = SEAL_LEAST) {
+    return now.seen === before.seen && now.sent - before.sent >= least;
+}
+
+// stopUnsealed stops a sender the browser sent around its seal, which
+// carries nothing more in the call, and says why; the call's log notes it.
+function stopUnsealed(c, sender, e, n) {
+    unsealed.add(sender);
+    seals.delete(sender);
+    note({ what: 'unsealed', track: TRACK_NAMES[e.track], sent: n });
+    sender.replaceTrack(null).catch(() => {});
+    if (e.track === VOICE_TRACK) {
+        sendCall('voice.leave', { den: c.den });
+        finish({ text: UNSEALED_VOICE });
+    } else if (e.track === SCREEN_TRACK) {
+        if (!share) return;
+        sendCall('voice.share', { den: c.den, on: false });
+        endShare(UNSEALED_SCREEN);
+    } else {
+        dropShareSound(c, UNSEALED_SOUND);
+    }
+}
+
+// dropShareSound takes the sound off the page's share, which goes on
+// without it, and has the den tell the call it has none.
+function dropShareSound(c, why) {
+    const s = share;
+    if (!s?.audio) return;
+    s.audio.stop();
+    s.audio = null;
+    s.unsealed = true;
+    sendCall('voice.share', { den: c.den, on: true, sound: false });
+    shareNotice = { text: why };
+    notify();
+}
+
+// unsealedOn says whether the sender on one of the page's call's sections
+// was sent around its seal.
+function unsealedOn(mid) {
+    const t = mid && pc ? pc.getTransceivers().find((x) => x.mid === mid) : null;
+    return !!t && unsealed.has(t.sender);
 }
 
 // fromBase64url reads bytes as a den writes them.
@@ -2039,7 +2258,10 @@ export async function startShare() {
     if (!denView) await loadDen(c);
     if (call !== c || share || !denView) return;
     shareNotice = null;
-    const blocked = shareBlocked(denView.limits, denView.calls);
+    // A sender the browser sent around its seal carries nothing more in the
+    // call (M18): without the screen's there's no share, and without its
+    // sound's the share goes without sound.
+    const blocked = unsealedOn(c.screenMid) ? UNSEALED_AGAIN : shareBlocked(denView.limits, denView.calls);
     if (blocked) {
         shareNotice = { text: blocked };
         notify();
@@ -2069,6 +2291,11 @@ export async function startShare() {
     mine.stream = stream;
     mine.video = stream.getVideoTracks()[0];
     mine.audio = stream.getAudioTracks()[0] || null;
+    if (mine.audio && unsealedOn(c.soundMid)) {
+        mine.audio.stop();
+        mine.audio = null;
+        mine.unsealed = true;
+    }
     // The member's own screen shows in the player, from the capture itself,
     // when the player holds nothing else; otherwise when they ask.
     mine.preview = watched.size === 0;
@@ -2126,17 +2353,17 @@ function endShare(why) {
 }
 
 // attachShare puts the page's screen and its sound on the den's sections
-// for them, once the den has added them.
+// for them, once the den has added them, on senders sealed as their offer
+// was applied (M18).
 async function attachShare(own) {
     const c = call;
     const s = share;
     if (!c || !s?.video) return;
     for (const [mid, track, kind] of [[c.screenMid, s.video, SCREEN_TRACK], [c.soundMid, s.audio, SOUND_TRACK]]) {
         const t = mid && track ? own.getTransceivers().find((x) => x.mid === mid) : null;
-        if (!t) continue;
-        if (t.direction !== 'sendonly') t.direction = 'sendonly';
-        sealSender(t.sender, kind);
-        if (t.sender.track !== track) await t.sender.replaceTrack(track);
+        if (!t || t.sender.track === track || !carries(c, t.sender)) continue;
+        await t.sender.replaceTrack(track);
+        watchSeal(c, own, t.sender, kind);
     }
 }
 

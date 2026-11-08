@@ -8,7 +8,11 @@
 #
 # The checks drive real browsers through every milestone's page features,
 # from M2's calls on. CI doesn't run them: they're the check before each
-# manual test, run by hand, and they take minutes each.
+# manual test, run by hand, and they take minutes each. A check measures
+# what a feature delivers, as the other page receives it, such as the
+# samples it decodes and the frames its worker opens, rather than what a
+# page set up: a share's sound once had its transform and its track in
+# place while it reached nobody (M18).
 #
 # Usage: scripts/test/browser/setup.sh [--no-build]
 #   --no-build  push the binaries already built instead of building them
