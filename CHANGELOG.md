@@ -1,5 +1,17 @@
 # Changelog
 
+## [v1.10.1] - 2026-11-08
+
+### Fixed
+
+- Since v1.9.0, a shared screen's sound from Chrome, Edge or any other Chromium-based browser went out unencrypted: the den received it in the clear and could have listened, while nobody watching heard a thing, so shares had no sound. Dens encrypts it now, as it does voices and screens. If a browser ever sends part of a call unencrypted anyway, Dens stops it within about a second and says why: a share's sound is turned off while the share goes on, a screen share ends, or your voice leaves the call. Someone sharing from v1.9.0 or v1.10.0 still sends their share's sound unencrypted, and nobody hears it, until they update.
+- On Windows, installing and updating Dens, which run as administrator, wrote two files in your user's temporary folder first, the installer `dens update` downloads and the task that starts Dens's helper when you sign in, where another program of yours could have swapped them before they were used. They go in a folder only administrators can change now.
+
+### Changed
+
+- On Windows, the notice that an update is ready gives the line that installs it, `irm 'https://releases.dens.chat/install.ps1' | iex`, which runs in an ordinary terminal and asks Windows for permission itself.
+- The app's links to the guides go to their new places: joining a den is under Usage, and hosting, on your computer or a server, under Hosting. Links from older versions still land.
+
 ## [v1.10.0] - 2026-11-07
 
 ### Added
