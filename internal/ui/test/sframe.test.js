@@ -2,14 +2,15 @@
 // through: RFC 9605's own cases, both ways, for the header, the key and
 // salt a key ID derives, and a frame under AES_128_GCM_SHA256_128; then
 // the worker's rules: a track's key, a counter seen again, a key it lacks,
-// a frame in the clear and the soundboard's, and changing keys.
+// a frame in the clear and the soundboard's, and changing keys; and from
+// M18 what it counts on each track, and why it drops each frame.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
-    Frames, KEEP_OLD, LACK_EVERY, SCREEN, SOUND, SWITCH_AFTER, VOICE, WINDOW, decodeHeader, deriveKey, deriveSecrets, encodeHeader, open, seal,
-    transform,
+    DROPS, Frames, KEEP_OLD, LACK_EVERY, SCREEN, SOUND, SWITCH_AFTER, TRACKS, VOICE, WINDOW, decodeHeader, deriveKey, deriveSecrets, encodeHeader,
+    freshCounts, open, seal, transform,
 } from '../assets/js/sframe.worker.js';
 
 const rfc = JSON.parse(readFileSync('internal/ui/test/testdata/rfc9605.json', 'utf8'));
@@ -71,6 +72,29 @@ function pair(clock) {
 
 const voiceOf = (member) => ({ member, track: VOICE });
 
+// counted is what the worker counted, with what's still 0 left out: by
+// track, then by what it did, or why it dropped a frame.
+function counted(frames) {
+    const out = {};
+    for (const [name, value] of Object.entries(frames.counts)) {
+        if (typeof value === 'number') {
+            if (value) out[name] = value;
+            continue;
+        }
+        const track = {};
+        for (const [what, n] of Object.entries(value)) {
+            if (typeof n === 'number') {
+                if (n) track[what] = n;
+            } else {
+                const why = Object.fromEntries(Object.entries(n).filter(([, d]) => d));
+                if (Object.keys(why).length) track[what] = why;
+            }
+        }
+        if (Object.keys(track).length) out[name] = track;
+    }
+    return out;
+}
+
 test('a frame sealed by one page opens on another, on its track alone, and once', async () => {
     const { alice, bob } = pair({ t: 0 });
     const first = await alice.sealFrame(VOICE, text('hello'));
@@ -91,8 +115,11 @@ test('a frame sealed by one page opens on another, on its track alone, and once'
     assert.equal(await bob.openFrame(voiceOf('1'), frames[5]), null);
     assert.equal(str(await bob.openFrame(voiceOf('1'), frames.at(-1))), `f${WINDOW + 2}`);
     assert.equal(await bob.openFrame(voiceOf('1'), frames[0]), null, 'a frame older than the window');
-    assert.equal(alice.counts.sealed, WINDOW + 5);
-    assert.deepEqual(bob.counts, { sealed: 0, opened: 5, dropped: 5 });
+    // Each counted on its track, and each dropped one by why: a counter
+    // its key had, a key bob lacks for the member he was told, and the
+    // voice's frame on the screen's receiver.
+    assert.deepEqual(counted(alice), { voice: { seen: WINDOW + 5, sealed: WINDOW + 5 } });
+    assert.deepEqual(counted(bob), { voice: { opened: 5, dropped: { lacking: 1, replay: 3 } }, screen: { dropped: { track: 1 } } });
 });
 
 test("each of a member's tracks goes under a key of its own", async () => {
@@ -107,6 +134,8 @@ test("each of a member's tracks goes under a key of its own", async () => {
     for (const [i, track] of [VOICE, SCREEN, SOUND].entries()) {
         assert.equal(str(await bob.openFrame({ member: '1', track }, sealed[i])), 'the same frame');
     }
+    assert.deepEqual(counted(alice), { voice: { seen: 1, sealed: 1 }, screen: { seen: 1, sealed: 1 }, sound: { seen: 1, sealed: 1 } });
+    assert.deepEqual(counted(bob), { voice: { opened: 1 }, screen: { opened: 1 }, sound: { opened: 1 } });
 });
 
 test("a frame in the clear, a key the page lacks, the soundboard's, and a page with no key", async () => {
@@ -134,19 +163,38 @@ test("a frame in the clear, a key the page lacks, the soundboard's, and a page w
     // receiver the page never named drops its frames.
     assert.equal(await bob.openFrame({ member: '', track: VOICE }, clear), clear);
     assert.equal(await bob.openFrame(undefined, theirs), null);
-    // A page without a key of its own yet sends nothing.
-    assert.equal(await new Frames(() => clock.t).sealFrame(VOICE, text('x')), null);
+    // A frame in the clear on the share's sound, as Chromium sent one
+    // around its seal (M18), counts there.
+    assert.equal(await bob.openFrame({ member: '1', track: SOUND }, Uint8Array.from([0xfc, 0xff, 0xfe, 0x01, 0x02])), null);
+    assert.deepEqual(counted(bob), { unnamed: 1, voice: { dropped: { clear: 2, lacking: 3 } }, sound: { dropped: { clear: 1 } } });
+    // A page without a key of its own yet sends nothing, but its sender's
+    // frames reached the worker.
+    const keyless = new Frames(() => clock.t);
+    assert.equal(await keyless.sealFrame(VOICE, text('x')), null);
+    assert.deepEqual(counted(keyless), { voice: { seen: 1 } });
+});
+
+test('what the worker counts: every track, and every reason it drops a frame', () => {
+    assert.deepEqual(TRACKS, ['voice', 'screen', 'sound']);
+    assert.deepEqual([VOICE, SCREEN, SOUND].map((t) => TRACKS[t]), ['voice', 'screen', 'sound']);
+    const fresh = freshCounts();
+    assert.deepEqual(Object.keys(fresh), ['unnamed', ...TRACKS]);
+    for (const name of TRACKS) assert.deepEqual(fresh[name], { seen: 0, sealed: 0, opened: 0, empty: 0, dropped: Object.fromEntries(DROPS.map((d) => [d, 0])) });
+    assert.deepEqual(DROPS, ['clear', 'lacking', 'track', 'replay', 'unopened']);
 });
 
 test('an empty frame, as DTX leaves between its packets of silence, goes on empty, and nothing seals it', async () => {
     const { alice, bob } = pair({ t: 0 });
     const empty = new Uint8Array(0);
     assert.equal(await alice.sealFrame(VOICE, empty), empty);
-    assert.equal(alice.counts.sealed, 0);
+    // The worker saw it, which says the sender's transform runs (M18).
+    assert.deepEqual(counted(alice), { voice: { seen: 1 } });
     // It took no counter: the next frame is the key's first.
     assert.equal(decodeHeader(await alice.sealFrame(VOICE, text('a'))).ctr, 0n);
-    // An empty frame reaching a member's track opens to nothing, and drops.
+    // An empty frame reaching a member's track, as the browser sends a few
+    // of, opens to nothing, and drops as empty, not in the clear.
     assert.equal(await bob.openFrame(voiceOf('1'), empty), null);
+    assert.deepEqual(counted(bob), { voice: { empty: 1 } });
 });
 
 test("changing keys: a page sends under its new key a second after it comes, and opens a member's last for ten seconds more", async () => {
@@ -168,15 +216,22 @@ test("changing keys: a page sends under its new key a second after it comes, and
     assert.equal(await bob.openFrame(voiceOf('1'), old[1]), null, 'the last key, ten seconds on');
     const later = await alice.sealFrame(VOICE, text('later'));
     assert.equal(str(await bob.openFrame(voiceOf('1'), later)), 'later');
+    // A frame changed on the way doesn't open.
+    const changed = await alice.sealFrame(VOICE, text('changed'));
+    changed[changed.length - 1] ^= 1;
+    const before = bob.counts.voice.dropped.unopened;
+    assert.equal(await bob.openFrame(voiceOf('1'), changed), null);
+    assert.equal(bob.counts.voice.dropped.unopened, before + 1);
     // A member the keys leave out, as one who left, opens ten seconds
     // more.
     bob.setKeys({ own: { n: 9, key: KEY_B }, members: {} });
     assert.equal(str(await bob.openFrame(voiceOf('1'), await alice.sealFrame(VOICE, text('going')))), 'going');
     clock.t += KEEP_OLD;
     assert.equal(await bob.openFrame(voiceOf('1'), await alice.sealFrame(VOICE, text('gone'))), null);
-    // Ending the call forgets every key.
+    // Ending the call forgets every key, and what it counted.
     alice.reset();
     assert.equal(await alice.sealFrame(VOICE, text('x')), null);
+    assert.deepEqual(counted(alice), { voice: { seen: 1 } });
 });
 
 test('a transform passes what it seals or opens on, and drops the rest without stopping', async () => {
