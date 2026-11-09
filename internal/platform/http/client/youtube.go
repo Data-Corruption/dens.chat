@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -11,11 +12,13 @@ import (
 )
 
 // mountYouTube serves the covers of YouTube's players (M4.1): a linked
-// video's title and channel, and its picture. The page asks only while a
-// member has players on, and only for covers on screen.
+// video's title and channel, and its picture, or a Short's portrait one.
+// The page asks only while a member has players on, and only for covers
+// on screen.
 func (rt *router) mountYouTube(r chi.Router) {
 	r.Get("/api/youtube/{id}", rt.handleVideo)
-	r.Get("/api/youtube/{id}/thumb", rt.handleVideoThumb)
+	r.Get("/api/youtube/{id}/thumb", videoPicture(rt.youTube.Picture))
+	r.Get("/api/youtube/{id}/portrait", videoPicture(rt.youTube.Portrait))
 }
 
 func (rt *router) handleVideo(w http.ResponseWriter, r *http.Request) {
@@ -28,22 +31,24 @@ func (rt *router) handleVideo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, v)
 }
 
-// handleVideoThumb serves a video's picture as the page's files are
+// videoPicture serves a video's picture as the page's files are
 // served: inline only as the JPEG it was checked to be, sandboxed, and kept
 // out of the browser's cache, which would otherwise record what videos a
 // member's chats link to.
-func (rt *router) handleVideoThumb(w http.ResponseWriter, r *http.Request) {
-	jpeg, err := rt.youTube.Picture(r.Context(), chi.URLParam(r, "id"))
-	if err != nil {
-		videoError(w, r, err)
-		return
+func videoPicture(picture func(context.Context, string) ([]byte, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		jpeg, err := picture(r.Context(), chi.URLParam(r, "id"))
+		if err != nil {
+			videoError(w, r, err)
+			return
+		}
+		h := w.Header()
+		h.Set("Cache-Control", "no-store")
+		h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+		h.Set("Content-Type", "image/jpeg")
+		h.Set("Content-Disposition", "inline")
+		_, _ = w.Write(jpeg)
 	}
-	h := w.Header()
-	h.Set("Cache-Control", "no-store")
-	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	h.Set("Content-Type", "image/jpeg")
-	h.Set("Content-Disposition", "inline")
-	_, _ = w.Write(jpeg)
 }
 
 // videoError tells the page why a cover has nothing to show. The log gets
