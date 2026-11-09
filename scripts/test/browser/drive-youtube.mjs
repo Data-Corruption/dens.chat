@@ -75,7 +75,7 @@ const post = (s, channel, text) => s.b.eval(`(async () => (await fetch('/api/den
     headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nonce: ${JSON.stringify(crypto.randomBytes(16).toString('base64url'))}, text: ${JSON.stringify(text)} }) })).status)()`);
 
 async function setPlayers(s, on) {
-    await openSettings(s.b, 'Chat & media');
+    await openSettings(s.b, 'Chat');
     const BOX = `${SETTINGS}.querySelector('input#youtube')`;
     await waitFor(() => s.b.eval(`!!${BOX}`), `${s.browser} settings`);
     await s.b.eval(`(() => { const box = ${BOX}; if (box.checked !== ${on}) box.click(); return true; })()`);

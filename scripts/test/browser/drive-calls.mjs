@@ -301,7 +301,7 @@ try {
     const openVoice = async (s) => {
         await s.b.eval(`document.querySelector('button[aria-label="App settings"]').click(), true`);
         await waitFor(() => s.b.eval(`!!${SETTINGS}`), `${s.browser} settings`);
-        await s.b.eval(`[...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Voice & video').click(), true`);
+        await s.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'Voice').click(), true`);
         await waitFor(() => s.b.eval(`!!document.getElementById('noise')`), `${s.browser} voice settings`);
     };
     const closeSettings = async (s, how) => {
@@ -326,10 +326,10 @@ try {
     await openVoice(B);
     await sleep(1500);
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-settings.png`).catch((e) => console.log('shot', e.message));
-    await B.b.eval(`(${SETTINGS}.querySelector('[role=tabpanel]').scrollTop = 10000, true)`);
+    await B.b.eval(`(${SETTINGS}.querySelector('[data-panel]').scrollTop = 10000, true)`);
     await sleep(300);
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-settings-keys.png`).catch((e) => console.log('shot', e.message));
-    await B.b.eval(`(${SETTINGS}.querySelector('[role=tabpanel]').scrollTop = 0, true)`);
+    await B.b.eval(`(${SETTINGS}.querySelector('[data-panel]').scrollTop = 0, true)`);
     const checked0 = await B.b.eval(`${RNNOISE}.checked`);
     const turn = async () => {
         await B.b.eval(`${RNNOISE}.click(), true`);
@@ -593,7 +593,7 @@ try {
     const edit = await waitFor(() => B.b.eval(`!!${EDIT}`), `${B.browser} edits the profile`, 3000).catch(() => false);
     await B.b.eval(`(${EDIT}?.querySelector('button[aria-label="Close"]').click(), true)`);
     await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').parentElement.querySelector('[aria-label="App settings"]').click(), true)`);
-    const cog = await waitFor(() => B.b.eval(`${SETTINGS}?.querySelector('[role=tab][aria-selected=true]')?.textContent.trim() || false`), `${B.browser} settings from the panel`, 3000).catch(() => false);
+    const cog = await waitFor(() => B.b.eval(`${SETTINGS}?.querySelector('nav button[aria-current=page]')?.textContent.trim() || false`), `${B.browser} settings from the panel`, 3000).catch(() => false);
     await closeSettings(B, 'close');
     // The den's header: home at the left of its name, and no status while
     // it's connected; no header above the page.
@@ -609,15 +609,15 @@ try {
         && head.home && !head.dot && !head.header,
         `${B.browser} panel and bar line up: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, the channel's speaker ${JSON.stringify(speaker)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
 
-    // Every theme, with its colors, in the settings' Appearance tab: System,
+    // Every theme, with its colors, in the settings' Appearance: System,
     // Light and Dark, and the rest under More themes; a pick takes hold at
     // once, and System follows the device again.
-    const PICKER = `${SETTINGS}?.querySelector('[role=tabpanel]')`;
+    const PICKER = `${SETTINGS}?.querySelector('[data-panel]')`;
     const MORE = `${SETTINGS}?.querySelector('[role=radiogroup][aria-label="More themes"]')`;
     const openGeneral = async () => {
         if (!(await B.b.eval(`!!${SETTINGS}`))) await B.b.eval(`(document.querySelector('button[aria-label="App settings"]').click(), true)`);
         await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
-        await B.b.eval(`([...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Appearance').click(), true)`);
+        await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'Appearance').click(), true)`);
         await waitFor(() => B.b.eval(`!!${SETTINGS}?.querySelector('[role=radiogroup][aria-label=Theme]')`), `${B.browser} theme picker`);
         if (!(await B.b.eval(`!!${MORE}`))) {
             await B.b.eval(`([...${SETTINGS}.querySelectorAll('button')].find((b) => b.textContent.startsWith('More themes')).click(), true)`);
@@ -719,9 +719,9 @@ try {
     await B.b.eval(`(document.querySelector('button[aria-label="Leave the call"]').click(), true)`);
     await B.b.eval(`(document.querySelector('button[aria-label="App settings"]').click(), true)`);
     await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
-    const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('[role=tab]')].map((t) => t.textContent.trim()).join('|')`);
+    const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].map((t) => t.textContent.trim()).join('|')`);
     await closeSettings(B, 'close');
-    report(tabs === 'Appearance|Chat & media|Notifications & sounds|Voice & video|System', `${B.browser} settings tabs: ${tabs}`);
+    report(tabs === 'Appearance|Chat|Notifications|Voice|System', `${B.browser} settings sections: ${tabs}`);
 
     // A join that waits on the microphone, as while the browser asks for
     // it, says so; the voice processor's context comes from the click.
@@ -855,7 +855,7 @@ try {
     await B.b.eval(`(document.querySelector('a[aria-label="App settings"]').click(), true)`);
     const homeSettings = await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings from home`, 3000).catch(() => false);
     // The version and instance moved from home's foot to the settings' About.
-    await B.b.eval(`([...${SETTINGS}.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'System').click(), true)`);
+    await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'System').click(), true)`);
     const about = await waitFor(() => B.b.eval(`[...${SETTINGS}.querySelectorAll('section')].find((x) => x.querySelector('h2')?.textContent === 'About')?.innerText || ''`), `${B.browser} About`, 5000).catch(() => '');
     await closeSettings(B, 'close');
     report(home.fixed === 'fixed' && home.left <= 24 && home.fromBottom <= 24 && !home.header && home.title === 'Dens (m2b)' && home.label === 'App settings'
