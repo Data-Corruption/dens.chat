@@ -2,8 +2,8 @@
 // them, and checks what the page does, in Chromium and Firefox, with each
 // browser's own autoplay rules; and from M14.1, a cover's title and channel
 // as links to YouTube, underlined only on hover and keyboard focus, which
-// open their tabs without playing it. YouTube is on the internet, so this
-// check needs it.
+// open their tabs without playing it; and from M19.2 a Short, its cover and
+// player portrait. YouTube is on the internet, so this check needs it.
 //
 //   run.sh youtube chromium|firefox chromium|firefox   (alice's, then bob's)
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -14,6 +14,8 @@ const [, , aName, bName] = process.argv;
 const { DEN: den, GENERAL: general, OTHER: other, DM: dm } = process.env;
 const RICK = 'dQw4w9WgXcQ';
 const ZOO = 'jNQXAC9IVRw';
+// A Short on YouTube's own channel.
+const SHORT = '2CkofPRY3V4';
 const tag = Date.now().toString(36);
 
 // Counts the page's requests about videos, as covers make them.
@@ -244,6 +246,25 @@ try {
     await waitFor(() => B.b.eval(`!!${COVER(zoo, ZOO)}`), `${B.browser} back in general`);
     const back = await B.b.eval(`JSON.stringify({ frames: document.querySelectorAll('iframe').length, play: !!${COVER(zoo, ZOO)}.querySelector('button') })`);
     report(elsewhere === 0 && back === '{"frames":0,"play":true}', `${B.browser}: another channel stops it (${elsewhere} frames), and back it's a cover: ${back}`);
+
+    // A Short, linked as a phone shares one, stays a Short: its cover is as
+    // tall as another's is wide, with the Short's own picture, and plays
+    // there (M19.2).
+    const short = `${tag}-short`;
+    await post(A, general, `${short} https://youtube.com/shorts/${SHORT}?si=abc`);
+    await waitFor(() => B.b.eval(`!!document.querySelector('a[href="https://www.youtube.com/shorts/${SHORT}"]')`), `${B.browser} sees the Short's link`);
+    const portrait = await waitFor(() => B.b.eval(`(() => { const c = ${COVER(short, SHORT)}; if (!c) return false; const img = c.querySelector('img'); const r = c.getBoundingClientRect();
+        return img?.complete && img.naturalWidth > 0 ? JSON.stringify({ box: Math.round(r.width) + 'x' + Math.round(r.height), picture: img.naturalWidth + 'x' + img.naturalHeight,
+            src: img.getAttribute('src'), title: c.querySelector('a')?.href }) : false; })()`), `${B.browser} the Short's cover`).catch((e) => e.message);
+    report(portrait.includes('"box":"225x400"') && portrait.includes('"picture":"1080x1920"') && portrait.includes(`"src":"/api/youtube/${SHORT}/portrait"`) &&
+        portrait.includes(`"title":"https://www.youtube.com/shorts/${SHORT}"`), `${B.browser}: a Short's cover is portrait, with the Short's picture: ${portrait}`);
+    await B.b.eval(`${COVER(short, SHORT)}.scrollIntoView({ block: 'center' }), true`);
+    await B.b.shot(`${HOME}/shot-youtube-${B.browser}-short.png`);
+    const shortFrame = await playCover(B, short, SHORT);
+    const shortBox = await B.b.eval(`(() => { const r = ${COVER(short, SHORT)}.querySelector('iframe').getBoundingClientRect(); return Math.round(r.width) + 'x' + Math.round(r.height); })()`);
+    report(shortFrame.src === `https://www.youtube-nocookie.com/embed/${SHORT}?autoplay=1` && shortBox === '225x400', `${B.browser}: the Short's player is portrait too, ${shortBox}: ${shortFrame.src}`);
+    await playing(B, SHORT, 0);
+    await B.b.shot(`${HOME}/shot-youtube-${B.browser}-short-playing.png`);
 
     // In a DM, sealed end to end.
     const dmLabel = `${tag}-dm`;

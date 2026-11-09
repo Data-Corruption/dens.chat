@@ -6,8 +6,10 @@
 #
 # Usage: scripts/test/browser/run.sh CHECK [ARGS...]
 # The checks, by milestone, and the arguments their drivers take:
-#   calls BROWSER BROWSER       M2, M3: two members in a call
-#   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1)
+#   calls BROWSER BROWSER       M2, M3: two members in a call; from M19.2 staff sliding a member's
+#                               volume with the mouse, their menu staying put
+#   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1),
+#                               and a Short's cover and player portrait (M19.2)
 #   share                       M4.2: screen shares, Chromium and Firefox
 #   two-shares                  M4.2: two shares in a player, one the probe's
 #   retention                   M5.1: retention, Chromium and Firefox
@@ -27,7 +29,9 @@
 #                               and removing it from this one once its server is gone
 #   fixes BROWSER               M11.1: the small fixes: dialogs, a key's capture, the two tabs,
 #                               the New divider, the message box, folding groups, a late-sound video,
-#                               and a thin video's full screen button (M14.3)
+#                               and a thin video's full screen button (M14.3); and the crown and the
+#                               shield at one height, a long name scrolling under the pointer, and
+#                               right clicks on a message, a link and a member (M19.2)
 #   messages BROWSER            M11.2: each message's ⋯ menu by keyboard, and by touch through a long
 #                               press (M13.2), its delete dialog, and links to messages, in a den and
 #                               from another; a link underlined only on hover and focus (M14.1)
@@ -143,7 +147,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,141p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,145p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

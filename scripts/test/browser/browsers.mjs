@@ -377,7 +377,7 @@ const FIREFOX_KEYS = {
     End: '\uE010',
     v: 'v',
 };
-const FIREFOX_BUTTONS = { left: 0, back: 3 };
+const FIREFOX_BUTTONS = { left: 0, right: 2, back: 3 };
 const FIREFOX_MODIFIERS = { Control: '\uE009', Shift: '\uE008', Alt: '\uE00A', Meta: '\uE03D' };
 
 async function firefox(port, { media, screen, preload, prefs = {}, size = [1400, 900], downloads, hover }) {
