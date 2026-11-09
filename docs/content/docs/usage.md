@@ -158,6 +158,13 @@ soundboard work as you'd expect. What's different:
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
   → **Messages**, beside **Width**, which holds messages to a narrower
   column on a wide window.
+- **Themes**: **Settings** → **Appearance** has a few dozen, and **New
+  theme** makes one of your own from five colors. **Copy code** turns yours
+  into a line of text to send someone, who adds it with **Paste a code**.
+  Your themes stay in the browser you made them in.
+- **Chat background** puts a picture of yours behind your messages, as dim
+  as you set it. Your Dens keeps it, so each browser you open Dens in shows
+  it, and nobody else sees it.
 
 ## Notifications
 
