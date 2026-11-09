@@ -307,6 +307,33 @@ packages. Where the Go and page code must agree, as on mentions, tasks and
 links, both test against one shared file of cases in a `testdata` directory.
 Keep it that way.
 
+## Writing
+
+What a change says matters as much as what it does, and runs long unless
+held short. Every kind of text has one job:
+
+- **A code comment** says why an ordering, a check or a limit exists, in a
+  line or two above the code it explains. It never narrates the next line,
+  the milestone that added it or the alternative that lost. A comment that
+  restates its code goes.
+- **A design doc line** describes how Dens behaves now, as one sentence a
+  contributor can check against the code. No history, no "we chose", no
+  account of the session that produced it; the rationale that matters is one
+  clause, not a paragraph.
+- **Text in the page** is a label, or one line of what to do. The guide
+  holds the rest, linked (design.md's *The page's words*).
+- **A changelog line** says what a member notices, in their words, and for a
+  fix what went wrong and since when.
+- **A commit message** says what changed and why in a few lines; **PR text**
+  is for the reviewer: what to look at, what was checked, what's deliberately
+  left out.
+- **The milestone plan** states options and the pick with one reason each,
+  and leaves the rest to the build.
+
+When a draft explains, cut: a reader who wants the why has the docs, the
+commit and the review. The test is whether a line would be missed; if not, it
+goes.
+
 ## Documentation
 
 Public docs under `docs/content/` are for people using Dens: members joining a
