@@ -331,6 +331,24 @@ export async function memberScreens(h, ctx) {
         await h.snap('settings-appearance', { scroll: PANEL });
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
+        // A theme of the member's own (M19.4): the editor, under the
+        // themes, which Cancel closes; and the chat's background, a
+        // picture the page draws and sends as the card would, for the
+        // card's Dim, and then removes.
+        await h.click(h.withText('[role=dialog] button', 'More themes'));
+        await h.click(h.byText('[data-own-themes] button', 'New theme'));
+        await h.wait(`document.querySelector('[data-theme-editor]')`, 'the theme editor');
+        await h.ev(`document.querySelector('[data-own-themes]').scrollIntoView(), true`);
+        await h.snap('settings-theme-editor', { scroll: PANEL, max: 2 });
+        await h.click(h.byText('[data-theme-editor] button', 'Cancel'));
+        await h.ev(`new Promise((done) => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+            x.fillStyle = '#335566'; x.fillRect(0, 0, 64, 64);
+            c.toBlob((blob) => fetch('/api/background', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob }).then((r) => done(r.ok)), 'image/png'); })`);
+        await h.wait(`document.querySelector('[data-background-preview] img')?.naturalWidth`, "the background's card with its picture");
+        await h.ev(`document.querySelector('[data-background-preview]').closest('section').scrollIntoView(), true`);
+        await h.snap('settings-background');
+        await h.ev(`fetch('/api/background', { method: 'DELETE' }).then((r) => r.ok)`);
+        await h.wait(`!document.querySelector('[data-background-preview]')`, 'the background removed');
         for (const [tab, name] of [['Chat', 'chat'], ['Notifications', 'notifications'], ['Voice', 'voice'], ['System', 'system']]) {
             await settingsTab(h, tab);
             await sleep(600);

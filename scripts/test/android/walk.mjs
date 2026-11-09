@@ -158,12 +158,17 @@ async function first(h, d, c) {
     });
 }
 
+// OWN_THEME is a theme of a member's own as its code: Plum, dark, on
+// #2b1d3a.
+const OWN_THEME = 'dens-theme:1.d.r.2b1d3aeae0f5c084fc7dd3fcfbbf2409090b00bafe00d390fcb700ff627d.506c756d';
+
 // hex writes red, green and blue bytes as #rrggbb.
 const hex = (rgb) => `#${[...rgb].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 
 // bars checks the status and navigation bars take the page's background,
 // with the theme the system's, then Dark, then Light, each picked on the
-// settings' Appearance page, then the system's again (M13.3).
+// settings' Appearance page, then a theme of the member's own, pasted as
+// its code (M19.4), then the system's again (M13.3).
 async function bars(h, d) {
     const background = () => h.ev(`(() => { const c = document.createElement('canvas').getContext('2d');
         c.fillStyle = getComputedStyle(document.body).backgroundColor; c.fillRect(0, 0, 1, 1);
@@ -190,6 +195,18 @@ async function bars(h, d) {
         await pick(theme);
         await painted(theme);
     }
+    // A theme of the member's own (M19.4), pasted as its code: the WebView
+    // wears it, and the bars its background.
+    await h.click(h.byText('[data-own-themes] button', 'Paste a code'));
+    await h.ev(`(() => { const el = document.querySelector('[data-own-themes] form input');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(OWN_THEME)});
+        el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await h.click(h.byText('[data-own-themes] button', 'Add'));
+    await waitFor(() => h.has(`document.querySelector('[role=radiogroup][aria-label="Your themes"] input:checked')`), 'the pasted theme chosen');
+    const wears = hex(await background());
+    report(wears === '#2b1d3a', `the page wears a theme pasted as its code, its background ${wears}`);
+    await painted("member's own");
+    await h.click(h.byText('[data-own-themes] button', 'Delete'));
     await pick('system');
     await d.back();
     await d.back();
