@@ -479,12 +479,12 @@ func moved(from, to string) (string, func(denproto.Event) bool) {
 }
 
 // TestStaffMoveMembers checks staff moving a member's call to another
-// voice channel (M17.2): by the rank disconnecting takes; only to a voice
-// channel the member can see, whose call has room; told to the socket
-// holding the call, whose join of that channel doesn't count toward the
-// member's limit on joining; and refused while the call is held, which
-// nothing can tell. A member in no call, or in that channel's already,
-// stays as they are.
+// voice channel (M17.2): anyone but the owner and themselves, a moderator
+// too; only to a voice channel the member can see, whose call has room;
+// told to the socket holding the call, whose join of that channel doesn't
+// count toward the member's limit on joining; and refused while the call
+// is held, which nothing can tell. A member in no call, or in that
+// channel's already, stays as they are.
 func TestStaffMoveMembers(t *testing.T) {
 	f := newFixture(t)
 	f.startCalls(sfu.Config{})
@@ -503,6 +503,7 @@ func TestStaffMoveMembers(t *testing.T) {
 	lounge := f.channel(owner, "Lounge", denproto.KindVoice, false)
 	games := f.channel(owner, "Games", denproto.KindVoice, false)
 	staff := f.channel(owner, "Staff", denproto.KindVoice, true)
+	raid := f.channel(owner, "Raid", denproto.KindVoice, false)
 	alice := f.voiceSocket(aliceToken, newCaller(t))
 	bob := f.voiceSocket(bobToken, newCaller(t))
 	dave := f.voiceSocket(daveToken, newCaller(t))
@@ -566,6 +567,18 @@ func TestStaffMoveMembers(t *testing.T) {
 	alice.wait(inCall(lounge.ID, dave.me))
 	moves(aliceToken, dave.me, staff.ID)
 	dave.wait(moved(lounge.ID, staff.ID))
+	// A moderator moves another moderator, whom they still can't mute or
+	// disconnect, and neither the owner nor themselves.
+	moves(carolToken, dave.me, raid.ID)
+	dave.wait(moved(lounge.ID, raid.ID))
+	act := func(what string, body any) *http.Response {
+		return f.post("/api/members/"+dave.me+"/"+what, body, http.Header{"Authorization": {"Bearer " + carolToken.String()}})
+	}
+	wantError(t, act("voice-mute", denproto.VoiceMuteRequest{Muted: true}), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, act("disconnect", nil), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, move(carolToken, alice.me, lounge.ID), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, move(carolToken, carol.me, lounge.ID), http.StatusForbidden, denproto.CodeForbidden)
+	wantError(t, move(aliceToken, alice.me, lounge.ID), http.StatusForbidden, denproto.CodeForbidden)
 
 	// A held call has no page to tell.
 	bob.c.Close(websocket.StatusGoingAway, "")

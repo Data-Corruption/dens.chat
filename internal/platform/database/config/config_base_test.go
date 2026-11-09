@@ -91,9 +91,10 @@ func TestUpdateValidatesVoiceKeys(t *testing.T) {
 		return err
 	}
 	if err := set(map[string]types.VoiceKey{
-		"ptt":        {Code: "KeyV", Label: "V"},
-		"toggleMute": {Code: "Mouse4", Label: "Mouse 4", Ctrl: true},
-		"pushMute":   {Code: "Backquote", Label: "`"},
+		"ptt":          {Code: "KeyV", Label: "V"},
+		"toggleMute":   {Code: "Mouse4", Label: "Mouse 4", Ctrl: true},
+		"pushMute":     {Code: "Backquote", Label: "`"},
+		"toggleDeafen": {Code: "KeyB", Label: "B", Shift: true},
 	}); err != nil {
 		t.Fatalf("valid keys refused: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestUpdateValidatesVoiceKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if k := cfg.VoiceKeys["toggleMute"]; k.Code != "Mouse4" || !k.Ctrl {
+	if k := cfg.VoiceKeys["toggleMute"]; k.Code != "Mouse4" || !k.Ctrl || !cfg.VoiceKeys["toggleDeafen"].Shift {
 		t.Fatalf("keys kept = %+v", cfg.VoiceKeys)
 	}
 	for name, keys := range map[string]map[string]types.VoiceKey{
