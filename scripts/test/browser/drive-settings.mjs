@@ -2,9 +2,10 @@
 // browser named at a desktop's width: every section of the settings and
 // of Manage opened from the list down the side, each with the layout
 // audit, and every hint in it read as one line, a hint that wrapped
-// failing it; then Appearance's Width: Wide and Narrow holding general's
-// header, list and composer to 1,200 and 900 pixels, centered in the pane,
-// and Full letting them go.
+// failing it, Voice with push to talk's release delay too (M19.3); then
+// Appearance's Width: Wide and Narrow holding general's header, list and
+// composer to 1,200 and 900 pixels, centered in the pane, and Full letting
+// them go.
 //
 //   run.sh settings chromium|firefox
 import fs from 'node:fs';
@@ -65,6 +66,16 @@ try {
         const wrapped = await b.eval(WRAPPED);
         c.report(wrapped.length === 0, `${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
     }
+    // Push to talk shows its release delay in Voice, which the audit and
+    // the hints' measure take too.
+    await openSettings(b, 'Voice');
+    await b.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Sending your voice"] label')].find((l) => l.textContent.trim() === 'Push to talk').querySelector('input').click(), true`);
+    await waitFor(() => b.eval(`!!document.querySelector('input[aria-label="Release delay"]')`), 'the release delay');
+    await sleep(300);
+    await h.snap('settings-voice-ptt', { scroll: PANEL, max: 6 });
+    const pttWrapped = await b.eval(WRAPPED);
+    c.report(pttWrapped.length === 0, `Voice with push to talk: every hint reads in a line${pttWrapped.length ? `; wrapped: ${pttWrapped.join('; ')}` : ''}`);
+    await b.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Sending your voice"] label')].find((l) => l.textContent.trim() === 'Voice activity').querySelector('input').click(), true`);
     await b.key('Escape');
     await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closing');
 

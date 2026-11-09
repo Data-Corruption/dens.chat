@@ -1,11 +1,13 @@
 // The M11.3 check: bob in the browser named, alice in Chromium, in a call,
 // both sending by push to talk. Held, push to talk rings for the call's
 // other member, in silence too, as the den passes it on, and never while
-// muted; a share bob watches opens in a window of its own, plays there with
-// its controls and his voice keys, and comes back to the player as the
-// window closes, by the player's button, and as watching or the share
-// stops; and the logs download from the settings with what the call
-// noted, on bob's side and the den's.
+// muted; from M19.3, bob's release delay keeps his gate open and his ring
+// lit on both pages for it after he lets go, and his deafen key deafens
+// him and hears again; a share bob watches opens in a window of its own,
+// plays there with its controls and his voice keys, and comes back to the
+// player as the window closes, by the player's button, and as watching or
+// the share stops; and the logs download from the settings with what the
+// call noted, on bob's side and the den's.
 //
 //   run.sh talk chromium|firefox
 import fs from 'node:fs';
@@ -36,7 +38,7 @@ B.display = 'Bob';
 const PLAYER = `document.querySelector('section[aria-label="Screen shares"]')`;
 // rings says whether a page's call list rings a member, by name.
 const rings = (s, name) => s.b.eval(`[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes(${JSON.stringify(name)}) && li.textContent.includes('speaking'))`);
-const KEY = (type) => `(document.body.dispatchEvent(new KeyboardEvent('${type}', { code: 'KeyV', key: 'v', bubbles: true })), true)`;
+const KEY = (type, code = 'KeyV') => `(document.body.dispatchEvent(new KeyboardEvent('${type}', { code: '${code}', key: '${code.slice(3).toLowerCase()}', bubbles: true })), true)`;
 const button = (label) => `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)} || x.getAttribute('aria-label') === ${JSON.stringify(label)})`;
 const click = (s, label, gesture = false) => s.b.eval(`(() => { const b = ${button(label)}; if (!b) return 'missing'; if (b.disabled) return 'disabled: ' + b.title; b.click(); return 'clicked'; })()`, gesture);
 // A video plays at its size, as a page or a window shows it.
@@ -113,6 +115,43 @@ try {
     await B.b.eval(KEY('keyup'));
     await click(B, 'Unmute');
     report(muted.every((r) => !r), `muted, bob's push to talk rings on neither page: ${JSON.stringify(muted)}`);
+
+    // Bob's release delay, set in the settings, keeps his gate open, his
+    // ring lit on both pages and the den told for it after his release.
+    await openSettings(B.b, 'Voice');
+    const DELAY = `${SETTINGS}.querySelector('input[aria-label="Release delay"]')`;
+    await waitFor(() => B.b.eval(`!!${DELAY}`), 'the release delay');
+    await B.b.eval(`(() => { const r = ${DELAY}; r.value = '600'; r.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const keptDelay = await B.b.eval(`JSON.parse(localStorage.getItem('DENS_VOICE')).releaseDelay`);
+    await B.b.shot(`${HOME}/shot-talk-${which}-delay.png`);
+    const gateOpen = () => B.b.eval(`!!${SETTINGS}.querySelector('div.relative.h-2 > div.bg-success')`);
+    await B.b.eval(KEY('keydown'));
+    const heldOpen = await waitFor(async () => (await gateOpen()) && (await rings(A, 'Bob')), "bob's gate and his ring on alice's page", 5000).catch(() => false);
+    await B.b.eval(KEY('keyup'));
+    const letGo = Date.now();
+    await sleep(250);
+    const within = { gate: await gateOpen(), own: await rings(B, 'Bob'), theirs: await rings(A, 'Bob') };
+    await waitFor(async () => !(await gateOpen()), "bob's gate to close", 5000);
+    const closedAfter = Date.now() - letGo;
+    const ringsOut = await waitFor(async () => !(await rings(A, 'Bob')) && !(await rings(B, 'Bob')), "bob's rings out", 5000).catch(() => false);
+    report(keptDelay === 600 && heldOpen === true && within.gate && within.own && within.theirs && closedAfter >= 550 && closedAfter < 2000 && ringsOut === true,
+        `bob's release delay of ${keptDelay} ms: held, his gate opened and alice's page rang him (${heldOpen}); let go, 250 ms on, ${JSON.stringify(within)}; closed ${closedAfter} ms after, the rings out (${ringsOut})`);
+    await B.b.eval(`(() => { const r = ${DELAY}; r.value = '0'; r.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    await B.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+
+    // Bob's deafen key deafens him, which alice's page shows, and hears
+    // again.
+    const deafKeys = await B.b.eval(`fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voiceKeys: { ptt: { code: 'KeyV', label: 'V' }, toggleDeafen: { code: 'KeyD', label: 'D' } } }) }).then((r) => r.status)`);
+    const bobDeaf = () => A.b.eval(`[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes('Bob') && !!li.querySelector('[aria-label="deafened"]'))`);
+    await sleep(300);
+    await B.b.eval(KEY('keydown', 'KeyD'));
+    await B.b.eval(KEY('keyup', 'KeyD'));
+    const deafened = await waitFor(async () => (await B.b.eval(`!!${button('Undeafen')}`)) && (await bobDeaf()), 'bob deafened on both pages', 5000).catch(() => false);
+    await B.b.eval(KEY('keydown', 'KeyD'));
+    await B.b.eval(KEY('keyup', 'KeyD'));
+    const hearing = await waitFor(async () => (await B.b.eval(`!!${button('Deafen')}`)) && !(await bobDeaf()), 'bob hearing again on both pages', 5000).catch(() => false);
+    report(deafKeys === 200 && deafened === true && hearing === true, `bob's deafen key (${deafKeys}) deafens him, which alice's page shows (${deafened}), and hears again (${hearing})`);
     for (const s of [A, B]) await silence(s, false);
 
     // Alice shares, and bob watches.
@@ -195,7 +234,7 @@ try {
     const ours = ["'s stream opened", 'asked to join it', 'offer 1 came', 'answer 1 went', 'its connection is connected, its ICE', 'over udp, from a host candidate'];
     const missing = ours.filter((x) => !logs.includes(x));
     const address = logs.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/)?.[0];
-    report(card.includes('They hold no messages, keys or addresses') && !missing.length && !address,
+    report(card.includes('with no messages, keys or addresses') && !missing.length && !address,
         `bob downloads ${file}, ${logs.length} bytes, with his call's signaling and notes (missing ${JSON.stringify(missing)}) and no address (${address}); the card says: ${card}`);
     // The den's, alice's install's, have the call's ICE and DTLS.
     const denLogs = await A.b.eval(`fetch('/api/logs').then((r) => r.text())`);

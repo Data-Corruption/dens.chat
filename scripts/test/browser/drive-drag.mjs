@@ -4,14 +4,17 @@
 // then, with bob in Lounge's call in his browser, muted, she drags his row
 // onto Games, and his page joins its call, sealed and still muted, which
 // ends the one in Lounge; and Move to in his menu in the call takes him
-// back. Chromium drags as a mouse does, the drag handed over through the
-// DevTools protocol, which a headless Chromium needs; Firefox's drag under
-// WebDriver starts but never ends, so its drops are the page's own events,
-// dispatched in order, and at the end a mouse's drag in it starts one.
+// back. From M19.3, with bob and carol moderators, carol, on alice's
+// browser, moves bob: his menu offers her Move to and neither Mute for
+// everyone nor Disconnect, and she drags him onto Games. Chromium drags as
+// a mouse does, the drag handed over through the DevTools protocol, which
+// a headless Chromium needs; Firefox's drag under WebDriver starts but
+// never ends, so its drops are the page's own events, dispatched in order,
+// and at the end a mouse's drag in it starts one.
 //
 //   run.sh drag chromium|firefox chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
 
 const [, , aliceBrowser = 'chromium', bobBrowser = 'firefox'] = process.argv;
 const { DEN: den, LOUNGE: lounge, GENERAL: general, GAMES: games, TALK: talk, PLAY: play, NEWS: news } = process.env;
@@ -128,6 +131,28 @@ try {
         const started = await waitFor(() => alice.eval(`document.querySelector('[data-ungrouped]').className.includes('min-h-4')`), 'the drag to start', 5000).catch(() => false);
         c.report(started === true, 'firefox: a mouse dragging a row starts its drag');
     }
+
+    // Bob and carol made moderators, carol moves bob, on alice's browser:
+    // his menu offers her Move to, and none of what takes outranking him.
+    const carolID = state().members.find((m) => m.username === 'carol').id;
+    for (const id of [bobID, carolID]) lib('api', 'alice', 'PUT', `/api/dens/${den}/members/${id}/role`, '{"role":"moderator"}');
+    await waitFor(() => state().members.filter((m) => m.role === 'moderator').length === 2, 'bob and carol moderators');
+    await pair(alice, CAROL);
+    await alice.go(`http://localhost:${CAROL.port}/den/${den}`);
+    const bobRow = (channel) => `${row(channel)}?.parentElement.querySelector('[data-call-member="${bobID}"]')`;
+    await waitFor(() => alice.eval(`!!${bobRow(lounge)}`), "bob's row under Lounge on carol's page");
+    await alice.eval(`${bobRow(lounge)}.querySelector('button[aria-label^="Options for"]').click(), true`);
+    await waitFor(() => alice.eval(`!!document.querySelector('[data-move-to]')`), "Move to in bob's menu");
+    const offered = await alice.eval(`[...document.querySelectorAll('[data-call-menu] button')].map((b) => b.textContent.trim()).filter(Boolean).join(', ')`);
+    const draggable = await alice.eval(`${bobRow(lounge)}.getAttribute('draggable')`);
+    await alice.shot(`${HOME}/shot-drag-${aliceBrowser}-moderator.png`);
+    await alice.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    await waitFor(() => alice.eval(`${bobRow(lounge)}.getAttribute('draggable') === 'true'`), "bob's row draggable for carol", 5000);
+    await dragOnto(alice, bobRow(lounge), row(games), 'middle');
+    await waitFor(() => callOf(games).some((m) => m.id === bobID) && callOf(lounge).length === 0, 'bob in Games', 30000);
+    await waitFor(() => bob.eval(`!!${row(games)}.querySelector('[data-call-state="connected"]')`), "bob's page connected in Games", 30000);
+    c.report(offered.includes('Games') && !/Mute for everyone|Disconnect/.test(offered),
+        `${aliceBrowser}: carol, a moderator, is offered ${offered} on bob, a moderator, and drags him onto Games (draggable with the menu open: ${draggable})`);
 } catch (e) {
     c.fail(e);
 } finally {

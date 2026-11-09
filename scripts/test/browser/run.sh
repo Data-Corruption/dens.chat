@@ -7,7 +7,8 @@
 # Usage: scripts/test/browser/run.sh CHECK [ARGS...]
 # The checks, by milestone, and the arguments their drivers take:
 #   calls BROWSER BROWSER       M2, M3: two members in a call; from M19.2 staff sliding a member's
-#                               volume with the mouse, their menu staying put
+#                               volume with the mouse, their menu staying put; and a member at 200%,
+#                               measured twice as loud as their stream (M19.3)
 #   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1),
 #                               and a Short's cover and player portrait (M19.2)
 #   share                       M4.2: screen shares, Chromium and Firefox
@@ -21,7 +22,7 @@
 #   cache BROWSER               M6.1: the cache of other dens' files
 #   history BROWSER             M6.2: history read offline
 #   keys BROWSER                M7.1: voice keys with the helper
-#   desktop BROWSER             M7.2: a desktop that binds the keys
+#   desktop BROWSER             M7.2: a desktop that binds the keys, toggle deafen among them (M19.3)
 #   answers BROWSER             M8: answers reach the den without addresses
 #   hostile BROWSER             M8: a channel of hostile messages
 #   hosting BROWSER             M9.1: hosting turned on and off in the settings
@@ -36,7 +37,9 @@
 #                               press (M13.2), its delete dialog, and links to messages, in a den and
 #                               from another; a link underlined only on hover and focus (M14.1)
 #   talk BROWSER                M11.3: push to talk ringing in silence for the call, a watched share
-#                               in a window of its own and back, and the logs downloaded
+#                               in a window of its own and back, and the logs downloaded; and a
+#                               release delay holding the gate and the rings open after the key's
+#                               release, and the deafen key (M19.3)
 #   callaudio BROWSER BROWSER   M12.2: a call played as Android's app plays it, through a context
 #                               made once the microphone is open, and played again on resume
 #   notify BROWSER              M12.3: a DM's notification from a tab in the background, its click,
@@ -118,7 +121,8 @@
 #                               another's heading, and a group above another, as the den then has them;
 #                               and bob, in the second, in a call, muted, dragged onto another voice
 #                               channel, whose call his page joins, sealed and still muted, and Move to in
-#                               his menu taking him back
+#                               his menu taking him back; and carol, a moderator, offered Move to on bob, a
+#                               moderator, without Mute for everyone or Disconnect, dragging him (M19.3)
 #   notes BROWSER               M17.3: bob's notes opened from the top of his Direct messages tab, the den
 #                               making them then; a note with a photo written on his phone, the composer
 #                               offering no one else's editing, poll or Spoiler; his laptop opening them from
@@ -147,7 +151,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,145p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,149p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
