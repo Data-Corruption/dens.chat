@@ -107,6 +107,7 @@ func New(a *app.App) http.Handler {
 			rt.mountDens(r)
 			rt.mountYouTube(r)
 			rt.mountSounds(r)
+			rt.mountBackground(r)
 		})
 	})
 	return r
@@ -600,8 +601,15 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			Off    *bool `json:"off"`
 			Volume *int  `json:"volume"`
 		} `json:"sounds"`
+		// BackgroundDim is how far the page's background covers the
+		// picture behind the chat, in percent.
+		BackgroundDim *int `json:"backgroundDim"`
 	}
 	if !decodeJSON(w, r, &body) {
+		return
+	}
+	if d := body.BackgroundDim; d != nil && (*d < 0 || *d > types.BackgroundMaxDim) {
+		http.Error(w, "the background's dim is 0 to 90", http.StatusBadRequest)
 		return
 	}
 	if n := body.Notifications; n != nil {
@@ -647,6 +655,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		if body.BackgroundUpdateChecks != nil {
 			cfg.BackgroundUpdateChecks = *body.BackgroundUpdateChecks
 		}
+		if body.BackgroundDim != nil {
+			cfg.BackgroundDim = body.BackgroundDim
+		}
 		return nil
 	})
 	if err != nil {
@@ -667,6 +678,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.VoiceKeys != nil {
 		rt.a.Shortcuts.SetKeys(cfg.VoiceKeys)
+	}
+	if body.BackgroundDim != nil {
+		rt.a.Dens.Changed()
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

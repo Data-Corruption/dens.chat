@@ -11,8 +11,12 @@ class Node {
         this.parentNode = null;
         this.attributes = {};
         this.listeners = {};
-        // Preact sets a custom property, as --name-by, through setProperty.
-        this.style = Object.defineProperty({}, 'setProperty', { value(name, value) { this[name] = value; } });
+        // Preact sets a custom property, as --name-by, through setProperty,
+        // and the page takes a theme's off through removeProperty.
+        this.style = Object.defineProperties({}, {
+            setProperty: { value(name, value) { this[name] = value; } },
+            removeProperty: { value(name) { delete this[name]; } },
+        });
     }
 
     get firstChild() {

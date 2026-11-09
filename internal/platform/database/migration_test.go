@@ -23,14 +23,17 @@ var releasedSchema = []struct {
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
 	{"v1.6.0", 1, slices.Concat([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"},
-		m16Tables, m17Tables)},
+		m16Tables, m17Tables, m19Tables)},
 	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
-	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables)},
+	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables, m19Tables)},
 	// v1.8.0 added M15.2's emoji, M15.3's reactions and M15.4's polls.
-	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables)},
+	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables, m19Tables)},
 	// v1.9.0 added M16.1's identities, M16.3's group DMs and M16.4's
 	// disappearing messages.
-	{"v1.9.0", 9, m17Tables},
+	{"v1.9.0", 9, slices.Concat(m17Tables, m19Tables)},
+	// v1.10.0 added M17.2's spoilers, M17.3's notes, M17.4's events,
+	// M17.5's badges and M17.6's hidden ones, and v1.10.1 nothing more.
+	{"v1.10.1", 14, m19Tables},
 }
 
 // m16Tables are the tables M16's steps add: M16.1's identities and
@@ -40,6 +43,9 @@ var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_
 // m17Tables are the tables M17's steps add: M17.4's events and who's
 // interested in them, and M17.5's badges and their awards.
 var m17Tables = []string{"den_events", "den_event_interest", "den_badges", "den_badge_awards"}
+
+// m19Tables are the tables M19's steps add: M19.4's chat background.
+var m19Tables = []string{"background"}
 
 // retiredKeys are the tables of DM keys, which M16.1's step changes for a
 // release before it: an exchange still running, or checked by one member
@@ -68,7 +74,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // start empty, and the den's limit for members' events, which starts at 0,
 // leaving them to staff. M17.5 adds badges and their awards, which start
 // empty, and an event's staff-only mark, which none has; and M17.6 an
-// award's hidden mark, which an award starts without.
+// award's hidden mark, which an award starts without; a database v1.10.1
+// left, with a spoiler, notes, an event, a badge and a hidden award, keeps
+// them all. M19.4 adds the chat's background, which starts with none.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -202,7 +210,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				}
 				// No file went as a spoiler before M17.2.
 				var spoilers int
-				if err := db.QueryRow(`SELECT count(*) FROM den_files WHERE spoiler != 0`).Scan(&spoilers); err != nil || spoilers != 0 {
+				if err := db.QueryRow(`SELECT count(*) FROM den_files WHERE spoiler != 0`).Scan(&spoilers); err != nil ||
+					(released.version < 14 && spoilers != 0) {
 					t.Errorf("%s holds %d spoilers after the migration, %v", what, spoilers, err)
 				}
 				if _, err := db.Exec(`UPDATE den_files SET spoiler = 2 WHERE id = 1`); err == nil {
@@ -212,7 +221,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				// and each is to come, live or ended, ending no sooner than
 				// it starts.
 				var memberEvents int
-				if err := db.QueryRow(`SELECT member_events FROM den`).Scan(&memberEvents); err != nil || memberEvents != 0 {
+				if err := db.QueryRow(`SELECT member_events FROM den`).Scan(&memberEvents); err != nil || (released.version < 14 && memberEvents != 0) {
 					t.Errorf("%s's den lets each member have %d events, %v, not 0", what, memberEvents, err)
 				}
 				if _, err := db.Exec(`INSERT INTO den_events (details, channel_id, made_by, made_at, starts_at, ends_at) VALUES (x'00', 1, 1, 9, 10, 20)`); err != nil {
@@ -238,7 +247,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					}
 				}
 				var staffEvents int
-				if err := db.QueryRow(`SELECT count(*) FROM den_events WHERE staff_only != 0 AND id != ?`, event).Scan(&staffEvents); err != nil || staffEvents != 0 {
+				if err := db.QueryRow(`SELECT count(*) FROM den_events WHERE staff_only != 0 AND id != ?`, event).Scan(&staffEvents); err != nil ||
+					(released.version < 14 && staffEvents != 0) {
 					t.Errorf("%s holds %d staff-only events of its own after the migration, %v", what, staffEvents, err)
 				}
 				// An award starts shown, and its member hides it or not (M17.6).
@@ -338,7 +348,9 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 // a poll with @everyone and a vote; from version 9, v1.9.0's, a member's
 // identity and record, a signed DM key, the identities a joined den kept,
 // a group DM with its members and its first change, and a DM's time with a
-// message sent under it.
+// message sent under it; from version 14, v1.10.1's, a spoiler, a member's
+// notes, an event of staff's with a member interested, its badge and a
+// hidden award, and the den's limit for members' events.
 func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 	rows := []string{
@@ -415,6 +427,20 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 			`INSERT INTO den_group_changes (channel_id, n, made_by, made_at, statement) VALUES (5, 1, 1, 7, x'7a')`,
 			`UPDATE den_channels SET expires_after = 3600, expires_by = 1, expires_set_at = 7 WHERE id = 4`,
 			`INSERT INTO den_messages (id, channel_id, author_id, created_at, text, nonce, key_id, expires_at) VALUES (4, 4, 1, 8, x'37', x'38', 2, 3600008)`,
+		)
+	}
+	if version >= 14 {
+		rows = append(rows,
+			`UPDATE den_files SET spoiler = 1 WHERE id = 1`,
+			`INSERT INTO den_channels (id, name, kind, position, created_at, notes_of) VALUES (6, '', 'notes', 0, 8, 3)`,
+			`UPDATE den SET member_events = 3`,
+			`INSERT INTO den_events (id, details, banner_id, channel_id, made_by, made_at, starts_at, ends_at, state, staff_only)
+				VALUES (1, x'81', 1, 2, 1, 9, 10, 20, 'ended', 1)`,
+			`INSERT INTO den_event_interest (event_id, member_id) VALUES (1, 3)`,
+			`INSERT INTO den_files (id, blob, uploader_id, name, type, size, width, height, created_at) VALUES (5, x'82', 1, x'83', 'image/png', 500, 128, 128, 9)`,
+			`INSERT INTO den_named_files (id, kind, name, file_id, added_by, added_at) VALUES (3, 'badge', '1', 5, 1, 9)`,
+			`INSERT INTO den_badges (event_id, named_id, title) VALUES (1, 3, x'84')`,
+			`INSERT INTO den_badge_awards (event_id, member_id, earned_at, hidden) VALUES (1, 3, 11, 1)`,
 		)
 	}
 	for _, q := range rows {

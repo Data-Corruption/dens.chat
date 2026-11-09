@@ -107,7 +107,8 @@
 #                               and the owner's events, their form as a sheet and Cancel's dialog (M17.4);
 #                               and an event's card under its link, Interested by taps, and a badge's tip
 #                               shown by a tap on a profile card, within the screen (M17.5); and a profile
-#                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6).
+#                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6); and the
+#                               theme editor and the chat background's card with its Dim (M19.4).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -142,16 +143,21 @@
 #                               earning the badge in its call, bob joining and leaving at once earning none;
 #                               the badge and its tip on alice's profile card; the card saying Ended; and the
 #                               den's database holding alice's award alone, the badge's title sealed
-#   settings BROWSER            M19.1: every section of the settings and of Manage opened from the list down
+#   settings BROWSER [PART...]  M19.1: every section of the settings and of Manage opened from the list down
 #                               the side, with the layout audit, every hint in them reading in a line; and
 #                               Appearance's Width holding general's header, list and composer to 1,200 or
-#                               900 pixels, centered, and Full letting them go
+#                               900 pixels, centered, and Full letting them go; and a theme of the member's
+#                               own made in the editor, the page wearing it color for color, saved, edited,
+#                               its code copied and pasted into bob's browser, a stranger's codes refused; and
+#                               a picture set behind general's messages, found there under its dim by the
+#                               screen's pixels, in a second browser too, and removed (M19.4). PART is
+#                               sections, width, themes or background; all unless given
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,149p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,155p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

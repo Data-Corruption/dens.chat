@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { startBackground } from './background.js';
 import { onConnection, onUnpaired } from './events.js';
 import { Card, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
 import { onOpenManage } from './dialogs.js';
@@ -131,11 +132,12 @@ export function App({ instance, version, pair, pairLink }) {
     const open = passwordSet && !locked;
     const chat = open ? chatRoute(pathOf(trail)) : null;
     // The event stream needs a paired browser, so it starts only then, and
-    // with it the notifications this page shows (M12.3), whose click opens
-    // their message.
+    // with it the chat's background and the notifications this page shows
+    // (M12.3), whose click opens their message.
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
     useEffect(() => {
         if (!open) return;
+        startBackground();
         startNotifications((n) => {
             if (n.event) {
                 showEvent(n.den, n.event);

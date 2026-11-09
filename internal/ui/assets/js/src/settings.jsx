@@ -1,7 +1,8 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
 // a call stay in view, its sections listed down the side as Manage's are,
 // or on the phone layout a list of them, each a page. Appearance holds the
-// theme, how messages show and the verified mark; Chat compressing photos
+// theme, the member's own among them, the picture behind the chat, how
+// messages show and the verified mark; Chat compressing photos
 // and videos and what happens to links; Notifications what notifies the
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
@@ -12,8 +13,10 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
+import { DIM_MOST, DIM_STEP, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, slideDim } from './background.js';
 import {
-    Card, DOCS, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction, useBackdrop, useNotifications,
+    Card, CopyButton, DOCS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction, useBackdrop,
+    useBackground, useNotifications,
 } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
@@ -27,7 +30,8 @@ import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './sounds.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
-import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
+import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
+import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, hexColor, readCode, themeCode, variables } from './themes.js';
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
 import { WIDTH_FULL, WIDTH_NARROW, WIDTH_WIDE, setWidth, useWidth } from './width.js';
@@ -81,7 +85,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><ThemePicker /><MessagesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
+    else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -140,17 +144,50 @@ function Toggle({ id, label, hint, tip, checked, disabled, onChange }) {
 }
 
 // ThemePicker chooses the page's theme: the device's light or dark, Light
-// or Dark, or one of the others, each shown in its colors. It takes hold
-// at once, and this browser keeps it.
+// or Dark, one of the others, or one of the member's own, each shown in
+// its colors. It takes hold at once, and this browser keeps it. Under
+// them the member makes a theme, edits or deletes the one chosen, copies
+// its code for another member, and pastes one.
 function ThemePicker() {
     const [choice, setChoice] = useState(themeChoice);
-    const other = !['system', 'light', 'dark'].includes(choice);
+    const [own, setOwn] = useState(ownThemes);
+    const other = THEMES.includes(choice) && !['light', 'dark'].includes(choice);
     const [more, setMore] = useState(other);
+    // editing is the theme in the editor while it's open, as it started,
+    // with its id, '' for a new one; pasting, the field for a code.
+    const [editing, setEditing] = useState(null);
+    const [pasting, setPasting] = useState(false);
+    const [code, setCode] = useState('');
+    const [error, setError] = useState('');
+    const chosen = own.find((t) => ownChoice(t.id) === choice);
+    const full = own.length >= MOST_THEMES;
     function pick(theme) {
         setTheme(theme);
         setChoice(theme);
     }
+    function reread() {
+        setOwn(ownThemes());
+        setChoice(themeChoice());
+        setEditing(null);
+        setPasting(false);
+        setError('');
+    }
+    // kept takes a theme the member made or pasted, and chooses it.
+    function kept(theme, id) {
+        const now = keepTheme(theme, id);
+        if (!now) return setError("That theme couldn't be kept.");
+        setTheme(ownChoice(now));
+        reread();
+    }
+    function paste(e) {
+        e.preventDefault();
+        const theme = readCode(code);
+        if (!theme) return setError("That isn't a theme's code.");
+        setCode('');
+        kept(theme);
+    }
     const ring = 'has-[:checked]:ring-2 has-[:checked]:ring-primary has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary';
+    const tile = `flex cursor-pointer items-center gap-2 rounded-field px-2 py-1.5 text-sm hover:bg-base-300 has-[:checked]:bg-base-100 has-[:checked]:font-medium max-md:has-[:checked]:bg-base-200 ${ring}`;
     return (
         <Card title="Theme">
             <div role="radiogroup" aria-label="Theme" class="grid grid-cols-3 gap-2">
@@ -174,8 +211,7 @@ function ThemePicker() {
             {more && (
                 <div role="radiogroup" aria-label="More themes" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1">
                     {THEMES.filter((t) => t !== 'light' && t !== 'dark').map((theme) => (
-                        <label key={theme}
-                            class={`flex cursor-pointer items-center gap-2 rounded-field px-2 py-1.5 text-sm hover:bg-base-300 has-[:checked]:bg-base-100 has-[:checked]:font-medium max-md:has-[:checked]:bg-base-200 ${ring}`}>
+                        <label key={theme} class={tile}>
                             <input type="radio" name="theme" class="sr-only" value={theme} checked={choice === theme} onChange={() => pick(theme)} />
                             <Swatch theme={theme} />
                             <span class="truncate">{themeName(theme)}</span>
@@ -183,6 +219,183 @@ function ThemePicker() {
                     ))}
                 </div>
             )}
+            <div class="flex flex-col gap-3" data-own-themes>
+                <h3 class="text-sm font-semibold">Your themes</h3>
+                {own.length > 0 && (
+                    <div role="radiogroup" aria-label="Your themes" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1">
+                        {own.map((theme) => (
+                            <label key={theme.id} class={tile}>
+                                <input type="radio" name="theme" class="sr-only" value={ownChoice(theme.id)} checked={choice === ownChoice(theme.id)}
+                                    onChange={() => pick(ownChoice(theme.id))} />
+                                <Swatch own={theme} />
+                                <span class="truncate">{theme.name}</span>
+                            </label>
+                        ))}
+                    </div>
+                )}
+                {editing ? (
+                    <ThemeEditor start={editing.start} onSave={(theme) => kept(theme, editing.id)} onCancel={reread} />
+                ) : pasting ? (
+                    <form class="flex flex-wrap gap-2" onSubmit={paste}>
+                        <input class="input input-sm min-w-40 flex-1 font-mono" aria-label="A theme's code" placeholder="dens-theme:…" value={code}
+                            onInput={(e) => setCode(e.currentTarget.value)} required autofocus {...PLAIN} />
+                        <button type="submit" class="btn btn-primary btn-sm">Add</button>
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={reread}>Cancel</button>
+                    </form>
+                ) : (
+                    <>
+                        {chosen && (
+                            <div class="flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm" onClick={() => setEditing({ id: chosen.id, start: chosen })}>Edit</button>
+                                <CopyButton text={themeCode(chosen)} label="Copy code" />
+                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                                    forgetTheme(chosen.id);
+                                    reread();
+                                }}>
+                                    Delete
+                                </button>
+                            </div>
+                        )}
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-sm" disabled={full} onClick={() => setEditing({ id: '', start: shownTheme('My theme') })}>
+                                New theme
+                            </button>
+                            <button type="button" class="btn btn-sm" disabled={full} onClick={() => setPasting(true)}>Paste a code</button>
+                        </div>
+                    </>
+                )}
+                {full && !editing && <p class="text-sm text-base-content/70">You have {MOST_THEMES} themes. Delete one to add another.</p>}
+                <ErrorText message={error} />
+            </div>
+        </Card>
+    );
+}
+
+// COLOR_NAMES are what the editor calls the colors a member picks.
+const COLOR_NAMES = { base: 'Background', text: 'Text', primary: 'Primary', secondary: 'Secondary', accent: 'Accent' };
+const CORNER_LABELS = { square: 'Square', rounded: 'Rounded', round: 'Round' };
+
+// ThemeEditor makes or changes a theme of the member's own: its name,
+// whether it stands on Light or Dark, its five colors and its corners. The
+// page wears the theme as it's made, and takes the chosen one back when
+// the editor goes, saved or not.
+function ThemeEditor({ start, onSave, onCancel }) {
+    const [draft, setDraft] = useState(start);
+    const [error, setError] = useState('');
+    const form = useRef(null);
+    useEffect(() => {
+        previewTheme(draft);
+    }, [draft]);
+    // It opens under the card's themes, so it's brought into view.
+    useEffect(() => {
+        form.current?.scrollIntoView?.({ block: 'nearest' });
+        return () => previewTheme(null);
+    }, []);
+    const change = (changes) => setDraft((d) => ({ ...d, ...changes }));
+    function save(e) {
+        e.preventDefault();
+        const name = cleanName(draft.name);
+        if (!name) return setError(`A theme's name is up to ${NAME_MOST} characters.`);
+        onSave({ ...draft, name });
+    }
+    return (
+        <form ref={form} class="flex flex-col gap-3 rounded-box bg-base-100 p-3 max-md:bg-base-200" data-theme-editor onSubmit={save}>
+            <label class="flex flex-col gap-1">
+                <span class="text-sm">Name</span>
+                <TextInput value={draft.name} onInput={(name) => change({ name })} maxlength={NAME_MOST * 2} required />
+            </label>
+            <Choices label="Based on" name="theme-base" data="data-theme-base" choice={draft.dark ? 'dark' : 'light'} onPick={(v) => change({ dark: v === 'dark' })}
+                choices={[['light', 'Light'], ['dark', 'Dark']]} />
+            <div role="group" aria-label="Colors" class="flex flex-col gap-2">
+                {PICKED.map((color) => (
+                    <ColorField key={color} label={COLOR_NAMES[color]} value={draft[color]} onChange={(hex) => change({ [color]: hex })} />
+                ))}
+            </div>
+            <Choices label="Corners" name="theme-corners" data="data-theme-corners" choice={draft.corners} onPick={(corners) => change({ corners })}
+                choices={CORNER_NAMES.map((c) => [c, CORNER_LABELS[c]])} />
+            <div class="flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                <button type="button" class="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
+            </div>
+            <ErrorText message={error} />
+        </form>
+    );
+}
+
+// ColorField takes a color: the browser's picker, and beside it the
+// color's hex, the same in every browser, which takes a typed or pasted
+// one once it reads as a color.
+function ColorField({ label, value, onChange }) {
+    const [typed, setTyped] = useState(value);
+    useEffect(() => {
+        setTyped((t) => (hexColor(t) === value ? t : value));
+    }, [value]);
+    return (
+        <div class="flex items-center gap-3" data-color={label}>
+            <span class="min-w-0 flex-1 text-sm">{label}</span>
+            <input type="color" class="h-8 w-12 shrink-0 cursor-pointer rounded-field border border-base-content/20 bg-transparent p-0.5"
+                aria-label={`${label}, picked`} value={value} onInput={(e) => onChange(e.currentTarget.value.toLowerCase())} />
+            <input type="text" class="input input-sm w-24 shrink-0 font-mono" aria-label={`${label}, as hex`} value={typed} maxlength="7" {...PLAIN}
+                onInput={(e) => {
+                    const text = e.currentTarget.value;
+                    setTyped(text);
+                    const hex = hexColor(text);
+                    if (hex && hex !== value) onChange(hex);
+                }}
+                onBlur={() => setTyped(value)} />
+        </div>
+    );
+}
+
+// ChatBackground sets the picture behind the member's messages: Choose
+// image, for a PNG, a JPEG or a WebP of theirs, Dim, how far the theme's
+// background covers it, and Remove. The service keeps both, so every
+// browser paired with it shows them.
+function ChatBackground() {
+    const background = useBackground();
+    const file = useRef(null);
+    const act = useAction();
+    function choose(picked) {
+        act.run(async () => {
+            const why = checkBackground(picked);
+            if (why) throw new Error(why);
+            await setBackground(picked);
+        });
+    }
+    return (
+        <Card title="Chat background">
+            <p class="text-sm text-base-content/70">A picture behind your messages. Only you see it.</p>
+            {background && (
+                <div class="relative h-24 w-40 overflow-hidden rounded-box border border-base-content/10" data-background-preview aria-hidden="true">
+                    <img src={backgroundURL(background.version)} alt="" class="size-full object-cover" />
+                    <div class="absolute inset-0 bg-base-100" style={{ opacity: background.dim / 100 }}></div>
+                </div>
+            )}
+            <div class="flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => file.current?.click()}>
+                    {act.busy && <span class="loading loading-spinner loading-sm"></span>}
+                    {background ? 'Change image' : 'Choose image'}
+                </button>
+                {background && <button type="button" class="btn btn-ghost btn-sm" disabled={act.busy} onClick={() => act.run(removeBackground)}>Remove</button>}
+                <input ref={file} type="file" accept={KINDS.join(',')} class="hidden" onChange={(e) => {
+                    const picked = e.currentTarget.files?.[0];
+                    e.currentTarget.value = '';
+                    if (picked) choose(picked);
+                }} />
+            </div>
+            {background && (
+                <label class="flex flex-col gap-1">
+                    <span class="text-sm">Dim</span>
+                    <span class="flex items-center gap-3">
+                        <input type="range" class="range range-md min-w-0 flex-1" min="0" max={DIM_MOST} step={DIM_STEP} value={background.dim}
+                            aria-label="Dim" aria-valuetext={`${background.dim}%`}
+                            onInput={(e) => slideDim(Number(e.currentTarget.value))}
+                            onChange={(e) => setDim(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
+                        <span class="w-10 text-right text-sm tabular-nums">{background.dim}%</span>
+                    </span>
+                </label>
+            )}
+            <ErrorText message={act.error} />
         </Card>
     );
 }
@@ -277,11 +490,12 @@ function VerifiedMarksPicker() {
 }
 
 // Swatch shows a theme's colors: its text, primary, secondary and accent on
-// its background.
-function Swatch({ theme, large }) {
+// its background; one of the member's own by its variables, over Light or
+// Dark.
+function Swatch({ theme, own, large }) {
     const dot = `${large ? 'size-3' : 'size-1.5'} rounded-full`;
     return (
-        <span data-theme={theme} aria-hidden="true"
+        <span data-theme={own ? (own.dark ? 'dark' : 'light') : theme} style={own ? variables(own) : undefined} aria-hidden="true"
             class={`grid shrink-0 grid-cols-2 rounded-md border border-base-content/10 bg-base-100 ${large ? 'gap-1 p-2' : 'gap-0.5 p-1'}`}>
             <span class={`${dot} bg-base-content`} />
             <span class={`${dot} bg-primary`} />
