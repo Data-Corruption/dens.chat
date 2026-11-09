@@ -2,9 +2,10 @@
 // that owns the keys. The keys card offers to set them up with it, says to
 // confirm them while its dialog is up, shows its names once they're bound,
 // asks it to show its settings, and stops using it; in a call, its presses
-// open the push-to-talk gate. A desktop that bound them and holds none now
-// gets a card that says so, with a way out, rather than a button that
-// can't be pressed (M11).
+// open the push-to-talk gate, and from M19.3 its toggle deafen deafens and
+// hears again. A desktop that bound them and holds none now gets a card
+// that says so, with a way out, rather than a button that can't be
+// pressed (M11).
 //
 //   run.sh desktop chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -55,10 +56,12 @@ try {
     h.send('source', { covers: [], confirms: true, binding: true, configurable: true });
     await waitFor(() => has("Confirm the shortcuts in your desktop's dialog."), 'the confirm note');
     ok("the page says to confirm in the desktop's dialog while it's up");
-    h.send('source', { covers: ['ptt', 'toggleMute'], confirms: true, configurable: true, names: { ptt: 'Press F8', toggleMute: 'Press F9' } });
+    h.send('source', { covers: ['ptt', 'toggleMute', 'toggleDeafen'], confirms: true, configurable: true,
+        names: { ptt: 'Press F8', toggleMute: 'Press F9', toggleDeafen: 'Press F10' } });
     h.send('bound');
-    await waitFor(async () => (await keyIn('Push to talk')) === 'Press F8' && (await keyIn('Toggle mute')) === 'Press F9', "the desktop's names");
-    await waitFor(async () => (await marked('Push to talk')) && (await marked('Toggle mute')), 'the marks');
+    await waitFor(async () => (await keyIn('Push to talk')) === 'Press F8' && (await keyIn('Toggle mute')) === 'Press F9' &&
+        (await keyIn('Toggle deafen')) === 'Press F10', "the desktop's names");
+    await waitFor(async () => (await marked('Push to talk')) && (await marked('Toggle mute')) && (await marked('Toggle deafen')), 'the marks');
     if (await b.eval(`!!${row('Push to talk')}?.querySelector('button')`)) throw new Error("push to talk's row still offers Change");
     await waitFor(() => has('Your desktop runs these in every app'), 'the note once set up');
     await waitFor(() => h.state()?.desktop, 'the service keeping that the member set it up');
@@ -81,6 +84,15 @@ try {
     h.send('press', { action: 'ptt', down: false });
     await waitFor(async () => !(await gateOpen()), 'the gate closing', 5000);
     ok("the desktop's push to talk opens and closes the gate");
+    await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    h.send('press', { action: 'toggleDeafen', down: true });
+    h.send('press', { action: 'toggleDeafen', down: false });
+    await waitFor(() => b.eval(`!!${button('Undeafen')}`), "the desktop's toggle deafen deafening", 5000);
+    h.send('press', { action: 'toggleDeafen', down: true });
+    h.send('press', { action: 'toggleDeafen', down: false });
+    await waitFor(() => b.eval(`!!${button('Deafen')}`), 'and hearing again', 5000);
+    ok("the desktop's toggle deafen deafens and hears again");
+    await clickOn(`document.querySelector('button[aria-label="Voice settings"]')`, "the call's voice settings");
 
     step('stopping');
     await clickOn(button('Stop using them'), 'Stop using them');
@@ -95,7 +107,7 @@ try {
     step('a desktop that holds none of them now');
     const mark = h.lines.length;
     h.send('source', { covers: [], confirms: true, configurable: true });
-    await waitFor(() => has('Your desktop has none of them set now'), 'the note for a desktop holding none');
+    await waitFor(() => has('None are set on your desktop'), 'the note for a desktop holding none');
     if (await b.eval(`!!${button('Set up with your desktop')}`)) throw new Error('the set-up button shows where it can do nothing');
     await waitFor(() => b.eval(`!!${button('Change them')} && !!${button('Start over')}`), 'Change them and Start over');
     h.send('source', { covers: [], confirms: true, note: "Change them in GNOME's Settings, under Apps, then Dens." });

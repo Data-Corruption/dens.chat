@@ -33,9 +33,9 @@ import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './dens
 import { WIDTH_FULL, WIDTH_NARROW, WIDTH_WIDE, setWidth, useWidth } from './width.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
-    callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
-    keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise, setShareSettings, setVoice,
-    shareSettings, startMicTest, stopMicTest, voiceSettings,
+    RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
+    inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise,
+    setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
 } from './voice.js';
 
 const openers = new Set();
@@ -682,8 +682,19 @@ function VoiceSettings() {
                             </label>
                         )}
                     </div>
-                ) : !holds && (
-                    <p class="text-sm text-base-content/70">{talk}</p>
+                ) : (
+                    <div class="flex flex-col gap-3 rounded-box bg-base-100 p-3 max-md:bg-base-200">
+                        {!holds && <p class="text-sm text-base-content/70">{talk}</p>}
+                        <label class="flex flex-col gap-1">
+                            <span class="text-sm">Release delay</span>
+                            <span class="flex items-center gap-3">
+                                <input type="range" class="range range-md min-w-0 flex-1" min="0" max={RELEASE_MOST} step={RELEASE_STEP}
+                                    value={v.releaseDelay} aria-label="Release delay" aria-valuetext={`${v.releaseDelay} ms`}
+                                    onInput={(e) => change({ releaseDelay: Number(e.currentTarget.value) })} />
+                                <span class="w-16 text-right text-sm tabular-nums">{v.releaseDelay} ms</span>
+                            </span>
+                        </label>
+                    </div>
                 )}
                 <div class="flex items-center gap-3">
                     <div class="min-w-0 flex-1">
@@ -740,6 +751,7 @@ const KEYS = [
     ['ptt', 'Push to talk'],
     ['toggleMute', 'Toggle mute'],
     ['pushMute', 'Push to mute'],
+    ['toggleDeafen', 'Toggle deafen'],
 ];
 
 // ROLES are what the call's button may do (M13.4), its default first.

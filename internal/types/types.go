@@ -105,9 +105,9 @@ func (c *Configuration) SetHosting(on bool) {
 	}
 }
 
-// VoiceActions are what keys are bound to: push to talk, toggle mute and
-// push to mute.
-var VoiceActions = []string{"ptt", "toggleMute", "pushMute"}
+// VoiceActions are what keys are bound to: push to talk, toggle mute,
+// push to mute and toggle deafen.
+var VoiceActions = []string{"ptt", "toggleMute", "pushMute", "toggleDeafen"}
 
 // VoiceKey is a key bound to a voice action. Code names it by its place on
 // the keyboard, as the page's KeyboardEvent.code does, or names a mouse's

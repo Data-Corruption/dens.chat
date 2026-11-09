@@ -180,6 +180,47 @@ test("a call's row drags for staff but while its menu is open, whose slider woul
     mount(null, root);
 });
 
+test("a call member's slider runs to twice as loud, full marked at its middle", async () => {
+    const root = document.createElement('div');
+    mount(callRows(alice, { volumes: { 'd:2': 1.5 } }), root);
+    findAll(root, buttonNamed('Options for Bob in the call'))[0].dispatch('click', {});
+    await settle();
+    const slider = findAll(root, (n) => n.localName === 'input' && n.attributes.type === 'range')[0];
+    assert.deepEqual([slider.attributes.min, slider.attributes.max, slider.attributes.step], ['0', '200', '5']);
+    assert.equal(slider.attributes['aria-valuetext'], '150%');
+    const full = findAll(slider.parentNode, byAttr('data-full'));
+    assert.equal(full.length, 1, 'the mark at full');
+    assert.match(full[0].attributes.class, /\bleft-1\/2\b/, "at the track's middle");
+    findAll(root, buttonNamed('Options for Bob in the call'))[0].dispatch('click', {});
+    await settle();
+    mount(null, root);
+});
+
+test('a moderator moves another moderator, and mutes and disconnects only those they outrank, while nobody moves the owner', async () => {
+    const root = document.createElement('div');
+    const carol = { id: '3', display_name: 'Carol', username: 'carol', role: 'moderator', joined_at: 1 };
+    const moving = { targets: () => [{ id: '9', name: 'Games' }], lift() {}, letGo() {} };
+    const offered = async (name) => {
+        findAll(root, buttonNamed(`Options for ${name} in the call`))[0].dispatch('click', {});
+        await settle();
+        const out = ['Mute for everyone', 'Games', 'Disconnect from the call'].filter((label) => findAll(root, buttonNamed(label)).length > 0);
+        findAll(root, buttonNamed(`Options for ${name} in the call`))[0].dispatch('click', {});
+        await settle();
+        return out;
+    };
+    const row = (id) => findAll(root, byAttr('data-call-member', id))[0];
+    for (const [role, mine, drags] of [['moderator', ['Games'], 'true'], ['member', ['Mute for everyone', 'Games', 'Disconnect from the call'], 'true']]) {
+        const members = new Map([alice, { ...bob, role }, carol].map((m) => [m.id, m]));
+        mount(h(CallMembers, { denID: 'd', call: { channel_id: '5', members: [{ id: alice.id }, { id: bob.id }, { id: carol.id }] }, members, me: carol,
+            speaking: new Set(), sounding: '', deafened: false, volumes: {}, onProfile() {}, inCall: false, label: { den: 'Den', channel: 'Lounge' }, moving }), root);
+        assert.deepEqual(await offered('Bob'), mine, `carol, on bob as a ${role}`);
+        assert.equal(row(bob.id).attributes.draggable, drags, `carol drags bob as a ${role}`);
+        assert.deepEqual(await offered('Alice'), [], 'nothing on the owner');
+        assert.equal(row(alice.id).attributes.draggable, undefined, "the owner's row doesn't drag");
+        mount(null, root);
+    }
+});
+
 test("a card's ⋯ holds what the viewer may do beyond the button that stands out, by role, and one's own card has none", () => {
     const keys = (args) => cardMenu(args).map((i) => i.label).join(' | ');
     const kept = { verified: false };

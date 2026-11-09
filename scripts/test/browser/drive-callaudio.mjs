@@ -3,8 +3,8 @@
 // audio contexts made once the microphone is open, and the voices through
 // the call's context, as the page does where the service says audio may
 // start without a click. Each hears the other there, at the level chosen
-// for them, under the call's volume from the settings, and not at all
-// while deafened. A page Chromium froze plays
+// for them, 200% from M19.3, under the call's volume from the settings,
+// and not at all while deafened. A page Chromium froze plays
 // its call again as it thaws, and so does a page that hears resume with
 // its elements paused, in either browser; and the call's notes in the log
 // say what each page sent a second, what its encoder aimed at, and how far
@@ -117,10 +117,14 @@ try {
     await slide(0);
     await sleep(500);
     const down = await B.b.eval(LOUDEST);
+    await slide(200);
+    await sleep(500);
+    const louder = await B.b.eval(LOUDEST);
     await slide(100);
     await B.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
     await sleep(500);
     const up = await B.b.eval(LOUDEST);
+    report(louder - up > 3 && louder - up < 9, `${B.browser}'s Alice at 200% plays ${louder} dBFS, ${Math.round((louder - up) * 10) / 10} dB over 100% (6 wanted)`);
     await B.b.eval(`${button('Deafen')}.click(), true`);
     await sleep(500);
     const deaf = await B.b.eval(LOUDEST);

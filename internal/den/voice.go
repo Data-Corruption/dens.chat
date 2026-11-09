@@ -1038,22 +1038,32 @@ func (d *Den) devicesSignedOut(keys [][]byte) {
 	}
 }
 
-// staffOver returns the member staff act on, after checking that staff
-// rank above them, as removal does: moderators act on members, and the
-// owner on anyone else.
-func (d *Den) staffOver(ctx context.Context, s *Session, id string) (int64, error) {
+// staffTarget returns the member staff act on, and their role, after
+// checking that the session is staff's and the member is in the den.
+func (d *Den) staffTarget(ctx context.Context, s *Session, id string) (int64, string, error) {
 	if !IsStaff(s.Role) {
-		return 0, forbidden("only moderators and the owner do that")
+		return 0, "", forbidden("only moderators and the owner do that")
 	}
 	mid, err := denproto.ParseID(id)
 	if err != nil {
-		return 0, errMemberNotFound
+		return 0, "", errMemberNotFound
 	}
 	var role string
 	err = d.db.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ? AND left_at IS NULL`, mid).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, errMemberNotFound
+		return 0, "", errMemberNotFound
 	}
+	if err != nil {
+		return 0, "", err
+	}
+	return mid, role, nil
+}
+
+// staffOver returns the member staff act on, after checking that staff
+// rank above them, as removal does: moderators act on members, and the
+// owner on anyone else.
+func (d *Den) staffOver(ctx context.Context, s *Session, id string) (int64, error) {
+	mid, role, err := d.staffTarget(ctx, s, id)
 	if err != nil {
 		return 0, err
 	}
@@ -1081,16 +1091,29 @@ func (d *Den) DisconnectFromCall(ctx context.Context, s *Session, id string) err
 	return nil
 }
 
+// staffMove returns the member staff move between calls: anyone but the
+// owner and themselves. It takes no rank over them, since a move silences
+// nobody.
+func (d *Den) staffMove(ctx context.Context, s *Session, id string) (int64, error) {
+	mid, role, err := d.staffTarget(ctx, s, id)
+	if err != nil {
+		return 0, err
+	}
+	if role == denproto.RoleOwner || mid == s.MemberID {
+		return 0, forbidden("staff move others, and nobody moves the owner")
+	}
+	return mid, nil
+}
+
 // MoveMember moves a member's call to another voice channel at staff's
-// word (M17.2). The den checks what disconnecting checks, that staff rank
-// above them, and what joining checks, that the member sees the channel
-// and its call has room; then it tells the socket holding their call,
-// whose page joins the channel as if they'd picked it, which ends the old
-// call. A call held while its socket is away has nothing to tell, so it's
-// refused. A member in no call, or in that channel's already, stays as
-// they are.
+// word (M17.2). The den checks that staff may move them, and what joining
+// checks, that the member sees the channel and its call has room; then it
+// tells the socket holding their call, whose page joins the channel as if
+// they'd picked it, which ends the old call. A call held while its socket
+// is away has nothing to tell, so it's refused. A member in no call, or in
+// that channel's already, stays as they are.
 func (d *Den) MoveMember(ctx context.Context, s *Session, id string, req denproto.MoveRequest) error {
-	mid, err := d.staffOver(ctx, s, id)
+	mid, err := d.staffMove(ctx, s, id)
 	if err != nil {
 		return err
 	}

@@ -110,7 +110,7 @@ type Source struct {
 
 // actionNames are what the actions do, for the desktop's dialog and
 // settings.
-var actionNames = map[string]string{"ptt": "Push to talk", "toggleMute": "Toggle mute", "pushMute": "Push to mute"}
+var actionNames = map[string]string{"ptt": "Push to talk", "toggleMute": "Toggle mute", "pushMute": "Push to mute", "toggleDeafen": "Toggle deafen"}
 
 // Press is an action's key going down or up.
 type Press struct {

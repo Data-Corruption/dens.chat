@@ -136,7 +136,9 @@ soundboard work as you'd expect. What's different:
 
 - **Calls** are end-to-end encrypted, and the lock beside one lists who's in
   it, to compare codes with. Everyone in a call hears the soundboard, and
-  one sound plays at a time.
+  one sound plays at a time. Turn anyone up to 200% from their **⋯** in the
+  call; past 100% a loud voice may crackle. **Settings** → **Voice** holds
+  push to talk's **Release delay** and a **Toggle deafen** shortcut.
 - **Polls** can be anonymous to everyone in the den, its owner included; the
   den itself still knows, since it counts each vote once. With **After
   voting**, each person sees the totals once they vote, and their vote is

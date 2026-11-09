@@ -1,6 +1,7 @@
 // The M2 and M3 checks: two members in a call, in the browsers named,
 // alice's first. Each hears the other, at the channel's bitrate; speaking
-// rings; volume; the settings' Voice section and RNNoise; how a member
+// rings; volume, and from M19.3 a member at 200%, measured twice as loud
+// as their own stream; the settings' Voice section and RNNoise; how a member
 // sends, by voice activity or push to talk; staff mute and disconnect; a
 // call that rides out its member's service restarting and its UDP path
 // breaking; deafen; and the page around the call: the composer, the
@@ -264,6 +265,28 @@ try {
         }, 200));
     })()`);
     const full = await B.b.eval(VOLUME());
+    // At 200% her element plays nothing itself, and an element of its own
+    // plays her through a gain in the call's context: her stream and what
+    // it plays are measured side by side, in the page's running context.
+    await slide(200);
+    await sleep(500);
+    const louder = JSON.parse(await B.b.eval(`(async () => {
+        const own = window.__audios.filter((x) => x.srcObject && x.srcObject.id === ${JSON.stringify(aliceID)}).at(-1);
+        const out = window.__audios.filter((x) => x.srcObject && !x.paused && ![${JSON.stringify(aliceID)}, 'soundboard'].includes(x.srcObject.id)).at(-1);
+        const ctx = window.__acs.find((c) => c.state === 'running');
+        if (!out || !ctx) return JSON.stringify({ out: !!out, ctx: !!ctx });
+        const tap = (stream) => { const a = ctx.createAnalyser(); a.fftSize = 2048; ctx.createMediaStreamSource(stream).connect(a); return a; };
+        const [a, b] = [tap(own.srcObject), tap(out.srcObject)];
+        const buf = new Float32Array(2048);
+        const energy = (n) => { n.getFloatTimeDomainData(buf); let e = 0; for (const x of buf) e += x * x; return e; };
+        let ea = 0, eb = 0;
+        for (let i = 0; i < 40; i++) { ea += energy(a); eb += energy(b); await new Promise((r) => setTimeout(r, 50)); }
+        return JSON.stringify({ own: { muted: own.muted, volume: own.volume }, out: { muted: out.muted, volume: out.volume },
+            db: Math.round(10 * Math.log10(Math.max(eb, 1e-12) / Math.max(ea, 1e-12)) * 10) / 10, heard: ea > 1e-6 });
+    })()`));
+    const keptLouder = await B.b.eval(KEPT);
+    report(louder.own?.muted && louder.out && !louder.out.muted && louder.heard && Math.abs(louder.db - 6) <= 1.5 && keptLouder === JSON.stringify({ [`${den}:${aliceID}`]: 2 }),
+        `${B.browser} plays Alice at 200% through its own element, ${louder.db} dB over her stream (6 wanted): ${JSON.stringify(louder)}, kept ${keptLouder}`);
     await slide(30);
     await sleep(300);
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-menu.png`).catch((e) => console.log('shot', e.message));
@@ -430,15 +453,15 @@ try {
     report(back.moving, `unmuted: packets ${back.before}->${back.after}`);
 
     // The owner, who can drag Bob's row onto another call, drags the slider
-    // in his menu with the mouse: it moves, and the menu stays where it is,
-    // nothing dragged (M19.2). A drag Chromium starts is caught, as it never
-    // ends under the DevTools protocol.
+    // in his menu with the mouse, from 100% at its middle: it moves, and the
+    // menu stays where it is, nothing dragged (M19.2). A drag Chromium starts
+    // is caught, as it never ends under the DevTools protocol.
     const SLIDER = `document.querySelector('input[aria-label="Volume for Bob"]')`;
     await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);
     await waitFor(() => A.b.eval(`!!${SLIDER}`), `${A.browser} Bob's slider`);
     const sliding = () => A.b.eval(`(() => { const s = ${SLIDER}; if (!s) return 'gone'; const r = s.closest('[data-call-menu]').getBoundingClientRect();
         return JSON.stringify({ value: s.value, menu: [Math.round(r.left), Math.round(r.top)], draggable: s.closest('[data-call-member]').getAttribute('draggable') }); })()`);
-    const thumb = JSON.parse(await A.b.eval(`(() => { const r = ${SLIDER}.getBoundingClientRect(); return JSON.stringify([r.right - 6, r.top + r.height / 2, r.left + r.width / 2]); })()`));
+    const thumb = JSON.parse(await A.b.eval(`(() => { const r = ${SLIDER}.getBoundingClientRect(); return JSON.stringify([r.left + r.width / 2, r.top + r.height / 2, r.left + r.width / 4]); })()`));
     const grabbed = JSON.parse(await sliding());
     await A.b.eval(`(window.__rowDrags = 0, document.addEventListener('dragstart', () => window.__rowDrags++, true), true)`);
     if (A.browser === 'chromium') await A.b.cdp('Input.setInterceptDrags', { enabled: true });

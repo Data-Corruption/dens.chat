@@ -79,17 +79,35 @@ test('a member plays at full volume unless chosen, and the choice is kept by den
     assert.equal(volumeIn(volumes, 'den', '3'), 1);
     volumes = withVolume(volumes, 'den', '3', 0);
     assert.equal(volumeIn(volumes, 'den', '3'), 0);
+    // Up to twice as loud as they send.
+    volumes = withVolume(volumes, 'den', '4', 1.5);
+    volumes = withVolume(volumes, 'den', '5', 9);
+    assert.deepEqual([volumeIn(volumes, 'den', '4'), volumeIn(volumes, 'den', '5')], [1.5, 2]);
     // Full is everyone's unless chosen, so it isn't kept.
     volumes = withVolume(volumes, 'den', '2', 1);
-    assert.deepEqual(volumes, { 'den:3': 0 });
+    assert.deepEqual(volumes, { 'den:3': 0, 'den:4': 1.5, 'den:5': 2 });
     assert.deepEqual(readVolumes(JSON.stringify(volumes)), volumes);
 });
 
-test('volumes stay between 0 and full, in steps of 5%', () => {
+// A page from before members played past full kept only volumes under
+// it, as this does, so it reads one past full as full and the rest as
+// they were.
+test("volumes past full are kept where an older page reads them as full", () => {
+    const older = (text) => Object.fromEntries(Object.entries(JSON.parse(text)).filter(([, v]) => typeof v === 'number' && v >= 0 && v < 1));
+    const kept = JSON.stringify(withVolume(withVolume({}, 'den', '2', 2), 'den', '3', 0.4));
+    assert.deepEqual(readVolumes(kept), { 'den:2': 2, 'den:3': 0.4 });
+    assert.deepEqual(older(kept), { 'den:3': 0.4 });
+    assert.equal(volumeIn(older(kept), 'den', '2'), 1);
+    assert.deepEqual(readVolumes('{"den:3":0.4}'), older('{"den:3":0.4}'), "an older page's volumes read the same");
+});
+
+test('volumes stay between 0 and full, or up to the most given, in steps of 5%', () => {
     assert.equal(clampVolume(0.42), 0.4);
     assert.equal(clampVolume(0.43), 0.45);
     assert.equal(clampVolume(-1), 0);
     assert.equal(clampVolume(3), 1);
+    assert.equal(clampVolume(3, 2), 2);
+    assert.equal(clampVolume(1.42, 2), 1.4);
     assert.equal(clampVolume('0.5'), 0.5);
     assert.equal(clampVolume(NaN), 1);
     assert.equal(clampVolume(undefined), 1);
@@ -100,7 +118,8 @@ test('kept volumes that make no sense are skipped', () => {
     assert.deepEqual(readVolumes('not json'), {});
     assert.deepEqual(readVolumes('[0.5]'), {});
     assert.deepEqual(readVolumes('null'), {});
-    assert.deepEqual(readVolumes('{"d:1":0.5,"d:2":"0.5","d:3":-0.1,"d:4":1,"d:5":7,"d:6":null,"d:7":0}'), { 'd:1': 0.5, 'd:7': 0 });
+    assert.deepEqual(readVolumes('{"d:1":0.5,"d:2":"0.5","d:3":-0.1,"d:4":1,"d:5":7,"d:6":null,"d:7":0,"d:8":2,"d:9":1.5,"d:10":2.05}'),
+        { 'd:1': 0.5, 'd:7': 0, 'd:8': 2, 'd:9': 1.5 });
 });
 
 test('RNNoise runs unless the member turned it off', () => {
@@ -110,17 +129,24 @@ test('RNNoise runs unless the member turned it off', () => {
 });
 
 test('voice settings fall back to their defaults, piece by piece', () => {
-    const defaults = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute' };
+    const defaults = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute', releaseDelay: 0 };
     assert.deepEqual(readVoice(''), defaults);
     assert.deepEqual(readVoice('not json'), defaults);
     assert.deepEqual(readVoice('[1]'), { ...defaults });
     // Keys the browser kept before the service kept them are left behind.
     const v = readVoice(JSON.stringify({ mode: 'ptt', auto: false, threshold: -63.4, keys: { ptt: { code: 'KeyV', label: 'V' } } }));
-    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63, button: 'ptt' });
+    assert.deepEqual(v, { mode: 'ptt', auto: false, threshold: -63, button: 'ptt', releaseDelay: 0 });
     assert.equal(readVoice('{"threshold": 20}').threshold, 0);
     assert.equal(readVoice('{"threshold": -500}').threshold, -100);
     assert.equal(readVoice('{"mode": "shout", "auto": "yes"}').mode, 'voice');
     assert.equal(readVoice('{"auto": "yes"}').auto, true);
+    // Push to talk's release delay: up to two seconds, in steps of 50 ms.
+    assert.equal(readVoice('{"releaseDelay": 420}').releaseDelay, 400);
+    assert.equal(readVoice('{"releaseDelay": 5000}').releaseDelay, 2000);
+    assert.equal(readVoice('{"releaseDelay": -50}').releaseDelay, 0);
+    assert.equal(readVoice('{"releaseDelay": "300"}').releaseDelay, 0);
+    // Toggle deafen is a key's alone, never the call's button's.
+    assert.equal(readVoice('{"button": "toggleDeafen"}').button, 'toggleMute');
 });
 
 test('the gate follows how the member sends', () => {

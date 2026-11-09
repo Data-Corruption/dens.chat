@@ -69,7 +69,7 @@ type fakeKeys struct {
 }
 
 func newFakeKeys() *fakeKeys {
-	return &fakeKeys{codes: map[string]host.Key{"KeyV": 1, "Mouse4": 2, "F8": 3}, down: map[host.Key]bool{}}
+	return &fakeKeys{codes: map[string]host.Key{"KeyV": 1, "Mouse4": 2, "F8": 3, "KeyB": 4}, down: map[host.Key]bool{}}
 }
 
 func (f *fakeKeys) Key(code string) (host.Key, bool) {
@@ -268,13 +268,17 @@ func TestNewKeysReachTheHelper(t *testing.T) {
 	defer stop()
 	waitStatus(t, events, func(s *Status) bool { return s.Helper })
 	hub.SetCall(true)
-	hub.SetKeys(map[string]types.VoiceKey{"pushMute": {Code: "F8", Label: "F8"}})
-	st := waitStatus(t, events, func(s *Status) bool { return len(s.Covers) == 1 })
-	if st.Covers[0] != "pushMute" || st.Keys["pushMute"].Label != "F8" {
+	hub.SetKeys(map[string]types.VoiceKey{"pushMute": {Code: "F8", Label: "F8"}, "toggleDeafen": {Code: "KeyB", Label: "B"}})
+	st := waitStatus(t, events, func(s *Status) bool { return len(s.Covers) == 2 })
+	if !slices.Equal(st.Covers, []string{"pushMute", "toggleDeafen"}) || st.Keys["pushMute"].Label != "F8" {
 		t.Fatalf("status = %+v", st)
 	}
 	keys.set(3, true)
 	waitPress(t, events, Press{Action: "pushMute", Down: true})
+	keys.set(4, true)
+	waitPress(t, events, Press{Action: "toggleDeafen", Down: true})
+	keys.set(4, false)
+	waitPress(t, events, Press{Action: "toggleDeafen", Down: false})
 }
 
 func TestHelperWithoutKeysSaysWhy(t *testing.T) {
@@ -517,7 +521,8 @@ func TestTheDesktopBindsTheKeysTheMemberAsksIt(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the helper didn't bind")
 	}
-	if len(actions) != 3 || actions[0].ID != "ptt" || actions[0].Trigger != "" && actions[0].Trigger != "CTRL+v" {
+	if len(actions) != 4 || actions[0].ID != "ptt" || actions[0].Trigger != "" && actions[0].Trigger != "CTRL+v" ||
+		actions[3] != (host.DesktopAction{ID: "toggleDeafen", Description: "Toggle deafen"}) {
 		t.Fatalf("bound %+v", actions)
 	}
 	waitStatus(t, events, func(s *Status) bool { return s.Binding && !s.Bindable })
@@ -544,12 +549,17 @@ func TestTheDesktopBindsTheKeysTheMemberAsksIt(t *testing.T) {
 	waitPress(t, events, Press{Action: "ptt", Down: false})
 	noPress(t, events, "the desktop repeated a held key's press")
 
-	// The member renames a key in the desktop's settings.
-	desk.changes <- map[string]string{"ptt": "Press F8", "toggleMute": "Press F9"}
+	// The member renames a key in the desktop's settings, and gives toggle
+	// deafen one, which then reaches the page as the others do.
+	desk.changes <- map[string]string{"ptt": "Press F8", "toggleMute": "Press F9", "toggleDeafen": "Press F10"}
 	st = waitStatus(t, events, func(s *Status) bool { return s.Names["ptt"] == "Press F8" })
-	if !slices.Equal(st.Covers, []string{"ptt", "toggleMute"}) {
+	if !slices.Equal(st.Covers, []string{"ptt", "toggleMute", "toggleDeafen"}) {
 		t.Fatalf("covers after the change = %v", st.Covers)
 	}
+	desk.presses <- host.DesktopPress{ID: "toggleDeafen", Down: true}
+	desk.presses <- host.DesktopPress{ID: "toggleDeafen", Down: false}
+	waitPress(t, events, Press{Action: "toggleDeafen", Down: true})
+	waitPress(t, events, Press{Action: "toggleDeafen", Down: false})
 
 	if err := hub.Desktop(DesktopConfigure); err != nil {
 		t.Fatal(err)
