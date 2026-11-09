@@ -7,6 +7,7 @@
 // leaving the call or the share ending closes it, and so does closing or
 // reloading the page.
 
+import { dressTheme } from './theme.js';
 import { listenIn } from './voice.js';
 
 // windows holds each open window, by the member whose share it plays.
@@ -100,8 +101,7 @@ function dress(doc, title) {
         copy.href = link.href;
         doc.head.append(copy);
     }
-    const theme = document.documentElement.getAttribute('data-theme');
-    if (theme) doc.documentElement.setAttribute('data-theme', theme);
+    dressTheme(doc);
     doc.documentElement.lang = document.documentElement.lang;
     doc.body.className = 'm-0 h-screen overflow-hidden bg-black';
 }

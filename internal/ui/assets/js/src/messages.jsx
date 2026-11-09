@@ -16,8 +16,9 @@ import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
+import { backgroundStyle } from './background.js';
 import { copyText } from './clipboard.js';
-import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
+import { ErrorText, PLAIN, Tip, dayTime, useAction, useBackground } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
@@ -157,6 +158,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // Compact shows each message as a line (M17.2).
     const line = useDensity() === DENSITY_COMPACT;
     const width = useWidthClass();
+    const background = useBackground();
     // A photo or video goes as a spoiler in a DM, inside its seal, and in a
     // channel where the den keeps which files are (M17.2).
     const canSpoil = !notes && (sealed || !!spoilers);
@@ -846,7 +848,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             {/* The room at the bottom is where who's typing shows, over the list.
                 Appearance's Width holds the content, not the scroller, so the
                 scrollbar stays at the pane's edge. */}
-            <div ref={scroller} data-scroller class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" onScroll={checkEdges}>
+            <div ref={scroller} data-scroller class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" style={backgroundStyle(background)} onScroll={checkEdges}>
                 <div ref={content} class={width}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">

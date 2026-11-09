@@ -3,6 +3,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useOver } from './animations.js';
+import { onBackground } from './background.js';
 import { copyText } from './clipboard.js';
 import { InfoIcon } from './icons.jsx';
 import { onNotifications } from './notify.js';
@@ -417,4 +418,12 @@ export function useNotifications() {
     const [status, setStatus] = useState(null);
     useEffect(() => onNotifications(setStatus), []);
     return status;
+}
+
+// useBackground is the picture behind the chat, its version and dim, or
+// null for none.
+export function useBackground() {
+    const [background, setBackground] = useState(null);
+    useEffect(() => onBackground(setBackground), []);
+    return background;
 }
