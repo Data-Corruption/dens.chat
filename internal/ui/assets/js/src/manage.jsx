@@ -3,7 +3,7 @@
 
 import { useState } from 'preact/hooks';
 import { api } from './api.js';
-import { ErrorText, Field, SubmitButton, TextInput, useAction, useBackdrop } from './components.jsx';
+import { ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useBackdrop } from './components.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { Handle, useDragDown } from './sheet.jsx';
 
@@ -116,13 +116,13 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                     </Field>
                 )}
                 {kind === 'text' && (
-                    <Field label="Description" hint="Shown at the top of the channel. The same formatting as messages works here.">
+                    <Field label="Description" hint="Shown at the top of the channel, formatted as messages are.">
                         <textarea class="textarea w-full" rows="4" value={description} onInput={(e) => setDescription(e.currentTarget.value)} maxlength="4000"></textarea>
                     </Field>
                 )}
                 {kind === 'voice' && (
-                    <Field label={`Voice quality: ${bitrate / 1000} kbps`}
-                        hint="The most each voice in the call sends. Higher sounds better, and costs more of the den's upload: each member who talks sends it to everyone else in the call. A change reaches a call in progress at once.">
+                    <Field label={<>Voice quality: {bitrate / 1000} kbps <Tip id="bitrate-tip">Each member who talks sends it to everyone else in the call. A change reaches a call in progress at once.</Tip></>}
+                        hint="Higher sounds better and costs more of the den's upload.">
                         <input type="range" class="range range-md w-full" min={BITRATE.min} max={BITRATE.max} step={BITRATE.step} value={bitrate}
                             onInput={(e) => setBitrate(Number(e.currentTarget.value))} aria-label="Voice quality" aria-valuetext={`${bitrate / 1000} kbps`} />
                     </Field>
@@ -154,7 +154,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                         <button type="button" class="btn btn-outline btn-error btn-sm" onClick={() => setConfirmDelete(true)}>Delete channel</button>
                     ) : (
                         <div class="flex flex-col gap-2">
-                            <p class="text-sm">This deletes #{channel.name} and every message in it, for everyone. It can't be undone.</p>
+                            <p class="text-sm">Deletes #{channel.name} and every message in it, for everyone, for good.</p>
                             <div class="flex gap-2">
                                 <button
                                     type="button"
@@ -225,7 +225,7 @@ export function GroupDialog({ denID, view, group, onClose }) {
             </form>
             {editing && (
                 <div class="border-t border-base-300 pt-3">
-                    <p class="mb-2 text-sm text-base-content/70">Deleting the group keeps its channels; they move to the ungrouped list.</p>
+                    <p class="mb-2 text-sm text-base-content/70">Its channels stay, moving to the ungrouped list.</p>
                     <button type="button" class="btn btn-outline btn-error btn-sm" disabled={save.busy}
                         onClick={() => act(() => api.del(`/api/dens/${denID}/groups/${group.id}`))}>
                         Delete group

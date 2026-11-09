@@ -149,23 +149,24 @@ export function notifying(st) {
 }
 
 // whereTheyShow says where the member's notifications show, for the
-// settings: through this browser, the desktop's helper with no tab open,
-// or Android, by what each allows. helper is the keys' status from the
-// service, which says whether a helper that shows notifications runs.
+// settings, a line each: through this browser, the desktop's helper with
+// no tab open, or Android, by what each allows. helper is the keys' status
+// from the service, which says whether a helper that shows notifications
+// runs.
 export function whereTheyShow(st, browser, helper) {
     if (st?.shell) {
         return st.shell.allowed
-            ? 'Android shows them, unless Dens is open on that channel.'
-            : "Android doesn't let Dens show notifications. Allow them for Dens in Android's settings, under Apps.";
+            ? ['Android shows them, unless Dens is open on that channel.']
+            : ["Android doesn't let Dens show notifications.", "Allow them for Dens in Android's settings, under Apps."];
     }
     const here = {
-        granted: 'This browser shows them while a Dens tab is open, unless it shows that channel.',
-        denied: "This browser blocks Dens's notifications: allow them for this site in its settings.",
-        default: 'This browser asks whether to show them as you turn one on, or mark an event Interested.',
+        granted: 'A Dens tab shows them, unless it shows that channel.',
+        denied: 'This browser blocks them; allow them in its site settings.',
+        default: 'This browser asks to show them as you turn one on.',
         unsupported: "This browser can't show notifications.",
     }[browser];
     const away = helper?.helper && helper.notifies
         ? 'With no Dens tab open, your desktop shows them.'
-        : "With no Dens tab open, your desktop shows them while Dens's helper runs.";
-    return `${here} ${away}`;
+        : "With no tab open, Dens's helper shows them on your desktop.";
+    return [here, away];
 }

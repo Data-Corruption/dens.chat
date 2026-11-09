@@ -92,7 +92,7 @@ try {
     if (which === 'chromium') await b.cdp('Browser.grantPermissions', { permissions: ['notifications'], origin: 'http://localhost:18484' }, null);
     await b.go(`http://localhost:18484/den/${den}/${general}`);
     await waitFor(() => b.eval(`!!document.querySelector('textarea')`), 'general');
-    await openSettings(b, 'Notifications & sounds');
+    await openSettings(b, 'Notifications');
     await waitFor(() => b.eval(`!!document.getElementById('notify-dms')`), 'the notifications card');
     await b.eval(`document.getElementById('notify-dms').click(), true`, true);
     await waitFor(() => settings().dms, 'DMs on, kept by the service');
@@ -149,7 +149,7 @@ try {
     c.report(mutedQuiet && unmuted, `with the DM muted from its bell, no notification showed (${mutedQuiet}), and it unmuted (${unmuted})`);
 
     step("staff's @everyone in a channel, with mentions on");
-    await openSettings(b, 'Notifications & sounds');
+    await openSettings(b, 'Notifications');
     await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
     const under = await b.eval(`(() => { const t = document.getElementById('notify-everyone'); return t.checked && t.disabled; })()`);
     await b.eval(`document.getElementById('notify-mentions').click(), true`, true);
@@ -173,7 +173,7 @@ try {
     await front();
 
     step('@everyone switched off, nothing shows, and it still counts');
-    await openSettings(b, 'Notifications & sounds');
+    await openSettings(b, 'Notifications');
     await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
     await b.eval(`document.getElementById('notify-everyone').click(), true`, true);
     await waitFor(() => settings().everyoneOff, '@everyone off, kept by the service');
@@ -187,7 +187,7 @@ try {
     await front();
 
     step('@everyone on again, its channel muted from its bell, nothing shows');
-    await openSettings(b, 'Notifications & sounds');
+    await openSettings(b, 'Notifications');
     await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
     await b.eval(`document.getElementById('notify-everyone').click(), true`, true);
     await waitFor(() => !settings().everyoneOff, '@everyone on again');
@@ -216,7 +216,7 @@ try {
         env: { ...BUS, PATH: `${HOME}/notify-bin:${process.env.PATH}` },
         stdio: ['ignore', 'ignore', fs.openSync(`${HOME}/helper.log`, 'w')],
     });
-    await openSettings(b, 'Notifications & sounds');
+    await openSettings(b, 'Notifications');
     const desktop = await may(waitFor(() => has('With no Dens tab open, your desktop shows them.'), 'the helper showing notifications', 20000));
     const said = await b.eval(`[...document.querySelectorAll('p')].find((p) => p.textContent.includes('With no Dens tab open'))?.textContent || ''`);
     await shot('helper-settings');

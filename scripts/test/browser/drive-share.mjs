@@ -346,7 +346,7 @@ try {
     await clickButton(A, 'Stop sharing your screen');
 
     // The settings' card, and the den's call limits in its Manage dialog.
-    await openSettings(A.b, 'Voice & video');
+    await openSettings(A.b, 'Voice');
     await waitFor(async () => (await text(A)).includes('Screen share'), 'the share card');
     await A.b.eval(`[...${SETTINGS}.querySelectorAll('h2')].find((h) => h.textContent === 'Screen share').scrollIntoView(), true`);
     await A.b.shot(`${HOME}/shot-share-settings.png`);

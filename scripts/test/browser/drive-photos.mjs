@@ -127,7 +127,7 @@ try {
     await shot(alice, 'received');
 
     // With copies off, a photo goes full size, and still compares.
-    await openSettings(bob, 'Chat & media');
+    await openSettings(bob, 'Chat');
     const toggle = `${SETTINGS}.querySelector('input#compress')`;
     await waitFor(() => bob.eval(`!!${toggle}`), 'the setting');
     await shot(bob, 'setting');

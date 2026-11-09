@@ -133,7 +133,7 @@ try {
 
     // The call's volume in the settings turns everyone down at once, and
     // the browser keeps it.
-    await openSettings(B.b, 'Voice & video');
+    await openSettings(B.b, 'Voice');
     const loudness = async (pct) => {
         await B.b.eval(`(() => {
             const r = document.querySelector('input[aria-label="Call volume"]');

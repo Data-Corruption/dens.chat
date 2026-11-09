@@ -160,7 +160,7 @@ try {
     curl('alice', 'POST', `/api/dens/${den}/settings`, { limits });
 
     // The setting names videos too.
-    await openSettings(bob, 'Chat & media');
+    await openSettings(bob, 'Chat');
     await waitFor(() => bob.eval(`[...${SETTINGS}.querySelectorAll('label')].some((l) => l.textContent.includes('Compress photos and videos'))`), 'the setting');
     await shot(bob, 'setting');
     ok('the setting reads "Compress photos and videos"');

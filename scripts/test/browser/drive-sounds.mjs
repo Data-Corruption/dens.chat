@@ -5,7 +5,7 @@
 // alice leaving and joining, and her share starting and ending; bob's
 // microphone closing and opening by the call's controls, deafening, which
 // silences the call's other sounds, the settings' push to talk, and its
-// key; then in the settings' Notifications & sounds, a sound heard by its
+// key; then in the settings' Notifications, a sound heard by its
 // ▶, replaced with a file of bob's, a file too long refused, one quieted,
 // one off and one reset, each as the call next plays it; and bob leaving.
 // Then a DM from alice: its sound once with the browser's popup, which
@@ -123,10 +123,10 @@ async function aliceJoins() {
 // row is an expression for one of the settings' sounds, by name.
 const row = (name) => `document.querySelector('[data-sound=${name}]')`;
 const own = () => settings().own || {};
-// soundsTab opens bob's settings at Notifications & sounds, once its cards
+// soundsTab opens bob's settings at Notifications, once its cards
 // show, which wait for the service's status.
 async function soundsTab() {
-    await openSettings(B.b, 'Notifications & sounds');
+    await openSettings(B.b, 'Notifications');
     await waitFor(() => B.b.eval(`!!${row('micOff')} && !!document.getElementById('notify-dms')`), 'the sounds card');
 }
 
@@ -189,7 +189,7 @@ try {
     b = await mark(B);
     await click(B, 'Undeafen');
     await expect(B, b, ['micOn'], 'hearing again opens it, Microphone on');
-    await openSettings(B.b, 'Voice & video');
+    await openSettings(B.b, 'Voice');
     b = await mark(B);
     await B.b.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Sending your voice"] label')].find((l) => l.textContent.trim() === 'Push to talk').click(), true`);
     await expect(B, b, ['micOff'], 'push to talk closes it until held');
@@ -209,7 +209,7 @@ try {
         groups: [...document.querySelectorAll('[role=dialog] [role=group]')].map((g) => g.getAttribute('aria-label')),
     })`);
     report(card.notifications && card.groups.join() === 'Messages,Calls' && card.rows.join() === 'message 60,joined 35,left 30,shareStarted 50,shareEnded 40,micOn 65,micOff 85',
-        `Notifications & sounds holds the notifications and the sounds, grouped, each at its default volume: ${JSON.stringify(card)}`);
+        `Notifications holds the notifications and the sounds, grouped, each at its default volume: ${JSON.stringify(card)}`);
     await B.b.shot(`${HOME}/shot-sounds-${which}-settings.png`);
     b = await mark(B);
     await B.b.eval(`${row('shareStarted')}.querySelector('button[aria-label="Play Share started"]').click(), true`);

@@ -134,12 +134,16 @@
 #                               earning the badge in its call, bob joining and leaving at once earning none;
 #                               the badge and its tip on alice's profile card; the card saying Ended; and the
 #                               den's database holding alice's award alone, the badge's title sealed
+#   settings BROWSER            M19.1: every section of the settings and of Manage opened from the list down
+#                               the side, with the layout audit, every hint in them reading in a line; and
+#                               Appearance's Width holding general's header, list and composer to 1,200 or
+#                               900 pixels, centered, and Full letting them go
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,136p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,141p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

@@ -57,12 +57,6 @@ the tests themselves run in CI on Windows.
 - CI is gated on the `CI_ENABLED` repository variable. If your PR's checks show
   only the gate job, that is the variable, not your change.
 
-AI-assisted contributions are ok.. but you still need to understand every line
-submitted and be able to explain it in review; PRs that read as unreviewed
-model output will be closed. That and it needs to meet basic quality standards.
-Yes this is subjective, if you think of a better rule here, fork the project
-and try using it. Diversity in how we treat this stuff is unironically good.
-
 ## Security
 
 Do not open a public issue for a vulnerability. Use GitHub's private

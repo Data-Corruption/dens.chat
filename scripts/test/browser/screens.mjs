@@ -15,8 +15,8 @@
 //                            the writing guide
 //   photos, videos, files    a photo in the composer, comparing its copies, the viewer,
 //                            a video in the list
-//   keys, desktop, notify    the settings, each tab
-//   hosting, move, cache     the System tab, as an owner
+//   keys, desktop, notify    the settings, each section
+//   hosting, move, cache     the System section, as an owner
 //   retention, files         Manage, each section, as a member and as an owner
 //   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
 //   groups                   a group DM, its members beside it, a new group (M16.3)
@@ -331,7 +331,7 @@ export async function memberScreens(h, ctx) {
         await h.snap('settings-appearance', { scroll: PANEL });
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
-        for (const [tab, name] of [['Chat & media', 'chat'], ['Notifications & sounds', 'notifications'], ['Voice & video', 'voice'], ['System', 'system']]) {
+        for (const [tab, name] of [['Chat', 'chat'], ['Notifications', 'notifications'], ['Voice', 'voice'], ['System', 'system']]) {
             await settingsTab(h, tab);
             await sleep(600);
             await h.snap(`settings-${name}`, { scroll: PANEL, max: 6 });
@@ -737,7 +737,7 @@ const BUTTON = `document.querySelector('[data-call-button]')`;
 // (M13.4), through the driver's d, as gettingAround and touching have it,
 // the call's bar shows across the top of the channel's pane; where the
 // page has the call's button, a touch screen's, d.down(x) and d.up() hold
-// it, as Settings' Voice & video sets its role, toggling mute with a tap,
+// it, as Settings' Voice sets its role, toggling mute with a tap,
 // as the default, then talking while it's held, and letting go of a press
 // the browser cancels, by d.cancel(), or the page's losing focus; with a
 // mouse, there's none, and Sending your voice keeps its place; a member's
@@ -841,7 +841,7 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
             // Push to talk, from the settings, where the button's role takes
             // Sending your voice's place.
             await h.click(`document.querySelector('[data-pane=list] button[aria-label="App settings"]')`, 'the settings');
-            await settingsTab(h, 'Voice & video');
+            await settingsTab(h, 'Voice');
             const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
             const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => [l.textContent.trim(), l.querySelector('input').checked])`);
             const sending = await h.has(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"]')`);
@@ -1154,7 +1154,7 @@ export async function touching(h, ctx, d, report) {
 
     // A tip opens on a tap within the screen, and the next tap closes it.
     await openSettings(h);
-    await settingsTab(h, 'Chat & media');
+    await settingsTab(h, 'Chat');
     const TIP = `document.querySelector('[role=dialog][aria-label="App settings"] button[aria-label="More about this"]')`;
     const shows = () => h.ev(`(() => { const t = document.getElementById(${TIP}.getAttribute('aria-describedby'));
         if (!t || t.hidden) return null; const r = t.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), vw: document.documentElement.clientWidth }; })()`);
@@ -1187,8 +1187,8 @@ const VIEWER = `(() => {
 // point at from a gap of from to to, and d.wheel(at, dy), where given,
 // turns the wheel there. The settings open as a list of their sections,
 // each a page, which Back leaves for the list, and Back leaves the list,
-// closing them; Notifications & sounds holds the notifications and the
-// sounds (M14.2); where d.phone says, Voice & video holds no keyboard
+// closing them; Notifications holds the notifications and the
+// sounds (M14.2); where d.phone says, Voice holds no keyboard
 // shortcuts or screen share, which a browser's hold. Manage goes the same
 // way. The viewer, on a message's two photos, moves to the second by a
 // swipe, zooms by a double tap, and by two fingers or the wheel, and Back
@@ -1223,17 +1223,17 @@ export async function pages(h, ctx, d, report) {
     await h.wait(HOME, 'home');
     await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
     await walk(SETTINGS_FRAME, 'the settings', '', async (row, page) => {
-        if (row === 'Notifications & sounds') {
+        if (row === 'Notifications') {
             const shown = await until(SETTINGS_FRAME, (s) => s.cards.includes('Sounds'), 'the sounds card');
-            did(shown?.cards.join() === 'Notifications,Sounds', `Notifications & sounds holds the notifications and the sounds (${shown?.cards.join(', ')})`);
+            did(shown?.cards.join() === 'Notifications,Sounds', `Notifications holds the notifications and the sounds (${shown?.cards.join(', ')})`);
             return;
         }
-        if (row !== 'Voice & video') return;
+        if (row !== 'Voice') return;
         const keys = page.cards.includes('Keyboard shortcuts');
         const share = page.cards.includes('Screen share');
         did(d.phone ? !keys && !share : keys && share, d.phone
-            ? `the phone's Voice & video holds no keyboard shortcuts or screen share (${page.cards.join(', ')})`
-            : `a browser's Voice & video holds the keyboard shortcuts and screen share (${page.cards.join(', ')})`);
+            ? `the phone's Voice holds no keyboard shortcuts or screen share (${page.cards.join(', ')})`
+            : `a browser's Voice holds the keyboard shortcuts and screen share (${page.cards.join(', ')})`);
     });
     await d.tap(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Manage')`);
     // A den's sections are headed by the den's name.
@@ -1500,7 +1500,7 @@ export async function polling(h, ctx, d, report) {
     await h.escape();
 }
 
-// compact walks Appearance's Message density and spoilers (M17.2): Compact
+// compact walks Appearance's Density and spoilers (M17.2): Compact
 // picked by a tap, a channel's messages a line each, every one named and
 // none with a picture, a long press opening a message's sheet there too;
 // then a photo bob sent as a spoiler in random, covered, and shown by a tap;

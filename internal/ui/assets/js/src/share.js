@@ -204,6 +204,6 @@ export function presetOf(limits) {
 // computer's, without the call's voices; Firefox shares none.
 export function shareAudio(browser, system) {
     if (browser === 'firefox') return { supported: false, text: "Firefox can't share audio." };
-    if (system === 'windows') return { supported: true, text: "Shares a tab's audio, or this computer's without the call." };
-    return { supported: true, text: "Shares a tab's audio." };
+    if (system === 'windows') return { supported: true, text: "A tab's audio, or this computer's without the call." };
+    return { supported: true, text: "A tab's audio." };
 }

@@ -373,7 +373,7 @@ export function PendingSignIns({ list, onRecover }) {
     ));
 }
 
-const KEY_WHY = "You'll need this to read your DMs if you lose all your devices. Keep it secret.";
+const KEY_WHY = 'Reads your DMs if you lose every device. Keep it secret.';
 
 // KeyShown shows a DM recovery key once, to keep, beside a den's recovery
 // codes or after a reset.
@@ -524,7 +524,7 @@ export function DMKey({ den, onSeal }) {
                         setShown(result.seal);
                     });
                 }}>
-                    <Field label="Local password" hint="The one that protects Dens on this device, not your den password.">
+                    <Field label="Local password" hint="Your Dens password on this device, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
                     </Field>
                     <ErrorText message={act.error} />

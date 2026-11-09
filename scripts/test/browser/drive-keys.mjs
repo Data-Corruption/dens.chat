@@ -37,7 +37,7 @@ try {
 
     step('binding V and Mouse 4 in the settings');
     await clickOn(button('App settings'), 'the settings button');
-    await clickOn(button('Voice & video'), 'the voice tab');
+    await clickOn(button('Voice'), 'the voice tab');
     await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
     await waitFor(() => b.eval(`document.body.innerText.includes("Press a key, or a mouse's side button")`), 'the capture prompt');
     await b.key('v', 'down');

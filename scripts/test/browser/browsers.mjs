@@ -33,16 +33,16 @@ export async function waitFor(fn, what, ms = 20000) {
     throw new Error(`timed out waiting for ${what}: ${typeof last === 'string' ? last : JSON.stringify(last)}`);
 }
 
-// The app's settings (M8.3): the dialog, a tab of it by name, and opening
-// it at a tab from the cog on either page, as expressions for a page's
-// eval and a step that waits.
+// The app's settings (M8.3): the dialog, a section of it by name in the
+// list down its side (M19.1), and opening it at a section from the cog on
+// either page, as expressions for a page's eval and a step that waits.
 export const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
-export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="App settings"] [role=tab]')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
+export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="App settings"] nav button')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
 export async function openSettings(b, tab) {
     if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="App settings"], a[aria-label="App settings"]').click(), true`);
     await waitFor(() => b.eval(`!!${settingsTab(tab)}`), 'the settings');
     await b.eval(`${settingsTab(tab)}.click(), true`);
-    await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-selected') === 'true'`), `the settings' ${tab} tab`);
+    await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-current') === 'page'`), `the settings' ${tab} section`);
 }
 
 // openManage opens the Manage dialog of the first den on home's list

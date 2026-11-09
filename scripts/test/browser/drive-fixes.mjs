@@ -56,7 +56,7 @@ try {
     c.report(stayed && closed, `a selection let go outside the channel's dialog left it open (${stayed}), and a click outside closed it (${closed})`);
 
     step("a click elsewhere ends a key's capture");
-    await openSettings(b, 'Voice & video');
+    await openSettings(b, 'Voice');
     await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
     await waitFor(() => has("Press a key, or a mouse's side button"), 'the capture prompt');
     const TITLE = `[...document.querySelectorAll('h2')].find((h) => h.textContent === 'Keyboard shortcuts')`;

@@ -1,4 +1,4 @@
-// Appearance's Message density (M17.2): Default, as messages always
+// Appearance's Density (M17.2): Default, as messages always
 // showed, or Compact, a line each of the time, the author's name and the
 // text, which wraps under the name, on a phone too. The browser keeps the
 // choice, as it keeps Animations; until the member makes one, it's
