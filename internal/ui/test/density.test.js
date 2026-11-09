@@ -1,4 +1,4 @@
-// Appearance's Message density (M17.2), checked without a browser: the
+// Appearance's Density (M17.2), checked without a browser: the
 // browser's choice, Default until the member makes one; which messages
 // show under the one before's name, none in Compact; and Compact's row,
 // a line of the time, the name and the text, with no picture.

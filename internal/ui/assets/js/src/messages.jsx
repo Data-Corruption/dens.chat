@@ -21,6 +21,7 @@ import { ErrorText, PLAIN, Tip, dayTime, useAction } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
+import { useWidthClass } from './width.js';
 import { completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
@@ -153,6 +154,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const sealed = isPrivate(channel);
     // Compact shows each message as a line (M17.2).
     const line = useDensity() === DENSITY_COMPACT;
+    const width = useWidthClass();
     // A photo or video goes as a spoiler in a DM, inside its seal, and in a
     // channel where the den keeps which files are (M17.2).
     const canSpoil = !notes && (sealed || !!spoilers);
@@ -838,9 +840,11 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     {OFFLINE_NOTE}
                 </div>
             )}
-            {/* The room at the bottom is where who's typing shows, over the list. */}
+            {/* The room at the bottom is where who's typing shows, over the list.
+                Appearance's Width holds the content, not the scroller, so the
+                scrollbar stays at the pane's edge. */}
             <div ref={scroller} data-scroller class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" onScroll={checkEdges}>
-                <div ref={content}>
+                <div ref={content} class={width}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
                             {notes ? (
@@ -883,7 +887,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             </div>
             {/* The pane's foot, the composer among it, which the call's button
                 floats above (M13.4). */}
-            <div ref={foot}>
+            <div ref={foot} class={width}>
                 {(list.hasNewer || newCount > 0) && (
                     <div class="flex cursor-default select-none items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
                         <span>
@@ -2122,7 +2126,7 @@ function WritingGuide({ touch, onClose }) {
                     <p>@ and a username lets them know, if they can see the channel. Inside code or a link it's only text.</p>
                     <p>
                         Staff, the moderators and the owner, write @everyone to let everyone who can see the channel know. Anyone can turn
-                        those off in the settings, under Notifications & sounds, or mute the channel.
+                        those off in the settings, under Notifications, or mute the channel.
                     </p>
                     <p>
                         A link shows where it goes, as you paste it; there's no way to give one a label. When it's sent, Dens takes its tracking

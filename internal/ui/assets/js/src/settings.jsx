@@ -1,17 +1,12 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
-// a call stay in view (M3.3), in five tabs (M8.3, M14.2), or on the phone
-// layout a list of the five, each a page (M13.3). Appearance holds the
-// theme, when animated pictures play (M15.1), and how dense messages show
-// (M17.2); Chat & media whether
-// photos and videos go compressed (M5), what
-// happens to links, and whether YouTube videos play in Dens (M4.1);
-// Notifications & sounds what notifies the member (M12.3) and the page's
-// sounds (M14.2); Voice & video the microphone and speaker, noise
-// suppression, how the member sends their voice, their shortcuts (M7) and
-// how they share their screen (M4.2); System hosting a den (M9.1) and
-// moving it to another computer (M10), the cache of other dens' files
-// (M6), update checks, and in the Android app a check at once (M17.2), the
-// local password, logging, signing this browser out, and the version.
+// a call stay in view, its sections listed down the side as Manage's are,
+// or on the phone layout a list of them, each a page. Appearance holds the
+// theme, how messages show and the verified mark; Chat compressing photos
+// and videos and what happens to links; Notifications what notifies the
+// member and the page's sounds; Voice the microphone and speaker, noise
+// suppression, how the member sends their voice, their shortcuts and their
+// screen share; and System hosting a den, the cache, updates, backups, the
+// local password, the logs, signing this browser out, and the version.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
@@ -35,6 +30,7 @@ import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.js
 import { THEMES, setTheme, themeChoice, themeName } from './theme.js';
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
+import { WIDTH_FULL, WIDTH_NARROW, WIDTH_WIDE, setWidth, useWidth } from './width.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
     callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices, inCall as callNow, keyLabel,
@@ -44,7 +40,7 @@ import {
 
 const openers = new Set();
 
-// openSettings opens the settings at a tab, "appearance", "chat",
+// openSettings opens the settings at a section, "appearance", "chat",
 // "notifications", "voice" or "system", from anywhere on the page; with
 // none, at the first, or on the phone layout at the list of them.
 export function openSettings(section = '') {
@@ -56,18 +52,20 @@ export function onOpenSettings(fn) {
     return () => openers.delete(fn);
 }
 
-const SECTIONS = [
+// SECTIONS are the settings' sections, by the id openSettings takes and
+// the name the list shows.
+export const SECTIONS = [
     ['appearance', 'Appearance'],
-    ['chat', 'Chat & media'],
-    ['notifications', 'Notifications & sounds'],
-    ['voice', 'Voice & video'],
+    ['chat', 'Chat'],
+    ['notifications', 'Notifications'],
+    ['voice', 'Voice'],
     ['system', 'System'],
 ];
 
-// SettingsDialog shows a tab of the settings. It closes with its ✕,
-// Escape, a click outside it, or Back (M13.1). On the phone layout it takes
-// the screen, its tabs a list of pages, and Back and Escape go from a page
-// to the list (M13.3).
+// SettingsDialog shows a section of the settings. It closes with its ✕,
+// Escape, a click outside it, or Back. On the phone layout it takes the
+// screen, its sections a list of pages, and Back and Escape go from a page
+// to the list.
 export function SettingsDialog({ section, onSection, onClose, instance, version, pair }) {
     useLayer(onClose);
     const narrow = useNarrow();
@@ -83,10 +81,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    // Density, animations and verified marks come first, their few choices
-    // above the themes' grid, where a long list of themes would push them
-    // out of sight.
-    else panel = <><DensityPicker /><AnimationsPicker /><VerifiedMarksPicker /><ThemePicker /></>;
+    else panel = <><ThemePicker /><MessagesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -107,20 +102,22 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     }
     return (
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
-            <div role="dialog" aria-modal="true" aria-label="App settings" class="card flex h-full max-h-[48rem] w-full max-w-2xl flex-col bg-base-100 shadow-xl">
-                <div class="flex items-center gap-2 px-4 pt-3">
-                    <h2 class="card-title flex-1">App settings</h2>
+            <div role="dialog" aria-modal="true" aria-label="App settings" class="card flex h-full max-h-[48rem] w-full max-w-3xl flex-col bg-base-100 shadow-xl">
+                <div class="flex items-center gap-2 border-b border-base-300 px-4 py-3">
+                    <h2 class="card-title min-w-0 flex-1 truncate">App settings</h2>
                     <button type="button" class="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
                 </div>
-                <div role="tablist" class="tabs tabs-border flex-nowrap overflow-x-auto px-2">
-                    {SECTIONS.map(([id, name]) => (
-                        <button key={id} type="button" role="tab" aria-selected={at === id}
-                            class={`tab whitespace-nowrap ${at === id ? 'tab-active' : ''}`} onClick={() => onSection(id)}>
-                            {name}
-                        </button>
-                    ))}
+                <div class="flex min-h-0 flex-1 flex-row">
+                    <nav aria-label="Sections" class="flex w-52 shrink-0 flex-col gap-1 border-r border-base-300 p-2">
+                        {SECTIONS.map(([id, name]) => (
+                            <button key={id} type="button" aria-current={at === id ? 'page' : undefined}
+                                class={`btn btn-ghost btn-sm shrink-0 justify-start font-normal ${at === id ? 'btn-active' : ''}`} onClick={() => onSection(id)}>
+                                {name}
+                            </button>
+                        ))}
+                    </nav>
+                    <div data-panel class="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
                 </div>
-                <div role="tabpanel" data-panel class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
             </div>
         </div>
     );
@@ -190,47 +187,65 @@ function ThemePicker() {
     );
 }
 
-// DensityPicker chooses how messages show (M17.2): as they always have, or
-// Compact, a line each of the time, the name and the text. This browser
-// keeps it, as it keeps the theme.
-function DensityPicker() {
-    const choice = useDensity();
+// MessagesPicker chooses how messages show: their Density, Default or
+// Compact, a line each of the time, the name and the text; and their
+// Width, Full, Wide or Narrow, how far across the pane they run. This
+// browser keeps both, as it keeps the theme.
+function MessagesPicker() {
+    const density = useDensity();
+    const width = useWidth();
     return (
-        <Card title="Message density">
-            <div role="radiogroup" aria-label="Message density" class="flex flex-wrap gap-x-6 gap-y-2" data-density>
-                {[[DENSITY_DEFAULT, 'Default'], [DENSITY_COMPACT, 'Compact']].map(([value, label]) => (
-                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
-                        <input type="radio" class="radio radio-sm" name="density" value={value} checked={choice === value}
-                            onChange={() => setDensity(value)} />
-                        <span>{label}</span>
-                    </label>
-                ))}
-            </div>
+        <Card title="Messages">
+            <Choices label="Density" name="density" data="data-density" choice={density} onPick={setDensity}
+                choices={[[DENSITY_DEFAULT, 'Default'], [DENSITY_COMPACT, 'Compact']]} />
+            <Choices label="Width" name="width" data="data-width" choice={width} onPick={setWidth}
+                choices={[[WIDTH_FULL, 'Full'], [WIDTH_WIDE, 'Wide'], [WIDTH_NARROW, 'Narrow']]} />
         </Card>
     );
 }
 
-// AnimationsPicker chooses when animated pictures, and from M15.2 the den's
-// emoji, play (M15.1): always, or while the pointer is over their row,
-// which the system's asking for less motion makes the default. This browser
-// keeps it, as it keeps the theme.
+// Choices is a setting of a few, in a row under its label.
+function Choices({ label, name, data, choice, choices, onPick }) {
+    return (
+        <div class="flex flex-col gap-1">
+            <span class="text-sm">{label}</span>
+            <div role="radiogroup" aria-label={label} class="flex flex-wrap gap-x-6 gap-y-2" {...{ [data]: true }}>
+                {choices.map(([value, text]) => (
+                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
+                        <input type="radio" class="radio radio-sm" name={name} value={value} checked={choice === value} onChange={() => onPick(value)} />
+                        <span>{text}</span>
+                    </label>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// AnimationsPicker chooses when animated pictures and the den's emoji
+// play: always, or while the pointer is over their row, which the system's
+// asking for less motion makes the default. This browser keeps it, as it
+// keeps the theme.
 function AnimationsPicker() {
     const choice = useAnimations();
     return (
         <Card title="Animations">
             <div role="radiogroup" aria-label="Animations" class="flex flex-col gap-3">
                 {[
-                    [ALWAYS, 'Always', 'Animated pictures and emoji play wherever they show.'],
-                    [ON_HOVER, 'On hover', "A picture or an emoji plays while the pointer is over its message or member, and in a profile you open. On a touch screen, only in profiles."],
-                ].map(([value, label, hint]) => (
-                    <label key={value} class="flex cursor-pointer items-start gap-3">
-                        <input type="radio" class="radio radio-sm mt-0.5 shrink-0" name="animations" value={value} checked={choice === value}
-                            onChange={() => setAnimations(value)} />
-                        <span class="min-w-0">
-                            <span class="block">{label}</span>
-                            <span class="block text-sm text-base-content/70">{hint}</span>
-                        </span>
-                    </label>
+                    [ALWAYS, 'Always', 'Animated pictures and emoji play wherever they show.', ''],
+                    [ON_HOVER, 'On hover', 'They play while the pointer is over their message or member.', 'And in a profile you open. On a touch screen, only in profiles.'],
+                ].map(([value, label, hint, tip]) => (
+                    <div key={value} class="flex flex-col gap-0.5">
+                        <div class="flex items-center gap-1">
+                            <label class="flex min-h-6 cursor-pointer items-center gap-3">
+                                <input type="radio" class="radio radio-sm" name="animations" value={value} checked={choice === value}
+                                    onChange={() => setAnimations(value)} />
+                                <span>{label}</span>
+                            </label>
+                            {tip && <Tip id={`animations-${value}-tip`}>{tip}</Tip>}
+                        </div>
+                        {/* Under the label: the radio is 20 pixels, and its gap 12. */}
+                        <p class="pl-8 text-sm text-base-content/70">{hint}</p>
+                    </div>
                 ))}
             </div>
         </Card>
@@ -238,17 +253,17 @@ function AnimationsPicker() {
 }
 
 // VerifiedMarksPicker chooses whether the check beside a member this
-// member compared codes with shows beside their name (M16.4): always, on
-// hover or never, and on a touch screen, which has no hover, shown or not.
-// This browser keeps it, as it keeps the theme.
+// member compared codes with shows beside their name: always, on hover or
+// never, and on a touch screen, which has no hover, shown or not. This
+// browser keeps it, as it keeps the theme.
 function VerifiedMarksPicker() {
     const touch = useCoarse();
     const choice = useVerifiedMarks();
     const choices = touch ? [[MARKS_ALWAYS, 'Yes'], [MARKS_NEVER, 'No']] : [[MARKS_ALWAYS, 'Always'], [MARKS_HOVER, 'On hover'], [MARKS_NEVER, 'No']];
     return (
-        <Card title="Verified status">
-            <p class="text-sm text-base-content/70">Show it beside people in lists, once you've compared codes with them.</p>
-            <div role="radiogroup" aria-label="Show verified status in lists" class="flex flex-wrap gap-x-6 gap-y-2" data-verified-marks>
+        <Card title="Verified mark">
+            <p class="text-sm text-base-content/70">Beside people you've compared codes with.</p>
+            <div role="radiogroup" aria-label="Verified mark" class="flex flex-wrap gap-x-6 gap-y-2" data-verified-marks>
                 {choices.map(([value, label]) => (
                     <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
                         <input type="radio" class="radio radio-sm" name="verified-marks" value={value} checked={choice === value}
@@ -297,7 +312,7 @@ function ChatSettings() {
         <>
             <Card title="Photos and videos">
                 <Toggle id="compress" label="Compress photos and videos" checked={compress}
-                    hint="Sends faster and saves space. You can still choose the original before sending."
+                    hint="Sends faster and saves space. You can still send the original."
                     tip="A photo goes at most 2,560 pixels across, and a video at most 720p, made on this device before it's sent, which takes about as long as the video lasts. A file larger than a den allows is compressed either way."
                     onChange={(on) => {
                         setSendSmaller(on);
@@ -358,17 +373,18 @@ function NotificationSettings() {
     return (
         <Card title="Notifications">
             <Toggle id="notify-dms" label="Direct messages" checked={!!status.dms} disabled={act.busy} onChange={(on) => change('dms', on)} />
-            <Toggle id="notify-mentions" label="Mentions" hint="Messages in a den's channels that mention you by your username."
+            <Toggle id="notify-mentions" label="Mentions" hint="Messages in channels that mention your username."
                 checked={!!status.mentions} disabled={act.busy} onChange={(on) => change('mentions', on)} />
             <div class="pl-6">
-                <Toggle id="notify-everyone" label="@everyone" hint="Staff's @everyone, in a channel you can see. Off, it notifies nothing and plays no sound, but still counts among your mentions."
+                <Toggle id="notify-everyone" label="@everyone" hint="Staff's @everyone, in channels you can see."
+                    tip="Off, it notifies nothing and plays no sound, but still counts among your mentions."
                     checked={!status.everyoneOff} disabled={act.busy || !status.mentions} onChange={(on) => change('everyone', on)} />
             </div>
             <Toggle id="notify-events" label="Events" hint="Events you're interested in, as they start."
                 checked={!status.eventsOff} disabled={act.busy} onChange={(on) => change('events', on)} />
             <Toggle id="notify-text" label="Show the message" hint="The start of each message, in its notification."
                 checked={!status.hideText} disabled={act.busy || !notifying(status)} onChange={(on) => change('hideText', !on)} />
-            {notifying(status) && <p class="text-sm text-base-content/70">{whereTheyShow(status, browser, elsewhere)}</p>}
+            {notifying(status) && whereTheyShow(status, browser, elsewhere).map((line) => <p key={line} class="text-sm text-base-content/70">{line}</p>)}
             <p class="text-sm text-base-content/70">Mute a den or a channel from the bell beside its name.</p>
             <ErrorText message={act.error} />
         </Card>
@@ -402,9 +418,16 @@ function SoundSettings() {
             await uploadSound(name, file);
         });
     }
-    const message = status.shell
-        ? "A DM or a mention plays it once while Dens is open, unless you're reading that channel or muted it. With a notification, Android plays its own sound instead, which you change in Android's settings for Dens's notifications."
-        : "A DM or a mention plays it once, in the Dens tab you used last, unless you're reading that channel or muted it. With a notification your desktop shows, its own sound plays instead.";
+    const message = (
+        <>
+            Plays once for a DM or a mention, unless read or muted.{' '}
+            <DocsTip id="docs-sounds" page="usage/#notifications">
+                {status.shell
+                    ? "Where a notification shows instead, Android plays its own sound, set in Android's settings for Dens."
+                    : 'Where your desktop shows a notification instead, its own sound plays.'}
+            </DocsTip>
+        </>
+    );
     return (
         <Card title="Sounds">
             {GROUPS.map(([group, names]) => (
@@ -608,7 +631,7 @@ function VoiceSettings() {
                         )}
                     </div>
                 )}
-                <Field label="Call volume" hint="Everyone in a call, at once, under each one's own volume.">
+                <Field label="Call volume" hint="Everyone in the call, before their own volumes.">
                     <div class="flex items-center gap-3">
                         <input type="range" class="range range-md min-w-0 flex-1" min="0" max="100" step="5" value={Math.round(loud * 100)}
                             aria-label="Call volume" aria-valuetext={`${Math.round(loud * 100)}%`}
@@ -620,11 +643,8 @@ function VoiceSettings() {
                     hint="Removes keyboard, fan and background noise."
                     tip="It adds 30 ms of delay and uses a little of this device's processor. Off, the built-in suppression takes out only steady noise, such as a fan's." />
                 {suppression.processorFailed ? (
-                    <p class="text-sm text-warning">
-                        Dens's voice processing couldn't run here, so the built-in noise suppression is on, and voice activity sends whatever
-                        it hears. Push to talk still works.
-                    </p>
-                ) : suppression.failed && <p class="text-sm text-warning">Noise suppression couldn't start here, so the built-in one is on.</p>}
+                    <p class="text-sm text-warning">Voice processing can't run here; voice activity sends everything.</p>
+                ) : suppression.failed && <p class="text-sm text-warning">Noise suppression couldn't start; the built-in one is on.</p>}
             </Card>
             <Card title={holds ? "The call's button" : 'Sending your voice'}>
                 {holds ? (
@@ -758,7 +778,8 @@ function KeysNote({ elsewhere, onDesktop }) {
         if (elsewhere.covers.length > 0) {
             return (
                 <div class="flex flex-col gap-2">
-                    <p class={text}>Your desktop runs these in every app, and Dens acts on them during a call. {elsewhere.note}</p>
+                    <p class={text}>Your desktop runs these in every app; Dens acts on them in a call.</p>
+                    {elsewhere.note && <p class={text}>{elsewhere.note}</p>}
                     <div class="flex flex-wrap gap-2">
                         {elsewhere.configurable && <button type="button" class="btn btn-sm" onClick={() => onDesktop('configure')}>Change them</button>}
                         <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDesktop('stop')}>Stop using them</button>
@@ -772,7 +793,8 @@ function KeysNote({ elsewhere, onDesktop }) {
         if (!elsewhere.bindable) {
             return (
                 <div class="flex flex-col gap-2">
-                    <p class={text}>Your desktop has none of them set now, so they work only while Dens is focused. {elsewhere.note}</p>
+                    <p class={text}>None are set on your desktop, so they work while Dens is focused.</p>
+                    {elsewhere.note && <p class={text}>{elsewhere.note}</p>}
                     <div class="flex flex-wrap gap-2">
                         {elsewhere.configurable && <button type="button" class="btn btn-sm" onClick={() => onDesktop('configure')}>Change them</button>}
                         <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDesktop('stop')}>Start over</button>
@@ -782,7 +804,7 @@ function KeysNote({ elsewhere, onDesktop }) {
         }
         return (
             <div class="flex flex-col gap-2">
-                <p class={text}>Work while Dens is focused. To use them in other apps, set them up with your desktop.</p>
+                <p class={text}>Work while Dens is focused. Set them up to work in every app.</p>
                 <div>
                     <button type="button" class="btn btn-sm" onClick={() => onDesktop('bind')}>
                         Set up with your desktop
@@ -792,13 +814,18 @@ function KeysNote({ elsewhere, onDesktop }) {
         );
     }
     if (elsewhere.helper && elsewhere.covers.length > 0) {
-        return <p class={text}>Work in other apps too during a call, such as a game in full screen. {elsewhere.note}</p>;
+        return (
+            <>
+                <p class={text}>Work in every app during a call, a full-screen game included.</p>
+                {elsewhere.note && <p class={text}>{elsewhere.note}</p>}
+            </>
+        );
     }
     return (
         <p class={text}>
             {elsewhere.helper
-                ? "Work while Dens is focused. Dens's helper can't read them in other apps on this computer."
-                : 'Work while Dens is focused. To use them in other apps, keep the Dens helper running.'}
+                ? "Work while Dens is focused; the helper can't read them here."
+                : 'Work while Dens is focused, or in every app with the helper.'}
         </p>
     );
 }
@@ -868,7 +895,7 @@ function ShareSettings() {
 }
 
 // SystemSettings holds hosting, the cache, update checks, the local
-// password, logging, signing this browser out, and the version.
+// password, the logs, signing this browser out, and the version.
 function SystemSettings({ instance, version, pair }) {
     const [settings, setSettings] = useState(null);
     const load = useAction();
@@ -900,9 +927,13 @@ function SystemSettings({ instance, version, pair }) {
                     <Toggle id="update-notices" label="Show a notice when an update is available" checked={settings.updateNotifications}
                         onChange={(on) => change('updateNotifications', on)} />
                     <p class="text-sm text-base-content/70">
-                        {settings.updatesDownload
-                            ? "A check asks the release host for the newest version, which sees this phone's IP address. Dens downloads a newer one as it finds it, checks it was signed by Dens's release process, and Android asks you before installing it."
-                            : "A check asks the release host for the newest version, which sees this computer's IP address."}
+                        {settings.updatesDownload ? "Each check shows the release host this phone's IP address." : "Each check shows the release host this computer's IP address."}
+                        {settings.updatesDownload && (
+                            <>
+                                {' '}
+                                <Tip id="updates-tip">Dens downloads a newer version, checks that Dens's release process signed it, and Android asks you before installing it.</Tip>
+                            </>
+                        )}
                     </p>
                     {settings.updatesDownload && <CheckNow />}
                 </Card>
@@ -911,12 +942,12 @@ function SystemSettings({ instance, version, pair }) {
                 <Card title="Updates">
                     <Toggle id="update-notices" label="Show a notice when an update is available" checked={settings.updateNotifications}
                         onChange={(on) => change('updateNotifications', on)} />
-                    <p class="text-sm text-base-content/70">Flatpak checks for updates, and installs them with your other apps.</p>
+                    <p class="text-sm text-base-content/70">Flatpak updates Dens with your other apps.</p>
                 </Card>
             )}
             <BackUp />
             <LocalPassword />
-            <Card title="Logging">
+            <Card title={<>Logs <DocsTip id="docs-logs" page="usage/#sending-logs" side="right">Which level to set, and what the logs hold.</DocsTip></>}>
                 <Field label="Log level">
                     <select class="select" value={settings.logLevel} onChange={(e) => change('logLevel', e.currentTarget.value)}>
                         {settings.logLevels.map((level) => <option key={level} value={level}>{level}</option>)}
@@ -924,22 +955,20 @@ function SystemSettings({ instance, version, pair }) {
                 </Field>
                 {/* The service keeps the logs where an installed Dens's
                     desktop user can't read them, so the page downloads
-                    them (M11). */}
-                <p class="text-sm text-base-content/70">
-                    The logs say what Dens did and when, to send with a problem: debug says the most, calls in detail. They hold no messages,
-                    keys or addresses, but they do name your dens, with their IDs.
-                </p>
+                    them. */}
+                <p class="text-sm text-base-content/70">What Dens did and when, with no messages, keys or addresses.</p>
                 <div>
                     <a class="btn btn-outline btn-sm" href="/api/logs" download>Download the newest logs</a>
                 </div>
             </Card>
             <ErrorText message={save.error} />
             <Card title={inApp() ? 'This page' : 'This browser'}>
+                <p class="text-sm text-base-content/70">{inApp() ? 'Signing out unpairs this page.' : 'Signing out unpairs this browser.'}</p>
                 <p class="text-sm text-base-content/70">
-                    {inApp() ? 'Signing out unpairs this page. Dens pairs it again as you open it from your apps.'
+                    {inApp() ? 'Dens pairs it again as you open it from your apps.'
                         : pair
-                            ? <>Signing out unpairs this browser. To pair it again, run <code class="rounded bg-base-300 px-1">{pair}</code>.</>
-                            : 'Signing out unpairs this browser. To pair it again, open Dens from your apps menu.'}
+                            ? <>To pair it again, run <code class="rounded bg-base-300 px-1">{pair}</code>.</>
+                            : 'To pair it again, open Dens from your apps menu.'}
                 </p>
                 <div>
                     <button type="button" class="btn btn-outline btn-sm" onClick={() => save.run(async () => {
@@ -960,8 +989,8 @@ function SystemSettings({ instance, version, pair }) {
                     <a class="link link-primary" href={DOCS} target="_blank" rel="noopener noreferrer">dens.chat/docs</a>
                 </p>
                 <p class="text-sm text-base-content/70">
-                    Dens includes software from other projects, under their own licenses.{' '}
-                    <a class="link link-primary" href="/licenses" target="_blank" rel="noopener noreferrer">Read them</a>
+                    Includes other projects' software.{' '}
+                    <a class="link link-primary" href="/licenses" target="_blank" rel="noopener noreferrer">Their licenses</a>
                 </p>
             </Card>
         </>
@@ -1051,10 +1080,10 @@ function OnThisComputer({ settings, onChange }) {
         <Card title="On this computer">
             <Toggle id="remember" label="Remember on this computer" checked={asking || remember.on || remember.asking}
                 disabled={act.busy || remember.asking} onChange={change}
-                hint="Dens opens without your local password, and when you sign in. Programs you run could open it too." />
+                hint="Opens without your local password, and at sign-in." tip="Programs you run on this computer could open Dens too." />
             {asking ? (
                 <form class="flex flex-col gap-2" onSubmit={turnOn}>
-                    <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+                    <Field label="Local password" hint="Your Dens password on this device, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
                     </Field>
                     <div class="flex gap-2">
@@ -1076,10 +1105,12 @@ function OnThisComputer({ settings, onChange }) {
                             onChange({ ...settings, startAtSignIn });
                         })} />
                     {settings.startAtSignIn.manual && (
-                        <p class="text-sm text-base-content/70">
-                            Your desktop can't start Dens itself. Have it run this when you sign in:{' '}
-                            <code class="rounded bg-base-300 px-1">{settings.startAtSignIn.manual}</code>
-                        </p>
+                        <>
+                            <p class="text-sm text-base-content/70">Your desktop can't start Dens itself.</p>
+                            <p class="text-sm text-base-content/70">
+                                Have it run this when you sign in: <code class="rounded bg-base-300 px-1">{settings.startAtSignIn.manual}</code>
+                            </p>
+                        </>
                     )}
                 </>
             )}
@@ -1126,10 +1157,10 @@ function BackUp() {
 
     return (
         <Card title={<>Backup <DocsTip id="docs-backups" page="backups/" side="right">What a backup holds, and restoring one here or on another computer.</DocsTip></>}>
-            <p class="text-sm text-base-content/70">Your dens, keys and settings, and a den you host, protected by your local password. Not the cache.</p>
+            <p class="text-sm text-base-content/70">Your dens, keys, settings and a hosted den. Not the cache.</p>
             {asking ? (
                 <form class="flex flex-col gap-2" onSubmit={submit}>
-                    <Field label="Local password" hint="The one that protects Dens on this device, not a den password.">
+                    <Field label="Local password" hint="Your Dens password on this device, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
                     </Field>
                     <div class="flex flex-wrap items-center gap-2">
@@ -1250,7 +1281,7 @@ function Hosting() {
     const moves = switching ? null : moving(hosting);
     const warning = hostingOnWarning(hosting);
     const passwordField = (
-        <Field label="Local password" hint="The one that protects Dens on this computer, not a den password.">
+        <Field label="Local password" hint="Your Dens password on this device, not a den password.">
             <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
         </Field>
     );
@@ -1258,11 +1289,11 @@ function Hosting() {
     return (
         <Card title={title}>
             <Toggle id="hosting" label="Host a den on this computer" checked={on} disabled={act.busy} onChange={ask}
-                hint="A den needs this computer to stay on, a domain, and Caddy in front of it." />
+                hint="Needs this computer on, a domain, and Caddy in front." />
             {asking === 'on' && (
                 <form class="flex flex-col gap-2" onSubmit={turnOn}>
                     {warning && <p class="text-sm text-warning">{warning}</p>}
-                    <p class="text-sm text-base-content/70">Hosting opens ports to the internet, so it takes your local password.</p>
+                    <p class="text-sm text-base-content/70">Opening ports to the internet takes your local password.</p>
                     {passwordField}
                     <div class="flex gap-2">
                         <SubmitButton busy={act.busy}>Turn hosting on</SubmitButton>
@@ -1272,7 +1303,8 @@ function Hosting() {
             )}
             {asking === 'off' && (
                 <div class="flex flex-col gap-2">
-                    <p class="text-sm">Members can't reach your den until hosting is back on. Everything in it stays.</p>
+                    <p class="text-sm">Members can't reach your den until hosting is back on.</p>
+                    <p class="text-sm text-base-content/70">Everything in it stays.</p>
                     <div class="flex gap-2">
                         <button type="button" class="btn btn-error" disabled={act.busy} onClick={turnOff}>
                             {act.busy && <span class="loading loading-spinner loading-sm"></span>}
@@ -1284,10 +1316,12 @@ function Hosting() {
             )}
             {note?.problem && <p role="status" class="text-sm text-warning">{note.problem}</p>}
             {note?.address && (
-                <p class="text-sm text-base-content/70">
-                    Caddy forwards your den's address to <code class="rounded bg-base-300 px-1">{note.address}</code>, and your router
-                    forwards port {note.udp} (UDP) and port {note.tcp} (TCP) to this computer, for calls.
-                </p>
+                <>
+                    <p class="text-sm text-base-content/70">
+                        Caddy forwards your den's address to <code class="rounded bg-base-300 px-1">{note.address}</code>.
+                    </p>
+                    <p class="text-sm text-base-content/70">Your router forwards UDP {note.udp} and TCP {note.tcp} here, for calls.</p>
+                </>
             )}
             {moves && (
                 <div class="flex flex-col gap-2 border-t border-base-300 pt-3">
@@ -1297,21 +1331,14 @@ function Hosting() {
                                 You exported {moves.den} on {moves.exported}.{' '}
                                 <DocsTip id="docs-server" page="hosting/#on-a-server">Restoring the den on a server, hosting it there, and removing it from this computer.</DocsTip>
                             </p>
-                            {asking !== 'remove' && (
-                                <p class="text-sm text-base-content/70">
-                                    Once the other computer hosts it, remove it from this one. Dens here then reaches it at {moves.url}, as any
-                                    member's does.
-                                </p>
-                            )}
+                            {asking !== 'remove' && <p class="text-sm text-base-content/70">Once the other computer hosts it, remove it from this one.</p>}
                         </>
                     )}
                     {asking === 'move' && (
                         <form class="flex flex-col gap-2" onSubmit={move}>
-                            <p class="text-sm">
-                                {hosting.enabled ? 'This turns hosting off: members' : 'Members'} can't reach {moves.den} until the other
-                                computer hosts it.
-                            </p>
-                            <p class="text-sm text-base-content/70">The file only holds the den, not any of your client data.</p>
+                            {hosting.enabled && <p class="text-sm">This turns hosting off.</p>}
+                            <p class="text-sm">Members can't reach {moves.den} until the other computer hosts it.</p>
+                            <p class="text-sm text-base-content/70">The file holds the den alone, none of your own data.</p>
                             {passwordField}
                             <div class="flex flex-wrap items-center gap-2">
                                 <SubmitButton busy={act.busy}>Download the den's export</SubmitButton>
@@ -1322,11 +1349,9 @@ function Hosting() {
                     )}
                     {asking === 'remove' && (
                         <form class="flex flex-col gap-2" onSubmit={remove}>
-                            <p class="text-sm">
-                                This deletes this computer's copy of {moves.den}: its members, messages and files. Dens first checks that another
-                                computer serves the den at {moves.url}.
-                            </p>
-                            <p class="text-sm text-base-content/70">Your account in the den stays, and Dens here reaches the den at its address.</p>
+                            <p class="text-sm">Deletes this computer's copy of {moves.den}, its messages and files.</p>
+                            <p class="text-sm text-base-content/70">Dens first checks that another computer serves it at {moves.url}.</p>
+                            <p class="text-sm text-base-content/70">Your account stays; Dens here reaches the den at its address.</p>
                             {passwordField}
                             <div class="flex gap-2">
                                 <SubmitButton busy={act.busy} class="btn-error">Remove from this computer</SubmitButton>
@@ -1371,7 +1396,7 @@ function Cache({ settings, onChange }) {
     const reload = async () => onChange(await api.get('/api/settings'));
     return (
         <Card title="Cache">
-            <p class="text-sm text-base-content/70">Reduces network use, and lets you view what's cached offline.</p>
+            <p class="text-sm text-base-content/70">Other dens' files and messages, kept for offline reading.</p>
             <p class="text-sm">{cacheUsage(settings.cacheUsed, settings.cacheLimit)}</p>
             <Field label="Keep up to">
                 <select class="select" value={settings.cacheLimit} disabled={save.busy} onChange={(e) => {
@@ -1428,7 +1453,7 @@ function LocalPassword() {
 
     return (
         <Card title="Local password">
-            <p class="text-sm text-base-content/70">Protects Dens on this device. It's separate from your den passwords.</p>
+            <p class="text-sm text-base-content/70">Protects Dens on this device. Not a den password.</p>
             {open ? (
                 <form class="flex flex-col gap-2" onSubmit={submit}>
                     <Field label="Current password">
