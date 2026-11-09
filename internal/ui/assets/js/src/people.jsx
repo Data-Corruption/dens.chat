@@ -5,17 +5,19 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, HoverTip, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
+import { ErrorText, Field, HoverTip, LongName, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
 import { CalendarIcon, CrownIcon, EyeIcon, ShieldIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
+import { PointerMenu, ownsMenu, rightClick } from './menus.jsx';
 import { useNarrow } from './nav.js';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
 import { badgeTip, zone } from './denevents.js';
 import { Sheet, SheetRow } from './sheet.jsx';
+import { useCoarse } from './touch.js';
 
 const MAX_BIO = 300;
 
@@ -39,31 +41,19 @@ export function roleMark(role) {
 // themes, Retro's among them.
 export const MARK = 'text-base-content/80';
 
-function RoleIcon({ role }) {
-    return <span class={`inline-flex ${MARK}`}>{role === 'owner' ? <CrownIcon size="h-4 w-4" /> : <ShieldIcon size="h-4 w-4" />}</span>;
-}
-
-// RoleMark is a staff member's mark beside their name on their profile
-// (M17.6), with its tip, in place of a role's pill.
-function RoleMark({ role, id }) {
+/** RoleMark is a staff member's mark beside their name, in place of a
+    role's pill (M17.6). Its boxes are flex boxes down to the icon, so no
+    line of text sets its height, and each row centers it on the name.
+    With id, its tip opens on a tap too, as on the card; without, the tip
+    is hover's alone and its words are read with the row's, where the row
+    or the name is a button. */
+export function RoleMark({ role, id }) {
     const label = roleMark(role);
     if (!label) return null;
+    const icon = <span class={`inline-flex ${MARK}`}>{role === 'owner' ? <CrownIcon size="h-4 w-4" /> : <ShieldIcon size="h-4 w-4" />}</span>;
     return (
-        <span data-role-mark={role}>
-            <Tip id={id} label={label} trigger={<RoleIcon role={role} />}>{label}</Tip>
-        </span>
-    );
-}
-
-// RowRoleMark is the same mark in the member list, whose row is a button
-// that opens the card: its tip shows on a mouse's hover, and its words are
-// read with the row's.
-function RowRoleMark({ role }) {
-    const label = roleMark(role);
-    if (!label) return null;
-    return (
-        <span data-role-mark={role}>
-            <HoverTip label={label} tip={label}><RoleIcon role={role} /></HoverTip>
+        <span class="inline-flex shrink-0" data-role-mark={role}>
+            {id ? <Tip id={id} label={label} trigger={icon} wrap="inline-flex">{label}</Tip> : <HoverTip label={label} tip={label}>{icon}</HoverTip>}
         </span>
     );
 }
@@ -91,13 +81,61 @@ export function cardMenu({ self, role, member, kept }) {
     return out;
 }
 
+/** memberMenu lists what a right click on a member's row in the list
+    offers: their profile, then what their card does, Message, or
+    on one's own Edit profile and Notes, and what its ⋯ holds */
+export function memberMenu({ self, role, member, kept, notes }) {
+    const left = !!member.left_at;
+    return [
+        { key: 'profile', label: 'Profile' },
+        self && { key: 'edit', label: 'Edit profile' },
+        self && notes && { key: 'notes', label: 'Notes' },
+        !self && !left && { key: 'message', label: 'Message' },
+        ...cardMenu({ self, role, member, kept }),
+    ].filter(Boolean);
+}
+
 const byName = (a, b) => a.display_name.localeCompare(b.display_name);
 
-// MemberList shows who's in the den, online first.
-export function MemberList({ members, online, onProfile }) {
+// MemberList shows who's in the den, online first. With a mouse, a right
+// click on a row opens what the member's card does, at the pointer, or as
+// a sheet on the phone layout: card holds the viewer, their role, the
+// identities their Dens keeps, and what the card's buttons do.
+export function MemberList({ denID, members, online, card, onProfile }) {
+    const narrow = useNarrow();
+    const touch = useCoarse();
+    const act = useAction();
+    const [menu, setMenu] = useState(null);
     const here = members.filter((m) => !m.left_at);
     const on = here.filter((m) => online.has(m.id)).sort(byName);
     const off = here.filter((m) => !online.has(m.id)).sort(byName);
+    function items(m) {
+        const setRole = (next) => act.run(() => api.put(`/api/dens/${denID}/members/${m.id}/role`, { role: next }));
+        const run = {
+            profile: () => onProfile(m),
+            edit: card.onEdit,
+            notes: () => act.run(card.onNotes),
+            message: () => act.run(() => card.onMessage(m)),
+            compare: () => card.onCompare(m),
+            promote: () => setRole('moderator'),
+            demote: () => setRole('member'),
+            remove: () => card.onRemove(m),
+        };
+        const self = m.id === card.me.id;
+        const kept = card.identities ? card.identities[m.id] || {} : null;
+        return memberMenu({ self, role: card.role, member: m, kept, notes: !!card.onNotes })
+            .map((item) => ({ ...item, disabled: act.busy && ['message', 'notes', 'promote', 'demote'].includes(item.key), run: run[item.key] }));
+    }
+    const rightClicks = (m) => (card && !touch ? {
+        onContextMenu: (e) => {
+            const row = e.currentTarget;
+            if (!ownsMenu(e.target, getSelection(), row)) return;
+            e.preventDefault();
+            const r = row.getBoundingClientRect();
+            setMenu({ id: m.id, at: rightClick(e, row) || { x: r.left + 8, y: r.bottom }, row });
+        },
+    } : {});
+    const opened = menu && here.find((m) => m.id === menu.id);
     const section = (title, list, dim) =>
         list.length > 0 && (
             <div>
@@ -106,19 +144,23 @@ export function MemberList({ members, online, onProfile }) {
                 </h3>
                 <ul>
                     {list.map((m) => (
-                        <li key={m.id}>
+                        <li key={m.id} class="relative">
                             <HoverRow
                                 as="button"
                                 type="button"
-                                class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11 ${dim ? 'opacity-60' : ''}`}
+                                class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11 ${dim ? 'opacity-60' : ''} ${menu?.id === m.id ? 'bg-base-300/60' : ''}`}
                                 onClick={() => onProfile(m)}
+                                {...rightClicks(m)}
                             >
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />
                                 <span class="flex min-w-0 flex-1 items-center gap-1">
-                                    <span class="truncate">{m.display_name}</span>
-                                    <RowRoleMark role={m.role} />
+                                    <LongName name={m.display_name} />
+                                    <RoleMark role={m.role} />
                                 </span>
                             </HoverRow>
+                            {opened?.id === m.id && !narrow && (
+                                <PointerMenu at={menu.at} label={`Options for ${m.display_name}`} items={items(m)} back={menu.row} onClose={() => setMenu(null)} />
+                            )}
                         </li>
                     ))}
                 </ul>
@@ -126,8 +168,21 @@ export function MemberList({ members, online, onProfile }) {
         );
     return (
         <nav aria-label="Members" class="flex flex-col gap-2 p-2">
+            {act.error && <p role="alert" class="px-2 text-xs text-error">{act.error}</p>}
             {section('Online', on, false)}
             {section('Offline', off, true)}
+            {opened && narrow && (
+                <Sheet label={`Options for ${opened.display_name}`} title={<span class="font-semibold">{opened.display_name}</span>} onClose={() => setMenu(null)}>
+                    {items(opened).map((a) => (
+                        <SheetRow key={a.key} danger={a.danger} disabled={a.disabled} onClick={() => {
+                            setMenu(null);
+                            a.run();
+                        }}>
+                            {a.label}
+                        </SheetRow>
+                    ))}
+                </Sheet>
+            )}
         </nav>
     );
 }

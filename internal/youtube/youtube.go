@@ -1,8 +1,9 @@
 // Package youtube fetches what the covers of YouTube's players show (M4.1):
 // a linked video's title and channel, with the channel's address (M14.1),
-// from YouTube's oEmbed endpoint, and its picture, from i.ytimg.com. The
-// page shows both from its own origin, so nothing on it contacts YouTube
-// until a member plays a video or opens one of its links.
+// from YouTube's oEmbed endpoint, and its picture from i.ytimg.com, a
+// Short's portrait. The page shows both from its own origin, so
+// nothing on it contacts YouTube until a member plays a video or opens one
+// of its links.
 //
 // It asks only at addresses it builds from a checked video ID, follows no
 // redirects, caps what it reads, and keeps what it found in memory. It
@@ -43,6 +44,9 @@ const (
 	maxPicture = 256 << 10
 	// The picture asked for is 480 by 360; much more isn't that picture.
 	maxSide = 1280
+	// A Short's is 1080 by 1920, and up to about 360 KB.
+	maxPortrait     = 1 << 20
+	maxPortraitSide = 1920
 
 	fetchTimeout = 10 * time.Second
 	// A failure is kept for a minute, so a YouTube that was down is asked
@@ -158,7 +162,29 @@ func (l *Lookup) Picture(ctx context.Context, id string) ([]byte, error) {
 	if !denproto.VideoID(id) {
 		return nil, ErrBadID
 	}
-	v, err := l.get(ctx, "picture "+id, func(ctx context.Context) (any, int, error) { return l.fetchPicture(ctx, id) })
+	v, err := l.get(ctx, "picture "+id, func(ctx context.Context) (any, int, error) {
+		return l.fetchPicture(ctx, id, "hqdefault.jpg", maxPicture, maxSide)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]byte), nil
+}
+
+// Portrait returns a Short's picture, portrait as the Short plays: a JPEG,
+// with its metadata taken out. Where YouTube has none, it's the usual
+// picture, a frame of the Short between blurred bands, which the page's
+// portrait box crops to the frame.
+func (l *Lookup) Portrait(ctx context.Context, id string) ([]byte, error) {
+	if !denproto.VideoID(id) {
+		return nil, ErrBadID
+	}
+	v, err := l.get(ctx, "portrait "+id, func(ctx context.Context) (any, int, error) {
+		return l.fetchPicture(ctx, id, "oar2.jpg", maxPortrait, maxPortraitSide)
+	})
+	if errors.Is(err, ErrNotFound) {
+		return l.Picture(ctx, id)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -286,8 +312,8 @@ func channelURL(s string) string {
 	return u.String()
 }
 
-func (l *Lookup) fetchPicture(ctx context.Context, id string) (any, int, error) {
-	resp, err := l.ask(ctx, l.pictures+id+"/hqdefault.jpg", "image/jpeg")
+func (l *Lookup) fetchPicture(ctx context.Context, id, name string, maxBytes int64, side int) (any, int, error) {
+	resp, err := l.ask(ctx, l.pictures+id+"/"+name, "image/jpeg")
 	if err != nil {
 		return nil, 0, err
 	}
@@ -299,7 +325,7 @@ func (l *Lookup) fetchPicture(ctx context.Context, id string) (any, int, error) 
 	default:
 		return nil, 0, fmt.Errorf("%w: the picture's host answered %d", ErrUnavailable, resp.StatusCode)
 	}
-	body, err := readAll(resp.Body, maxPicture)
+	body, err := readAll(resp.Body, maxBytes)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -311,7 +337,7 @@ func (l *Lookup) fetchPicture(ctx context.Context, id string) (any, int, error) 
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: the picture doesn't read as a JPEG", ErrUnavailable)
 	}
-	if res.Width < 1 || res.Height < 1 || res.Width > maxSide || res.Height > maxSide {
+	if res.Width < 1 || res.Height < 1 || res.Width > side || res.Height > side {
 		return nil, 0, fmt.Errorf("%w: the picture is %d by %d", ErrUnavailable, res.Width, res.Height)
 	}
 	return out.Bytes(), out.Len(), nil

@@ -293,7 +293,9 @@ func canonical(host, path, query string) (string, bool) {
 		switch {
 		case path == "/watch":
 			return youTube(param(query, "v"), param(query, "t"))
-		case len(seg) == 2 && (seg[0] == "shorts" || seg[0] == "live"):
+		case len(seg) == 2 && seg[0] == "shorts":
+			return youTubeShort(seg[1])
+		case len(seg) == 2 && seg[0] == "live":
 			return youTube(seg[1], param(query, "t"))
 		case len(seg) == 2 && seg[0] == "embed":
 			return youTube(seg[1], embedStart(query))
@@ -333,6 +335,15 @@ func youTube(id, start string) (string, bool) {
 		out += "&t=" + start
 	}
 	return out, true
+}
+
+// youTubeShort keeps a Short as one, so the page plays it portrait. A
+// Short loops, so it keeps no start time.
+func youTubeShort(id string) (string, bool) {
+	if !VideoID(id) {
+		return "", false
+	}
+	return "https://www.youtube.com/shorts/" + id, true
 }
 
 // embedStart is an embed's start time: start, as embeds say it, or t.

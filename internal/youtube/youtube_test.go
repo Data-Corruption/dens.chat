@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -290,6 +291,51 @@ func TestPicturesThatArentServed(t *testing.T) {
 				t.Error("the redirect was followed")
 			}
 		})
+	}
+}
+
+func TestAShortsPictureIsPortrait(t *testing.T) {
+	size := func(t *testing.T, b []byte) string {
+		t.Helper()
+		img, err := jpeg.Decode(bytes.NewReader(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("%dx%d", img.Bounds().Dx(), img.Bounds().Dy())
+	}
+	y := newYouTube(t)
+	y.answer("/vi/"+id+"/oar2.jpg", serve(picture(t, 1080, 1920)))
+	y.answer("/vi/"+id+"/hqdefault.jpg", serve(picture(t, 480, 360)))
+	got, err := y.lookup().Portrait(context.Background(), id)
+	if err != nil || size(t, got) != "1080x1920" || y.times("/vi/"+id+"/hqdefault.jpg") != 0 {
+		t.Fatalf("the Short's own picture: %v, asked for the usual one %d times", err, y.times("/vi/"+id+"/hqdefault.jpg"))
+	}
+
+	// Where YouTube has none, the usual one stands in, kept as it is.
+	y = newYouTube(t)
+	y.answer("/vi/"+id+"/hqdefault.jpg", serve(picture(t, 480, 360)))
+	l := y.lookup()
+	for range 2 {
+		if got, err = l.Portrait(context.Background(), id); err != nil || size(t, got) != "480x360" {
+			t.Fatalf("without a portrait: %v", err)
+		}
+	}
+	if y.times("/vi/"+id+"/oar2.jpg") != 1 || y.times("/vi/"+id+"/hqdefault.jpg") != 1 {
+		t.Errorf("asked for the portrait %d times and the usual one %d", y.times("/vi/"+id+"/oar2.jpg"), y.times("/vi/"+id+"/hqdefault.jpg"))
+	}
+
+	// A portrait has room for its size, and no more.
+	huge := append(picture(t, 1080, 1920), make([]byte, maxPortrait)...)
+	for name, answer := range map[string]http.HandlerFunc{"too large": serve(huge), "too tall": serve(picture(t, 1080, 2000))} {
+		y := newYouTube(t)
+		y.answer("/vi/"+id+"/oar2.jpg", answer)
+		y.answer("/vi/"+id+"/hqdefault.jpg", serve(picture(t, 480, 360)))
+		if _, err := y.lookup().Portrait(context.Background(), id); !errors.Is(err, ErrUnavailable) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := y.lookup().Portrait(context.Background(), "dQw4w9WgX/Q"); !errors.Is(err, ErrBadID) {
+		t.Errorf("a bad ID: %v", err)
 	}
 }
 

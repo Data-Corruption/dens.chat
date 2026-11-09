@@ -64,6 +64,23 @@
     }
 }
 
+/* A long name scrolls to its end while the pointer rests on its row, and
+   back as it leaves: its row sets how far, --name-by, and how
+   long, --name-ms. With less motion asked for, the end shows at once. */
+@utility name-scroll {
+    transition: text-indent 200ms ease-out;
+    &[data-scrolling] {
+        text-indent: calc(var(--name-by) * -1);
+        transition: text-indent var(--name-ms) linear 400ms;
+    }
+    @media (prefers-reduced-motion: reduce) {
+        transition: none;
+        &[data-scrolling] {
+            transition-duration: 0s;
+        }
+    }
+}
+
 /* A video's seek bar: a thin track whose played part, --seek of it, is as
    thin as the rest, and a small round thumb, in a box 24 pixels tall for a
    finger. DaisyUI's range draws the played part as tall as its thumb. */

@@ -2,7 +2,8 @@
 // covers under it: each video's picture, title and channel, which the local
 // service fetched, the title and channel linking to them on YouTube
 // (M14.1), and a play button that swaps in YouTube's own player, in the
-// same box. One plays at a time.
+// same box. One plays at a time. A Short's box is portrait, as tall as
+// another's is wide, and its picture is the Short's own.
 //
 // The player is a frame from youtube-nocookie.com, sandboxed: it can't
 // navigate the page, its popups can't reach it, and the page listens to
@@ -23,8 +24,21 @@ export function embedURL({ id, start }) {
     return `https://www.youtube-nocookie.com/embed/${id}?autoplay=1${start > 0 ? `&start=${start}` : ''}`;
 }
 
-export function watchURL({ id, start }) {
+export function watchURL({ id, start, short }) {
+    if (short) return `https://www.youtube.com/shorts/${id}`;
     return `https://www.youtube.com/watch?v=${id}${start > 0 ? `&t=${start}` : ''}`;
+}
+
+// pictureURL is where a cover's picture comes from: the local service,
+// which fetched it from YouTube.
+export function pictureURL({ id, short }) {
+    return `/api/youtube/${id}/${short ? 'portrait' : 'thumb'}`;
+}
+
+// playerBox sizes a video's box before anything in it loads: 16:9 and 400
+// pixels wide, or a Short's 9:16 and 400 tall.
+export function playerBox({ short }) {
+    return short ? 'aspect-[9/16] w-[225px]' : 'aspect-video w-[400px]';
 }
 
 // playing is the player whose video plays: an object only that player
@@ -52,7 +66,7 @@ export function Videos({ text }) {
 }
 
 // Player is a video's cover, which becomes YouTube's player when clicked.
-// Both take one 16:9 box, sized before anything in it loads, so the message
+// Both take one box, sized before anything in it loads, so the message
 // list never moves. The cover asks about its video once it comes on screen,
 // since YouTube hears of each video asked about.
 function Player({ video }) {
@@ -115,7 +129,7 @@ function Player({ video }) {
     } else if (about?.found && !about.playable) {
         inside = (
             <>
-                <Picture id={video.id} dim />
+                <Picture video={video} dim />
                 <Notice>
                     This video plays only on YouTube.
                     <a href={watchURL(video)} target="_blank" rel="noopener noreferrer nofollow" class="link font-medium text-white">
@@ -128,7 +142,7 @@ function Player({ video }) {
         inside = <Cover video={video} about={about} onPlay={() => play(self.current)} />;
     }
     return (
-        <div ref={box} data-video={video.id} class="relative aspect-video w-[400px] max-w-full overflow-hidden rounded bg-black">
+        <div ref={box} data-video={video.id} class={`relative ${playerBox(video)} max-w-full overflow-hidden rounded bg-black`}>
             {inside}
         </div>
     );
@@ -156,7 +170,7 @@ export function Cover({ video, about, onPlay }) {
     return (
         <>
             <button type="button" class="group/play absolute inset-0 size-full cursor-pointer" onClick={onPlay} aria-label={`Play ${about?.title || 'the YouTube video'}`}>
-                {about?.found && <Picture id={video.id} />}
+                {about?.found && <Picture video={video} />}
                 <span class="absolute left-1/2 top-1/2 flex h-12 w-17 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-black/70 transition-colors group-hover/play:bg-[#f00] group-focus-visible/play:bg-[#f00]">
                     <svg viewBox="0 0 24 24" class="size-7 fill-white" aria-hidden="true">
                         <path d="M8 5.5v13l11-6.5z" />
@@ -181,10 +195,10 @@ export function Cover({ video, about, onPlay }) {
     );
 }
 
-function Picture({ id, dim }) {
+function Picture({ video, dim }) {
     return (
         <img
-            src={`/api/youtube/${id}/thumb`}
+            src={pictureURL(video)}
             alt=""
             class={`absolute inset-0 size-full object-cover ${dim ? 'opacity-40' : ''}`}
             onError={(e) => {

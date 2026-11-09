@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_VIDEOS, parse, videosIn } from '../assets/js/src/markdown.jsx';
 import { onYouTubePlayers, setYouTubePlayers, startSeconds, videoOf, youTubePlayers } from '../assets/js/src/links.js';
-import { Cover, embedURL, watchURL } from '../assets/js/src/youtube.jsx';
+import { Cover, embedURL, pictureURL, playerBox, watchURL } from '../assets/js/src/youtube.jsx';
 import linkCases from '../../denproto/testdata/links.json';
 
 const ID = 'dQw4w9WgXcQ';
@@ -54,7 +54,7 @@ test("a cover plays exactly the links the den writes in YouTube's form, wherever
         if (written.includes('||')) continue;
         const want = [];
         for (const link of linksIn(written)) {
-            const m = /^https:\/\/www\.youtube\.com\/watch\?v=([^&]+)/.exec(link);
+            const m = /^https:\/\/www\.youtube\.com\/(?:watch\?v=|shorts\/)([A-Za-z0-9_-]{11})(?:&|$)/.exec(link);
             if (m && !want.includes(m[1])) want.push(m[1]);
         }
         youTube += want.length;
@@ -128,6 +128,25 @@ test('covers skip code and spoilers, come once per video, and stop at three', ()
         [`${other(1)} ${other(2)} ${other(3)} ${other(4)}`, [1, 2, 3].map((n) => ({ id: `video${n}abcde`, start: 0 }))],
     ]) {
         assert.deepEqual(videosIn(text), want, text);
+    }
+});
+
+test("a Short plays in a portrait box, as tall as another's is wide, with its own picture", () => {
+    const short = `https://www.youtube.com/shorts/${ID}`;
+    const video = videoOf(short);
+    assert.deepEqual(video, { id: ID, start: 0, short: true });
+    assert.equal(playerBox(video), 'aspect-[9/16] w-[225px]');
+    assert.equal(playerBox(videoOf(watch())), 'aspect-video w-[400px]');
+    assert.equal(pictureURL(video), `/api/youtube/${ID}/portrait`);
+    assert.equal(pictureURL(videoOf(watch())), `/api/youtube/${ID}/thumb`);
+    // Its links go to it as a Short, and its player is any video's.
+    assert.equal(watchURL(video), short);
+    assert.equal(embedURL(video), `https://www.youtube-nocookie.com/embed/${ID}?autoplay=1`);
+    assert.deepEqual(videosIn(`look ${short} and ${watch()}`), [video]);
+    // The den writes a Short in one form; any other gets no cover.
+    for (const link of [`https://youtube.com/shorts/${ID}`, `https://m.youtube.com/shorts/${ID}`, `${short}?t=5`, `${short}/`,
+        `https://www.youtube.com/shorts/dQw4w9WgXc`, `https://www.youtube.com/shorts/${ID}#t=1`]) {
+        assert.equal(videoOf(link), null, link);
     }
 });
 

@@ -38,8 +38,9 @@ import { QuickReactions, ReactionPicker, Reactions, RemoveReactions, useChips } 
 import { keptFor } from './retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
+import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { useNarrow } from './nav.js';
-import { isStaff, rank } from './people.jsx';
+import { RoleMark, isStaff, rank } from './people.jsx';
 import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js';
 import { Poll, PollEditor } from './polls.jsx';
 import { LOCKED, dueBy, isPrivate, keyChanges, nextDue, placeAt } from './private.js';
@@ -130,8 +131,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const [highlight, setHighlight] = useState(null);
     const [newCount, setNewCount] = useState(0);
     const [replyTo, setReplyTo] = useState(null);
-    // menu is the message whose ⋯ menu is open, and deleting the one whose
-    // delete waits on the member's word (M11).
+    // menu is the message whose ⋯ menu is open, with where a right click
+    // opened it, if one did, and deleting the one whose delete
+    // waits on the member's word (M11).
     const [menu, setMenu] = useState(null);
     const [deleting, setDeleting] = useState(null);
     // reacting is the message whose picker is open to react to it, with
@@ -521,7 +523,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         setRemoving((id) => (out.has(id) ? null : id));
         setReplyTo((r) => (r && out.has(r.id) ? null : r));
         setEditing((id) => (out.has(id) ? null : id));
-        setMenu((id) => (out.has(id) ? null : id));
+        setMenu((open) => (open && out.has(open.id) ? null : open));
         setList((cur) => ids.reduce((l, id) => withDelete(l, { id, channel_id: channel.id }), cur));
     }
 
@@ -776,7 +778,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 canEdit={!m.locked && !m.poll && (m.author_id === me.id || (m.editors || []).includes(me.id))}
                 canDelete={m.author_id === me.id || (!sealed && rank(role) > rank(members.get(m.author_id)?.role))}
                 link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
-                menuOpen={menu === m.id}
+                menuOpen={menu?.id === m.id}
+                menuAt={menu?.id === m.id ? menu.at : null}
                 narrow={narrow}
                 touch={touch}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
@@ -794,7 +797,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     setList((cur) => withPoll(cur, t, d));
                 }}
                 onProfile={onProfile}
-                onMenu={(open) => setMenu(open ? m.id : null)}
+                onMenu={(open, at) => setMenu(open ? { id: m.id, at } : null)}
                 onReply={() => setReplyTo(m)}
                 onEdit={() => setEditing(m.id)}
                 onEditDone={() => setEditing(null)}
@@ -989,10 +992,11 @@ function Quoted({ text, locked, me }) {
 // MessageRow is a message in the list, with its ⋯ menu of what the member
 // may do with it: link is the link to it, for Copy link (M11). A finger's
 // long press opens the menu in the ⋯'s place, which a touch screen has
-// none of, and on the phone layout, narrow, it's a sheet (M13.2). compact
-// is a run's later message, under its first's name; line is Compact's row,
-// each a line of its own (M17.2).
-export function MessageRow({ m, compact, line, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+// none of, and on the phone layout, narrow, it's a sheet (M13.2); a mouse's
+// right click opens it at the pointer, menuAt. compact is a run's
+// later message, under its first's name; line is Compact's row, each a
+// line of its own (M17.2).
+export function MessageRow({ m, compact, line, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1049,13 +1053,27 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
         onPointerUp: () => press.current.up(),
         onPointerCancel: () => press.current.cancel(),
         onContextMenu: (e) => e.preventDefault(),
+    } : !touch && !editing && actions.length > 0 ? {
+        onContextMenu: (e) => {
+            if (!ownsMenu(e.target, getSelection(), e.currentTarget)) return;
+            e.preventDefault();
+            onMenu(true, narrow ? null : rightClick(e, e.currentTarget));
+        },
     } : {};
+    // Staff's mark centers on the name, whose box keeps the line's
+    // baseline.
+    const authorName = (
+        <span class="flex items-center gap-1">
+            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
+            <RoleMark role={author?.role} />
+        </span>
+    );
     // In Compact, each message is a line of its time, its author's name and
     // its text (M17.2): the name floats at the text's start, so the text
     // wraps under it, and the rest goes below, from the name's start.
     const lead = line ? (
         <span class="float-left mr-2 flex items-baseline gap-1">
-            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
+            {authorName}
             {m.expires_at ? <Disappears at={m.expires_at} /> : null}
         </span>
     ) : null;
@@ -1150,7 +1168,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
                 <div class="min-w-0 flex-1">
                     {!line && !compact && (
                         <div class="flex items-baseline gap-2">
-                            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
+                            {authorName}
                             <span class="text-xs text-base-content/50" title={new Date(m.created_at).toLocaleString()}>{clock(m.created_at)}</span>
                             {m.expires_at ? <Disappears at={m.expires_at} /> : null}
                         </div>
@@ -1160,7 +1178,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
                 </div>
             </div>
             {!editing && actions.length > 0 && (
-                <MessageMenu open={menuOpen} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} onReact={canReact ? onReactPick : null} />
+                <MessageMenu open={menuOpen} at={menuAt} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} onReact={canReact ? onReactPick : null} />
             )}
             {!editing && menuOpen && narrow && actions.length > 0 && (
                 <Sheet label="Message actions" title={<MessageHeading m={m} author={author} editorNames={editorNames} />} onClose={() => onMenu(false)}>
@@ -1224,16 +1242,18 @@ function Disappears({ at }) {
 // MessageMenu is a message's ⋯, which shows on hover or focus, for a mouse
 // and the keyboard, and the menu of what the member may do with the
 // message (M11), which a touch screen's long press opens without it
-// (M13.2). The menu opens toward whichever side of the list has room for
-// it. Arrow keys move through it, and Escape, Tab or a press elsewhere
-// closes it. On the phone layout, narrow, the ⋯ opens the message's sheet
-// instead. copied says what the member just copied.
-function MessageMenu({ open, narrow, onOpen, actions, copied, onReact }) {
+// (M13.2), and a right click at the pointer, at. Under the ⋯, the
+// menu opens toward whichever side of the list has room for it. Arrow keys
+// move through it, and Escape, Tab or a press elsewhere closes it. On the
+// phone layout, narrow, the ⋯ opens the message's sheet instead. copied
+// says what the member just copied.
+function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact }) {
     const box = useRef(null);
     const button = useRef(null);
     const list = useRef(null);
     const [up, setUp] = useState(false);
     const dropdown = open && !narrow;
+    usePlaced(dropdown ? at : null, list);
     useLayoutEffect(() => {
         if (!dropdown || !list.current) return;
         const view = box.current.closest('[data-scroller]')?.getBoundingClientRect();
@@ -1293,7 +1313,7 @@ function MessageMenu({ open, narrow, onOpen, actions, copied, onReact }) {
             </button>
             {dropdown && (
                 <ul ref={list} role="menu" aria-label="Message actions" onKeyDown={keys}
-                    class={`menu absolute right-0 z-20 w-44 rounded-box bg-base-100 p-1 shadow ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+                    class={`menu absolute z-20 w-44 rounded-box bg-base-100 p-1 shadow ${at ? 'left-0 top-0' : up ? 'right-0 bottom-full mb-1' : 'right-0 top-full mt-1'}`}>
                     {actions.map((a) => (
                         <li key={a.label} role="none">
                             <button type="button" role="menuitem" tabIndex={-1} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}

@@ -8,7 +8,11 @@
 // group; a video whose sound starts late playing it in time; a thin video
 // keeping its full screen button as the rest give way (M14.3); and from
 // M15, an unread channel told from a read one at a glance, and a video's
-// seek bar drawn thin.
+// seek bar drawn thin; and from M19.2, the crown and the shield at one
+// height beside their names in the member list, a card and a message, a
+// long name scrolling to its end under the pointer and back, and a right
+// click opening a message's menu and a member's at the pointer, and a
+// link's the browser's own.
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -265,6 +269,104 @@ try {
     })()`));
     c.report(bar.height === 24 && bar.utility && /%$/.test(bar.seek), `the seek bar is 24 pixels tall for a finger, drawn thin, with its played part set: ${JSON.stringify(bar)}`);
     await shot('seek');
+
+    step('the crown and the shield stand at one height beside their names, in the list, a card and a message');
+    // Each mark's middle, less its name's text's, in pixels.
+    const MARKS = (root) => `(() => {
+        const out = [];
+        for (const mark of ${root}.querySelectorAll('[data-role-mark]')) {
+            const name = [...mark.parentElement.children].find((e) => e !== mark && e.textContent.trim());
+            const range = document.createRange();
+            range.selectNodeContents(name);
+            const text = range.getBoundingClientRect(), icon = mark.querySelector('svg').getBoundingClientRect();
+            out.push(Math.round((icon.top + icon.height / 2 - text.top - text.height / 2) * 10) / 10);
+        }
+        return JSON.stringify(out);
+    })()`;
+    const LIST = `document.querySelector('nav[aria-label=Members]')`;
+    const MEMBER = (name) => `[...${LIST}.querySelectorAll('button')].find((x) => x.textContent.includes(${JSON.stringify(name)}))`;
+    await open(general);
+    await waitFor(() => b.eval(`${LIST}?.querySelectorAll('[data-role-mark]').length === 2 && !!document.querySelector('[data-id] [data-role-mark]')`), 'the marks');
+    const inList = JSON.parse(await b.eval(MARKS(LIST)));
+    const inMessages = JSON.parse(await b.eval(MARKS(`document.querySelector('[data-scroller]')`)));
+    await clickOn(MEMBER('Alice'), "alice's row");
+    const CARD = `document.querySelector('[role=dialog][aria-label=Profile]')`;
+    await waitFor(() => b.eval(`!!${CARD}?.querySelector('[data-role-mark]')`), "alice's card");
+    const onCard = JSON.parse(await b.eval(MARKS(CARD)));
+    await shot('marks');
+    await b.eval(`${CARD}.querySelector('button[aria-label=Close]').click(), true`);
+    await waitFor(async () => !(await b.eval(`!!${CARD}`)), 'the card closing');
+    const heights = [...inList, ...onCard, ...inMessages];
+    c.report(inList.length === 2 && onCard.length === 1 && inMessages.length >= 3 && heights.every((d) => Math.abs(d) <= 1) && Math.max(...heights) - Math.min(...heights) <= 1,
+        `each mark's middle is its name's, within a pixel: the list ${JSON.stringify(inList)}, a card ${JSON.stringify(onCard)}, messages ${JSON.stringify(inMessages)}`);
+
+    step('a long name scrolls to its end under the pointer, and back as it leaves');
+    const LONG = `[...${LIST}.querySelectorAll('.name-scroll')].find((x) => x.textContent.startsWith('Bartholomew'))`;
+    // Where the name's last letter is against its box, and how far it's
+    // moved.
+    const END = `(() => {
+        const name = ${LONG}, text = name.firstChild, range = document.createRange();
+        range.setStart(text, text.length - 1);
+        range.setEnd(text, text.length);
+        const box = name.getBoundingClientRect(), last = range.getBoundingClientRect();
+        return JSON.stringify({ cut: name.scrollWidth - name.clientWidth, indent: parseFloat(getComputedStyle(name).textIndent), shown: last.right <= box.right + 1 });
+    })()`;
+    const rest = JSON.parse(await b.eval(END));
+    const p = await at(LONG);
+    await b.move(p[0], p[1]);
+    // It waits 400 ms, then moves 40 pixels a second.
+    const end = await may(waitFor(async () => {
+        const now = JSON.parse(await b.eval(END));
+        return now.shown && now.indent < 0 ? now : false;
+    }, 'the name at its end', 3000 + (rest.cut / 40) * 1000));
+    await shot('long-name');
+    await b.move(5, 5);
+    const away = await may(waitFor(async () => JSON.parse(await b.eval(END)).indent === 0, 'the name back', 3000));
+    c.report(rest.cut > 20 && rest.indent === 0 && !rest.shown && end && Math.abs(end.indent + rest.cut) <= 1 && away,
+        `a name ${rest.cut} pixels too long, cut at rest, scrolled to its end under the pointer (${JSON.stringify(end)}) and back as it left (${away})`);
+
+    step("a right click on a message opens its menu at the pointer, on a link the browser's, and on a member theirs");
+    send(general, 'a link to https://example.com/page');
+    const LINKED = `[...document.querySelectorAll('[data-id]')].find((r) => r.textContent.includes('a link to'))`;
+    await waitFor(() => b.eval(`!!${LINKED}?.querySelector('a[href]')`), 'the message with a link', 10000);
+    // Whether the page took each right click from the browser.
+    await b.eval(`(window.__took = [], document.addEventListener('contextmenu', (e) => window.__took.push(e.defaultPrevented)), true)`);
+    const MENU = (label) => `document.querySelector('ul[role=menu][aria-label^=${JSON.stringify(label)}]')`;
+    // Where a menu is, once it holds the focus, which it takes as it shows.
+    const where = async (sel, what) => {
+        let last = null;
+        await may(waitFor(async () => {
+            last = JSON.parse(await b.eval(`(() => { const m = ${sel}; if (!m) return 'null'; const r = m.getBoundingClientRect();
+                return JSON.stringify({ x: Math.round(r.left), y: Math.round(r.top), focused: m.contains(document.activeElement),
+                    items: [...m.querySelectorAll('[role=menuitem]')].map((i) => i.textContent.trim()) }); })()`));
+            return last?.focused;
+        }, what, 3000));
+        return last;
+    };
+    const text = await at(`${message(5)}.querySelector('p')`);
+    await b.click(text[0], text[1], 'right');
+    const onMessage = await where(MENU('Message actions'), "the message's menu");
+    await shot('right-click');
+    await b.key('Escape');
+    await waitFor(async () => !(await b.eval(`!!${MENU('Message actions')}`)), "the message's menu closing");
+    const link = await at(`${LINKED}.querySelector('a[href]')`);
+    await b.click(link[0], link[1], 'right');
+    await sleep(500);
+    const onLink = await b.eval(`!!document.querySelector('ul[role=menu]')`);
+    await b.key('Escape');
+    const memberAt = await at(MEMBER('Bartholomew'));
+    await b.click(memberAt[0], memberAt[1], 'right');
+    const onMember = await where(MENU('Options for Bartholomew'), "the member's menu");
+    await clickOn(`[...${MENU('Options for Bartholomew')}.querySelectorAll('[role=menuitem]')].find((i) => i.textContent.trim() === 'Profile')`, 'Profile');
+    const card = await may(waitFor(() => b.eval(`${CARD}?.innerText.includes('@bob') || false`), "bob's card", 3000));
+    await b.eval(`${CARD}?.querySelector('button[aria-label=Close]').click(), true`);
+    const took = await b.eval(`JSON.stringify(window.__took)`);
+    const near = (m, q) => m && Math.abs(m.x - q[0]) <= 2 && Math.abs(m.y - q[1]) <= 2;
+    // The member list is at the window's edge, so their menu opens left of
+    // the pointer, held within the list.
+    c.report(near(onMessage, text) && onMessage.focused && onMessage.items.includes('Copy text') && !onLink && onMember && Math.abs(onMember.y - memberAt[1]) <= 2 &&
+        onMember.focused && onMember.items[0] === 'Profile' && onMember.items.includes('Demote to member') && card && took === '[true,false,true]',
+    `a right click at ${text.map(Math.round)} opened a message's menu there (${JSON.stringify(onMessage)}), left a link's to the browser (page's menu ${onLink}), and one at ${memberAt.map(Math.round)} opened a member's (${JSON.stringify(onMember)}), whose Profile opened their card (${card}); the page took them as ${took}`);
     await shot('done');
 } catch (e) {
     c.fail(e);

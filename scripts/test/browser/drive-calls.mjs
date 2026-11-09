@@ -246,10 +246,12 @@ try {
         `${B.browser}'s notes count its voice frames, the denied ones dropped under a key it lacks: ${JSON.stringify(last)}`);
 
     // Volume: Bob turns Alice down on his side. Her audio element follows,
-    // the list shows the level, and the browser keeps it.
+    // the browser keeps it, and her row shows no figure: her menu's slider
+    // says it (M19.2).
     const aliceID = await A.b.eval(`(async () => (await (await fetch('/api/dens/${den}/state')).json()).me.id)()`);
     const VOLUME = (id) => `(() => { const a = window.__audios.filter((x) => x.srcObject && x.srcObject.id === ${JSON.stringify(aliceID)}).at(-1); return a ? a.volume : -1; })()`;
-    const ROW = `(() => { const li = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes('Alice')); const mark = li && li.querySelector('button[aria-label^="Plays at"], button[aria-label="Muted for you"]'); return mark ? mark.getAttribute('aria-label') + ': ' + mark.textContent : ''; })()`;
+    const ROW = `(() => { const li = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes('Alice'));
+        return li ? [...li.querySelectorAll('*')].filter((e) => !e.closest('[data-call-menu]') && !e.children.length && /\\d%/.test(e.textContent)).map((e) => e.textContent).join(' ') : 'no row'; })()`;
     const KEPT = `localStorage.getItem('DENS_VOLUMES')`;
     const slide = (pct) => B.b.eval(`(() => {
         if (!document.querySelector('input[aria-label="Volume for Alice"]')) document.querySelector('button[aria-label="Options for Alice in the call"]').click();
@@ -269,8 +271,8 @@ try {
     await slide(0);
     await sleep(300);
     const zero = { volume: await B.b.eval(VOLUME()), row: await B.b.eval(ROW), kept: await B.b.eval(KEPT) };
-    report(full === 1 && thirty.volume === 0.3 && thirty.row === 'Plays at 30% for you: 30%' && thirty.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0.3 })
-        && zero.volume === 0 && zero.row === 'Muted for you: 0%' && zero.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0 }),
+    report(full === 1 && thirty.volume === 0.3 && thirty.row === '' && thirty.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0.3 })
+        && zero.volume === 0 && zero.row === '' && zero.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0 }),
         `${B.browser} turns Alice down: ${full} -> ${JSON.stringify(thirty)} -> ${JSON.stringify(zero)}`);
 
     // A name in the call opens its profile; the menu closes on a click
@@ -426,6 +428,37 @@ try {
     await sleep(1000);
     const back = await flowing(A, 'alice hears bob again');
     report(back.moving, `unmuted: packets ${back.before}->${back.after}`);
+
+    // The owner, who can drag Bob's row onto another call, drags the slider
+    // in his menu with the mouse: it moves, and the menu stays where it is,
+    // nothing dragged (M19.2). A drag Chromium starts is caught, as it never
+    // ends under the DevTools protocol.
+    const SLIDER = `document.querySelector('input[aria-label="Volume for Bob"]')`;
+    await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);
+    await waitFor(() => A.b.eval(`!!${SLIDER}`), `${A.browser} Bob's slider`);
+    const sliding = () => A.b.eval(`(() => { const s = ${SLIDER}; if (!s) return 'gone'; const r = s.closest('[data-call-menu]').getBoundingClientRect();
+        return JSON.stringify({ value: s.value, menu: [Math.round(r.left), Math.round(r.top)], draggable: s.closest('[data-call-member]').getAttribute('draggable') }); })()`);
+    const thumb = JSON.parse(await A.b.eval(`(() => { const r = ${SLIDER}.getBoundingClientRect(); return JSON.stringify([r.right - 6, r.top + r.height / 2, r.left + r.width / 2]); })()`));
+    const grabbed = JSON.parse(await sliding());
+    await A.b.eval(`(window.__rowDrags = 0, document.addEventListener('dragstart', () => window.__rowDrags++, true), true)`);
+    if (A.browser === 'chromium') await A.b.cdp('Input.setInterceptDrags', { enabled: true });
+    try {
+        await A.b.drag(thumb[0], thumb[1], thumb[2], thumb[1]);
+    } finally {
+        if (A.browser === 'chromium') await A.b.cdp('Input.setInterceptDrags', { enabled: false });
+    }
+    await sleep(300);
+    const slid = JSON.parse(await sliding());
+    const rowDrags = await A.b.eval('window.__rowDrags');
+    await A.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    const dragsAgain = await waitFor(() => A.b.eval(`document.querySelector('button[aria-label="Options for Bob in the call"]').closest('[data-call-member]').getAttribute('draggable') === 'true'`),
+        `${A.browser} Bob's row draggable again`, 3000).catch(() => false);
+    report(grabbed.value === '100' && Number(slid.value) >= 30 && Number(slid.value) <= 70 && slid.menu.join() === grabbed.menu.join() && rowDrags === 0 &&
+        grabbed.draggable !== 'true' && dragsAgain,
+    `${A.browser}: the owner's mouse slid Bob's volume from ${grabbed.value} to ${slid.value}, his menu staying put (${grabbed.menu} then ${slid.menu}) and nothing dragged (${rowDrags}, his row draggable ${grabbed.draggable} while it showed, and again after: ${dragsAgain})`);
+    await A.b.eval(`(() => { const s = ${SLIDER}; if (!s) { document.querySelector('button[aria-label="Options for Bob in the call"]').click(); }
+        return new Promise((resolve) => setTimeout(() => { const t = ${SLIDER}; t.value = '100'; t.dispatchEvent(new Event('input', { bubbles: true }));
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); resolve(true); }, 200)); })()`);
 
     // Bob's service restarts mid-call: the page holds the call, its media
     // flowing, and takes it back on the same connection.

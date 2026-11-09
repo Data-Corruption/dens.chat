@@ -717,7 +717,17 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     onAdd={() => setDialog({ kind: 'add-to-group' })} onRename={() => setDialog({ kind: 'rename-group' })}
                                     expiry={view.disappearing && !gone ? channel : null} />
                             ) : (
-                                <MemberList members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                                <MemberList denID={denID} members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })}
+                                    card={{
+                                        me: view.me,
+                                        role: gone ? 'member' : view.role,
+                                        identities: view.keeps_identities ? view.identities || {} : null,
+                                        onMessage: message,
+                                        onNotes: view.has_notes && !gone ? openNotes : null,
+                                        onCompare: (m) => setDialog({ kind: 'codes', member: m }),
+                                        onEdit: () => setDialog({ kind: 'edit' }),
+                                        onRemove: (m) => setDialog({ kind: 'remove', member: m }),
+                                    }} />
                             )}
                         </aside>
                     )}

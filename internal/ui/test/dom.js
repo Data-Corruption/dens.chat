@@ -11,7 +11,8 @@ class Node {
         this.parentNode = null;
         this.attributes = {};
         this.listeners = {};
-        this.style = {};
+        // Preact sets a custom property, as --name-by, through setProperty.
+        this.style = Object.defineProperty({}, 'setProperty', { value(name, value) { this[name] = value; } });
     }
 
     get firstChild() {
@@ -51,6 +52,10 @@ class Node {
 
     removeAttribute(name) {
         delete this.attributes[name];
+    }
+
+    hasAttribute(name) {
+        return name in this.attributes;
     }
 
     addEventListener(type, listener) {
