@@ -100,13 +100,15 @@ type hosting struct {
 
 // densView is what the home page shows. Epoch and Version order the
 // copies it gets from the stream and from fetches, so it keeps the newest.
-// SignIns are sign-ins on this device waiting for approval.
+// SignIns are sign-ins on this device waiting for approval, and Background
+// the picture behind the chat, where the member set one.
 type densView struct {
-	Epoch   string                 `json:"epoch"`
-	Version uint64                 `json:"version"`
-	Dens    []denclient.Status     `json:"dens"`
-	SignIns []denclient.SignInView `json:"sign_ins"`
-	Hosting hosting                `json:"hosting"`
+	Epoch      string                 `json:"epoch"`
+	Version    uint64                 `json:"version"`
+	Dens       []denclient.Status     `json:"dens"`
+	SignIns    []denclient.SignInView `json:"sign_ins"`
+	Hosting    hosting                `json:"hosting"`
+	Background *backgroundView        `json:"background,omitempty"`
 }
 
 func (rt *router) densView(ctx context.Context) (densView, error) {
@@ -116,6 +118,11 @@ func (rt *router) densView(ctx context.Context) (densView, error) {
 	v.Epoch, v.Version = rt.a.Dens.Version()
 	v.Dens = rt.a.Dens.Statuses()
 	v.SignIns = rt.a.Dens.SignIns()
+	bg, err := rt.backgroundView(ctx)
+	if err != nil {
+		return v, err
+	}
+	v.Background = bg
 	if info, _, ok := rt.a.OwnDen(); ok {
 		v.Hosting.Created, v.Hosting.Name, v.Hosting.URL = true, info.Name, info.URL
 		owned, err := rt.a.Den.Owned(ctx)

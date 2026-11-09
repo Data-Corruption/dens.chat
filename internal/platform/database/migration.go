@@ -764,6 +764,22 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// The picture behind the member's chat: one file of theirs, sealed with
+	// the data key, and when it was set, which names its version for the
+	// page. The file comes last, so reading the version leaves it unread.
+	m.Add("Chat background", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE background (
+				id     INTEGER PRIMARY KEY CHECK (id = 1),
+				set_at INTEGER NOT NULL, -- unix milliseconds
+				file   BLOB NOT NULL
+			) STRICT;
+		`); err != nil {
+			return fmt.Errorf("create background: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

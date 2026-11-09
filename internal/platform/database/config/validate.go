@@ -19,6 +19,9 @@ func validate(cfg *types.Configuration) error {
 	if err := validateVoiceKeys(cfg.VoiceKeys); err != nil {
 		return err
 	}
+	if d := cfg.BackgroundDim; d != nil && (*d < 0 || *d > types.BackgroundMaxDim) {
+		return fmt.Errorf("the background's dim is %d, not 0 to %d", *d, types.BackgroundMaxDim)
+	}
 	return validateSounds(cfg.Notifications.Sounds)
 }
 

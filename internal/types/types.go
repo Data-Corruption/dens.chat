@@ -52,6 +52,11 @@ type Configuration struct {
 	// The service keeps them, so every browser paired with the instance
 	// shares them, as it shares the voice keys.
 	Notifications Notifications `json:"notifications,omitzero"`
+	// BackgroundDim is how far the page's background covers the picture
+	// behind the chat, in percent, nil until the member sets it. The
+	// service keeps it with the picture, so every browser paired with the
+	// instance shows the same.
+	BackgroundDim *int `json:"backgroundDim,omitempty"`
 }
 
 // Notifications are the member's choices for what notifies them (M12.3):
@@ -76,6 +81,13 @@ type Notifications struct {
 	// notifies the member, as one tab of the settings holds both.
 	Sounds map[string]Sound `json:"sounds,omitempty"`
 }
+
+// The background's dim is at most BackgroundMaxDim percent, so the
+// picture always shows, and BackgroundDefaultDim until the member sets it.
+const (
+	BackgroundMaxDim     = 90
+	BackgroundDefaultDim = 70
+)
 
 // SoundNames are the page's sounds (M14.2): a message, a member joining and
 // leaving the call, a share starting and ending, and the member's
