@@ -2,6 +2,7 @@
 // rendering; nothing sets HTML from a string.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useOver } from './animations.js';
 import { copyText } from './clipboard.js';
 import { InfoIcon } from './icons.jsx';
 import { onNotifications } from './notify.js';
@@ -32,8 +33,8 @@ const SIDES = {
 
 // clipOf is the part of the window that the boxes around el leave showing:
 // the window, less any box around it that clips what runs past its edges,
-// as a list that scrolls does, which would cut a tip in it off.
-function clipOf(el) {
+// as a list that scrolls does, which would cut a tip or a menu in it off.
+export function clipOf(el) {
     const out = { left: 0, top: 0, right: document.documentElement.clientWidth, bottom: innerHeight };
     for (let p = el.parentElement; p; p = p.parentElement) {
         const s = getComputedStyle(p);
@@ -134,10 +135,11 @@ const TRIGGER = 'relative inline-flex min-h-6 min-w-6 items-center justify-cente
 // Tip is an i beside a label that says more: the detail a one-line hint
 // leaves out (M8.3), on hover or focus, or a tap (M13.2). trigger stands in
 // the i's place, as a mark whose meaning a title held, and label names it.
-export function Tip({ id, side = 'bottom', label = 'More about this', trigger, children }) {
+// wrap is how its box sits in a line of text, or in a row of flex boxes.
+export function Tip({ id, side = 'bottom', label = 'More about this', trigger, wrap = 'align-middle', children }) {
     const tip = useTip(side);
     return (
-        <span {...tip.wrapProps} class={`${tip.wrapProps.class} align-middle`}>
+        <span {...tip.wrapProps} class={`${tip.wrapProps.class} ${wrap}`}>
             <span id={id} role="tooltip" class={TIP} {...tip.contentProps}>
                 {children}
             </span>
@@ -162,6 +164,37 @@ export function HoverTip({ side = 'bottom', label, tip: content, children }) {
             <span class={TIP} aria-hidden="true" {...tip.contentProps}>{content}</span>
             {label && <span class="sr-only">{label}</span>}
             <span class="inline-flex" aria-hidden="true">{children}</span>
+        </span>
+    );
+}
+
+// A long name scrolls at this many pixels a second.
+const NAME_SPEED = 40;
+
+/** nameScroll is how far a name full pixels wide scrolls in a box shown
+    pixels wide to show its end, and how long that takes, in ms; null for a
+    name that fits */
+export function nameScroll(full, shown) {
+    const by = Math.ceil(full - shown);
+    return by > 1 ? { by, ms: Math.round((by / NAME_SPEED) * 1000) } : null;
+}
+
+/** LongName is a name cut to its row's width, which scrolls to its end
+    while a mouse rests on the row, a HoverRow, and back as it leaves: the
+    row measures how far, and the stylesheet moves it. A touch screen has
+    no hover, so there it stays cut. */
+export function LongName({ name }) {
+    const over = useOver();
+    const box = useRef(null);
+    const [scroll, setScroll] = useState(null);
+    useLayoutEffect(() => {
+        const el = box.current;
+        setScroll(over && el ? nameScroll(el.scrollWidth, el.clientWidth) : null);
+    }, [over, name]);
+    return (
+        <span ref={box} class="name-scroll truncate" data-scrolling={scroll ? '' : undefined}
+            style={scroll ? { '--name-by': `${scroll.by}px`, '--name-ms': `${scroll.ms}ms` } : undefined}>
+            {name}
         </span>
     );
 }

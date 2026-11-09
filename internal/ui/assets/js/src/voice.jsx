@@ -11,23 +11,24 @@
 // M16.2 the call's lock stands beside how it stands, and the list marks
 // each member verified, and one whose keys changed.
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
 import { CallLock, KeysChangedMark, keysChanged } from './calllock.jsx';
-import { Tip } from './components.jsx';
+import { LongName, Tip } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
+import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { nav, useNarrow } from './nav.js';
-import { rank } from './people.jsx';
+import { RoleMark, rank } from './people.jsx';
 import { canShare } from './platform.js';
 import { VerifiedMark } from './private.jsx';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { SoundboardButton } from './soundboard.jsx';
-import { createHold, useHoldsButton } from './touch.js';
+import { createHold, useCoarse, useHoldsButton } from './touch.js';
 import {
     byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened, setMuted,
     setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
@@ -479,6 +480,19 @@ function LiveMark({ denID, call, member, name, mine, inCall, label, watching, me
     );
 }
 
+// CallMenu is the menu of a member in the call on a wider layout: under
+// its ⋯, or opened by a right click at the pointer, at.
+function CallMenu({ at, children }) {
+    const box = useRef(null);
+    usePlaced(at, box);
+    return (
+        <div ref={box} data-call-menu
+            class={`absolute z-10 flex max-h-96 w-52 flex-col gap-1 overflow-y-auto rounded-box bg-base-100 p-2 shadow ${at ? 'left-0 top-0' : 'right-0 top-full'}`}>
+            {children}
+        </div>
+    );
+}
+
 // CallMenuRow is an action in the menu of a member in the call, in a wider
 // window; the phone layout's sheet has SheetRows.
 function CallMenuRow({ danger, onClick, children }) {
@@ -582,20 +596,25 @@ function LeaveIcon() {
 // whose keys changed since, or since the page's call began, since. Where
 // the den moves members, moving gives staff Move to in the menu of those
 // they outrank, with the voice channels it lists, and with a mouse lets
-// them drag their row onto another (M17.2).
+// them drag their row onto another (M17.2), but for a row whose menu is
+// open, whose slider would drag the row along. With a mouse, a right
+// click on a row opens its menu at the pointer.
 export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since, moving }) {
-    const [menu, setMenu] = useState('');
+    // menu is the member whose menu is open, and where a right click
+    // opened it, if one did.
+    const [menu, setMenu] = useState(null);
     const [error, setError] = useState('');
     const narrow = useNarrow();
+    const touch = useCoarse();
     // An open menu closes on a click anywhere else, or on Escape; on the
     // phone layout it's a sheet, which closes itself (M13.2).
     useEffect(() => {
         if (!menu || narrow) return undefined;
         const away = (e) => {
-            if (!e.target.closest?.('[data-call-menu]')) setMenu('');
+            if (!e.target.closest?.('[data-call-menu]')) setMenu(null);
         };
         const escape = (e) => {
-            if (e.key === 'Escape') setMenu('');
+            if (e.key === 'Escape') setMenu(null);
         };
         document.addEventListener('pointerdown', away);
         document.addEventListener('keydown', escape);
@@ -607,7 +626,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
     if (!call?.members?.length) return null;
     async function act(id, what, body) {
         setError('');
-        setMenu('');
+        setMenu(null);
         try {
             await api.post(`/api/dens/${denID}/members/${id}/${what}`, body);
         } catch (e) {
@@ -663,20 +682,29 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                     const other = me && m.id !== me.id;
                     const moderate = me && member && rank(me.role) > rank(member.role);
                     const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
+                    const open = menu?.id === m.id;
                     // Staff drag those they outrank onto another voice channel.
-                    const drags = moderate && moving?.lift ? {
+                    const drags = moderate && moving?.lift && !open ? {
                         draggable: true, onDragStart: (e) => moving.lift(e, m), onDragEnd: moving.letGo,
+                    } : {};
+                    const rightClicks = other && !touch ? {
+                        onContextMenu: (e) => {
+                            if (!ownsMenu(e.target, getSelection(), e.currentTarget)) return;
+                            e.preventDefault();
+                            setMenu({ id: m.id, at: narrow ? null : rightClick(e, e.currentTarget) });
+                        },
                     } : {};
                     return (
                         <HoverRow as="li" key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11"
-                            data-call-member={m.id} {...drags}>
+                            data-call-member={m.id} {...drags} {...rightClicks}>
                             <button type="button" class="flex min-w-0 flex-1 items-center gap-1.5 self-stretch rounded pr-1 text-left hover:text-base-content disabled:cursor-default"
                                 disabled={!member} onClick={() => onProfile?.(member)}>
                                 {/* A block of the avatar's own size, so the ring is round. */}
                                 <span class={`inline-flex shrink-0 rounded-full ring-2 ring-offset-1 ring-offset-base-200 ${talking ? 'ring-success' : 'ring-transparent'}`}>
                                     <Avatar member={member || { id: m.id }} size="sm" />
                                 </span>
-                                <span class="truncate">{name}</span>
+                                <LongName name={name} />
+                                <RoleMark role={member?.role} />
                             </button>
                             {other && identities?.[m.id]?.verified && <VerifiedMark id={`call-verified-${m.id}`} name={name} />}
                             {other && keysChanged(identities?.[m.id], inCall ? since : Infinity) && (
@@ -704,24 +732,14 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                 <LiveMark denID={denID} call={call} member={m} name={name} mine={m.id === me?.id} inCall={inCall} label={label}
                                     watching={!!watched?.has(m.id)} members={members} previewing={previewing} />
                             )}
-                            {other && pct < 100 && (
-                                <Tip id={`volume-${m.id}`} label={pct === 0 ? 'Muted for you' : `Plays at ${pct}% for you`}
-                                    trigger={<span class="text-xs text-base-content/50">{pct}%</span>}>
-                                    {pct === 0 ? 'Muted for you' : `Plays at ${pct}% for you`}
-                                </Tip>
-                            )}
                             {other && (
                                 <button type="button" class="btn btn-ghost btn-xs relative opacity-0 touch-room focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" data-call-menu
-                                    aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={menu === m.id}
-                                    onClick={() => setMenu(menu === m.id ? '' : m.id)}>⋯</button>
+                                    aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={open}
+                                    onClick={() => setMenu(open ? null : { id: m.id, at: null })}>⋯</button>
                             )}
-                            {other && menu === m.id && !narrow && (
-                                <div class="absolute right-0 top-full z-10 flex max-h-96 w-52 flex-col gap-1 overflow-y-auto rounded-box bg-base-100 p-2 shadow" data-call-menu>
-                                    {options(m, name, pct, moderate, CallMenuRow)}
-                                </div>
-                            )}
-                            {other && menu === m.id && narrow && (
-                                <Sheet label={`Options for ${name} in the call`} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu('')}>
+                            {other && open && !narrow && <CallMenu at={menu.at}>{options(m, name, pct, moderate, CallMenuRow)}</CallMenu>}
+                            {other && open && narrow && (
+                                <Sheet label={`Options for ${name} in the call`} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu(null)}>
                                     {options(m, name, pct, moderate, SheetRow)}
                                 </Sheet>
                             )}

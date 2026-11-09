@@ -2,8 +2,9 @@
 // link to a Reddit post as https://www.reddit.com/comments/…, so showing
 // it on old.reddit.com, for a browser that prefers it, takes only another
 // host. Every YouTube link is written as https://www.youtube.com/watch?v=…,
-// which is all a browser that turned YouTube's players on (M4.1) needs to
-// find the video to play.
+// or a Short's as https://www.youtube.com/shorts/…, which is all a
+// browser that turned YouTube's players on (M4.1) needs to find the video
+// to play, and its shape.
 
 const OLD_REDDIT = 'DENS_OLD_REDDIT';
 const REDDIT_POST = 'https://www.reddit.com/comments/';
@@ -71,14 +72,18 @@ export function onYouTubePlayers(fn) {
     return () => playersListeners.delete(fn);
 }
 
-// The one form the den writes a YouTube link in: the video's ID, and its
-// start time if it has one. Anything else, which a hostile den or sender
-// could send, isn't played.
+// The forms the den writes a YouTube link in: the video's ID, and its
+// start time if it has one; or a Short's ID. Anything else, which a hostile
+// den or sender could send, isn't played.
 const WATCH = /^https:\/\/www\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})(?:&t=([0-9hms]{1,16}))?$/;
+const SHORT = /^https:\/\/www\.youtube\.com\/shorts\/([A-Za-z0-9_-]{11})$/;
 
 // videoOf is the video a link plays, as { id, start } with start in
-// seconds, or null for a link that isn't in the den's form.
+// seconds, and short for a Short, or null for a link that isn't in the
+// den's form.
 export function videoOf(url) {
+    const short = SHORT.exec(url);
+    if (short) return { id: short[1], start: 0, short: true };
     const m = WATCH.exec(url);
     if (!m) return null;
     const start = m[2] === undefined ? 0 : startSeconds(m[2]);

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { avatarColor, avatarLetter } from '../assets/js/src/avatar.jsx';
-import { typingLine } from '../assets/js/src/messages.jsx';
-import { EditProfile, MemberList, ProfileCard, cardMenu, rank, roleMark, shownBadges } from '../assets/js/src/people.jsx';
+import { MessageRow, typingLine } from '../assets/js/src/messages.jsx';
+import { EditProfile, MARK, MemberList, ProfileCard, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../assets/js/src/people.jsx';
+import { CallMembers } from '../assets/js/src/voice.jsx';
 
 test("an avatar's color depends only on the member's ID", () => {
     assert.equal(avatarColor('1000123'), avatarColor('1000123'));
@@ -101,6 +102,81 @@ test("a staff member's name has a crown or a shield with its tip, on the card an
     const words = rows.map((r) => findAll(r, byAttr('data-role-mark')).map((m) => `${m.attributes['data-role-mark']}:${said(m)}`).join());
     assert.deepEqual(words, ['owner:Owner', 'moderator:Moderator', '']);
     assert.equal(findAll(root, (n) => /\bbadge\b/.test(n.attributes?.class || '')).length, 0, 'no pill');
+    mount(null, root);
+});
+
+// A message's row, as density.test.js renders one.
+function messageRow(author, line) {
+    const none = () => {};
+    const m = { id: '10', channel_id: '2', author_id: author.id, created_at: Date.UTC(2026, 10, 6, 12, 34), revision: 1, text: 'hi' };
+    return h(MessageRow, {
+        m, author, me: { ...bob, id: '3' }, line, canReply: false, canEdit: false, canDelete: false, link: '', editorNames: [], candidates: [],
+        canReact: false, nameOf: () => '', onReact: none, onReactPick: none, onRemoveReactions: none, onUpdated: none, onPolled: none, onMenu: none,
+        onReply: none, onEdit: none, onEditDone: none, onDelete: none, onJump: none, onView: none, onProfile: none, onToggle: none, denID: 'd', channelID: '2',
+    });
+}
+
+// A voice channel's call, as the channel list renders one, of alice and
+// bob, seen by me.
+function callRows(me, { volumes = {}, moving = null } = {}) {
+    const members = new Map([alice, bob].map((m) => [m.id, m]));
+    return h(CallMembers, { denID: 'd', call: { channel_id: '5', members: [{ id: alice.id }, { id: bob.id }] }, members, me, speaking: new Set(),
+        sounding: '', deafened: false, volumes, onProfile() {}, inCall: false, label: { den: 'Den', channel: 'Lounge' }, moving });
+}
+
+test("a crown or a shield is one mark, centered on the name wherever it stands: the list, a call, a card and a message's name", () => {
+    const root = document.createElement('div');
+    const moderator = { ...bob, role: 'moderator' };
+    const places = {
+        list: h(MemberList, { members: [alice, moderator], online: new Set(['1']), onProfile() {} }),
+        call: callRows({ ...moderator, id: '3' }),
+        card: card({ member: alice }),
+        message: messageRow(alice, false),
+        compact: messageRow(alice, true),
+    };
+    for (const [place, tree] of Object.entries(places)) {
+        mount(tree, root);
+        const marks = findAll(root, byAttr('data-role-mark'));
+        assert.ok(marks.length > 0, `${place} has its mark`);
+        for (const mark of marks) {
+            assert.equal(mark.attributes.class, 'inline-flex shrink-0', `${place}: the one mark`);
+            const icon = findAll(mark, (n) => n.attributes?.class === `inline-flex ${MARK}`);
+            assert.equal(icon.length, 1, `${place}: its icon, in the marks' color`);
+            assert.equal(findAll(icon[0], (n) => n.localName === 'svg').length, 1);
+            // Every box from the mark to its icon is a flex box, so no line
+            // of text sets its height, and the row centers it on the name.
+            for (let n = icon[0].parentNode; n !== mark; n = n.parentNode) assert.match(n.attributes.class, /\b(inline-)?flex\b/, `${place}: ${n.localName}`);
+            assert.match(mark.parentNode.attributes.class, /\bflex\b.*\bitems-center\b|\bitems-center\b.*\bflex\b/, `${place}: centered on its row`);
+        }
+    }
+    mount(null, root);
+});
+
+test("a right click on a member in the list offers their profile, what their card does, and its ⋯", () => {
+    const keys = (args) => memberMenu(args).map((i) => i.label).join(' | ');
+    const kept = { verified: false };
+    assert.equal(keys({ self: false, role: 'owner', member: bob, kept, notes: true }), 'Profile | Message | Compare codes | Promote to moderator | Remove from den…');
+    assert.equal(keys({ self: true, role: 'owner', member: alice, kept, notes: true }), 'Profile | Edit profile | Notes');
+    assert.equal(keys({ self: true, role: 'owner', member: alice, kept, notes: false }), 'Profile | Edit profile');
+    assert.equal(keys({ self: false, role: 'member', member: { ...bob, identity: undefined }, kept: null }), 'Profile | Message');
+    assert.equal(keys({ self: false, role: 'owner', member: { ...bob, left_at: 9 }, kept }), 'Profile | Ban…');
+});
+
+test("a call's row drags for staff but while its menu is open, whose slider would drag it along, and shows no volume of its own", async () => {
+    const root = document.createElement('div');
+    mount(callRows(alice, { volumes: { 'd:2': 0.3 }, moving: { targets: () => [], lift() {}, letGo() {} } }), root);
+    const row = () => findAll(root, byAttr('data-call-member', bob.id))[0];
+    assert.equal(row().attributes.draggable, 'true', 'the owner drags a member');
+    assert.equal(findAll(root, byAttr('data-call-member', alice.id))[0].attributes.draggable, undefined, 'and not herself');
+    assert.doesNotMatch(row().textContent, /%/, 'its volume is in its menu alone');
+    findAll(row(), buttonNamed('Options for Bob in the call'))[0].dispatch('click', {});
+    await settle();
+    assert.equal(findAll(root, (n) => n.localName === 'input' && n.attributes.type === 'range').length, 1, 'its menu, with the slider');
+    assert.match(row().textContent, /30%/, "the slider's figure");
+    assert.equal(row().attributes.draggable, undefined, 'a press in its menu drags nothing');
+    findAll(row(), buttonNamed('Options for Bob in the call'))[0].dispatch('click', {});
+    await settle();
+    assert.equal(row().attributes.draggable, 'true', 'closed, it drags again');
     mount(null, root);
 });
 

@@ -51,7 +51,8 @@ const DOTS = {
 // ringed in the color behind it, dotRing. A picture that fails to load
 // gives way to the default. An animated one that isn't playing shows its
 // preview, its first frame, which the picture covers while it plays, so it
-// never blinks out as it starts.
+// never blinks out as it starts. It stands for its member, so a right click
+// on it opens the page's menu, not the browser's.
 export function Avatar({ member, size = 'md', online, dotRing = 'ring-base-200' }) {
     const denID = useContext(DenContext);
     const [failed, setFailed] = useState('');
@@ -60,7 +61,7 @@ export function Avatar({ member, size = 'md', online, dotRing = 'ring-base-200' 
     const file = `/api/dens/${denID}/files/${picture}`;
     const round = 'h-full w-full select-none rounded-full object-cover';
     return (
-        <span class={`relative inline-flex shrink-0 ${SIZES[size]}`} aria-hidden="true">
+        <span class={`relative inline-flex shrink-0 ${SIZES[size]}`} aria-hidden="true" data-avatar>
             {picture ? (
                 <>
                     <img src={how === 'file' ? file : `${file}/thumb`} alt="" draggable={false} onError={() => setFailed(picture)}
