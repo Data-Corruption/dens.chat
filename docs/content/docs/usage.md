@@ -95,7 +95,7 @@ Calls are end-to-end encrypted too, with the same codes: the lock beside a call
 shows yours, and everyone in the call, to compare with right there. A
 comparison holds wherever you meet them after, in DMs, groups and calls.
 Whether the check shows beside people in lists is yours to choose, under
-**Settings** → **Appearance** → **Verified status**.
+**Settings** → **Appearance** → **Verified mark**.
 
 If someone's keys change, as when they reset their DM recovery key, the DM says
 so where it happened, and their check goes. If you'd compared codes with
@@ -154,12 +154,13 @@ soundboard work as you'd expect. What's different:
   moderator. Photos you send lose their location and camera details before
   they leave your computer.
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
-  → **Message density**.
+  → **Messages**, beside **Width**, which holds messages to a narrower
+  column on a wide window.
 
 ## Notifications
 
 Nothing notifies you until you turn it on: in **Settings**, under
-**Notifications & sounds**, turn on **Direct messages**, **Mentions**, or
+**Notifications**, turn on **Direct messages**, **Mentions**, or
 both. The bell beside a den's name mutes the den, and the bell at the top of a
 channel or DM mutes just that one. A notification shows the start of the
 message to anyone who can see your screen; turn off **Show the message** and

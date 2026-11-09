@@ -77,7 +77,7 @@ and still sees that the messages were sent, and when.
 - **Members** screenshotting or repeating what you say.
 - **Whoever sees your screen.** A notification shows the start of a message, a
   DM's included. Turn off **Show the message**, in the settings under
-  **Notifications & sounds**, and it says only who sent one.
+  **Notifications**, and it says only who sent one.
 - **A compromised computer**, yours or the den's.
 - **Traffic analysis.** A den sees its members' IP addresses while they're
   connected.
