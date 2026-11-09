@@ -130,8 +130,9 @@ you'd expect; what's different:
 - **Invites are the only way in.** Each expires and works a set number of
   times. Dens keeps no IP addresses, so someone banned can come back under a
   new name with a new invite: revoke the one they used.
-- **Staff act only on people of a lower rank.** The owner promotes
-  moderators from **⋯** on a profile, and sets the den's limits.
+- **Staff act only on people of a lower rank.** The exception is moving
+  someone between calls, which staff do to anyone but the owner. The owner
+  promotes moderators from **⋯** on a profile, and sets the den's limits.
 - **Limits** cap files, storage, and how big calls and screen shares get; the
   calls section shows the upload they need when full. Lower them if calls
   stutter.
