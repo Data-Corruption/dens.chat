@@ -26,7 +26,7 @@ func (*KeyState) Close() error { return nil }
 
 // Note says what Windows keeps from the reader, for the settings to show.
 func (*KeyState) Note() string {
-	return "While a program run as administrator is in front, Windows keeps its keys from Dens."
+	return "With an administrator's program in front, Windows hides the keys."
 }
 
 // Key resolves a key the page names by its place on the keyboard

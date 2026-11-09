@@ -37,7 +37,7 @@ export function rememberNote(r) {
     if (!r.on) return { text: 'Dens asks for your local password each time it starts.' };
     if (r.where === 'keyring') return { text: 'Your keyring keeps it, and opens Dens when you sign in.' };
     return {
-        text: "It's kept in a file in Dens's own folder, which keeps it from other apps, though not from programs you run.",
+        text: "Kept in a file in Dens's folder, which other apps can't read.",
         problem: r.problem || '',
     };
 }

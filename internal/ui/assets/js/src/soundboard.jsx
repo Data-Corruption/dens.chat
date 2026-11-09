@@ -192,10 +192,7 @@ export function ManageSoundboard({ denID, owner, onLimits }) {
     return (
         <>
             <h3 class="text-lg font-semibold">Soundboard</h3>
-            <p class="text-sm text-base-content/70">
-                Sounds anyone in a call can play for everyone in it, from the call's controls. The den streams each to the call, evened to
-                one loudness, at 64 kbps.
-            </p>
+            <p class="text-sm text-base-content/70">Sounds anyone in a call can play for everyone in it.</p>
             {!limits ? (
                 <p class="text-sm">This den runs a version of Dens without a soundboard.</p>
             ) : (

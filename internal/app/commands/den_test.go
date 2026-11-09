@@ -301,7 +301,7 @@ func TestCreateCommand(t *testing.T) {
 	}
 }
 
-// dens logs saves the newest logs, as the settings' Logging card downloads
+// dens logs saves the newest logs, as the settings' Logs card downloads
 // them, and with --level sets how much they say, as the card does (M11).
 func TestLogsCommand(t *testing.T) {
 	f := serveDen(t)

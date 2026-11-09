@@ -16,7 +16,7 @@ export function hostingAsk(enabled, on) {
 // only the line on what hosting needs.
 export function hostingNote(h) {
     if (h.can_host === false) {
-        return { cantHost: 'Hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in.' };
+        return { cantHost: 'Hosting needs Dens installed on Linux or Windows.' };
     }
     if (h.enabled && !h.serving) return { problem: h.problem || "The den hasn't started yet." };
     if (h.serving) return { address: `127.0.0.1:${h.den_port}`, udp: h.media_udp_port, tcp: h.media_tcp_port };

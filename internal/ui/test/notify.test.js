@@ -108,10 +108,10 @@ test('mutes and kinds, as the service says them', () => {
 test('the settings say where notifications show', () => {
     const on = { dms: true };
     const helper = { helper: true, notifies: true };
-    assert.match(whereTheyShow(on, 'granted', helper), /^This browser shows them while a Dens tab is open.*With no Dens tab open, your desktop shows them\.$/);
-    assert.match(whereTheyShow(on, 'denied', { helper: false }), /blocks Dens's notifications.*while Dens's helper runs/);
-    assert.match(whereTheyShow(on, 'default', helper), /asks whether to show them/);
-    assert.match(whereTheyShow(on, 'unsupported', helper), /can't show notifications/);
-    assert.match(whereTheyShow({ ...on, shell: { allowed: true } }, 'unsupported', null), /^Android shows them/);
-    assert.match(whereTheyShow({ ...on, shell: { allowed: false } }, 'unsupported', null), /^Android doesn't let Dens show notifications/);
+    assert.match(whereTheyShow(on, 'granted', helper).join('\n'), /^A Dens tab shows them.*\nWith no Dens tab open, your desktop shows them\.$/);
+    assert.match(whereTheyShow(on, 'denied', { helper: false }).join('\n'), /blocks them.*\nWith no tab open, Dens's helper shows them/);
+    assert.match(whereTheyShow(on, 'default', helper).join(' '), /asks to show them/);
+    assert.match(whereTheyShow(on, 'unsupported', helper).join(' '), /can't show notifications/);
+    assert.match(whereTheyShow({ ...on, shell: { allowed: true } }, 'unsupported', null).join(' '), /^Android shows them/);
+    assert.match(whereTheyShow({ ...on, shell: { allowed: false } }, 'unsupported', null).join(' '), /^Android doesn't let Dens show notifications/);
 });

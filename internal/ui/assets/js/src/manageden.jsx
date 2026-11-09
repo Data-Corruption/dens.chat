@@ -312,10 +312,8 @@ function General({ den, draft, base, onEdit }) {
                     <Field label="Den name">
                         <TextInput value={draft.name} onInput={(v) => onEdit({ name: v })} required maxlength="32" />
                     </Field>
-                    <Field label="Public address"
-                        hint={moved
-                            ? 'Keep the old address pointing at the den for a while: members who were offline, and invites already sent, find the new one through it.'
-                            : 'The address members use to connect.'}>
+                    <Field label={<>Public address{moved && <> <Tip id="moved-tip">Members who were offline, and invites already sent, find the new address through the old one.</Tip></>}</>}
+                        hint={moved ? 'Keep the old address pointing at the den for a while.' : 'The address members use to connect.'}>
                         <div class="flex gap-2">
                             <TextInput type="url" value={draft.url} onInput={(v) => onEdit({ url: v })} required {...PLAIN} />
                             <button type="button" class="btn" onClick={test} disabled={check.busy || moved} title={moved ? 'Save the new address first' : undefined}>
@@ -329,10 +327,7 @@ function General({ den, draft, base, onEdit }) {
                         <>
                             <ErrorText message={check.error} />
                             {den.own && (
-                                <p class="text-sm text-base-content/70">
-                                    Some routers can't reach their own public address from inside the network, so members may still get
-                                    through. If you're unsure, test from a phone or another network.
-                                </p>
+                                <p class="text-sm text-base-content/70">Your router may not reach itself from inside; test from a phone.</p>
                             )}
                         </>
                     )}
@@ -366,7 +361,8 @@ function NewAddress({ den }) {
     return (
         <form class="flex flex-col gap-2 rounded-box bg-base-200 p-3" onSubmit={submit}>
             <p class="font-medium">Den moved?</p>
-            <p class="text-sm text-base-content/70">If the owner gave {den.name} a new address, enter it. Dens only uses it if the den there proves it's the same one.</p>
+            <p class="text-sm text-base-content/70">Enter the new address the owner gave it.</p>
+            <p class="text-sm text-base-content/70">Dens uses it only if the den there proves it's the same one.</p>
             <div class="flex gap-2">
                 <TextInput type="url" value={url} onInput={setURL} placeholder="https://den.example.com" autocomplete="off" required {...PLAIN} />
                 <SubmitButton busy={act.busy}>Use it</SubmitButton>
@@ -577,7 +573,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
             </section>
             <section class="flex flex-col gap-2 border-t border-base-300 pt-3">
                 <h4 class="font-medium">Calls</h4>
-                <p class="text-sm text-base-content/70">Calls and screen shares pass through the network of the computer hosting the den. Lower these if calls stutter.</p>
+                <p class="text-sm text-base-content/70">Calls use the host's upload. Lower these if they stutter.</p>
                 <div role="radiogroup" aria-label="Call limits" class="flex flex-wrap gap-4">
                     {Object.entries(CALL_PRESETS).map(([name, limits]) => (
                         <label key={name} class="label gap-2">
@@ -637,11 +633,8 @@ function Limits({ denID, view, draft, base, onEdit }) {
             </section>
             {hasBoard(draft) && (
                 <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-soundboard>
-                    <h4 class="font-medium">Soundboard</h4>
-                    <p class="text-sm text-base-content/70">
-                        Sounds staff add, which anyone in a call plays for everyone in it. The den streams each to the whole call, so a long one
-                        costs its upload as long as it plays.
-                    </p>
+                    <h4 class="font-medium">Soundboard <Tip id="soundboard-tip">The den streams each sound to the whole call, so a long one costs its upload as long as it plays.</Tip></h4>
+                    <p class="text-sm text-base-content/70">Sounds staff add, which anyone in a call plays for everyone in it.</p>
                     <label class="label gap-2">
                         <input type="checkbox" class="toggle toggle-sm" checked={board}
                             onChange={(e) => onEdit({ sounds: e.currentTarget.checked ? String(Number(base.sounds) || 50) : '0' })} />
@@ -666,7 +659,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
             {hasEmoji(draft) && (
                 <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-emoji>
                     <h4 class="font-medium">Emoji</h4>
-                    <p class="text-sm text-base-content/70">The den's own emoji, which staff add. Everyone's Dens keeps every one, to show them.</p>
+                    <p class="text-sm text-base-content/70">Staff's emoji for the den, kept by every member's Dens.</p>
                     <label class="label gap-2">
                         <input type="checkbox" class="toggle toggle-sm" checked={Number(draft.emojis) > 0}
                             onChange={(e) => onEdit({ emojis: e.currentTarget.checked ? String(Number(base.emojis) || 50) : '0' })} />
@@ -679,13 +672,13 @@ function Limits({ denID, view, draft, base, onEdit }) {
                             </Field>
                         </div>
                     )}
-                    <p class="text-sm text-base-content/70">Lowering this leaves the emoji already added; turning emoji off keeps them.</p>
+                    <p class="text-sm text-base-content/70">Lowering it or turning emoji off keeps the emoji already added.</p>
                 </section>
             )}
             {hasEvents(draft) && (
                 <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-events>
                     <h4 class="font-medium">Events</h4>
-                    <p class="text-sm text-base-content/70">Staff make events. Members may too, each up to this many that haven't ended.</p>
+                    <p class="text-sm text-base-content/70">Staff make events. Members may too, each this many at a time.</p>
                     <label class="label gap-2">
                         <input type="checkbox" class="toggle toggle-sm" checked={Number(draft.memberEvents) > 0} data-member-events
                             onChange={(e) => onEdit({ memberEvents: e.currentTarget.checked ? String(Number(base.memberEvents) || 1) : '0' })} />
@@ -843,13 +836,11 @@ function YourCode({ den, view }) {
                 <DocsTip id={`docs-code-${den.den_id}`} page="usage/#comparing-codes">Why members compare codes, and where it's safe to.</DocsTip>
             </Heading>
             {view && !view.keeps_identities ? (
-                <p class="text-sm">This den runs an older Dens, which keeps no identities, so there's no code to compare here yet.</p>
+                <p class="text-sm">This den's Dens is older, and has no codes to compare yet.</p>
             ) : (
                 <>
-                    <p class="text-sm">
-                        Others in this den compare this code with the one their Dens shows for you, to check nobody sits between you. Read it out
-                        when they ask. It's the same for everyone, and changes only if you reset your DM recovery key.
-                    </p>
+                    <p class="text-sm">Read it out when someone asks to compare codes.</p>
+                    <p class="text-sm text-base-content/70">It changes only if you reset your DM recovery key.</p>
                     {code ? <p class="select-all font-mono text-2xl tracking-wider" data-own-code>{code}</p> : <ErrorText message={error} />}
                 </>
             )}
@@ -951,7 +942,7 @@ function NewCodes({ den, left, onCodes }) {
     return (
         <form class="flex flex-col gap-2" onSubmit={submit}>
             <p class={`text-sm ${left <= 3 ? 'text-warning' : 'text-base-content/70'}`}>
-                {left === 1 ? '1 code left.' : `${left} codes left.`} Use one to sign in if you forget your password.
+                {left === 1 ? '1 code left' : `${left} codes left`}, to sign in if you forget your password.
             </p>
             {asking ? (
                 <>

@@ -56,7 +56,7 @@ const (
 	// OpCreateDen creates the den this instance hosts, with no account on
 	// this computer, and makes its owner invite (M10).
 	OpCreateDen = "create-den"
-	// OpLogs streams the newest logs, as the settings' Logging card
+	// OpLogs streams the newest logs, as the settings' Logs card
 	// downloads them, or with Level sets how much they say, as the card's
 	// level does (M11), so a server needs the page for neither.
 	OpLogs = "logs"

@@ -297,9 +297,7 @@ export function ManageEmoji({ denID, owner, onLimits }) {
     return (
         <EmojiContext.Provider value={ctx}>
             <h3 class="text-lg font-semibold">Emoji</h3>
-            <p class="text-sm text-base-content/70">
-                The den's own emoji, which everyone writes by name, as :name:, or picks beside the usual ones. Each is at most 128 pixels.
-            </p>
+            <p class="text-sm text-base-content/70">The den's own emoji, typed as :name: or picked with the rest.</p>
             {!limits ? (
                 <p class="text-sm">This den runs a version of Dens without emoji.</p>
             ) : (

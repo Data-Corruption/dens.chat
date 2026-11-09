@@ -148,6 +148,6 @@ test("with a soundboard, the upload counts a sound to everyone in a full call", 
 test('share audio is described for the browser and system the page is in', () => {
     assert.deepEqual(shareAudio('firefox', 'windows'), { supported: false, text: "Firefox can't share audio." });
     assert.deepEqual(shareAudio('firefox', 'linux'), { supported: false, text: "Firefox can't share audio." });
-    assert.deepEqual(shareAudio('chromium', 'windows'), { supported: true, text: "Shares a tab's audio, or this computer's without the call." });
-    assert.deepEqual(shareAudio('chromium', 'linux'), { supported: true, text: "Shares a tab's audio." });
+    assert.deepEqual(shareAudio('chromium', 'windows'), { supported: true, text: "A tab's audio, or this computer's without the call." });
+    assert.deepEqual(shareAudio('chromium', 'linux'), { supported: true, text: "A tab's audio." });
 });
