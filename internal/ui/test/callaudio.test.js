@@ -34,6 +34,8 @@ globalThis.document = {
 globalThis.window = { location: { protocol: 'http:', host: 'localhost:8484' }, addEventListener() {} };
 const kept = new Map();
 globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v), removeItem: (k) => kept.delete(k) };
+// Volumes a page before this one kept, which the page reads as it loads.
+kept.set('DENS_VOLUMES', JSON.stringify({ 'den1:8': 0.4, 'den1:9': 2 }));
 // The service answers nothing the call needs: RNNoise's module and the
 // den's state aren't there, so the processor runs without RNNoise.
 globalThis.fetch = async () => ({ ok: false, status: 404, headers: { get: () => null }, text: async () => '' });
@@ -161,6 +163,7 @@ globalThis.Audio = class {
     muted = false;
     paused = true;
     srcObject = null;
+    sinkId = '';
     constructor() {
         elements.push(this);
     }
@@ -170,6 +173,10 @@ globalThis.Audio = class {
     }
     pause() {
         this.paused = true;
+    }
+    setSinkId(id) {
+        this.sinkId = id;
+        return Promise.resolve();
     }
 };
 
@@ -233,6 +240,62 @@ test("where audio may start without a click, the call's contexts start once the 
     leaveCall();
     assert.deepEqual(gain.to, [], 'leaving disconnects the voice');
     assert.equal(call.state, 'closed');
+});
+
+test('volumes the browser kept play as the page loads, under full and past it', async () => {
+    await joined(false);
+    const [call] = contexts;
+    peers.at(-1).ontrack({ streams: [new Stream([new Track()], '8')] });
+    const quieter = elements.at(-1);
+    peers.at(-1).ontrack({ streams: [new Stream([new Track()], '9')] });
+    const [louder, out] = elements.slice(-2);
+    assert.deepEqual([quieter.volume, quieter.muted], [0.4, false]);
+    assert.deepEqual([louder.muted, out.muted, call.gains.at(-1).gain.value], [true, false, 2]);
+    leaveCall();
+});
+
+// An element plays at most full, so a member turned up past it plays
+// through a gain in the call's context, into an element of its own on the
+// speaker chosen, their own playing on, muted, for Chromium to decode
+// their stream; back at full or under, their element plays them again.
+test("in a browser, a member past full plays through the call's context, into an element of its own", async () => {
+    kept.set('DENS_SPEAKER', 'headset');
+    const { element } = await joined(false);
+    const [call] = contexts;
+    setVolume('den1', '7', 2);
+    const out = elements.at(-1);
+    const gain = call.gains.at(-1);
+    assert.notEqual(out, element);
+    assert.deepEqual([element.muted, element.paused, element.volume], [true, false, 1], 'their element plays the stream, and nothing itself');
+    assert.deepEqual([out.paused, out.sinkId, gain.gain.value], [false, 'headset', 2]);
+    assert.equal(gain.to[0].stream, out.srcObject, 'the gain plays into the element');
+    assert.match(kept.get('DENS_VOLUMES'), /"den1:7":2\b/);
+    setCallVolume(0.5);
+    assert.equal(gain.gain.value, 1, "the call's volume, under the member's own");
+    setCallVolume(1);
+    setDeafened(true);
+    assert.equal(out.muted, true);
+    setDeafened(false);
+    assert.equal(out.muted, false);
+    setVolume('den1', '7', 0.8);
+    assert.deepEqual([element.muted, element.volume], [false, 0.8], 'their element plays them again');
+    assert.deepEqual([out.paused, out.srcObject, gain.to], [true, null, []], 'and the gain goes');
+    setVolume('den1', '7', 1.5);
+    leaveCall();
+    assert.deepEqual([elements.at(-1).paused, elements.at(-1).srcObject], [true, null], 'leaving stops it');
+    setVolume('den1', '7', 1);
+    kept.delete('DENS_SPEAKER');
+});
+
+test("where audio may start without a click, a member past full plays louder through their gain", async () => {
+    const { element } = await joined(true);
+    const call = contexts[1];
+    const count = elements.length;
+    setVolume('den1', '7', 2);
+    assert.equal(call.gains.at(-1).gain.value, 2);
+    assert.deepEqual([elements.length, element.muted], [count, true], 'no element of its own');
+    setVolume('den1', '7', 1);
+    leaveCall();
 });
 
 // Chromium pauses a frozen page's media elements and never plays them

@@ -73,6 +73,9 @@ const MUTED = 'DENS_MUTED';
 const DEAFENED = 'DENS_DEAFENED';
 const RNNOISE = 'DENS_RNNOISE';
 const VOLUMES = 'DENS_VOLUMES';
+// LOUDEST is the loudest a member plays, twice what they send. It stands
+// above the read of the kept volumes, which runs as the module loads.
+export const LOUDEST = 2;
 const CALL_VOLUME = 'DENS_CALL_VOLUME';
 const VOICE = 'DENS_VOICE';
 const SHARE = 'DENS_SHARE';
@@ -157,6 +160,9 @@ const audios = new Map();
 let callContext = null;
 const meters = new Map();
 const voices = new Map();
+// louder holds what plays each member turned up past full, by member ID
+// (see boost).
+const louder = new Map();
 let meterTimer = null;
 // speaking is who rings in the call: those the meters hear, audible, those
 // the den says hold push to talk, talkers (M11), and "self" while this
@@ -232,7 +238,7 @@ function start() {
         document.addEventListener('freeze', () => note({ what: 'frozen' }));
         document.addEventListener('resume', () => {
             note({ what: 'resumed' });
-            playAgain(audios.values());
+            playAgain([...audios.values(), ...[...louder.values()].map((b) => b.out)]);
         });
     }
     onConnection((up) => {
@@ -718,8 +724,10 @@ async function reopenMic() {
 
 // A member sends by voice activity ("voice"), automatically or above a
 // level in dBFS, or while they push to talk ("ptt"), which the browser
-// keeps. Their keys for push to talk, toggle mute and push to mute live in
-// the service from M7, so its helper can read them in other programs.
+// keeps, with how long push to talk stays open after its key's release,
+// in milliseconds. Their keys for push to talk, toggle mute, push to mute
+// and toggle deafen live in the service from M7, so its helper can read
+// them in other programs.
 //
 // From M13.4 the call's button, on a touch screen, has a role, one of
 // those three actions, which sets how the member sends there: push to talk
@@ -727,8 +735,14 @@ async function reopenMic() {
 // voice activity. The role and the mode never disagree: settings kept from
 // before the button had a role follow their mode, so a member who sent by
 // push to talk still does.
-export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute' };
-const KEYS = ['ptt', 'toggleMute', 'pushMute'];
+export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute', releaseDelay: 0 };
+const KEYS = ['ptt', 'toggleMute', 'pushMute', 'toggleDeafen'];
+// ROLES are what the call's button may do.
+const ROLES = ['ptt', 'toggleMute', 'pushMute'];
+// RELEASE_MOST is the longest release delay, in milliseconds, which goes
+// in steps of RELEASE_STEP.
+export const RELEASE_MOST = 2000;
+export const RELEASE_STEP = 50;
 
 // readVoice reads the voice settings the browser kept, falling back to
 // the defaults for anything that isn't one.
@@ -741,7 +755,7 @@ export function readVoice(text) {
     }
     if (!kept || typeof kept !== 'object') kept = {};
     const mode = kept.mode === 'ptt' ? 'ptt' : 'voice';
-    let button = KEYS.includes(kept.button) ? kept.button : VOICE_DEFAULTS.button;
+    let button = ROLES.includes(kept.button) ? kept.button : VOICE_DEFAULTS.button;
     if (mode === 'ptt') button = 'ptt';
     else if (button === 'ptt') button = VOICE_DEFAULTS.button;
     return {
@@ -749,6 +763,9 @@ export function readVoice(text) {
         auto: typeof kept.auto === 'boolean' ? kept.auto : VOICE_DEFAULTS.auto,
         threshold: Number.isFinite(kept.threshold) ? Math.min(0, Math.max(-100, Math.round(kept.threshold))) : VOICE_DEFAULTS.threshold,
         button,
+        releaseDelay: Number.isFinite(kept.releaseDelay)
+            ? Math.min(RELEASE_MOST, Math.max(0, Math.round(kept.releaseDelay / RELEASE_STEP) * RELEASE_STEP))
+            : VOICE_DEFAULTS.releaseDelay,
     };
 }
 
@@ -799,6 +816,9 @@ let voice = readVoice(stored(VOICE));
 let keyStatus = readKeyStatus(null);
 let pttHeld = false;
 let pushMuted = false;
+// letGo lets push to talk go once its release delay passes after the key's
+// release; a press before then keeps it held.
+let letGo = null;
 
 // voiceSettings is how the member sends, with their keys.
 export function voiceSettings() {
@@ -829,7 +849,7 @@ export function setVoice(changes) {
     const mode = 'button' in changes ? { mode: changes.button === 'ptt' ? 'ptt' : 'voice' } : {};
     voice = readVoice(JSON.stringify({ ...voice, ...changes, ...mode }));
     store(VOICE, JSON.stringify(voice));
-    pttHeld = pushMuted = false;
+    letGoNow();
     applySending();
     notify();
 }
@@ -840,7 +860,7 @@ export async function setKeys(keys) {
     const next = readKeys(keys);
     await api.post('/api/settings', { voiceKeys: next });
     keyStatus = { ...keyStatus, keys: next };
-    pttHeld = pushMuted = false;
+    letGoNow();
     applySending();
     keyListeners.forEach((fn) => fn());
     notify();
@@ -1062,12 +1082,38 @@ export function released(action, s) {
     return s;
 }
 
+// A press of push to talk within its release delay keeps it held.
 function pressAction(action) {
+    if (action === 'toggleDeafen') {
+        setDeafened(!isDeafened());
+        return;
+    }
+    if (action === 'ptt') {
+        clearTimeout(letGo);
+        letGo = null;
+    }
     sendAs(pressed(action, sending()));
 }
 
+// Push to talk stays held for its release delay, which a second release
+// while it waits, as the page's blur after the key's, doesn't restart.
 function releaseAction(action) {
+    if (action === 'ptt' && pttHeld && voice.releaseDelay > 0) {
+        letGo ??= setTimeout(() => {
+            letGo = null;
+            sendAs(released('ptt', sending()));
+        }, voice.releaseDelay);
+        return;
+    }
     sendAs(released(action, sending()));
+}
+
+// letGoNow lets go of what's pushed without the delay, as the way of
+// sending or the keys change.
+function letGoNow() {
+    clearTimeout(letGo);
+    letGo = null;
+    pttHeld = pushMuted = false;
 }
 
 function sending() {
@@ -1432,8 +1478,10 @@ function play(e) {
     // member, as the call's sound (M12). Chromium decodes a member's stream
     // only while a media element plays it, so theirs plays it too, muted.
     if (autoplays()) playVoice(member, stream);
-    level(member);
+    // level boosts from the element's stream, so the stream goes in
+    // first; nothing plays before this task ends.
     audio.srcObject = stream;
+    level(member);
     audio.play().catch(() => {});
     if (autoplays()) replaySoon();
     if (member !== SOUNDBOARD) meter(member, stream);
@@ -1444,6 +1492,7 @@ function play(e) {
             audios.delete(member);
             unmeter(member);
             dropVoice(member);
+            unboost(member);
         }
     };
 }
@@ -1503,16 +1552,65 @@ function dropVoice(member) {
 // level plays a member as loud as the member here chose, under the call's
 // volume, and not at all while they're deafened: through the call's
 // context where it plays them, with their element muted, and through their
-// element otherwise.
+// element otherwise, or boosted where their own volume is past full,
+// whatever the call's volume makes of it, so the call's never switches
+// how they play.
 function level(member) {
     const audio = audios.get(member);
     const v = voices.get(member);
-    const volume = volumeIn(volumes, call?.den, member) * wholeVolume;
+    const own = volumeIn(volumes, call?.den, member);
+    const volume = own * wholeVolume;
+    const deaf = isDeafened();
+    const boosted = !v && own > 1 && boost(member, audio?.srcObject);
+    if (!boosted) unboost(member);
     if (audio) {
-        audio.volume = volume;
-        audio.muted = !!v || isDeafened();
+        audio.volume = Math.min(1, volume);
+        audio.muted = !!v || boosted || deaf;
     }
-    if (v) v.gain.gain.value = isDeafened() ? 0 : volume;
+    if (v) v.gain.gain.value = deaf ? 0 : volume;
+    const b = louder.get(member);
+    if (b) {
+        b.gain.gain.value = volume;
+        b.out.muted = deaf;
+    }
+}
+
+// boost plays a member past full, which an element can't: through a gain
+// in the call's context, into an element of its own, since Firefox's
+// contexts can't choose a speaker. Their own element plays on, muted, since
+// Chromium decodes a stream only while an element plays it. It returns
+// whether it plays them.
+function boost(member, stream) {
+    if (!callContext || !stream) return false;
+    if (louder.get(member)?.stream === stream) return true;
+    unboost(member);
+    try {
+        const source = callContext.createMediaStreamSource(stream);
+        const gain = callContext.createGain();
+        const sink = callContext.createMediaStreamDestination();
+        source.connect(gain).connect(sink);
+        const out = new Audio();
+        out.autoplay = true;
+        const speaker = stored(SPEAKER);
+        if (speaker && out.setSinkId) out.setSinkId(speaker).catch(() => {});
+        out.srcObject = sink.stream;
+        out.play().catch(() => {});
+        louder.set(member, { stream, source, gain, out });
+        return true;
+    } catch {
+        // A stream without audio yet, as in meter: their element plays them.
+        return false;
+    }
+}
+
+function unboost(member) {
+    const b = louder.get(member);
+    if (!b) return;
+    b.source.disconnect();
+    b.gain.disconnect();
+    b.out.pause();
+    b.out.srcObject = null;
+    louder.delete(member);
 }
 
 // playAgain plays again each element that holds a stream but stopped, as
@@ -1672,6 +1770,7 @@ function closePeer() {
         audio.srcObject = null;
         unmeter(member);
         dropVoice(member);
+        unboost(member);
     }
     audios.clear();
 }
@@ -2500,7 +2599,7 @@ export function boardVolume() {
 // setBoardVolume sets how loud the soundboard plays here, mid-call too, and
 // keeps it, as a member's volume is kept; 0 mutes it.
 export function setBoardVolume(volume) {
-    if (call) setVolume(call.den, SOUNDBOARD, volume);
+    if (call) setVolume(call.den, SOUNDBOARD, clampVolume(volume));
 }
 
 // Speaking ----------------------------------------------------------------
@@ -2588,11 +2687,12 @@ export function speakingNow(levels, last, now) {
 
 // Volumes -----------------------------------------------------------------
 
-// A member's volume, from 0 to 1, is the member here's own choice: the
+// A member's volume, from 0 to 2, is the member here's own choice: the
 // browser keeps it by den and member, as it keeps the microphone and
-// speaker, so someone turned down stays down in the next call. It's the
-// volume of the media element that plays them, which tops out at 1: more
-// would mean playing them through Web Audio instead.
+// speaker, so someone turned down stays down in the next call. Up to 1
+// it's the volume of the media element that plays them, which tops out
+// there; past it, a gain in the call's context plays them (boost). A page
+// that keeps only volumes under 1 reads one past it as full.
 //
 // The call's volume turns everyone down at once, under their own (M12):
 // a phone's loudspeaker plays a call loud even at its lowest call volume.
@@ -2612,16 +2712,17 @@ export function readVolumes(text) {
     const out = {};
     if (!kept || typeof kept !== 'object' || Array.isArray(kept)) return out;
     for (const [key, v] of Object.entries(kept)) {
-        if (typeof v === 'number' && v >= 0 && v < 1) out[key] = v;
+        if (typeof v === 'number' && v >= 0 && v <= LOUDEST && v !== 1) out[key] = v;
     }
     return out;
 }
 
-// clampVolume keeps a volume between 0 and 1, in steps of 5%.
-export function clampVolume(v) {
+// clampVolume keeps a volume between 0 and most, full unless given, in
+// steps of 5%.
+export function clampVolume(v, most = 1) {
     const n = Number(v);
     if (!Number.isFinite(n)) return 1;
-    return Math.min(1, Math.max(0, Math.round(n * 20) / 20));
+    return Math.min(most, Math.max(0, Math.round(n * 20) / 20));
 }
 
 // volumeIn is how loud a member of a den plays: full unless chosen.
@@ -2633,7 +2734,7 @@ export function volumeIn(volumes, den, member) {
 // it's what everyone plays at unless chosen.
 export function withVolume(volumes, den, member, volume) {
     const next = { ...volumes };
-    const v = clampVolume(volume);
+    const v = clampVolume(volume, LOUDEST);
     if (v === 1) delete next[volumeKey(den, member)];
     else next[volumeKey(den, member)] = v;
     return next;
@@ -2693,6 +2794,7 @@ export async function chooseMic(id) {
 export function chooseSpeaker(id) {
     store(SPEAKER, id);
     for (const audio of audios.values()) audio.setSinkId?.(id).catch(() => {});
+    for (const b of louder.values()) b.out.setSinkId?.(id).catch(() => {});
 }
 
 // byName orders a call's members by display name for the page, as the

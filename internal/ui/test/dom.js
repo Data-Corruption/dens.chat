@@ -81,6 +81,16 @@ class Node {
         }
         return null;
     }
+
+    // A sheet's effect looks for a row to focus, and may run after its
+    // test ended; it finds none.
+    querySelector() {
+        return null;
+    }
+
+    querySelectorAll() {
+        return [];
+    }
 }
 
 // Preact names a listener as the element names the event's handler, so

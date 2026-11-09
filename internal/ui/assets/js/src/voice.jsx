@@ -21,7 +21,7 @@ import { openManage } from './dialogs.js';
 import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
 import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { nav, useNarrow } from './nav.js';
-import { RoleMark, rank } from './people.jsx';
+import { RoleMark, isStaff, rank } from './people.jsx';
 import { canShare } from './platform.js';
 import { VerifiedMark } from './private.jsx';
 import { openSettings } from './settings.jsx';
@@ -30,8 +30,8 @@ import { Sheet, SheetRow } from './sheet.jsx';
 import { SoundboardButton } from './soundboard.jsx';
 import { createHold, useCoarse, useHoldsButton } from './touch.js';
 import {
-    byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened, setMuted,
-    setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
+    LOUDEST, byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened,
+    setMuted, setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
@@ -587,18 +587,19 @@ function LeaveIcon() {
 // talk (M11): speaking holds member IDs, and "self" for this page's member,
 // me; and whoever's sound plays, sounding (M14.3). A member's name opens
 // their profile through onProfile. Everyone else's row has a menu that sets
-// how loud they play here, from volumes, and gives staff a way to mute or
-// disconnect those they rank above. A member who shares their screen has a
-// LIVE mark (M4.2), which watches or stops watching in the page's own call,
-// inCall, and elsewhere joins the call as label names it and watches;
-// watched holds the members whose shares the page watches. From M16.2 the
-// identities this member's Dens kept mark those they verified, and those
-// whose keys changed since, or since the page's call began, since. Where
-// the den moves members, moving gives staff Move to in the menu of those
-// they outrank, with the voice channels it lists, and with a mouse lets
-// them drag their row onto another (M17.2), but for a row whose menu is
-// open, whose slider would drag the row along. With a mouse, a right
-// click on a row opens its menu at the pointer.
+// how loud they play here, from volumes, up to twice as loud as they send,
+// and gives staff a way to mute or disconnect those they rank above. A
+// member who shares their screen has a LIVE mark (M4.2), which watches or
+// stops watching in the page's own call, inCall, and elsewhere joins the
+// call as label names it and watches; watched holds the members whose
+// shares the page watches. From M16.2 the identities this member's Dens
+// kept mark those they verified, and those whose keys changed since, or
+// since the page's call began, since. Where the den moves members, moving
+// gives staff Move to in the menu of anyone but the owner, with the voice
+// channels it lists, and with a mouse lets them drag their row onto
+// another (M17.2), but for a row whose menu is open, whose slider would
+// drag the row along. With a mouse, a right click on a row opens its menu
+// at the pointer.
 export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since, moving }) {
     // menu is the member whose menu is open, and where a right click
     // opened it, if one did.
@@ -635,37 +636,40 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
     }
     // options are what the menu of a member other than this one holds: how
     // loud they play here, on the phone layout's sheet a slider a finger
-    // can hold (M13.4), and for staff who outrank them, muting them for
-    // everyone, moving them to another call (M17.2) and disconnecting them.
-    function options(m, name, pct, moderate, Row) {
-        const targets = moderate && moving ? moving.targets(members.get(m.id)) : [];
+    // can hold (M13.4); for staff who outrank them, muting them for
+    // everyone and disconnecting them; and for staff, moving anyone but
+    // the owner to another call (M17.2).
+    function options(m, name, pct, moderate, movable, Row) {
+        const targets = movable && moving ? moving.targets(members.get(m.id)) : [];
         return (
             <>
                 <label class={`flex items-center ${narrow ? 'h-14 gap-3 px-4 text-sm' : 'min-h-6 gap-2 text-xs'}`} title="How loud they play for you">
                     <span>Volume</span>
-                    <input type="range" class={`range min-w-0 flex-1 ${narrow ? 'range-xl' : 'range-md'}`} min="0" max="100" step="5" value={pct}
-                        aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
-                        onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
+                    {/* Full, at the track's middle, is marked under it. */}
+                    <span class="relative isolate flex min-w-0 flex-1 items-center">
+                        <span class="absolute inset-y-0 left-1/2 -z-10 w-0.5 -translate-x-1/2 rounded-full bg-base-content/30" aria-hidden="true" data-full></span>
+                        <input type="range" class={`range w-full ${narrow ? 'range-xl' : 'range-md'}`} min="0" max={LOUDEST * 100} step="5" value={pct}
+                            aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
+                            onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
+                    </span>
                     <span class="w-9 text-right tabular-nums">{pct}%</span>
                 </label>
                 {moderate && (
-                    <>
-                        <Row onClick={() => act(m.id, 'voice-mute', { muted: !m.staff_muted })}>
-                            {m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone'}
-                        </Row>
-                        {targets.length > 0 && (
-                            <div role="group" aria-label="Move to" class="flex flex-col" data-move-to>
-                                <p class={`cursor-default select-none text-base-content/60 ${narrow ? 'px-4 pb-1 pt-3 text-xs' : 'px-2 pt-1 text-xs'}`}>Move to</p>
-                                {targets.map((t) => (
-                                    <Row key={t.id} onClick={() => act(m.id, 'move', { channel_id: t.id })}>
-                                        <span class="flex min-w-0 items-center gap-2"><SpeakerIcon size="h-3.5 w-3.5" /><span class="truncate">{t.name}</span></span>
-                                    </Row>
-                                ))}
-                            </div>
-                        )}
-                        <Row danger onClick={() => act(m.id, 'disconnect')}>Disconnect from the call</Row>
-                    </>
+                    <Row onClick={() => act(m.id, 'voice-mute', { muted: !m.staff_muted })}>
+                        {m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone'}
+                    </Row>
                 )}
+                {targets.length > 0 && (
+                    <div role="group" aria-label="Move to" class="flex flex-col" data-move-to>
+                        <p class={`cursor-default select-none text-base-content/60 ${narrow ? 'px-4 pb-1 pt-3 text-xs' : 'px-2 pt-1 text-xs'}`}>Move to</p>
+                        {targets.map((t) => (
+                            <Row key={t.id} onClick={() => act(m.id, 'move', { channel_id: t.id })}>
+                                <span class="flex min-w-0 items-center gap-2"><SpeakerIcon size="h-3.5 w-3.5" /><span class="truncate">{t.name}</span></span>
+                            </Row>
+                        ))}
+                    </div>
+                )}
+                {moderate && <Row danger onClick={() => act(m.id, 'disconnect')}>Disconnect from the call</Row>}
             </>
         );
     }
@@ -678,13 +682,16 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                     const name = member?.display_name || 'Unknown member';
                     const talking = rings(m, me?.id, speaking, sounding, deafened);
                     // Everyone else's row has a menu, for their volume here,
-                    // and for staff's actions when the member here outranks them.
+                    // and for staff's actions: muting and disconnecting when
+                    // the member here outranks them, and moving anyone but
+                    // the owner.
                     const other = me && m.id !== me.id;
                     const moderate = me && member && rank(me.role) > rank(member.role);
+                    const movable = other && member && isStaff(me.role) && member.role !== 'owner';
                     const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
                     const open = menu?.id === m.id;
-                    // Staff drag those they outrank onto another voice channel.
-                    const drags = moderate && moving?.lift && !open ? {
+                    // Staff drag those they may move onto another voice channel.
+                    const drags = movable && moving?.lift && !open ? {
                         draggable: true, onDragStart: (e) => moving.lift(e, m), onDragEnd: moving.letGo,
                     } : {};
                     const rightClicks = other && !touch ? {
@@ -737,10 +744,10 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                     aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={open}
                                     onClick={() => setMenu(open ? null : { id: m.id, at: null })}>⋯</button>
                             )}
-                            {other && open && !narrow && <CallMenu at={menu.at}>{options(m, name, pct, moderate, CallMenuRow)}</CallMenu>}
+                            {other && open && !narrow && <CallMenu at={menu.at}>{options(m, name, pct, moderate, movable, CallMenuRow)}</CallMenu>}
                             {other && open && narrow && (
                                 <Sheet label={`Options for ${name} in the call`} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu(null)}>
-                                    {options(m, name, pct, moderate, SheetRow)}
+                                    {options(m, name, pct, moderate, movable, SheetRow)}
                                 </Sheet>
                             )}
                         </HoverRow>
