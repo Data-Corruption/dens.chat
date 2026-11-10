@@ -94,6 +94,22 @@ EMOJI_DATA=(
   "annotations-derived-en.xml a4a6c1a4c341d94179cb116623c5f44c47400a5bc55da483423ef7430ecf622e https://raw.githubusercontent.com/unicode-org/cldr/release-49/common/annotationsDerived/en.xml"
 )
 
+# The fonts a member's name may show in, each a Fontsource package:
+# the build copies one weight's Latin woff2 from it into the page's assets,
+# and scripts/notices/ keeps its license. denproto.NameFonts lists the same
+# fonts, in this order. Fontsource's name, version, the weight, the
+# package's SHA-256, and the font's own name.
+NAME_FONTS=(
+  "pacifico 5.3.0 400 397f4f0a8a4c44e929cafa4cfede7240f7ac81a922f6779d3fefe2192c67d619 Pacifico"
+  "fredoka 5.3.0 600 3826ef8182dca8bec112e8320cd42c4aaec1b4cad9f6a3a2eaa4c98ee7ece323 Fredoka"
+  "zilla-slab 5.3.0 700 b7db2f40f3aaeb44c0e1dfe3da1e5de96d177a674ffe5e5e012c59b6a01e8aab Zilla Slab"
+  "space-mono 5.3.0 700 e0cd78cb7aa93e772905297d8d5ad2a3d9eea7a6a12f281a3940a28ec01c19eb Space Mono"
+  "orbitron 5.3.0 700 a9b5e98a3421cd897d7bc0c1d8683579d07191e03090913381daebbbe735f492 Orbitron"
+  "pixelify-sans 5.3.0 600 003876aaa787e925e6f17bd08901dc9d551bcc8ecbf4420c670497aa44378218 Pixelify Sans"
+  "bangers 5.3.0 400 7200b288ad26e3da1dd0a47dfb6f1712c4c327f038d84afe69a682c63a2c102c Bangers"
+  "cinzel 5.3.0 700 b80629f715b4603fd099c0ceaa94cc7a15308a75a9cf52f0613a312ee6d53c28 Cinzel"
+)
+
 # The Android app (M12): the NDK, which builds Dens for Android with cgo;
 # the SDK's build tools and platform, Kotlin and a JDK, which build the APK
 # around it without Gradle; and the platform tools (adb), the emulator and
@@ -260,6 +276,7 @@ VENDOR_RNNOISE_SRC=""
 VENDOR_RNNOISE_MODEL=""
 VENDOR_BROWSER_MEDIA=""
 VENDOR_EMOJI_DATA=""
+VENDOR_NAME_FONTS=""
 VENDOR_FIRST_RELEASE=""
 VENDOR_ANDROID=""
 VENDOR_ANDROID_EMULATOR=""
@@ -271,7 +288,7 @@ COSIGN_BIN="${COSIGN_BIN:-cosign}"
 
 VENDOR_REFETCH="${VENDOR_REFETCH:-false}"
 
-VENDOR_FETCHABLE=(esbuild tailwind daisyui preact cosign rclone shellcheck hugo caddy caddy-windows node
+VENDOR_FETCHABLE=(esbuild tailwind daisyui preact name-fonts cosign rclone shellcheck hugo caddy caddy-windows node
   wasi-sdk binaryen ffmpeg-src zlib-src wasm2go exiftool rnnoise-src rnnoise-model aom-src cmake browser-media
   emoji-data android android-emulator)
 
@@ -363,6 +380,10 @@ validate_pins() {
   for entry in "${EMOJI_DATA[@]}"; do
     read -r _ sha _ <<<"$entry"
     validate_sha256 "$sha" "EMOJI_DATA"
+  done
+  for entry in "${NAME_FONTS[@]}"; do
+    read -r _ _ _ sha _ <<<"$entry"
+    validate_sha256 "$sha" "NAME_FONTS"
   done
   for entry in "${ANDROID_TOOLS[@]}" "${ANDROID_EMULATOR_TOOLS[@]}"; do
     read -r _ sha _ <<<"$entry"
@@ -788,6 +809,27 @@ vendor_emoji_data() {
   printf "🟢 Vendored Unicode's emoji data\n"
 }
 
+# vendor_name_fonts resolves to a directory of the fonts a name may show
+# in, each as <name>.woff2, taken from its verified package.
+vendor_name_fonts() {
+  vendor_require_bins tar
+  VENDOR_NAME_FONTS="$TOOLS_DIR/name-fonts"
+  mkdir -p "$VENDOR_NAME_FONTS"
+  local entry name version weight sha archive font
+  for entry in "${NAME_FONTS[@]}"; do
+    read -r name version weight sha _ <<<"$entry"
+    archive="$VENDOR_NAME_FONTS/${name}-${version}.tgz"
+    download_verified "$archive" "https://registry.npmjs.org/@fontsource/${name}/-/${name}-${version}.tgz" "$sha" "the font $name"
+    font="$VENDOR_NAME_FONTS/${name}.woff2"
+    if [[ "$(cat "$font.vendored" 2>/dev/null)" != "$sha $weight" || ! -s "$font" ]]; then
+      tar -xzf "$archive" -O "package/files/${name}-latin-${weight}-normal.woff2" > "$font.tmp"
+      mv -f "$font.tmp" "$font"
+      printf '%s %s\n' "$sha" "$weight" > "$font.vendored"
+    fi
+  done
+  printf "🟢 Vendored the names' fonts\n"
+}
+
 # vendor_android_unpack NAME DIR TOP unpacks the verified download NAME
 # from ANDROID_TOOLS to DIR, from its top directory TOP, once: DIR keeps
 # the SHA-256 it came from, so a new pin unpacks again.
@@ -917,6 +959,7 @@ vendor_ensure() {
     cmake) vendor_cmake ;;
     browser-media) vendor_browser_media ;;
     emoji-data) vendor_emoji_data ;;
+    name-fonts) vendor_name_fonts ;;
     android) vendor_android ;;
     android-emulator) vendor_android_emulator ;;
     *)
@@ -952,6 +995,7 @@ vendor_resolved() {
     cmake) printf '%s' "$VENDOR_CMAKE" ;;
     browser-media) printf '%s' "$VENDOR_BROWSER_MEDIA" ;;
     emoji-data) printf '%s' "$VENDOR_EMOJI_DATA" ;;
+    name-fonts) printf '%s' "$VENDOR_NAME_FONTS" ;;
     android) printf '%s' "$VENDOR_ANDROID" ;;
     android-emulator) printf '%s' "$VENDOR_ANDROID_EMULATOR" ;;
   esac

@@ -4,6 +4,7 @@
 /internal/ui/assets/css/output.css
 /internal/ui/assets/js/output.js
 /internal/ui/assets/manifest.json
+/internal/ui/assets/fonts/
 /coverage.out
 *.test
 *.prof

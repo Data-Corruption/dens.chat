@@ -25,6 +25,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
 	"github.com/Data-Corruption/dens.chat/internal/cache"
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/clientsessions"
@@ -33,6 +34,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
+	"github.com/Data-Corruption/dens.chat/internal/ui"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/internal/youtube"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
@@ -53,8 +55,9 @@ type router struct {
 	youTube    *youtube.Lookup
 	backups    backups
 	// sounds are the page's own sounds' addresses, by name, as JSON
-	// (M14.2).
+	// (M14.2), and fonts those of the names' fonts.
 	sounds string
+	fonts  string
 }
 
 // New returns the client listener's handler.
@@ -66,6 +69,7 @@ func New(a *app.App) http.Handler {
 		youTube:    youtube.New(),
 		backups:    backups{links: map[string]backupLink{}},
 		sounds:     soundAssets(a.UI),
+		fonts:      fontAssets(a.UI),
 	}
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
@@ -219,7 +223,25 @@ func (rt *router) pageData(title string) map[string]any {
 	data["InApp"] = rt.inApp()
 	data["Keys"] = !rt.inApp()
 	data["Sounds"] = rt.sounds
+	data["Fonts"] = rt.fonts
 	return data
+}
+
+// fontAssets are the fonts a name may show in, by name, at their
+// assets' addresses, as JSON for the page's shell, which gives each to the
+// browser to fetch as a name on screen uses it; the ones the build left
+// out aren't there.
+func fontAssets(pages *ui.UI) string {
+	paths := map[string]string{}
+	if pages != nil {
+		for _, name := range denproto.NameFonts {
+			if a := pages.Assets["fonts/"+name+".woff2"]; a != nil {
+				paths[name] = a.URLPath
+			}
+		}
+	}
+	data, _ := json.Marshal(paths)
+	return string(data)
 }
 
 // autoplays reports whether the page's audio may start without a click,

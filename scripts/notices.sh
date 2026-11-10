@@ -116,6 +116,13 @@ generate() {
     "no credit; Dens gives it all the same. message.ogg is Drop 4, joined.ogg Confirmation 1, left.ogg" \
     "Question 2, shareStarted.ogg Maximize 6, shareEnded.ogg Minimize 6, micOn.ogg Drop 3, and" \
     "micOff.ogg Bong 1."
+  local entry font family
+  for entry in "${NAME_FONTS[@]}"; do
+    read -r font version _ _ family <<<"$entry"
+    section "${family}, one of the names' fonts in the page" "$TEXTS/font-${font}.txt" \
+      "https://fontsource.org/fonts/${font}" \
+      "Its Latin characters, as Fontsource ${version} packages them."
+  done
   local kotlin
   kotlin=$(printf '%s\n' "${ANDROID_TOOLS[@]}" | sed -n 's/^kotlin-compiler-\([0-9.]*\)\.zip .*/\1/p')
   section "Kotlin's standard library ${kotlin}, in the Android app's shell" "$TEXTS/kotlin.txt" "https://kotlinlang.org" \

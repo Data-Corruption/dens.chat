@@ -22,14 +22,17 @@ func TestAppShellRenders(t *testing.T) {
 		"Version":  "v0.0.0-dev",
 		"Instance": `second"><script>`,
 		"Sounds":   `{"joined":"/assets/sounds/joined.a1b2.ogg"}`,
+		"Fonts":    `{"pacifico":"/assets/fonts/pacifico.c3d4.woff2"}`,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	// The page's sounds' addresses go as JSON in an attribute (M14.2).
+	// The page's sounds' addresses go as JSON in an attribute (M14.2), and
+	// the names' fonts'.
 	for _, want := range []string{"<!DOCTYPE html>", `<div id="app"`, `data-version="v0.0.0-dev"`, `src="/assets/js/output.js"`, "</html>",
-		`data-sounds="{&#34;joined&#34;:&#34;/assets/sounds/joined.a1b2.ogg&#34;}"`} {
+		`data-sounds="{&#34;joined&#34;:&#34;/assets/sounds/joined.a1b2.ogg&#34;}"`,
+		`data-fonts="{&#34;pacifico&#34;:&#34;/assets/fonts/pacifico.c3d4.woff2&#34;}"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("app shell lacks %q", want)
 		}
