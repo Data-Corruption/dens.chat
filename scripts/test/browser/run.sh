@@ -108,7 +108,8 @@
 #                               and an event's card under its link, Interested by taps, and a badge's tip
 #                               shown by a tap on a profile card, within the screen (M17.5); and a profile
 #                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6); and the
-#                               theme editor and the chat background's card with its Dim (M19.4).
+#                               theme editor and the chat background's card with its Dim (M19.4); and Edit
+#                               profile's Name style, a font and a gradient picked (M19.5).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -145,19 +146,26 @@
 #                               den's database holding alice's award alone, the badge's title sealed
 #   settings BROWSER [PART...]  M19.1: every section of the settings and of Manage opened from the list down
 #                               the side, with the layout audit, every hint in them reading in a line; and
-#                               Appearance's Width holding general's header, list and composer to 1,200 or
-#                               900 pixels, centered, and Full letting them go; and a theme of the member's
+#                               Appearance's sizes, a photo and a YouTube player each shown at the size
+#                               chosen, a large photo drawn itself over its preview; and a theme of the member's
 #                               own made in the editor, the page wearing it color for color, saved, edited,
 #                               its code copied and pasted into bob's browser, a stranger's codes refused; and
 #                               a picture set behind general's messages, found there under its dim by the
 #                               screen's pixels, in a second browser too, and removed (M19.4). PART is
-#                               sections, width, themes or background; all unless given
+#                               sections, sizes, themes or background; all unless given
+#   names BROWSER               M19.5: alice picking a font and a gradient in Edit profile, its fonts as
+#                               tiles in their own faces; bob's page showing her name in them in the member
+#                               list, a message, a reply's quote, a call, the DM list, a DM's header and her
+#                               card, the dark end lightened on Dark and the pale one darkened on Light, by
+#                               the page's styles and the screen's pixels, no row taller, her font alone
+#                               fetched; a Cyrillic name in the page's font; bob's Name styles at Colors
+#                               only and Off; and alice clearing her style
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,155p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,163p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

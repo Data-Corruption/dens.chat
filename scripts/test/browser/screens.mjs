@@ -481,7 +481,11 @@ export async function memberScreens(h, ctx) {
     await h.step('edit-profile', async () => {
         await h.go(`/den/${den}`);
         await h.click(h.label('Edit your profile'));
-        await h.snap('edit-profile', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
+        // A font and a gradient picked (M19.5), so its two colors show.
+        await h.click(`document.querySelector('[data-name-fonts] input[value=pacifico]').closest('label')`, 'the Pacifico tile');
+        await h.click(`document.querySelector('[data-name-color] input[value=gradient]').closest('label')`, 'Gradient');
+        await h.wait(`document.querySelector('[data-name-style] [data-color="To"]')`, "the gradient's two colors");
+        await h.snap('edit-profile', { scroll: `document.querySelector('[role=dialog]')`, max: 4 });
         await h.escape();
     });
     if (dm) {

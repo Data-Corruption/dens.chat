@@ -535,8 +535,11 @@ adb shell settings put secure show_ime_with_hard_keyboard 0
 ok "by Android's own touch, a long press opened a message's actions in a sheet, which a swipe down and Back closed; with the keyboard up, the composer and the newest message stayed in sight, and three lines went by the send button; and a tip opened on a tap"
 phone start
 waitfor 20 "the page in front" front
+# Desk's name in a font and a color (M19.5), which the walk finds drawn in
+# the WebView.
+den api PATCH "/api/dens/$den_id/me" '{"name_style":{"font":"pacifico","color":"#c084fc"}}' >/dev/null
 walk pages || fail "dialogs, the settings and the viewer at 390 pixels"
-ok "the settings and Manage opened as lists of pages, which Back walked out of, and the phone's settings held no keyboard shortcuts or screen share; the viewer moved to a message's second photo by a swipe, zoomed by a double tap, and Back closed it; and a dialog, a sheet, closed by a swipe down"
+ok "the settings and Manage opened as lists of pages, which Back walked out of, and the phone's settings held no keyboard shortcuts or screen share; the viewer moved to a message's second photo by a swipe, zoomed by a double tap, and Back closed it; a dialog, a sheet, closed by a swipe down; and desk's name showed in its font"
 # Reactions (M15.3): desk reacts to the member's message, which the phone's
 # page shows as a chip; the member reacts to desk's from the long press's
 # quick row, by Android's own touch, which desk's page shows.
