@@ -1,7 +1,8 @@
 // Package youtube fetches what the covers of YouTube's players show (M4.1):
 // a linked video's title and channel, with the channel's address (M14.1),
 // from YouTube's oEmbed endpoint, and its picture from i.ytimg.com, a
-// Short's portrait. The page shows both from its own origin, so
+// Short's portrait, and a larger one for a larger player. The page shows
+// both from its own origin, so
 // nothing on it contacts YouTube until a member plays a video or opens one
 // of its links.
 //
@@ -47,6 +48,9 @@ const (
 	// A Short's is 1080 by 1920, and up to about 360 KB.
 	maxPortrait     = 1 << 20
 	maxPortraitSide = 1920
+	// The larger picture is 1280 by 720, and up to about 300 KB.
+	maxLarge     = 1 << 20
+	maxLargeSide = 1920
 
 	fetchTimeout = 10 * time.Second
 	// A failure is kept for a minute, so a YouTube that was down is asked
@@ -165,6 +169,25 @@ func (l *Lookup) Picture(ctx context.Context, id string) ([]byte, error) {
 	v, err := l.get(ctx, "picture "+id, func(ctx context.Context) (any, int, error) {
 		return l.fetchPicture(ctx, id, "hqdefault.jpg", maxPicture, maxSide)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]byte), nil
+}
+
+// Large returns the video id's picture at 1280 by 720, for a player wider
+// than the usual picture: a JPEG, with its metadata taken out. Where
+// YouTube has none, as for an older video, it's the usual picture.
+func (l *Lookup) Large(ctx context.Context, id string) ([]byte, error) {
+	if !denproto.VideoID(id) {
+		return nil, ErrBadID
+	}
+	v, err := l.get(ctx, "large "+id, func(ctx context.Context) (any, int, error) {
+		return l.fetchPicture(ctx, id, "maxresdefault.jpg", maxLarge, maxLargeSide)
+	})
+	if errors.Is(err, ErrNotFound) {
+		return l.Picture(ctx, id)
+	}
 	if err != nil {
 		return nil, err
 	}
