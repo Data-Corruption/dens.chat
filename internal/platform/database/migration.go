@@ -780,6 +780,15 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// How a member's name shows to everyone, a font and colors, as the JSON
+	// their record carries; NULL for the page's own.
+	m.Add("Name styles", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `ALTER TABLE den_members ADD COLUMN name_style TEXT;`); err != nil {
+			return fmt.Errorf("add name styles: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

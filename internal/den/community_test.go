@@ -3,7 +3,9 @@ package den
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -402,6 +404,65 @@ func TestProfiles(t *testing.T) {
 	}
 	if m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Bio: ptr("")}); err != nil || m.Bio != "" {
 		t.Fatalf("clearing the bio: %+v %v", m, err)
+	}
+}
+
+// A member's name takes a style: a font of the page's and up to
+// two colors, checked as a bio is, kept on their row, and carried in
+// their record wherever it goes.
+func TestNameStyles(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	if info, _ := f.d.Info(); !info.NameStyles {
+		t.Fatalf("the den's info doesn't say it keeps name styles: %+v", info)
+	}
+	sub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
+	for what, bad := range map[string]denproto.NameStyle{
+		"a font off the list":          {Font: "comic-sans"},
+		"a color that isn't #rrggbb":   {Color: "red"},
+		"a color in capitals":          {Color: "#AA0000"},
+		"a second color that isn't":    {Color: "#aa0000", Color2: "url(x)"},
+		"a second color with no first": {Color2: "#00aa00"},
+	} {
+		if _, err := f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{NameStyle: &bad}); !denproto.IsCode(err, denproto.CodeInvalidField) {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	style := denproto.NameStyle{Font: "pacifico", Color: "#aa0000", Color2: "#00aa00"}
+	m, err := f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{NameStyle: &style})
+	if err != nil || m.NameStyle != style {
+		t.Fatalf("setting a style: %+v %v", m, err)
+	}
+	e := <-sub.Events
+	var event denproto.Member
+	if e.T != denproto.EventMemberUpdated || json.Unmarshal(e.D, &event) != nil || event.NameStyle != style {
+		t.Fatalf("event %+v", e)
+	}
+	if got, err := f.d.Member(ctx, member.MemberID); err != nil || got.NameStyle != style {
+		t.Fatalf("the member's record: %+v %v", got, err)
+	}
+	snap, err := f.d.snapshot(ctx, owner.MemberID, true, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.IndexFunc(snap.Members, func(m denproto.Member) bool { return m.ID == denproto.FormatID(member.MemberID) }); i < 0 ||
+		snap.Members[i].NameStyle != style {
+		t.Fatalf("ready's members: %+v", snap.Members)
+	}
+	// A change to anything else leaves the style, and no style clears it.
+	if m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{DisplayName: ptr("Robert")}); err != nil || m.NameStyle != style {
+		t.Fatalf("a new name: %+v %v", m, err)
+	}
+	if m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{NameStyle: &denproto.NameStyle{Color: "#336699"}}); err != nil ||
+		m.NameStyle != (denproto.NameStyle{Color: "#336699"}) {
+		t.Fatalf("a color alone: %+v %v", m, err)
+	}
+	if m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{NameStyle: &denproto.NameStyle{}}); err != nil || !m.NameStyle.IsZero() {
+		t.Fatalf("clearing the style: %+v %v", m, err)
+	}
+	var kept sql.NullString
+	if err := f.db.QueryRow(`SELECT name_style FROM den_members WHERE id = ?`, member.MemberID).Scan(&kept); err != nil || kept.Valid {
+		t.Fatalf("a cleared style is kept as %+v, %v", kept, err)
 	}
 }
 

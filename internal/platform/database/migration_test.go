@@ -45,6 +45,7 @@ var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_
 var m17Tables = []string{"den_events", "den_event_interest", "den_badges", "den_badge_awards"}
 
 // m19Tables are the tables M19's steps add: M19.4's chat background.
+// M19.5's name styles are a column.
 var m19Tables = []string{"background"}
 
 // retiredKeys are the tables of DM keys, which M16.1's step changes for a
@@ -76,7 +77,8 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // empty, and an event's staff-only mark, which none has; and M17.6 an
 // award's hidden mark, which an award starts without; a database v1.10.1
 // left, with a spoiler, notes, an event, a badge and a hidden award, keeps
-// them all. M19.4 adds the chat's background, which starts with none.
+// them all. M19.4 adds the chat's background, which starts with none, and
+// M19.5 each member's name style, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -271,6 +273,14 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					if _, err := db.Exec(q); err == nil {
 						t.Errorf("%s took %s", what, q)
 					}
+				}
+				// No name has a style until its member sets one (M19.5).
+				var styled int
+				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE name_style IS NOT NULL`).Scan(&styled); err != nil || styled != 0 {
+					t.Errorf("%s holds %d name styles after the migration, %v", what, styled, err)
+				}
+				if _, err := db.Exec(`UPDATE den_members SET name_style = '{"font":"pacifico"}' WHERE id = 1`); err != nil {
+					t.Errorf("%s takes no name style after the migration: %v", what, err)
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {

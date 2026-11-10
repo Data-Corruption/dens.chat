@@ -299,6 +299,9 @@ type Den struct {
 	// another (M17.2); a den older than them says neither.
 	Spoilers    bool `json:"spoilers,omitempty"`
 	MoveMembers bool `json:"move_members,omitempty"`
+	// NameStyles says the den keeps a style for each member's name; a den
+	// older than them drops one a member sets.
+	NameStyles bool `json:"name_styles,omitempty"`
 }
 
 // Roles.
@@ -313,18 +316,20 @@ const (
 // comes only with GET /api/members/{id}, to keep snapshots small.
 // Identity is the hash of the identity their Dens published (M16.1), as
 // base64url, which a change to it reaches everyone with; none before it
-// published one, as from an older Dens.
+// published one, as from an older Dens. NameStyle is how their name
+// shows, left out when they set none.
 type Member struct {
-	ID          string `json:"id"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Role        string `json:"role"`
-	JoinedAt    int64  `json:"joined_at"`
-	LeftAt      int64  `json:"left_at,omitempty"`
-	Bio         string `json:"bio,omitempty"`
-	Avatar      Image  `json:"avatar,omitzero"`
-	Banner      Image  `json:"banner,omitzero"`
-	Identity    string `json:"identity,omitempty"`
+	ID          string    `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	Role        string    `json:"role"`
+	JoinedAt    int64     `json:"joined_at"`
+	LeftAt      int64     `json:"left_at,omitempty"`
+	Bio         string    `json:"bio,omitempty"`
+	Avatar      Image     `json:"avatar,omitzero"`
+	Banner      Image     `json:"banner,omitzero"`
+	Identity    string    `json:"identity,omitempty"`
+	NameStyle   NameStyle `json:"name_style,omitzero"`
 }
 
 // MemberProfile is a member as GET /api/members/{id} answers, for their
