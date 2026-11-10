@@ -40,6 +40,7 @@ import { keptFor } from './retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
 import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
+import { Name } from './names.jsx';
 import { useNarrow } from './nav.js';
 import { RoleMark, isStaff, rank } from './people.jsx';
 import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js';
@@ -1066,7 +1067,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
     // baseline.
     const authorName = (
         <span class="flex items-center gap-1">
-            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}>{name(author)}</button>
+            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}><Name member={author} /></button>
             <RoleMark role={author?.role} />
         </span>
     );
@@ -1136,7 +1137,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
                     onClick={() => onJump(m.reply_to)}>
                     <Spine />
                     {!line && <Avatar member={repliedAuthor} size="sm" />}
-                    <span class="shrink-0 font-medium">{name(repliedAuthor)}</span>
+                    <Name member={repliedAuthor} class="shrink-0 font-medium" />
                     <span class="truncate"><Quoted text={replied.text} locked={replied.locked} me={me} /></span>
                 </button>
             )}
@@ -1457,7 +1458,7 @@ function Spine() {
 function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
     const status = <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>;
     // In Compact, a line as the sent ones are (M17.2).
-    const lead = line ? <span class="float-left mr-2 flex items-baseline gap-2"><span class="font-semibold">{me.display_name}</span>{status}</span> : null;
+    const lead = line ? <span class="float-left mr-2 flex items-baseline gap-2"><Name member={me} class="font-semibold" />{status}</span> : null;
     const below = (
         <>
             {p.attachments?.length > 0 && (
@@ -1487,7 +1488,7 @@ function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
             <div class="min-w-0 flex-1">
                 {!line && (
                     <div class="flex items-baseline gap-2">
-                        <span class="font-semibold">{me.display_name}</span>
+                        <Name member={me} class="font-semibold" />
                         {status}
                     </div>
                 )}

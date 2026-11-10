@@ -710,7 +710,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                 <span class={`inline-flex shrink-0 rounded-full ring-2 ring-offset-1 ring-offset-base-200 ${talking ? 'ring-success' : 'ring-transparent'}`}>
                                     <Avatar member={member || { id: m.id }} size="sm" />
                                 </span>
-                                <LongName name={name} />
+                                <LongName name={name} member={member} />
                                 <RoleMark role={member?.role} />
                             </button>
                             {other && identities?.[m.id]?.verified && <VerifiedMark id={`call-verified-${m.id}`} name={name} />}

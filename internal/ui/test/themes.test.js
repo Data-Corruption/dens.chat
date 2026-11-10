@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    CODE, MOST_THEMES, VARIABLES, cleanName, cleanTheme, contrast, cornersOf, deeper, fromOklch, hexColor, oklch, readCode, readThemes, textOn,
-    themeCode, variables,
+    CARRIED, CODE, MOST_THEMES, PICKED, VARIABLES, cleanName, cleanTheme, contrast, cornersOf, deeper, fromOklch, hexColor, oklch, readCode, readThemes,
+    textOn, themeCode, variables,
 } from '../assets/js/src/themes.js';
 
 const DUSK = {
@@ -88,6 +88,14 @@ test("a theme's code holds it whole, and reads back the same", () => {
         assert.deepEqual(readCode(code), theme);
         assert.deepEqual(readCode(`  ${code.toUpperCase()}\n`), theme, 'as pasted, with space around it, in capitals');
     }
+});
+
+test('the member picks three colors, and a code keeps all ten in their order', () => {
+    assert.deepEqual(PICKED, ['base', 'text', 'primary']);
+    assert.deepEqual(CARRIED, ['secondary', 'accent', 'neutral', 'info', 'success', 'warning', 'error']);
+    const code = 'dens-theme:1.d.r.1d232aa6adbb605dfff4309800d3bb09090b00bafe00d390fcb700ff627d.4475736b';
+    assert.equal(themeCode(DUSK), code);
+    assert.deepEqual(readCode(code), DUSK);
 });
 
 test('a code with anything but a theme in it is refused', () => {

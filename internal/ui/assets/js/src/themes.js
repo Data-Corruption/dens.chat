@@ -1,9 +1,9 @@
 // A theme of the member's own: a name, Light or Dark, the corners, and ten
-// colors as #rrggbb. Five the member picks, the background, the text,
-// primary, secondary and accent; five come from the theme it started
-// from, since they carry meaning: neutral, info, success, warning and
-// error. The rest derives from them here: the two deeper backgrounds, and
-// each color's own text.
+// colors as #rrggbb. Three the member picks, the background, the text and
+// primary; seven come from the theme it started from: secondary and
+// accent, which the page draws little with, and neutral, info, success,
+// warning and error, which carry meaning. The rest derives from them
+// here: the two deeper backgrounds, and each color's own text.
 //
 // A theme reaches the page as DaisyUI's variables, variables(), and
 // another member as a code, themeCode(). A code is a member's message, so
@@ -18,13 +18,13 @@ export const NAME_MOST = 40;
 export const CODE = 'dens-theme:';
 const CODE_VERSION = '1';
 
-/** The colors a theme holds, in a code's order: the member's five, then
-    the five carried from the theme it started from */
-export const PICKED = ['base', 'text', 'primary', 'secondary', 'accent'];
-export const CARRIED = ['neutral', 'info', 'success', 'warning', 'error'];
+/** The colors a theme holds, in a code's order: the member's three, then
+    the seven carried from the theme it started from */
+export const PICKED = ['base', 'text', 'primary'];
+export const CARRIED = ['secondary', 'accent', 'neutral', 'info', 'success', 'warning', 'error'];
 const COLORS = [...PICKED, ...CARRIED];
 // TINTS are the colors that carry text of their own.
-const TINTS = [...PICKED.slice(2), ...CARRIED];
+const TINTS = ['primary', ...CARRIED];
 
 // CORNERS are the corners by name, each with DaisyUI's three radii, for
 // selectors, fields and boxes, and its letter in a code: Rounded is

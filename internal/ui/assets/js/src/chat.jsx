@@ -17,6 +17,7 @@ import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
 import { MessagePane, openAt } from './messages.jsx';
 import { LinkContext } from './msglinks.jsx';
+import { Name } from './names.jsx';
 import { nav, useNarrow } from './nav.js';
 import { mutedIn, notifying, withdraw } from './notify.js';
 import { showsOffline } from './offline.js';
@@ -751,7 +752,8 @@ export function Chat({ denID, channelID, pane, navigate }) {
                     />
                 )}
                 {dialog?.kind === 'codes' && <CodesDialog denID={denID} member={members.get(dialog.member.id) || dialog.member} onClose={() => setDialog(null)} />}
-                {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} onClose={() => setDialog(null)} />}
+                {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} nameStyles={!!view.name_styles}
+                    onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
                 {/* Group DMs (M16.3): making one, from the DM list or a DM's
                     profile, which leaves the DM as it is; adding to one; and
@@ -813,7 +815,7 @@ function UserPanel({ me, online, onEdit }) {
                 onClick={onEdit} aria-label="Edit your profile" title="Edit your profile">
                 <Avatar member={me} size="md" online={online} />
                 <span class="min-w-0 leading-tight">
-                    <span class="block truncate text-sm font-medium">{me.display_name}</span>
+                    <Name member={me} class="block truncate text-sm font-medium" />
                     <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
                 </span>
             </HoverRow>
@@ -1267,7 +1269,7 @@ function DMList({ dms, notes, reads, open, partner, online, identities, muted, t
                                 aria-label={rowLabel(who, verified && 'verified', isMuted && 'muted', mentions && `${mentions} mentions`)}
                             >
                                 <Avatar member={other} size="sm" online={other && !other.left_at ? online.has(other.id) : undefined} />
-                                <span class={`truncate ${readStyle(isUnread, c.id === open)}`}>{who}</span>
+                                <Name member={other} class={`truncate ${readStyle(isUnread, c.id === open)}`} />
                             </button>
                             {isUnread && <UnreadPill />}
                             {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
@@ -1360,7 +1362,7 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                             <HoverRow as="span" class="flex min-w-0 items-center gap-1">
                                 <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
                                     <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
-                                    <span class="truncate font-semibold">{dm ? dm.display_name : 'Unknown member'}</span>
+                                    <Name member={dm} class="truncate font-semibold" />
                                     {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
                                 </button>
                                 {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}

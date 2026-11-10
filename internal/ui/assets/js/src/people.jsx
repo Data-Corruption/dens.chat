@@ -5,13 +5,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, HoverTip, LongName, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
+import { Choices, ColorField, ErrorText, Field, HoverTip, LongName, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
 import { CalendarIcon, CrownIcon, EyeIcon, ShieldIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
 import { PointerMenu, ownsMenu, rightClick } from './menus.jsx';
+import { FONTS, cleanStyle, fontFamily } from './names.js';
+import { Name } from './names.jsx';
 import { useNarrow } from './nav.js';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
@@ -154,7 +156,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
                             >
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />
                                 <span class="flex min-w-0 flex-1 items-center gap-1">
-                                    <LongName name={m.display_name} />
+                                    <LongName name={m.display_name} member={m} />
                                     <RoleMark role={m.role} />
                                 </span>
                             </HoverRow>
@@ -233,7 +235,7 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
                     <div class="flex flex-col gap-3 @min-[26rem]:flex-row @min-[26rem]:items-start @min-[26rem]:justify-between">
                         <div class="flex min-w-0 flex-col items-start gap-0.5 @min-[26rem]:flex-1">
                             <p class="flex max-w-full items-center gap-0.5 text-lg font-semibold">
-                                <span class="truncate">{member.display_name}</span>
+                                <Name member={member} class="truncate" />
                                 <RoleMark role={member.role} id={`profile-role-${member.id}${at}`} />
                                 {verified && <VerifiedMark id={`profile-verified-${member.id}${at}`} name={member.display_name} />}
                             </p>
@@ -509,9 +511,11 @@ export function Banner({ denID, image, edge = false }) {
 
 // EditProfile changes the member's own display name, bio and pictures in
 // this den, and which of their badges their card shows (M17.6), which
-// takes at once, as a picture does.
-export function EditProfile({ denID, me, limits, onClose }) {
+// takes at once, as a picture does; and, in a den that keeps them,
+// nameStyles, how their name shows to everyone.
+export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) {
     const [name, setName] = useState(me.display_name);
+    const [style, setStyle] = useState(() => cleanStyle(me.name_style) || {});
     const [bio, setBio] = useState(null);
     const [badges, setBadges] = useState([]);
     const [cropping, setCropping] = useState(null);
@@ -572,7 +576,7 @@ export function EditProfile({ denID, me, limits, onClose }) {
     function submit(e) {
         e.preventDefault();
         save.run(async () => {
-            await api.patch(`/api/dens/${denID}/me`, { display_name: name, bio });
+            await api.patch(`/api/dens/${denID}/me`, { display_name: name, bio, ...(nameStyles ? { name_style: style } : {}) });
             onClose();
         });
     }
@@ -622,6 +626,7 @@ export function EditProfile({ denID, me, limits, onClose }) {
                     <Field label="Display name">
                         <TextInput value={name} onInput={setName} required maxlength="32" />
                     </Field>
+                    {nameStyles && <NameStyleFields me={me} name={name} style={style} onChange={setStyle} />}
                     <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
                         {/* The form shows at once; only the bio waits for the den. */}
                         <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
@@ -648,6 +653,54 @@ export function EditProfile({ denID, me, limits, onClose }) {
                 )}
             </Shown>
         </Dialog>
+    );
+}
+
+// The colors a name starts from as the member turns them on.
+const NAME_FROM = '#4f8ff7';
+const NAME_TO = '#c05bf0';
+
+// NameStyleFields takes how the member's name shows to everyone:
+// a font of the page's, each a tile in its own face, and its color, none,
+// one, or two for a gradient. Over them the name shows as it will on
+// this theme, whatever the member's own Name styles says.
+function NameStyleFields({ me, name, style, onChange }) {
+    const mode = style.color2 ? 'gradient' : style.color ? 'solid' : 'none';
+    // set changes parts of the style; one set to '' leaves it.
+    const set = (changes) => onChange(Object.fromEntries(Object.entries({ ...style, ...changes }).filter(([, v]) => v)));
+    function pick(next) {
+        const color = next === 'none' ? '' : style.color || NAME_FROM;
+        set({ color, color2: next === 'gradient' ? style.color2 || NAME_TO : '' });
+    }
+    const tile = 'flex min-h-9 cursor-pointer items-center justify-center rounded-field bg-base-200 px-2 py-1 text-center hover:bg-base-300 has-[:checked]:ring-2 has-[:checked]:ring-primary has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary pointer-coarse:min-h-11';
+    return (
+        <fieldset class="fieldset" data-name-style>
+            <legend class="fieldset-legend">Name style</legend>
+            <div class="flex min-w-0 items-center gap-2 rounded-box bg-base-200 px-3 py-2 text-base" data-name-preview>
+                <Avatar member={me} size="sm" />
+                <Name member={{ ...me, display_name: name.trim() || me.display_name, name_style: style }} always class="truncate font-semibold" />
+            </div>
+            <div role="radiogroup" aria-label="Font" class="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-1.5 text-sm" data-name-fonts>
+                {[['', 'Default'], ...FONTS].map(([font, label]) => (
+                    <label key={font} class={tile}>
+                        <input type="radio" name="name-font" class="sr-only" value={font} checked={(style.font || '') === font} onChange={() => set({ font })} />
+                        <span class="truncate" style={font ? { fontFamily: fontFamily(font) } : undefined}>{label}</span>
+                    </label>
+                ))}
+            </div>
+            <p class="label whitespace-normal">Latin letters only. Others keep the page's font.</p>
+            <div class="text-sm">
+                <Choices label="Color" name="name-color" data="data-name-color" choice={mode} onPick={pick}
+                    choices={[['none', 'Default'], ['solid', 'Solid'], ['gradient', 'Gradient']]} />
+            </div>
+            {mode !== 'none' && (
+                <div role="group" aria-label="Colors" class="flex flex-col gap-2">
+                    <ColorField label={mode === 'gradient' ? 'From' : 'Color'} value={style.color} onChange={(color) => set({ color })} />
+                    {mode === 'gradient' && <ColorField label="To" value={style.color2} onChange={(color2) => set({ color2 })} />}
+                </div>
+            )}
+            {mode !== 'none' && <p class="label whitespace-normal">It may lighten or darken to read on other themes.</p>}
+        </fieldset>
     );
 }
 
