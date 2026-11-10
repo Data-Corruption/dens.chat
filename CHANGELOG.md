@@ -1,5 +1,33 @@
 # Changelog
 
+## [v1.11.0] - 2026-11-10
+
+### Added
+
+- Name styles: give your name in a den a font, a color or a gradient, where you edit your profile. Everyone there sees it in the member list, on your messages, in calls and on your profile. A color too dark or too pale for someone else's theme shows a little lighter or darker for them, so it always reads. To see names in their colors alone, or plain, set Name styles under Appearance. A den that hasn't been updated yet doesn't offer them.
+- Themes of your own: under Appearance's themes, New theme makes one from a background, a text color and a primary color, with square or round corners, and the page changes as you pick. Copy code turns it into a line of text to send someone, who adds it with Paste a code. Your themes stay in the browser you made them in.
+- Chat background: a picture of yours behind your messages, as dim as you set it. Your Dens keeps it, so every browser you open Dens in shows it, and nobody else sees it.
+- On a computer, choose how large photos, videos and YouTube players show, each up to Largest, under Appearance's Messages. Photos and videos start a size up from before, and a large photo shows sharp, not as its small preview stretched.
+- In a call, turn anyone up to 200% from their ⋯. Past 100% a loud voice may crackle.
+- Push to talk's Release delay, under Voice, keeps you heard for up to two seconds after you let go of the key.
+- A Toggle deafen shortcut, under Voice, which works from other programs as the other shortcuts do.
+- Right-click a message, or a member in the list or a call, for its menu. On a link, a picture or selected text, right-click stays the browser's.
+- YouTube Shorts play in a portrait player.
+
+### Changed
+
+- The settings list their sections down the side, as Manage does: Appearance, Chat, Notifications, Voice and System. Their explanations are a line each, with the rest behind an i or in the guide.
+- Moderators move other moderators between calls. Muting for everyone and disconnecting still take a higher rank.
+- A name too long for its row in the member list or a call scrolls to its end while the pointer rests on it.
+- A member you turned down no longer shows a percentage beside their name in a call; the slider under their ⋯ holds it.
+- The den's name at the top of its channel list has no arrow beside it. Clicking it still opens Manage.
+
+### Fixed
+
+- Since v1.10.0, a moderator or the owner dragging a call member's volume slider dragged the member's row along, menu and all. The slider keeps its drag now.
+- The crown and the shield sat at different heights beside names in the member list, calls, profiles and messages. They stand at one height now.
+- The quote above a reply took a click anywhere across the chat, jumping to the message it quotes. Only the quote itself does now.
+
 ## [v1.10.1] - 2026-11-08
 
 ### Fixed

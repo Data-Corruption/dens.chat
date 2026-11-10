@@ -312,6 +312,25 @@ func TestProfilesAndBans(t *testing.T) {
 	})
 	waitFor(t, member, "bob's own new name", func(s denclient.Status) bool { return s.DisplayName == name })
 
+	// A name's style reaches everyone with the member; one the page
+	// has no font for, or that isn't a color, asks the den nothing.
+	if v, _ := member.View(denID); !v.NameStyles {
+		t.Error("the den's view doesn't say it keeps name styles")
+	}
+	style := denproto.NameStyle{Font: "orbitron", Color: "#aa0000", Color2: "#00aa00"}
+	if m, err := member.UpdateProfile(ctx, denID, denproto.ProfileRequest{NameStyle: &style}); err != nil || m.NameStyle != style {
+		t.Fatalf("setting a name style: %+v %v", m, err)
+	}
+	viewOf(t, owner, denID, "bob's name style", func(v denclient.View) bool {
+		m, ok := memberIn(v, bob)
+		return ok && m.NameStyle == style && m.DisplayName == name
+	})
+	for _, bad := range []denproto.NameStyle{{Font: "comic-sans"}, {Color: "red"}, {Color2: "#00aa00"}} {
+		if _, err := member.UpdateProfile(ctx, denID, denproto.ProfileRequest{NameStyle: &bad}); err == nil || errors.As(err, &perr) {
+			t.Errorf("setting %+v: %v, want it refused before the den", bad, err)
+		}
+	}
+
 	if err := owner.RemoveMember(ctx, denID, bob, denproto.RemoveRequest{Ban: true}); err != nil {
 		t.Fatal(err)
 	}

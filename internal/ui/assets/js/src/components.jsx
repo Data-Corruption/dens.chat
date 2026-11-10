@@ -6,7 +6,9 @@ import { useOver } from './animations.js';
 import { onBackground } from './background.js';
 import { copyText } from './clipboard.js';
 import { InfoIcon } from './icons.jsx';
+import { nameText, useNameLook } from './names.jsx';
 import { onNotifications } from './notify.js';
+import { hexColor } from './themes.js';
 import { tipShift } from './touch.js';
 
 export function Card({ title, children, class: extra = '' }) {
@@ -169,6 +171,48 @@ export function HoverTip({ side = 'bottom', label, tip: content, children }) {
     );
 }
 
+// Choices is a setting of a few, in a row under its label.
+export function Choices({ label, name, data, choice, choices, onPick }) {
+    return (
+        <div class="flex flex-col gap-1">
+            <span class="text-sm">{label}</span>
+            <div role="radiogroup" aria-label={label} class="flex flex-wrap gap-x-6 gap-y-2" {...{ [data]: true }}>
+                {choices.map(([value, text]) => (
+                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
+                        <input type="radio" class="radio radio-sm" name={name} value={value} checked={choice === value} onChange={() => onPick(value)} />
+                        <span>{text}</span>
+                    </label>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+// ColorField takes a color: the browser's picker, and beside it the
+// color's hex, the same in every browser, which takes a typed or pasted
+// one once it reads as a color.
+export function ColorField({ label, value, onChange }) {
+    const [typed, setTyped] = useState(value);
+    useEffect(() => {
+        setTyped((t) => (hexColor(t) === value ? t : value));
+    }, [value]);
+    return (
+        <div class="flex items-center gap-3" data-color={label}>
+            <span class="min-w-0 flex-1 text-sm">{label}</span>
+            <input type="color" class="h-8 w-12 shrink-0 cursor-pointer rounded-field border border-base-content/20 bg-transparent p-0.5"
+                aria-label={`${label}, picked`} value={value} onInput={(e) => onChange(e.currentTarget.value.toLowerCase())} />
+            <input type="text" class="input input-sm w-24 shrink-0 font-mono" aria-label={`${label}, as hex`} value={typed} maxlength="7" {...PLAIN}
+                onInput={(e) => {
+                    const text = e.currentTarget.value;
+                    setTyped(text);
+                    const hex = hexColor(text);
+                    if (hex && hex !== value) onChange(hex);
+                }}
+                onBlur={() => setTyped(value)} />
+        </div>
+    );
+}
+
 // A long name scrolls at this many pixels a second.
 const NAME_SPEED = 40;
 
@@ -183,19 +227,21 @@ export function nameScroll(full, shown) {
 /** LongName is a name cut to its row's width, which scrolls to its end
     while a mouse rests on the row, a HoverRow, and back as it leaves: the
     row measures how far, and the stylesheet moves it. A touch screen has
-    no hover, so there it stays cut. */
-export function LongName({ name }) {
+    no hover, so there it stays cut. With its member, it shows as they
+    styled it. */
+export function LongName({ name, member }) {
     const over = useOver();
+    const look = useNameLook(member);
     const box = useRef(null);
     const [scroll, setScroll] = useState(null);
     useLayoutEffect(() => {
         const el = box.current;
         setScroll(over && el ? nameScroll(el.scrollWidth, el.clientWidth) : null);
-    }, [over, name]);
+    }, [over, name, look]);
+    const style = scroll ? { ...look.style, '--name-by': `${scroll.by}px`, '--name-ms': `${scroll.ms}ms` } : look.style;
     return (
-        <span ref={box} class="name-scroll truncate" data-scrolling={scroll ? '' : undefined}
-            style={scroll ? { '--name-by': `${scroll.by}px`, '--name-ms': `${scroll.ms}ms` } : undefined}>
-            {name}
+        <span ref={box} class={`name-scroll truncate ${look.class}`} data-scrolling={scroll ? '' : undefined} style={style} data-name>
+            {nameText(name, look)}
         </span>
     );
 }

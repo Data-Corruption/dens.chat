@@ -728,6 +728,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
 			c.den.spoilers, c.den.moveMembers, c.den.eventLimits = d.Spoilers, d.MoveMembers, d.EventLimits
+			c.den.nameStyles = d.NameStyles
 		}
 		c.mu.Unlock()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
@@ -1108,7 +1109,8 @@ func (c *conn) follow(ctx context.Context, url string) {
 func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	username, err := denproto.NormalizeUsername(m.Username)
 	if err != nil || !validID(m.ID) || m.JoinedAt < 0 || m.LeftAt < 0 || denproto.CheckBio(m.Bio) != nil ||
-		denproto.CheckImage(m.Avatar) != nil || denproto.CheckImage(m.Banner) != nil || (m.Identity != "" && m.IdentityHash() == nil) {
+		denproto.CheckImage(m.Avatar) != nil || denproto.CheckImage(m.Banner) != nil || (m.Identity != "" && m.IdentityHash() == nil) ||
+		denproto.CheckSentNameStyle(m.NameStyle) != nil {
 		return m, false
 	}
 	display, err := denproto.CleanName(m.DisplayName, denproto.MaxNameRunes)

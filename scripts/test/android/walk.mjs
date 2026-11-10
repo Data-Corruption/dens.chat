@@ -212,6 +212,21 @@ async function bars(h, d) {
     await d.back();
 }
 
+// styledName checks the WebView draws a name in the font its member
+// picked (M19.5): desk's, in general, in Pacifico, once the WebView has
+// fetched the face.
+async function styledName(h, c) {
+    await h.go(`/den/${c.den}/${c.general}`);
+    const NAME = `[...document.querySelectorAll('[data-scroller] [data-name]')].find((n) => n.textContent === 'Desk')`;
+    await h.wait(NAME, "desk's name in general");
+    const drawn = () => h.ev(`(() => { const n = ${NAME}; const f = [...document.fonts].find((x) => x.family.includes('Dens name pacifico'));
+        return JSON.stringify({ font: getComputedStyle(n).fontFamily.split(',')[0].replace(/"/g, ''), color: getComputedStyle(n).color, face: f ? f.status : 'none' }); })()`).then(JSON.parse);
+    const got = await waitFor(async () => { const g = await drawn(); return g.font === 'Dens name pacifico' && g.face === 'loaded' && g; }, "desk's name in its font", 15000)
+        .catch(() => drawn());
+    report(got.font === 'Dens name pacifico' && got.face === 'loaded' && got.color !== 'rgba(0, 0, 0, 0)', `the WebView draws desk's name in the font it picked, the face fetched: ${JSON.stringify(got)}`);
+    await h.snap('styled-name');
+}
+
 // callWalk walks M13.4's done-when, in a call with desk, the den's owner,
 // whose desk.mjs answers at c.desk with what its page shows of the call,
 // and c.name the member's name there: the member joins Lounge from the
@@ -641,6 +656,7 @@ try {
     if (want('pages')) {
         await pages(h, ctx, d, report).catch((e) => report(false, e.message));
         await bars(h, d).catch((e) => report(false, e.message));
+        await styledName(h, ctx).catch((e) => report(false, e.message));
     }
     if (want('reactions')) {
         await reactionsWalk(h, d, ctx).catch((e) => report(false, e.message));

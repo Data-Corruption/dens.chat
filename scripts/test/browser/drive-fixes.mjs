@@ -12,7 +12,8 @@
 // height beside their names in the member list, a card and a message, a
 // long name scrolling to its end under the pointer and back, and a right
 // click opening a message's menu and a member's at the pointer, and a
-// link's the browser's own.
+// link's the browser's own; and from M19.5, the den's name with no arrow
+// beside it, under a pointing hand.
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -27,7 +28,18 @@ const step = (what) => console.error(`.. ${what}`);
 const b = await launch(which, which === 'chromium' ? 9531 : 9532, { media: true });
 const shot = (name) => b.shot(`${HOME}/shot-fixes-${which}-${name}.png`);
 const at = (sel) => b.eval(`(() => { const el = ${sel}; if (!el) return ''; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return JSON.stringify([r.x + r.width / 2, r.y + r.height / 2]); })()`).then((r) => r && JSON.parse(r));
-const clickOn = async (sel, what) => { const p = await waitFor(() => at(sel), what); await b.click(p[0], p[1]); };
+// A click lands where its target has come to rest: a section that's still
+// laying itself out moves it from under the pointer.
+const clickOn = async (sel, what) => {
+    let p = await waitFor(() => at(sel), what);
+    for (let i = 0; i < 20; i++) {
+        await sleep(150);
+        const now = await at(sel);
+        if (now && now[0] === p[0] && now[1] === p[1]) break;
+        p = now || p;
+    }
+    await b.click(p[0], p[1]);
+};
 const button = (text) => `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(text)} || x.getAttribute('aria-label') === ${JSON.stringify(text)})`;
 const has = (text) => b.eval(`document.body.innerText.includes(${JSON.stringify(text)})`);
 const open = (channel) => b.go(`http://localhost:${ALICE.port}/den/${den}/${channel}`);
@@ -269,6 +281,11 @@ try {
     })()`));
     c.report(bar.height === 24 && bar.utility && /%$/.test(bar.seek), `the seek bar is 24 pixels tall for a finger, drawn thin, with its played part set: ${JSON.stringify(bar)}`);
     await shot('seek');
+
+    step("the den's name is a button with no arrow, under a pointing hand");
+    const denName = JSON.parse(await b.eval(`JSON.stringify((() => { const t = document.querySelector('[data-den-manage]');
+        return { text: t.textContent.trim(), arrows: t.querySelectorAll('svg').length, cursor: getComputedStyle(t).cursor }; })())`));
+    c.report(denName.text === 'Voice Den' && denName.arrows === 0 && denName.cursor === 'pointer', `the den's name opens Manage, with no arrow beside it and a pointer over it: ${JSON.stringify(denName)}`);
 
     step('the crown and the shield stand at one height beside their names, in the list, a card and a message');
     // Each mark's middle, less its name's text's, in pixels.

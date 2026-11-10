@@ -88,11 +88,42 @@ function show(root, name, own) {
 // previewed is a theme the editor shows while the member makes it.
 let previewed = null;
 
+// watchers hear of each change of the theme, and colors are the ones the
+// page read from it since the last, undefined until it reads them.
+const watchers = new Set();
+let colors;
+
 function apply() {
     const choice = themeChoice();
     const own = previewed || (choice.startsWith(OWN) && ownThemes().find((t) => ownChoice(t.id) === choice)) || null;
     show(document.documentElement, choice === 'system' ? (dark()?.matches ? DARK_THEME : LIGHT_THEME) : choice, own);
+    colors = undefined;
+    watchers.forEach((fn) => fn());
     tellBars();
+}
+
+/** Calls fn as the page's theme changes, until what it returns is called */
+export function onTheme(fn) {
+    watchers.add(fn);
+    return () => watchers.delete(fn);
+}
+
+/** The theme's three backgrounds, base-100 to base-300, and its text, as
+    #rrggbb, for what must read against them; null where the page can't
+    read them */
+export function themeColors() {
+    if (colors === undefined) {
+        colors = null;
+        try {
+            const style = getComputedStyle(document.documentElement);
+            const backs = ['--color-base-100', '--color-base-200', '--color-base-300'].map((v) => hex(style.getPropertyValue(v)));
+            const text = hex(style.getPropertyValue('--color-base-content'));
+            if (text && backs.every(Boolean)) colors = { backs, text };
+        } catch {
+            // No page to read them from.
+        }
+    }
+    return colors;
 }
 
 /** Shows a theme the member is making, without keeping it, or with null
@@ -162,8 +193,8 @@ export function shownTheme(name) {
 // hex is a CSS color as #rrggbb, in sRGB, as a canvas draws it: a theme's
 // colors are OKLCH, which Android takes no more than a hex's.
 function hex(color) {
-    const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
-    if (!ctx) return '';
+    const ctx = document.createElement('canvas').getContext?.('2d', { willReadFrequently: true });
+    if (!ctx || !color) return '';
     // A color the canvas can't read leaves the one before.
     ctx.fillStyle = '#010203';
     ctx.fillStyle = color;

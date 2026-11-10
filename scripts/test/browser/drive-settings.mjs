@@ -3,9 +3,11 @@
 // of Manage opened from the list down the side, each with the layout
 // audit, and every hint in it read as one line, a hint that wrapped
 // failing it, Voice with push to talk's release delay too (M19.3); then
-// Appearance's Width: Wide and Narrow holding general's header, list and
-// composer to 1,200 and 900 pixels, centered in the pane, and Full letting
-// them go. From M19.4, a theme of her own: the editor starting from the
+// Appearance's sizes: a photo at Medium until she chooses, at Large and
+// Largest the photo itself drawn over the den's preview, and at Small its
+// preview again; a YouTube player at Small, then Large with the larger
+// cover; neither moving the other, nor running past the pane. From M19.4,
+// a theme of her own: the editor starting from the
 // theme the page shows, the page wearing each color as it's typed or
 // picked, Cancel putting the one before back, the theme saved, chosen and
 // kept across a reload, edited, its code copied and pasted into bob's
@@ -17,7 +19,7 @@
 //
 //   run.sh settings chromium|firefox [PART...]
 //
-// PART is sections, width, themes or background; all unless given.
+// PART is sections, sizes, themes or background; all unless given.
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import zlib from 'node:zlib';
@@ -26,7 +28,7 @@ import { audits, helpers } from './screens.mjs';
 
 const [, , which, ...parts] = process.argv;
 const runs = (part) => parts.length === 0 || parts.includes(part);
-const { DEN: den, GENERAL: general } = process.env;
+const { DEN: den, GENERAL: general, PHOTO: photo } = process.env;
 const c = checks();
 const step = (what) => console.error(`.. ${what}`);
 
@@ -160,7 +162,7 @@ try {
         c.report((await sections('[role=dialog][aria-label="App settings"]')) === 'Appearance*|Chat|Notifications|Voice|System',
             `the settings list their sections down the side, open at Appearance: ${await sections('[role=dialog][aria-label="App settings"]')}`);
         const ready = {
-            Appearance: `document.querySelector('[data-width]')`,
+            Appearance: `document.querySelector('[data-media-size]')`,
             Chat: `document.getElementById('compress')`,
             Notifications: `document.getElementById('notify-dms') && document.querySelector('[data-sound]')`,
             Voice: `document.getElementById('noise') && document.querySelector('select')`,
@@ -205,52 +207,69 @@ try {
 
     }
 
-    if (runs('width')) {
-        step("Appearance's Width");
+    if (runs('sizes')) {
+        step("Appearance's sizes: photos and videos, and YouTube players");
+        // Players are on, as Chat's switch turns them, so the link has its box.
+        await b.eval(`localStorage.setItem('DENS_YOUTUBE', '1'), true`);
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
-        await waitFor(() => b.eval(`document.querySelectorAll('[data-scroller] [data-id]').length >= 5`), "general's messages");
-        // measure takes the pane, and the header's, the list's and the foot's
-        // content, each by its left edge and width.
-        const measure = () => b.eval(`(() => {
-            const box = (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.width)]; };
-            const pane = document.querySelector('[data-pane=chan]');
-            const scroller = document.querySelector('[data-scroller]');
-            const header = pane.querySelector('header');
-            return { pane: box(pane), header: box(header.firstElementChild), list: box(scroller.firstElementChild), scroller: box(scroller),
-                foot: box(document.querySelector('textarea[placeholder^="Message "]').closest('[data-scroller] ~ div')) };
-        })()`);
-        const pick = async (choice) => {
+        await waitFor(() => b.eval(`!!document.querySelector('[data-id="${photo}"] button[aria-label^="Open "]') && !!document.querySelector('[data-video]')`), "general's photo and player");
+        // measure takes the photo's tile and the player's box, each by its
+        // width and height, whether the photo itself shows over its preview
+        // and has drawn, the player's picture, and the pane's width.
+        const measure = () => b.eval(`JSON.stringify((() => {
+            const box = (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+            const tile = document.querySelector('[data-id="${photo}"] button[aria-label^="Open "]');
+            const sharp = tile.querySelector('[data-sharp]');
+            const player = document.querySelector('[data-video]');
+            return { tile: box(tile), sharp: sharp ? (sharp.complete && sharp.naturalWidth > 0 ? sharp.naturalWidth : 'loading') : 'none', player: box(player),
+                picture: (player.querySelector('img')?.getAttribute('src') || '').split('/').pop(), pane: box(document.querySelector('[data-pane=chan]'))[0],
+                header: box(document.querySelector('[data-pane=chan] header').firstElementChild)[0] };
+        })())`).then(JSON.parse);
+        const pick = async (group, choice) => {
             await openSettings(b, 'Appearance');
-            await waitFor(() => b.eval(`!!document.querySelector('[data-width]')`), 'the Width choices');
-            await b.eval(`[...document.querySelectorAll('[data-width] label')].find((l) => l.textContent.trim() === ${JSON.stringify(choice)}).querySelector('input').click(), true`);
+            await waitFor(() => b.eval(`!!document.querySelector('[${group}]')`), 'the sizes');
+            await b.eval(`[...document.querySelectorAll('[${group}] label')].find((l) => l.textContent.trim() === ${JSON.stringify(choice)}).querySelector('input').click(), true`);
             await sleep(200);
             await b.key('Escape');
             await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closing');
-            await sleep(300);
+            await b.eval(`document.querySelector('[data-id="${photo}"]').scrollIntoView({ block: 'center' }), true`);
+            await sleep(400);
             return measure();
         };
-        const centered = (m, part, max) => {
-            const [left, width] = m[part];
-            const [paneLeft, paneWidth] = m.pane;
-            const inset = (paneWidth - width) / 2;
-            return width <= max && width >= max - 2 && Math.abs(left - (paneLeft + inset)) <= 17;
-        };
-        const full = await pick('Full');
-        const wide = await pick('Wide');
-        const narrow = await pick('Narrow');
-        await b.shot(`${HOME}/shot-settings-${which}-narrow.png`);
-        const back = await pick('Full');
-        c.report(full.pane[1] >= 1300, `the pane is wide enough for the check: ${full.pane[1]} pixels`);
-        c.report(full.list[1] >= full.pane[1] - 40 && full.header[1] >= full.pane[1] - 40 && full.foot[1] >= full.pane[1] - 2,
-            `Full lets the header, the list and the foot take the pane: ${JSON.stringify(full)}`);
-        c.report(centered(wide, 'list', 1200) && centered(wide, 'header', 1200) && centered(wide, 'foot', 1200),
-            `Wide holds the header, the list and the foot to 1,200 pixels, centered: ${JSON.stringify(wide)}`);
-        c.report(centered(narrow, 'list', 900) && centered(narrow, 'header', 900) && centered(narrow, 'foot', 900),
-            `Narrow holds them to 900, centered: ${JSON.stringify(narrow)}`);
-        c.report(narrow.scroller[1] === full.scroller[1], `the scroller keeps the pane's width, its scrollbar at the edge: ${narrow.scroller[1]} of ${full.scroller[1]}`);
-        c.report(back.list[1] === full.list[1], `Full again lets the list go: ${back.list[1]}`);
-        const kept = await b.eval(`localStorage.getItem('DENS_WIDTH')`);
-        c.report(kept === 'full', `the browser keeps the choice: ${kept}`);
+        const first = await measure();
+        c.report(first.pane >= 1300 && first.header >= first.pane - 40, `the pane is wide enough for the check, and its header takes it: ${q(first)}`);
+        // The photo is a phone's, portrait, so each box holds it by its height.
+        c.report(q(first.tile) === q([360, 480]) && first.sharp === 'none' && q(first.player) === q([400, 225]) && first.picture === 'thumb',
+            `until she chooses, a photo shows at Medium, 480 high, as its preview, and a player at Small: ${q(first)}`);
+        await openSettings(b, 'Appearance');
+        const choices = JSON.parse(await b.eval(`JSON.stringify(['data-media-size', 'data-player-size'].map((g) =>
+            [...document.querySelectorAll('[' + g + '] label')].map((l) => l.textContent.trim() + (l.querySelector('input').checked ? '*' : '')).join('|')))`));
+        const width = await b.eval(`!!document.querySelector('[data-width]')`);
+        await b.key('Escape');
+        await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closing');
+        c.report(choices[0] === 'Small|Medium*|Large|Largest' && choices[1] === 'Small*|Medium|Large|Largest' && !width,
+            `Messages offers each four sizes, and no Width: ${q(choices)}`);
+        const large = await pick('data-media-size', 'Large');
+        const drawn = await waitFor(async () => { const m = await measure(); return typeof m.sharp === 'number' && m; }, 'the photo itself over its preview');
+        c.report(q(large.tile) === q([540, 720]) && drawn.sharp > 640 && q(large.player) === q(first.player),
+            `Large shows the photo 720 high, the photo itself drawn over the den's preview, and leaves the player: ${q(drawn)}`);
+        await b.shot(`${HOME}/shot-settings-${which}-large.png`);
+        const largest = await pick('data-media-size', 'Largest');
+        c.report(q(largest.tile) === q([720, 960]), `Largest shows it 960 high: ${q(largest.tile)}`);
+        const small = await pick('data-media-size', 'Small');
+        c.report(q(small.tile) === q([225, 300]) && small.sharp === 'none', `Small shows it 300 high, as its preview: ${q(small)}`);
+        const player = await pick('data-player-size', 'Large');
+        c.report(q(player.player) === q([960, 540]) && player.picture === 'large' && q(player.tile) === q(small.tile),
+            `a Large player is 960 by 540, its cover the larger picture, and the photo stays: ${q(player)}`);
+        const kept = await b.eval(`[localStorage.getItem('DENS_MEDIA_SIZE'), localStorage.getItem('DENS_PLAYER_SIZE')].join(' ')`);
+        c.report(kept === 'small large', `the browser keeps both choices: ${kept}`);
+        // A narrow pane still holds each: neither runs past it.
+        await b.eval(`localStorage.setItem('DENS_MEDIA_SIZE', 'largest'), localStorage.setItem('DENS_PLAYER_SIZE', 'largest'), true`);
+        await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
+        await waitFor(() => b.eval(`!!document.querySelector('[data-id="${photo}"] button[aria-label^="Open "]')`), 'general again');
+        const fits = await b.eval(`JSON.stringify((() => { const s = document.querySelector('[data-scroller]'); return [s.scrollWidth, s.clientWidth]; })())`).then(JSON.parse);
+        c.report(fits[0] <= fits[1], `at Largest nothing runs past the list's edge: ${q(fits)}`);
+        await b.eval(`localStorage.removeItem('DENS_MEDIA_SIZE'), localStorage.removeItem('DENS_PLAYER_SIZE'), localStorage.removeItem('DENS_YOUTUBE'), true`);
     }
 
     if (runs('themes')) {
@@ -275,14 +294,15 @@ try {
             colors: [...${EDITOR}.querySelectorAll('[data-color]')].map((r) => [r.dataset.color, r.querySelector('input[type=color]').value, r.querySelector('input[type=text]').value]),
             base: ${EDITOR}.querySelector('[data-theme-base] input:checked').value, corners: ${EDITOR}.querySelector('[data-theme-corners] input:checked').value })`));
         const starts = Object.fromEntries(started.colors.map(([label, picked]) => [label, picked]));
-        c.report(started.colors.map(([label]) => label).join('|') === 'Background|Text|Primary|Secondary|Accent' && started.colors.every(([, picked, typed]) => picked === typed),
-            `the editor asks for five colors, each picked and as hex: ${q(started.colors)}`);
-        c.report(starts.Background === dracula.base && starts.Text === dracula.text && starts.Primary === dracula.primary && starts.Secondary === dracula.secondary
-            && starts.Accent === dracula.accent && started.base === 'dark' && started.corners === 'rounded',
+        c.report(started.colors.map(([label]) => label).join('|') === 'Background|Text|Primary' && started.colors.every(([, picked, typed]) => picked === typed),
+            `the editor asks for three colors, each picked and as hex: ${q(started.colors)}`);
+        c.report(starts.Background === dracula.base && starts.Text === dracula.text && starts.Primary === dracula.primary
+            && started.base === 'dark' && started.corners === 'rounded',
         `it starts from the theme the page shows, Dracula: ${q(started)} of ${q(dracula)}`);
         const before = await wears(b);
-        c.report(before.page === dracula.page && before.error === dracula.error && before.theme === 'dark',
-            `opened, the page looks as it did, over Dark, the error color carried: ${q(before)}`);
+        c.report(before.page === dracula.page && before.error === dracula.error && before.secondary === dracula.secondary && before.accent === dracula.accent
+            && before.theme === 'dark',
+        `opened, the page looks as it did, over Dark, the colors it doesn't ask for carried: ${q(before)}`);
         await set(b, field('Background', 'text'), '#102030');
         await sleep(250);
         const typed = await wears(b);
@@ -303,16 +323,15 @@ try {
         await choose(b, 'data-theme-base', 'Light');
         await set(b, field('Background', 'text'), '#f4efe6');
         await set(b, field('Text', 'text'), '2a2118');
+        await set(b, field('Primary', 'text'), '#c41');
         await set(b, field('Primary', 'color'), '#c2410c');
-        await set(b, field('Secondary', 'text'), '#0af');
-        await set(b, field('Accent', 'color'), '#22cc88');
         await choose(b, 'data-theme-corners', 'Square');
         await sleep(300);
         const made = await wears(b);
-        const wanted = { theme: 'light', page: '#f4efe6', text: '#2a2118', base: '#f4efe6', primary: '#c2410c', secondary: '#00aaff', accent: '#22cc88', button: '#c2410c', radius: '0px' };
+        const wanted = { theme: 'light', page: '#f4efe6', text: '#2a2118', base: '#f4efe6', primary: '#c2410c', button: '#c2410c', radius: '0px' };
         const holds = (got, want) => Object.entries(want).every(([k, v]) => got[k] === v);
-        c.report(holds(made, wanted) && made.error === dracula.error,
-            `the page wears the theme as it's made, every color and the corners, its Save button among them: ${q(made)}`);
+        c.report(holds(made, wanted) && made.error === dracula.error && made.secondary === dracula.secondary && made.accent === dracula.accent,
+            `the page wears the theme as it's made, every color and the corners, its Save button among them, the rest Dracula's: ${q(made)}`);
         c.report(/^(--[a-z0-9-]+: (#[0-9a-f]{6}|[0-9.]+rem); ?)+$/.test(made.styled),
             `the root's style holds variables alone, each a hex color or a radius: ${q(made.styled)}`);
         await b.shot(`${HOME}/shot-settings-${which}-editor.png`);
@@ -327,7 +346,7 @@ try {
             `saved, it's chosen among Your themes, which the browser keeps: ${await ownNames(b)}, ${stored}, ${q(saved)}`);
         const swatch = await b.eval(`(() => { const hex = ${HEX}; const s = document.querySelector('[role=radiogroup][aria-label="Your themes"] [data-theme]');
             return [hex(getComputedStyle(s).backgroundColor), ...[...s.children].map((d) => hex(getComputedStyle(d).backgroundColor))].join(' '); })()`);
-        c.report(swatch === '#f4efe6 #2a2118 #c2410c #00aaff #22cc88', `its swatch shows its colors: ${swatch}`);
+        c.report(swatch === '#f4efe6 #2a2118 #c2410c', `its swatch shows the colors it asked for: ${swatch}`);
         await h.snap('theme-own', { scroll: PANEL, max: 3 });
         await closeSettings(b);
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
@@ -352,7 +371,8 @@ try {
         await b.eval(`(() => { window.copied = []; navigator.clipboard.writeText = async (t) => { window.copied.push(t); }; return true; })()`);
         await press(b, 'Copy code');
         const code = await waitFor(async () => JSON.parse(await b.eval('JSON.stringify(window.copied || [])'))[0], 'the copied code');
-        c.report(/^dens-theme:1\.l\.o\.f4efe62a21187c3aed00aaff22cc88[0-9a-f]{30}\.[0-9a-f]+$/.test(code), `Copy code gives the theme as a code: ${code}`);
+        c.report(new RegExp(`^dens-theme:1\\.l\\.o\\.f4efe62a21187c3aed${dracula.secondary.slice(1)}${dracula.accent.slice(1)}[0-9a-f]{30}\\.[0-9a-f]+$`).test(code),
+            `Copy code gives the theme as a code, ten colors still: ${code}`);
         await closeSettings(b);
 
         step("pasted into bob's browser, and a stranger's codes refused");
@@ -387,7 +407,7 @@ try {
         await press(b2, 'Add');
         await waitFor(async () => (await ownNames(b2)) === 'Check theme*', "the pasted theme among bob's");
         const pasted = await wears(b2);
-        c.report(holds(pasted, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#7c3aed', secondary: '#00aaff', accent: '#22cc88', error: edited.error })
+        c.report(holds(pasted, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#7c3aed', secondary: edited.secondary, accent: edited.accent, error: edited.error })
             && pasted.base200 === edited.base200 && pasted.base300 === edited.base300,
         `bob's page wears alice's theme, color for color: ${q(pasted)}`);
         await b2.shot(`${HOME}/shot-settings-${which}-pasted.png`);

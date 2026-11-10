@@ -3,7 +3,9 @@ package den
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -22,8 +24,8 @@ func forbidden(format string, args ...any) error {
 func bioAD(id int64) []byte { return []byte("den_members.bio:" + strconv.FormatInt(id, 10)) }
 
 // memberColumns selects a member from den_members, with the size of the
-// pictures on their profile, and whether each is animated (M15.1), and
-// their identity's hash (M16.1).
+// pictures on their profile, and whether each is animated (M15.1), their
+// identity's hash (M16.1) and their name's style.
 const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	avatar_id, (SELECT width FROM den_files WHERE den_files.id = den_members.avatar_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.avatar_id),
@@ -31,7 +33,7 @@ const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	banner_id, (SELECT width FROM den_files WHERE den_files.id = den_members.banner_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.banner_id),
 	(SELECT animated FROM den_files WHERE den_files.id = den_members.banner_id),
-	identity`
+	identity, name_style`
 
 func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) {
 	var m denproto.Member
@@ -39,8 +41,14 @@ func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) 
 	var left, avatar, aw, ah, banner, bw, bh sql.NullInt64
 	var aa, ba sql.NullBool
 	var identity []byte
+	var style sql.NullString
 	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &aa, &banner, &bw, &bh, &ba,
-		&identity}, extra...)...)
+		&identity, &style}, extra...)...)
+	if err == nil && style.Valid {
+		if err = json.Unmarshal([]byte(style.String), &m.NameStyle); err != nil {
+			err = fmt.Errorf("read a member's name style: %w", err)
+		}
+	}
 	m.ID = denproto.FormatID(id)
 	if len(identity) > 0 {
 		m.Identity = denproto.Bytes(identity).String()
@@ -106,8 +114,8 @@ func (d *Den) profileOf(ctx context.Context, id string) (denproto.Member, error)
 }
 
 // UpdateProfile changes the member's own display name, bio, avatar or
-// banner. A picture is an upload of theirs waiting to be used; the one it
-// replaces is deleted.
+// banner, or their name's style. A picture is an upload of theirs
+// waiting to be used; the one it replaces is deleted.
 func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.ProfileRequest) (denproto.Member, error) {
 	var sets []string
 	var args []any
@@ -132,6 +140,20 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 				return denproto.Member{}, err
 			}
 			sets, args = append(sets, "bio = ?"), append(args, sealed)
+		}
+	}
+	if req.NameStyle != nil {
+		if err := denproto.CheckNameStyle(*req.NameStyle); err != nil {
+			return denproto.Member{}, invalid("name_style: %v", err)
+		}
+		if req.NameStyle.IsZero() {
+			sets = append(sets, "name_style = NULL")
+		} else {
+			style, err := json.Marshal(req.NameStyle)
+			if err != nil {
+				return denproto.Member{}, err
+			}
+			sets, args = append(sets, "name_style = ?"), append(args, string(style))
 		}
 	}
 	var replaced [][]byte

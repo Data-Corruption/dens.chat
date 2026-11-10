@@ -12,12 +12,14 @@ import (
 )
 
 // mountYouTube serves the covers of YouTube's players (M4.1): a linked
-// video's title and channel, and its picture, or a Short's portrait one.
+// video's title and channel, and its picture, a larger one for a larger
+// player, or a Short's portrait one.
 // The page asks only while a member has players on, and only for covers
 // on screen.
 func (rt *router) mountYouTube(r chi.Router) {
 	r.Get("/api/youtube/{id}", rt.handleVideo)
 	r.Get("/api/youtube/{id}/thumb", videoPicture(rt.youTube.Picture))
+	r.Get("/api/youtube/{id}/large", videoPicture(rt.youTube.Large))
 	r.Get("/api/youtube/{id}/portrait", videoPicture(rt.youTube.Portrait))
 }
 

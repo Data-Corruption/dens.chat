@@ -1,0 +1,32 @@
+{
+  "about": "Name styles, as denproto.CheckNameStyle takes one a member sets, set, as CheckSentNameStyle takes one a den sends, sent, and as the page's cleanStyle reads it, shown: what the page draws a name with, null for nothing, and the style itself where shown is left out. fonts are the fonts a style may name, in the picker's order.",
+  "fonts": ["pacifico", "fredoka", "zilla-slab", "space-mono", "orbitron", "pixelify-sans", "bangers", "cinzel"],
+  "cases": [
+    {"style": {}, "set": true, "sent": true, "shown": null},
+    {"style": {"font": "pacifico"}, "set": true, "sent": true},
+    {"style": {"color": "#aa0000"}, "set": true, "sent": true},
+    {"style": {"color": "#aa0000", "color2": "#00aa00"}, "set": true, "sent": true},
+    {"style": {"font": "cinzel", "color": "#aa0000", "color2": "#00aa00"}, "set": true, "sent": true},
+    {"style": {"font": "zilla-slab", "color": "#000000"}, "set": true, "sent": true},
+    {"style": {"font": "comic-sans"}, "set": false, "sent": true, "shown": null},
+    {"style": {"font": "comic-sans", "color": "#aa0000"}, "set": false, "sent": true, "shown": {"color": "#aa0000"}},
+    {"style": {"font": "Pacifico"}, "set": false, "sent": false, "shown": null},
+    {"style": {"font": "pacifico "}, "set": false, "sent": false, "shown": null},
+    {"style": {"font": "pacifico; color: red"}, "set": false, "sent": false, "shown": null},
+    {"style": {"font": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}, "set": false, "sent": false, "shown": null},
+    {"style": {"font": "toString"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "red"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#AA0000"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#a00"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "aa0000"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#aa00000"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#aa000g"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#aa0000 "}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "url(https://evil.example/x.png)"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "var(--color-primary)"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#aa0000", "color2": "red"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color": "#aa0000", "color2": "#aa0000;background:url(https://evil.example/x.png)"}, "set": false, "sent": false, "shown": null},
+    {"style": {"color2": "#00aa00"}, "set": false, "sent": false, "shown": null},
+    {"style": {"font": "pacifico", "color2": "#00aa00"}, "set": false, "sent": false, "shown": null}
+  ]
+}

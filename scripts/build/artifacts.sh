@@ -20,6 +20,16 @@ frontend_build() {
   vendor_daisyui
   vendor_tailwind
   vendor_preact
+  vendor_name_fonts
+
+  # The fonts a name may show in, each from its pinned package.
+  rm -rf "$ASSETS_DIR/fonts"
+  mkdir -p "$ASSETS_DIR/fonts"
+  local entry font
+  for entry in "${NAME_FONTS[@]}"; do
+    read -r font _ <<<"$entry"
+    cp "$VENDOR_NAME_FONTS/$font.woff2" "$ASSETS_DIR/fonts/$font.woff2"
+  done
 
   run_step "Tailwind CSS built" "Tailwind CSS failed" "$VENDOR_TAILWIND" -i "$CSS_DIR/input.css" -o "$CSS_DIR/output.css" --minify
   # esbuild resolves preact through NODE_PATH, from the vendored package.

@@ -73,7 +73,7 @@ func (m *Manager) SetBadgeHidden(ctx context.Context, denID, eventID string, hid
 }
 
 // UpdateProfile changes this member's display name, bio or pictures in a
-// den.
+// den, or their name's style there.
 func (m *Manager) UpdateProfile(ctx context.Context, denID string, req denproto.ProfileRequest) (denproto.Member, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -88,6 +88,11 @@ func (m *Manager) UpdateProfile(ctx context.Context, denID string, req denproto.
 	}
 	if req.Bio != nil {
 		if err := denproto.CheckBio(*req.Bio); err != nil {
+			return denproto.Member{}, inputError(err)
+		}
+	}
+	if req.NameStyle != nil {
+		if err := denproto.CheckNameStyle(*req.NameStyle); err != nil {
 			return denproto.Member{}, inputError(err)
 		}
 	}

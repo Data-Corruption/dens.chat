@@ -339,6 +339,51 @@ func TestAShortsPictureIsPortrait(t *testing.T) {
 	}
 }
 
+func TestALargerPlayersPictureIsLarger(t *testing.T) {
+	size := func(t *testing.T, b []byte) string {
+		t.Helper()
+		img, err := jpeg.Decode(bytes.NewReader(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("%dx%d", img.Bounds().Dx(), img.Bounds().Dy())
+	}
+	y := newYouTube(t)
+	y.answer("/vi/"+id+"/maxresdefault.jpg", serve(picture(t, 1280, 720)))
+	y.answer("/vi/"+id+"/hqdefault.jpg", serve(picture(t, 480, 360)))
+	got, err := y.lookup().Large(context.Background(), id)
+	if err != nil || size(t, got) != "1280x720" || y.times("/vi/"+id+"/hqdefault.jpg") != 0 {
+		t.Fatalf("the larger picture: %v, asked for the usual one %d times", err, y.times("/vi/"+id+"/hqdefault.jpg"))
+	}
+
+	// Where YouTube has none, the usual one stands in, each asked for once.
+	y = newYouTube(t)
+	y.answer("/vi/"+id+"/hqdefault.jpg", serve(picture(t, 480, 360)))
+	l := y.lookup()
+	for range 2 {
+		if got, err = l.Large(context.Background(), id); err != nil || size(t, got) != "480x360" {
+			t.Fatalf("without a larger picture: %v", err)
+		}
+	}
+	if y.times("/vi/"+id+"/maxresdefault.jpg") != 1 || y.times("/vi/"+id+"/hqdefault.jpg") != 1 {
+		t.Errorf("asked for the larger one %d times and the usual one %d", y.times("/vi/"+id+"/maxresdefault.jpg"), y.times("/vi/"+id+"/hqdefault.jpg"))
+	}
+
+	// It has room for its size, and no more.
+	huge := append(picture(t, 1280, 720), make([]byte, maxLarge)...)
+	for name, answer := range map[string]http.HandlerFunc{"too large": serve(huge), "too wide": serve(picture(t, 2000, 720))} {
+		y := newYouTube(t)
+		y.answer("/vi/"+id+"/maxresdefault.jpg", answer)
+		y.answer("/vi/"+id+"/hqdefault.jpg", serve(picture(t, 480, 360)))
+		if _, err := y.lookup().Large(context.Background(), id); !errors.Is(err, ErrUnavailable) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := y.lookup().Large(context.Background(), "dQw4w9WgX/Q"); !errors.Is(err, ErrBadID) {
+		t.Errorf("a bad ID: %v", err)
+	}
+}
+
 func TestCoversAskingTogetherFetchOnce(t *testing.T) {
 	y := newYouTube(t)
 	y.answer("/oembed", oEmbed(t, `{"type":"video","title":"Once"}`))

@@ -2,7 +2,7 @@
 // a call stay in view, its sections listed down the side as Manage's are,
 // or on the phone layout a list of them, each a page. Appearance holds the
 // theme, the member's own among them, the picture behind the chat, how
-// messages show and the verified mark; Chat compressing photos
+// messages and styled names show and the verified mark; Chat compressing photos
 // and videos and what happens to links; Notifications what notifies the
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
@@ -15,14 +15,15 @@ import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
 import { DIM_MOST, DIM_STEP, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, slideDim } from './background.js';
 import {
-    Card, CopyButton, DOCS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction, useBackdrop,
-    useBackground, useNotifications,
+    Card, Choices, ColorField, CopyButton, DOCS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction,
+    useBackdrop, useBackground, useNotifications,
 } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
 import { PlayIcon } from './icons.jsx';
+import { STYLES_ALL, STYLES_COLORS, STYLES_OFF, setNameStyles, useNameStyles } from './names.js';
 import { useLayer, useNarrow } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
 import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js';
@@ -31,10 +32,10 @@ import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } fro
 import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
 import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
-import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, hexColor, readCode, themeCode, variables } from './themes.js';
+import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, readCode, themeCode, variables } from './themes.js';
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
-import { WIDTH_FULL, WIDTH_NARROW, WIDTH_WIDE, setWidth, useWidth } from './width.js';
+import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
     RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
@@ -85,7 +86,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
+    else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><NameStylesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -272,11 +273,11 @@ function ThemePicker() {
 }
 
 // COLOR_NAMES are what the editor calls the colors a member picks.
-const COLOR_NAMES = { base: 'Background', text: 'Text', primary: 'Primary', secondary: 'Secondary', accent: 'Accent' };
+const COLOR_NAMES = { base: 'Background', text: 'Text', primary: 'Primary' };
 const CORNER_LABELS = { square: 'Square', rounded: 'Rounded', round: 'Round' };
 
 // ThemeEditor makes or changes a theme of the member's own: its name,
-// whether it stands on Light or Dark, its five colors and its corners. The
+// whether it stands on Light or Dark, its three colors and its corners. The
 // page wears the theme as it's made, and takes the chosen one back when
 // the editor goes, saved or not.
 function ThemeEditor({ start, onSave, onCancel }) {
@@ -319,31 +320,6 @@ function ThemeEditor({ start, onSave, onCancel }) {
             </div>
             <ErrorText message={error} />
         </form>
-    );
-}
-
-// ColorField takes a color: the browser's picker, and beside it the
-// color's hex, the same in every browser, which takes a typed or pasted
-// one once it reads as a color.
-function ColorField({ label, value, onChange }) {
-    const [typed, setTyped] = useState(value);
-    useEffect(() => {
-        setTyped((t) => (hexColor(t) === value ? t : value));
-    }, [value]);
-    return (
-        <div class="flex items-center gap-3" data-color={label}>
-            <span class="min-w-0 flex-1 text-sm">{label}</span>
-            <input type="color" class="h-8 w-12 shrink-0 cursor-pointer rounded-field border border-base-content/20 bg-transparent p-0.5"
-                aria-label={`${label}, picked`} value={value} onInput={(e) => onChange(e.currentTarget.value.toLowerCase())} />
-            <input type="text" class="input input-sm w-24 shrink-0 font-mono" aria-label={`${label}, as hex`} value={typed} maxlength="7" {...PLAIN}
-                onInput={(e) => {
-                    const text = e.currentTarget.value;
-                    setTyped(text);
-                    const hex = hexColor(text);
-                    if (hex && hex !== value) onChange(hex);
-                }}
-                onBlur={() => setTyped(value)} />
-        </div>
     );
 }
 
@@ -400,37 +376,51 @@ function ChatBackground() {
     );
 }
 
+// The sizes' names, as the settings show them.
+const SIZE_NAMES = { small: 'Small', medium: 'Medium', large: 'Large', largest: 'Largest' };
+
 // MessagesPicker chooses how messages show: their Density, Default or
-// Compact, a line each of the time, the name and the text; and their
-// Width, Full, Wide or Narrow, how far across the pane they run. This
-// browser keeps both, as it keeps the theme.
+// Compact, a line each of the time, the name and the text; and on a wide
+// window, how large their photos and videos show, and their YouTube
+// players. This browser keeps each, as it keeps the theme.
 function MessagesPicker() {
     const density = useDensity();
-    const width = useWidth();
+    const media = useSize(MEDIA);
+    const players = useSize(PLAYERS);
+    const narrow = useNarrow();
+    const sizes = SIZES.map((s) => [s, SIZE_NAMES[s]]);
     return (
         <Card title="Messages">
             <Choices label="Density" name="density" data="data-density" choice={density} onPick={setDensity}
                 choices={[[DENSITY_DEFAULT, 'Default'], [DENSITY_COMPACT, 'Compact']]} />
-            <Choices label="Width" name="width" data="data-width" choice={width} onPick={setWidth}
-                choices={[[WIDTH_FULL, 'Full'], [WIDTH_WIDE, 'Wide'], [WIDTH_NARROW, 'Narrow']]} />
+            {!narrow && (
+                <>
+                    <Choices label="Photos and videos" name="media-size" data="data-media-size" choice={media} onPick={(s) => setSize(MEDIA, s)} choices={sizes} />
+                    <Choices label="YouTube players" name="player-size" data="data-player-size" choice={players} onPick={(s) => setSize(PLAYERS, s)} choices={sizes} />
+                </>
+            )}
         </Card>
     );
 }
 
-// Choices is a setting of a few, in a row under its label.
-function Choices({ label, name, data, choice, choices, onPick }) {
+// NameStylesPicker chooses how the names members styled show here: their
+// colors and fonts, their colors alone, or plain. This browser keeps it,
+// as it keeps the theme.
+function NameStylesPicker() {
+    const choice = useNameStyles();
     return (
-        <div class="flex flex-col gap-1">
-            <span class="text-sm">{label}</span>
-            <div role="radiogroup" aria-label={label} class="flex flex-wrap gap-x-6 gap-y-2" {...{ [data]: true }}>
-                {choices.map(([value, text]) => (
+        <Card title="Name styles">
+            <p class="text-sm text-base-content/70">The colors and fonts members give their names.</p>
+            <div role="radiogroup" aria-label="Name styles" class="flex flex-wrap gap-x-6 gap-y-2" data-name-styles>
+                {[[STYLES_ALL, 'Colors and fonts'], [STYLES_COLORS, 'Colors only'], [STYLES_OFF, 'Off']].map(([value, label]) => (
                     <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
-                        <input type="radio" class="radio radio-sm" name={name} value={value} checked={choice === value} onChange={() => onPick(value)} />
-                        <span>{text}</span>
+                        <input type="radio" class="radio radio-sm" name="name-styles" value={value} checked={choice === value}
+                            onChange={() => setNameStyles(value)} />
+                        <span>{label}</span>
                     </label>
                 ))}
             </div>
-        </div>
+        </Card>
     );
 }
 
@@ -489,18 +479,28 @@ function VerifiedMarksPicker() {
     );
 }
 
-// Swatch shows a theme's colors: its text, primary, secondary and accent on
-// its background; one of the member's own by its variables, over Light or
-// Dark.
+// Swatch shows a theme's colors on its background: DaisyUI's by its text,
+// primary, secondary and accent; one of the member's own by the text and
+// primary they picked, through its variables over Light or Dark.
 function Swatch({ theme, own, large }) {
     const dot = `${large ? 'size-3' : 'size-1.5'} rounded-full`;
+    const bar = `${large ? 'h-7 w-3' : 'h-3.5 w-1.5'} rounded-full`;
     return (
         <span data-theme={own ? (own.dark ? 'dark' : 'light') : theme} style={own ? variables(own) : undefined} aria-hidden="true"
             class={`grid shrink-0 grid-cols-2 rounded-md border border-base-content/10 bg-base-100 ${large ? 'gap-1 p-2' : 'gap-0.5 p-1'}`}>
-            <span class={`${dot} bg-base-content`} />
-            <span class={`${dot} bg-primary`} />
-            <span class={`${dot} bg-secondary`} />
-            <span class={`${dot} bg-accent`} />
+            {own ? (
+                <>
+                    <span class={`${bar} bg-base-content`} />
+                    <span class={`${bar} bg-primary`} />
+                </>
+            ) : (
+                <>
+                    <span class={`${dot} bg-base-content`} />
+                    <span class={`${dot} bg-primary`} />
+                    <span class={`${dot} bg-secondary`} />
+                    <span class={`${dot} bg-accent`} />
+                </>
+            )}
         </span>
     );
 }
