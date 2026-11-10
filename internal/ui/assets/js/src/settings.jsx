@@ -35,7 +35,7 @@ import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, set
 import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, readCode, themeCode, variables } from './themes.js';
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
-import { WIDTH_FULL, WIDTH_NARROW, WIDTH_WIDE, setWidth, useWidth } from './width.js';
+import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
     RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
@@ -376,19 +376,29 @@ function ChatBackground() {
     );
 }
 
+// The sizes' names, as the settings show them.
+const SIZE_NAMES = { small: 'Small', medium: 'Medium', large: 'Large', largest: 'Largest' };
+
 // MessagesPicker chooses how messages show: their Density, Default or
-// Compact, a line each of the time, the name and the text; and their
-// Width, Full, Wide or Narrow, how far across the pane they run. This
-// browser keeps both, as it keeps the theme.
+// Compact, a line each of the time, the name and the text; and on a wide
+// window, how large their photos and videos show, and their YouTube
+// players. This browser keeps each, as it keeps the theme.
 function MessagesPicker() {
     const density = useDensity();
-    const width = useWidth();
+    const media = useSize(MEDIA);
+    const players = useSize(PLAYERS);
+    const narrow = useNarrow();
+    const sizes = SIZES.map((s) => [s, SIZE_NAMES[s]]);
     return (
         <Card title="Messages">
             <Choices label="Density" name="density" data="data-density" choice={density} onPick={setDensity}
                 choices={[[DENSITY_DEFAULT, 'Default'], [DENSITY_COMPACT, 'Compact']]} />
-            <Choices label="Width" name="width" data="data-width" choice={width} onPick={setWidth}
-                choices={[[WIDTH_FULL, 'Full'], [WIDTH_WIDE, 'Wide'], [WIDTH_NARROW, 'Narrow']]} />
+            {!narrow && (
+                <>
+                    <Choices label="Photos and videos" name="media-size" data="data-media-size" choice={media} onPick={(s) => setSize(MEDIA, s)} choices={sizes} />
+                    <Choices label="YouTube players" name="player-size" data="data-player-size" choice={players} onPick={(s) => setSize(PLAYERS, s)} choices={sizes} />
+                </>
+            )}
         </Card>
     );
 }

@@ -2,8 +2,8 @@
 // covers under it: each video's picture, title and channel, which the local
 // service fetched, the title and channel linking to them on YouTube
 // (M14.1), and a play button that swaps in YouTube's own player, in the
-// same box. One plays at a time. A Short's box is portrait, as tall as
-// another's is wide, and its picture is the Short's own.
+// same box, of the size the member chose in Appearance. One plays at a
+// time. A Short's box is portrait, and its picture is the Short's own.
 //
 // The player is a frame from youtube-nocookie.com, sandboxed: it can't
 // navigate the page, its popups can't reach it, and the page listens to
@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onYouTubePlayers, youTubePlayers } from './links.js';
 import { videosIn } from './markdown.jsx';
+import { PLAYERS, playerClass, useShownSize } from './sizes.js';
 
 const SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox';
 const ALLOW = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
@@ -30,15 +31,9 @@ export function watchURL({ id, start, short }) {
 }
 
 // pictureURL is where a cover's picture comes from: the local service,
-// which fetched it from YouTube.
-export function pictureURL({ id, short }) {
-    return `/api/youtube/${id}/${short ? 'portrait' : 'thumb'}`;
-}
-
-// playerBox sizes a video's box before anything in it loads: 16:9 and 400
-// pixels wide, or a Short's 9:16 and 400 tall.
-export function playerBox({ short }) {
-    return short ? 'aspect-[9/16] w-[225px]' : 'aspect-video w-[400px]';
+// which fetched it from YouTube, a larger one for a player past Small.
+export function pictureURL({ id, short }, size = 'small') {
+    return `/api/youtube/${id}/${short ? 'portrait' : size === 'small' ? 'thumb' : 'large'}`;
 }
 
 // playing is the player whose video plays: an object only that player
@@ -70,6 +65,7 @@ export function Videos({ text }) {
 // list never moves. The cover asks about its video once it comes on screen,
 // since YouTube hears of each video asked about.
 function Player({ video }) {
+    const size = useShownSize(PLAYERS);
     const self = useRef(null);
     if (!self.current) self.current = {};
     const box = useRef(null);
@@ -129,7 +125,7 @@ function Player({ video }) {
     } else if (about?.found && !about.playable) {
         inside = (
             <>
-                <Picture video={video} dim />
+                <Picture video={video} size={size} dim />
                 <Notice>
                     This video plays only on YouTube.
                     <a href={watchURL(video)} target="_blank" rel="noopener noreferrer nofollow" class="link font-medium text-white">
@@ -139,10 +135,10 @@ function Player({ video }) {
             </>
         );
     } else {
-        inside = <Cover video={video} about={about} onPlay={() => play(self.current)} />;
+        inside = <Cover video={video} about={about} size={size} onPlay={() => play(self.current)} />;
     }
     return (
-        <div ref={box} data-video={video.id} class={`relative ${playerBox(video)} max-w-full overflow-hidden rounded bg-black`}>
+        <div ref={box} data-video={video.id} class={`relative ${playerClass(size, video.short)} max-w-full overflow-hidden rounded bg-black`}>
             {inside}
         </div>
     );
@@ -165,12 +161,12 @@ export function channelURL(about) {
 // height, a finger's least. The button's group is named, since the
 // message's row is a group too, whose hover would light the play button
 // under the words.
-export function Cover({ video, about, onPlay }) {
+export function Cover({ video, about, size, onPlay }) {
     const channel = channelURL(about);
     return (
         <>
             <button type="button" class="group/play absolute inset-0 size-full cursor-pointer" onClick={onPlay} aria-label={`Play ${about?.title || 'the YouTube video'}`}>
-                {about?.found && <Picture video={video} />}
+                {about?.found && <Picture video={video} size={size} />}
                 <span class="absolute left-1/2 top-1/2 flex h-12 w-17 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl bg-black/70 transition-colors group-hover/play:bg-[#f00] group-focus-visible/play:bg-[#f00]">
                     <svg viewBox="0 0 24 24" class="size-7 fill-white" aria-hidden="true">
                         <path d="M8 5.5v13l11-6.5z" />
@@ -195,10 +191,10 @@ export function Cover({ video, about, onPlay }) {
     );
 }
 
-function Picture({ video, dim }) {
+function Picture({ video, size, dim }) {
     return (
         <img
-            src={pictureURL(video)}
+            src={pictureURL(video, size)}
             alt=""
             class={`absolute inset-0 size-full object-cover ${dim ? 'opacity-40' : ''}`}
             onError={(e) => {

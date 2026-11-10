@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { MAX_VIDEOS, parse, videosIn } from '../assets/js/src/markdown.jsx';
 import { onYouTubePlayers, setYouTubePlayers, startSeconds, videoOf, youTubePlayers } from '../assets/js/src/links.js';
-import { Cover, embedURL, pictureURL, playerBox, watchURL } from '../assets/js/src/youtube.jsx';
+import { playerClass } from '../assets/js/src/sizes.js';
+import { Cover, embedURL, pictureURL, watchURL } from '../assets/js/src/youtube.jsx';
 import linkCases from '../../denproto/testdata/links.json';
 
 const ID = 'dQw4w9WgXcQ';
@@ -135,8 +136,8 @@ test("a Short plays in a portrait box, as tall as another's is wide, with its ow
     const short = `https://www.youtube.com/shorts/${ID}`;
     const video = videoOf(short);
     assert.deepEqual(video, { id: ID, start: 0, short: true });
-    assert.equal(playerBox(video), 'aspect-[9/16] w-[225px]');
-    assert.equal(playerBox(videoOf(watch())), 'aspect-video w-[400px]');
+    assert.equal(playerClass('small', video.short), 'aspect-[9/16] w-[225px]');
+    assert.equal(playerClass('small', videoOf(watch()).short), 'aspect-video w-[400px]');
     assert.equal(pictureURL(video), `/api/youtube/${ID}/portrait`);
     assert.equal(pictureURL(videoOf(watch())), `/api/youtube/${ID}/thumb`);
     // Its links go to it as a Short, and its player is any video's.

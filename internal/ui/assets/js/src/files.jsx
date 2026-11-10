@@ -13,12 +13,14 @@ import { PlayIcon } from './icons.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { canCopy, followUpload } from './copier.js';
 import { dismisses } from './touch.js';
+import { MEDIA, mediaBox, useShownSize } from './sizes.js';
 import { fitted, isFitted, maxScale, useZoom } from './zoom.js';
 
-// Previews fit these boxes in the message list; one image gets more room
-// than several.
-const ONE = { w: 400, h: 300 };
-const SEVERAL = { w: 240, h: 180 };
+// The den's preview of an image is this many pixels on its longer side;
+// a tile larger than that shows the image itself over it, where it's one
+// a browser draws and holds still.
+const PREVIEW_PIXELS = 640;
+const DRAWN = ['image/jpeg', 'image/png', 'image/webp'];
 // The smallest side a preview keeps, so a sliver of an image can still be
 // clicked; anything past the box is cropped from the preview.
 const MIN_SIDE = 48;
@@ -174,7 +176,9 @@ export function Attachments({ denID, files, onOpen }) {
     const [shown, setShown] = useState(() => new Set());
     const tiles = files.filter((f) => ['image', 'video'].includes(attachmentKind(f)));
     const others = files.filter((f) => !tiles.includes(f));
-    const box = tiles.length > 1 ? SEVERAL : ONE;
+    // Previews fit a box of the size the member chose in Appearance; one
+    // image gets more room than several.
+    const box = mediaBox(useShownSize(MEDIA), tiles.length > 1);
     const covered = new Set(tiles.filter((f) => covers(f, shown)).map((f) => f.id));
     return (
         <div class="mt-1 flex flex-col gap-1">
@@ -426,6 +430,8 @@ function AudioCard({ denID, file }) {
 // the den stated, so nothing below it moves when it arrives.
 function ImageTile({ denID, file, box, onOpen }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
+    const [failed, setFailed] = useState(false);
+    const sharp = !failed && !file.animated && DRAWN.includes(file.type) && Math.max(size.width, size.height) > PREVIEW_PIXELS;
     return (
         <button
             type="button"
@@ -437,6 +443,10 @@ function ImageTile({ denID, file, box, onOpen }) {
         >
             <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
                 class="h-full w-full object-cover" />
+            {sharp && (
+                <img src={fileURL(denID, file.id)} alt="" loading="lazy" draggable={false} data-sharp
+                    class="absolute inset-0 h-full w-full object-cover" onError={() => setFailed(true)} />
+            )}
             {file.animated && <span class="badge badge-neutral badge-sm absolute bottom-1 left-1 select-none opacity-90">GIF</span>}
         </button>
     );

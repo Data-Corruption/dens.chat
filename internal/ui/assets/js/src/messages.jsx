@@ -22,7 +22,6 @@ import { ErrorText, PLAIN, Tip, dayTime, useAction, useBackground } from './comp
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
-import { useWidthClass } from './width.js';
 import { completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
@@ -158,7 +157,6 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const sealed = isPrivate(channel);
     // Compact shows each message as a line (M17.2).
     const line = useDensity() === DENSITY_COMPACT;
-    const width = useWidthClass();
     const background = useBackground();
     // A photo or video goes as a spoiler in a DM, inside its seal, and in a
     // channel where the den keeps which files are (M17.2).
@@ -846,11 +844,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                     {OFFLINE_NOTE}
                 </div>
             )}
-            {/* The room at the bottom is where who's typing shows, over the list.
-                Appearance's Width holds the content, not the scroller, so the
-                scrollbar stays at the pane's edge. */}
+            {/* The room at the bottom is where who's typing shows, over the list. */}
             <div ref={scroller} data-scroller class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-2" style={backgroundStyle(background)} onScroll={checkEdges}>
-                <div ref={content} class={width}>
+                <div ref={content}>
                     {list.loaded && !list.hasOlder && (
                         <div class="cursor-default select-none py-6 text-center text-sm text-base-content/60">
                             {notes ? (
@@ -893,7 +889,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             </div>
             {/* The pane's foot, the composer among it, which the call's button
                 floats above (M13.4). */}
-            <div ref={foot} class={width}>
+            <div ref={foot}>
                 {(list.hasNewer || newCount > 0) && (
                     <div class="flex cursor-default select-none items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
                         <span>
@@ -1133,7 +1129,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
         >
             {/* In Compact the quote sits over the name, past the time. */}
             {m.reply_to && replied && (
-                <button type="button" class={`flex w-full min-w-0 items-center gap-1 text-left text-xs text-base-content/60 hover:text-base-content ${line ? 'pl-14' : 'pl-2'}`}
+                <button type="button" class={`flex w-fit min-w-0 max-w-full items-center gap-1 text-left text-xs text-base-content/60 hover:text-base-content ${line ? 'pl-14' : 'pl-2'}`}
                     onClick={() => onJump(m.reply_to)}>
                     <Spine />
                     {!line && <Avatar member={repliedAuthor} size="sm" />}

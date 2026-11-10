@@ -34,7 +34,6 @@ import { EventsPane, EventsRow, showEvent } from './denevents.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
-import { useWidthClass } from './width.js';
 import { applyCalls, joinCall } from './voice.js';
 import { CallLock } from './calllock.jsx';
 import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, groupDrop, moveTargets } from './drag.js';
@@ -560,10 +559,9 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 {/* The den's name opens its Manage, as a server's name
                                     opens its menu elsewhere; on the phone layout, at
                                     the list of its sections (M14.3). */}
-                                <button type="button" class="-my-1 flex min-h-8 min-w-0 flex-1 items-center gap-1 rounded px-1 text-left font-semibold hover:bg-base-300/60"
+                                <button type="button" class="-my-1 flex min-h-8 min-w-0 flex-1 cursor-pointer items-center rounded px-1 text-left font-semibold hover:bg-base-300/60"
                                     aria-label={`Manage ${view.name}`} title="Manage this den" data-den-manage onClick={() => openManage(denID)}>
                                     <span class="truncate">{view.name}</span>
-                                    <ChevronIcon folded={false} />
                                 </button>
                                 {bells && (
                                     <button type="button" class="btn btn-ghost btn-xs btn-square relative -my-1 touch-room" aria-pressed={muted.den}
@@ -1339,122 +1337,119 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
     const clipped = useClipped(line, channel.description);
     const hasMore = !!channel.description && channel.description.trim() !== firstLine(channel.description).trim();
     const expandable = hasMore || clipped || expanded;
-    const width = useWidthClass();
     return (
         <header class="border-b border-base-300 px-4 py-2">
-            <div class={width}>
-                <div class="flex min-w-0 items-center gap-2">
+            <div class="flex min-w-0 items-center gap-2">
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm btn-square relative md:hidden"
+                    onClick={onChannels}
+                    aria-label={elsewhere.mentions ? `Channels, ${elsewhere.mentions} unread mentions` : 'Channels'}
+                >
+                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <path d="M2 4h12M2 8h12M2 12h12" />
+                    </svg>
+                    <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
+                </button>
+                {dm !== null && channel.kind === 'dm' ? (
+                    <>
+                        {/* The member and their verified mark are one row, which
+                            the mark shows on hover over (M16.4). */}
+                        <HoverRow as="span" class="flex min-w-0 items-center gap-1">
+                            <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
+                                <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
+                                <Name member={dm} class="truncate font-semibold" />
+                                {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
+                            </button>
+                            {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}
+                        </HoverRow>
+                        {/* The lock says the DM is end-to-end encrypted, and
+                            opens comparing codes (M16.1). */}
+                        <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onCompare}
+                            title="End-to-end encrypted: only the two of you can read it. Compare codes to check nobody sits between you."
+                            aria-label="End-to-end encrypted: compare codes">
+                            <LockIcon size="h-3 w-3" />
+                            Encrypted
+                        </button>
+                        {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
+                    </>
+                ) : channel.kind === 'notes' ? (
+                    <>
+                        <span class="flex min-w-0 items-center gap-2" data-notes-header>
+                            <NotesIcon />
+                            <span class="truncate font-semibold">Notes</span>
+                        </span>
+                        {/* Only the member's devices open them (M17.3). */}
+                        <Tip id={`header-notes-${channel.id}`} label="Encrypted" trigger={
+                            <span class="flex shrink-0 items-center gap-1 text-xs text-base-content/60"><LockIcon size="h-3 w-3" />Encrypted</span>
+                        }>
+                            End-to-end encrypted: only your devices can read your notes.
+                        </Tip>
+                    </>
+                ) : channel.kind === 'group_dm' ? (
+                    <>
+                        <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={onMembers}>
+                            <GroupIcon size="h-6 w-6" />
+                            <span class="truncate font-semibold" data-group-header>{grouped}</span>
+                        </button>
+                        {/* The lock says the group is end-to-end encrypted, and
+                            opens its members, where each compares codes (M16.3). */}
+                        <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onMembers}
+                            title="End-to-end encrypted: only the group's members can read it. Compare codes with each to check nobody sits between you."
+                            aria-label="End-to-end encrypted: the group's members">
+                            <LockIcon size="h-3 w-3" />
+                            Encrypted
+                        </button>
+                        {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
+                    </>
+                ) : (
+                    <span class="flex shrink-0 items-center gap-1 font-semibold">
+                        <span class="text-base-content/50"><HashIcon /></span>
+                        {channel.name}
+                        {channel.staff_only && <Tip id={`header-staff-${channel.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
+                    </span>
+                )}
+                {channel.description && (
                     <button
                         type="button"
-                        class="btn btn-ghost btn-sm btn-square relative md:hidden"
-                        onClick={onChannels}
-                        aria-label={elsewhere.mentions ? `Channels, ${elsewhere.mentions} unread mentions` : 'Channels'}
+                        class="flex min-h-8 min-w-0 items-center gap-1 rounded px-1 text-left text-sm text-base-content/60 enabled:hover:bg-base-200 enabled:hover:text-base-content disabled:cursor-default"
+                        disabled={!expandable}
+                        aria-expanded={expandable ? expanded : undefined}
+                        title={expandable ? (expanded ? 'Hide the description' : 'Show the whole description') : undefined}
+                        onClick={() => setExpanded(!expanded)}
                     >
-                        <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                            <path d="M2 4h12M2 8h12M2 12h12" />
-                        </svg>
-                        <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
-                    </button>
-                    {dm !== null && channel.kind === 'dm' ? (
-                        <>
-                            {/* The member and their verified mark are one row, which
-                                the mark shows on hover over (M16.4). */}
-                            <HoverRow as="span" class="flex min-w-0 items-center gap-1">
-                                <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
-                                    <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
-                                    <Name member={dm} class="truncate font-semibold" />
-                                    {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
-                                </button>
-                                {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}
-                            </HoverRow>
-                            {/* The lock says the DM is end-to-end encrypted, and
-                                opens comparing codes (M16.1). */}
-                            <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onCompare}
-                                title="End-to-end encrypted: only the two of you can read it. Compare codes to check nobody sits between you."
-                                aria-label="End-to-end encrypted: compare codes">
-                                <LockIcon size="h-3 w-3" />
-                                Encrypted
-                            </button>
-                            {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
-                        </>
-                    ) : channel.kind === 'notes' ? (
-                        <>
-                            <span class="flex min-w-0 items-center gap-2" data-notes-header>
-                                <NotesIcon />
-                                <span class="truncate font-semibold">Notes</span>
-                            </span>
-                            {/* Only the member's devices open them (M17.3). */}
-                            <Tip id={`header-notes-${channel.id}`} label="Encrypted" trigger={
-                                <span class="flex shrink-0 items-center gap-1 text-xs text-base-content/60"><LockIcon size="h-3 w-3" />Encrypted</span>
-                            }>
-                                End-to-end encrypted: only your devices can read your notes.
-                            </Tip>
-                        </>
-                    ) : channel.kind === 'group_dm' ? (
-                        <>
-                            <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={onMembers}>
-                                <GroupIcon size="h-6 w-6" />
-                                <span class="truncate font-semibold" data-group-header>{grouped}</span>
-                            </button>
-                            {/* The lock says the group is end-to-end encrypted, and
-                                opens its members, where each compares codes (M16.3). */}
-                            <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onMembers}
-                                title="End-to-end encrypted: only the group's members can read it. Compare codes with each to check nobody sits between you."
-                                aria-label="End-to-end encrypted: the group's members">
-                                <LockIcon size="h-3 w-3" />
-                                Encrypted
-                            </button>
-                            {channel.expires_after > 0 && <ExpiryBadge after={channel.expires_after} onClick={onMembers} />}
-                        </>
-                    ) : (
-                        <span class="flex shrink-0 items-center gap-1 font-semibold">
-                            <span class="text-base-content/50"><HashIcon /></span>
-                            {channel.name}
-                            {channel.staff_only && <Tip id={`header-staff-${channel.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
+                        <span ref={line} class="truncate">
+                            <Preview text={channel.description} me={me} more={hasMore} />
                         </span>
-                    )}
-                    {channel.description && (
-                        <button
-                            type="button"
-                            class="flex min-h-8 min-w-0 items-center gap-1 rounded px-1 text-left text-sm text-base-content/60 enabled:hover:bg-base-200 enabled:hover:text-base-content disabled:cursor-default"
-                            disabled={!expandable}
-                            aria-expanded={expandable ? expanded : undefined}
-                            title={expandable ? (expanded ? 'Hide the description' : 'Show the whole description') : undefined}
-                            onClick={() => setExpanded(!expanded)}
-                        >
-                            <span ref={line} class="truncate">
-                                <Preview text={channel.description} me={me} more={hasMore} />
-                            </span>
-                            {expandable && (
-                                <svg viewBox="0 0 16 16" class={`h-3 w-3 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                    <path d="M4 6l4 4 4-4" />
-                                </svg>
-                            )}
+                        {expandable && (
+                            <svg viewBox="0 0 16 16" class={`h-3 w-3 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <path d="M4 6l4 4 4-4" />
+                            </svg>
+                        )}
+                    </button>
+                )}
+                <div class="ml-auto flex shrink-0 items-center gap-1">
+                    {muted !== null && channel.kind !== 'voice' && channel.kind !== 'notes' && (
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" aria-pressed={muted} onClick={() => onMute(!muted)}
+                            aria-label={`${muted ? 'Unmute' : 'Mute'} ${channel.kind === 'dm' ? `the DM with ${dm ? dm.display_name : 'this member'}` : channel.kind === 'group_dm' ? grouped : `#${channel.name}`}`}
+                            title={muted ? 'Unmute its notifications' : 'Mute its notifications'}>
+                            <BellIcon off={muted} />
                         </button>
                     )}
-                    <div class="ml-auto flex shrink-0 items-center gap-1">
-                        {muted !== null && channel.kind !== 'voice' && channel.kind !== 'notes' && (
-                            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-pressed={muted} onClick={() => onMute(!muted)}
-                                aria-label={`${muted ? 'Unmute' : 'Mute'} ${channel.kind === 'dm' ? `the DM with ${dm ? dm.display_name : 'this member'}` : channel.kind === 'group_dm' ? grouped : `#${channel.name}`}`}
-                                title={muted ? 'Unmute its notifications' : 'Mute its notifications'}>
-                                <BellIcon off={muted} />
-                            </button>
-                        )}
-                        {channel.kind !== 'notes' && (
-                            <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
-                                aria-label={channel.kind === 'dm' ? 'Profile' : channel.kind === 'group_dm' ? "The group's members" : 'Members'} aria-pressed={membersOpen}
-                                title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
-                                <PeopleIcon />
-                            </button>
-                        )}
-                    </div>
+                    {channel.kind !== 'notes' && (
+                        <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
+                            aria-label={channel.kind === 'dm' ? 'Profile' : channel.kind === 'group_dm' ? "The group's members" : 'Members'} aria-pressed={membersOpen}
+                            title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
+                            <PeopleIcon />
+                        </button>
+                    )}
                 </div>
-                {expanded && channel.description && (
-                    <div class="mt-1 max-h-64 overflow-y-auto rounded bg-base-200 p-2 text-sm">
-                        <Markdown text={channel.description} me={me} />
-                    </div>
-                )}
             </div>
+            {expanded && channel.description && (
+                <div class="mt-1 max-h-64 overflow-y-auto rounded bg-base-200 p-2 text-sm">
+                    <Markdown text={channel.description} me={me} />
+                </div>
+            )}
         </header>
     );
 }
