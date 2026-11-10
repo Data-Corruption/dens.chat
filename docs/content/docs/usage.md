@@ -155,11 +155,16 @@ soundboard work as you'd expect. What's different:
 - **Your profile** is per den. A crown marks the den's owner, a shield a
   moderator. Photos you send lose their location and camera details before
   they leave your computer.
+- **Name style**, in your profile: a font, a color or a gradient for your
+  name, which everyone in the den sees. A color may show lighter or darker
+  on someone else's theme, so it stays readable there. To see names plain,
+  or in their colors alone, set **Settings** → **Appearance** → **Name
+  styles**.
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
-  → **Messages**, beside **Width**, which holds messages to a narrower
-  column on a wide window.
+  → **Messages**. On a computer, the sizes of photos and videos and of
+  YouTube players are there too, up to **Largest**.
 - **Themes**: **Settings** → **Appearance** has a few dozen, and **New
-  theme** makes one of your own from five colors. **Copy code** turns yours
+  theme** makes one of your own from three colors. **Copy code** turns yours
   into a line of text to send someone, who adds it with **Paste a code**.
   Your themes stay in the browser you made them in.
 - **Chat background** puts a picture of yours behind your messages, as dim
