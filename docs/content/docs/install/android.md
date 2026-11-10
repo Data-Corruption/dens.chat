@@ -5,9 +5,28 @@ aliases:
   - /docs/android/
 ---
 
-Android 12 or later. Dens isn't in Google Play or any other store: you
-download it from Dens's release site, and it updates itself from there,
-asking you before each update.
+Android 12 or later. Dens isn't in Google Play: you download the app from
+Dens's release site, and it updates from there, asking you each time.
+
+## Your phone will warn you
+
+Installing Dens brings up to three warnings: one from your browser, one from
+Android, and one from Play Protect, which may say the app is harmful. They
+appear because Dens comes from outside a store and its developers haven't
+registered with Google.
+
+We haven't registered on purpose. A registered app installs only as long as
+Google keeps its developer on the list, and Dens is built so that it doesn't
+need a company's permission to run.
+[Keep Android Open](https://keepandroidopen.org/) makes the wider case.
+
+What you have in place of Google's word: Dens's
+[source is public](https://github.com/Data-Corruption/dens.chat), each release
+is built from it on GitHub and signed there, and Dens checks that signature on
+every update. You can [check it yourself](#check-the-app-yourself) before you
+install.
+
+## Install
 
 {{% steps %}}
 
@@ -15,99 +34,87 @@ asking you before each update.
 
 In your phone's browser, open
 [releases.dens.chat/dens.apk](https://releases.dens.chat/dens.apk). The browser
-warns that the file might be harmful, as it does for any app from outside a
+warns that the file might be harmful, as it does for any app that isn't from a
 store. Download it anyway.
 
 ### Let the browser install apps
 
-Open the download. The first time, Android says your phone isn't allowed to
-install unknown apps from this source. Tap **Settings**, turn on **Allow from
-this source**, and go back.
+Open the download. Android says your browser isn't allowed to install apps:
+tap **Settings**, turn on **Allow from this source**, and go back.
 
-{{% details title="On a newer Galaxy phone" closed="true" %}}
-
-Samsung's **Auto Blocker** blocks it instead. Turn it off in **Settings**,
-under **Security and privacy**, then **Auto Blocker**, and leave it off: while
-it's on, Dens can't install its updates either.
-
-{{% /details %}}
+On a Galaxy phone, **Auto Blocker** may block it instead. Turn it off in
+**Settings**, **Security and privacy**, **Auto Blocker**, and leave it off, or
+it blocks Dens's updates too.
 
 ### Install it
 
-Android asks whether to install Dens: tap **Install**.
+Tap **Install**.
 
-{{% details title="If Play Protect warns about it" closed="true" %}}
+Play Protect may offer to scan the app first, which sends its details to
+Google. That's up to you. After a scan it may say the app may be harmful: tap
+the arrow beside the warning, then **Install anyway**.
 
-Play Protect may offer to scan it first, which sends the app's details to
-Google. Scanning it is up to you. Scanned, it may say the app may be harmful,
-without saying why: to install it anyway, tap the arrow beside the warning,
-then **Install anyway**.
-
-{{% /details %}}
+Play Protect doesn't say why, and we don't know for sure. A test build that
+asks for the same permissions passed, so our best guess is that Dens's name
+and signing key are new to Google.
 
 ### Open Dens
 
-Open Dens from your apps. The first time, it asks you to set a local password.
+The first time, it asks you to set a local password.
 
 {{% /steps %}}
 
-## Keeping it connected
+## Keep it connected
 
-Dens keeps your dens connected while it isn't on screen, which is what brings
-your messages and notifications while the phone sleeps. Two settings stop it:
+Dens stays connected to your dens while it's off screen, which is how messages
+and notifications reach you. Two settings stop that:
 
-- **Battery set to Restricted.** Android cuts Dens off as soon as it leaves
-  the screen, and nothing arrives until you open it again. Leave Dens at
-  **Optimized** or **Unrestricted**: in **Settings**, **Apps**, **Dens**, then
-  **Battery**.
-- **Galaxy phones put apps to sleep** that they think you don't use. Put Dens
-  among **Never auto sleeping apps**: in **Settings**, **Battery**, then
-  **Background usage limits**.
+- **Battery set to Restricted.** Nothing arrives until you open Dens again.
+  Leave it at **Optimized** or **Unrestricted**, in **Settings**, **Apps**,
+  **Dens**, **Battery**.
+- **Galaxy phones put apps to sleep.** Add Dens to **Never auto sleeping
+  apps**, in **Settings**, **Battery**, **Background usage limits**.
 
-## Updating
+## Updates
 
-When Dens finds an update, it says so in a notification and on Dens's home:
-tap either, and Android asks you to confirm. The first time, Android asks you
-to let Dens install apps, as it asked of your browser: turn on **Allow from
-this source** for Dens.
+Dens tells you about an update in a notification and on its home. Tap either,
+and Android asks you to confirm. The first time, Android also asks you to let
+Dens install apps, as it asked of your browser, and Play Protect may warn
+again.
 
-## Google's developer verification
+## If Android refuses to install it
 
-Dens isn't in Google Play, and its developers haven't registered with Google,
-since installing Dens would then depend on Google's say-so. Google is starting
-to make phones check that an app from outside its store comes from a developer
-who registered with it: in Brazil, Indonesia, Singapore and Thailand since
-September 30, 2026, and Google plans it everywhere in 2027.
-[Keep Android Open](https://keepandroidopen.org/) campaigns against it: 71
-organizations, among them the Tor Project, KDE and LineageOS, signed its open
-letter, and it asks developers not to sign up.
+Google is starting to make phones refuse apps from developers who haven't
+registered with it: in Brazil, Indonesia, Singapore and Thailand since
+September 30, 2026, and everywhere in 2027, by its plan.
 
-On a phone that checks, Android installs Dens only through its **advanced
-flow**, which you set up once, in **Developer options**. It makes you wait a
-day, then asks how long to allow apps from unverified developers: choose **for
-good**, since with 7 days, Dens's updates fail once they run out.
+On such a phone, Dens installs only through Android's **advanced flow**, which
+you set up once in **Developer options**. It makes you wait a day, then asks
+how long to allow apps from unverified developers. Choose **for good**: with 7
+days, Dens's updates fail once they run out.
 
 Phones without Google's certification, such as those running GrapheneOS or
-LineageOS, check none of this.
+LineageOS, don't check.
 
 ## Uninstalling
 
-Uninstall Dens as you would any app. That deletes everything it keeps on the
-phone, its keys among them, and Android's backups and its transfers to a new
-phone leave Dens's data out.
+Uninstalling Dens deletes everything it keeps on the phone, its keys among
+them. Android's backups and its transfers to a new phone leave Dens's data
+out.
 
-Your accounts in your dens stay: on a new phone, or a computer, install Dens
+Your accounts in your dens stay. On a new phone or a computer, install Dens
 and sign in as another device, with your den password or a recovery code
 ([Usage](../../usage/)).
 
----
+## Check the app yourself
 
-{{% details title="To check the app first" closed="true" %}}
+To prove the download is the app Dens's release process built, check it on a
+computer first. Dens checks every update the same way.
 
-Check it on a computer before you install it. That proves it's the app Dens's
-release process built, and not a copy someone swapped in on the way. You need
-[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) for it.
-Dens checks every update this way by itself.
+{{% details title="With cosign" closed="true" %}}
+
+You need
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/).
 
 ```sh
 version=$(curl -fsSL https://releases.dens.chat/version)
