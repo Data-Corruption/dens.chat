@@ -253,14 +253,23 @@ period = [int(16384 * math.sin(2 * math.pi * 440 * i / 48000)) for i in range(12
 block = b\"\".join(struct.pack(\"<hh\", v, v) for v in period)
 while True:
     sys.stdout.buffer.write(block)
-' | pacat -d tone --format=s16le --rate=48000 --channels=2" >/dev/null 2>&1 &
-    tone=$!
+' | pacat -d tone --latency-msec=20 --format=s16le --rate=48000 --channels=2" >/dev/null 2>&1 &
     probe="/home/alice/.var/app/$APP/capture-probe"
     install -o alice -g alice -m 0755 /root/capture-probe "$probe"
     out=$(as_alice flatpak run --env=DENS_CAPTURE_PROBE=1 --command="$probe" "$APP" -test.run '^TestCaptureProbe$' -test.v 2>&1) || :
-    kill "$tone" 2>/dev/null || :
     rm -f "$probe"
-    printf '%s\n' "$out" | grep -q '^--- PASS: TestCaptureProbe' || fail "the capture in the sandbox: $out"
+    printf '%s\n' "$out" | grep -q '^--- PASS: TestCaptureProbe' || {
+        # What the member's server holds, for whoever reads the failure.
+        as_alice pactl info >&2 || :
+        as_alice pactl list short sinks >&2 || :
+        as_alice pactl list short sink-inputs >&2 || :
+        as_alice pactl list short source-outputs >&2 || :
+        as_alice journalctl --user -u pulseaudio.service -u pulseaudio.socket --no-pager -n 30 >&2 || :
+        pkill -u alice -x pacat || :
+        fail "the capture in the sandbox: $out"
+    }
+    # The tone's player, which outlives the shell that started it.
+    pkill -u alice -x pacat || :
     printf '%s\n' "$out" | grep 'read the first sound' || :
     ;;
 wait-connected)
