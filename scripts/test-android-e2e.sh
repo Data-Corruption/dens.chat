@@ -52,9 +52,17 @@
 # to the member's message, which the phone's page shows as a chip, and the
 # member reacts to desk's from the long press's quick row, which desk's
 # page shows (M15.3). Desk posts a poll, which the member votes on by taps,
-# and desk's den counts (M15.4). Then the screens are walked again with Android's font scale at
-# 1.3, as a member with larger text has it. The host package's tests, which
-# hold Android's seams, run in the emulator as the app. Then the app's
+# and desk's den counts (M15.4). An install of the member's own beside
+# desk's signs in through the phone's approval and shares that computer's
+# sound, a tone; on the phone, by Android's own taps, Keybind relay goes
+# on, which has Android ask to let Dens reach its network, allowed on its
+# dialog, and Listen plays the install's sound across the link from the
+# emulator, as media, the page held as shown and Wi-Fi kept awake, moving
+# into a call's context as the phone joins one and back as it leaves,
+# until Stop lets them go (M20.3). Then the screens are walked again with
+# Android's font scale at 1.3, as a member with larger text has it. The
+# host package's tests, which hold Android's seams, run in the emulator as
+# the app. Then the app's
 # release, from the fixture releases (scripts/test/android/releases.sh),
 # updates itself (M12.4): its updater refuses a newer release whose
 # checksums another workflow signed, before downloading its APK, then, at
@@ -171,6 +179,9 @@ finish() {
   done
   stop_releases_host
   incus exec dens-browsers -- curl -s -m 3 -X POST "http://127.0.0.1:$DESK_PORT/quit" >/dev/null 2>&1 || :
+  # The member's install beside desk's, its log kept (M20.3).
+  incus exec dens-browsers -- cat /home/tester/android-den/rden.log >"$RUN_LOG_DIR/twin.log" 2>/dev/null || :
+  den twin down >/dev/null 2>&1 || :
   # The emulator keeps a density it was given across restarts, and its
   # keyboard's setting, font scale and full screen's notice.
   serial=$NEW
@@ -608,6 +619,41 @@ waitfor 20 "the page in front" front
 walk call || fail "a call by the call's button"
 wait "$desk" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/desk.log")"
 ok "in a call with desk, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, desk's sound played from the call's track through the call's context and the phone's from its bar to desk, and the call left from the bar"
+# Relay (M20.3): an install of the member's own on desk's computer, its
+# sign-in approved on the phone, as a member's second device's is, so both
+# hold the member's seal; it shares that computer's sound, which the phone
+# plays from its Relay settings.
+echo ">> Relay, from the emulator to the member's install beside desk's"
+den twin up
+sign_in=$(den twin api POST /api/dens/signin "{\"den\":\"$(den url)\",\"username\":\"$member\",\"password\":\"$member den password\"}" |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["pending"]["id"])')
+request=""
+for _ in $(seq 80); do
+  request=$(pagejson /api/dens "((v.dens.find((x) => x.den_id === '$den_id') || {}).requests || []).find((r) => !r.approved)?.id || ''")
+  [[ -n "$request" ]] && break
+  sleep 0.25
+done
+[[ -n "$request" ]] || fail "the phone never heard of the install's sign-in"
+phone drive api POST "/api/dens/$den_id/requests/$request/answer" | grep -q '^200' || fail "answering the sign-in on the phone"
+twin_half="" phone_half=""
+for _ in $(seq 80); do
+  twin_half=$(den twin api GET /api/dens | python3 -c "import json, sys; print(next((s.get('half', '') for s in json.load(sys.stdin).get('sign_ins') or [] if s['id'] == '$sign_in'), ''))")
+  phone_half=$(pagejson /api/dens "(((v.dens.find((x) => x.den_id === '$den_id') || {}).requests || []).find((r) => r.id === '$request') || {}).half || ''")
+  [[ -n "$twin_half" && -n "$phone_half" ]] && break
+  sleep 0.25
+done
+[[ -n "$twin_half" && -n "$phone_half" ]] || fail "the sign-in's digits never came"
+phone drive api POST "/api/dens/$den_id/requests/$request/approve" "{\"digits\":\"$twin_half\"}" | grep -q '^200' || fail "approving the sign-in on the phone"
+den twin api POST "/api/dens/signin/$sign_in/check" "{\"digits\":\"$phone_half\"}" >/dev/null || fail "checking the phone's digits on the install"
+twinned() { [[ $(den twin api GET /api/dens | python3 -c "import json, sys; print(any(x['den_id'] == '$den_id' and x['state'] == 'connected' for x in json.load(sys.stdin)['dens']))") == True ]]; }
+waitfor 30 "the install connected as the member" twinned
+den twin api POST /api/settings '{"relayKeys":true,"relaySound":true}' >/dev/null || fail "turning the install's Relay on"
+den twin sound
+phone start
+waitfor 20 "the page in front" front
+walk relay || fail "Relay on the phone"
+den twin down
+ok "Keybind relay on had Android ask to let Dens reach its network, which the member allowed, and Listen played the member's other install's sound across the link from the emulator, as media, the page held and Wi-Fi kept awake, in a call's context while the phone was in one and its own after, until Stop"
 phone start
 waitfor 20 "the page in front" front
 walk screens || fail "the screens at 390 pixels"
@@ -646,6 +692,9 @@ ok "the host package's tests passed as the app: $(grep -c '^--- PASS' "$RUN_LOG_
 update_from_fixtures() {
   echo ">> An update, from the fixture releases"
   release_log() { ANDROID_APP=$RELEASE_APP scripts/test/android/phone.sh "$serial" log -s Dens:* | tr -d '\r'; }
+  # Whole, since grep -q leaves the log being written to a closed pipe,
+  # which pipefail counts as failing.
+  logged() { [[ $(release_log) == *"$1"* ]]; }
   version_of() { adb shell dumpsys package "$RELEASE_APP" | tr -d '\r' | sed -n 's/^ *versionName=//p' | head -n 1; }
   fetched() { incus exec "$CONTAINER" -- grep -c "GET /releases/v99.0.2-e2e/$1 " /root/releases.log || :; }
   host_dir=/root/android-releases/releases/v99.0.2-e2e
@@ -668,7 +717,7 @@ update_from_fixtures() {
   waitfor 90 "the release's checksums and their signature fetched" bundle_fetched
   sleep 5
   [[ $(fetched android-amd64.apk) == 0 ]] || fail "the updater downloaded an APK whose release another workflow signed"
-  ! release_log | grep -q 'update: v99.0.2-e2e is ready' || fail "the shell offered a release another workflow signed"
+  ! logged 'update: v99.0.2-e2e is ready' || fail "the shell offered a release another workflow signed"
   ok "the updater refused v99.0.2-e2e's checksums signed by another workflow, before downloading its APK"
 
   incus exec "$CONTAINER" -- cp "$host_dir/release.cosign.bundle" "$host_dir/checksums.txt.cosign.bundle"
@@ -708,7 +757,7 @@ update_from_fixtures() {
     adb shell am force-stop "$RELEASE_APP"
     adb shell am start -n "$RELEASE_APP/chat.dens.shell.PageActivity" >/dev/null
   fi
-  ready() { release_log | grep -q 'update: v99.0.2-e2e is ready'; }
+  ready() { logged 'update: v99.0.2-e2e is ready'; }
   waitfor 120 "the update ready" ready
   [[ $(fetched android-amd64.apk) == 1 ]] || fail "the updater fetched the APK $(fetched android-amd64.apk) times"
   adb shell input keyevent KEYCODE_HOME
@@ -723,14 +772,14 @@ update_from_fixtures() {
   # On its own, not in the bundle Android makes of an app's quiet
   # notifications, whose tap would only open the app.
   tap 10 'Dens v99.0.2-e2e is ready to install' || fail "no update's notification to tap in the shade"
-  handed() { release_log | grep -q 'update: handed v99.0.2-e2e to Android'"'"'s installer'; }
+  handed() { logged "update: handed v99.0.2-e2e to Android's installer"; }
   waitfor 30 "the APK handed to Android's installer" handed
   tap 30 'Update|UPDATE|Install|INSTALL' || fail "Android's installer asked nothing to confirm"
   updated() { [[ $(version_of) == v99.0.2-e2e ]]; }
   waitfor 120 "the app updated to v99.0.2-e2e" updated
-  up() { release_log | grep -q 'service: Dens v99.0.2-e2e is up'; }
+  up() { logged 'service: Dens v99.0.2-e2e is up'; }
   waitfor 60 "v99.0.2-e2e's Dens up" up
-  release_log | grep -q 'start: MY_PACKAGE_REPLACED' || fail "Android didn't start the updated app's service"
+  logged 'start: MY_PACKAGE_REPLACED' || fail "Android didn't start the updated app's service"
   ok "the notification's tap handed the APK to Android's installer, which updated the app to v99.0.2-e2e, and Dens started again"
   incus exec "$CONTAINER" -- cp /root/releases.log /root/releases-host.log || :
   incus file pull -q "$CONTAINER/root/releases-host.log" "$RUN_LOG_DIR/releases-host.log" || :

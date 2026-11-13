@@ -37,7 +37,9 @@ OUT=$ROOT/out/android/$SERIAL
 adb() { incus exec "$CONTAINER" -- /opt/android/sdk/platform-tools/adb -s "$SERIAL" "$@"; }
 # app runs a shell command as the app, in its data directory.
 app() { adb shell run-as "$APP" sh -c "'$*'"; }
-uid() { adb shell pm list packages -U "$APP" | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | tr -d '\r'; }
+# uid is the app's alone: pm lists every package whose name holds APP's,
+# as the development build's holds the release's.
+uid() { adb shell pm list packages -U "$APP" | tr -d '\r' | awk -v p="package:$APP" '$1 == p { sub("uid:", "", $2); print $2 }'; }
 
 case $COMMAND in
   install)
