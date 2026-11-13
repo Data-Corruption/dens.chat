@@ -8,7 +8,9 @@
 # member's session bus is her systemd user manager's, and Flatpak's portal
 # checks for updates every few seconds, which the app may install by
 # itself. Two launches at once
-# start one service; the page's API pairs and sets the local password, and
+# start one service; the Flatpak has PulseAudio's socket, through which
+# Dens's capture, run in its sandbox as a test probe, reads a tone from the
+# member's own PulseAudio (M20.2); the page's API pairs and sets the local password, and
 # a restarted service starts locked, until the password opens it; Remember,
 # with no keyring there to take it, keeps the key in a file, and the next
 # start is unlocked. The Flatpak joins a den behind Caddy in a second
@@ -162,6 +164,9 @@ run() {
   next=v99.0.2-e2e
   gzip -dc "$HARNESS_DIR/release/releases/$first/$target.gz" >"$HARNESS_DIR/dens-$first"
   gzip -dc "$HARNESS_DIR/release/next/releases/$next/$target.gz" >"$HARNESS_DIR/dens-$next"
+  # Dens's capture of the computer's sound, as a test probe the Flatpak's
+  # sandbox runs (M20.2).
+  CGO_ENABLED=0 go test -c -o "$HARNESS_DIR/capture-probe" ./internal/platform/host
 
   image
   publisher
@@ -195,12 +200,17 @@ run() {
     "${INCUS[@]}" file push -q --mode 0755 "$HARNESS_DIR/dens-$version" "$FLATPAK/root/dens-$version"
   done
   "${INCUS[@]}" file push -q "$HARNESS_DIR/den-ca.crt" "$FLATPAK/root/den-ca.crt"
+  "${INCUS[@]}" file push -q --mode 0755 "$HARNESS_DIR/capture-probe" "$FLATPAK/root/capture-probe"
   flatpak prepare
   flatpak publish "$first"
   flatpak install
 
   echo ">> Two launches at once open the page, from one service"
   flatpak launch-twice
+
+  echo ">> The Flatpak has PulseAudio's socket, and Dens's capture in its sandbox reads the computer's sound"
+  flatpak permissions
+  flatpak sound
   flatpak pair "$(flatpak link)"
   [[ "$(flatpak status | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["version"], d["locked"])')" == "$first False" ]] ||
     { echo "error: the new instance's status: $(flatpak status)" >&2; return 1; }

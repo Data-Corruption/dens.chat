@@ -12,13 +12,28 @@ import (
 
 // fakeHub records what Relay hands the shortcut hub: each device's holds
 // as they change, the toggles fired, and the hand-over of this install's
-// own presses.
+// own presses; and from M20.2 what takes the computer's sound while the
+// helper reads it.
 type fakeHub struct {
 	mu      sync.Mutex
 	holds   map[string][]string
 	toggles []string
 	take    func(shortcuts.Press)
 	calls   []string
+	sound   func([]byte)
+	problem func(string)
+}
+
+func (h *fakeHub) SetSound(take func([]byte), problem func(string)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.sound, h.problem = take, problem
+}
+
+func (h *fakeHub) sounder() func([]byte) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.sound
 }
 
 func newFakeHub() *fakeHub { return &fakeHub{holds: map[string][]string{}} }

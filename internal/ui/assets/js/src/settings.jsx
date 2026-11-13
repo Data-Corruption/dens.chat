@@ -7,7 +7,8 @@
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
 // screen share; Relay this install's links with the member's other devices
-// (M20); and System hosting a den, the cache, updates, backups, the local
+// (M20), and from M20.2 the computer's sound shared and listened to; and
+// System hosting a den, the cache, updates, backups, the local
 // password, the logs, signing this browser out, and the version.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -32,6 +33,8 @@ import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './sounds.js';
 import { cacheSizes, cacheUsage } from './storage.js';
 import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
+import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, listen, setBufferChoice, stopListening } from './relay.js';
+import { useRelay } from './relay.jsx';
 import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
 import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, readCode, themeCode, variables } from './themes.js';
 import { useCoarse, useHoldsButton } from './touch.js';
@@ -1135,12 +1138,16 @@ function ShareSettings() {
 const DEVICES_EVERY = 3000;
 
 // RelaySettings links this install with the member's other devices on one
-// network (M20): Keybind relay, whose switch the service keeps, and the
-// devices that answered, each with how its link stands or what it offers,
-// asked again while the section is open.
+// network (M20): Keybind relay and, from M20.2, Share this computer's
+// sound, whose switches the service keeps, and the buffer of what this
+// page plays, which the browser keeps; and the devices that answered,
+// each with how its link stands or what it offers, and Listen beside each
+// that shares its sound, asked again while the section is open.
 export function RelaySettings() {
     const [relay, setRelay] = useState(null);
     const [devices, setDevices] = useState(null);
+    const [buffer, setBuffer] = useState(bufferChoice);
+    const sound = useRelay();
     const load = useAction();
     const save = useAction();
     useEffect(() => {
@@ -1155,21 +1162,34 @@ export function RelaySettings() {
         };
     }, []);
     if (!relay) return load.error ? <ErrorText message={load.error} /> : <span class="loading loading-spinner"></span>;
-    const setKeys = (on) => save.run(async () => {
-        await api.post('/api/settings', { relayKeys: on });
-        setRelay((r) => ({ ...r, keys: on }));
+    const set = (key, on) => save.run(async () => {
+        await api.post('/api/settings', { [key]: on });
+        setRelay((r) => ({ ...r, [key === 'relayKeys' ? 'keys' : 'sound']: on }));
     });
     return (
         <>
             {relay.can?.includes('keys') && (
                 <Card title="Keybind relay">
                     <Toggle id="relay-keys" label="Relay voice keys" hint="Keys pressed on one device act in the call another holds."
-                        checked={!!relay.keys} disabled={save.busy} onChange={setKeys} />
+                        checked={!!relay.keys} disabled={save.busy} onChange={(on) => set('relayKeys', on)} />
                     <ErrorText message={save.error} />
                 </Card>
             )}
+            <Card title="Audio relay">
+                {relay.can?.includes('sound') && (
+                    <Toggle id="relay-sound" label="Share this computer's sound" checked={!!relay.sound} disabled={save.busy}
+                        hint="Muted, it still sends; at volume 0, Windows sends silence."
+                        onChange={(on) => set('relaySound', on)} />
+                )}
+                <Choices label="Buffer" name="relay-buffer" data="data-relay-buffer" choice={buffer} choices={[[BUFFER_LOW, 'Low'], [BUFFER_HIGH, 'High']]}
+                    onPick={(b) => {
+                        setBufferChoice(b);
+                        setBuffer(b);
+                    }} />
+                <p class="text-sm text-base-content/70">High plays a little later, and rides out a busy Wi-Fi.</p>
+            </Card>
             <Card title="Your devices">
-                <RelayDevices devices={devices} />
+                <RelayDevices devices={devices} listening={sound?.listening} />
                 <p class="text-sm text-base-content/70">
                     Signed in as you, on this network. <DocsLink page="relay/" label="How Relay works" />
                 </p>
@@ -1183,21 +1203,36 @@ export function RelaySettings() {
 export function relayState(d) {
     if (d.linked) return 'Linked';
     if (d.apart) return 'Not on this network';
-    return d.offers?.includes('keys') ? 'Keybind relay' : 'Keybind relay off';
+    const offers = [];
+    if (d.offers?.includes('keys')) offers.push('Keybind relay');
+    if (d.offers?.includes('sound')) offers.push('Sharing its sound');
+    return offers.join(', ') || 'Keybind relay off';
 }
 
-// RelayDevices lists the member's other devices that answered.
-function RelayDevices({ devices }) {
+// RelayDevices lists the member's other devices that answered, with Listen
+// beside each that shares its sound, or Stop beside the one this page
+// listens to.
+function RelayDevices({ devices, listening }) {
     if (!devices) return <span class="loading loading-spinner"></span>;
     if (devices.length === 0) return <p class="text-sm">None of your other devices answered.</p>;
     return (
         <ul aria-label="Your devices" class="flex flex-col gap-1">
-            {devices.map((d) => (
-                <li key={d.id} data-device={d.id} class="flex min-h-11 items-center gap-3">
-                    <span class="min-w-0 flex-1 truncate">{d.name}</span>
-                    <span class={`shrink-0 text-sm ${d.linked ? 'text-success' : 'text-base-content/70'}`}>{relayState(d)}</span>
-                </li>
-            ))}
+            {devices.map((d) => {
+                const mine = listening?.id === d.id;
+                return (
+                    <li key={d.id} data-device={d.id} class="flex min-h-11 items-center gap-3">
+                        <span class="min-w-0 flex-1 truncate">{d.name}</span>
+                        <span class={`shrink-0 text-sm ${d.linked ? 'text-success' : 'text-base-content/70'}`}>{relayState(d)}</span>
+                        {mine ? (
+                            <button type="button" class="btn btn-sm shrink-0" data-listen={d.id} onClick={stopListening}>Stop</button>
+                        ) : d.offers?.includes('sound') ? (
+                            <button type="button" class="btn btn-sm shrink-0" data-listen={d.id} onClick={() => listen({ id: d.id, name: d.name })}>
+                                Listen
+                            </button>
+                        ) : null}
+                    </li>
+                );
+            })}
         </ul>
     );
 }

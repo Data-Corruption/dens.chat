@@ -20,7 +20,8 @@ import (
 
 // shortcutsCommand is the shortcut helper (M7): it runs as the desktop user
 // in their session, for every instance that answers them, and carries the
-// voice keys to the page's call from other programs.
+// voice keys to the page's call from other programs, and from M20.2 the
+// computer's sound to Relay while it shares it.
 func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 	return &cli.Command{
 		Name:   shortcuts.Command,
@@ -37,7 +38,16 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 					}
 					return client.Open(control.Request{Op: control.OpShortcuts})
 				},
-				Logf: func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
+				// The computer's sound, which Relay shares (M20.2).
+				OpenSound: func(name string) (*control.Stream, error) {
+					client, _, err := controlClient(bi, name)
+					if err != nil {
+						return nil, err
+					}
+					return client.Open(control.Request{Op: control.OpSound})
+				},
+				Capture: host.CaptureSound,
+				Logf:    func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) },
 			}
 			// Under Wayland the desktop owns the keys, through its portal;
 			// elsewhere the helper reads them itself.

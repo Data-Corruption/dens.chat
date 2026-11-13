@@ -44,6 +44,12 @@ func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handl
 			}
 			return control.Reply{Stream: a.Shortcuts.Serve}, nil
 		},
+		control.OpSound: func(context.Context, control.Request) (control.Reply, error) {
+			if a.Locked() {
+				return control.Reply{}, control.Errorf("Dens is locked")
+			}
+			return control.Reply{Stream: a.Shortcuts.ServeSound}, nil
+		},
 		control.OpOwnerInvite: func(ctx context.Context, req control.Request) (control.Reply, error) {
 			return ownerInviteReply(ctx, a, req.Password)
 		},

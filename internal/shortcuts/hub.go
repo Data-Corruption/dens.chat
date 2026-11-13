@@ -39,8 +39,9 @@ const AppID = layout.DesktopID
 // to show, which replaces its channel's, and unnotify for those to take
 // back. The helper sends source, what it can watch and whether it shows
 // notifications, after each state and whenever that changes, press for
-// each press and release of a bound key, and bound once the desktop took
-// the keys the member asked it to.
+// each press and release of a bound key, bound once the desktop took
+// the keys the member asked it to, and from M20.2 sound, what keeps it
+// from reading the computer's sound while the state asks it to.
 const (
 	msgHello    = "hello"
 	msgState    = "state"
@@ -51,6 +52,7 @@ const (
 	msgSource   = "source"
 	msgPress    = "press"
 	msgBound    = "bound"
+	msgSound    = "sound"
 )
 
 // What the member asks of a desktop that owns the keys (M7.2): to bind the
@@ -83,11 +85,18 @@ type unnotify struct {
 // instance holds a call or Relay takes them for another of the member's
 // devices' (M20), and whether the member uses the desktop's keys, which
 // the helper then binds as it starts, without a dialog where the desktop
-// remembers them.
+// remembers them; and from M20.2 whether it reads the computer's sound.
 type state struct {
 	Keys    map[string]types.VoiceKey `json:"keys"`
 	Call    bool                      `json:"call"`
 	Desktop bool                      `json:"desktop"`
+	Sound   bool                      `json:"sound,omitempty"`
+}
+
+// soundNote is a sound line's data: why the helper reads no sound, or ""
+// once it does.
+type soundNote struct {
+	Problem string `json:"problem"`
 }
 
 // Source is what the helper can do, which pages learn: the actions it
@@ -166,6 +175,14 @@ type Hub struct {
 	// holds are who holds each hold action: "" the helper, or another of
 	// the member's devices by the name Relay gives it (M20).
 	holds map[string]map[string]bool
+	// sound takes each piece of the computer's sound the helper reads
+	// while Relay shares it, nil while it doesn't, and soundProblem hears
+	// why none comes (M20.2); soundSaid is what the helper last said of
+	// it, and soundStream the request that carries it.
+	sound        func(piece []byte)
+	soundProblem func(string)
+	soundSaid    string
+	soundStream  *control.Stream
 }
 
 // link is a connected helper; wake tells its writer the state changed.
@@ -337,6 +354,35 @@ func (h *Hub) RelayToggle(device, action string) {
 	}
 }
 
+// SetSound has the helper read the computer's sound and the hub hand Relay
+// each piece, which it sends to another of the member's devices (M20.2);
+// problem hears why none comes, and "" once the helper reads it. nil stops
+// it.
+func (h *Hub) SetSound(take func(piece []byte), problem func(string)) {
+	h.mu.Lock()
+	if (h.sound != nil) != (take != nil) {
+		h.wakeLocked()
+	}
+	h.sound, h.soundProblem = take, problem
+	tell := h.soundReportLocked()
+	h.mu.Unlock()
+	tell()
+}
+
+// soundReportLocked is what tells Relay why no sound comes, while it
+// shares: no helper to read it, or what the helper said.
+func (h *Hub) soundReportLocked() func() {
+	report := h.soundProblem
+	if h.sound == nil || report == nil {
+		return func() {}
+	}
+	why := h.soundSaid
+	if h.helper == nil {
+		why = ErrNoHelper.Error()
+	}
+	return func() { report(why) }
+}
+
 // holdLocked keeps whether a source holds a hold action, and during a call
 // tells the pages as the first source presses it or the last lets go.
 func (h *Hub) holdLocked(source, action string, down bool) {
@@ -367,9 +413,11 @@ func (h *Hub) Serve(ctx context.Context, s *control.Stream) error {
 	l := &link{stream: s, wake: make(chan struct{}, 1)}
 	h.mu.Lock()
 	old := h.helper
-	h.helper, h.source = l, Source{}
+	h.helper, h.source, h.soundSaid = l, Source{}, ""
 	h.broadcastLocked(Event{Status: h.statusLocked()})
+	tell := h.soundReportLocked()
 	h.mu.Unlock()
+	tell()
 	if old != nil {
 		// The old helper closes its end as it leaves. Closing it here
 		// could reset the stream before the line is read, on a socket
@@ -410,6 +458,22 @@ func (h *Hub) Serve(ctx context.Context, s *control.Stream) error {
 				h.setDesktopLocked(true)
 			}
 			h.mu.Unlock()
+		case msgSound:
+			var n soundNote
+			if json.Unmarshal(msg.D, &n) != nil {
+				continue
+			}
+			h.mu.Lock()
+			tell := func() {}
+			if h.helper == l && n.Problem != h.soundSaid {
+				h.soundSaid = n.Problem
+				if n.Problem != "" {
+					h.log.Warnf("The shortcut helper can't read this computer's sound: %s", n.Problem)
+				}
+				tell = h.soundReportLocked()
+			}
+			h.mu.Unlock()
+			tell()
 		}
 	}
 }
@@ -418,7 +482,7 @@ func (h *Hub) Serve(ctx context.Context, s *control.Stream) error {
 func (h *Hub) sendState(ctx context.Context, l *link) {
 	for {
 		h.mu.Lock()
-		st := state{Keys: maps.Clone(h.keys), Call: h.call || h.relay != nil, Desktop: h.desktop}
+		st := state{Keys: maps.Clone(h.keys), Call: h.call || h.relay != nil, Desktop: h.desktop, Sound: h.sound != nil}
 		h.mu.Unlock()
 		if st.Keys == nil {
 			st.Keys = map[string]types.VoiceKey{}
@@ -483,11 +547,11 @@ func (h *Hub) press(l *link, p Press) {
 
 func (h *Hub) drop(l *link) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if h.helper != l {
+		h.mu.Unlock()
 		return
 	}
-	h.helper, h.source = nil, Source{}
+	h.helper, h.source, h.soundSaid = nil, Source{}, ""
 	h.broadcastLocked(Event{Status: h.statusLocked()})
 	// The pages let go of what the helper covered as it goes; what another
 	// device still holds, they hold again (M20).
@@ -497,6 +561,9 @@ func (h *Hub) drop(l *link) {
 			h.broadcastLocked(Event{Press: &Press{Action: action, Down: true, Relayed: true}})
 		}
 	}
+	tell := h.soundReportLocked()
+	h.mu.Unlock()
+	tell()
 	h.log.Info("The shortcut helper disconnected")
 }
 

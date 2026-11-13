@@ -101,7 +101,7 @@ image)
     # may update itself; it has no backends here, so no keyring.
     bash /root/scripts/flatpak.sh deps
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-        xdg-desktop-portal dbus-user-session curl python3 ca-certificates >/dev/null
+        xdg-desktop-portal dbus-user-session curl python3 ca-certificates pulseaudio pulseaudio-utils >/dev/null
     useradd -m alice
     loginctl enable-linger alice
     for _ in $(seq 1 100); do
@@ -112,9 +112,11 @@ image)
     as_alice flatpak --user install -y --noninteractive --no-related flathub org.freedesktop.Platform//26.08
     ;;
 prepare)
-    # An image made before the frontend was in it.
-    dpkg -s xdg-desktop-portal >/dev/null 2>&1 ||
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends xdg-desktop-portal >/dev/null
+    # An image made before the frontend was in it, or PulseAudio (M20.2).
+    for package in xdg-desktop-portal pulseaudio pulseaudio-utils; do
+        dpkg -s "$package" >/dev/null 2>&1 ||
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$package" >/dev/null
+    done
     # Flatpak's portal checks for updates every few seconds here, where it
     # checks every 30 minutes.
     mkdir -p /etc/systemd/user/flatpak-portal.service.d
@@ -225,6 +227,50 @@ join)
     # join INVITE: join as bob, through the den's Caddy.
     api POST /api/dens/join "{\"invite\":\"$1\",\"username\":\"bob\",\"display_name\":\"Bob\",\"password\":\"bob password\"}" |
         json 'd["den"]["role"]'
+    ;;
+permissions)
+    # The Flatpak has PulseAudio's socket, for the sound Relay shares
+    # (M20.2), beside its others.
+    perms=$(as_alice flatpak info --show-permissions "$APP")
+    printf '%s\n' "$perms" | grep -q '^sockets=.*pulseaudio' || fail "the Flatpak's permissions: $perms"
+    ;;
+sound)
+    # Dens's capture, as a test probe run inside the Flatpak's sandbox with
+    # the app's permissions alone, reads a tone through PulseAudio's socket,
+    # from the member's own server, its default output a null sink the tone
+    # plays into.
+    as_alice pulseaudio --start --exit-idle-time=-1 >/dev/null 2>&1 || :
+    for _ in $(seq 1 50); do
+        [ -S "/run/user/$(uid)/pulse/native" ] && break
+        sleep 0.2
+    done
+    as_alice pactl list short sinks | cut -f2 | grep -qx tone ||
+        as_alice pactl load-module module-null-sink sink_name=tone >/dev/null
+    as_alice pactl set-default-sink tone
+    as_alice sh -c "python3 -c '
+import math, struct, sys
+period = [int(16384 * math.sin(2 * math.pi * 440 * i / 48000)) for i in range(1200)]
+block = b\"\".join(struct.pack(\"<hh\", v, v) for v in period)
+while True:
+    sys.stdout.buffer.write(block)
+' | pacat -d tone --latency-msec=20 --format=s16le --rate=48000 --channels=2" >/dev/null 2>&1 &
+    probe="/home/alice/.var/app/$APP/capture-probe"
+    install -o alice -g alice -m 0755 /root/capture-probe "$probe"
+    out=$(as_alice flatpak run --env=DENS_CAPTURE_PROBE=1 --command="$probe" "$APP" -test.run '^TestCaptureProbe$' -test.v 2>&1) || :
+    rm -f "$probe"
+    printf '%s\n' "$out" | grep -q '^--- PASS: TestCaptureProbe' || {
+        # What the member's server holds, for whoever reads the failure.
+        as_alice pactl info >&2 || :
+        as_alice pactl list short sinks >&2 || :
+        as_alice pactl list short sink-inputs >&2 || :
+        as_alice pactl list short source-outputs >&2 || :
+        as_alice journalctl --user -u pulseaudio.service -u pulseaudio.socket --no-pager -n 30 >&2 || :
+        pkill -u alice -x pacat || :
+        fail "the capture in the sandbox: $out"
+    }
+    # The tone's player, which outlives the shell that started it.
+    pkill -u alice -x pacat || :
+    printf '%s\n' "$out" | grep 'read the first sound' || :
     ;;
 wait-connected)
     for _ in $(seq 1 120); do

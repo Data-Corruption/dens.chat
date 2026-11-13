@@ -1,10 +1,11 @@
 // Package relay links this install with the member's other installs
 // straight across their network (M20), and carries the voice keys of one
-// to the call another holds. The dens only introduce two installs, in boxes
-// sealed between the member's devices, which denclient seals and opens:
-// who and here fill the settings' list of the member's devices, and hello
-// and answer carry each side's half of a link. The link is Pion to Pion, on
-// an ephemeral port, over host candidates on private IPv4 addresses alone,
+// to the call another holds, and from M20.2 one computer's sound to play
+// on another. The dens only introduce two installs, in boxes sealed
+// between the member's devices, which denclient seals and opens: who and
+// here fill the settings' list of the member's devices, and hello and
+// answer carry each side's half of a link. The link is Pion to Pion, on an
+// ephemeral port, over host candidates on private IPv4 addresses alone,
 // which stay in memory: never logged, written, or given to the page.
 package relay
 
@@ -39,11 +40,13 @@ type Dens interface {
 	SendRelay(den string, to denproto.Bytes, note []byte) error
 }
 
-// Hub is what Relay asks of the shortcut hub (internal/shortcuts).
+// Hub is what Relay asks of the shortcut hub (internal/shortcuts): the
+// keys, and from M20.2 the computer's sound, which the helper reads.
 type Hub interface {
 	SetRelay(take func(shortcuts.Press))
 	RelayHolds(device string, held []string)
 	RelayToggle(device, action string)
+	SetSound(take func(piece []byte), problem func(string))
 }
 
 // Config is what an install's Relay is.
@@ -55,6 +58,9 @@ type Config struct {
 	// Keys is Keybind relay, as the settings keep it, and CanKeys whether
 	// this install relays keys at all.
 	Keys, CanKeys bool
+	// Sound is Share this computer's sound, as the settings keep it, and
+	// CanSound whether this install shares its sound at all (M20.2).
+	Sound, CanSound bool
 	// Loopback has links made over loopback too, as development
 	// instances and tests make them.
 	Loopback bool
@@ -80,6 +86,10 @@ const (
 	// mostWait is the longest a hello that goes unanswered waits before
 	// the next.
 	mostWait = 2 * time.Minute
+	// listenWait is how long a hello for a device's sound waits for its
+	// answer, which comes through the den at once from a device that
+	// shares it.
+	listenWait = 10 * time.Second
 )
 
 // Relay is the install's side of the links with the member's others.
@@ -94,11 +104,12 @@ type Relay struct {
 	mu      sync.Mutex
 	ctx     context.Context
 	keysOn  bool
+	soundOn bool
 	devices map[ID]*device
 	peers   map[ID]*peer
-	// asking is this install's hello, waiting for its answer; retry is
-	// when it may ask again, after tries failures in a row; callDen is the
-	// den of the call it last asked for.
+	// asking is this install's hello for keys, waiting for its answer;
+	// retry is when it may ask again, after tries failures in a row;
+	// callDen is the den of the call it last asked for.
 	asking   *attempt
 	retry    time.Time
 	tries    int
@@ -107,6 +118,17 @@ type Relay struct {
 	relaying bool
 	// held is the den of the call this install held when last evaluated.
 	held string
+	// Sound (M20.2): listening is this install's listening to another
+	// device's sound, and listenAsk its hello waiting for an answer;
+	// listener is the device this install's sound goes to, capturing
+	// whether the helper reads it, and captureWhy why none comes.
+	listening  *Listening
+	listenAsk  *attempt
+	listener   *peer
+	capturing  bool
+	captureWhy string
+	status     Status
+	watchers   map[chan Status]struct{}
 }
 
 type inbox struct {
@@ -115,62 +137,85 @@ type inbox struct {
 	note []byte
 }
 
-// device is another of the member's installs, as it last said. apart says
-// the last link tried with it never came up: the two aren't on one
-// network.
+// device is another of the member's installs, as it last said, at the den
+// and with the device key it last said it through. apart says the last
+// link tried with it never came up: the two aren't on one network.
 type device struct {
 	name   string
 	offers []string
 	heard  time.Time
 	apart  bool
+	den    string
+	key    denproto.Bytes
 }
 
-// attempt is this install's hello, waiting for its answer.
+// attempt is a hello of this install's, waiting for its answer: one for
+// keys goes to every other device, and one for sound to the device whose
+// sound it asks for.
 type attempt struct {
 	id    denproto.Bytes
 	local *local
 	den   string
+	to    ID
 	sent  time.Time
 }
 
 // state is what each side of a link says of itself: whether it holds a
-// call, and whether its Keybind relay is on.
+// call, and whether its Keybind relay is on; and from M20.2 whether it
+// shares its sound now, and whether it listens to the other side's.
 type state struct {
-	Call bool `json:"call"`
-	Keys bool `json:"keys"`
+	Call   bool `json:"call"`
+	Keys   bool `json:"keys"`
+	Share  bool `json:"share,omitempty"`
+	Listen bool `json:"listen,omitempty"`
 }
 
 // needed says whether a link is needed by either side: keys go from one
-// that holds no call to one that does, with Keybind relay on at both.
+// that holds no call to one that does, with Keybind relay on at both, and
+// sound from one that shares it to one that listens.
 func needed(a, b state) bool {
-	return a.Keys && b.Keys && a.Call != b.Call
+	return a.Keys && b.Keys && a.Call != b.Call || a.Listen && b.Share || b.Listen && a.Share
 }
 
-// ctlMsg is what the ctl channel carries: each side's state.
+// What the ctl channel carries: each side's state, and from M20.2 a
+// listener's end, told by the side whose sound it was: another device took
+// over, or the member stopped sharing there.
+const (
+	ctlState   = "state"
+	ctlTaken   = "taken"
+	ctlStopped = "stopped"
+)
+
 type ctlMsg struct {
 	T string `json:"t"`
 	state
 }
 
 // peer is another of the member's installs this one links with, or tries
-// to, through the den that introduced them.
+// to, through the den that introduced them, from a hello's attempt, this
+// side's own or the other's.
 type peer struct {
-	id    ID
-	den   string
-	key   denproto.Bytes
-	local *local
-	link  *link
-	in    *keysIn
-	since time.Time
+	id      ID
+	den     string
+	key     denproto.Bytes
+	attempt denproto.Bytes
+	mine    bool
+	local   *local
+	link    *link
+	in      *keysIn
+	since   time.Time
 	// Guarded by Relay.mu: whether the link is up, and since when; what the
 	// other side last said of itself, and whether it has; what this side
-	// last said; and since when nobody has needed the link.
-	up     bool
-	upAt   time.Time
-	theirs state
-	heard  bool
-	sent   *state
-	idle   time.Time
+	// last said; since when nobody has needed the link; and whether the
+	// other side listened to this one's sound as last seen, so a listener
+	// is taken as it starts.
+	up       bool
+	upAt     time.Time
+	theirs   state
+	heard    bool
+	sent     *state
+	idle     time.Time
+	listened bool
 }
 
 // close closes the link and lets go of its port, and of what the other
@@ -202,16 +247,25 @@ func New(cfg Config) *Relay {
 		cfg.Addrs = func() []netip.Addr { return localAddrs(loopback) }
 	}
 	return &Relay{cfg: cfg, boxes: make(chan inbox, 64), wake: make(chan struct{}, 1), asks: make(chan struct{}, 1),
-		heres: make(chan struct{}, 1), out: newKeysOut(cfg.Now), keysOn: cfg.Keys, devices: map[ID]*device{}, peers: map[ID]*peer{}}
+		heres: make(chan struct{}, 1), out: newKeysOut(cfg.Now), keysOn: cfg.Keys, soundOn: cfg.Sound, devices: map[ID]*device{},
+		peers: map[ID]*peer{}, watchers: map[chan Status]struct{}{}}
 }
 
-// Can says what this install relays: keys, or nothing.
+// Can says what this install relays: keys, its sound, both or nothing.
 func (r *Relay) Can() []string {
+	can := []string{}
 	if r.cfg.CanKeys {
-		return []string{offerKeys}
+		can = append(can, offerKeys)
 	}
-	return []string{}
+	if r.cfg.CanSound {
+		can = append(can, offerSound)
+	}
+	return can
 }
+
+// relays says whether this install relays anything: one that relays
+// nothing neither asks nor answers.
+func (r *Relay) relays() bool { return r.cfg.CanKeys || r.cfg.CanSound }
 
 // Box takes a note from another of the member's devices, as denclient
 // opened it. It never blocks: a note past what's waiting goes.
@@ -249,6 +303,24 @@ func (r *Relay) SetKeys(on bool) {
 	}
 	poke(r.heres)
 	poke(r.wake)
+}
+
+// SetSound turns Share this computer's sound on or off, as the settings
+// do, and tells the member's other devices (M20.2). Off, whoever listens
+// hears that it stopped.
+func (r *Relay) SetSound(on bool) {
+	r.mu.Lock()
+	r.soundOn = on
+	r.mu.Unlock()
+	poke(r.heres)
+	poke(r.wake)
+}
+
+// sharesLocked says whether this install shares its sound now: its switch
+// is on, and it isn't listening to another's, since two devices playing
+// each other would loop.
+func (r *Relay) sharesLocked() bool {
+	return r.soundOn && r.cfg.CanSound && r.listening == nil
 }
 
 // Devices lists the member's other installs that said they're here, and
@@ -306,30 +378,45 @@ func (r *Relay) stop() {
 	r.mu.Lock()
 	peers := slices.Collect(maps.Values(r.peers))
 	clear(r.peers)
-	a := r.asking
-	r.asking = nil
-	relaying := r.relaying
-	r.relaying = false
+	asks := []*attempt{r.asking, r.listenAsk}
+	r.asking, r.listenAsk = nil, nil
+	relaying, capturing := r.relaying, r.capturing
+	r.relaying, r.capturing, r.listener = false, false, nil
+	l := r.listening
+	r.listening = nil
 	r.mu.Unlock()
 	for _, p := range peers {
 		p.close()
 	}
-	if a != nil {
-		a.local.close()
+	for _, a := range asks {
+		if a != nil {
+			a.local.close()
+		}
 	}
 	if relaying {
 		r.cfg.Hub.SetRelay(nil)
 	}
+	if capturing {
+		r.cfg.Hub.SetSound(nil, nil)
+	}
+	if l != nil {
+		l.finish(WhyClosing)
+	}
+	r.publish()
 }
 
 // note is a note of a kind from this install: what it is and offers.
 func (r *Relay) note(kind string) note {
 	r.mu.Lock()
 	keys := r.keysOn && r.cfg.CanKeys
+	sound := r.sharesLocked()
 	r.mu.Unlock()
 	n := note{Kind: kind, ID: append(denproto.Bytes{}, r.cfg.ID[:]...), Name: r.cfg.Name, At: r.cfg.Now().UnixMilli()}
 	if keys {
-		n.Offers = []string{offerKeys}
+		n.Offers = append(n.Offers, offerKeys)
+	}
+	if sound {
+		n.Offers = append(n.Offers, offerSound)
 	}
 	return n
 }
@@ -343,10 +430,10 @@ func (r *Relay) send(den string, to denproto.Bytes, n note) error {
 }
 
 // broadcast sends a note of a kind to the member's other devices at every
-// den that passes them: who, to ask who's there, or here, as Keybind relay
-// changes.
+// den that passes them: who, to ask who's there, or here, as what this
+// install offers changes.
 func (r *Relay) broadcast(kind string) {
-	if !r.cfg.CanKeys {
+	if !r.relays() {
 		return
 	}
 	n := r.note(kind)
@@ -359,7 +446,7 @@ func (r *Relay) broadcast(kind string) {
 
 // handle takes a note from another of the member's devices.
 func (r *Relay) handle(in inbox) {
-	if !r.cfg.CanKeys {
+	if !r.relays() {
 		return
 	}
 	now := r.cfg.Now()
@@ -379,7 +466,7 @@ func (r *Relay) handle(in inbox) {
 		d = &device{}
 		r.devices[id] = d
 	}
-	d.name, d.offers, d.heard = n.Name, n.Offers, now
+	d.name, d.offers, d.heard, d.den, d.key = n.Name, n.Offers, now, in.den, slices.Clone(in.from)
 	// A device that turned Keybind relay on, or took a call, is worth
 	// asking again at once: a hello waiting may have reached it before.
 	var dropped *attempt
@@ -403,19 +490,24 @@ func (r *Relay) handle(in inbox) {
 	}
 }
 
-// answer answers a hello for keys from another of the member's devices,
-// where this install holds the call in the den it came through and has
-// Keybind relay on. A device asks only while it has no link to the call,
-// so one this side still holds is stale, as when that device started
-// again before the link here failed, and the new one replaces it.
+// answer answers a hello from another of the member's devices that this
+// install can serve: for keys, where it holds the call in the den the
+// hello came through and has Keybind relay on; for sound, where it shares
+// its sound (M20.2). A device asks only while it has no link here, so a
+// link this side holds from that device's earlier hello went stale, as
+// when it started again before the link here failed, and the new one
+// replaces it. A hello that crossed this side's own, which the other
+// device answered, goes unanswered where this side's attempt wins: see
+// keepsLocked.
 func (r *Relay) answer(in inbox, id ID, n note) {
-	if !slices.Contains(n.Wants, offerKeys) || r.cfg.Dens.CallDen() != in.den {
-		return
-	}
+	keys := slices.Contains(n.Wants, offerKeys) && r.cfg.Dens.CallDen() == in.den
+	sound := slices.Contains(n.Wants, offerSound)
 	r.mu.Lock()
-	on := r.keysOn
+	keys = keys && r.keysOn
+	sound = sound && r.sharesLocked()
+	keep := r.keepsLocked(id, n.Attempt, false)
 	r.mu.Unlock()
-	if !on {
+	if !keys && !sound || keep {
 		return
 	}
 	loc, err := newLocal(r.cfg.Addrs())
@@ -431,35 +523,52 @@ func (r *Relay) answer(in inbox, id ID, n note) {
 		return
 	}
 	r.cfg.Log.Debugf("Relay with %s: answered its hello", id.short())
-	r.link(id, in.den, in.from, loc, n.Half)
+	r.link(id, in.den, in.from, n.Attempt, loc, n.Half, true)
 }
 
-// answered takes the answer to this install's hello.
+// answered takes the answer to one of this install's hellos.
 func (r *Relay) answered(in inbox, id ID, n note) {
 	r.mu.Lock()
-	a := r.asking
-	if a == nil || a.den != in.den || !bytes.Equal(a.id, n.Attempt) {
-		r.mu.Unlock()
-		return
+	var a *attempt
+	for _, at := range []**attempt{&r.asking, &r.listenAsk} {
+		if x := *at; x != nil && x.den == in.den && bytes.Equal(x.id, n.Attempt) && (x.to == ID{} || x.to == id) {
+			a, *at = x, nil
+		}
 	}
-	r.asking = nil
-	p := r.peers[id]
-	linked := p != nil && p.up
 	r.mu.Unlock()
-	if linked {
-		a.local.close()
+	if a == nil {
 		return
 	}
 	r.cfg.Log.Debugf("Relay with %s: its answer came", id.short())
-	r.link(id, in.den, in.from, a.local, n.Half)
+	r.link(id, in.den, in.from, a.id, a.local, n.Half, false)
+}
+
+// keepsLocked says whether the link this install has with a device stays
+// in place of one from a new attempt, mine where it's this side's own
+// hello's: where the two hellos crossed, each side asking the other, the
+// link of the greater attempt is kept, on both sides alike. A side that
+// asks again gave up its earlier attempt, whose link the new one replaces.
+func (r *Relay) keepsLocked(id ID, attempt denproto.Bytes, mine bool) bool {
+	old := r.peers[id]
+	return old != nil && old.mine != mine && bytes.Compare(old.attempt, attempt) > 0
 }
 
 // link starts a link with another of the member's installs from the two
-// halves, and watches it.
-func (r *Relay) link(id ID, den string, key denproto.Bytes, loc *local, theirs *half) {
+// halves, of the hello's attempt, and watches it, in place of any other
+// link with it but one keepsLocked keeps.
+func (r *Relay) link(id ID, den string, key, attempt denproto.Bytes, loc *local, theirs *half, theyAsked bool) {
+	r.mu.Lock()
+	keep := r.keepsLocked(id, attempt, !theyAsked)
+	r.mu.Unlock()
+	if keep {
+		loc.close()
+		return
+	}
 	offer := bytes.Compare(r.cfg.ID[:], id[:]) < 0
-	p := &peer{id: id, den: den, key: key, local: loc, in: newKeysIn(r.cfg.Hub, id.String(), r.cfg.Now), since: r.cfg.Now()}
-	k, err := loc.dial(theirs, offer, r.cfg.Loopback, func(b []byte) { r.onCtl(p, b) }, func(b []byte) { r.onNow(p, b) })
+	p := &peer{id: id, den: den, key: key, attempt: attempt, mine: !theyAsked, local: loc, in: newKeysIn(r.cfg.Hub, id.String(), r.cfg.Now),
+		since: r.cfg.Now()}
+	k, err := loc.dial(theirs, offer, r.cfg.Loopback, func(b []byte) { r.onCtl(p, b) }, func(b []byte) { r.onNow(p, b) },
+		func(at uint32, piece []byte) { r.onSound(p, at, piece) })
 	if err != nil {
 		loc.close()
 		r.cfg.Log.Debugf("Relay with %s: %v", id.short(), err)
@@ -478,7 +587,8 @@ func (r *Relay) link(id ID, den string, key denproto.Bytes, loc *local, theirs *
 }
 
 // watch waits for a link to come up, holds its session while it lasts,
-// and closes it.
+// and closes it. A link closed as another replaced it, or as nobody
+// needed it, says nothing of the network.
 func (r *Relay) watch(ctx context.Context, p *peer) {
 	deadline := time.NewTimer(introduction)
 	defer deadline.Stop()
@@ -503,18 +613,32 @@ func (r *Relay) watch(ctx context.Context, p *peer) {
 	}
 	now := r.cfg.Now()
 	r.mu.Lock()
+	if r.peers[p.id] != p {
+		r.mu.Unlock()
+		return
+	}
 	if d := r.devices[p.id]; d != nil {
 		d.apart = apart
+	}
+	l := r.listening
+	if l != nil && l.device != p.id {
+		l = nil
 	}
 	if apart {
 		r.failedLocked(now)
 	} else {
 		p.up, p.upAt = true, now
 		r.tries = 0
+		if l != nil {
+			l.linked, l.tries = true, 0
+		}
 	}
 	r.mu.Unlock()
 	if apart {
 		r.cfg.Log.Infof("Relay with %s: the link never came up, so the two aren't on one network", p.id.short())
+		if l != nil {
+			r.endListening(l, WhyApart)
+		}
 		return
 	}
 	r.cfg.Log.Infof("Relay with %s: linked in %s", p.id.short(), now.Sub(p.since).Round(time.Millisecond))
@@ -524,20 +648,31 @@ func (r *Relay) watch(ctx context.Context, p *peer) {
 	r.mu.Lock()
 	// A link lost can come back at once, through a new introduction.
 	r.retry = r.cfg.Now().Add(time.Second)
+	if l := r.listening; l != nil && l.device == p.id {
+		l.retry = r.retry
+	}
 	r.mu.Unlock()
 }
 
-// onCtl takes what a link's ctl channel carries: the other side's state.
+// onCtl takes what a link's ctl channel carries: the other side's state,
+// and the end of this install's listening to it, as it says why.
 func (r *Relay) onCtl(p *peer, b []byte) {
 	p.in.hear()
 	var c ctlMsg
-	if json.Unmarshal(b, &c) != nil || c.T != "state" {
+	if json.Unmarshal(b, &c) != nil {
 		return
 	}
-	r.mu.Lock()
-	p.theirs, p.heard = c.state, true
-	r.mu.Unlock()
-	poke(r.wake)
+	switch c.T {
+	case ctlState:
+		r.mu.Lock()
+		p.theirs, p.heard = c.state, true
+		r.mu.Unlock()
+		poke(r.wake)
+	case ctlTaken:
+		r.endListeningTo(p, WhyTaken)
+	case ctlStopped:
+		r.endListeningTo(p, WhyStopped)
+	}
 }
 
 // onNow takes what a link's now channel carries: pings, and the other
@@ -604,24 +739,34 @@ func (r *Relay) failedLocked(now time.Time) {
 	r.retry = now.Add(wait)
 }
 
+// ending is a listening to end, and why, once Relay's lock is let go.
+type ending struct {
+	l   *Listening
+	why string
+}
+
 // evaluate goes over the links: each told this side's state as it
 // changes, those nobody needs closed, the hub's keys handed over while one
 // goes to a call, and a hello sent where the member's call is held by a
-// device this one has no link to.
+// device this one has no link to; and from M20.2 the device this
+// install's sound goes to, the newest that listens taking over, the
+// helper reading the sound while one does, and a hello sent for the sound
+// this install listens to where it has no link to its device.
 func (r *Relay) evaluate() {
 	dens := r.cfg.Dens.RelayDens()
 	calls := r.cfg.Dens.MemberCalls()
 	held := r.cfg.Dens.CallDen()
 	now := r.cfg.Now()
 	r.mu.Lock()
-	mine := state{Call: held != "", Keys: r.keysOn && r.cfg.CanKeys}
-	var expired *attempt
+	shares := r.sharesLocked()
+	base := state{Call: held != "", Keys: r.keysOn && r.cfg.CanKeys, Share: shares}
+	var expired []*attempt
 	if a := r.asking; a != nil && now.Sub(a.sent) >= introduction {
-		expired, r.asking = a, nil
+		expired, r.asking = append(expired, a), nil
 		r.failedLocked(now)
 	}
 	callDen := ""
-	if mine.Keys && !mine.Call {
+	if base.Keys && !base.Call {
 		for _, d := range calls {
 			if slices.Contains(dens, d) {
 				callDen = d
@@ -634,7 +779,7 @@ func (r *Relay) evaluate() {
 	}
 	covered := r.asking != nil
 	relaying := false
-	var tell, closing []*peer
+	var tell, closing, taken []*peer
 	for id, p := range r.peers {
 		// A link coming up, or up but not yet heard from, may be the one
 		// to the call.
@@ -646,12 +791,25 @@ func (r *Relay) evaluate() {
 		}
 		if p.theirs.Call && p.theirs.Keys {
 			covered = true
-			relaying = relaying || (mine.Keys && !mine.Call)
+			relaying = relaying || (base.Keys && !base.Call)
 		}
+		mine := base
+		mine.Listen = r.listening != nil && r.listening.device == id
 		if p.sent == nil || *p.sent != mine {
 			s := mine
 			p.sent = &s
 			tell = append(tell, p)
+		}
+		// A device that starts listening to this one's sound takes it
+		// from whichever listened before, which is told.
+		if p.heard {
+			if p.theirs.Listen && !p.listened && shares {
+				if r.listener != nil && r.listener != p {
+					taken = append(taken, r.listener)
+				}
+				r.listener = p
+			}
+			p.listened = p.theirs.Listen
 		}
 		switch {
 		case needed(mine, p.theirs) || (!p.heard && now.Sub(p.upAt) < grace):
@@ -663,26 +821,72 @@ func (r *Relay) evaluate() {
 			delete(r.peers, id)
 		}
 	}
+	if l := r.listener; l != nil && (!shares || r.peers[l.id] != l || !l.theirs.Listen) {
+		r.listener = nil
+	}
+	capture := r.listener != nil
+	captureChanged := capture != r.capturing
+	r.capturing = capture
 	hello := callDen != "" && !covered && !now.Before(r.retry)
 	handOver := relaying != r.relaying
 	r.relaying = relaying
 	// Taking a call, this install says it's here, for a device whose hello
 	// went unanswered while the den held the call for this one.
-	tookCall := held != "" && held != r.held && mine.Keys
+	tookCall := held != "" && held != r.held && base.Keys
 	r.held = held
+
+	// The sound this install listens to: its device told this side
+	// listens, or asked for a link where there's none.
+	var ends []ending
+	var listenTo *device
+	if l := r.listening; l != nil {
+		p := r.peers[l.device]
+		// A hello waits for its answer even where a link came from the
+		// device's own hello, which crossed it: the device may keep this
+		// one's. Unanswered, it ends the listening where there's no link.
+		unanswered := r.listenAsk != nil && now.Sub(r.listenAsk.sent) >= listenWait
+		if unanswered {
+			expired = append(expired, r.listenAsk)
+			r.listenAsk = nil
+		}
+		why := WhyNoAnswer
+		if l.linked {
+			why = WhyLost
+		}
+		switch {
+		case p != nil:
+			if p.up && p.heard && !p.theirs.Share {
+				ends = append(ends, ending{l, WhyUnshared})
+			}
+		case unanswered:
+			ends = append(ends, ending{l, why})
+		case r.listenAsk != nil:
+		case !now.Before(l.retry):
+			if d := r.devices[l.device]; d != nil && l.tries < 2 {
+				dd := *d
+				listenTo = &dd
+			} else {
+				ends = append(ends, ending{l, why})
+			}
+		}
+	}
 	r.mu.Unlock()
 	if tookCall {
 		poke(r.heres)
 	}
 
-	if expired != nil {
-		expired.local.close()
-		r.cfg.Log.Debugf("Relay: no device holding the call answered")
+	for _, a := range expired {
+		a.local.close()
+		r.cfg.Log.Debugf("Relay: a hello went unanswered")
 	}
 	for _, p := range tell {
-		if b, err := json.Marshal(ctlMsg{T: "state", state: mine}); err == nil {
+		if b, err := json.Marshal(ctlMsg{T: ctlState, state: *p.sent}); err == nil {
 			_ = p.link.ctl.Send(b)
 		}
+	}
+	for _, p := range taken {
+		r.cfg.Log.Debugf("Relay with %s: another device took this computer's sound", p.id.short())
+		_ = p.link.ctl.Send([]byte(`{"t":"` + ctlTaken + `"}`))
 	}
 	for _, p := range closing {
 		r.cfg.Log.Debugf("Relay with %s: nothing needs the link", p.id.short())
@@ -695,9 +899,23 @@ func (r *Relay) evaluate() {
 			r.cfg.Hub.SetRelay(nil)
 		}
 	}
+	if captureChanged {
+		if capture {
+			r.cfg.Hub.SetSound(r.takeSound, r.captureProblem)
+		} else {
+			r.cfg.Hub.SetSound(nil, nil)
+		}
+	}
+	for _, e := range ends {
+		r.endListening(e.l, e.why)
+	}
 	if hello {
 		r.hello(callDen, now)
 	}
+	if listenTo != nil {
+		r.listenHello(listenTo, now)
+	}
+	r.publish()
 }
 
 // hello asks the member's other devices at a den for a link, for keys:

@@ -51,12 +51,15 @@ const (
 )
 
 // What an install offers, and what a link is for: keys, as Keybind relay
-// carries them.
-const offerKeys = "keys"
+// carries them, and from M20.2 sound, the computer's, which it shares.
+const (
+	offerKeys  = "keys"
+	offerSound = "sound"
+)
 
 // known are the offers this build knows; others, from a newer Dens, it
 // leaves out rather than refuse the box.
-var known = []string{offerKeys}
+var known = []string{offerKeys, offerSound}
 
 // note is what a box between the member's devices holds. At is when it
 // was written, which the other side takes within a minute of.

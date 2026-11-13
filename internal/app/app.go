@@ -497,14 +497,19 @@ func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, 
 	if err != nil {
 		return nil, err
 	}
-	return relay.New(relay.Config{ID: id, Name: a.Dens.Label, Keys: cfg.RelayKeys, CanKeys: a.CanRelay(),
-		Loopback: a.Layout.Form == layout.Development, Dens: a.Dens, Hub: a.Shortcuts, Log: a.Log}), nil
+	return relay.New(relay.Config{ID: id, Name: a.Dens.Label, Keys: cfg.RelayKeys, CanKeys: a.CanRelay(), Sound: cfg.RelaySound,
+		CanSound: a.CanShareSound(), Loopback: a.Layout.Form == layout.Development, Dens: a.Dens, Hub: a.Shortcuts, Log: a.Log}), nil
 }
 
 // CanRelay reports whether the install links with the member's others on
 // its network (M20): every form but the Android app, which has no local
 // network's permission yet.
 func (a *App) CanRelay() bool { return a.Layout.Form != layout.Android }
+
+// CanShareSound reports whether the install shares its computer's sound
+// with the member's others (M20.2): every form whose helper reads it, a
+// desktop's, which the Android app isn't.
+func (a *App) CanShareSound() bool { return a.Layout.Form != layout.Android }
 
 // prepareHosting settles the hosting switch as the service starts, and
 // returns the configuration with it (M9.1). The first start of a version

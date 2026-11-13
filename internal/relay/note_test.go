@@ -39,14 +39,15 @@ func TestNotes(t *testing.T) {
 	largest := aHello(now, "192.168.100.200", "192.168.100.201", "192.168.100.202", "192.168.100.203", "172.31.255.250", "172.31.255.251",
 		"10.255.255.250", "10.255.255.251")
 	largest.Name = strings.Repeat("<", denproto.MaxLabelRunes)
-	largest.Offers = []string{offerKeys, "sound", "more"}
+	largest.Offers = []string{offerKeys, offerSound, "more"}
 	if _, err := largest.encode(); err != nil {
 		t.Errorf("the largest note doesn't fit its box: %v", err)
 	}
 
 	newer := aHello(now, "192.168.1.20")
-	newer.Offers, newer.Wants = []string{"sound", offerKeys}, []string{"sound"}
-	if got, err := decoded(t, newer, now, false); err != nil || !slices.Equal(got.Offers, []string{offerKeys}) || len(got.Wants) != 0 {
+	newer.Offers, newer.Wants = []string{"screen", offerSound, offerKeys}, []string{"screen", offerSound}
+	if got, err := decoded(t, newer, now, false); err != nil || !slices.Equal(got.Offers, []string{offerSound, offerKeys}) ||
+		!slices.Equal(got.Wants, []string{offerSound}) {
 		t.Errorf("a newer Dens's offers decoded as %v and %v, %v", got.Offers, got.Wants, err)
 	}
 

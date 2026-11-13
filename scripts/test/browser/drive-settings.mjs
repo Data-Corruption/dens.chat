@@ -3,7 +3,7 @@
 // of Manage opened from the list down the side, each with the layout
 // audit, and every hint in it read as one line, a hint that wrapped
 // failing it, Voice with push to talk's release delay too (M19.3), and
-// Relay (M20.1); then
+// Relay (M20.1), its Audio relay card among it (M20.2); then
 // Appearance's sizes: a photo at Medium until she chooses, at Large and
 // Largest the photo itself drawn over the den's preview, and at Small its
 // preview again; a YouTube player at Small, then Large with the larger
@@ -167,7 +167,7 @@ try {
             Chat: `document.getElementById('compress')`,
             Notifications: `document.getElementById('notify-dms') && document.querySelector('[data-sound]')`,
             Voice: `document.getElementById('noise') && document.querySelector('select')`,
-            Relay: `document.getElementById('relay-keys') && document.querySelector('[data-docs-link]')`,
+            Relay: `document.getElementById('relay-keys') && document.getElementById('relay-sound') && document.querySelector('[data-docs-link]')`,
             System: `document.querySelector('a[href="/api/logs"]') && document.getElementById('hosting')`,
         };
         for (const name of ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']) {
