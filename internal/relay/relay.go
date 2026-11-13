@@ -6,7 +6,9 @@
 // here fill the settings' list of the member's devices, and hello and
 // answer carry each side's half of a link. The link is Pion to Pion, on an
 // ephemeral port, over host candidates on private IPv4 addresses alone,
-// which stay in memory: never logged, written, or given to the page.
+// which stay in memory: never logged, written, or given to the page. The
+// Android app relays its call's button's presses, and listens, once
+// Android lets it reach its network.
 package relay
 
 import (
@@ -24,6 +26,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
+
+	"github.com/wlynxg/anet"
 )
 
 // Dens is what Relay asks of the dens this install joined (denclient).
@@ -35,6 +39,9 @@ type Dens interface {
 	MemberCalls() []string
 	// CallDen is the den of the call this install holds, "" for none.
 	CallDen() string
+	// MemberMuted says whether the member is muted, by themselves or by
+	// staff, in their call at a den, whichever device holds it.
+	MemberMuted(den string) bool
 	// SendRelay sends a note to another of the member's devices at a den,
 	// by its key ID, or to every other where to is nil.
 	SendRelay(den string, to denproto.Bytes, note []byte) error
@@ -55,18 +62,24 @@ type Config struct {
 	// under.
 	ID   ID
 	Name string
-	// Keys is Keybind relay, as the settings keep it, and CanKeys whether
-	// this install relays keys at all.
-	Keys, CanKeys bool
+	// Keys is Keybind relay, as the settings keep it: a computer's helper
+	// reads the keys, and a phone's page sends its call's button's presses.
+	Keys bool
 	// Sound is Share this computer's sound, as the settings keep it, and
-	// CanSound whether this install shares its sound at all (M20.2).
+	// CanSound whether this install shares its sound at all, as a
+	// computer's helper reads it (M20.2); every install listens.
 	Sound, CanSound bool
+	// AsksLocal has the install link with nothing until SetLocal says the
+	// system lets it reach its network, which Android 17 asks the member.
+	AsksLocal bool
 	// Loopback has links made over loopback too, as development
 	// instances and tests make them.
 	Loopback bool
 	Dens     Dens
 	Hub      Hub
 	Log      *xlog.Logger
+	// Wants hears what Relay asks of the system, as it changes.
+	Wants func(Wants)
 	// Addrs lists this computer's addresses a link may take, and Now reads
 	// the clock; tests set them.
 	Addrs func() []netip.Addr
@@ -129,6 +142,23 @@ type Relay struct {
 	captureWhy string
 	status     Status
 	watchers   map[chan Status]struct{}
+	// Whether the system lets this install reach its network, and whether
+	// the member refused it when asked; the device holding the member's
+	// call, which this install's keys go to, and whether the member is
+	// muted there; and what Relay last asked of the system.
+	local, refused bool
+	keysTo         *peer
+	keysMuted      bool
+	wants          Wants
+}
+
+// Wants is what Relay asks of the system the install runs on: On while a
+// switch is on or the install listens, which is when Android asks the
+// member for the network, and Listening while it plays another's sound,
+// which the Android app plays as media.
+type Wants struct {
+	On        bool `json:"on"`
+	Listening bool `json:"listening"`
 }
 
 type inbox struct {
@@ -248,24 +278,41 @@ func New(cfg Config) *Relay {
 	}
 	return &Relay{cfg: cfg, boxes: make(chan inbox, 64), wake: make(chan struct{}, 1), asks: make(chan struct{}, 1),
 		heres: make(chan struct{}, 1), out: newKeysOut(cfg.Now), keysOn: cfg.Keys, soundOn: cfg.Sound, devices: map[ID]*device{},
-		peers: map[ID]*peer{}, watchers: map[chan Status]struct{}{}}
+		peers: map[ID]*peer{}, watchers: map[chan Status]struct{}{}, local: !cfg.AsksLocal}
 }
 
-// Can says what this install relays: keys, its sound, both or nothing.
+// Can says what this install relays: keys, and its sound where it shares
+// it.
 func (r *Relay) Can() []string {
-	can := []string{}
-	if r.cfg.CanKeys {
-		can = append(can, offerKeys)
-	}
+	can := []string{offerKeys}
 	if r.cfg.CanSound {
 		can = append(can, offerSound)
 	}
 	return can
 }
 
-// relays says whether this install relays anything: one that relays
-// nothing neither asks nor answers.
-func (r *Relay) relays() bool { return r.cfg.CanKeys || r.cfg.CanSound }
+// SetLocal says whether the system lets this install reach its network,
+// and whether the member refused it when asked. Refused, a listening
+// ends, saying so.
+func (r *Relay) SetLocal(on, refused bool) {
+	refused = refused && !on
+	r.mu.Lock()
+	changed := r.local != on || r.refused != refused
+	r.local, r.refused = on, refused
+	r.mu.Unlock()
+	if changed {
+		r.cfg.Log.Infof("Relay: the system lets this install reach its network: %t", on)
+		poke(r.wake)
+	}
+}
+
+// Refused says whether the member refused this install its network when
+// the system asked, as the settings say.
+func (r *Relay) Refused() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.refused
+}
 
 // Box takes a note from another of the member's devices, as denclient
 // opened it. It never blocks: a note past what's waiting goes.
@@ -381,7 +428,7 @@ func (r *Relay) stop() {
 	asks := []*attempt{r.asking, r.listenAsk}
 	r.asking, r.listenAsk = nil, nil
 	relaying, capturing := r.relaying, r.capturing
-	r.relaying, r.capturing, r.listener = false, false, nil
+	r.relaying, r.capturing, r.listener, r.keysTo = false, false, nil, nil
 	l := r.listening
 	r.listening = nil
 	r.mu.Unlock()
@@ -408,7 +455,7 @@ func (r *Relay) stop() {
 // note is a note of a kind from this install: what it is and offers.
 func (r *Relay) note(kind string) note {
 	r.mu.Lock()
-	keys := r.keysOn && r.cfg.CanKeys
+	keys := r.keysOn
 	sound := r.sharesLocked()
 	r.mu.Unlock()
 	n := note{Kind: kind, ID: append(denproto.Bytes{}, r.cfg.ID[:]...), Name: r.cfg.Name, At: r.cfg.Now().UnixMilli()}
@@ -433,9 +480,6 @@ func (r *Relay) send(den string, to denproto.Bytes, n note) error {
 // den that passes them: who, to ask who's there, or here, as what this
 // install offers changes.
 func (r *Relay) broadcast(kind string) {
-	if !r.relays() {
-		return
-	}
 	n := r.note(kind)
 	for _, den := range r.cfg.Dens.RelayDens() {
 		if r.send(den, nil, n) != nil {
@@ -446,9 +490,6 @@ func (r *Relay) broadcast(kind string) {
 
 // handle takes a note from another of the member's devices.
 func (r *Relay) handle(in inbox) {
-	if !r.relays() {
-		return
-	}
 	now := r.cfg.Now()
 	n, err := decodeNote(in.note, now, privateAddr(r.cfg.Loopback))
 	if err != nil {
@@ -506,8 +547,9 @@ func (r *Relay) answer(in inbox, id ID, n note) {
 	keys = keys && r.keysOn
 	sound = sound && r.sharesLocked()
 	keep := r.keepsLocked(id, n.Attempt, false)
+	local := r.local
 	r.mu.Unlock()
-	if !keys && !sound || keep {
+	if !keys && !sound || keep || !local {
 		return
 	}
 	loc, err := newLocal(r.cfg.Addrs())
@@ -751,15 +793,27 @@ type ending struct {
 // device this one has no link to; and from M20.2 the device this
 // install's sound goes to, the newest that listens taking over, the
 // helper reading the sound while one does, and a hello sent for the sound
-// this install listens to where it has no link to its device.
+// this install listens to where it has no link to its device. It sends
+// no hello until the system lets the install reach its network, and tells
+// the system what Relay wants of it.
 func (r *Relay) evaluate() {
 	dens := r.cfg.Dens.RelayDens()
 	calls := r.cfg.Dens.MemberCalls()
 	held := r.cfg.Dens.CallDen()
+	// The den of the member's call, and whether they're muted there, for
+	// the page's button.
+	memberDen := ""
+	for _, d := range calls {
+		if slices.Contains(dens, d) {
+			memberDen = d
+			break
+		}
+	}
+	muted := memberDen != "" && r.cfg.Dens.MemberMuted(memberDen)
 	now := r.cfg.Now()
 	r.mu.Lock()
 	shares := r.sharesLocked()
-	base := state{Call: held != "", Keys: r.keysOn && r.cfg.CanKeys, Share: shares}
+	base := state{Call: held != "", Keys: r.keysOn, Share: shares}
 	var expired []*attempt
 	if a := r.asking; a != nil && now.Sub(a.sent) >= introduction {
 		expired, r.asking = append(expired, a), nil
@@ -767,18 +821,14 @@ func (r *Relay) evaluate() {
 	}
 	callDen := ""
 	if base.Keys && !base.Call {
-		for _, d := range calls {
-			if slices.Contains(dens, d) {
-				callDen = d
-				break
-			}
-		}
+		callDen = memberDen
 	}
 	if callDen != r.callDen {
 		r.callDen, r.tries, r.retry = callDen, 0, time.Time{}
 	}
 	covered := r.asking != nil
 	relaying := false
+	var keysTo *peer
 	var tell, closing, taken []*peer
 	for id, p := range r.peers {
 		// A link coming up, or up but not yet heard from, may be the one
@@ -791,7 +841,9 @@ func (r *Relay) evaluate() {
 		}
 		if p.theirs.Call && p.theirs.Keys {
 			covered = true
-			relaying = relaying || (base.Keys && !base.Call)
+			if base.Keys && !base.Call {
+				relaying, keysTo = true, p
+			}
 		}
 		mine := base
 		mine.Listen = r.listening != nil && r.listening.device == id
@@ -827,9 +879,10 @@ func (r *Relay) evaluate() {
 	capture := r.listener != nil
 	captureChanged := capture != r.capturing
 	r.capturing = capture
-	hello := callDen != "" && !covered && !now.Before(r.retry)
+	hello := callDen != "" && !covered && !now.Before(r.retry) && r.local
 	handOver := relaying != r.relaying
 	r.relaying = relaying
+	r.keysTo, r.keysMuted = keysTo, muted && keysTo != nil
 	// Taking a call, this install says it's here, for a device whose hello
 	// went unanswered while the den held the call for this one.
 	tookCall := held != "" && held != r.held && base.Keys
@@ -854,6 +907,10 @@ func (r *Relay) evaluate() {
 			why = WhyLost
 		}
 		switch {
+		case r.refused && p == nil:
+			ends = append(ends, ending{l, WhyLocal})
+		case !r.local && p == nil:
+			// The system asks the member first, as Android does.
 		case p != nil:
 			if p.up && p.heard && !p.theirs.Share {
 				ends = append(ends, ending{l, WhyUnshared})
@@ -870,9 +927,15 @@ func (r *Relay) evaluate() {
 			}
 		}
 	}
+	wants := Wants{On: r.keysOn || r.soundOn && r.cfg.CanSound || r.listening != nil, Listening: r.listening != nil}
+	wanted := wants != r.wants
+	r.wants = wants
 	r.mu.Unlock()
 	if tookCall {
 		poke(r.heres)
+	}
+	if wanted && r.cfg.Wants != nil {
+		r.cfg.Wants(wants)
 	}
 
 	for _, a := range expired {
@@ -946,19 +1009,22 @@ func (r *Relay) hello(den string, now time.Time) {
 }
 
 // localAddrs lists this computer's IPv4 addresses on private networks, on
-// interfaces that are up, and loopback's where it's allowed.
+// interfaces that are up, and loopback's only where it has none and
+// loopback is allowed: any install but a development instance refuses a
+// half that names it. anet lists them where net can't: Android refuses
+// an app net's netlink requests.
 func localAddrs(loopback bool) []netip.Addr {
-	ifaces, err := net.Interfaces()
+	ifaces, err := anet.Interfaces()
 	if err != nil {
 		return nil
 	}
-	allowed := privateAddr(loopback)
-	var out []netip.Addr
+	private := privateAddr(false)
+	var out, lo []netip.Addr
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
-		addrs, err := iface.Addrs()
+		addrs, err := anet.InterfaceAddrsByInterface(&iface)
 		if err != nil {
 			continue
 		}
@@ -968,10 +1034,19 @@ func localAddrs(loopback bool) []netip.Addr {
 				continue
 			}
 			ip, ok := netip.AddrFromSlice(n.IP)
-			if ip = ip.Unmap(); ok && allowed(ip) && !slices.Contains(out, ip) && len(out) < maxAddrs {
+			if ip = ip.Unmap(); !ok {
+				continue
+			}
+			switch {
+			case private(ip) && !slices.Contains(out, ip) && len(out) < maxAddrs:
 				out = append(out, ip)
+			case loopback && ip.Is4() && ip.IsLoopback() && len(lo) == 0:
+				lo = append(lo, ip)
 			}
 		}
+	}
+	if len(out) == 0 {
+		return lo
 	}
 	return out
 }

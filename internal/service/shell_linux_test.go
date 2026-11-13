@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -310,4 +312,80 @@ func TestTheShellPaintsTheBarsWithThePagesTheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	bars(again, "#123456")
+}
+
+// Relay on the phone (M20.3): the member turning Keybind relay on has the
+// shell told Relay wants the network, which it asks Android for, and the
+// shell's word on that reaches the settings' list of devices: refused, it
+// says so. A shell that connects again hears it at once.
+func TestTheShellAsksForTheLocalNetwork(t *testing.T) {
+	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
+	a, client, _, err := runAndroid(t, androidBuild("v1.12.0"), freePort(t))
+	if err != nil {
+		t.Fatalf("the service didn't start: %v", err)
+	}
+	b := pair(t, a, client)
+	shell := func() *control.Stream {
+		s, err := client.Open(control.Request{Op: control.OpShell})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"hello", "notifying"} {
+			if msg := next(t, s); msg.T != want {
+				t.Fatalf("got %s, want %s", msg.T, want)
+			}
+		}
+		return s
+	}
+	relayed := func(s *control.Stream, want string) {
+		t.Helper()
+		if msg := next(t, s); msg.T != "relay" || string(msg.D) != want {
+			t.Fatalf("got %s %s, want relay %s", msg.T, msg.D, want)
+		}
+	}
+	get := func(path string) (v map[string]any) {
+		t.Helper()
+		_, body := b.do("GET", path, nil)
+		if err := json.Unmarshal(body, &v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	refused := func() any { return get("/api/relay/devices")["refused"] }
+	if r := get("/api/settings")["relay"].(map[string]any); fmt.Sprint(r["can"]) != "[keys]" || refused() != false {
+		t.Fatalf("the phone's Relay settings: %v, refused %v", r, refused())
+	}
+
+	first := shell()
+	b.expect(http.StatusOK, "turn Keybind relay on", "POST", "/api/settings", map[string]bool{"relayKeys": true})
+	relayed(first, `{"on":true,"listening":false}`)
+	if err := first.Send("local", map[string]bool{"on": false, "refused": true}); err != nil {
+		t.Fatal(err)
+	}
+	for range 100 {
+		if refused() == true {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if refused() != true {
+		t.Fatal("the settings don't say the member refused it")
+	}
+	_ = first.Close()
+
+	again := shell()
+	defer again.Close()
+	relayed(again, `{"on":true,"listening":false}`)
+	if err := again.Send("local", map[string]bool{"on": true}); err != nil {
+		t.Fatal(err)
+	}
+	for range 100 {
+		if refused() == false {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if refused() != false {
+		t.Fatal("the settings still say the member refused it, once allowed")
+	}
 }

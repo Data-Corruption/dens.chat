@@ -29,6 +29,8 @@ type standIn struct {
 	mu       sync.Mutex
 	installs []*install
 	calls    []string
+	// muted is whether the member is muted in their call (M20.3).
+	muted bool
 	// holding keeps the boxes passed until let go, held, as a slow den.
 	holding bool
 	held    []func()
@@ -79,6 +81,16 @@ func (s *standIn) install(name string) *install {
 	return s.installAs(name, NewID(), denproto.Random(denproto.IDSize))
 }
 
+// phone is an install as the Android app's is (M20.3): it shares no sound,
+// and links with nothing until the system lets it reach its network. What
+// it asks of the system goes to wants.
+func (s *standIn) phone(name string, wants func(Wants)) *install {
+	i := s.installAs(name, NewID(), denproto.Random(denproto.IDSize))
+	i.relay = New(Config{ID: i.relay.cfg.ID, Name: name, Keys: true, AsksLocal: true, Loopback: true, Dens: i, Hub: i.hub, Log: i.relay.cfg.Log,
+		Addrs: i.relay.cfg.Addrs, Wants: wants})
+	return i
+}
+
 // installAs is an install with its Relay ID and device key, as one started
 // again has.
 func (s *standIn) installAs(name string, id ID, keyID denproto.Bytes) *install {
@@ -101,7 +113,7 @@ func (s *standIn) installAs(name string, id ID, keyID denproto.Bytes) *install {
 		s.t.Fatal(err)
 	}
 	s.t.Cleanup(func() { log.Close() })
-	i.relay = New(Config{ID: id, Name: name, Keys: true, CanKeys: true, CanSound: true, Loopback: true, Dens: i, Hub: i.hub, Log: log,
+	i.relay = New(Config{ID: id, Name: name, Keys: true, CanSound: true, Loopback: true, Dens: i, Hub: i.hub, Log: log,
 		Addrs: func() []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} }})
 	s.mu.Lock()
 	s.installs = append(s.installs, i)
@@ -136,6 +148,12 @@ func (i *install) CallDen() string {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	return i.call
+}
+
+func (i *install) MemberMuted(string) bool {
+	i.s.mu.Lock()
+	defer i.s.mu.Unlock()
+	return i.s.muted
 }
 
 func (i *install) SendRelay(den string, to denproto.Bytes, b []byte) error {

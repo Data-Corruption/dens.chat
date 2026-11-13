@@ -418,7 +418,8 @@ func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *webs
 // holding push to talk and its notes for the log (M11), playing one of the
 // den's sounds (M14.3), asking for its keys again (M16.2), and leaving;
 // and from M12.3 "page", whether it's on screen and whether the browser
-// lets it notify.
+// lets it notify; and "relay.key", a press of the call's button on a page
+// that holds no call, for the call another of the member's devices holds.
 type pageMessage struct {
 	T string `json:"t"`
 	D struct {
@@ -438,6 +439,8 @@ type pageMessage struct {
 		Visible  bool                `json:"visible"`
 		Allowed  bool                `json:"allowed"`
 		Color    string              `json:"color"`
+		Action   string              `json:"action"`
+		Down     bool                `json:"down"`
 	} `json:"d"`
 }
 
@@ -483,6 +486,8 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 		}
 	case "voice.leave":
 		rt.a.Dens.LeaveCall(page, msg.D.Den)
+	case "relay.key":
+		rt.a.Shortcuts.PagePress(shortcuts.Press{Action: msg.D.Action, Down: msg.D.Down})
 	}
 }
 

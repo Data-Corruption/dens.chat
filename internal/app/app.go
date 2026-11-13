@@ -114,6 +114,8 @@ type App struct {
 	apk apkUpdate
 	// bars is the page's background, for the shell's bars (M13.3).
 	bars barsState
+	// relayShell is what Relay asks of Android, for the shell.
+	relayShell relayShellState
 	// Argon2id makes each password check expensive; the limiter keeps a
 	// local caller from turning that into a denial of service.
 	passwordMu      sync.Mutex
@@ -497,14 +499,10 @@ func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, 
 	if err != nil {
 		return nil, err
 	}
-	return relay.New(relay.Config{ID: id, Name: a.Dens.Label, Keys: cfg.RelayKeys, CanKeys: a.CanRelay(), Sound: cfg.RelaySound,
-		CanSound: a.CanShareSound(), Loopback: a.Layout.Form == layout.Development, Dens: a.Dens, Hub: a.Shortcuts, Log: a.Log}), nil
+	return relay.New(relay.Config{ID: id, Name: a.Dens.Label, Keys: cfg.RelayKeys, Sound: cfg.RelaySound, CanSound: a.CanShareSound(),
+		AsksLocal: a.Layout.Form == layout.Android, Loopback: a.Layout.Form == layout.Development, Dens: a.Dens, Hub: a.Shortcuts,
+		Log: a.Log, Wants: a.relayWants}), nil
 }
-
-// CanRelay reports whether the install links with the member's others on
-// its network (M20): every form but the Android app, which has no local
-// network's permission yet.
-func (a *App) CanRelay() bool { return a.Layout.Form != layout.Android }
 
 // CanShareSound reports whether the install shares its computer's sound
 // with the member's others (M20.2): every form whose helper reads it, a

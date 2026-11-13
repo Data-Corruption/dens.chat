@@ -846,3 +846,38 @@ func TestRelayedKeys(t *testing.T) {
 	hub.RelayHolds("", []string{"ptt"})
 	noPress(t, events, "nothing it should pass")
 }
+
+// TestPagePresses checks the call's button on a page that holds no call,
+// as a phone's (M20.3): its presses go to Relay while another of the
+// member's devices holds the call, and nowhere otherwise, nor during a
+// call of the install's own, nor for an action that isn't one.
+func TestPagePresses(t *testing.T) {
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
+	events, stop := hub.Watch()
+	defer stop()
+	<-events
+	taken := make(chan Press, 8)
+	hub.PagePress(Press{Action: "ptt", Down: true})
+	hub.SetRelay(func(p Press) { taken <- p })
+	hub.PagePress(Press{Action: "toggleMute", Down: true, Relayed: true})
+	hub.PagePress(Press{Action: "shout", Down: true})
+	select {
+	case p := <-taken:
+		if p != (Press{Action: "toggleMute", Down: true}) {
+			t.Errorf("Relay took %+v", p)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the button's press never reached Relay")
+	}
+	hub.SetCall(true)
+	hub.PagePress(Press{Action: "ptt", Down: true})
+	hub.SetRelay(nil)
+	hub.SetCall(false)
+	hub.PagePress(Press{Action: "ptt", Down: true})
+	select {
+	case p := <-taken:
+		t.Errorf("Relay took %+v", p)
+	case <-time.After(200 * time.Millisecond):
+	}
+	noPress(t, events, "the pages hear nothing of the button's presses")
+}

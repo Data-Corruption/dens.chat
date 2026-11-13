@@ -36,6 +36,9 @@ const (
 	// WhyApart is a link that never came up: the two aren't on one
 	// network.
 	WhyApart = "apart"
+	// WhyLocal is the member refusing this install its network, where the
+	// system asks them, as Android does.
+	WhyLocal = "local"
 	// WhyClosing is the service stopping.
 	WhyClosing = "closing"
 )
@@ -126,7 +129,7 @@ func (r *Relay) Listen(device string) (*Listening, error) {
 	now := r.cfg.Now()
 	r.mu.Lock()
 	d := r.devices[id]
-	if !r.relays() || d == nil || id == r.cfg.ID || !slices.Contains(d.offers, offerSound) || now.Sub(d.heard) >= forget {
+	if d == nil || id == r.cfg.ID || !slices.Contains(d.offers, offerSound) || now.Sub(d.heard) >= forget {
 		r.mu.Unlock()
 		return nil, ErrNotSharing
 	}
@@ -283,17 +286,28 @@ func (r *Relay) StopSharing() {
 	poke(r.wake)
 }
 
-// Status is what the pages learn of this computer's sound: the device it
-// goes to, while one listens, and why none comes.
+// Status is what the pages learn of Relay: the device this computer's
+// sound goes to, while one listens, and why none comes; and the device
+// holding the member's call, while this install's keys go there, for the
+// call's button.
 type Status struct {
 	Sharing *Sharing `json:"sharing"`
 	Problem string   `json:"problem,omitempty"`
+	Call    *Holding `json:"call,omitempty"`
 }
 
 // Sharing names the device this computer's sound goes to.
 type Sharing struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// Holding names the device that holds the member's call, and says whether
+// the member is muted there.
+type Holding struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Muted bool   `json:"muted,omitempty"`
 }
 
 // statusBuffer bounds the statuses a page may fall behind by before its
@@ -324,12 +338,11 @@ func (r *Relay) publish() {
 	defer r.mu.Unlock()
 	var st Status
 	if p := r.listener; p != nil {
-		name := ""
-		if d := r.devices[p.id]; d != nil {
-			name = d.name
-		}
-		st.Sharing = &Sharing{ID: p.id.String(), Name: name}
+		st.Sharing = &Sharing{ID: p.id.String(), Name: r.nameLocked(p.id)}
 		st.Problem = r.captureWhy
+	}
+	if p := r.keysTo; p != nil {
+		st.Call = &Holding{ID: p.id.String(), Name: r.nameLocked(p.id), Muted: r.keysMuted}
 	}
 	if same(st, r.status) {
 		return
@@ -345,9 +358,17 @@ func (r *Relay) publish() {
 	}
 }
 
+// nameLocked is a device's name, as it last said.
+func (r *Relay) nameLocked(id ID) string {
+	if d := r.devices[id]; d != nil {
+		return d.name
+	}
+	return ""
+}
+
 func same(a, b Status) bool {
-	if (a.Sharing == nil) != (b.Sharing == nil) || a.Problem != b.Problem {
+	if (a.Sharing == nil) != (b.Sharing == nil) || a.Problem != b.Problem || (a.Call == nil) != (b.Call == nil) {
 		return false
 	}
-	return a.Sharing == nil || *a.Sharing == *b.Sharing
+	return (a.Sharing == nil || *a.Sharing == *b.Sharing) && (a.Call == nil || *a.Call == *b.Call)
 }
