@@ -58,6 +58,7 @@ Dens is one static Go binary, forked from Sprout, that always runs the client an
 | Local service ↔ remote den | HTTPS + WSS via the den's Caddy | Auth, messages, presence, files, signaling |
 | Local service ↔ own den | HTTP + WebSocket to the den listener on 127.0.0.1 | The same, for the den this install hosts |
 | Browser ↔ den SFU | UDP (DTLS-SRTP), TCP fallback | Voice and screen share media only |
+| Local service ↔ the member's other installs | UDP (DTLS and SCTP) on their local network, introduced through a den | Relay's voice keys (M20) |
 | CLI ↔ local service | Unix socket (Linux), named pipe (Windows) | Pairing tokens, admin commands, backups |
 | Local service ↔ YouTube | HTTPS | A linked video's title and picture, for a member who turned YouTube players on (M4.1) |
 | Browser ↔ YouTube | HTTPS, in a sandboxed frame | YouTube's player, once that member plays a video (M4.1) |
@@ -70,7 +71,7 @@ The owner's client reaches its own den over loopback, not through the public dom
 
 **The page's parts (M8.3).**
 
-- The settings are a dialog over whatever the page shows, so a den and a call stay in view, in Manage's frame (M19.1): their five sections listed down its left, which the phone layout lists as pages (M13.3, see The phone layout). Appearance holds Theme first, the member's own themes under the others, then Chat background (M19.4, see Custom themes), Messages, with Density (M17.2) and the sizes of photos, videos and YouTube's players (M19.5), Name styles (M19.5), Animations (M15.1, see Profiles) and the Verified mark (M16.4); Chat, compressing photos and videos, links and YouTube's players; Notifications, what notifies the member and the page's sounds (M14.2, see Notifications and Sounds); Voice, the microphone and speaker, noise suppression, how the member sends their voice, their shortcuts and their screen share; and System: Hosting (M9.1), whose switch, Host a den on this computer, stands beside a line on what a den needs and the hosting guide's i, with the address Caddy forwards to and the media ports while hosting is on; in the Flatpak, On this computer, with Remember on this computer, starting at sign-in and Quit (M9.3); Backup (M9.3); the cache, update checks, the local password, the logs, signing this browser out, or in the Android app this page, and the version. `openSettings` keeps its section ids, so the links into them hold.
+- The settings are a dialog over whatever the page shows, so a den and a call stay in view, in Manage's frame (M19.1): their sections listed down its left, which the phone layout lists as pages (M13.3, see The phone layout). Appearance holds Theme first, the member's own themes under the others, then Chat background (M19.4, see Custom themes), Messages, with Density (M17.2) and the sizes of photos, videos and YouTube's players (M19.5), Name styles (M19.5), Animations (M15.1, see Profiles) and the Verified mark (M16.4); Chat, compressing photos and videos, links and YouTube's players; Notifications, what notifies the member and the page's sounds (M14.2, see Notifications and Sounds); Voice, the microphone and speaker, noise suppression, how the member sends their voice, their shortcuts and their screen share; Relay, where the install relays (M20, see Relay); and System: Hosting (M9.1), whose switch, Host a den on this computer, stands beside a line on what a den needs and the hosting guide's i, with the address Caddy forwards to and the media ports while hosting is on; in the Flatpak, On this computer, with Remember on this computer, starting at sign-in and Quit (M9.3); Backup (M9.3); the cache, update checks, the local password, the logs, signing this browser out, or in the Android app this page, and the version. `openSettings` keeps its section ids, so the links into them hold.
 - Home is a launcher. Each den is a row: a dot for its state, named in words when it isn't connected, who the member is there and their role, a large Open and a small Manage. Sign-ins and approvals waiting on this device show above the list, and Add a den takes one pasted thing, an invite or a den's address, and goes on a screen at a time. Creating the den this install hosts is a card above the list until its owner account exists, once hosting is on (M9). While hosting is off, the den's row says so and leads to the switch, and so does the end of Add a den where this install can host one (M9.1, M13.3).
 - Manage is a dialog for each den, in two parts, which the phone layout lists as pages (M13.3). The den's name at the top of its list opens it, under a pointing hand, as a server's name opens its menu in other chat apps, and on the phone layout at the list of its sections; Home's Manage opens it too, and the cog beside the member's name stays the app's settings, so what's the den's and what's this device's Dens stay apart (M14.3). This den holds General, with the den's address and Den ID for every member and the owner's edits; Invites, Bans, the Soundboard (M14.3) and Emoji (M15.2), for staff; and Limits, the owner's. Their edits gather under one Save changes bar, and closing with changes unsaved asks first. You in this den holds Devices, Password and recovery, and Your files. A den that isn't connected shows General alone.
 - On a den's page the member list starts open on screens wide enough to show it beside the channel, and channels' kinds, the soundboard, the lock on DMs and the shield on staff-only channels are drawn icons of one size, not emoji. The lock is end-to-end encryption's alone, a DM's, a group's or a call's, so a staff-only channel has a shield (M16.4).
@@ -763,7 +764,7 @@ All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already s
 - One seal serves every den an install joins. Each den's DM keys are sealed under a key derived from the seal and the den's ID, so no den sees the seal, and what one den stores is useless at another. An install that joined dens before it was linked to the member's other devices can hold a different seal for some dens; each den's DMs use the seal they were set up with.
 - The page shows the seal beside the recovery codes whenever the member joins a den, saying when it's the one the install's other dens use, and again on request after the local password: "This protects your end-to-end encrypted direct messages. Keep it secret and don't share it with anyone. You'll need it to read your DMs if you lose every device."
 - The seal never changes. A member who loses it and every device starts over (see History and starting over).
-- The seal is what the member's identity in each den comes from (see Identities), so it guards every DM, from M16.2 every call, from M16.3 every group, and from M17.3 the key of the member's notes (see Notes to self).
+- The seal is what the member's identity in each den comes from (see Identities), so it guards every DM, from M16.2 every call, from M16.3 every group, from M17.3 the key of the member's notes (see Notes to self), and from M20 the boxes between their devices (see Relay).
 
 **Identities (M16.1)**
 
@@ -899,7 +900,7 @@ All of it uses Go's standard library, plus the XChaCha20-Poly1305 that already s
 
 ## Voice and screen share
 
-The browser does all client-side media with standard APIs, and the den runs a Pion SFU that forwards packets without decoding. In the client role, the service only relays signaling and never touches media; the Pion SFU runs only when the same install is also acting as a den.
+The browser does all client-side media with standard APIs, and the den runs a Pion SFU that forwards packets without decoding. In the client role, the service relays a call's signaling and never touches its media; the Pion SFU runs only when the same install is also acting as a den. From M20 the service also links with the member's other installs on its network, which carry their voice keys (see Relay).
 
 **Calls (M2)**
 
@@ -1080,12 +1081,12 @@ A page sees keys only while it has focus, so push to talk can't reach it from a 
 
 - A small helper, `dens shortcuts`, the same binary, runs as the desktop user in their session from login. One helper serves every instance on the machine: it finds them in the instance roots, which users may list, and holds a stream on each one's control endpoint, which answers only that instance's desktop user.
 - The service sends the helper the member's keys, and whether one of its pages is in a call. The helper sends back each press and release as the action it's bound to: push to talk, toggle mute, push to mute or, from M19.3, toggle deafen. The service passes them to its pages, and the page in the call acts on them.
-- The helper watches keys only while a page is in a call. Outside calls it watches nothing and costs nothing.
+- The helper watches keys only while a page is in a call, or from M20 while Relay hands them to the call another of the member's devices holds (see Relay). Otherwise it watches nothing and costs nothing.
 - The service keeps the keys, since the helper needs them, so every browser paired with the instance shares them. How the member sends, and the level, stay with the browser.
 - A key is a keyboard key with any modifiers or, on Windows and in the page, one of the mouse's side buttons, which many players push to talk with. The page names a key by its place on the keyboard (`KeyboardEvent.code`), and the helper finds what the current layout makes of it.
 - When the service comes back from an update at another version, the helper starts the new binary and exits.
 - The helper's stream is the control endpoint's `shortcuts` request: JSON lines go both ways until either side closes it, each pinging every 15 seconds and giving up on the other after 45 without a line. The service sends `hello` with its version, then `state`, its keys and whether it holds a call, as either changes; the helper answers each with `source`, what it covers, and sends `press` for each press and release. An instance holds one stream from its desktop user's helper: a newer one replaces it, and the old one, told `replaced`, exits.
-- The keys are the service's setting `voiceKeys`, which the settings' API takes whole. The page hears of them, and of the helper, over its socket with the service: `keys`, with the keys, whether a helper is connected, what it covers and its note, as any of them changes, and `key` for each press during a call, which the service drops outside one.
+- The keys are the service's setting `voiceKeys`, which the settings' API takes whole. The page hears of them, and of the helper, over its socket with the service: `keys`, with the keys, whether a helper is connected, what it covers and its note, as any of them changes, and `key` for each press during a call, which the service drops outside one, or hands to Relay. From M20 a press from another of the member's devices comes `relayed`.
 
 *Windows*
 
@@ -1121,6 +1122,40 @@ A page sees keys only while it has focus, so push to talk can't reach it from a 
 - While the helper covers a key, during a call the page ignores its own presses of it and acts on the helper's: on Windows and X11 the helper sees a key pressed in the page too, and toggle mute would fire twice. Outside a call the helper reads nothing, and the page's own keys work as before, except those the desktop owns, whose keys may be others. A key that types something still doesn't fire while the member types in a text field; one the desktop owns never reaches the field.
 - A side button the member bound is the page's while it has focus: its press and release don't take the browser back or forward.
 - The helper tells the service what its keys can do (whether the desktop confirms and names them) and what the system keeps from them, as a note the settings show, never which system it runs on, so no platform difference reaches the local API.
+
+**Relay (M20)**
+
+A member's installs on one network link straight to each other, and the den only introduces them. A link carries the voice keys of one install to the call another holds.
+
+*The introduction*
+
+- `relay.signal` carries a box of 1,024 bytes from one of a member's devices to their others, or to one by its key ID. The den passes it to that member's sockets alone, never back to the sender's device, keeps nothing of it, and limits it to 30 in 10 seconds a member, as it does `voice.key` (see protocol.md's Relay). Its info says `relay`, and an install sends boxes only through a den that does, connected, where it holds the member's seal.
+- A box is sealed under a key made from the member's DM seal by HKDF, salted with the den's ID under a label of its own (`dens-relay-v1`), as the notes' key is, bound to the den, the member, the device it came from and the one it's for, and padded to its size: the den learns that two of a member's devices spoke, and when. A device without the seal opens nothing, and isn't listed.
+- Inside is a note of `internal/relay`'s, in JSON: the install's Relay ID, 16 random bytes kept in its configuration, by which two installs that share more than one den know they're one pair, and which a restore makes afresh, since it names the computer; its name, the label its dens list it under; what it offers, `keys` while Keybind relay is on; its time, which the other side takes within a minute; and its kind. `who` asks the member's other devices to say they're here, which `here` does, and again as Keybind relay changes or the install takes a call; `hello` asks for a link with this side's half of it, and `answer` agrees with the other half, naming the hello's attempt. A device waiting on an unanswered hello asks again at once on a `here` that offers keys, as from the device that took the call back after the den held it.
+- A half is a DTLS certificate's SHA-256, ICE credentials made for the attempt, a UDP port, and up to 8 of the install's IPv4 addresses on private networks. A box naming any other address is refused, so none aims an install at the internet. Offers a newer Dens makes are left out, not refused.
+
+*The link*
+
+- One Pion peer connection between two installs, by Relay ID, through whichever den introduced them. The service holds it: Windows raises a firewall prompt for a desktop program holding a port, and none for the service.
+- Each side writes the other's description from its half, the lower Relay ID offering: host candidates alone, over IPv4, on an ephemeral port held on every interface, which names to ICE only the half's addresses. No STUN, nothing listening, no firewall rule. A development instance's links take loopback too.
+- Both sides send checks from the answer on, for the 30 seconds an introduction is good, 150 binding requests at Pion's 200 ms, since each side's sending is what lets the other's packets through its firewall. A link that never comes up says the two aren't on one network.
+- ICE calls a link disconnected after a second without a packet, and checks every half second once connected. The link fails itself 3 seconds after it's disconnected, and an attempt once its introduction runs out: Pion's own failed timeout would end the first checks too, after 4 seconds.
+- Two negotiated data channels: `ctl`, reliable, carries each side's state, whether it holds a call and whether Keybind relay is on; `now`, unordered and never sent again, carries a ping every 250 ms and keys. SCTP's retransmission timer is capped at 100 ms, without which a cut of a fifth of a second stops every channel for a second.
+- A link closes once neither side has needed it for 2 seconds, which a call moving from one device to the other rides out, and closing tells the other side at once. One lost fails within 4 seconds, and the side that wants it asks again a second later; an unanswered hello, or a link that never came up, waits 2 seconds before the next, then twice as long each time, up to two minutes.
+- A device asks only while it has no link to the call, so a hello from one this side links with finds that link stale, as when the device started again, and replaces it.
+- Local addresses stay in memory. Pion's messages, which name them, never reach the log, nor do errors that could; nothing writes them or gives them to the page.
+
+*Keys*
+
+- With Keybind relay on, an install that sees its member in a call it doesn't hold, in the den's `voice.state`, says `hello` there, and the install holding the call answers if its switch is on too. Once they're linked, the first one's helper is told a call is on, so it reads its own bound keys as for a call of its own, and its hub hands Relay what it would have dropped.
+- Keys cross as states: every action held, and each toggle's count of its presses, every 20 ms while a key is held or for 200 ms after a change, and every 100 ms otherwise.
+- The other hub takes them as a second helper's: a hold lasts while the helper or any device holds it; a toggle fires for each step its count moves, at most 8 a state and never on a link's first; and 300 ms after the last word from a device, of any kind, what it held is let go.
+- The page acts on a relayed press, whatever its own helper covers, and only in a call it holds.
+
+*The settings*
+
+- Relay, a section after Voice where the install relays: Keybind relay's switch, off unless set, and Your devices, the member's other installs that answered `who`, by name, with how each one's link stands or what it offers, and a line to the guide. While the section is open it asks again every few seconds, the service asking the member's devices every 10 at most, and lists one heard from in the last minute.
+- The switch is the service's setting `relayKeys`, kept beside `relayID`, and `/api/settings` says what the install relays, as `relay.can`. The Android app relays nothing until it has Android 17's local network permission (M20.3).
 
 **Media addresses**
 
@@ -1381,10 +1416,19 @@ Before the first release an audit checked every item here against the code (2026
 
 **Global shortcuts (M7)**
 
-- [x] The helper watches only the bound keys, and only while a page is in a call, with no keyboard hook, and sends nothing but the bound actions' presses and releases; neither it nor the service logs them.
+- [x] The helper watches only the bound keys, and only while a page is in a call or Relay hands them to one (M20), with no keyboard hook, and sends nothing but the bound actions' presses and releases; neither it nor the service logs them.
 - [x] The helper's stream is a control request like any other: it answers only the instance's desktop user, by the identity the system reports.
 - [x] The page acts on the helper's keys only in a call it holds, and never while the member types a key that types something.
 - [x] Each desktop user's helper task runs as them, with their limited token; nothing of the helper runs elevated.
+
+**Relay (M20)**
+
+- [x] A box between a member's devices is sealed under a key their seal makes, bound to the den, the member and both devices, and one size; the den passes it to that member's other devices alone and keeps nothing of it.
+- [x] A box's note is taken within a minute of its time, and an answer only for the hello whose attempt it names.
+- [x] A link's addresses are IPv4 ones on private networks, or loopback in a development instance: a box naming any other is refused, and the link gathers no other address, asks no STUN server and listens on nothing.
+- [x] The DTLS certificate a link proves is the one its box named, so only a device holding the seal links.
+- [x] Local addresses are never logged, written or given to the page, and Pion's messages are dropped.
+- [x] Keys go only to an install holding a call, with Keybind relay on at both ends, and a device quiet for 300 ms holds nothing.
 
 **Notifications (M12.3)**
 
