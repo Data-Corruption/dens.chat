@@ -1,5 +1,18 @@
 # Changelog
 
+## [v1.12.0] - 2026-11-13
+
+### Added
+
+- Relay, a new section in the settings, links your own devices on one network: those signed in to your account in the same den. The den only introduces them, and what they relay goes straight between them, encrypted. The guide's Relay page has the setups.
+- Keybind relay: push to talk and your other voice keys work from whichever computer you're at, in the call another of your devices holds. On a phone, the call's button does it, under that device's name.
+- Audio relay: turn on Share this computer's sound, then press Listen beside that computer on another of your devices to hear everything it plays. A phone plays it as media, so it reaches the headphones paired to the phone, with the screen off too.
+- On Android 17, Dens asks to reach devices on your network the first time you turn on Keybind relay or press Listen.
+
+### Changed
+
+- The Flatpak asks for one more permission, to play and record sound, which Audio relay reads your computer's sound through. Dens can't install this update itself: update through your software center, which marks it "Requires additional permissions", or with `flatpak update`.
+
 ## [v1.11.0] - 2026-11-10
 
 ### Added
