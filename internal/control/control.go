@@ -1,7 +1,8 @@
 // Package control is the protocol between the dens CLI, run by the desktop
 // user, and the service. Each connection carries one request: a JSON line
 // from the client, then a JSON line back, optionally followed by a body or
-// by a stream of JSON lines both ways, as the shortcut helper keeps (M7).
+// by a stream of JSON lines both ways, as the shortcut helper keeps (M7),
+// or of frames, as the helper's sound for Relay (M20.2).
 // A body comes in frames and ends with an empty one, so a client tells a
 // body cut short, by a failure or a stall, from a whole one (M10).
 //
@@ -63,6 +64,10 @@ const (
 	// OpShell opens the stream the Android app's shell keeps with the
 	// service (M12).
 	OpShell = "shell"
+	// OpSound opens the stream that carries this computer's sound from
+	// the desktop user's shortcut helper to the service, in frames, while
+	// Relay shares it (M20.2).
+	OpSound = "sound"
 )
 
 const maxLine = 64 * 1024
@@ -653,6 +658,41 @@ func (s *Stream) Recv() (Message, error) {
 		return Message{}, fmt.Errorf("decode message: %w", err)
 	}
 	return msg, nil
+}
+
+// SendFrame writes b as a frame, a 4-byte big-endian length and its bytes,
+// as a stream of binary data carries it in place of lines (M20.2).
+func (s *Stream) SendFrame(b []byte) error {
+	if len(b) > maxFrame {
+		return fmt.Errorf("a frame of %d bytes is more than one holds", len(b))
+	}
+	buf := make([]byte, 4+len(b))
+	binary.BigEndian.PutUint32(buf, uint32(len(b)))
+	copy(buf[4:], b)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err := s.conn.Write(buf)
+	return err
+}
+
+// RecvFrame reads the next frame, failing once the other side has sent
+// none for idle.
+func (s *Stream) RecvFrame(idle time.Duration) ([]byte, error) {
+	_ = s.conn.SetReadDeadline(time.Now().Add(idle))
+	var header [4]byte
+	if _, err := io.ReadFull(s.r, header[:]); err != nil {
+		return nil, err
+	}
+	n := binary.BigEndian.Uint32(header[:])
+	if n > maxFrame {
+		return nil, fmt.Errorf("a frame of %d bytes, more than one holds", n)
+	}
+	b := make([]byte, n)
+	if _, err := io.ReadFull(s.r, b); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // KeepAlive pings every StreamPing until ctx ends or a ping fails, which

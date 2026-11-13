@@ -50,6 +50,9 @@ func serve(t *testing.T, hub *Hub, allowed host.Identity) control.Client {
 		control.OpShortcuts: func(context.Context, control.Request) (control.Reply, error) {
 			return control.Reply{Stream: hub.Serve}, nil
 		},
+		control.OpSound: func(context.Context, control.Request) (control.Reply, error) {
+			return control.Reply{Stream: hub.ServeSound}, nil
+		},
 	}}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(ctx, ln) }()

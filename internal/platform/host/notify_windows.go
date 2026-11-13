@@ -58,10 +58,15 @@ const toastGroup = "dens"
 // method table.
 type comObject struct{ vtbl *[32]uintptr }
 
+// hresult is a COM call's failure, which callers that act on one compare.
+type hresult uint32
+
+func (h hresult) Error() string { return fmt.Sprintf("HRESULT 0x%08X", uint32(h)) }
+
 func (o *comObject) call(method int, args ...uintptr) error {
 	r, _, _ := syscall.SyscallN(o.vtbl[method], append([]uintptr{uintptr(unsafe.Pointer(o))}, args...)...)
 	if int32(r) < 0 {
-		return fmt.Errorf("HRESULT 0x%08X", uint32(r))
+		return hresult(r)
 	}
 	return nil
 }

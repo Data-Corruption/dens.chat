@@ -180,7 +180,8 @@ func (f *flatpak) showConnected(ctx context.Context) {
 // to the hub, and its keys the desktop's shortcuts portal, which knows the
 // sandboxed app by its Flatpak ID in every session, or X11's. It shows the
 // member's notifications through the desktop's Notification portal
-// (M12.3), and a click opens the page paired, through the OpenURI portal.
+// (M12.3), and a click opens the page paired, through the OpenURI portal;
+// and it reads the computer's sound while Relay shares it (M20.2).
 func (f *flatpak) runHelper(ctx context.Context) {
 	a := f.a
 	h := &shortcuts.Helper{
@@ -191,6 +192,15 @@ func (f *flatpak) runHelper(ctx context.Context) {
 			go func() { _ = a.Shortcuts.Serve(ctx, control.NewStream(hubs)) }()
 			return control.NewStream(mine), nil
 		},
+		// The computer's sound, which Relay shares (M20.2), over the
+		// session's PulseAudio socket, which the Flatpak's permission
+		// gives it.
+		OpenSound: func(string) (*control.Stream, error) {
+			mine, hubs := net.Pipe()
+			go func() { _ = a.Shortcuts.ServeSound(ctx, control.NewStream(hubs)) }()
+			return control.NewStream(mine), nil
+		},
+		Capture: host.CaptureSound,
 		OpenPage: func(_ string, n notify.Notification) error {
 			token, err := a.Pairing.Issue()
 			if err != nil {

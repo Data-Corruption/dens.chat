@@ -6,6 +6,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/godbus/dbus/v5 v5.2.2
+	github.com/jfreymuth/pulse v0.1.3
 	github.com/ncruces/go-sqlite3 v0.35.3
 	github.com/pion/ice/v4 v4.4.5
 	github.com/pion/interceptor v0.1.49

@@ -92,6 +92,12 @@ type Helper struct {
 	// dens open pairs it.
 	Notifier Notifier
 	OpenPage func(instance string, n notify.Notification) error
+	// OpenSound opens an instance's sound request (M20.2), over its
+	// control endpoint or a pipe inside the Flatpak's service, and Capture
+	// reads the computer's sound for it: host.CaptureSound, or a test's.
+	// Without either the helper reads none.
+	OpenSound func(instance string) (*control.Stream, error)
+	Capture   func(ctx context.Context, take func(pcm []int16, rate int), problem func(why string)) error
 
 	// sourceMu keeps what the helper tells instances it covers in turn:
 	// each word is taken and sent before the next is taken, so the last an
@@ -156,7 +162,8 @@ func (h *Helper) UseSystem(sandboxed bool) (close func()) {
 }
 
 // remote is one instance's stream and what it asks the helper to watch,
-// with its page's origin.
+// with its page's origin, and what stops its sound while the helper reads
+// it (M20.2).
 type remote struct {
 	name   string
 	page   string
@@ -165,6 +172,7 @@ type remote struct {
 	call   bool
 	bound  map[string]bound
 	held   map[string]bool
+	sound  context.CancelFunc
 }
 
 // note is a notification showing: its instance's, and what it shows.
@@ -337,6 +345,7 @@ func (h *Helper) serve(ctx context.Context, cancel context.CancelCauseFunc, name
 			if st.Desktop {
 				go h.bindDesktop(st.Keys, false)
 			}
+			h.soundFor(ctx, r, st.Sound)
 		case msgDesktop:
 			var req desktopRequest
 			if json.Unmarshal(msg.D, &req) != nil {
