@@ -48,7 +48,9 @@ type socket struct {
 	// which go to it alone.
 	voiceOut chan denproto.Event
 	// sub is the socket's subscription, set before it reads a frame, which
-	// takes what goes to the call's members alone (M11).
+	// takes what goes to the call's members alone (M11). It's set under
+	// the socket set's lock, which a box between devices reads it under
+	// (M20).
 	sub *Sub
 	// forGood marks a socket the den closed because its device or member is
 	// done here, whose call ends rather than waits for the device (M3).
@@ -141,6 +143,28 @@ func (s *socketSet) closeSession(tokenHash []byte, code websocket.StatusCode, re
 // closeKey closes the sockets of every session a device key started.
 func (s *socketSet) closeKey(keyID []byte, code websocket.StatusCode, reason string) {
 	s.closeWhere(func(sock *socket) bool { return bytes.Equal(sock.keyID, keyID) }, code, reason)
+}
+
+// subscribed sets a socket's subscription.
+func (s *socketSet) subscribed(sock *socket, sub *Sub) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sock.sub = sub
+}
+
+// devicesOf returns the subscriptions of a member's sockets on devices
+// other than from's, or on to's alone where to names one (M20).
+func (s *socketSet) devicesOf(member int64, from, to []byte) map[*Sub]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	subs := map[*Sub]bool{}
+	for sock := range s.open {
+		if sock.member != member || sock.sub == nil || bytes.Equal(sock.keyID, from) || (len(to) > 0 && !bytes.Equal(sock.keyID, to)) {
+			continue
+		}
+		subs[sock.sub] = true
+	}
+	return subs
 }
 
 // CloseMemberSockets closes a member's sockets with a code: 4003 when
@@ -258,7 +282,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	// (M16.3), and one before notes nothing of those (M17.3).
 	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), s.Version, epoch, after)
 	defer d.Hub.Unsubscribe(sub)
-	sock.sub = sub
+	d.sockets.subscribed(sock, sub)
 
 	write := func(events ...denproto.Event) bool {
 		frame, err := denproto.EncodeFrame(events...)
@@ -551,6 +575,11 @@ func (d *Den) readClient(ctx context.Context, cancel context.CancelFunc, c *webs
 				var req denproto.VoiceKey
 				if json.Unmarshal(e.D, &req) == nil {
 					d.relayKey(s, sock, req)
+				}
+			case denproto.EventRelaySignal:
+				var req denproto.RelaySignal
+				if json.Unmarshal(e.D, &req) == nil {
+					d.relaySignal(s, sock, req)
 				}
 			}
 			// Unknown event types are ignored, as the protocol requires.
