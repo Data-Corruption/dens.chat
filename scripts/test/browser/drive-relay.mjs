@@ -9,11 +9,11 @@
 // again with its own helper, the real one, shares the container's sound,
 // a tone, and bob's first page listens from his settings: the worklet's
 // own counts say the packets came, at the tone's level, and it never ran
-// dry, with the tab behind another too, once the switch to the other tab
-// settles; the laptop's page shows the bar on its end; a second page of
-// bob's first install takes over, the first told; and the laptop's Stop
-// ends it, the second told. Then the den's database and both of bob's
-// installs' logs hold none of the container's addresses.
+// dry, in front, going behind another tab or there; the laptop's page
+// shows the bar on its end; a second page of bob's first install takes
+// over, the first told; and the laptop's Stop ends it, the second told.
+// Then the den's database and both of bob's installs' logs hold none of
+// the container's addresses.
 //
 //   run.sh relay chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -99,6 +99,7 @@ let h = null;
 try {
     A.b = await launch('chromium', 9545, { media: true, preload: PRELOAD });
     B.b = await launch(which, 9546, { media: which === 'firefox' ? 'pulse' : true, preload: PRELOAD, hover: true });
+    const launched = Date.now();
     for (const s of [A, B]) {
         await pair(s.b, s);
         if (s === B) await s.b.eval(`localStorage.setItem('DENS_VOICE', JSON.stringify({ mode: 'ptt' })), true`);
@@ -197,6 +198,10 @@ try {
     const listenable = await waitFor(() => B.b.eval(`${listenButton}?.textContent.trim() === 'Listen'`), "Listen beside bob's laptop", 30000)
         .catch(() => false);
     report(listenable === true, "bob's Relay settings show Listen beside the laptop, which shares its sound");
+    // Firefox, half a minute after it starts, holds a worker's messages for
+    // some 80 ms, once, at work of its own: a member's has long been
+    // running, so the listening waits that out.
+    await sleep(Math.max(0, 45000 - (Date.now() - launched)));
     await B.b.eval(`${listenButton}.click(), true`, true);
     const counts = (b) => b.eval(`JSON.stringify((window.__relay.at(-1) || []).at(-1) || null)`).then(JSON.parse);
     const started = Date.now();
@@ -210,28 +215,24 @@ try {
     const barB = await waitFor(async () => ((await bar(B.b)).includes('playing') ? bar(B.b) : ''), "bob's bar", 10000).catch(() => '');
     report(barB.includes('Listening to') && barB.includes('Stop'), `bob's bar says he listens, with Stop: ${barB}`);
 
-    // Ten seconds in front, then ten behind another tab: what came, at the
-    // tone's level (a sine at half of full scale, -9.0 dB), never dry.
+    // Ten seconds in front, then as the tab goes behind another and ten
+    // seconds there: what came, at the tone's level (a sine at half of full
+    // scale, -9.0 dB), never dry. The worklet reports every two seconds, so
+    // each count is read once a report has what came before it.
+    await sleep(2500);
     const settle = await counts(B.b);
     await sleep(10000);
     const shown = await counts(B.b);
     const tone = -9.03;
     report(shown && shown.packets > settle.packets + 1500 && shown.dry === settle.dry && Math.abs(shown.level - tone) < 1.5 && shown.lost === settle.lost,
         `in front, the worklet counts ${shown?.packets - settle?.packets} packets in 10 s, none lost (${shown?.lost - settle?.lost}), at ${shown?.level} dB, `
-        + `never dry (${shown?.dry - settle?.dry}), its buffer ${shown?.least} to ${shown?.depth} ms of ${shown?.target}`);
-    // The switch itself can cost Firefox a moment's delivery to the worker,
-    // which a Low buffer doesn't hide: it may run dry once, and the ten
-    // seconds behind the other tab are measured once it settles.
+        + `never dry (${shown?.dry - settle?.dry}; ${settle?.dry} while it started), its buffer ${shown?.least} to ${shown?.depth} ms of ${shown?.target}`);
     await hide(B.b);
-    await sleep(2500);
-    const switched = await counts(B.b);
-    await sleep(10000);
+    await sleep(12500);
     const hidden = await counts(B.b);
     await front(B.b);
-    report(switched?.playing && switched.dry - shown.dry <= 1,
-        `as the tab went behind another, the worklet ran dry ${switched?.dry - shown?.dry} times, once at most, and played on`);
-    report(hidden && hidden.packets > switched.packets + 1500 && hidden.dry === switched.dry && Math.abs(hidden.level - tone) < 1.5,
-        `behind another tab, ${hidden?.packets - switched?.packets} packets in 10 s at ${hidden?.level} dB, never dry (${hidden?.dry - switched?.dry}), `
+    report(hidden && hidden.packets > shown.packets + 1900 && hidden.dry === shown.dry && Math.abs(hidden.level - tone) < 1.5,
+        `going behind another tab and there, ${hidden?.packets - shown?.packets} packets in 12 s at ${hidden?.level} dB, never dry (${hidden?.dry - shown?.dry}), `
         + `its buffer ${hidden?.least} to ${hidden?.depth} ms`);
 
     step("the laptop's end");
