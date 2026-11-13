@@ -502,7 +502,14 @@ func TestCaptureProbe(t *testing.T) {
 	done := make(chan error, 1)
 	start := time.Now()
 	go func() { done <- CaptureSound(ctx, h.take, h.problem) }()
-	waitUntil(t, "the first sound", func() bool { return h.count() > 0 })
+	for h.count() == 0 {
+		if time.Since(start) > 10*time.Second {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			t.Fatalf("no sound came in 10 s, the capture's problems %q", h.problems)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	first := time.Since(start)
 	h.mu.Lock()
 	from := len(h.frames)
