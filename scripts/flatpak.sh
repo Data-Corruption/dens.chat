@@ -78,8 +78,10 @@ commit() {
     --data-dir="$build/files/share/app-info/xmls" --icons-dir="$build/files/share/app-info/icons/flatpak" \
     "$build/files" >/dev/null
   # With Wayland granted, fallback-x11 gives the app X11 only in an X11
-  # session, where push to talk needs it.
-  flatpak build-finish "$build" --command=dens --share=network --socket=wayland --socket=fallback-x11 >/dev/null
+  # session, where push to talk needs it. PulseAudio's socket, which
+  # PipeWire serves too, gives Relay the computer's sound to share (M20.2).
+  flatpak build-finish "$build" --command=dens --share=network --socket=wayland --socket=fallback-x11 \
+    --socket=pulseaudio >/dev/null
   # The subject names the version, which the publisher reads back. The
   # icon's validator runs unsandboxed: the icon is this repository's, and
   # the release job's container, as Docker's are, can't make the
