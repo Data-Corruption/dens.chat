@@ -420,6 +420,32 @@ voice-probe)
         /root/voice-probe -test.run '^TestVoiceProbe$' -test.v -test.count=1 ||
         fail "the call over $4 didn't carry member $3's audio${5:+, then $5}"
     ;;
+relay-probe)
+    # relay-probe DEN_ID CHANNEL_ID: join the call in a voice channel, as
+    # voice-probe does, and pass once push to talk, held on another of the
+    # member's installs, reaches the page as a relayed press (M20.1); then
+    # create /tmp/relay-ready, which the stand-in helper waits for.
+    cookie=$(awk '$6 ~ /^dens_session_/ { print $6 "=" $7 }' "$JAR")
+    [ -n "$cookie" ] || fail "no browser session to call with"
+    rm -f /tmp/relay-ready
+    DENS_VOICE_PROBE=$BASE DENS_PROBE_COOKIE=$cookie DENS_PROBE_DEN=$1 DENS_PROBE_CHANNEL=$2 DENS_PROBE_HEAR='' \
+        DENS_PROBE_NETWORK=udp DENS_PROBE_THEN=relayed DENS_PROBE_READY=/tmp/relay-ready \
+        /root/voice-probe -test.run '^TestVoiceProbe$' -test.v -test.count=1 ||
+        fail "push to talk held on another of the member's installs never reached the call"
+    ;;
+relay-keys)
+    # relay-keys: turn Keybind relay on (M20.1).
+    api POST /api/settings '{"relayKeys":true}' >/dev/null
+    ;;
+helper-probe)
+    # helper-probe: stand in for this instance's shortcut helper, as its
+    # desktop user: once the service says a call is on, hold push to talk
+    # until relay-probe has seen it (see TestHelperProbe).
+    install -m 0755 /root/voice-probe /tmp/helper-probe
+    runuser -u alice -- env DENS_HELPER_PROBE="$INSTANCE" DENS_HELPER_UNTIL=/tmp/relay-ready \
+        /tmp/helper-probe -test.run '^TestHelperProbe$' -test.v -test.count=1 ||
+        fail "the stand-in helper never held push to talk in a call"
+    ;;
 wait-ready)
     # wait-ready: wait until this install's voice probe has heard the other
     # side, and is waiting for what comes next.

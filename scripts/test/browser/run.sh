@@ -160,12 +160,17 @@
 #                               the page's styles and the screen's pixels, no row taller, her font alone
 #                               fetched; a Cyrillic name in the page's font; bob's Name styles at Colors
 #                               only and Off; and alice clearing her style
+#   relay BROWSER               M20.1: bob in a call on his first install, his laptop's install linked to it
+#                               through the den's introduction, its stand-in helper's push to talk ringing
+#                               him on alice's page, its toggle mute muting him once, the ring out within half
+#                               a second of the laptop's install stopping; his Relay settings listing the
+#                               laptop as linked; and no address in the den's database or his installs' logs
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,163p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,168p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
