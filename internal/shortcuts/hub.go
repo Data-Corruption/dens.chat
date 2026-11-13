@@ -80,9 +80,10 @@ type unnotify struct {
 }
 
 // state is what the helper watches: the keys, by action, while the
-// instance holds a call, and whether the member uses the desktop's keys,
-// which the helper then binds as it starts, without a dialog where the
-// desktop remembers them.
+// instance holds a call or Relay takes them for another of the member's
+// devices' (M20), and whether the member uses the desktop's keys, which
+// the helper then binds as it starts, without a dialog where the desktop
+// remembers them.
 type state struct {
 	Keys    map[string]types.VoiceKey `json:"keys"`
 	Call    bool                      `json:"call"`
@@ -112,11 +113,18 @@ type Source struct {
 // settings.
 var actionNames = map[string]string{"ptt": "Push to talk", "toggleMute": "Toggle mute", "pushMute": "Push to mute", "toggleDeafen": "Toggle deafen"}
 
-// Press is an action's key going down or up.
+// Press is an action's key going down or up. Relayed marks one from
+// another of the member's devices (M20), which the page takes whatever its
+// own helper covers.
 type Press struct {
-	Action string `json:"action"`
-	Down   bool   `json:"down"`
+	Action  string `json:"action"`
+	Down    bool   `json:"down"`
+	Relayed bool   `json:"relayed,omitempty"`
 }
+
+// holdActions last while their key is held; the rest toggle as it goes
+// down.
+var holdActions = []string{"ptt", "pushMute"}
 
 // Status is what a page learns of the keys and the helper, and whether the
 // member uses the desktop's keys.
@@ -152,6 +160,12 @@ type Hub struct {
 	helper  *link
 	source  Source
 	pages   map[chan Event]struct{}
+	// relay takes what the helper reads while the install holds no call,
+	// as another of the member's devices does (M20), nil while none does.
+	relay func(Press)
+	// holds are who holds each hold action: "" the helper, or another of
+	// the member's devices by the name Relay gives it (M20).
+	holds map[string]map[string]bool
 }
 
 // link is a connected helper; wake tells its writer the state changed.
@@ -163,7 +177,8 @@ type link struct {
 // NewHub returns a hub for a service at version, whose page is at the
 // origin page, with the member's keys.
 func NewHub(version, page string, keys map[string]types.VoiceKey, log *xlog.Logger) *Hub {
-	return &Hub{version: version, page: page, log: log, keys: maps.Clone(keys), pages: make(map[chan Event]struct{})}
+	return &Hub{version: version, page: page, log: log, keys: maps.Clone(keys), pages: make(map[chan Event]struct{}),
+		holds: map[string]map[string]bool{}}
 }
 
 // Show has the helper show a notification, where one is connected that
@@ -264,14 +279,81 @@ func (h *Hub) SetKeys(keys map[string]types.VoiceKey) {
 }
 
 // SetCall says whether the install holds a call: the helper watches keys
-// only while it does.
+// only while it does, or while Relay takes them. What the helper held ends
+// with a call; what another device holds reaches the pages as one starts.
 func (h *Hub) SetCall(active bool) {
 	h.mu.Lock()
 	if h.call != active {
 		h.call = active
+		for _, action := range holdActions {
+			delete(h.holds[action], "")
+			if active && len(h.holds[action]) > 0 {
+				h.broadcastLocked(Event{Press: &Press{Action: action, Down: true, Relayed: true}})
+			}
+		}
 		h.wakeLocked()
 	}
 	h.mu.Unlock()
+}
+
+// SetRelay has Relay take what the helper reads while the install holds
+// no call, which it sends to the call another of the member's devices
+// holds (M20); the helper reads keys then as for a call. nil stops it.
+func (h *Hub) SetRelay(take func(Press)) {
+	h.mu.Lock()
+	if (h.relay != nil) != (take != nil) {
+		h.wakeLocked()
+	}
+	h.relay = take
+	h.mu.Unlock()
+}
+
+// RelayHolds takes what another of the member's devices holds, as its
+// latest word says, as a second helper's (M20): a hold lasts while any
+// device holds it, and nil lets go of everything it held. The pages hear
+// of it during a call this install holds.
+func (h *Hub) RelayHolds(device string, held []string) {
+	if device == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, action := range holdActions {
+		h.holdLocked(device, action, slices.Contains(held, action))
+	}
+}
+
+// RelayToggle passes a toggle another of the member's devices pressed to
+// the pages, during a call this install holds (M20).
+func (h *Hub) RelayToggle(device, action string) {
+	if device == "" || !slices.Contains(types.VoiceActions, action) || slices.Contains(holdActions, action) {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.call {
+		h.broadcastLocked(Event{Press: &Press{Action: action, Down: true, Relayed: true}})
+		h.broadcastLocked(Event{Press: &Press{Action: action, Down: false, Relayed: true}})
+	}
+}
+
+// holdLocked keeps whether a source holds a hold action, and during a call
+// tells the pages as the first source presses it or the last lets go.
+func (h *Hub) holdLocked(source, action string, down bool) {
+	held := h.holds[action]
+	before := len(held) > 0
+	if down {
+		if held == nil {
+			held = map[string]bool{}
+			h.holds[action] = held
+		}
+		held[source] = true
+	} else {
+		delete(held, source)
+	}
+	if after := len(held) > 0; h.call && after != before {
+		h.broadcastLocked(Event{Press: &Press{Action: action, Down: after, Relayed: source != ""}})
+	}
 }
 
 // Serve is the stream of a helper's shortcuts request. One helper is
@@ -336,7 +418,7 @@ func (h *Hub) Serve(ctx context.Context, s *control.Stream) error {
 func (h *Hub) sendState(ctx context.Context, l *link) {
 	for {
 		h.mu.Lock()
-		st := state{Keys: maps.Clone(h.keys), Call: h.call, Desktop: h.desktop}
+		st := state{Keys: maps.Clone(h.keys), Call: h.call || h.relay != nil, Desktop: h.desktop}
 		h.mu.Unlock()
 		if st.Keys == nil {
 			st.Keys = map[string]types.VoiceKey{}
@@ -373,15 +455,30 @@ func (h *Hub) setSource(l *link, src Source) {
 	h.broadcastLocked(Event{Status: h.statusLocked()})
 }
 
-// press passes a press to the pages while the install holds a call; the
-// helper watches only then, so a press outside one is late, and dropped.
+// press passes a press to the pages while the install holds a call, and
+// to Relay while another of the member's devices does (M20). The helper
+// watches only then, so a press outside both is late, and dropped.
 func (h *Hub) press(l *link, p Press) {
+	p.Relayed = false
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.helper != l || !h.call {
+	if h.helper != l {
+		h.mu.Unlock()
 		return
 	}
-	h.broadcastLocked(Event{Press: &p})
+	if h.call {
+		if slices.Contains(holdActions, p.Action) {
+			h.holdLocked("", p.Action, p.Down)
+		} else {
+			h.broadcastLocked(Event{Press: &p})
+		}
+		h.mu.Unlock()
+		return
+	}
+	take := h.relay
+	h.mu.Unlock()
+	if take != nil {
+		take(p)
+	}
 }
 
 func (h *Hub) drop(l *link) {
@@ -392,6 +489,14 @@ func (h *Hub) drop(l *link) {
 	}
 	h.helper, h.source = nil, Source{}
 	h.broadcastLocked(Event{Status: h.statusLocked()})
+	// The pages let go of what the helper covered as it goes; what another
+	// device still holds, they hold again (M20).
+	for _, action := range holdActions {
+		delete(h.holds[action], "")
+		if h.call && len(h.holds[action]) > 0 {
+			h.broadcastLocked(Event{Press: &Press{Action: action, Down: true, Relayed: true}})
+		}
+	}
 	h.log.Info("The shortcut helper disconnected")
 }
 
