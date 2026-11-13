@@ -5,7 +5,8 @@
 // the port the page gives it. As the listening ends the service says why,
 // which the worker tells the page, as it does the socket closing.
 //
-// The page posts {url, port} to start, and {stop} to close the socket.
+// The page posts {port}, then {url} to start, {port} again as the player
+// moves to another context (M20.3), and {stop} to close the socket.
 
 // split cuts a message into its packets.
 export function split(buf) {
@@ -25,8 +26,8 @@ if (typeof WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlob
     let port = null;
     globalThis.onmessage = (e) => {
         const m = e.data || {};
+        if (m.port) port = m.port;
         if (m.url) {
-            port = m.port;
             socket = new WebSocket(m.url);
             socket.binaryType = 'arraybuffer';
             socket.onmessage = (msg) => {
@@ -40,7 +41,7 @@ if (typeof WorkerGlobalScope !== 'undefined' && globalThis instanceof WorkerGlob
                     if (said?.t === 'ended') postMessage({ t: 'ended', why: said.why || '' });
                     return;
                 }
-                for (const pkt of split(msg.data)) port.postMessage(pkt, [pkt]);
+                for (const pkt of split(msg.data)) port?.postMessage(pkt, [pkt]);
             };
             socket.onclose = () => postMessage({ t: 'closed' });
         } else if (m.stop && socket) {

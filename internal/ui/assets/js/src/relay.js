@@ -6,11 +6,14 @@
 // worker, which holds the listening's socket, and an audio worklet, which
 // plays, in a context of its own, so the page's thread carries none of
 // the sound. The buffer is the member's choice, kept by the browser:
-// Low, 40 ms, or High, 150 ms, High on a phone until they choose.
+// Low, 40 ms, or High, 150 ms, High on a phone until they choose. In the
+// Android app a listening plays through the call's context while the
+// phone is in a call: as media it goes silent on Bluetooth headphones
+// once the call's microphone opens.
 
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { inApp } from './platform.js';
+import { autoplays, inApp } from './platform.js';
 
 const KEY = 'DENS_RELAY_BUFFER';
 export const BUFFER_LOW = 'low';
@@ -57,6 +60,7 @@ const ENDED = {
     noanswer: (name) => `${name} didn't answer.`,
     lost: (name) => `Lost the link to ${name}.`,
     apart: (name) => `${name} isn't on this network.`,
+    local: () => 'Android keeps Dens off your network.',
     closing: () => 'Dens stopped.',
     closed: () => 'Lost touch with Dens on this device.',
     player: () => "This browser couldn't play it.",
@@ -67,11 +71,12 @@ export function endedText(why, name) {
     return (ENDED[why] || ENDED.closed)(name);
 }
 
-// state is what the page knows of Relay's sound: its own listening, with
-// its device and how it stands (connecting, playing or waiting), and why
-// the last one ended; and this computer's sound, the device it goes to,
-// as the service says, and why none comes.
-let state = { listening: null, notice: '', sharing: null, problem: '' };
+// state is what the page knows of Relay: its own listening, with its
+// device and how it stands (connecting, playing or waiting), and why the
+// last one ended; this computer's sound, the device it goes to, as the
+// service says, and why none comes; and the device holding the member's
+// call that takes this install's keys, and whether they're muted there.
+let state = { listening: null, notice: '', sharing: null, problem: '', call: null };
 const listeners = new Set();
 let watching = false;
 
@@ -80,14 +85,14 @@ function set(patch) {
     listeners.forEach((fn) => fn(state));
 }
 
-/** onRelay calls fn with the state now and as it changes; with sharing,
-    the service's word of this computer's sound too, from the page's event
-    stream */
-export function onRelay(fn, sharing = false) {
-    if (sharing && !watching) {
+/** onRelay calls fn with the state now and as it changes; with stream,
+    the service's word on this computer's sound and the member's call too,
+    from the page's event stream */
+export function onRelay(fn, stream = false) {
+    if (stream && !watching) {
         watching = true;
         onEvent((m) => {
-            if (m.t === 'relay') set({ sharing: m.d?.sharing || null, problem: m.d?.problem || '' });
+            if (m.t === 'relay') set({ sharing: m.d?.sharing || null, problem: m.d?.problem || '', call: m.d?.call || null });
         });
     }
     listeners.add(fn);
@@ -96,6 +101,18 @@ export function onRelay(fn, sharing = false) {
 }
 
 let player = null;
+// callContext is the call's audio context while the phone is in a call,
+// where a listening plays.
+let callContext = null;
+const modules = new WeakMap();
+
+// ownContext is a listening's own context. On the phone it's opened for
+// playback, unlike a call's: Chromium keeps a closed context's stream a
+// few seconds for the next one opened like it, which would play as the
+// call's, or not at all.
+function ownContext() {
+    return new AudioContext({ sampleRate: RATE, latencyHint: autoplays() ? 'playback' : 'interactive' });
+}
 
 /** listen plays a device's sound, {id, name}: called from the click that
     asks, which lets the context play. A listening already under way here
@@ -103,32 +120,66 @@ let player = null;
 export async function listen(device, app = document.getElementById('app').dataset) {
     stopListening();
     const choice = bufferChoice();
-    const ctx = new AudioContext({ sampleRate: RATE, latencyHint: 'interactive' });
-    const mine = { ctx, worker: null, id: device.id, name: device.name, played: false };
+    const own = callContext ? null : ownContext();
+    const mine = { app, choice, ctx: own || callContext, own: !!own, node: null, moves: 0, worker: null, id: device.id, name: device.name, played: false };
     player = mine;
     set({ listening: { id: device.id, name: device.name, status: 'connecting' }, notice: '' });
     try {
-        await ctx.audioWorklet.addModule(app.relayWorklet);
-        if (player !== mine) return;
-        const node = new AudioWorkletNode(ctx, 'relay', {
-            numberOfInputs: 0, outputChannelCount: [2], processorOptions: { buffer: BUFFERS[choice] },
-        });
-        node.connect(ctx.destination);
-        node.port.onmessage = (e) => report(mine, e.data);
-        const pipe = new MessageChannel();
-        node.port.postMessage({ port: pipe.port2 }, [pipe.port2]);
         mine.worker = new Worker(app.relayWorker, { type: 'module' });
         mine.worker.onmessage = (e) => {
             if (e.data?.t === 'ended') end(mine, e.data.why);
             else if (e.data?.t === 'closed') end(mine, 'closed');
         };
+        await place(mine, mine.ctx);
+        if (player !== mine) return;
         const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
         const url = `${scheme}//${location.host}/api/relay/listen?device=${encodeURIComponent(device.id)}&batch=${BATCHES[choice]}`;
-        mine.worker.postMessage({ url, port: pipe.port1 }, [pipe.port1]);
-        await ctx.resume();
+        mine.worker.postMessage({ url });
+        await mine.ctx.resume();
     } catch {
         if (player === mine) end(mine, 'player');
     }
+}
+
+// place plays a listening through ctx: a worklet node there, which the
+// worker feeds from then on, in place of the node before. It reports
+// whether the listening still goes on, and still to ctx.
+async function place(mine, ctx) {
+    const move = ++mine.moves;
+    if (!modules.has(ctx)) modules.set(ctx, ctx.audioWorklet.addModule(mine.app.relayWorklet));
+    await modules.get(ctx);
+    if (player !== mine || mine.moves !== move) return false;
+    const node = new AudioWorkletNode(ctx, 'relay', {
+        numberOfInputs: 0, outputChannelCount: [2], processorOptions: { buffer: BUFFERS[mine.choice] },
+    });
+    node.connect(ctx.destination);
+    node.port.onmessage = (e) => mine.node === node && report(mine, e.data);
+    const pipe = new MessageChannel();
+    node.port.postMessage({ port: pipe.port2 }, [pipe.port2]);
+    mine.worker.postMessage({ port: pipe.port1 }, [pipe.port1]);
+    const was = mine.node;
+    mine.node = node;
+    was?.disconnect();
+    return true;
+}
+
+/** setCallContext takes the phone's call's context once the call plays
+    through it, and null as the call ends, before the context closes: a
+    listening moves into it, and back into one of its own after */
+export function setCallContext(ctx) {
+    if (ctx === callContext) return;
+    callContext = ctx;
+    const mine = player;
+    if (!mine) return;
+    // The context it leaves closes however the move ends, where it was
+    // its own; the call's isn't its to close.
+    const was = mine.own ? mine.ctx : null;
+    mine.ctx = ctx || ownContext();
+    mine.own = !ctx;
+    place(mine, mine.ctx)
+        .then((placed) => placed && mine.own && mine.ctx.resume())
+        .catch(() => player === mine && end(mine, 'player'))
+        .finally(() => was?.close().catch(() => {}));
 }
 
 // report takes what the worklet counted every two seconds: playing, or,
@@ -140,12 +191,15 @@ function report(mine, r) {
     if (status !== state.listening.status) set({ listening: { ...state.listening, status } });
 }
 
+// close stops a listening's worker, and its context where that's its own;
+// a call's goes on.
 function close(mine) {
     if (mine.worker) {
         mine.worker.postMessage({ stop: true });
         mine.worker.terminate();
     }
-    mine.ctx.close().catch(() => {});
+    if (mine.own) mine.ctx.close().catch(() => {});
+    else mine.node?.disconnect();
 }
 
 function end(mine, why) {

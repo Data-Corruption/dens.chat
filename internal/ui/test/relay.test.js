@@ -184,5 +184,6 @@ test('why a listening ended, in a line', () => {
     assert.equal(endedText('taken', 'Desk'), 'Another of your devices took over listening to Desk.');
     assert.equal(endedText('stopped', 'Desk'), 'Desk stopped sharing.');
     assert.equal(endedText('apart', 'Desk'), "Desk isn't on this network.");
+    assert.equal(endedText('local', 'Desk'), 'Android keeps Dens off your network.');
     assert.equal(endedText('nonsense', 'Desk'), 'Lost touch with Dens on this device.');
 });

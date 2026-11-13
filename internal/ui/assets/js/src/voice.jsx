@@ -9,7 +9,8 @@
 // the bar and the box open the den's soundboard, and the channel's row in
 // the list shows how the call stands, where the block's speaker did. From
 // M16.2 the call's lock stands beside how it stands, and the list marks
-// each member verified, and one whose keys changed.
+// each member verified, and one whose keys changed. From M20.3 the call's
+// button presses for a call another of the member's devices holds.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -18,12 +19,14 @@ import { Avatar } from './avatar.jsx';
 import { CallLock, KeysChangedMark, keysChanged } from './calllock.jsx';
 import { LongName, Tip } from './components.jsx';
 import { openManage } from './dialogs.js';
+import { sendRelayKey } from './events.js';
 import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
 import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { nav, useNarrow } from './nav.js';
 import { RoleMark, isStaff, rank } from './people.jsx';
 import { canShare } from './platform.js';
 import { VerifiedMark } from './private.jsx';
+import { onRelay } from './relay.js';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import { Sheet, SheetRow } from './sheet.jsx';
@@ -48,13 +51,25 @@ export function useCall() {
 }
 
 // useCallButton says whether the call's button shows (M13.4): in a call,
-// where the page has the button. It changes only as those do, so what
-// leaves room for the button doesn't render as the call's rings change.
+// where the page has the button, or while another of the member's devices
+// holds their call and takes this one's presses. It changes only as those
+// do, so what leaves room for the button doesn't render as the call's
+// rings change.
 export function useCallButton() {
     const holds = useHoldsButton();
     const [inCall, setInCall] = useState(false);
+    const [elsewhere, setElsewhere] = useState(false);
     useEffect(() => onCall((s) => setInCall(!!s.call)), []);
-    return holds && inCall;
+    useEffect(() => onRelay((s) => setElsewhere(!!s.call), true), []);
+    return holds && (inCall || elsewhere);
+}
+
+// useHeldElsewhere is the device holding the member's call that takes
+// this install's presses, with whether they're muted there, or null.
+function useHeldElsewhere() {
+    const [held, setHeld] = useState(null);
+    useEffect(() => onRelay((s) => setHeld(s.call), true), []);
+    return held;
 }
 
 // foot is the height of what stands at the foot of the channel's pane,
@@ -253,12 +268,21 @@ export function CallBar({ denID }) {
 export function CallButton() {
     const { call, speaking, den } = useCall();
     const shows = useCallButton();
+    const elsewhere = useHeldElsewhere();
     const above = useFoot();
-    if (!shows || !call) return null;
+    if (!shows) return null;
+    const bottom = above ? above + 24 : 16;
+    const role = voiceSettings().button;
+    // A call another device holds: its presses go there.
+    if (!call) {
+        if (!elsewhere) return null;
+        return <HeldButton key="elsewhere" role={role} muted={elsewhere.muted} bottom={bottom} name={elsewhere.name}
+            onPress={() => sendRelayKey(voiceSettings().button, true)} onRelease={() => sendRelayKey(voiceSettings().button, false)} />;
+    }
     const mine = den?.calls.find((c) => c.channel_id === call.channel)?.members.find((m) => m.id === den.me);
     const muted = call.muted || !!mine?.staff_muted;
-    return <HeldButton role={voiceSettings().button} muted={muted} talking={!muted && speaking.has('self')}
-        bottom={above ? above + 24 : 16} />;
+    return <HeldButton key="call" role={role} muted={muted} talking={!muted && speaking.has('self')} bottom={bottom}
+        onPress={pressButton} onRelease={releaseButton} />;
 }
 
 // HeldButton is the call's button while it shows. A press lets go however
@@ -268,16 +292,19 @@ export function CallButton() {
 // gone, as when the call ends. Its pointer's events are all it takes, so
 // its touch is the page's alone: the browser makes no gesture of it, as
 // the long press a phone answers with a buzz, as if to select something.
-function HeldButton({ role, muted, talking, bottom }) {
+// For a call another device holds, that device's name stands over it,
+// and push to talk lights while it's held, since the page hears no
+// microphone to light it by.
+function HeldButton({ role, muted, talking, bottom, name, onPress, onRelease }) {
     const [held, setHeld] = useState(false);
     const [hold] = useState(() => createHold({
         onPress: () => {
             setHeld(true);
-            pressButton();
+            onPress();
         },
         onRelease: () => {
             setHeld(false);
-            releaseButton();
+            onRelease();
         },
     }));
     useEffect(() => {
@@ -291,17 +318,28 @@ function HeldButton({ role, muted, talking, bottom }) {
             hold.away();
         };
     }, []);
-    const label = role === 'toggleMute' ? (muted ? 'Unmute' : 'Mute') : `${role === 'ptt' ? 'Hold to talk' : 'Hold to mute'}${muted ? ', muted' : ''}`;
-    const look = talking ? 'bg-success text-success-content' : muted ? 'bg-neutral text-error' : 'bg-neutral text-neutral-content';
-    return (
-        <button type="button" data-call-button={role} aria-label={label} aria-pressed={role === 'toggleMute' ? muted : held}
-            class={`fixed right-4 z-40 flex h-16 w-16 touch-none select-none items-center justify-center rounded-full shadow-lg transition-colors [-webkit-touch-callout:none] ${look}`}
-            style={{ bottom: `${bottom}px` }}
+    const said = role === 'toggleMute' ? (muted ? 'Unmute' : 'Mute') : `${role === 'ptt' ? 'Hold to talk' : 'Hold to mute'}${muted ? ', muted' : ''}`;
+    const label = name ? `${said}, on ${name}` : said;
+    const lit = talking ?? (role === 'ptt' && held && !muted);
+    const look = lit ? 'bg-success text-success-content' : muted ? 'bg-neutral text-error' : 'bg-neutral text-neutral-content';
+    const place = 'fixed right-4 z-40';
+    const button = (
+        <button type="button" data-call-button={role} data-relayed={name ? '' : undefined} aria-label={label}
+            aria-pressed={role === 'toggleMute' ? muted : held}
+            class={`${name ? '' : place} flex h-16 w-16 touch-none select-none items-center justify-center rounded-full shadow-lg transition-colors [-webkit-touch-callout:none] ${look}`}
+            style={name ? undefined : { bottom: `${bottom}px` }}
             onPointerDown={hold.down} onPointerUp={hold.up} onPointerCancel={hold.up} onLostPointerCapture={hold.up}
             onTouchStart={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onKeyDown={hold.keydown} onKeyUp={hold.keyup}
             onClick={hold.click} onContextMenu={(e) => e.preventDefault()}>
             <MicIcon off={muted} size="h-7 w-7" />
         </button>
+    );
+    if (!name) return button;
+    return (
+        <div class={`${place} flex flex-col items-end gap-1`} style={{ bottom: `${bottom}px` }}>
+            <span class="max-w-40 truncate rounded-full bg-base-300 px-2 text-xs shadow" data-relayed-to aria-hidden="true">{name}</span>
+            {button}
+        </div>
     );
 }
 
