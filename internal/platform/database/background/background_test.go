@@ -78,6 +78,19 @@ func TestBackground(t *testing.T) {
 	if got, _ := Version(ctx, db); got != at.Add(time.Second).UnixMilli() {
 		t.Fatalf("set again, its version is %d", got)
 	}
+	// Set again within the same millisecond, or with the clock set back,
+	// it still takes a newer version.
+	last := at.Add(time.Second).UnixMilli()
+	for _, when := range []time.Time{at.Add(time.Second), at} {
+		got, err := Put(ctx, db, v, newer, when)
+		if err != nil || got != last+1 {
+			t.Fatalf("set again at %d after %d: version %d, %v", when.UnixMilli(), last, got, err)
+		}
+		last = got
+	}
+	if got, _ := Version(ctx, db); got != last {
+		t.Fatalf("the version kept is %d, not %d", got, last)
+	}
 	var rows int
 	if err := db.QueryRow(`SELECT count(*) FROM background`).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("set again, %d rows, %v", rows, err)
