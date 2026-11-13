@@ -113,6 +113,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 			return
 		}
 		start("den connections", a.Dens.Run)
+		start("relay", a.Relay.Run)
 		// A session form has no installer to publish ready for it, and
 		// its start isn't done before it has its key.
 		if l.Form.Session() && a.Lease.Mode == maintenance.StartMigrate {

@@ -55,7 +55,11 @@ import (
 //	                    side watches MEMBER's share, once it has started, and
 //	                    sees its screen and hears its sound; or
 //	                    "bitrate:BITS", an offer comes asking for that Opus
-//	                    bitrate, as after staff change the channel's
+//	                    bitrate, as after staff change the channel's; or
+//	                    from M20.1 "relayed", in place of hearing anyone:
+//	                    another of the member's installs, linked to this
+//	                    one, holds push to talk, which reaches the page as
+//	                    a relayed press
 //	DENS_PROBE_STAY     seconds to stay in the call at the end, 5 if unset
 func TestVoiceProbe(t *testing.T) {
 	base := os.Getenv("DENS_VOICE_PROBE")
@@ -138,6 +142,9 @@ func TestVoiceProbe(t *testing.T) {
 	away, offline := false, false
 	// keys are the call's keys as the service last gave them (M16.2).
 	var keys *denclient.CallKeys
+	// relayed takes the presses of another of the member's installs that
+	// reach the page (M20.1).
+	relayed := make(chan string, 16)
 	read := func(ws *websocket.Conn) {
 		for {
 			_, data, err := ws.Read(ctx)
@@ -154,6 +161,20 @@ func TestVoiceProbe(t *testing.T) {
 				D json.RawMessage `json:"d"`
 			}
 			if json.Unmarshal(data, &msg) != nil {
+				continue
+			}
+			if msg.T == "key" {
+				var p struct {
+					Action  string `json:"action"`
+					Down    bool   `json:"down"`
+					Relayed bool   `json:"relayed"`
+				}
+				if json.Unmarshal(msg.D, &p) == nil && p.Relayed {
+					select {
+					case relayed <- fmt.Sprintf("%s:%v", p.Action, p.Down):
+					default:
+					}
+				}
 				continue
 			}
 			if msg.T == "dens" {
@@ -252,6 +273,25 @@ func TestVoiceProbe(t *testing.T) {
 		c := make(chan error, 1)
 		go func() { c <- caller.WaitHeard(hear, n, 60*time.Second) }()
 		return c
+	}
+	if then == "relayed" {
+		pressed := make(chan error, 1)
+		go func() {
+			for p := range relayed {
+				if p == "ptt:true" {
+					pressed <- nil
+					return
+				}
+			}
+		}()
+		wait("push to talk held on another of the member's installs", 90*time.Second, pressed)
+		t.Log("push to talk, held on another of the member's installs, reached the page")
+		if ready := os.Getenv("DENS_PROBE_READY"); ready != "" {
+			if err := os.WriteFile(ready, nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return
 	}
 	wait("member "+hear, 70*time.Second, heard(100))
 	// keysWith waits until the call's keys hold this member's own, unlike

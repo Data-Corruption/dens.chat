@@ -728,9 +728,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
 			c.den.spoilers, c.den.moveMembers, c.den.eventLimits = d.Spoilers, d.MoveMembers, d.EventLimits
-			c.den.nameStyles = d.NameStyles
+			c.den.nameStyles, c.den.relay = d.NameStyles, d.Relay
 		}
 		c.mu.Unlock()
+		c.m.relayChanged()
 		if err := c.updateProfile(ctx, d, nil); err != nil {
 			return e, false, err
 		}
@@ -746,6 +747,14 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		denproto.EventVoiceSounding, denproto.EventVoiceKey, denproto.EventVoiceMove:
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(ctx, e)
+	case denproto.EventRelaySignal:
+		// A box from another of the member's devices, for Relay (M20).
+		var b denproto.RelaySignalEvent
+		if err := json.Unmarshal(e.D, &b); err != nil || denproto.CheckRelaySignalEvent(b) != nil {
+			return e, false, errors.New("malformed relay.signal")
+		}
+		c.relayBox(b)
+		return e, false, nil
 	case denproto.EventGroupChange:
 		// A change to a group, checked against the group as this Dens knew
 		// it, the pages hearing of the group as it now stands (M16.3).
@@ -925,6 +934,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	// which changes the member's key for it (M16.2).
 	if err == nil && ok && (e.T == denproto.EventVoiceState || e.T == denproto.EventMemberUpdated) {
 		c.m.keysDue(c.j.denID.String())
+	}
+	// Relay links to the device that holds the member's call (M20).
+	if err == nil && ok && e.T == denproto.EventVoiceState {
+		c.m.relayChanged()
 	}
 	if met {
 		c.identitiesChanged(ctx)

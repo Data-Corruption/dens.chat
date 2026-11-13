@@ -22,15 +22,18 @@ var ErrNone = errors.New("the chat has no background")
 var fileAD = []byte("background.file")
 
 // Put keeps file as the chat's background, in place of any before, and
-// returns its version: when it was set, in unix milliseconds.
+// returns its version: when it was set, in unix milliseconds, and always
+// past the one it replaces, since two set within a millisecond, or with the
+// clock set back, would otherwise share one and pages keep the first.
 func Put(ctx context.Context, db *sql.DB, v *vault.Vault, file []byte, now time.Time) (int64, error) {
 	sealed, err := v.Seal(file, fileAD)
 	if err != nil {
 		return 0, err
 	}
-	at := now.UnixMilli()
-	if _, err := db.ExecContext(ctx, `INSERT INTO background (id, set_at, file) VALUES (1, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET set_at = excluded.set_at, file = excluded.file`, at, sealed); err != nil {
+	var at int64
+	if err := db.QueryRowContext(ctx, `INSERT INTO background (id, set_at, file) VALUES (1, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET set_at = max(excluded.set_at, background.set_at + 1), file = excluded.file
+		RETURNING set_at`, now.UnixMilli(), sealed).Scan(&at); err != nil {
 		return 0, fmt.Errorf("keep the chat's background: %w", err)
 	}
 	return at, nil

@@ -85,7 +85,7 @@ type Den struct {
 	requests requests
 
 	limits struct {
-		challenge, join, login, socket, write, send, typing, upload, password, passwordName, call, talk, voiceKey *limiter
+		challenge, join, login, socket, write, send, typing, upload, password, passwordName, call, talk, voiceKey, relay *limiter
 		// messages and messageBytes are each member's budget across every
 		// channel and DM (M8).
 		messages, messageBytes *limiter
@@ -191,6 +191,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	d.limits.call = newLimiter(10, 6*time.Second, 100_000)
 	d.limits.talk = newLimiter(denproto.TalksPerSecond, time.Second/denproto.TalksPerSecond, 100_000)
 	d.limits.voiceKey = newLimiter(denproto.VoiceKeysPer10s, 10*time.Second/denproto.VoiceKeysPer10s, 100_000)
+	d.limits.relay = newLimiter(denproto.RelaySignalsPer10s, 10*time.Second/denproto.RelaySignalsPer10s, 100_000)
 	d.limits.messages = newLimiter(10, time.Second/2, 100_000)
 	d.limits.messageBytes = newLimiter(256<<10, time.Second/(16<<10), 100_000)
 
@@ -229,7 +230,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
 		SoundLimits: sounds, EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true,
-		NameStyles: true}
+		NameStyles: true, Relay: true}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -369,7 +370,8 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 		return nil, err
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
-		EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, NameStyles: true}
+		EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, NameStyles: true,
+		Relay: true}
 	d.log.Infof("Den created")
 	return code, nil
 }

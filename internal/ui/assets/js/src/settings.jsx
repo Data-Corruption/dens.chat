@@ -6,8 +6,9 @@
 // and videos and what happens to links; Notifications what notifies the
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
-// screen share; and System hosting a den, the cache, updates, backups, the
-// local password, the logs, signing this browser out, and the version.
+// screen share; Relay this install's links with the member's other devices
+// (M20); and System hosting a den, the cache, updates, backups, the local
+// password, the logs, signing this browser out, and the version.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
@@ -15,8 +16,8 @@ import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
 import { DIM_MOST, DIM_STEP, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, slideDim } from './background.js';
 import {
-    Card, Choices, ColorField, CopyButton, DOCS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, useAction,
-    useBackdrop, useBackground, useNotifications,
+    Card, Choices, ColorField, CopyButton, DOCS, DocsLink, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords,
+    useAction, useBackdrop, useBackground, useNotifications,
 } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
@@ -26,7 +27,7 @@ import { PlayIcon } from './icons.jsx';
 import { STYLES_ALL, STYLES_COLORS, STYLES_OFF, setNameStyles, useNameStyles } from './names.js';
 import { useLayer, useNarrow } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
-import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js';
+import { NO_CALLS, canCall, canShare, hasKeys, here, inApp, relays } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './sounds.js';
 import { cacheSizes, cacheUsage } from './storage.js';
@@ -46,8 +47,9 @@ import {
 const openers = new Set();
 
 // openSettings opens the settings at a section, "appearance", "chat",
-// "notifications", "voice" or "system", from anywhere on the page; with
-// none, at the first, or on the phone layout at the list of them.
+// "notifications", "voice", "relay" or "system", from anywhere on the
+// page; with none, at the first, or on the phone layout at the list of
+// them.
 export function openSettings(section = '') {
     openers.forEach((fn) => fn(section));
 }
@@ -58,14 +60,20 @@ export function onOpenSettings(fn) {
 }
 
 // SECTIONS are the settings' sections, by the id openSettings takes and
-// the name the list shows.
+// the name the list shows. Relay shows where the install relays (M20).
 export const SECTIONS = [
     ['appearance', 'Appearance'],
     ['chat', 'Chat'],
     ['notifications', 'Notifications'],
     ['voice', 'Voice'],
+    ['relay', 'Relay'],
     ['system', 'System'],
 ];
+
+// shownSections are the sections this install's settings have.
+export function shownSections(relaying = relays()) {
+    return SECTIONS.filter(([id]) => id !== 'relay' || relaying);
+}
 
 // SettingsDialog shows a section of the settings. It closes with its ✕,
 // Escape, a click outside it, or Back. On the phone layout it takes the
@@ -81,10 +89,12 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     }, [onClose, narrow, section]);
+    const sections = shownSections();
     let panel;
     if (at === 'chat') panel = <ChatSettings />;
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
+    else if (at === 'relay' && relays()) panel = <RelaySettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><NameStylesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
     const backdrop = useBackdrop(onClose);
@@ -93,13 +103,13 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
             <div role="dialog" aria-modal="true" aria-label="App settings" class="fixed inset-0 z-50 flex flex-col bg-base-100">
                 {at ? (
                     <>
-                        <PageHeader title={SECTIONS.find(([id]) => id === at)?.[1]} onBack={() => onSection('')} />
+                        <PageHeader title={sections.find(([id]) => id === at)?.[1]} onBack={() => onSection('')} />
                         <div data-panel class={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${PLAIN_CARDS}`}>{panel}</div>
                     </>
                 ) : (
                     <>
                         <PageHeader title="App settings" onClose={onClose} />
-                        <SectionList label="Settings" groups={[['', SECTIONS]]} onPick={onSection} />
+                        <SectionList label="Settings" groups={[['', sections]]} onPick={onSection} />
                     </>
                 )}
             </div>
@@ -114,7 +124,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
                 </div>
                 <div class="flex min-h-0 flex-1 flex-row">
                     <nav aria-label="Sections" class="flex w-52 shrink-0 flex-col gap-1 border-r border-base-300 p-2">
-                        {SECTIONS.map(([id, name]) => (
+                        {sections.map(([id, name]) => (
                             <button key={id} type="button" aria-current={at === id ? 'page' : undefined}
                                 class={`btn btn-ghost btn-sm shrink-0 justify-start font-normal ${at === id ? 'btn-active' : ''}`} onClick={() => onSection(id)}>
                                 {name}
@@ -1117,6 +1127,78 @@ function ShareSettings() {
             <Toggle id="share-audio" label="Share audio" hint={audio.text} checked={audio.supported && s.sound} disabled={!audio.supported}
                 onChange={(on) => change({ sound: on })} />
         </Card>
+    );
+}
+
+// DEVICES_EVERY is how often an open Relay section asks again which of
+// the member's devices are there.
+const DEVICES_EVERY = 3000;
+
+// RelaySettings links this install with the member's other devices on one
+// network (M20): Keybind relay, whose switch the service keeps, and the
+// devices that answered, each with how its link stands or what it offers,
+// asked again while the section is open.
+export function RelaySettings() {
+    const [relay, setRelay] = useState(null);
+    const [devices, setDevices] = useState(null);
+    const load = useAction();
+    const save = useAction();
+    useEffect(() => {
+        load.run(async () => setRelay((await api.get('/api/settings')).relay));
+        let live = true;
+        const ask = () => api.get('/api/relay/devices').then((d) => live && setDevices(d?.devices || []), () => {});
+        ask();
+        const timer = setInterval(ask, DEVICES_EVERY);
+        return () => {
+            live = false;
+            clearInterval(timer);
+        };
+    }, []);
+    if (!relay) return load.error ? <ErrorText message={load.error} /> : <span class="loading loading-spinner"></span>;
+    const setKeys = (on) => save.run(async () => {
+        await api.post('/api/settings', { relayKeys: on });
+        setRelay((r) => ({ ...r, keys: on }));
+    });
+    return (
+        <>
+            {relay.can?.includes('keys') && (
+                <Card title="Keybind relay">
+                    <Toggle id="relay-keys" label="Relay voice keys" hint="Keys pressed on one device act in the call another holds."
+                        checked={!!relay.keys} disabled={save.busy} onChange={setKeys} />
+                    <ErrorText message={save.error} />
+                </Card>
+            )}
+            <Card title="Your devices">
+                <RelayDevices devices={devices} />
+                <p class="text-sm text-base-content/70">
+                    Signed in as you, on this network. <DocsLink page="relay/" label="How Relay works" />
+                </p>
+            </Card>
+        </>
+    );
+}
+
+// relayState is what a device's row says of it: its link, or what it
+// offers.
+export function relayState(d) {
+    if (d.linked) return 'Linked';
+    if (d.apart) return 'Not on this network';
+    return d.offers?.includes('keys') ? 'Keybind relay' : 'Keybind relay off';
+}
+
+// RelayDevices lists the member's other devices that answered.
+function RelayDevices({ devices }) {
+    if (!devices) return <span class="loading loading-spinner"></span>;
+    if (devices.length === 0) return <p class="text-sm">None of your other devices answered.</p>;
+    return (
+        <ul aria-label="Your devices" class="flex flex-col gap-1">
+            {devices.map((d) => (
+                <li key={d.id} data-device={d.id} class="flex min-h-11 items-center gap-3">
+                    <span class="min-w-0 flex-1 truncate">{d.name}</span>
+                    <span class={`shrink-0 text-sm ${d.linked ? 'text-success' : 'text-base-content/70'}`}>{relayState(d)}</span>
+                </li>
+            ))}
+        </ul>
     );
 }
 

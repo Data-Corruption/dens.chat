@@ -66,14 +66,14 @@ Login and recovery failures use `401 unauthorized` whether the username exists o
 ```
 den    = {"id": "<den_id>", "name", "url", "limits"?, "call_limits"? (M4.2), "retention"? (M5), "sound_limits"? (M14.3),
           "emoji_limits"? (M15.2), "sealed_calls"? (M16.2), "disappearing"? (M16.4), "spoilers"? (M17.2), "move_members"? (M17.2),
-          "event_limits"? (M17.4), "name_styles"? (M19.5)}
+          "event_limits"? (M17.4), "name_styles"? (M19.5), "relay"? (M20)}
 member = {"id", "username", "display_name", "role": "member" | "moderator" | "owner", "joined_at", "left_at"?,
           "avatar"?, "banner"?, "identity"? (M16.1), "name_style"? (M19.5)}
 image  = {"id", "width", "height", "animated"? (M15.1)}
 name_style = {"font"?, "color"?, "color2"?}
 ```
 
-`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)), `disappearing` that it deletes a DM's and a group's messages at the time their members set (see [Disappearing messages](#disappearing-messages-m164)), `spoilers` that it keeps which of a channel's files went as spoilers (see [Attachments](#attachments)), `move_members` that staff move members from one call to another (see [Staff in calls](#staff-in-calls-m3)), `event_limits` its limit for members' events, which says it has events (see [Events](#events-m174)), and `name_styles` that it keeps a style for each member's name (see [Members and roles](#members-and-roles-m13)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
+`url` is the den's public URL, which the owner sets when creating the den. Clients build invite strings from it, and the den signs it into every challenge answer (see [Authentication](#authentication)). Den names follow the display name rules, up to 32 characters. `limits` are the den's upload limits (see [Files](#files-m14)), `call_limits` its limits for calls and screen shares (see [Limits for calls](#limits-for-calls-m42)), `retention` its retention period in days, when it has one (see [Retention](#retention-m5)), `sound_limits` its soundboard's (see [The soundboard](#the-soundboard-m143)), `emoji_limits` its limit for emoji (see [Emoji](#emoji-m152)), `sealed_calls` that it seals its calls end to end (see [Sealed calls](#sealed-calls-m162)), `disappearing` that it deletes a DM's and a group's messages at the time their members set (see [Disappearing messages](#disappearing-messages-m164)), `spoilers` that it keeps which of a channel's files went as spoilers (see [Attachments](#attachments)), `move_members` that staff move members from one call to another (see [Staff in calls](#staff-in-calls-m3)), `event_limits` its limit for members' events, which says it has events (see [Events](#events-m174)), `name_styles` that it keeps a style for each member's name (see [Members and roles](#members-and-roles-m13)), and `relay` that it passes boxes between a member's devices (see [Relay](#relay-m20)); they come in `ready` and `den.updated`, and not in a join preview. `avatar` and `banner` are the pictures on a member's profile (M1.4), each an `image`: its upload, its size, and `animated` when it's an animated GIF (M15.1). `identity` is the identity the member's client published, by its 32-byte hash (M16.1; see [Private DMs](#private-dms-m17)), until they leave or start over.
 
 ```
 PATCH /api/den   {"name"?, "url"?, "limits"?, "call_limits"?, "retention"?, "sound_limits"?, "emoji_limits"?, "event_limits"?}   200 den   (owner only)
@@ -272,7 +272,7 @@ GET /api/changes?since=<version>&upto=<message id>
 
 ### Client frames
 
-The client sends the same array shape: `auth.renew`, `focus` and `typing` (see [Presence and typing](#presence-and-typing)), and from M2 the `voice.*` frames (see [Voice](#voice-m2)).
+The client sends the same array shape: `auth.renew`, `focus` and `typing` (see [Presence and typing](#presence-and-typing)), from M2 the `voice.*` frames (see [Voice](#voice-m2)), and from M20 `relay.signal` (see [Relay](#relay-m20)).
 
 ```json
 [{"t": "auth.renew", "d": {"nonce": "…", "proof": "…"}}]
@@ -1101,6 +1101,21 @@ badge         = {"event_id", "title", "image": image, "event", "starts_at", "ear
 - `GET /api/members/{id}` carries the badges the member earned whose events the asker sees, latest first, up to 500, each with its event's ID and name and its start, and when they earned it. A client checks each: its IDs, its title and the event's name as cleaning leaves them, a picture of an emoji's size, its times, and each event once.
 - A badge its member hid (M17.6) is left out of everyone's answer but the member's own, where it carries `"hidden": true`; a client takes `hidden` on the member's own profile alone, and a profile card shows only the badges without it. Hiding one keeps a card tidy and no more: the den keeps the award as it was.
 
+## Relay (M20)
+
+A member's installs link across their network, and the den only passes boxes between them (see the design doc's Relay).
+
+```json
+[{"t": "relay.signal", "d": {"to": "<key id>", "box": "<1,024 bytes>"}}]
+{"t": "relay.signal", "d": {"from": "<key id>", "to": "<key id>", "box": "<1,024 bytes>"}}
+```
+
+- A client's `relay.signal` goes to the member's other devices, or with `to` to the device with that key ID alone, as an ephemeral `relay.signal` on their sockets, with `from` the key ID of the device it came from and `to` as it was. It never goes back to the sender's device, nor to another member's, and the den keeps nothing of it: a device that comes back gets none it missed.
+- The den checks its shape alone: a box of 1,024 bytes, and `to` a key ID or nothing. One that isn't, or past the limit, goes nowhere.
+- The box is XChaCha20-Poly1305 under `HKDF-SHA-256(seal, salt = den_id, info = "dens-relay-v1")`, 32 bytes, its nonce first: the note's length in two bytes, the note, and zeros to the box's size, bound to `"dens-relay-box-v1"` ‖ den ID ‖ the member's ID, 8 bytes ‖ `from` ‖ `to`. What the note says is the installs' own. A client closes its connection on a `relay.signal` of the wrong shape, as the den breaking the protocol, and drops one that doesn't open.
+- A den that passes boxes says `"relay": true` in its info; a client sends them only to one that does.
+- `relay.signal` has a limit of its own, 30 in 10 seconds a member, for all their devices together (see [Rate limits](#rate-limits)). Additive: no version bump.
+
 ## Rate limits
 
 The den limits per IP, taken from `X-Forwarded-For` only on connections from loopback, and per member. Limits live in memory only. Starting values, to tune with real use:
@@ -1121,4 +1136,5 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting, muting and from M17.2 moving, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, from M16.4 setting a DM's or a group's time, from M17.4 making, changing, canceling and ending an event, and marking Interested, and from M17.6 hiding or showing a badge | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | A member's keys for calls (M16.2) | 30 per 10 seconds per member; the rest are dropped |
+| Boxes between a member's devices (M20) | 30 per 10 seconds per member, all their devices together; the rest are dropped |
 | WebSocket connections | 5 open per member, 20 upgrades per minute per IP |

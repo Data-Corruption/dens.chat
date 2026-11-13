@@ -782,3 +782,64 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// TestRelayedKeys checks the hub's part in Keybind relay (M20). Outside a
+// call of its own, while another of the member's devices holds one, the
+// helper reads keys and its presses go to Relay, not the pages. In a call,
+// another device's keys reach the pages as a second helper's: push to talk
+// held while the helper or either device holds it, and let go only as the
+// last does; a toggle passed once; and a device's holds as the call starts,
+// while nothing reaches the pages outside one.
+func TestRelayedKeys(t *testing.T) {
+	me, _ := host.CurrentUser()
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
+	keys := newFakeKeys()
+	client := serve(t, hub, me)
+	run(t, helperFor(t, "v1.0.0", client, keys))
+	events, stop := hub.Watch()
+	defer stop()
+	waitStatus(t, events, func(s *Status) bool { return s.Helper && len(s.Covers) > 0 })
+
+	taken := make(chan Press, 8)
+	hub.SetRelay(func(p Press) { taken <- p })
+	keys.set(1, true)
+	select {
+	case p := <-taken:
+		if p != (Press{Action: "ptt", Down: true}) {
+			t.Errorf("Relay took %+v", p)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the helper's press never reached Relay")
+	}
+	noPress(t, events, "the install holds no call, and Relay took the press")
+	keys.set(1, false)
+	<-taken
+	hub.SetRelay(nil)
+
+	// Outside a call nothing reaches the pages; the call starting brings
+	// the laptop's hold with it.
+	hub.RelayHolds("laptop", []string{"ptt"})
+	hub.RelayToggle("laptop", "toggleMute")
+	noPress(t, events, "the install holds no call")
+	hub.SetCall(true)
+	waitPress(t, events, Press{Action: "ptt", Down: true, Relayed: true})
+
+	// The helper and a second device hold push to talk too, and let go:
+	// the pages hear nothing until the laptop, the last, lets go.
+	keys.set(1, true)
+	hub.RelayHolds("phone", []string{"ptt"})
+	noPress(t, events, "push to talk is held already")
+	keys.set(1, false)
+	hub.RelayHolds("phone", nil)
+	noPress(t, events, "the laptop still holds push to talk")
+	hub.RelayHolds("laptop", []string{})
+	waitPress(t, events, Press{Action: "ptt", Down: false, Relayed: true})
+
+	hub.RelayToggle("laptop", "toggleMute")
+	waitPress(t, events, Press{Action: "toggleMute", Down: true, Relayed: true})
+	waitPress(t, events, Press{Action: "toggleMute", Down: false, Relayed: true})
+	hub.RelayToggle("laptop", "ptt")
+	hub.RelayToggle("", "toggleMute")
+	hub.RelayHolds("", []string{"ptt"})
+	noPress(t, events, "nothing it should pass")
+}

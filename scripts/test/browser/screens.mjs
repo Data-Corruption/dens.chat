@@ -15,7 +15,8 @@
 //                            the writing guide
 //   photos, videos, files    a photo in the composer, comparing its copies, the viewer,
 //                            a video in the list
-//   keys, desktop, notify    the settings, each section
+//   keys, desktop, notify    the settings, each section, Relay's among them (M20.1)
+//   relay
 //   hosting, move, cache     the System section, as an owner
 //   retention, files         Manage, each section, as a member and as an owner
 //   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
@@ -349,7 +350,10 @@ export async function memberScreens(h, ctx) {
         await h.snap('settings-background');
         await h.ev(`fetch('/api/background', { method: 'DELETE' }).then((r) => r.ok)`);
         await h.wait(`!document.querySelector('[data-background-preview]')`, 'the background removed');
-        for (const [tab, name] of [['Chat', 'chat'], ['Notifications', 'notifications'], ['Voice', 'voice'], ['System', 'system']]) {
+        for (const [tab, name] of [['Chat', 'chat'], ['Notifications', 'notifications'], ['Voice', 'voice'], ['Relay', 'relay'], ['System', 'system']]) {
+            // Relay is a section where the install relays (M20), which the
+            // Android app doesn't yet.
+            if (tab === 'Relay' && !(await h.ev(`document.getElementById('app')?.dataset.relay === 'true'`))) continue;
             await settingsTab(h, tab);
             await sleep(600);
             await h.snap(`settings-${name}`, { scroll: PANEL, max: 6 });

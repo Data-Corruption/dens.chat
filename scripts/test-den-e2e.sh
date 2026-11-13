@@ -46,7 +46,11 @@
 # hands it the seal, with which it reads the DM. Signed out once more from
 # the fresh one's device list, it signs in again the same way, with the
 # digits typed into the fresh one first, which must go on showing its own.
-# The owner then bans the member, whose connections must close at once and
+# With Keybind relay on in both (M20.1), the first install holds a call, and
+# the fresh one, which sees it, says hello through Caddy; the first answers,
+# the two link across the member's machine, and push to talk held by the
+# fresh one's stand-in helper reaches the first one's call as a relayed
+# press. The owner then bans the member, whose connections must close at once and
 # who can't join again under the same name. Last, the den's machine makes an
 # owner invite with dens den owner-invite, and whoever redeems it, on the
 # member's machine under a new name, must own the den, with the owner before
@@ -817,6 +821,21 @@ run() {
   approve_sign_in member fresh "$den_id" "new bob password" old-first
   member wait-connected 0 >/dev/null
   echo ">> The first install was signed out within ${took} ms, and signed in again with the fresh one's approval, typed there first"
+
+  echo ">> Keybind relay between the member's two installs"
+  member relay-keys
+  fresh relay-keys
+  local helper_probe
+  fresh helper-probe >"$RUN_LOG_DIR/relay-helper.log" 2>&1 &
+  helper_probe=$!
+  if ! member relay-probe "$den_id" "$lounge" >"$RUN_LOG_DIR/relay-probe.log" 2>&1; then
+    kill "$helper_probe" 2>/dev/null || :
+    wait "$helper_probe" || :
+    cat "$RUN_LOG_DIR/relay-probe.log" "$RUN_LOG_DIR/relay-helper.log" >&2
+    return 1
+  fi
+  wait "$helper_probe" || { cat "$RUN_LOG_DIR/relay-helper.log" >&2; return 1; }
+  echo ">> The fresh install's hello and the first's answer passed through Caddy, the two linked, and push to talk held on the fresh one reached the call on the first"
 
   echo ">> Banning the member"
   guest "$CLIENT" status

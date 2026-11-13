@@ -2,7 +2,8 @@
 // browser named at a desktop's width: every section of the settings and
 // of Manage opened from the list down the side, each with the layout
 // audit, and every hint in it read as one line, a hint that wrapped
-// failing it, Voice with push to talk's release delay too (M19.3); then
+// failing it, Voice with push to talk's release delay too (M19.3), and
+// Relay (M20.1); then
 // Appearance's sizes: a photo at Medium until she chooses, at Large and
 // Largest the photo itself drawn over the den's preview, and at Small its
 // preview again; a YouTube player at Small, then Large with the larger
@@ -159,16 +160,17 @@ try {
     if (runs('sections')) {
         step('every section of the settings, from the list down the side');
         await openSettings(b, 'Appearance');
-        c.report((await sections('[role=dialog][aria-label="App settings"]')) === 'Appearance*|Chat|Notifications|Voice|System',
+        c.report((await sections('[role=dialog][aria-label="App settings"]')) === 'Appearance*|Chat|Notifications|Voice|Relay|System',
             `the settings list their sections down the side, open at Appearance: ${await sections('[role=dialog][aria-label="App settings"]')}`);
         const ready = {
             Appearance: `document.querySelector('[data-media-size]')`,
             Chat: `document.getElementById('compress')`,
             Notifications: `document.getElementById('notify-dms') && document.querySelector('[data-sound]')`,
             Voice: `document.getElementById('noise') && document.querySelector('select')`,
+            Relay: `document.getElementById('relay-keys') && document.querySelector('[data-docs-link]')`,
             System: `document.querySelector('a[href="/api/logs"]') && document.getElementById('hosting')`,
         };
-        for (const name of ['Appearance', 'Chat', 'Notifications', 'Voice', 'System']) {
+        for (const name of ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']) {
             await openSettings(b, name);
             await waitFor(() => b.eval(`!!(${ready[name]})`), `${name}'s cards`);
             await sleep(400);

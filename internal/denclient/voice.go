@@ -326,6 +326,7 @@ func (m *Manager) callChanged() {
 	if m.OnCall != nil {
 		m.OnCall(active)
 	}
+	m.relayChanged()
 }
 
 // failCall hangs up a call this install can't go on with, and tells its

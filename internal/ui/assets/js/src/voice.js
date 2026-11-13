@@ -1278,16 +1278,18 @@ function release() {
     for (const action of ['ptt', 'pushMute']) if (ownKey(action)) releaseAction(action);
 }
 
-// helperPress acts on a press the helper read, in this page's call.
+// helperPress acts on a press the helper read, in this page's call, or
+// one another of the member's devices read (M20), which this install's own
+// helper needn't cover and no field here types.
 function helperPress(p) {
-    if (!call || !p || !KEYS.includes(p.action) || !covered(p.action)) return;
+    if (!call || !p || !KEYS.includes(p.action) || (!p.relayed && !covered(p.action))) return;
     if (!p.down) {
         releaseAction(p.action);
         return;
     }
     // A key that types doesn't fire while the member types in a field
     // here. One the desktop owns never reaches the field.
-    if (!keyStatus.confirms && document.hasFocus() && isField(document.activeElement) && bindingTypes(keyStatus.keys[p.action])) return;
+    if (!p.relayed && !keyStatus.confirms && document.hasFocus() && isField(document.activeElement) && bindingTypes(keyStatus.keys[p.action])) return;
     pressAction(p.action);
 }
 
