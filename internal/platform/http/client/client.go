@@ -106,7 +106,7 @@ func New(a *app.App) http.Handler {
 			r.Post("/api/cache/clear", rt.handleClearCache)
 			r.Get("/api/logs", rt.handleLogs)
 			r.Post("/api/shortcuts/desktop", rt.handleShortcutsDesktop)
-			r.Get("/api/relay/devices", rt.handleRelayDevices)
+			rt.mountRelay(r)
 			rt.mountBackups(r)
 			rt.mountFlatpak(r)
 			rt.mountDens(r)
@@ -320,8 +320,9 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
 		"notifications":          rt.a.Notify.Status(),
 		// What this install relays to the member's others (M20), and
-		// Keybind relay's switch.
-		"relay": map[string]any{"can": rt.a.Relay.Can(), "keys": cfg.RelayKeys},
+		// Keybind relay's switch and from M20.2 Share this computer's
+		// sound.
+		"relay": map[string]any{"can": rt.a.Relay.Can(), "keys": cfg.RelayKeys, "sound": cfg.RelaySound},
 	}
 	// The Android app downloads the updates it finds, for Android's
 	// installer to install (M12.4).
@@ -356,12 +357,6 @@ func (rt *router) handleShortcutsDesktop(w http.ResponseWriter, r *http.Request)
 	default:
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
-}
-
-// handleRelayDevices lists the member's other installs that said they're
-// here (M20), and asks them again.
-func (rt *router) handleRelayDevices(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]any{"devices": rt.a.Relay.Devices()})
 }
 
 // handleLogs downloads the newest logs as one text file, for the member to
@@ -637,8 +632,10 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		// BackgroundDim is how far the page's background covers the
 		// picture behind the chat, in percent.
 		BackgroundDim *int `json:"backgroundDim"`
-		// RelayKeys turns Keybind relay on or off (M20).
-		RelayKeys *bool `json:"relayKeys"`
+		// RelayKeys turns Keybind relay on or off (M20), and RelaySound
+		// Share this computer's sound (M20.2).
+		RelayKeys  *bool `json:"relayKeys"`
+		RelaySound *bool `json:"relaySound"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -672,6 +669,10 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this install relays no keys", http.StatusBadRequest)
 		return
 	}
+	if body.RelaySound != nil && !slices.Contains(rt.a.Relay.Can(), "sound") {
+		http.Error(w, "this install shares no sound", http.StatusBadRequest)
+		return
+	}
 	if body.CacheLimit != nil {
 		if *body.CacheLimit < cache.MinLimit || *body.CacheLimit > cache.MaxLimit || rt.a.Cache == nil {
 			http.Error(w, "the cache's size is 512 MiB to 50 GiB", http.StatusBadRequest)
@@ -700,6 +701,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		if body.RelayKeys != nil {
 			cfg.RelayKeys = *body.RelayKeys
 		}
+		if body.RelaySound != nil {
+			cfg.RelaySound = *body.RelaySound
+		}
 		return nil
 	})
 	if err != nil {
@@ -726,6 +730,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.RelayKeys != nil {
 		rt.a.Relay.SetKeys(cfg.RelayKeys)
+	}
+	if body.RelaySound != nil {
+		rt.a.Relay.SetSound(cfg.RelaySound)
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

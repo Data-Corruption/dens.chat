@@ -17,6 +17,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database/config"
+	"github.com/Data-Corruption/dens.chat/internal/relay"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
@@ -190,6 +191,8 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer stopKeys()
 	notified, stopNotified := rt.a.Notify.Watch(page)
 	defer stopNotified()
+	relayed, stopRelayed := rt.a.Relay.Watch()
+	defer stopRelayed()
 	// A page's notes on its call go to the log at debug, so a page can't
 	// fill the disk with them: two a second, after the 64 a page keeps
 	// while its stream is down and sends once it's back.
@@ -211,6 +214,7 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 		stream:  stream,
 		keys:    keys,
 		notes:   notified,
+		relay:   relayed,
 		handle: func(ctx context.Context, msg pageMessage) {
 			if msg.T == "voice.note" && !notes.Allow() {
 				return
@@ -235,8 +239,9 @@ const closeHeard = 200 * time.Millisecond
 // pageServer is what a page's stream carries: the dens view, sent at first
 // and whenever changes says it changed; the events of the call the page
 // holds; the dens' events; the voice keys' status and the helper's presses
-// (M7); and the notifications' status, those the page shows through the
-// browser (M12.3), and the messages whose sound it plays alone (M14.2).
+// (M7); the notifications' status, those the page shows through the
+// browser (M12.3), and the messages whose sound it plays alone (M14.2);
+// and Relay's status, the device this computer's sound goes to (M20.2).
 // handle takes each of the page's own messages.
 type pageServer struct {
 	view    func(context.Context) (densView, error)
@@ -245,6 +250,7 @@ type pageServer struct {
 	stream  <-chan denclient.PageEvent
 	keys    <-chan shortcuts.Event
 	notes   <-chan notify.Event
+	relay   <-chan relay.Status
 	handle  func(context.Context, pageMessage)
 	times   pageTimes
 }
@@ -353,6 +359,11 @@ func (p pageServer) serve(ctx context.Context, c *websocket.Conn) string {
 			case e.Status != nil:
 				why = write("notifications", e.Status)
 			}
+		case st, ok := <-p.relay:
+			if !ok {
+				return behind()
+			}
+			why = write("relay", st)
 		case <-ping.C:
 			pctx, pcancel := context.WithTimeout(ctx, p.times.pong)
 			err := c.Ping(pctx)
