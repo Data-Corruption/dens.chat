@@ -14,6 +14,7 @@ import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
 import { CogIcon } from './icons.jsx';
 import { ManageDialog } from './manageden.jsx';
+import { RelayBar } from './relay.jsx';
 import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
 import { openAt } from './messages.jsx';
@@ -211,6 +212,7 @@ export function App({ instance, version, pair, pairLink }) {
                 <main class="min-h-0 flex-1 overflow-y-auto">
                     <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6 pb-20">
                         {open && <CallBox />}
+                        {open && <RelayBar look="box" />}
                         {/* The phone layout docks the shares the member
                             watches under the call's box (M13.4). */}
                         {open && narrow && <div class="overflow-hidden rounded-box empty:hidden"><DockedPlayer /></div>}

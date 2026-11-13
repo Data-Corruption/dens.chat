@@ -31,6 +31,7 @@ import { ExpiryBadge } from './disappearing.jsx';
 import { NotesIcon, NotesRow } from './notes.jsx';
 import { EVENTS, withEvent } from './denevents.js';
 import { EventsPane, EventsRow, showEvent } from './denevents.jsx';
+import { RelayBar } from './relay.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
@@ -526,6 +527,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
     const callTop = narrow && (
         <>
             <CallBar denID={denID} />
+            <RelayBar look="bar" />
             <DockedPlayer />
         </>
     );
@@ -607,6 +609,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                     <button type="button" class="btn btn-ghost btn-xs" onClick={() => setDialog({ kind: 'group' })}>+ Group</button>
                                 </div>
                             )}
+                            <RelayBar />
                             <CallBlock denID={denID} staffMuted={staffMuted(view, myCall)} roomy={button} />
                             <UserPanel me={view.me} online={live && view.state === 'connected'} onEdit={() => setDialog({ kind: 'edit' })} />
                         </div>

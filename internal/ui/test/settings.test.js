@@ -38,7 +38,9 @@ test('Relay shows where the install relays, after Voice', () => {
 test("a device's row says how its link stands, or what it offers", () => {
     assert.equal(relayState({ linked: true, apart: true, offers: ['keys'] }), 'Linked');
     assert.equal(relayState({ apart: true, offers: ['keys'] }), 'Not on this network');
-    assert.equal(relayState({ offers: ['keys', 'sound'] }), 'Keybind relay');
+    assert.equal(relayState({ offers: ['keys'] }), 'Keybind relay');
+    assert.equal(relayState({ offers: ['keys', 'sound'] }), 'Keybind relay, Sharing its sound');
+    assert.equal(relayState({ offers: ['sound'] }), 'Sharing its sound');
     assert.equal(relayState({ offers: [] }), 'Keybind relay off');
 });
 
@@ -57,7 +59,10 @@ async function relayPanel(relay, devices) {
     return {
         titles: all(root, (n) => n.localName === 'h2').map((t) => t.textContent.trim()),
         toggle: all(root, (n) => n.localName === 'input' && n.attributes.id === 'relay-keys')[0],
+        sound: all(root, (n) => n.localName === 'input' && n.attributes.id === 'relay-sound')[0],
+        buffer: all(root, (n) => n.localName === 'input' && n.attributes.name === 'relay-buffer').map((b) => b.attributes.value),
         rows: all(root, (n) => 'data-device' in n.attributes).map((li) => li.textContent.trim()),
+        listen: all(root, (n) => 'data-listen' in n.attributes).map((b) => b.attributes['data-listen']),
         saved,
         root,
     };
@@ -71,7 +76,7 @@ test('the Relay section shows Keybind relay where the install relays keys, and t
     ];
     const keys = await relayPanel({ can: ['keys'], keys: false }, devices);
     try {
-        assert.deepEqual(keys.titles, ['Keybind relay', 'Your devices']);
+        assert.deepEqual(keys.titles, ['Keybind relay', 'Audio relay', 'Your devices']);
         assert.ok(keys.toggle && !('checked' in keys.toggle.attributes), 'its switch, off');
         assert.deepEqual(keys.rows, ['LaptopLinked', 'PhoneKeybind relay off', 'VMNot on this network']);
         keys.toggle.dispatch('change', { currentTarget: { checked: true } });
@@ -82,10 +87,29 @@ test('the Relay section shows Keybind relay where the install relays keys, and t
     }
     const none = await relayPanel({ can: [], keys: false }, []);
     try {
-        assert.deepEqual(none.titles, ['Your devices'], 'no switch where it relays no keys');
-        assert.ok(!none.toggle);
+        assert.deepEqual(none.titles, ['Audio relay', 'Your devices'], 'no switch where it relays no keys');
+        assert.ok(!none.toggle && !none.sound, 'nor where it shares no sound');
+        assert.deepEqual(none.buffer, ['low', 'high'], 'and the buffer of what it plays');
     } finally {
         mount(null, none.root);
+    }
+});
+
+test('the Relay section shares the sound where the install can, and has Listen beside each device that shares its own', async () => {
+    const devices = [
+        { id: 'a', name: 'Desk', offers: ['keys', 'sound'] },
+        { id: 'b', name: 'Laptop', offers: ['keys'] },
+    ];
+    const panel = await relayPanel({ can: ['keys', 'sound'], keys: true, sound: false }, devices);
+    try {
+        assert.ok(panel.sound && !('checked' in panel.sound.attributes), 'Share this computer\'s sound, off');
+        assert.deepEqual(panel.rows, ['DeskKeybind relay, Sharing its soundListen', 'LaptopKeybind relay']);
+        assert.deepEqual(panel.listen, ['a'], 'Listen beside the desk alone');
+        panel.sound.dispatch('change', { currentTarget: { checked: true } });
+        for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5));
+        assert.deepEqual(panel.saved, [{ relaySound: true }], 'the switch goes to the service');
+    } finally {
+        mount(null, panel.root);
     }
 });
 
