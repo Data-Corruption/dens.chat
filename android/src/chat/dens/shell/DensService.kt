@@ -14,6 +14,7 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -31,11 +32,13 @@ import java.util.concurrent.TimeUnit
 // Dens refuses, and keeps the shell's stream with it, which says where the
 // page is, and carries the member's notifications, which the shell posts
 // (M12.3), the updates Dens readies, which it hands to Android's
-// installer (M12.4), and the page's background, which the bars take
-// (M13.3). A foreground service of the specialUse type holds the dens'
-// connections while the app isn't on screen, and of the microphone's type
-// too while the page has the microphone, as in a call, whose sound it
-// routes.
+// installer (M12.4), the page's background, which the bars take (M13.3),
+// and what Relay wants of Android (M20.3). A foreground service of the
+// specialUse type holds the dens' connections while the app isn't on
+// screen, of the microphone's type too while the page has the microphone,
+// as in a call, whose sound it routes, and of media playback's while the
+// page plays another of the member's devices' sound, with Wi-Fi kept
+// awake.
 class DensService : Service() {
     companion object {
         private const val NOTIFICATION = 1
@@ -77,6 +80,18 @@ class DensService : Service() {
         // hears, since the activity holds the page as shown through a call.
         @Volatile
         var notifying = false
+            private set
+
+        // relaying is whether the member wants Relay here, as Dens last
+        // said, which the activity asks Android for the network on;
+        // listening is whether the page plays another of the member's
+        // devices' sound, which the activity holds the page for (M20.3).
+        @Volatile
+        var relaying = false
+            private set
+
+        @Volatile
+        var listening = false
             private set
 
         @Volatile
@@ -124,6 +139,13 @@ class DensService : Service() {
         // member's notifications, which the page's settings say.
         fun tellAllowed(ctx: Context) = tell("notifies", JSONObject().put("on", Notes.allowed(ctx)))
 
+        // tellLocal tells Dens whether Android lets the app reach its
+        // network, and whether the member refused it when asked (M20.3).
+        fun tellLocal(ctx: Context) {
+            val on = Local.allowed(ctx)
+            tell("local", JSONObject().put("on", on).put("refused", !on && Local.asked(ctx)))
+        }
+
         // tell sends Dens a line, in turn with the others, off the thread
         // that asks.
         private val teller = Executors.newSingleThreadExecutor()
@@ -156,6 +178,8 @@ class DensService : Service() {
     private var linker: Thread? = null
     private val retry = LinkedBlockingQueue<Unit>()
     private val main = Handler(Looper.getMainLooper())
+    // Wi-Fi kept awake while the page plays another device's sound.
+    private var wifi: WifiManager.WifiLock? = null
     // The recordings the page's call has made, by session; where the member
     // chose its sound plays, if they did; and where Android last said it
     // plays.
@@ -279,15 +303,17 @@ class DensService : Service() {
             NotificationChannel(CHANNEL, "Connection", NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) }
         )
         // Android 14 and later need the service's type said; the
-        // microphone's keeps the page's recording going off screen.
+        // microphone's keeps the page's recording going off screen, and
+        // media playback's its playing another device's sound (M20.3).
         val base = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
         val mic = if (calling) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+        val media = if (listening) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
         try {
-            startForeground(NOTIFICATION, notification(), base or mic)
+            startForeground(NOTIFICATION, notification(), base or mic or media)
         } catch (e: Exception) {
-            Dens.log(this, "service: Android refused the foreground service${if (mic != 0) " with the microphone's type" else ""}: ${e.javaClass.simpleName}")
-            // The call goes on while the app is on screen.
-            if (mic != 0) {
+            Dens.log(this, "service: Android refused the foreground service${if (mic or media != 0) " with the types the page needs" else ""}: ${e.javaClass.simpleName}")
+            // The call, or the sound, goes on while the app is on screen.
+            if (mic or media != 0) {
                 try {
                     startForeground(NOTIFICATION, notification(), base)
                 } catch (e: Exception) {
@@ -295,6 +321,24 @@ class DensService : Service() {
                 }
             }
         }
+    }
+
+    // listen holds what playing another device's sound takes while Dens
+    // says the page plays it (M20.3): media playback's type, and a Wi-Fi
+    // lock for low latency, which Android honours while the app is in
+    // front.
+    private fun listen(on: Boolean) {
+        if (on == listening) return
+        listening = on
+        if (on) {
+            wifi = getSystemService(WifiManager::class.java).createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "dens:relay").apply { acquire() }
+        } else {
+            wifi?.takeIf { it.isHeld }?.release()
+            wifi = null
+        }
+        Dens.log(this, if (on) "service: the page plays another device's sound, as media, Wi-Fi kept awake" else "service: the page stopped playing another device's sound")
+        foreground()
+        changed()
     }
 
     // notification is the service's: that it keeps the dens connected, or
@@ -453,9 +497,10 @@ class DensService : Service() {
                             Updates.forget(this)
                             Dens.log(this, "service: Dens ${d?.optString("version")} is up")
                             // What Dens needs to know to notify the member
-                            // where it should.
+                            // where it should, and to relay (M20.3).
                             inFront(front)
                             tellAllowed(this)
+                            tellLocal(this)
                             changed()
                         }
                         "notify" -> if (d != null) Notes.post(this, d)
@@ -477,11 +522,28 @@ class DensService : Service() {
                         // the member asking the page to install it.
                         "update" -> if (d != null) Updates.offer(this, d.optString("version"), d.optString("apk"))
                         "install" -> if (d != null) Updates.install(this, d.optString("version"), d.optString("apk"))
+                        // What Relay wants of Android (M20.3).
+                        "relay" -> {
+                            val on = d?.optBoolean("on") == true
+                            val playing = d?.optBoolean("listening") == true
+                            main.post {
+                                if (on != relaying) Dens.log(this, "service: Relay ${if (on) "wants" else "no longer wants"} the local network")
+                                relaying = on
+                                listen(playing)
+                                changed()
+                            }
+                        }
                     }
                 }
             } finally {
                 s.close()
                 stream = null
+                // A Dens that comes back says again what Relay wants; the
+                // page that played went with the last.
+                main.post {
+                    relaying = false
+                    listen(false)
+                }
             }
             Dens.log(this, "service: the stream with Dens closed")
         }
@@ -501,6 +563,8 @@ class DensService : Service() {
         am.unregisterAudioDeviceCallback(devices)
         am.removeOnCommunicationDeviceChangedListener(moved)
         main.removeCallbacksAndMessages(null)
+        wifi?.takeIf { it.isHeld }?.release()
+        wifi = null
         stream?.close()
         // Dens stops on SIGTERM, as under systemd.
         process?.destroy()
