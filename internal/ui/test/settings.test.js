@@ -6,7 +6,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { SECTIONS, SettingsDialog, onOpenSettings, openSettings } from '../assets/js/src/settings.jsx';
+import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState, shownSections } from '../assets/js/src/settings.jsx';
 import { keepTheme, ownChoice, setTheme } from '../assets/js/src/theme.js';
 import { variables } from '../assets/js/src/themes.js';
 
@@ -19,14 +19,74 @@ function all(node, match, found = []) {
     return found;
 }
 
-test('the sections are Appearance, Chat, Notifications, Voice and System, and openSettings opens each', () => {
-    assert.deepEqual(SECTIONS.map(([, name]) => name), ['Appearance', 'Chat', 'Notifications', 'Voice', 'System']);
+test('the sections are Appearance, Chat, Notifications, Voice, Relay and System, and openSettings opens each', () => {
+    assert.deepEqual(SECTIONS.map(([, name]) => name), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
     const opened = [];
     const off = onOpenSettings((section) => opened.push(section));
     for (const [id] of SECTIONS) openSettings(id);
     openSettings();
     off();
-    assert.deepEqual(opened, ['appearance', 'chat', 'notifications', 'voice', 'system', '']);
+    assert.deepEqual(opened, ['appearance', 'chat', 'notifications', 'voice', 'relay', 'system', '']);
+});
+
+test('Relay shows where the install relays, after Voice', () => {
+    assert.deepEqual(shownSections(true).map(([id]) => id), ['appearance', 'chat', 'notifications', 'voice', 'relay', 'system']);
+    assert.deepEqual(shownSections(false).map(([id]) => id), ['appearance', 'chat', 'notifications', 'voice', 'system']);
+    assert.deepEqual(shownSections().map(([id]) => id), ['appearance', 'chat', 'notifications', 'voice', 'system'], 'a page the service gave no Relay');
+});
+
+test("a device's row says how its link stands, or what it offers", () => {
+    assert.equal(relayState({ linked: true, apart: true, offers: ['keys'] }), 'Linked');
+    assert.equal(relayState({ apart: true, offers: ['keys'] }), 'Not on this network');
+    assert.equal(relayState({ offers: ['keys', 'sound'] }), 'Keybind relay');
+    assert.equal(relayState({ offers: [] }), 'Keybind relay off');
+});
+
+// relayPanel renders the Relay section as the service answers: the
+// settings, with what the install relays, and the member's other devices.
+async function relayPanel(relay, devices) {
+    const saved = [];
+    globalThis.fetch = async (path, init) => {
+        if (init?.method === 'POST') saved.push(JSON.parse(init.body));
+        const body = path === '/api/relay/devices' ? { devices } : path === '/api/settings' ? { relay } : { ok: true };
+        return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) };
+    };
+    const root = document.createElement('div');
+    mount(h(RelaySettings, {}), root);
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 5));
+    return {
+        titles: all(root, (n) => n.localName === 'h2').map((t) => t.textContent.trim()),
+        toggle: all(root, (n) => n.localName === 'input' && n.attributes.id === 'relay-keys')[0],
+        rows: all(root, (n) => 'data-device' in n.attributes).map((li) => li.textContent.trim()),
+        saved,
+        root,
+    };
+}
+
+test('the Relay section shows Keybind relay where the install relays keys, and the devices that answered', async () => {
+    const devices = [
+        { id: 'a', name: 'Laptop', offers: ['keys'], linked: true },
+        { id: 'b', name: 'Phone', offers: [] },
+        { id: 'c', name: 'VM', offers: ['keys'], apart: true },
+    ];
+    const keys = await relayPanel({ can: ['keys'], keys: false }, devices);
+    try {
+        assert.deepEqual(keys.titles, ['Keybind relay', 'Your devices']);
+        assert.ok(keys.toggle && !('checked' in keys.toggle.attributes), 'its switch, off');
+        assert.deepEqual(keys.rows, ['LaptopLinked', 'PhoneKeybind relay off', 'VMNot on this network']);
+        keys.toggle.dispatch('change', { currentTarget: { checked: true } });
+        for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5));
+        assert.deepEqual(keys.saved, [{ relayKeys: true }], 'the switch goes to the service');
+    } finally {
+        mount(null, keys.root);
+    }
+    const none = await relayPanel({ can: [], keys: false }, []);
+    try {
+        assert.deepEqual(none.titles, ['Your devices'], 'no switch where it relays no keys');
+        assert.ok(!none.toggle);
+    } finally {
+        mount(null, none.root);
+    }
 });
 
 test('the dialog lists the sections down its side, the one shown marked, and opens at Appearance', () => {
