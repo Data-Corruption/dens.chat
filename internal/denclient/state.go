@@ -64,6 +64,9 @@ type denState struct {
 	spoilers, moveMembers bool
 	// nameStyles says the den keeps a style for each member's name.
 	nameStyles bool
+	// relay says the den passes boxes between the member's devices (M20).
+	// The cache doesn't keep it: it matters only while connected.
+	relay bool
 	// groupDMs says the snapshot came on a socket speaking the protocol's
 	// version with group DMs (M16.3), and notes the one with notes to self
 	// (M17.3).
@@ -398,6 +401,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.limits, next.callLimits, next.retention, next.soundLimits = r.Den.Limits, r.Den.CallLimits, r.Den.Retention, r.Den.SoundLimits
 	next.sealedCalls, next.disappearing = r.Den.SealedCalls, r.Den.Disappearing
 	next.spoilers, next.moveMembers, next.nameStyles = r.Den.Spoilers, r.Den.MoveMembers, r.Den.NameStyles
+	next.relay = r.Den.Relay
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
 		return errMalformed

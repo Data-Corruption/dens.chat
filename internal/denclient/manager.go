@@ -130,6 +130,9 @@ type Manager struct {
 	// Notices hears what the dens' events say of the member's
 	// notifications (M12.3).
 	Notices Notices
+	// Relay hears the boxes between the member's devices, and what it
+	// links for (M20); set before Run.
+	Relay Relay
 
 	// follows are uploads the page follows, by its keys (M5.4).
 	followMu sync.Mutex
@@ -443,13 +446,16 @@ func (m *Manager) Version() (epoch string, count uint64) {
 func (m *Manager) notify() {
 	m.changes.Add(1)
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for ch := range m.watches {
 		select {
 		case ch <- struct{}{}:
 		default:
 		}
 	}
+	m.mu.Unlock()
+	// A den connecting or dropping, or a seal arriving, changes what
+	// Relay may link through (M20).
+	m.relayChanged()
 }
 
 // HostingChanged tells the pages that hosting turned on or off (M9.1),
