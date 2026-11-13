@@ -57,6 +57,14 @@ type Configuration struct {
 	// service keeps it with the picture, so every browser paired with the
 	// instance shows the same.
 	BackgroundDim *int `json:"backgroundDim,omitempty"`
+	// RelayID names this install to the member's others it links with
+	// (M20): 16 random bytes in hex, made as a start finds none. A restore
+	// makes another, since it names the computer, not the data.
+	RelayID string `json:"relayID,omitempty"`
+	// RelayKeys is Keybind relay: this install's voice keys reaching a
+	// call another of the member's devices holds, and theirs its own,
+	// off until the member turns it on.
+	RelayKeys bool `json:"relayKeys,omitempty"`
 }
 
 // Notifications are the member's choices for what notifies them (M12.3):

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"slices"
 	"unicode"
@@ -21,6 +22,11 @@ func validate(cfg *types.Configuration) error {
 	}
 	if d := cfg.BackgroundDim; d != nil && (*d < 0 || *d > types.BackgroundMaxDim) {
 		return fmt.Errorf("the background's dim is %d, not 0 to %d", *d, types.BackgroundMaxDim)
+	}
+	if id := cfg.RelayID; id != "" {
+		if b, err := hex.DecodeString(id); err != nil || len(b) != 16 {
+			return fmt.Errorf("the Relay ID is %q, not 32 hex digits", id)
+		}
 	}
 	return validateSounds(cfg.Notifications.Sounds)
 }

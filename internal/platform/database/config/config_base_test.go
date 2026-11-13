@@ -164,3 +164,61 @@ func TestUpdateValidatesSounds(t *testing.T) {
 		}
 	}
 }
+
+// v1_11_0Row is the configuration as v1.11.0 kept it, with every field it
+// wrote that a member's choices set.
+const v1_11_0Row = `{"logLevel":"info","hosting":true,"denExported":"2026-11-01T10:00:00Z","updateNotifications":true,` +
+	`"backgroundUpdateChecks":true,"lastUpdateCheck":"2026-11-09T08:00:00Z","updateCheckSource":"background",` +
+	`"latestUpdateVersion":"v1.11.0","lastShutdownVersion":"v1.11.0","cacheLimit":1073741824,` +
+	`"voiceKeys":{"ptt":{"code":"KeyV","label":"V","ctrl":false,"alt":false,"shift":false,"meta":false}},"desktopKeys":true,` +
+	`"startAtSignIn":false,"notifications":{"dms":true,"mentions":true,"eventsOff":true,` +
+	`"muted":{"abc":{"den":true}},"sounds":{"message":{"off":true}}},"backgroundDim":40}`
+
+// The configuration v1.11.0 kept reads as it was, with Relay off and no
+// Relay ID (M20), and takes them.
+func TestReadsTheReleasedConfiguration(t *testing.T) {
+	tmp := t.TempDir()
+	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{DefaultLogLevel: "warn"}, database.ApplyPendingMigrations)
+	if err != nil {
+		logger.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		logger.Close()
+	})
+	if _, err := db.Exec(`UPDATE config SET value = ? WHERE key = ?`, v1_11_0Row, database.ConfigDataKey); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := View(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Hosting == nil || !*cfg.Hosting || cfg.VoiceKeys["ptt"].Code != "KeyV" || !cfg.DesktopKeys || cfg.CacheLimit != 1<<30 ||
+		!cfg.Notifications.DMs || !cfg.Notifications.Muted["abc"].Den || cfg.BackgroundDim == nil || *cfg.BackgroundDim != 40 {
+		t.Errorf("v1.11.0's configuration read as %+v", cfg)
+	}
+	if cfg.RelayID != "" || cfg.RelayKeys {
+		t.Errorf("v1.11.0's configuration read with Relay: %q, %v", cfg.RelayID, cfg.RelayKeys)
+	}
+	id := "00112233445566778899aabbccddeeff"
+	if _, err := Update(db, func(c *types.Configuration) error {
+		c.RelayID, c.RelayKeys = id, true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err = View(db); err != nil || cfg.RelayID != id || !cfg.RelayKeys || cfg.VoiceKeys["ptt"].Code != "KeyV" {
+		t.Errorf("Relay kept as %q, %v, %v", cfg.RelayID, cfg.RelayKeys, err)
+	}
+	if _, err := Update(db, func(c *types.Configuration) error {
+		c.RelayID = "not hex"
+		return nil
+	}); err == nil {
+		t.Error("a malformed Relay ID was kept")
+	}
+}

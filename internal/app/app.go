@@ -39,6 +39,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/platform/release"
+	"github.com/Data-Corruption/dens.chat/internal/relay"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
@@ -78,6 +79,9 @@ type App struct {
 	Shortcuts *shortcuts.Hub
 	// Notify decides what notifies the member, and where it shows (M12.3).
 	Notify *notify.Hub
+	// Relay links this install with the member's others on its network,
+	// and carries the voice keys of one to the call another holds (M20).
+	Relay *relay.Relay
 	// Cache is the client's cache of other dens' files (M6).
 	Cache *cache.Store
 	// Media runs the media module's jobs, the den's and the client's, one
@@ -445,6 +449,10 @@ func (a *App) unlock(key []byte) error {
 		}
 	})
 	a.Dens.OnCall = a.Shortcuts.SetCall
+	if a.Relay, err = a.newRelay(cfg, phase == maintenance.PhaseRestoring); err != nil {
+		return err
+	}
+	a.Dens.Relay = a.Relay
 	a.Notify = notify.New(a.Log, cfg.Notifications, func(n types.Notifications) error {
 		_, err := config.Update(a.DB, func(c *types.Configuration) error {
 			c.Notifications = n
@@ -471,6 +479,32 @@ func (a *App) unlock(key []byte) error {
 	a.Dens.Cache = a.Cache
 	return nil
 }
+
+// newRelay makes the install's Relay (M20), with its Relay ID, which the
+// first start of a version with Relay makes, and a restore makes afresh:
+// it names the computer, which a backup restored elsewhere isn't.
+func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, error) {
+	if cfg.RelayID == "" || restoring {
+		var err error
+		if cfg, err = config.Update(a.DB, func(c *types.Configuration) error {
+			c.RelayID = relay.NewID().String()
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	id, err := relay.ParseID(cfg.RelayID)
+	if err != nil {
+		return nil, err
+	}
+	return relay.New(relay.Config{ID: id, Name: a.Dens.Label, Keys: cfg.RelayKeys, CanKeys: a.CanRelay(),
+		Loopback: a.Layout.Form == layout.Development, Dens: a.Dens, Hub: a.Shortcuts, Log: a.Log}), nil
+}
+
+// CanRelay reports whether the install links with the member's others on
+// its network (M20): every form but the Android app, which has no local
+// network's permission yet.
+func (a *App) CanRelay() bool { return a.Layout.Form != layout.Android }
 
 // prepareHosting settles the hosting switch as the service starts, and
 // returns the configuration with it (M9.1). The first start of a version
