@@ -17,6 +17,7 @@ import (
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/logging"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -38,6 +39,27 @@ const (
 	// of one.
 	rtoMax = 100 * time.Millisecond
 )
+
+// The sound crosses as RTP beside the channels (M20.2), under the link's
+// own DTLS, with no interceptors, so nothing is reported, acknowledged or
+// sent again: a packet the path loses is 5 ms the player fades across.
+// Its payload is the helper's piece as it came, the rate and then the
+// frames, little-endian, whatever the codec's name says, and its
+// timestamp the piece's place in the stream, in frames.
+// Each side sends from an SSRC its role fixes, which the description
+// written for it names.
+const soundPayloadType = 96
+
+var soundCodec = webrtc.RTPCodecCapability{MimeType: "audio/L16", ClockRate: 48000, Channels: 2}
+
+// soundSSRC is the SSRC of the side that offers, or of the one that
+// answers.
+func soundSSRC(offers bool) uint32 {
+	if offers {
+		return 0x44454e01
+	}
+	return 0x44454e02
+}
 
 // local is this side of an attempt at a link: the UDP port it holds, its
 // certificate and the ICE credentials made for it.
@@ -123,10 +145,12 @@ func (m muxAt) GetListenAddresses() []net.Addr { return m.addrs }
 
 // link is one peer connection between two of the member's installs, with
 // its two channels: ctl, reliable and in order, and now, neither, so a lost
-// message never holds the next one back.
+// message never holds the next one back; and the track this side's sound
+// goes on (M20.2).
 type link struct {
 	pc       *webrtc.PeerConnection
 	ctl, now *webrtc.DataChannel
+	track    *webrtc.TrackLocalStaticRTP
 	// up is closed once both channels are open, and done once the link has
 	// failed or closed.
 	up, done chan struct{}
@@ -135,14 +159,31 @@ type link struct {
 	doneOnce sync.Once
 	mu       sync.Mutex
 	lost     *time.Timer
+	// The sound's sequence number and place in the stream, as sent.
+	soundMu  sync.Mutex
+	seq      uint16
+	position uint32
+}
+
+// sendSound sends a piece of this computer's sound as RTP. Nothing waits:
+// it goes to the socket, or it's lost.
+func (k *link) sendSound(piece []byte) {
+	frames := uint32((len(piece) - 4) / 4)
+	k.soundMu.Lock()
+	defer k.soundMu.Unlock()
+	k.seq++
+	_ = k.track.WriteRTP(&rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: soundPayloadType, SequenceNumber: k.seq,
+		Timestamp: k.position}, Payload: piece})
+	k.position += frames
 }
 
 // dial starts a link from this side's half to the other's, the side with
 // the lower Relay ID offering, each writing the other's description from
 // its half. From then each sends checks to the other's addresses until one
 // answers, or the introduction runs out. onCtl and onNow take what each
-// channel carries, from its first message.
-func (l *local) dial(theirs *half, offer, loopback bool, onCtl, onNow func([]byte)) (*link, error) {
+// channel carries, from its first message, and onSound each piece of the
+// other side's sound, with its place in the stream.
+func (l *local) dial(theirs *half, offer, loopback bool, onCtl, onNow func([]byte), onSound func(at uint32, piece []byte)) (*link, error) {
 	var se webrtc.SettingEngine
 	se.LoggerFactory = quiet{}
 	se.SetICECredentials(l.ufrag, l.pwd)
@@ -162,13 +203,39 @@ func (l *local) dial(theirs *half, offer, loopback bool, onCtl, onNow func([]byt
 	se.SetICETimeouts(disconnectedAfter, 0, keepAlive)
 	se.SetICEMaxBindingRequests(uint16(introduction / checkEvery))
 	se.SetSCTPRTOMax(rtoMax)
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(se), webrtc.WithMediaEngine(&webrtc.MediaEngine{}),
+	media := &webrtc.MediaEngine{}
+	if err := media.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: soundCodec, PayloadType: soundPayloadType},
+		webrtc.RTPCodecTypeAudio); err != nil {
+		return nil, err
+	}
+	api := webrtc.NewAPI(webrtc.WithSettingEngine(se), webrtc.WithMediaEngine(media),
 		webrtc.WithInterceptorRegistry(&interceptor.Registry{}))
 	pc, err := api.NewPeerConnection(webrtc.Configuration{Certificates: []webrtc.Certificate{l.cert}})
 	if err != nil {
 		return nil, err
 	}
 	k := &link{pc: pc, up: make(chan struct{}), done: make(chan struct{})}
+	if k.track, err = webrtc.NewTrackLocalStaticRTP(soundCodec, "sound", "relay"); err == nil {
+		_, err = pc.AddTransceiverFromTrack(k.track, webrtc.RTPTransceiverInit{
+			Direction:     webrtc.RTPTransceiverDirectionSendrecv,
+			SendEncodings: []webrtc.RTPEncodingParameters{{RTPCodingParameters: webrtc.RTPCodingParameters{SSRC: webrtc.SSRC(soundSSRC(offer))}}},
+		})
+	}
+	if err != nil {
+		_ = pc.Close()
+		return nil, err
+	}
+	pc.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+		for {
+			p, _, err := t.ReadRTP()
+			if err != nil {
+				return
+			}
+			if p.PayloadType == soundPayloadType {
+				onSound(p.Timestamp, p.Payload)
+			}
+		}
+	})
 	yes, no, zero := true, false, uint16(0)
 	channel := func(label string, id uint16, reliable bool) (*webrtc.DataChannel, error) {
 		init := &webrtc.DataChannelInit{Negotiated: &yes, ID: &id, Ordered: &yes}
@@ -228,7 +295,7 @@ func (l *local) dial(theirs *half, offer, loopback bool, onCtl, onNow func([]byt
 			err = pc.SetLocalDescription(o)
 		}
 		if err == nil {
-			err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: description(theirs, "active")})
+			err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: description(theirs, "active", soundSSRC(false))})
 		}
 		// Pion's errors can name addresses, which stay out of the log.
 		if err != nil {
@@ -237,7 +304,7 @@ func (l *local) dial(theirs *half, offer, loopback bool, onCtl, onNow func([]byt
 		}
 		return k, nil
 	}
-	err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: description(theirs, "actpass")})
+	err = pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: description(theirs, "actpass", soundSSRC(true))})
 	var a webrtc.SessionDescription
 	if err == nil {
 		a, err = pc.CreateAnswer(nil)
@@ -285,21 +352,29 @@ func (k *link) ending() bool {
 }
 
 // description is the other side's, as it would have written it, from its
-// half: one section for the data channels, with its credentials, its
-// fingerprint, and a host candidate at each of its addresses.
-func description(h *half, setup string) string {
+// half: a section for its sound, from the SSRC its role fixes, then one
+// for the data channels, as Pion orders its own, each with its
+// credentials, its fingerprint, and a host candidate at each of its
+// addresses.
+func description(h *half, setup string, ssrc uint32) string {
 	fp := make([]string, len(h.Fingerprint))
 	for i, b := range h.Fingerprint {
 		fp[i] = fmt.Sprintf("%02X", b)
 	}
-	lines := []string{"v=0", "o=- 1 1 IN IP4 0.0.0.0", "s=-", "t=0 0", "a=group:BUNDLE 0",
-		"m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0", "a=mid:0",
-		"a=ice-ufrag:" + h.Ufrag, "a=ice-pwd:" + h.Pwd, "a=fingerprint:sha-256 " + strings.Join(fp, ":"), "a=setup:" + setup,
-		"a=sctp-port:5000"}
+	transport := []string{"a=ice-ufrag:" + h.Ufrag, "a=ice-pwd:" + h.Pwd, "a=fingerprint:sha-256 " + strings.Join(fp, ":"),
+		"a=setup:" + setup}
 	for i, a := range h.Addrs {
-		lines = append(lines, fmt.Sprintf("a=candidate:%d 1 udp 2130706431 %s %d typ host", i+1, a, h.Port))
+		transport = append(transport, fmt.Sprintf("a=candidate:%d 1 udp 2130706431 %s %d typ host", i+1, a, h.Port))
 	}
-	lines = append(lines, "a=end-of-candidates")
+	transport = append(transport, "a=end-of-candidates")
+	lines := []string{"v=0", "o=- 1 1 IN IP4 0.0.0.0", "s=-", "t=0 0", "a=group:BUNDLE 0 1",
+		fmt.Sprintf("m=audio 9 UDP/TLS/RTP/SAVPF %d", soundPayloadType), "c=IN IP4 0.0.0.0", "a=mid:0"}
+	lines = append(lines, transport...)
+	lines = append(lines, "a=rtcp-mux", "a=sendrecv", fmt.Sprintf("a=rtpmap:%d L16/48000/2", soundPayloadType), "a=msid:relay sound",
+		fmt.Sprintf("a=ssrc:%d cname:relay", ssrc), fmt.Sprintf("a=ssrc:%d msid:relay sound", ssrc),
+		"m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "c=IN IP4 0.0.0.0", "a=mid:1")
+	lines = append(lines, transport...)
+	lines = append(lines, "a=sctp-port:5000")
 	return strings.Join(lines, "\r\n") + "\r\n"
 }
 

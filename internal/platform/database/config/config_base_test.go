@@ -202,18 +202,18 @@ func TestReadsTheReleasedConfiguration(t *testing.T) {
 		!cfg.Notifications.DMs || !cfg.Notifications.Muted["abc"].Den || cfg.BackgroundDim == nil || *cfg.BackgroundDim != 40 {
 		t.Errorf("v1.11.0's configuration read as %+v", cfg)
 	}
-	if cfg.RelayID != "" || cfg.RelayKeys {
-		t.Errorf("v1.11.0's configuration read with Relay: %q, %v", cfg.RelayID, cfg.RelayKeys)
+	if cfg.RelayID != "" || cfg.RelayKeys || cfg.RelaySound {
+		t.Errorf("v1.11.0's configuration read with Relay: %q, %v, %v", cfg.RelayID, cfg.RelayKeys, cfg.RelaySound)
 	}
 	id := "00112233445566778899aabbccddeeff"
 	if _, err := Update(db, func(c *types.Configuration) error {
-		c.RelayID, c.RelayKeys = id, true
+		c.RelayID, c.RelayKeys, c.RelaySound = id, true, true
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if cfg, err = View(db); err != nil || cfg.RelayID != id || !cfg.RelayKeys || cfg.VoiceKeys["ptt"].Code != "KeyV" {
-		t.Errorf("Relay kept as %q, %v, %v", cfg.RelayID, cfg.RelayKeys, err)
+	if cfg, err = View(db); err != nil || cfg.RelayID != id || !cfg.RelayKeys || !cfg.RelaySound || cfg.VoiceKeys["ptt"].Code != "KeyV" {
+		t.Errorf("Relay kept as %q, %v, %v, %v", cfg.RelayID, cfg.RelayKeys, cfg.RelaySound, err)
 	}
 	if _, err := Update(db, func(c *types.Configuration) error {
 		c.RelayID = "not hex"

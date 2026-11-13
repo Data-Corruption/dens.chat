@@ -65,6 +65,9 @@ type Configuration struct {
 	// call another of the member's devices holds, and theirs its own,
 	// off until the member turns it on.
 	RelayKeys bool `json:"relayKeys,omitempty"`
+	// RelaySound is Share this computer's sound: the member's other
+	// devices may listen to it (M20.2), off until the member turns it on.
+	RelaySound bool `json:"relaySound,omitempty"`
 }
 
 // Notifications are the member's choices for what notifies them (M12.3):

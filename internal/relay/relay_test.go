@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -27,6 +29,26 @@ type standIn struct {
 	mu       sync.Mutex
 	installs []*install
 	calls    []string
+	// holding keeps the boxes passed until let go, held, as a slow den.
+	holding bool
+	held    []func()
+}
+
+// hold keeps the boxes passed from now until letGo passes them, in order.
+func (s *standIn) hold() {
+	s.mu.Lock()
+	s.holding = true
+	s.mu.Unlock()
+}
+
+func (s *standIn) letGo() {
+	s.mu.Lock()
+	held := s.held
+	s.holding, s.held = false, nil
+	s.mu.Unlock()
+	for _, f := range held {
+		f()
+	}
 }
 
 func newStandIn(t *testing.T) *standIn {
@@ -61,12 +83,25 @@ func (s *standIn) install(name string) *install {
 // again has.
 func (s *standIn) installAs(name string, id ID, keyID denproto.Bytes) *install {
 	i := &install{s: s, keyID: keyID, hub: newFakeHub()}
-	log, err := xlog.New(s.t.TempDir(), "debug")
+	dir := s.t.TempDir()
+	// A failed test shows what each install logged.
+	s.t.Cleanup(func() {
+		if !s.t.Failed() {
+			return
+		}
+		files, _ := filepath.Glob(filepath.Join(dir, "*"))
+		for _, f := range files {
+			if b, err := os.ReadFile(f); err == nil {
+				s.t.Logf("%s's log:\n%s", name, b)
+			}
+		}
+	})
+	log, err := xlog.New(dir, "debug")
 	if err != nil {
 		s.t.Fatal(err)
 	}
 	s.t.Cleanup(func() { log.Close() })
-	i.relay = New(Config{ID: id, Name: name, Keys: true, CanKeys: true, Loopback: true, Dens: i, Hub: i.hub, Log: log,
+	i.relay = New(Config{ID: id, Name: name, Keys: true, CanKeys: true, CanSound: true, Loopback: true, Dens: i, Hub: i.hub, Log: log,
 		Addrs: func() []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} }})
 	s.mu.Lock()
 	s.installs = append(s.installs, i)
@@ -127,6 +162,11 @@ func (s *standIn) remove(i *install) {
 // pass opens a box on each of the member's devices it's for.
 func (s *standIn) pass(from, to denproto.Bytes, box []byte) {
 	s.mu.Lock()
+	if s.holding {
+		s.held = append(s.held, func() { s.pass(from, to, box) })
+		s.mu.Unlock()
+		return
+	}
 	installs := slices.Clone(s.installs)
 	s.mu.Unlock()
 	for _, j := range installs {
