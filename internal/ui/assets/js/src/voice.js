@@ -64,6 +64,7 @@ import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
 import { NO_CALLS, NO_SHARING, autoplays, canCall, canSeal, canShare, inApp } from './platform.js';
 import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
+import { setCallContext } from './relay.js';
 import { callSounds, playSound, setSoundRoute, warmSounds } from './sounds.js';
 import { soundRefusal } from './soundboard.js';
 
@@ -2617,14 +2618,19 @@ function startMeters() {
     }
     meterTimer = setInterval(measure, METER_MS);
     // Where the call's context plays its sounds, they're decoded for it
-    // now, so the first of each plays without waiting (M14.2).
-    if (autoplays()) warmSounds(callContext);
+    // now, so the first of each plays without waiting (M14.2), and Relay's
+    // sound moves into it, onto the call's route.
+    if (autoplays()) {
+        warmSounds(callContext);
+        setCallContext(callContext);
+    }
 }
 
 function stopMeters() {
     clearInterval(meterTimer);
     meterTimer = null;
     for (const key of [...meters.keys()]) unmeter(key);
+    if (autoplays()) setCallContext(null);
     callContext?.close().catch(() => {});
     callContext = null;
     lastLoud.clear();

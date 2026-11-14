@@ -13,7 +13,10 @@
 // shows the bar on its end; a second page of bob's first install takes
 // over, the first told; and the laptop's Stop ends it, the second told.
 // Then the den's database and both of bob's installs' logs hold none of
-// the container's addresses.
+// the container's addresses. From M20.3 the laptop's page, taken for a
+// phone's by touch, shows the call's button for bob's call under the name
+// of the device holding it, and held, rings bob for alice until it's let
+// go.
 //
 //   run.sh relay chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -192,6 +195,35 @@ try {
     real = spawn(`${HOME}/dens-dev`, ['shortcuts'], { cwd: HOME, stdio: ['ignore', 'ignore', fs.openSync(`${HOME}/helper.log`, 'w')] });
     C.b = await launch('chromium', 9547, {});
     await pair(C.b, LAPTOP);
+
+    step("the laptop's page, as a phone's, holds the call's button for bob's call");
+    await C.b.touch(true);
+    // Push to talk, the button's role with it.
+    await C.b.eval(`localStorage.setItem('DENS_VOICE', JSON.stringify({ mode: 'ptt' })), true`);
+    await C.b.go(`http://localhost:${LAPTOP.port}/`);
+    const relayed = `document.querySelector('[data-call-button][data-relayed]')`;
+    const shows = await waitFor(() => C.b.eval(`(() => {
+        const b = ${relayed};
+        return b ? b.getAttribute('aria-label') + ' | ' + document.querySelector('[data-relayed-to]')?.textContent : '';
+    })()`), "the call's button on the laptop's page", 30000).catch(() => '');
+    report(/^Hold to talk, on .+ \| .+/.test(shows), `the laptop's page shows the call's button for bob's call, under the name of the device holding it: ${shows}`);
+    if (shows) {
+        const [x, y] = await C.b.eval(`(() => { const r = ${relayed}.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()`);
+        const quiet = !(await rings(A, 'Bob'));
+        await C.b.cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        const pressed = Date.now();
+        const lit = await waitFor(() => rings(A, 'Bob'), "bob's ring from the button", 5000).catch(() => false);
+        const litAfter = Date.now() - pressed;
+        await sleep(1000);
+        const held = await rings(A, 'Bob');
+        await C.b.cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        const out = await waitFor(async () => !(await rings(A, 'Bob')), "bob's ring going out", 5000).catch(() => false);
+        report(quiet && lit === true && held && out === true,
+            `held, the button lights bob's ring on alice's page ${litAfter} ms after it's pressed (${lit}), held (${held}), and out as it's let go (${out})`);
+    }
+    await C.b.shot(`${HOME}/shot-relay-${which}-button.png`).catch(() => {});
+    await C.b.touch(false);
+
     await openSettings(B.b, 'Relay');
     // Bob's first install lists one device, the laptop.
     const listenButton = `${SETTINGS}.querySelector('[data-device] [data-listen]')`;

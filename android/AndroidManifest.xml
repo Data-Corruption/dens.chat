@@ -26,6 +26,13 @@
          UPDATE_PACKAGES_WITHOUT_USER_ACTION: Play Protect calls an app that
          asks for it harmful. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Relay (M20.3): Android 17 keeps an app off its own network unless
+         the member allows it, as they allow the microphone; and while the
+         phone plays another device's sound, the service's type for it, and
+         Wi-Fi kept awake. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- extractNativeLibs puts lib/<abi>/libdens.so in the native library
          directory, the only place an app may run a binary from. Backups
@@ -63,7 +70,7 @@
         <service
             android:name="chat.dens.shell.DensService"
             android:exported="false"
-            android:foregroundServiceType="specialUse|microphone">
+            android:foregroundServiceType="specialUse|microphone|mediaPlayback">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps a chat client's connections to its servers open, so messages arrive" />

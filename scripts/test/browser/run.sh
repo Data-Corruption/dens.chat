@@ -168,7 +168,9 @@
 #                               container's sound, a tone, which his first page plays from Listen, at the tone's
 #                               level and never dry, behind another tab too, by the worklet's counts; the bars
 #                               on both ends; a second page taking over, the first told; the laptop's Stop; and
-#                               no address in the den's database or his installs' logs
+#                               no address in the den's database or his installs' logs; and from M20.3 the
+#                               laptop's page, as a phone's, holding the call's button for his call, under the
+#                               name of the device holding it, which rings him on alice's page while it's held
 # BROWSER is chromium or firefox.
 
 set -euo pipefail

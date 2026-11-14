@@ -28,7 +28,7 @@ import { PlayIcon } from './icons.jsx';
 import { STYLES_ALL, STYLES_COLORS, STYLES_OFF, setNameStyles, useNameStyles } from './names.js';
 import { useLayer, useNarrow } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
-import { NO_CALLS, canCall, canShare, hasKeys, here, inApp, relays } from './platform.js';
+import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js';
 import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './sounds.js';
 import { cacheSizes, cacheUsage } from './storage.js';
@@ -63,7 +63,7 @@ export function onOpenSettings(fn) {
 }
 
 // SECTIONS are the settings' sections, by the id openSettings takes and
-// the name the list shows. Relay shows where the install relays (M20).
+// the name the list shows.
 export const SECTIONS = [
     ['appearance', 'Appearance'],
     ['chat', 'Chat'],
@@ -72,11 +72,6 @@ export const SECTIONS = [
     ['relay', 'Relay'],
     ['system', 'System'],
 ];
-
-// shownSections are the sections this install's settings have.
-export function shownSections(relaying = relays()) {
-    return SECTIONS.filter(([id]) => id !== 'relay' || relaying);
-}
 
 // SettingsDialog shows a section of the settings. It closes with its ✕,
 // Escape, a click outside it, or Back. On the phone layout it takes the
@@ -92,12 +87,12 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     }, [onClose, narrow, section]);
-    const sections = shownSections();
+    const sections = SECTIONS;
     let panel;
     if (at === 'chat') panel = <ChatSettings />;
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
-    else if (at === 'relay' && relays()) panel = <RelaySettings />;
+    else if (at === 'relay') panel = <RelaySettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><NameStylesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
     const backdrop = useBackdrop(onClose);
@@ -1142,10 +1137,13 @@ const DEVICES_EVERY = 3000;
 // sound, whose switches the service keeps, and the buffer of what this
 // page plays, which the browser keeps; and the devices that answered,
 // each with how its link stands or what it offers, and Listen beside each
-// that shares its sound, asked again while the section is open.
+// that shares its sound, asked again while the section is open. A phone's
+// keys are its call's button, and where the member refused Android's ask
+// to let Dens reach the network, the section says so.
 export function RelaySettings() {
     const [relay, setRelay] = useState(null);
     const [devices, setDevices] = useState(null);
+    const [refused, setRefused] = useState(false);
     const [buffer, setBuffer] = useState(bufferChoice);
     const sound = useRelay();
     const load = useAction();
@@ -1153,7 +1151,11 @@ export function RelaySettings() {
     useEffect(() => {
         load.run(async () => setRelay((await api.get('/api/settings')).relay));
         let live = true;
-        const ask = () => api.get('/api/relay/devices').then((d) => live && setDevices(d?.devices || []), () => {});
+        const ask = () => api.get('/api/relay/devices').then((d) => {
+            if (!live) return;
+            setDevices(d?.devices || []);
+            setRefused(!!d?.refused);
+        }, () => {});
         ask();
         const timer = setInterval(ask, DEVICES_EVERY);
         return () => {
@@ -1168,9 +1170,15 @@ export function RelaySettings() {
     });
     return (
         <>
+            {refused && (
+                <p role="status" class="text-sm text-warning" data-relay-refused>
+                    Android keeps Dens off your network. Allow it in Android's settings, under Apps.
+                </p>
+            )}
             {relay.can?.includes('keys') && (
                 <Card title="Keybind relay">
-                    <Toggle id="relay-keys" label="Relay voice keys" hint="Keys pressed on one device act in the call another holds."
+                    <Toggle id="relay-keys" label={hasKeys() ? 'Relay voice keys' : "Relay the call's button"}
+                        hint={hasKeys() ? 'Keys pressed on one device act in the call another holds.' : 'It acts in the call another of your devices holds.'}
                         checked={!!relay.keys} disabled={save.busy} onChange={(on) => set('relayKeys', on)} />
                     <ErrorText message={save.error} />
                 </Card>

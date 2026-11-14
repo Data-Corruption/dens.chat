@@ -49,12 +49,15 @@ import java.net.URL
 // navigation bars take the page's background, with icons to match, so
 // they follow its theme, the phone's light or dark or one the member
 // picks (M13.3). What the page plays full screen turns with the phone
-// (M13.4).
+// (M13.4). While the page plays another of the member's devices' sound,
+// the activity holds it as shown, as for a call, and as the member first
+// wants Relay, it asks Android to let the app reach its network (M20.3).
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
         const val MIC = 2
         const val NOTIFY_ASK = 3
+        const val LOCAL_ASK = 4
     }
 
     private lateinit var root: FrameLayout
@@ -62,6 +65,9 @@ class PageActivity : Activity() {
     // The page's request for the microphone, while Android asks the member
     // for it.
     private var micAsk: PermissionRequest? = null
+    // asking is whether Android is asking the member for a permission the
+    // activity asked for, which takes one request at a time.
+    private var asking = false
     // What shows over the page, or instead of it: Dens starting, or why it
     // can't show the page.
     private var note: View? = null
@@ -86,6 +92,7 @@ class PageActivity : Activity() {
                 show()
                 hold()
                 askToNotify()
+                askForLocal()
                 paintBars()
             }
         }
@@ -278,9 +285,11 @@ class PageActivity : Activity() {
         started = true
         DensService.inFront(true)
         // The member may have let the app post notifications, or stopped
-        // it, in Android's settings meanwhile.
+        // it, in Android's settings meanwhile, or let it reach its network.
         DensService.tellAllowed(this)
+        DensService.tellLocal(this)
         askToNotify()
+        askForLocal()
     }
 
     override fun onStop() {
@@ -294,12 +303,24 @@ class PageActivity : Activity() {
     // (M12.2): a member who refused then finds where to allow them in the
     // settings.
     private fun askToNotify() {
-        if (Build.VERSION.SDK_INT < 33 || !started || !DensService.notifying || micAsk != null) return
+        if (Build.VERSION.SDK_INT < 33 || !started || !DensService.notifying || micAsk != null || asking) return
         val prefs = DensService.prefs(this)
         if (prefs.getBoolean("askedToNotify", false) || checkSelfPermission(NOTIFY) == PackageManager.PERMISSION_GRANTED) return
         prefs.edit().putBoolean("askedToNotify", true).apply()
         Dens.log(this, "page: asking Android for POST_NOTIFICATIONS")
+        asking = true
         requestPermissions(arrayOf(NOTIFY), NOTIFY_ASK)
+    }
+
+    // askForLocal asks Android to let the app reach its network as the
+    // member first wants Relay, which Dens says (M20.3), once: a member
+    // who refused finds where to allow it in the Relay settings.
+    private fun askForLocal() {
+        if (!Local.asks() || !started || !DensService.relaying || micAsk != null || asking || Local.allowed(this) || Local.asked(this)) return
+        Local.markAsked(this)
+        Dens.log(this, "page: asking Android for ACCESS_LOCAL_NETWORK")
+        asking = true
+        requestPermissions(arrayOf(Local.PERMISSION), LOCAL_ASK)
     }
 
     override fun onRestart() {
@@ -451,6 +472,9 @@ class PageActivity : Activity() {
     // the call's holds the buttons that move its sound; then it answers the
     // page.
     private fun askForMic() {
+        // Android asks one thing at a time: the microphone waits for the
+        // answer to what it asks now.
+        if (asking) return
         val want = mutableListOf<String>()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) want += Manifest.permission.RECORD_AUDIO
         val prefs = DensService.prefs(this)
@@ -460,6 +484,7 @@ class PageActivity : Activity() {
         }
         if (want.isEmpty()) return answerMic()
         Dens.log(this, "page: asking Android for ${want.joinToString(" and ") { it.substringAfterLast('.') }}")
+        asking = true
         requestPermissions(want.toTypedArray(), MIC)
     }
 
@@ -481,20 +506,27 @@ class PageActivity : Activity() {
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
+        asking = false
         if (requestCode == MIC) answerMic()
+        if (requestCode == LOCAL_ASK) Dens.log(this, "page: Android ${if (Local.allowed(this)) "lets" else "doesn't let"} the app reach its network")
         DensService.tellAllowed(this)
+        DensService.tellLocal(this)
+        // What waited for this one's answer, the page's microphone first.
+        if (micAsk != null) return askForMic()
+        askToNotify()
+        askForLocal()
     }
 
     // hold holds the page as shown while it has the microphone, as in a
-    // call, and lets it go after: Chromium freezes a hidden page a minute
-    // after its sound stops, which stops a call sending, and leaves it
-    // silent once the page thaws.
+    // call, or plays another device's sound (M20.3), and lets it go after:
+    // Chromium freezes a hidden page a minute after its sound stops, which
+    // stops a call sending, and leaves it silent once the page thaws.
     private fun hold() {
         val w = web ?: return
-        val on = DensService.calling
+        val on = DensService.calling || DensService.listening
         if (w.held == on) return
         w.held = on
-        Dens.log(this, if (on) "page: held as shown, for its call" else "page: no longer held")
+        Dens.log(this, if (on) "page: held as shown, for ${if (DensService.calling) "its call" else "the sound it plays"}" else "page: no longer held")
     }
 
     private fun updateWebView(pkg: String?) {
@@ -550,15 +582,15 @@ class PageActivity : Activity() {
     }
 
     // back walks the page's history down to its root, Home, then leaves
-    // the page, as in a browser; full screen goes first. A page in a call
-    // goes behind the phone's other apps instead, as Home sends it, and its
-    // call goes on.
+    // the page, as in a browser; full screen goes first. A page in a call,
+    // or playing another device's sound (M20.3), goes behind the phone's
+    // other apps instead, as Home sends it, and its call or sound goes on.
     private fun back() {
         val w = web
         when {
             fullScreen != null -> fullScreenDone?.onCustomViewHidden()
             w != null && w.copyBackForwardList().currentIndex > loadedAt -> w.goBack()
-            DensService.calling -> moveTaskToBack(true)
+            DensService.calling || DensService.listening -> moveTaskToBack(true)
             else -> finish()
         }
     }

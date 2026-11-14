@@ -74,6 +74,29 @@ func (m *Manager) MemberCalls() []string {
 	return dens
 }
 
+// MemberMuted says whether the member is muted in their call at a den, by
+// themselves or by staff, whichever of their devices holds it.
+func (m *Manager) MemberMuted(den string) bool {
+	c, err := m.find(den)
+	if err != nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil {
+		return false
+	}
+	me := c.profile.Member.ID
+	for _, call := range c.den.calls {
+		for _, x := range call.Members {
+			if x.ID == me {
+				return x.Muted || x.StaffMuted
+			}
+		}
+	}
+	return false
+}
+
 // CallDen is the den of the call this install holds, or "" for none.
 func (m *Manager) CallDen() string {
 	m.callMu.Lock()

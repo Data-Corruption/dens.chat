@@ -8,6 +8,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
+	"github.com/Data-Corruption/dens.chat/internal/relay"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
@@ -23,9 +24,14 @@ import (
 // the page to install it, which the shell hands to Android's installer.
 // From M13.3 it sends bars, the page's background, which the shell paints
 // its status and navigation bars with, as the stream opens, where the page
-// has said one, and as it changes. The shell sends front as the app comes
-// in front and leaves it, and notifies, whether Android lets it post
-// notifications, as the stream opens and as that changes.
+// has said one, and as it changes. From M20.3 it sends relay, what Relay
+// wants of Android: on, for which the shell asks the member to let the app
+// reach its network, and listening, for which it plays as media with Wi-Fi
+// kept awake and the page held as shown. The shell sends front as the app
+// comes in front and leaves it, notifies, whether Android lets it post
+// notifications, and from M20.3 local, whether Android lets it reach its
+// network and whether the member refused that, as the stream opens and as
+// each changes.
 const (
 	msgShellHello     = "hello"
 	msgShellNotify    = "notify"
@@ -34,8 +40,10 @@ const (
 	msgShellUpdate    = "update"
 	msgShellInstall   = "install"
 	msgShellBars      = "bars"
+	msgShellRelay     = "relay"
 	msgShellFront     = "front"
 	msgShellNotifies  = "notifies"
+	msgShellLocal     = "local"
 )
 
 // shellHello is the service's first line on the stream: its version, and
@@ -60,6 +68,13 @@ type shellUnnotify struct {
 	Keys []string `json:"keys"`
 }
 
+// shellLocal is whether Android lets the app reach its network, and
+// whether the member refused when asked.
+type shellLocal struct {
+	On      bool `json:"on"`
+	Refused bool `json:"refused"`
+}
+
 // shellPlace is the shell, as a place notifications show (M12.3).
 type shellPlace struct{ s *control.Stream }
 
@@ -80,6 +95,9 @@ func (p shellPlace) InstallUpdate(u app.UpdateReady) { _ = p.s.Send(msgShellInst
 // The shell, as it paints its bars with the page's background (M13.3).
 func (p shellPlace) Bars(color string) { _ = p.s.Send(msgShellBars, shellBars{Color: color}) }
 
+// The shell, as it hears what Relay wants of Android.
+func (p shellPlace) Relay(w relay.Wants) { _ = p.s.Send(msgShellRelay, w) }
+
 // shellStream serves the shell's stream until either side closes it, or
 // the service stops.
 func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error {
@@ -99,6 +117,8 @@ func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error 
 		defer a.DropUpdateShell(place)
 		a.SetBarsShell(place)
 		defer a.DropBarsShell(place)
+		a.SetRelayShell(place)
+		defer a.DropRelayShell(place)
 		go s.KeepAlive(ctx)
 		for {
 			// A newer shell's lines this service doesn't know, it ignores.
@@ -116,6 +136,11 @@ func shellStream(a *app.App) func(ctx context.Context, s *control.Stream) error 
 			case msgShellNotifies:
 				if json.Unmarshal(msg.D, &on) == nil {
 					a.Notify.SetAllowed(on.On)
+				}
+			case msgShellLocal:
+				var local shellLocal
+				if json.Unmarshal(msg.D, &local) == nil {
+					a.Relay.SetLocal(local.On, local.Refused)
 				}
 			}
 		}

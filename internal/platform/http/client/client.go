@@ -223,7 +223,6 @@ func (rt *router) pageData(title string) map[string]any {
 	data["Autoplay"] = rt.autoplays()
 	data["InApp"] = rt.inApp()
 	data["Keys"] = !rt.inApp()
-	data["Relay"] = rt.a.CanRelay()
 	data["Sounds"] = rt.sounds
 	data["Fonts"] = rt.fonts
 	return data

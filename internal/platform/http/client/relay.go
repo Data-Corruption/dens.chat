@@ -24,9 +24,10 @@ func (rt *router) mountRelay(r chi.Router) {
 }
 
 // handleRelayDevices lists the member's other installs that said they're
-// here (M20), and asks them again.
+// here (M20), and asks them again; and says whether the member refused
+// this install its network, where the system asks them, as Android does.
 func (rt *router) handleRelayDevices(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, map[string]any{"devices": rt.a.Relay.Devices()})
+	writeJSON(w, map[string]any{"devices": rt.a.Relay.Devices(), "refused": rt.a.Relay.Refused()})
 }
 
 // How the sound reaches the page: binary messages of several packets, so

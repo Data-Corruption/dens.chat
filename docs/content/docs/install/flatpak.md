@@ -47,7 +47,10 @@ own.
 ## Updating
 
 Your software center updates Dens along with your other apps, and Dens offers
-to restart into each update.
+to restart into each update. An update that asks for a new permission waits
+for you: version 1.12.0 asks to play and record sound, for
+[Relay](../../relay/), so update to it through your software center or with
+`flatpak update`.
 
 ## Uninstalling
 

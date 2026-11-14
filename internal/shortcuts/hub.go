@@ -325,6 +325,26 @@ func (h *Hub) SetRelay(take func(Press)) {
 	h.mu.Unlock()
 }
 
+// PagePress takes a press of the call's button from a page that holds no
+// call, as a phone's, for Relay to send to the call another of the
+// member's devices holds, as it sends what the helper reads. With no such
+// call it goes nowhere.
+func (h *Hub) PagePress(p Press) {
+	if !slices.Contains(types.VoiceActions, p.Action) {
+		return
+	}
+	p.Relayed = false
+	h.mu.Lock()
+	take := h.relay
+	if h.call {
+		take = nil
+	}
+	h.mu.Unlock()
+	if take != nil {
+		take(p)
+	}
+}
+
 // RelayHolds takes what another of the member's devices holds, as its
 // latest word says, as a second helper's (M20): a hold lasts while any
 // device holds it, and nil lets go of everything it held. The pages hear

@@ -31,12 +31,14 @@ let down = false;
 let everConnected = false;
 let delay = MIN_DELAY;
 let retry = null;
-// The service sends den statuses, the voice keys' (M7) and the
-// notifications' (M12.3), when the stream opens and when they change, so a
-// view that starts listening later gets the latest from here.
+// The service sends den statuses, the voice keys' (M7), the
+// notifications' (M12.3) and Relay's (M20.2), when the stream opens and
+// when they change, so a view that starts listening later gets the latest
+// from here.
 let latestDens = null;
 let latestKeys = null;
 let latestNotifications = null;
+let latestRelay = null;
 // The channel shown in each den, and what the page says of itself, sent
 // again after a reconnect, since the service forgets them when the stream
 // closes.
@@ -118,6 +120,7 @@ function connect() {
         if (message.t === 'dens') latestDens = message;
         if (message.t === 'keys') latestKeys = message;
         if (message.t === 'notifications') latestNotifications = message;
+        if (message.t === 'relay') latestRelay = message;
         dispatch(message);
     });
     socket.addEventListener('close', () => {
@@ -173,6 +176,12 @@ export function sendTyping(den, channel) {
     send({ t: 'typing', d: { den, channel } });
 }
 
+// sendRelayKey sends a press of the call's button, or its letting go, for
+// the call another of the member's devices holds.
+export function sendRelayKey(action, down) {
+    send({ t: 'relay.key', d: { action, down } });
+}
+
 // sendCall sends a message of this page's call, and reports whether the
 // stream was up to take it. Unlike the hints above, a call needs to know:
 // the service ends a page's call when its stream closes.
@@ -188,7 +197,7 @@ export function sendCall(t, d) {
 export function onEvent(fn) {
     start();
     listeners.add(fn);
-    for (const replay of [latestDens, latestKeys, latestNotifications]) {
+    for (const replay of [latestDens, latestKeys, latestNotifications, latestRelay]) {
         if (replay) queueMicrotask(() => listeners.has(fn) && fn(replay));
     }
     return () => listeners.delete(fn);

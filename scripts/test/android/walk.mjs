@@ -35,9 +35,15 @@
 // desk_msg, from the long press's quick row, which stays for desk to see,
 // with the chip's tip by a long press; polls, M15.4's: desk's poll, whose
 // desk_poll CTX names, voted on by Android's own touch, its totals and
-// voters showing; or screens, every member's screen with its picture and
-// its audit, which fails as the phone check's does on a touch screen.
-// around unless given.
+// voters showing; relay, M20.3's: Keybind relay turned on in the settings,
+// which has Android ask to let Dens reach its network, allowed on its
+// dialog, and the member's install beside desk's listed as sharing its
+// sound, whose Listen plays it across the link, as media, the page held as
+// shown and Wi-Fi kept awake, moving into a call's sound as the phone joins
+// one, CTX's den's Lounge, and back to media as it leaves, until Stop lets
+// them go; or screens, every
+// member's screen with its picture and its audit, which fails as the phone
+// check's does on a touch screen. around unless given.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -507,6 +513,128 @@ async function pollsWalk(h, d, c) {
     }
 }
 
+// relayWalk is Relay on the phone (M20.3), from Home by Android's own taps.
+async function relayWalk(h, d, c) {
+    const SECTION = `[...document.querySelectorAll('[role=dialog][aria-label="App settings"] [data-section]')].find((b) => b.textContent.trim() === 'Relay')`;
+    const KEYS = `document.getElementById('relay-keys')`;
+    // The member's one other device, the install beside desk's.
+    const ROW = `document.querySelector('[data-device]')`;
+    const LISTEN = `document.querySelector('[data-device] [data-listen]')`;
+    const lines = (line) => d.shellLog().split('\n').filter((l) => l.includes(line)).length;
+    const said = (line) => lines(line) > 0;
+    const uid = adb('shell', 'pm', 'list', 'packages', '-U', APP).match(/uid:(\d+)/)?.[1];
+    const types = () => adb('shell', 'dumpsys', 'activity', 'services', APP).match(/types=(0x[0-9a-f]+)/)?.[1];
+    // The app's players as Android has them: their use and state.
+    const players = () => adb('shell', 'dumpsys', 'audio').split('\n').filter((l) => l.includes(`u/pid:${uid}/`) && l.includes('usage='))
+        .map((l) => `${l.match(/usage=(\w+)/)?.[1]} ${l.match(/state:(\w+)/)?.[1]}`);
+    // Wi-Fi's locks held now, which its dump lists apart from its log.
+    const wifiLock = () => {
+        const dump = adb('shell', 'dumpsys', 'wifi');
+        const from = dump.indexOf('Locks held:', dump.indexOf('Dump of WifiLockManager'));
+        return from >= 0 && dump.slice(from).split(/\r?\n\s*\r?\n/)[0].includes('dens:relay');
+    };
+    await h.go('/');
+    await h.wait(`[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`, 'Home');
+    await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
+    await h.wait(SECTION, "the settings' Relay");
+    await d.tap(SECTION);
+    await h.wait(KEYS, 'Keybind relay');
+    report(!(await h.ev(`${KEYS}.checked`)) && (await h.ev(`[...document.querySelectorAll('[data-panel]')].some((p) => p.textContent.includes("Relay the call's button"))`)),
+        "the WebView, by Android's input: the phone's Relay has Keybind relay off, the call's button its keys");
+    await h.snap('relay');
+    await d.tap(KEYS);
+    // Android asks to let Dens reach the network, on a dialog of its own.
+    const allow = await waitFor(() => adb('exec-out', 'uiautomator', 'dump', '/dev/tty')
+        .match(/resource-id="com\.android\.permissioncontroller:id\/permission_allow_(?:foreground_only_)?button"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/),
+    "Android's dialog", 15000).catch(() => null);
+    if (allow) {
+        const [x1, y1, x2, y2] = allow.slice(1).map(Number);
+        adb('shell', 'input', 'tap', String((x1 + x2) >> 1), String((y1 + y2) >> 1));
+    }
+    const allowed = await waitFor(() => said('page: Android lets the app reach its network'), 'the shell allowed the network', 10000).catch(() => false);
+    report(said('page: asking Android for ACCESS_LOCAL_NETWORK') && !!allow && allowed,
+        `the WebView, by Android's input: Keybind relay on has Android ask to let Dens reach the network, which the member allows (${!!allow}, ${allowed})`);
+    report(await h.ev(`${KEYS}.checked && !document.querySelector('[data-relay-refused]')`), 'Keybind relay stays on, with nothing refused');
+
+    const row = await waitFor(async () => {
+        const t = await h.ev(`${ROW}?.textContent || ''`);
+        return t.includes('Sharing its sound') && t;
+    }, "the member's install beside desk's", 30000).catch(() => '');
+    report(!!row && (await h.has(LISTEN)), `the member's install beside desk's shows among their devices, sharing its sound, with Listen: ${JSON.stringify(row)}`);
+    // Each of the player's nodes, by its context: the latency it was opened
+    // for, the call's context none of its own, and whether it's closed. The
+    // page makes both from the globals, so they're counted from here on.
+    await h.ev(`(() => {
+        if (window.__relayContexts) return true;
+        window.__relayContexts = [];
+        const Context = window.AudioContext;
+        window.AudioContext = class extends Context {
+            constructor(o) {
+                super(o);
+                this.__hint = o?.latencyHint || 'none';
+            }
+        };
+        const Node = window.AudioWorkletNode;
+        window.AudioWorkletNode = class extends Node {
+            constructor(ctx, name, o) {
+                super(ctx, name, o);
+                if (name === 'relay') window.__relayContexts.push(ctx);
+            }
+        };
+        return true;
+    })()`);
+    const contexts = () => h.ev(`window.__relayContexts.map((c) => c.__hint + ' ' + c.state)`);
+    await d.tap(LISTEN);
+    const playing = await waitFor(() => h.ev(`!!document.querySelector('[data-relay-bar] [data-relay="playing"]')`), 'the sound playing', 45000).catch(() => false);
+    // The list asks again every few seconds.
+    const linked = await waitFor(async () => {
+        const t = await h.ev(`${ROW}?.textContent || ''`);
+        return t.includes('Linked') && t;
+    }, 'the install linked', 10000).catch(() => h.ev(`${ROW}?.textContent || ''`));
+    const held = said('page: held as shown, for the sound it plays');
+    const asMedia = said("service: the page plays another device's sound, as media, Wi-Fi kept awake");
+    const type = types();
+    const media = await waitFor(() => players().some((p) => p === 'USAGE_MEDIA started'), 'the player as media', 10000).catch(() => false);
+    const lock = wifiLock();
+    await h.snap('relay-listening');
+    report(playing === true && linked.includes('Linked'), `Listen plays its sound across the link from the emulator: ${JSON.stringify({ playing, row: linked })}`);
+    report(asMedia && held && type === '0x40000002' && media === true && lock,
+        `as media: the service takes media playback's type (${type}), Android plays the page's player as media (${players().join(', ')}), the page held as shown (${held}), Wi-Fi kept awake (${lock})`);
+
+    // A call joined on the phone takes the player into the call's context,
+    // which Android plays as a call's on a phone with an echo canceller, as
+    // the emulator isn't; and its end gives it a context of its own again,
+    // opened for playback, played as media.
+    const inList = (name) => `[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
+    const PLAYING = `!!document.querySelector('[data-relay-bar] [data-relay="playing"]')`;
+    const started = (use) => players().includes(`${use} started`);
+    await d.back();
+    await d.back();
+    await h.wait(`[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`, 'Home');
+    await d.tap(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Open')`);
+    if (!(await h.has(inList('Lounge')))) await d.tap(`[...document.querySelectorAll('[role=tab]')].find((t) => t.textContent.trim() === 'Den')`);
+    await d.tap(inList('Lounge'));
+    await h.wait(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`, 'the call', 30000);
+    const moved = (x) => x.join() === 'playback closed,none running';
+    const inCall = await waitFor(async () => moved(await contexts()) && (await h.ev(PLAYING)), "the player in the call's context", 20000).catch(() => false);
+    report(inCall === true, `in a call on the phone, the player plays in the call's context, its own closed: ${JSON.stringify(await contexts())}; Android has ${players().join(', ')}`);
+    await h.snap('relay-call');
+    await d.tap(`document.querySelector('button[aria-label="Leave the call"]')`);
+    const backed = (x) => x.join() === 'playback closed,none closed,playback running';
+    const back = await waitFor(async () => backed(await contexts()) && (await h.ev(PLAYING)) && started('USAGE_MEDIA'), 'the player back in its own', 20000)
+        .catch(() => false);
+    report(back === true, `the call over, it plays in a context of its own again, as media: ${JSON.stringify(await contexts())}; Android has ${players().join(', ')}`);
+
+    const unheld = lines('page: no longer held');
+    await d.tap(`document.querySelector('[data-relay-bar] [data-relay="playing"] button')`);
+    const stopped = await waitFor(async () => !(await h.has(`document.querySelector('[data-relay-bar] [data-relay="playing"]')`))
+        && said("service: the page stopped playing another device's sound"), 'the sound stopped', 15000).catch(() => false);
+    // The microphone's type, and the hold, outlast the call by ten seconds.
+    const free = await waitFor(() => (parseInt(types(), 16) & 0x2) === 0 && !wifiLock() && lines('page: no longer held') > unheld, 'all of it let go', 15000)
+        .catch(() => false);
+    report(stopped === true && free === true, `the bar's Stop lets them go: the service's types ${types()}, without media playback's, Wi-Fi's lock ${wifiLock() ? 'held' : 'let go'}`);
+}
+
 // The page's own screenshots go through the DevTools protocol; Android's,
 // of the whole screen, show what the member sees.
 b.shot = async (file) => fs.writeFileSync(file, execFileSync(ADB, ['-s', serial, 'exec-out', 'screencap', '-p'], { maxBuffer: 64 << 20 }));
@@ -663,6 +791,9 @@ try {
     }
     if (want('polls')) {
         await pollsWalk(h, d, ctx).catch((e) => report(false, e.message));
+    }
+    if (want('relay')) {
+        await relayWalk(h, d, ctx).catch((e) => report(false, e.message));
     }
     if (want('call')) {
         try {

@@ -59,13 +59,6 @@ export function hasKeys(doc = globalThis.document) {
     return doc?.getElementById?.('app')?.dataset?.keys !== 'false';
 }
 
-// relays says whether this install links with the member's others on its
-// network (M20), as the service says its form does: the Android app
-// doesn't yet.
-export function relays(doc = globalThis.document) {
-    return doc?.getElementById?.('app')?.dataset?.relay === 'true';
-}
-
 // inApp says whether the page shows in Dens's own app rather than a
 // browser, as the service says its form has it: Android's app (M13.3). The
 // app holds the page's permissions, as for the microphone, which the

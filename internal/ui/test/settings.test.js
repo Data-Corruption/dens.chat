@@ -6,7 +6,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState, shownSections } from '../assets/js/src/settings.jsx';
+import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState } from '../assets/js/src/settings.jsx';
 import { keepTheme, ownChoice, setTheme } from '../assets/js/src/theme.js';
 import { variables } from '../assets/js/src/themes.js';
 
@@ -29,12 +29,6 @@ test('the sections are Appearance, Chat, Notifications, Voice, Relay and System,
     assert.deepEqual(opened, ['appearance', 'chat', 'notifications', 'voice', 'relay', 'system', '']);
 });
 
-test('Relay shows where the install relays, after Voice', () => {
-    assert.deepEqual(shownSections(true).map(([id]) => id), ['appearance', 'chat', 'notifications', 'voice', 'relay', 'system']);
-    assert.deepEqual(shownSections(false).map(([id]) => id), ['appearance', 'chat', 'notifications', 'voice', 'system']);
-    assert.deepEqual(shownSections().map(([id]) => id), ['appearance', 'chat', 'notifications', 'voice', 'system'], 'a page the service gave no Relay');
-});
-
 test("a device's row says how its link stands, or what it offers", () => {
     assert.equal(relayState({ linked: true, apart: true, offers: ['keys'] }), 'Linked');
     assert.equal(relayState({ apart: true, offers: ['keys'] }), 'Not on this network');
@@ -45,12 +39,13 @@ test("a device's row says how its link stands, or what it offers", () => {
 });
 
 // relayPanel renders the Relay section as the service answers: the
-// settings, with what the install relays, and the member's other devices.
-async function relayPanel(relay, devices) {
+// settings, with what the install relays, and the member's other devices,
+// and whether the member refused the install its network (M20.3).
+async function relayPanel(relay, devices, refused = false) {
     const saved = [];
     globalThis.fetch = async (path, init) => {
         if (init?.method === 'POST') saved.push(JSON.parse(init.body));
-        const body = path === '/api/relay/devices' ? { devices } : path === '/api/settings' ? { relay } : { ok: true };
+        const body = path === '/api/relay/devices' ? { devices, refused } : path === '/api/settings' ? { relay } : { ok: true };
         return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) };
     };
     const root = document.createElement('div');
@@ -63,6 +58,8 @@ async function relayPanel(relay, devices) {
         buffer: all(root, (n) => n.localName === 'input' && n.attributes.name === 'relay-buffer').map((b) => b.attributes.value),
         rows: all(root, (n) => 'data-device' in n.attributes).map((li) => li.textContent.trim()),
         listen: all(root, (n) => 'data-listen' in n.attributes).map((b) => b.attributes['data-listen']),
+        refused: all(root, (n) => 'data-relay-refused' in n.attributes).map((p) => p.textContent.trim()),
+        text: root.textContent,
         saved,
         root,
     };
@@ -113,6 +110,31 @@ test('the Relay section shares the sound where the install can, and has Listen b
     }
 });
 
+test("on the phone, the Relay section's keys are the call's button, it shares nothing, and it says where the member refused it the network", async () => {
+    const devices = [{ id: 'a', name: 'Desk', offers: ['keys', 'sound'] }];
+    globalThis.document.getElementById = (id) => (id === 'app' ? { dataset: { inApp: 'true', keys: 'false' } } : null);
+    try {
+        const phone = await relayPanel({ can: ['keys'], keys: true }, devices);
+        try {
+            assert.deepEqual(phone.titles, ['Keybind relay', 'Audio relay', 'Your devices']);
+            assert.ok(phone.text.includes("Relay the call's button"), 'the button in the keys\' place');
+            assert.ok(!phone.sound, 'no sharing');
+            assert.deepEqual(phone.listen, ['a'], 'Listen beside the desk');
+            assert.deepEqual(phone.refused, [], 'nothing refused yet');
+        } finally {
+            mount(null, phone.root);
+        }
+        const refused = await relayPanel({ can: ['keys'], keys: true }, devices, true);
+        try {
+            assert.deepEqual(refused.refused, ["Android keeps Dens off your network. Allow it in Android's settings, under Apps."]);
+        } finally {
+            mount(null, refused.root);
+        }
+    } finally {
+        delete globalThis.document.getElementById;
+    }
+});
+
 test('the dialog lists the sections down its side, the one shown marked, and opens at Appearance', () => {
     const root = document.createElement('div');
     const picked = [];
@@ -120,8 +142,8 @@ test('the dialog lists the sections down its side, the one shown marked, and ope
     const nav = all(root, (n) => n.localName === 'nav' && n.attributes['aria-label'] === 'Sections')[0];
     assert.ok(nav, 'a list of the sections');
     const items = all(nav, (n) => n.localName === 'button');
-    assert.deepEqual(items.map((b) => b.textContent.trim()), ['Appearance', 'Chat', 'Notifications', 'Voice', 'System']);
-    assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['page', '', '', '', '']);
+    assert.deepEqual(items.map((b) => b.textContent.trim()), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
+    assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['page', '', '', '', '', '']);
     const titles = all(root, (n) => n.localName === 'h2' && /\bcard-title\b/.test(n.attributes.class || '')).map((t) => t.textContent.trim());
     assert.deepEqual(titles, ['App settings', 'Theme', 'Chat background', 'Messages', 'Name styles', 'Animations', 'Verified mark'],
         'Theme first, then the chat\'s background and how messages and names show');

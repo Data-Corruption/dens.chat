@@ -20,6 +20,13 @@
 #        scripts/test/android/den.sh third                    print the ID of third, a member on another instance
 #                                                             beside desk's, which joins once (M16.3)
 #        scripts/test/android/den.sh group MEMBER...          a group DM desk makes with members by ID (M16.3)
+#        scripts/test/android/den.sh url                      print the den's address
+#        scripts/test/android/den.sh twin up|api|sound|quiet|down
+#                                                             an install of the phone's member's own beside desk's
+#                                                             (M20.3): made afresh, paired and its local password
+#                                                             set; its page API; a tone played into the container's
+#                                                             sound, which the shortcut helper reads, or stopped;
+#                                                             and stopped
 #
 # The app's Dens trusts the root through SSL_CERT_FILE, which phone.sh trust
 # gives a development build.
@@ -193,8 +200,70 @@ case $1 in
     members=$(printf '"%s",' "$@")
     api POST "/api/dens/$(den)/group-dms" "{\"members\":[${members%,}]}" | json 'd["id"]'
     ;;
+  url) echo "$URL" ;;
+  twin)
+    # An install of the phone's member's own (M20.3), which signs in to the
+    # den through the phone's approval, so both hold the member's seal, and
+    # shares this container's sound, a tone, which the phone's Relay plays.
+    # Each run's member is new, so its install is too.
+    RJAR=$HOME/android-den/jar-rden
+    RPORT=18587
+    rapi() {
+      local base=http://127.0.0.1:$RPORT
+      if [[ $# -ge 3 ]]; then
+        curl -sS --fail-with-body -b "$RJAR" -c "$RJAR" -X "$1" -H "Origin: $base" -H "Content-Type: application/json" --data "$3" "$base$2"
+      else
+        curl -sS --fail-with-body -b "$RJAR" -c "$RJAR" -X "$1" -H "Origin: $base" "$base$2"
+      fi
+    }
+    case $2 in
+      up)
+        stop rden
+        rm -rf "$HOME/.local/share/dens-dev/rden" "$RJAR"
+        SSL_CERT_FILE=$ROOT_CRT nohup ./dens-dev -i rden service run --port $RPORT >android-den/rden.log 2>&1 &
+        echo $! >android-den/rden.pid
+        for _ in $(seq 100); do curl -s -o /dev/null "http://127.0.0.1:$RPORT/api/status" && break; sleep 0.1; done
+        link=$(./dens-dev -i rden open --print)
+        rapi POST /api/pair "{\"token\":\"${link#*#token=}\"}" >/dev/null
+        rapi POST /api/password '{"password":"local password"}' >/dev/null
+        ;;
+      api) shift 2; rapi "$@" ;;
+      sound)
+        # A sine at 440 Hz into a null sink of its own, the default output,
+        # which the helper reads, as the browsers' relay check plays it.
+        pulseaudio --check 2>/dev/null || pulseaudio --start --exit-idle-time=-1
+        pactl list short sinks | cut -f2 | grep -qx tone || pactl load-module module-null-sink sink_name=tone >/dev/null
+        pactl set-default-sink tone
+        if ! running tone; then
+          nohup bash -c "python3 -c '
+import math, struct, sys
+period = [int(16384 * math.sin(2 * math.pi * 440 * i / 48000)) for i in range(48000 // 40)]
+block = b\"\".join(struct.pack(\"<hh\", v, v) for v in period)
+while True:
+    sys.stdout.buffer.write(block)
+' | pacat -d tone --format=s16le --rate=48000 --channels=2" >/dev/null 2>&1 &
+          echo $! >android-den/tone.pid
+        fi
+        if ! running helper; then
+          nohup ./dens-dev shortcuts >android-den/helper.log 2>&1 &
+          echo $! >android-den/helper.pid
+        fi
+        ;;
+      # The tone's shell ends once its pipe goes, which may be before it's
+      # stopped.
+      quiet)
+        stop helper
+        if running tone; then
+          pkill -P "$(cat android-den/tone.pid)" || :
+          stop tone 2>/dev/null || :
+        fi
+        rm -f android-den/tone.pid
+        ;;
+      down) "$0" twin quiet; stop rden ;;
+    esac
+    ;;
   root) cat "$ROOT_CRT" ;;
-  down) stop sden; stop tden; stop caddy ;;
+  down) stop sden; stop tden; stop rden; stop caddy ;;
 esac
 GUEST
   incus file push -q --uid 1000 --gid 1000 --mode 0755 "$tmp" "$BROWSERS/home/tester/android-den.sh"
@@ -207,7 +276,7 @@ case ${1:-} in
     guest
     as_tester ./android-den.sh up
     ;;
-  invite | root | down | api | den | general | channel | say | upload | dm | sound | third | group)
+  invite | root | down | api | den | general | channel | say | upload | dm | sound | third | group | url | twin)
     guest
     as_tester ./android-den.sh "$@"
     ;;
