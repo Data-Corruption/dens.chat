@@ -7,6 +7,7 @@
 // shown as text, never used as anything else.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { Picture, usePicture } from './animations.js';
 import { APIError, pageHeaders, reloadIfStale } from './api.js';
 import { useBackdrop } from './components.jsx';
 import { PlayIcon } from './icons.jsx';
@@ -427,10 +428,13 @@ function AudioCard({ denID, file }) {
 }
 
 // ImageTile takes its final size before the preview loads, from the size
-// the den stated, so nothing below it moves when it arrives.
+// the den stated, so nothing below it moves when it arrives. An animated
+// one plays as Animations says, as it nears the screen, since a GIF can be
+// as large as the den's files go.
 function ImageTile({ denID, file, box, onOpen }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
     const [failed, setFailed] = useState(false);
+    const how = usePicture(!!file.animated);
     const sharp = !failed && !file.animated && DRAWN.includes(file.type) && Math.max(size.width, size.height) > PREVIEW_PIXELS;
     return (
         <button
@@ -441,8 +445,13 @@ function ImageTile({ denID, file, box, onOpen }) {
             aria-label={`Open ${file.name}`}
             title={file.name}
         >
-            <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
-                class="h-full w-full object-cover" />
+            {file.animated ? (
+                <Picture how={how} file={fileURL(denID, file.id)} preview={thumbURL(denID, file.id)} cls="h-full w-full object-cover" lazy under
+                    width={size.width} height={size.height} />
+            ) : (
+                <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
+                    class="h-full w-full object-cover" />
+            )}
             {sharp && (
                 <img src={fileURL(denID, file.id)} alt="" loading="lazy" draggable={false} data-sharp
                     class="absolute inset-0 h-full w-full object-cover" onError={() => setFailed(true)} />
@@ -517,6 +526,19 @@ export function step(index, count, delta) {
 // pixels, and how long they take to settle once it's let go, in ms.
 const GAP = 16;
 const SETTLE = 200;
+
+// ViewedImage is an image in the viewer: its preview at once, and the
+// original over it, which takes the preview's place once it has loaded,
+// so none of the preview shows where it's transparent.
+function ViewedImage({ denID, file, alt }) {
+    const [loaded, setLoaded] = useState(false);
+    return (
+        <>
+            {file.thumb && !loaded && <img src={thumbURL(denID, file.id)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
+            <img src={fileURL(denID, file.id)} alt={alt} class="relative h-full w-full object-contain" draggable={false} onLoad={() => setLoaded(true)} />
+        </>
+    );
+}
 
 // Viewer shows a message's images whole, over everything (M5): the one at
 // index of files, its preview at once and the original as it loads. In a
@@ -636,8 +658,7 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
         const style = { left: `${v.x + d * (stage.width + GAP)}px`, top: `${v.y}px`, width: `${b.width * v.scale}px`, height: `${b.height * v.scale}px` };
         return (
             <div key={f.id} class="absolute overflow-hidden md:rounded" style={style} aria-hidden={d !== 0 || undefined} data-shown={d === 0 || undefined}>
-                {f.thumb && <img src={thumbURL(denID, f.id)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
-                <img src={fileURL(denID, f.id)} alt={d === 0 ? f.name : ''} class="relative h-full w-full object-contain" draggable={false} />
+                <ViewedImage denID={denID} file={f} alt={d === 0 ? f.name : ''} />
             </div>
         );
     };

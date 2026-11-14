@@ -4,17 +4,17 @@
 // and setting up the den this install hosts, once hosting is on (M9.1),
 // while it has no owner (M10).
 
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import { ADDRESS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, Waiting, checkPasswords, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
-import { restartDens, updateNotice } from './flatpak.js';
 import { ownRowNote, setupNeeded } from './hosting.js';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
 import { KeyNeeded, PendingSignIns, RecoveryCodes, SignInRequests, SignInSteps } from './private.jsx';
 import { openSettings } from './settings.jsx';
+import { UpdateNotice } from './update.jsx';
 
 const PASSWORD_HINT = "You'll need it to sign in on a new device. The den never sees it, so reusing one across dens is safe.";
 
@@ -73,7 +73,7 @@ export function Home({ status, navigate }) {
                 <Waiting label="Waiting for Dens on this device…" />
             ) : (
                 <>
-                    <PendingSignIns list={(view.sign_ins || []).filter((p) => p.id !== adding?.pending)} onRecover={recover} />
+                    <PendingSignIns list={(view.sign_ins || []).filter((p) => p.id !== adding?.pending?.id)} onRecover={recover} />
                     {connected.map((d) => <SignInRequests key={d.den_id} den={d} />)}
                     {connected.filter((d) => !d.seal).map((d) => <KeyNeeded key={d.den_id} den={d} onSeal={(seal) => showKey(d.name, seal)} />)}
                     {setupNeeded(view.hosting) && <HostDen hosting={view.hosting} onJoined={joined} />}
@@ -84,39 +84,9 @@ export function Home({ status, navigate }) {
             {adding && view && (
                 <AddDen start={adding} signIns={view.sign_ins || []} offerHosting={!!view.hosting.can_host && !view.hosting.enabled} onJoined={joined}
                     onClose={() => setAdding(null)}
-                    onPending={(id) => setAdding((a) => ({ ...a, pending: id }))} />
+                    onPending={(pending) => setAdding((a) => ({ ...a, pending }))} />
             )}
         </>
-    );
-}
-
-// UpdateNotice says an update is there, and what installs it: a command for
-// an installed Dens; for the Flatpak, a button where Dens may install it or
-// restart into it, or the software center (M9.3); and in the Android app, a
-// button that has Android's installer ask the member to confirm it, over
-// the page (M12.4).
-function UpdateNotice({ status }) {
-    const notice = updateNotice(status);
-    const act = useAction();
-    if (!notice) return null;
-    const go = () => act.run(async () => {
-        if (notice.action === 'install') await api.post('/api/update');
-        else await restartDens(notice.action === 'update' ? '/api/update' : '/api/restart');
-    });
-    return (
-        <div role="status" class="alert alert-info flex flex-wrap">
-            <span>
-                {notice.text}
-                {notice.command && <> <code>{notice.command}</code></>}
-            </span>
-            {notice.action && (
-                <button type="button" class="btn btn-sm" disabled={act.busy} onClick={go}>
-                    {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                    {act.busy ? (notice.action === 'install' ? 'Opening the installer…' : 'Restarting…') : notice.label}
-                </button>
-            )}
-            <ErrorText message={act.error} />
-        </div>
     );
 }
 
@@ -255,7 +225,12 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
     const [form, set, setForm] = useForm({ username: start.username || '', displayName: '', password: '', confirm: '', code: '' });
     const [done, setDone] = useState(null);
     const act = useAction();
-    const pending = start.pending ? signIns.find((p) => p.id === start.pending) : null;
+    // The request's answer shows the sign-in until the service's list has
+    // it, and its leaving the list then ends it.
+    const listed = start.pending ? signIns.find((p) => p.id === start.pending.id) : null;
+    const seen = useRef('');
+    if (listed) seen.current = listed.id;
+    const pending = listed || (start.pending && seen.current !== start.pending.id ? start.pending : null);
 
     function paste(e) {
         e.preventDefault();
@@ -292,7 +267,7 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
                 den, username: form.username, password: form.password, recovery_code: recovering ? form.code : '',
             });
             setForm((f) => ({ ...f, password: '', confirm: '', code: '' }));
-            if (result.pending) return onPending(result.pending.id);
+            if (result.pending) return onPending(result.pending);
             setDone({ name: result.den.name, left: result.recovery_codes_left, signedOut: result.signed_out, key: result.den.seal });
             setStep('done');
         });

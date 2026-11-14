@@ -5,7 +5,7 @@
 // class and a style the page sets through the CSSOM, as it sets a theme's.
 
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { STYLES_ALL, fontFamily, nameLook, useNameStyles } from './names.js';
+import { STYLES_ALL, fontFamily, fontRoom, nameLook, useNameStyles } from './names.js';
 import { onTheme, themeColors } from './theme.js';
 
 function useThemeColors() {
@@ -26,18 +26,24 @@ function dress(look) {
     if (!look) return PLAIN;
     const style = {};
     const family = look.font && fontFamily(look.font);
+    let [before, after] = [0, 0];
     if (family) {
         style.fontFamily = family;
-        // A face's tall and deep letters reach past the line, where a row
-        // that cuts long names short would cut them, and a gradient
-        // wouldn't reach: the box grows to hold them, and takes no more
-        // room for it.
+        // A face's tall and deep letters reach past the line, and some past
+        // the name's ends, where a row that cuts long names short would cut
+        // them, and a gradient wouldn't reach: the box grows to hold them,
+        // and takes no more room for it.
+        [before, after] = fontRoom(look.font);
         style.paddingBlock = '0.3em';
         style.marginBlock = '-0.3em';
+        style.paddingInline = `${before}em ${after}em`;
+        style.marginInline = `-${before}em -${after}em`;
     }
     const [from, to] = look.colors;
     if (to) {
-        style.backgroundImage = `linear-gradient(90deg, ${from}, ${to})`;
+        // The box's room past the name keeps its ends' colors, so the
+        // gradient runs across the name alone.
+        style.backgroundImage = family ? `linear-gradient(90deg, ${from} ${before}em, ${to} calc(100% - ${after}em))` : `linear-gradient(90deg, ${from}, ${to})`;
         style.color = 'transparent';
     } else if (from) {
         style.color = from;

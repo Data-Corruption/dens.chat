@@ -206,7 +206,7 @@ export function App({ instance, version, pair, pairLink }) {
             )}
             {chat ? (
                 <div class="min-h-0 flex-1">
-                    <Chat key={chat.denID} denID={chat.denID} channelID={chat.channelID} pane={paneOf(trail)} navigate={navigate} />
+                    <Chat key={chat.denID} denID={chat.denID} channelID={chat.channelID} pane={paneOf(trail)} navigate={navigate} service={state.status} />
                 </div>
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">

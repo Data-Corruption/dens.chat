@@ -3,7 +3,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { HoverRow, Shown, usePicture } from './animations.js';
+import { HoverRow, Picture, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
 import { Choices, ColorField, ErrorText, Field, HoverTip, LongName, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
 import { CropDialog } from './crop.jsx';
@@ -469,8 +469,7 @@ export function BadgePicture({ denID, image, size = 'h-8 w-8' }) {
     const fit = 'h-full w-full select-none rounded object-cover';
     return (
         <span class={`relative inline-block shrink-0 ${size}`}>
-            <img src={how === 'file' ? fileURL(denID, image.id) : thumbURL(denID, image.id)} alt="" draggable={false} class={fit} />
-            {how === 'hover' && <img src={fileURL(denID, image.id)} alt="" draggable={false} class={`absolute inset-0 ${fit}`} />}
+            <Picture how={how} file={fileURL(denID, image.id)} preview={thumbURL(denID, image.id)} cls={fit} />
         </span>
     );
 }
@@ -503,8 +502,7 @@ export function Banner({ denID, image, edge = false }) {
     const cover = 'h-full w-full select-none object-cover';
     return (
         <div class={`relative aspect-[3/1] w-full overflow-hidden bg-base-300 ${edge ? '' : 'rounded'}`}>
-            <img src={how === 'file' ? fileURL(denID, image.id) : thumbURL(denID, image.id)} alt="" draggable={false} class={cover} />
-            {how === 'hover' && <img src={fileURL(denID, image.id)} alt="" draggable={false} class={`absolute inset-0 ${cover}`} />}
+            <Picture how={how} file={fileURL(denID, image.id)} preview={thumbURL(denID, image.id)} cls={cover} />
         </div>
     );
 }

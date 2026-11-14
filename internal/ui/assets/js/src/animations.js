@@ -6,7 +6,7 @@
 // until the member makes one, it's Always, or On hover where the system
 // asks for less motion.
 
-import { createContext, h } from 'preact';
+import { Fragment, createContext, h } from 'preact';
 import { useContext, useEffect, useMemo, useState } from 'preact/hooks';
 
 const KEY = 'DENS_ANIMATIONS';
@@ -151,4 +151,29 @@ export function usePicture(animated) {
     }, [animated, scope]);
     if (!animated || state.choice === ALWAYS || scope?.shown) return 'file';
     return state.over ? 'hover' : 'still';
+}
+
+/** Picture draws a picture as usePicture says, how: the picture itself,
+    its preview, or on hover its preview with the picture over it, which
+    hides the preview once it has loaded, so a transparent picture shows
+    nothing of it, and still never blinks out as it starts. With under, it
+    layers them under Always too, for a picture large enough to take a
+    while. cls is both images' class; the preview takes alt and onError,
+    and lazy has both wait until they near the screen. */
+export function Picture({ how, file, preview, cls, alt = '', onError, lazy = false, under = false, width, height }) {
+    const layered = how === 'hover' || (under && how === 'file');
+    const [loaded, setLoaded] = useState('');
+    useEffect(() => {
+        if (!layered) setLoaded('');
+    }, [layered]);
+    const loading = lazy ? 'lazy' : undefined;
+    return h(
+        Fragment,
+        null,
+        h('img', {
+            src: how === 'file' && !layered ? file : preview, alt, width, height, loading, draggable: false, onError,
+            class: layered && loaded === file ? `${cls} opacity-0` : cls,
+        }),
+        layered && h('img', { src: file, alt: '', loading, draggable: false, class: `absolute inset-0 ${cls}`, onLoad: () => setLoaded(file) }),
+    );
 }

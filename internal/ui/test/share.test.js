@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-    CALL_PRESETS, MAX_WATCHING, SHARE_DEFAULTS, displayOptions, fitPixels, mbps, presetOf, readShare, receivingSections, refusalText, screenOwner,
-    SEALING, shareAudio, shareBlocked, shareCost, shareQuality, sharersIn, sharingAcross, uploadNeeded, watchersOf,
+    CALL_PRESETS, MAX_WATCHING, SHARE_DEFAULTS, displayOptions, fitPixels, mbps, presetOf, readShare, readShareLevels, receivingSections, refusalText,
+    screenOwner, SEALING, shareAudio, shareBlocked, shareCost, shareLevel, shareQuality, sharersIn, sharingAcross, slidShare, toggledShare, uploadNeeded,
+    watchersOf, withShareLevel,
 } from '../assets/js/src/share.js';
 
 const limits = { members: 15, callers: 30, shares: 1, share_viewers: 8, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 };
@@ -150,4 +151,33 @@ test('share audio is described for the browser and system the page is in', () =>
     assert.deepEqual(shareAudio('firefox', 'linux'), { supported: false, text: "Firefox can't share audio." });
     assert.deepEqual(shareAudio('chromium', 'windows'), { supported: true, text: "A tab's audio, or this computer's without the call." });
     assert.deepEqual(shareAudio('chromium', 'linux'), { supported: true, text: "A tab's audio." });
+});
+
+test('a share turned down, muted and unmuted plays where it was', () => {
+    let w = { volume: 1, level: 1 };
+    w = { ...w, ...slidShare(w, 0.4) };
+    assert.deepEqual(w, { volume: 0.4, level: 0.4 });
+    w = { ...w, volume: toggledShare(w) };
+    assert.equal(w.volume, 0);
+    w = { ...w, volume: toggledShare(w) };
+    assert.equal(w.volume, 0.4);
+    // The slider taken to 0 mutes it too, keeping the level to go back to.
+    w = { ...w, ...slidShare(w, 0) };
+    assert.deepEqual(w, { volume: 0, level: 0.4 });
+    assert.equal(toggledShare(w), 0.4);
+    assert.deepEqual(slidShare(w, 0.333), { volume: 0.35, level: 0.35 });
+});
+
+test("a share's level is kept by den and sharer, and read as the next watch starts", () => {
+    let levels = withShareLevel({}, 'D', '7', 0.3);
+    levels = withShareLevel(levels, 'E', '7', 0.6);
+    const kept = readShareLevels(JSON.stringify(levels));
+    assert.equal(shareLevel(kept, 'D', '7'), 0.3);
+    assert.equal(shareLevel(kept, 'E', '7'), 0.6);
+    assert.equal(shareLevel(kept, 'D', '8'), 1, 'another sharer plays at full');
+    assert.deepEqual(withShareLevel(kept, 'D', '7', 1), { 'E:7': 0.6 }, 'full drops out');
+    // Anything that isn't a level is skipped.
+    assert.deepEqual(readShareLevels(JSON.stringify({ 'D:1': 0, 'D:2': 1.5, 'D:3': 'loud', 'D:4': 0.5 })), { 'D:4': 0.5 });
+    assert.deepEqual(readShareLevels('nope'), {});
+    assert.deepEqual(readShareLevels('[0.5]'), {});
 });

@@ -223,10 +223,7 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                     {maker ? <button type="button" class="link-hover" onClick={() => onProfile(maker)}>{maker.display_name}</button> : 'a former member'}
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
-                    <button type="button" class={`btn btn-sm ${e.mine ? 'btn-primary' : ''}`} aria-pressed={!!e.mine} disabled={mark.busy || gone}
-                        data-interested onClick={() => interested(!e.mine)}>
-                        {e.mine ? '★ Interested' : '☆ Interested'}
-                    </button>
+                    <InterestedButton mine={e.mine} disabled={mark.busy || gone} onMark={interested} />
                     <span class="text-sm text-base-content/70" data-interest-count>{interestedText(e.interested)}</span>
                     <span class="ml-auto flex flex-wrap justify-end gap-1">
                         {view.url && (
@@ -251,6 +248,18 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
 // only in answer to a click.
 function askOnInterest(on, notifications) {
     if (on && notifications && !notifications.eventsOff && permission() === 'default') askToNotify().then(() => tell());
+}
+
+/** InterestedButton marks the member interested in an event, or takes it
+    back: colored while it asks for the click, plain with a tick once
+    marked. onMark hears what to mark. */
+export function InterestedButton({ mine, disabled, onMark }) {
+    return (
+        <button type="button" class={`btn btn-sm ${mine ? '' : 'btn-primary'}`} aria-pressed={!!mine} disabled={disabled} data-interested
+            onClick={() => onMark(!mine)}>
+            {mine ? '✓ Interested' : 'Interested'}
+        </button>
+    );
 }
 
 // EventBadge shows an event's badge on its card (M17.5): its picture and
@@ -327,10 +336,7 @@ function EventLinkCard({ link }) {
                 {event.badge && <EventBadge denID={den.den_id} badge={event.badge} id={`card-badge-${den.den_id}-${event.id}`} />}
                 {!ended && (
                     <div class="flex flex-wrap items-center gap-2">
-                        <button type="button" class={`btn btn-sm ${event.mine ? 'btn-primary' : ''}`} aria-pressed={!!event.mine} disabled={mark.busy || gone}
-                            data-interested onClick={() => interested(!event.mine)}>
-                            {event.mine ? '★ Interested' : '☆ Interested'}
-                        </button>
+                        <InterestedButton mine={event.mine} disabled={mark.busy || gone} onMark={interested} />
                         <span class="text-sm text-base-content/70" data-interest-count>{interestedText(event.interested)}</span>
                     </div>
                 )}

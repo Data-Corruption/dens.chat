@@ -13,7 +13,7 @@ import {
     EVENTS, LENGTHS, MAX_EVENTS, atZone, badgeProblem, badgeRequest, badgeTip, canMake, cardWhen, current, eventRequest, formOf, formProblem,
     inputsAt, interestedText, lengthsFor, mayChange, newForm, ordered, rowMark, whenText, willHaveBadge, withEvent, zoneParts,
 } from '../assets/js/src/denevents.js';
-import { EventsRow } from '../assets/js/src/denevents.jsx';
+import { EventsRow, InterestedButton } from '../assets/js/src/denevents.jsx';
 import { changesOf, draftOf } from '../assets/js/src/dendraft.js';
 import { fileWhere } from '../assets/js/src/files.jsx';
 import { chatRoute } from '../assets/js/src/nav.js';
@@ -184,6 +184,26 @@ test("the den's events change the view's list: made, changed and started in plac
     list = withEvent(list, 'event.canceled', { id: '2' });
     assert.deepEqual(list, []);
     assert.deepEqual(withEvent(undefined, 'event.updated', a), [a]);
+});
+
+// The colored button asks for the click; marked, it's plain with a tick.
+test('Interested asks in color until marked, then shows a tick', () => {
+    const root = document.createElement('div');
+    const marks = [];
+    const show = (mine) => mount(h(InterestedButton, { mine, disabled: false, onMark: (on) => marks.push(on) }), root);
+    const button = () => root.find((n) => n.attributes?.['data-interested'] !== undefined);
+    show(false);
+    assert.match(button().attributes.class, /\bbtn-primary\b/);
+    assert.equal(button().textContent, 'Interested');
+    assert.equal(button().attributes['aria-pressed'], 'false');
+    button().dispatch('click', { target: button() });
+    show(true);
+    assert.doesNotMatch(button().attributes.class, /\bbtn-primary\b/);
+    assert.equal(button().textContent, '✓ Interested');
+    assert.equal(button().attributes['aria-pressed'], 'true');
+    button().dispatch('click', { target: button() });
+    assert.deepEqual(marks, [true, false]);
+    mount(null, root);
 });
 
 test('the Events row says Live while one runs, else how many are to come', () => {

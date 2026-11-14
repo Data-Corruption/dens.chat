@@ -6,7 +6,7 @@
 
 import { createContext } from 'preact';
 import { useContext, useMemo } from 'preact/hooks';
-import { usePicture } from './animations.js';
+import { Picture, usePicture } from './animations.js';
 
 // EmojiContext holds the den's emoji for the text a view shows: the den's
 // ID, which their files come from, and the emoji by name, while emoji are
@@ -45,8 +45,7 @@ export function DenEmoji({ emoji, big, size }) {
     // :name:, and a picture that doesn't load reads as it was written.
     return (
         <span class={`relative inline-block shrink-0 align-top ${box}`} title={`:${emoji.name}:`} data-emoji={emoji.name}>
-            <img src={emojiFile(ctx.denID, emoji, how !== 'file')} alt={`:${emoji.name}:`} draggable={false} class={fit} />
-            {how === 'hover' && <img src={emojiFile(ctx.denID, emoji, false)} alt="" draggable={false} class={`absolute inset-0 ${fit}`} />}
+            <Picture how={how} file={emojiFile(ctx.denID, emoji, false)} preview={emojiFile(ctx.denID, emoji, true)} cls={fit} alt={`:${emoji.name}:`} />
         </span>
     );
 }

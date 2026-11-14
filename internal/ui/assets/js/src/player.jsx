@@ -14,7 +14,7 @@ import { holdLayout, useNarrow } from './nav.js';
 import { canPopOut } from './platform.js';
 import { clampBox, defaultBox, dockedShown, nextShown, readPlayer, resizeBox, tileLayout } from './player.js';
 import { onPopOut, popIn, popOut, poppedOut } from './popout.js';
-import { closePlayer, setPreview, setShareVolume, speakerID, unwatchShare } from './voice.js';
+import { closePlayer, setPreview, setShareVolume, speakerID, toggleShareMute, unwatchShare } from './voice.js';
 import { useCall } from './voice.jsx';
 
 const PLAYER = 'DENS_PLAYER';
@@ -290,7 +290,7 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
             <div class="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100">
                 <span class="min-w-0 flex-1 truncate px-1 text-xs">{w.label}</span>
                 <div class={`group/volume relative shrink-0 ${w.self ? 'hidden' : 'flex'}`}>
-                    <button type="button" class={button} onClick={() => setShareVolume(w.member, w.volume === 0 ? 1 : 0)} disabled={deafened}
+                    <button type="button" class={button} onClick={() => toggleShareMute(w.member)} disabled={deafened}
                         title={deafened ? 'Deafened: you hear nothing of the call' : silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
                         <SoundIcon muted={silent} />
                     </button>
