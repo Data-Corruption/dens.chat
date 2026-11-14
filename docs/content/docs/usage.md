@@ -52,9 +52,10 @@ den**, and the local password in **Settings**, under **System**.
 Every computer runs its own Dens. On the second one, choose **Add a den**,
 paste an invite to the den, even a used one, or the den's address, and choose
 **Sign in to my account there**. Enter your username and den password, then
-approve the sign-in from a device that's already in: type the digits each
-screen shows into the other. That proves the new device is the one in front
-of you, and hands it what it needs to read your DMs.
+approve the sign-in from a device that's already in, where it shows on Home
+and in that den: type the digits each screen shows into the other. That proves
+the new device is the one in front of you, and hands it what it needs to read
+your DMs.
 
 No other device at hand? Use a recovery code instead, then enter your DM
 recovery key to read your DMs. Forgot your den password? Choose **Forgot your
@@ -147,14 +148,16 @@ soundboard work as you'd expect. What's different:
   sees that yours changed, not what they are.
 - **Spoilers**: choose **Spoiler** on a photo or video before you send it, or
   write `||text||`.
-- **Events**, at the top of a den's channel list: choose **☆ Interested** and
+- **Events**, at the top of a den's channel list: choose **Interested** and
   Dens tells you as one starts, on your phone too. Be in a voice-channel
   event's call for a minute and you earn its badge, which shows on your
   profile; hide any badge with its eye on your profile. Nobody sees who's
   interested, only how many.
 - **Your profile** is per den. A crown marks the den's owner, a shield a
-  moderator. Photos you send lose their location and camera details before
-  they leave your computer.
+  moderator, in the member list and on profiles; to see them beside names in
+  messages and calls too, turn on **Staff marks** under **Settings** →
+  **Appearance** → **Messages**. Photos you send lose their location and
+  camera details before they leave your computer.
 - **Name style**, in your profile: a font, a color or a gradient for your
   name, which everyone in the den sees. A color may show lighter or darker
   on someone else's theme, so it stays readable there. To see names plain,
@@ -163,12 +166,16 @@ soundboard work as you'd expect. What's different:
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
   → **Messages**. On a computer, the sizes of photos and videos and of
   YouTube players are there too, up to **Largest**.
+- **Animations**, under **Settings** → **Appearance**: animated pictures,
+  emoji and GIFs in messages play always, or only while your pointer is over
+  them.
 - **Themes**: **Settings** → **Appearance** has a few dozen, and **New
   theme** makes one of your own from three colors. **Copy code** turns yours
   into a line of text to send someone, who adds it with **Paste a code**.
   Your themes stay in the browser you made them in.
 - **Chat background** puts a picture of yours behind your messages, as dim
-  as you set it. Your Dens keeps it, so each browser you open Dens in shows
+  as you set it, and **Hover** sets how much of it a message under your
+  pointer covers. Your Dens keeps it, so each browser you open Dens in shows
   it, and nobody else sees it.
 
 ## Notifications
