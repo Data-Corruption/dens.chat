@@ -16,7 +16,11 @@
 // with nothing reaching a style, and the theme deleted; and a picture
 // behind the chat: a PNG set, found behind general's list under the dim,
 // by the screen's own pixels, in a second browser paired with her Dens
-// too, dimmed further, a GIF refused, and removed from both.
+// too, dimmed further, a GIF refused, and removed from both. From M21.1
+// Staff marks, off until she turns them on, the crown then on her
+// messages and always in the member list; the bars on a green theme of her
+// own, their hue the page's; and Hover, how far a message under the
+// pointer covers the picture, in both browsers.
 //
 //   run.sh settings chromium|firefox [PART...]
 //
@@ -24,7 +28,7 @@
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import zlib from 'node:zlib';
-import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, openManage, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, lib, openManage, openSettings, pair, waitFor } from './browsers.mjs';
 import { audits, helpers } from './screens.mjs';
 
 const [, , which, ...parts] = process.argv;
@@ -127,6 +131,16 @@ const WEARS = `JSON.stringify((() => {
         set: document.documentElement.style.length, styled: document.documentElement.getAttribute('style') || '' };
 })())`;
 const wears = async (on) => JSON.parse(await on.eval(WEARS));
+// hue is a color's hue in OKLCH, in degrees, from its #rrggbb.
+function hue(hex) {
+    const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    const [r, g, bl] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * bl);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * bl);
+    const t = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * bl);
+    return ((Math.atan2(0.0259040371 * l + 0.7827717662 * m - 0.808675766 * t, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * t) * 180) / Math.PI + 360) % 360;
+}
+const apart = (x, y) => Math.min(Math.abs(x - y), 360 - Math.abs(x - y));
 const q = JSON.stringify;
 // set types into a field the page controls, as a member's typing or
 // picking would: the value, then the event Preact listens for.
@@ -207,6 +221,26 @@ try {
         await b.key('Escape');
         await waitFor(async () => !(await b.eval(`!!${MANAGE}`)), 'Manage closing');
 
+        step('Staff marks');
+        lib('api', 'alice', 'POST', `/api/dens/${den}/channels/${general}/messages`, q({ nonce: lib('nonce'), text: "Alice's message, the owner's." }));
+        await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
+        await waitFor(() => b.eval(`document.body.innerText.includes("Alice's message, the owner's.")`), "alice's message");
+        await waitFor(() => b.eval(`document.querySelectorAll('[data-scroller] [data-id]').length >= 5`), "general's messages");
+        if (!(await b.eval(`!!document.querySelector('nav[aria-label=Members]')`))) await b.eval(`document.querySelector('button[aria-label=Members]').click(), true`);
+        await waitFor(() => b.eval(`!!document.querySelector('nav[aria-label=Members] [data-role-mark=owner]')`), 'the member list');
+        const marks = () => b.eval(`document.querySelectorAll('[data-scroller] [data-role-mark=owner]').length`);
+        c.report((await marks()) === 0, 'until she turns them on, no crown on her messages, while the member list shows hers');
+        await openSettings(b, 'Appearance');
+        await waitFor(() => b.eval(`!!document.getElementById('staff-marks')`), 'Staff marks');
+        c.report(!(await b.eval(`document.getElementById('staff-marks').checked`)), 'Staff marks starts off');
+        await b.eval(`document.getElementById('staff-marks').click(), true`);
+        await closeSettings(b);
+        const shown = await waitFor(async () => ((await marks()) > 0 ? marks() : null), 'the crowns on her messages').catch(marks);
+        c.report(shown > 0 && (await b.eval(`localStorage.getItem('DENS_STAFF_MARKS')`)) === 'on', `turned on, her messages show the crown, ${shown} of them, which the browser keeps`);
+        await openSettings(b, 'Appearance');
+        await b.eval(`document.getElementById('staff-marks').click(), true`);
+        await closeSettings(b);
+        c.report(await waitFor(async () => (await marks()) === 0, 'the crowns gone').then(() => true, () => false), 'turned off, they go again');
     }
 
     if (runs('sizes')) {
@@ -424,6 +458,32 @@ try {
             && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null,
         `deleted, the page follows the system again, with nothing left on the root: ${q(deleted)}`);
         await closeSettings(b);
+
+        step('the bars on a green theme of her own');
+        await openSettings(b, 'Appearance');
+        await press(b, 'New theme');
+        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
+        await set(b, '[data-theme-editor] label input[type=text]', 'Green');
+        await choose(b, 'data-theme-base', 'Dark');
+        await set(b, field('Background', 'text'), '#14321f');
+        await set(b, field('Text', 'text'), '#e2efe6');
+        await set(b, field('Primary', 'text'), '#3fae6a');
+        await press(b, 'Save', EDITOR);
+        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
+        await closeSettings(b);
+        await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
+        await waitFor(() => b.eval(`!!document.querySelector('textarea[placeholder^="Message "]')`), "general's message bar");
+        const bars = JSON.parse(await b.eval(`JSON.stringify((() => { const hex = ${HEX};
+            const bar = document.querySelector('textarea[placeholder^="Message "]').closest('.bg-bar');
+            return { page: hex(getComputedStyle(document.body).backgroundColor), bar: hex(getComputedStyle(bar).backgroundColor), css: getComputedStyle(bar).backgroundColor }; })())`));
+        c.report(bars.page === '#14321f' && bars.bar !== bars.page && apart(hue(bars.bar), hue(bars.page)) <= 5,
+            `the message bar keeps the theme's green, a shade lighter: ${bars.bar} (${bars.css}) at ${Math.round(hue(bars.bar))}° on ${bars.page} at ${Math.round(hue(bars.page))}°`);
+        await b.shot(`${HOME}/shot-settings-${which}-green.png`);
+        await openSettings(b, 'Appearance');
+        await waitFor(() => b.eval(`!!${OWN}`), 'Your themes');
+        await press(b, 'Delete');
+        await waitFor(async () => (await ownNames(b)) === '', 'the green theme leaving the list');
+        await closeSettings(b);
     }
 
     if (runs('background')) {
@@ -503,6 +563,32 @@ try {
         await b.go(general$);
         const again = await waitFor(async () => { const s = await behind(b, 'background-reload'); return faint(s.pixel) && s; }, 'the picture after a reload');
         c.report(faint(again.pixel), `a reload shows the picture at its dim: ${q(again.pixel)}`);
+
+        step('Hover');
+        // cover is how far a message under the pointer covers the picture,
+        // as its row's background's alpha.
+        const cover = async (on) => {
+            const at = JSON.parse(await on.eval(`(() => { const r = [...document.querySelectorAll('[data-scroller] [data-id]')].at(-1).getBoundingClientRect();
+                return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
+            await on.move(at.x, at.y);
+            await sleep(300);
+            return on.eval(`(() => { const c = getComputedStyle([...document.querySelectorAll('[data-scroller] [data-id]')].at(-1)).backgroundColor;
+                const alpha = c.includes('/') ? c.slice(c.lastIndexOf('/') + 1) : c.startsWith('rgba') ? c.slice(c.lastIndexOf(',') + 1) : '1';
+                return parseFloat(alpha); })()`);
+        };
+        c.report(Math.abs((await cover(b)) - 1) < 0.01, 'until she sets it, a message under the pointer covers the picture');
+        await openSettings(b, 'Appearance');
+        await waitFor(() => b.eval(`!!${CARD}?.querySelector('[data-background-hover]')`), 'the Hover slider');
+        c.report((await b.eval(`${CARD}.querySelector('[data-background-hover]').value`)) === '100', 'Hover, under Dim, starts at 100%');
+        await b.eval(`${CARD}.querySelector('[data-background-hover]').dataset.check = 'hover', true`);
+        await set(b, 'input[data-check=hover]', '40', ['input', 'change']);
+        await closeSettings(b);
+        const covered = await waitFor(async () => { const v = await cover(b); return Math.abs(v - 0.4) < 0.02 && v; }, 'the hover at 40%').catch(() => cover(b));
+        const covered2 = await waitFor(async () => { const v = await cover(b2); return Math.abs(v - 0.4) < 0.02 && v; }, 'the hover at 40% in the second browser').catch(() => cover(b2));
+        const keptHover = await b.eval(`fetch('/api/dens').then((r) => r.json()).then((d) => d.background?.hover)`);
+        c.report(Math.abs(covered - 0.4) < 0.02 && Math.abs(covered2 - 0.4) < 0.02 && keptHover === 40,
+            `at 40% a message under the pointer covers that much of it, in both browsers, the service keeping it: ${covered}, ${covered2}, ${keptHover}`);
+        await b.shot(`${HOME}/shot-settings-${which}-hover.png`);
         await openSettings(b, 'Appearance');
         await waitFor(() => b.eval(`!!${CARD}`), 'the Chat background card');
         await press(b, 'Remove', CARD);

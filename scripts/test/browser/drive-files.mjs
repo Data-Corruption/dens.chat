@@ -3,12 +3,16 @@
 // in Firefox, moves through a message's images in the viewer. From M17.2,
 // spoilers: bob sends a photo as one in #general, which alice's page shows
 // covered until she clicks it, and alice one in their DM, which bob's does,
-// each page clicking the other's.
+// each page clicking the other's. From M21.1 a message's GIF, far up
+// #gifs: neither page fetches its file until it nears the screen, where
+// under Always it plays, and under On hover it plays while the pointer is
+// over its message.
 //
 //   run.sh files
-import { ALICE, BOB, HOME, MANAGE, checks, launch, lib, openManage, pair, waitFor } from './browsers.mjs';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, lib, openManage, openSettings, pair, waitFor } from './browsers.mjs';
 
-const { DEN: den, GENERAL: general, THREE: three, CLIP: clip, DM: dm } = process.env;
+const { DEN: den, GENERAL: general, THREE: three, CLIP: clip, DM: dm, GIF: gif, GIFS: gifs } = process.env;
 const c = checks();
 const ok = (what) => c.report(true, what);
 const api = (who, path) => JSON.parse(lib('api', who, 'GET', path));
@@ -21,7 +25,7 @@ const used = () => api('bob', `/api/dens/${den}/storage`).used;
 
 // Bob's Chromium hands this driver its file choosers, and takes each step
 // as from a click, which a file chooser needs.
-const chromium = await launch('chromium', 9311, { size: [1280, 900] });
+const chromium = await launch('chromium', 9311, { size: [1280, 900], hover: true });
 await chromium.cdp('Page.setInterceptFileChooserDialog', { enabled: true });
 const bob = {
     ...chromium,
@@ -33,7 +37,7 @@ const bob = {
         await chromium.cdp('DOM.setFileInputFiles', { files: [path], backendNodeId: opened.params.backendNodeId });
     },
 };
-const alice = await launch('firefox', 9312, { size: [1280, 900] });
+const alice = await launch('firefox', 9312, { size: [1280, 900], hover: true });
 try {
     await pair(bob, BOB);
     await pair(alice, ALICE);
@@ -137,6 +141,57 @@ try {
     }
     await spoil(alice, bob, dm, 'bob');
     ok("alice's photo, sent as a spoiler in their DM, showed covered on bob's page until he clicked it");
+
+    // A message's GIF plays as Animations says.
+    const page = api('bob', `/api/dens/${den}/channels/${gifs}/messages?around=${gif}&limit=1`);
+    const file = page.messages.find((x) => x.id === gif).attachments[0];
+    if (!file?.animated) throw new Error(`the GIF isn't animated: ${JSON.stringify(file)}`);
+    const row = `document.querySelector('[data-id="${gif}"]')`;
+    const tile = `${row}?.querySelector('button[aria-label="Open moving.gif"]')`;
+    // tileShows says what the GIF's tile shows: its preview, or the GIF
+    // over it, loaded, with the preview hidden.
+    const tileShows = (b) => b.eval(`(() => { const imgs = [...(${tile})?.querySelectorAll('img') || []];
+        const gif = imgs.find((i) => !i.getAttribute('src').endsWith('/thumb'));
+        if (!gif) return imgs.length === 1 ? 'still' : 'none';
+        return gif.complete && gif.naturalWidth > 0 && getComputedStyle(imgs[0]).opacity === '0' ? 'playing' : 'loading'; })()`);
+    const animations = async (b, value) => {
+        await openSettings(b, 'Appearance');
+        await b.eval(`document.querySelector('input[name=animations][value=${value}]').click(), true`);
+        await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+        await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    };
+    for (const [b, port] of [[alice, 18484], [bob, 18486]]) {
+        await b.go(`http://localhost:${port}/den/${den}/${gifs}`);
+        await waitFor(() => b.eval(`document.body.innerText.includes('after the gif, 45')`), `the foot of #gifs on ${b.name}'s page`);
+        await sleep(2000);
+        const fetched = () => b.eval(`performance.getEntriesByType('resource').some((e) => new URL(e.name).pathname === '/api/dens/${den}/files/${file.id}')`);
+        const far = JSON.parse(await b.eval(`JSON.stringify((() => { const t = ${tile}; if (!t) return null;
+            return Math.round(document.querySelector('[data-scroller]').getBoundingClientRect().top - t.getBoundingClientRect().bottom); })())`));
+        c.report(far > 2000 && !(await fetched()), `${b.name}'s page, Always: the GIF, in the list ${far} pixels above the screen, isn't fetched`);
+        await b.eval(`(async () => {
+            const list = document.querySelector('[data-scroller]');
+            for (let i = 0; i < 40 && !${tile}; i++) {
+                list.scrollTop = 0;
+                await new Promise((r) => setTimeout(r, 300));
+            }
+            ${tile}.scrollIntoView({ block: 'center' });
+            return true;
+        })()`);
+        await b.move(5, 5);
+        const playing = await waitFor(async () => ((await tileShows(b)) === 'playing' ? 'playing' : null), 'the GIF playing', 10000).catch(() => tileShows(b));
+        c.report(playing === 'playing' && (await fetched()), `${b.name}'s page, Always: it plays as it comes on screen, fetched then: ${playing}`);
+        await b.shot(`${HOME}/shot-files-gif-${b.name}.png`);
+        await animations(b, 'hover');
+        const still = await waitFor(async () => ((await tileShows(b)) === 'still' ? 'still' : null), 'the GIF still', 5000).catch(() => tileShows(b));
+        const at = JSON.parse(await b.eval(`(() => { const r = ${row}.getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width - 40, y: r.top + 12 }); })()`));
+        await b.move(at.x, at.y);
+        const over = await waitFor(async () => ((await tileShows(b)) === 'playing' ? 'playing' : null), 'the GIF playing under the pointer', 10000).catch(() => tileShows(b));
+        await b.move(5, 5);
+        const after = await waitFor(async () => ((await tileShows(b)) === 'still' ? 'still' : null), 'the GIF still again', 5000).catch(() => tileShows(b));
+        c.report(still === 'still' && over === 'playing' && after === 'still',
+            `${b.name}'s page, On hover: still, playing while the pointer is over its message, still again: ${[still, over, after].join(', ')}`);
+        await animations(b, 'always');
+    }
 } catch (e) {
     c.fail(e);
 } finally {
