@@ -22,6 +22,7 @@ import { ErrorText, PLAIN, Tip, dayTime, useAction, useBackground } from './comp
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
+import { useStaffMarks } from './staffmarks.js';
 import { completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
@@ -97,12 +98,16 @@ export function openAt(denID, channelID, messageID) {
 
 // continues says whether a message shows under the name of the one before
 // it, as a run's later message: by the same author, on the same day,
-// within GROUP_GAP and not a reply; in Compact never, as each message
-// shows its own name (M17.2).
-export function continues(prev, m, line) {
-    return !line && !!prev && prev.author_id === m.author_id && !m.reply_to && m.created_at - prev.created_at < GROUP_GAP &&
-        new Date(prev.created_at).toDateString() === new Date(m.created_at).toDateString();
+// within GROUP_GAP, not a reply, disappearing after the same time, which
+// a run's header shows, and with no line between them; in Compact never,
+// as each message shows its own name (M17.2).
+export function continues(prev, m, line, between = false) {
+    return !line && !between && !!prev && prev.author_id === m.author_id && !m.reply_to && m.created_at - prev.created_at < GROUP_GAP &&
+        new Date(prev.created_at).toDateString() === new Date(m.created_at).toDateString() && lasts(prev) === lasts(m);
 }
+
+// lasts is how long a message lasts before it disappears, 0 for always.
+const lasts = (m) => (m.expires_at ? m.expires_at - m.created_at : 0);
 
 // viewed is what the viewer shows from a message: its images, and which,
 // but for spoilers still covered (M17.2).
@@ -157,6 +162,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const sealed = isPrivate(channel);
     // Compact shows each message as a line (M17.2).
     const line = useDensity() === DENSITY_COMPACT;
+    const marks = useStaffMarks();
     const background = useBackground();
     // A photo or video goes as a spoiler in a DM, inside its seal, and in a
     // channel where the den keeps which files are (M17.2).
@@ -753,14 +759,16 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         if (!prev || new Date(prev.created_at).toDateString() !== day) {
             rows.push(<DayDivider key={`day-${m.id}`} time={m.created_at} />);
         }
+        const rowsBefore = rows.length;
         if (dividers.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={dividers.get(m.id)} />);
         for (const x of changed.before.get(m.id) || []) rows.push(changeLine(x));
         for (const c of groupLines.before.get(m.id) || []) rows.push(groupLine(c));
         for (const x of expiry.before.get(m.id) || []) rows.push(expiryLine(x));
+        const between = rows.length > rowsBefore;
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
             rows.push(<div key="unread" class="divider divider-error my-0 cursor-default select-none text-xs text-error">New</div>);
         }
-        const compact = continues(prev, m, line);
+        const compact = continues(prev, m, line, between);
         // The loaded copy is newer than the den's preview, if there is one.
         const replied = m.reply_to ? byId.get(m.reply_to) || m.reply : null;
         rows.push(
@@ -769,6 +777,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 m={m}
                 compact={compact}
                 line={line}
+                marks={marks}
                 author={members.get(m.author_id)}
                 replied={replied}
                 repliedAuthor={replied ? members.get(replied.author_id) : null}
@@ -995,7 +1004,7 @@ function Quoted({ text, locked, me }) {
 // right click opens it at the pointer, menuAt. compact is a run's
 // later message, under its first's name; line is Compact's row, each a
 // line of its own (M17.2).
-export function MessageRow({ m, compact, line, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1059,12 +1068,12 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
             onMenu(true, narrow ? null : rightClick(e, e.currentTarget));
         },
     } : {};
-    // Staff's mark centers on the name, whose box keeps the line's
-    // baseline.
+    // Staff's mark, where the member shows them, centers on the name,
+    // whose box keeps the line's baseline.
     const authorName = (
         <span class="flex items-center gap-1">
             <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}><Name member={author} /></button>
-            <RoleMark role={author?.role} />
+            {marks && <RoleMark role={author?.role} />}
         </span>
     );
     // In Compact, each message is a line of its time, its author's name and
@@ -1119,7 +1128,7 @@ export function MessageRow({ m, compact, line, author, replied, repliedAuthor, m
         <HoverRow
             data-id={m.id}
             data-line={line ? '' : undefined}
-            class={`group relative rounded px-2 ${line ? 'py-0.5' : compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-base-200' : 'hover:bg-base-200'} ${pressing ? 'select-none' : ''}`}
+            class={`group relative rounded px-2 ${line ? 'py-0.5' : compact ? 'py-0' : 'mt-2 py-0.5'} ${highlighted ? 'bg-warning/20' : menuOpen ? 'bg-row' : 'hover:bg-row'} ${pressing ? 'select-none' : ''}`}
             {...presses}
             onClickCapture={(e) => {
                 if (!press.current.click()) return;

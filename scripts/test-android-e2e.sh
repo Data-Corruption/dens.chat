@@ -67,8 +67,10 @@
 # updates itself (M12.4): its updater refuses a newer release whose
 # checksums another workflow signed, before downloading its APK, then, at
 # the member's Check now in the page's settings (M17.2), checks the release
-# signed as it should be, and the tap on its notification hands the APK to
-# Android's installer, which updates the app to it. Android 12's
+# signed as it should be; the app joins a den, which shows the update's
+# notice too, until the member dismisses it there, while Home keeps it
+# (M21.1); and the tap on its notification hands the APK to Android's
+# installer, which updates the app to it. Android 12's
 # emulator, whose WebView is older than the page needs, runs Dens and says
 # to update the WebView, and the release's app updates itself there too,
 # checking again as Dens starts again.
@@ -105,6 +107,10 @@ RELEASE_APP=chat.dens.Dens
 RELEASES_PORT=18480
 # Where desk answers the walk's call (M13.4), in dens-browsers.
 DESK_PORT=18590
+# The den the release's app joins (M21.1), on the emulator's loopback, which
+# adb forwards to the container's, and the page of the instance hosting it.
+LOOP_DEN_PORT=18695
+LOOP_PAGE_PORT=18694
 # The development build empties out/, so the run's logs wait for the
 # builds in a directory of their own.
 RUN_LOG_DIR=$(mktemp -d)
@@ -156,6 +162,62 @@ waitfor() {
   fail "waited $tries s for $what"
 }
 
+# loop_den up|invite|down is a den the release's app can join (M21.1),
+# which a den behind Caddy isn't, since a release build can't be given its
+# authority's root: a development instance in $CONTAINER, as loopden,
+# hosting one at http://127.0.0.1:$LOOP_DEN_PORT, the binary the browsers'
+# container runs.
+loop_den() {
+  local base=http://127.0.0.1:$LOOP_PAGE_PORT link uid
+  uid=$(incus exec "$CONTAINER" -- id -u loopden)
+  in_box() { incus exec "$CONTAINER" --user "$uid" --group "$uid" --cwd /home/loopden --env HOME=/home/loopden --env XDG_RUNTIME_DIR=/home/loopden/run -- "$@"; }
+  loop_api() {
+    if [[ $# -ge 3 ]]; then
+      in_box curl -sS --fail-with-body -b jar -c jar -X "$1" -H "Origin: $base" -H 'Content-Type: application/json' --data "$3" "$base$2"
+    else
+      in_box curl -sS --fail-with-body -b jar -c jar -X "$1" -H "Origin: $base" "$base$2"
+    fi
+  }
+  loop_id() { loop_api GET /api/dens | python3 -c 'import json, sys; print(next(x["den_id"] for x in json.load(sys.stdin)["dens"] if x["own"]))'; }
+  case $1 in
+    up)
+      loop_den down
+      incus file pull -q dens-browsers/home/tester/dens-dev "$RUN_LOG_DIR/dens-dev"
+      incus file push -q --mode 0755 --uid "$uid" --gid "$uid" "$RUN_LOG_DIR/dens-dev" "$CONTAINER/home/loopden/dens-dev"
+      rm -f "$RUN_LOG_DIR/dens-dev"
+      in_box sh -c 'rm -rf .local/share/dens-dev/loopden jar run && mkdir -m 0700 run'
+      # The instance keeps its PID, which stops it: its shell becomes it.
+      in_box sh -c "echo \$\$ >den.pid && exec ./dens-dev -i loopden service run --port $LOOP_PAGE_PORT --den-port $LOOP_DEN_PORT \
+        --media-udp-port 18696 --media-tcp-port 18697 >den.log 2>&1" &
+      waitfor 30 "the loopback den's instance" in_box curl -s -o /dev/null "$base/api/status"
+      link=$(in_box ./dens-dev -i loopden open --print)
+      loop_api POST /api/pair "{\"token\":\"${link#*#token=}\"}" >/dev/null
+      loop_api POST /api/password '{"password":"local password"}' >/dev/null
+      loop_api POST /api/den "{\"name\":\"Loopback Den\",\"url\":\"http://127.0.0.1:$LOOP_DEN_PORT\",\"username\":\"keeper\",\"display_name\":\"Keeper\",\"password\":\"keeper den password\"}" >/dev/null
+      ;;
+    invite)
+      loop_api POST "/api/dens/$(loop_id)/invites" '{"expires_in":3600,"max_uses":1}' | python3 -c 'import json, sys; print(json.load(sys.stdin)["invite"])'
+      ;;
+    down)
+      # shellcheck disable=SC2016 # the container's shell expands it
+      in_box sh -c 'test -f den.pid && kill "$(cat den.pid)" 2>/dev/null; rm -f den.pid' || :
+      ;;
+  esac
+}
+
+# type_field N TEXT taps the Nth text field on screen, as Android's
+# accessibility lists a page's, and types TEXT into it.
+type_field() {
+  local bounds
+  bounds=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE '<node [^>]*class="android.widget.EditText"[^>]*>' | sed -n "${1}p" |
+    grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
+  [[ -n "$bounds" ]] || { adb exec-out uiautomator dump /dev/tty >"$RUN_LOG_DIR/screen-$serial.xml" 2>/dev/null || :; return 1; }
+  read -r x1 y1 x2 y2 <<<"$bounds"
+  adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
+  sleep 1
+  adb shell input text "${2// /%s}"
+}
+
 # stop_releases_host stops the fixture releases' host, if it runs.
 stop_releases_host() {
   # shellcheck disable=SC2016 # the container's shell expands it
@@ -178,6 +240,7 @@ finish() {
     fi
   done
   stop_releases_host
+  loop_den down
   incus exec dens-browsers -- curl -s -m 3 -X POST "http://127.0.0.1:$DESK_PORT/quit" >/dev/null 2>&1 || :
   # The member's install beside desk's, its log kept (M20.3).
   incus exec dens-browsers -- cat /home/tester/android-den/rden.log >"$RUN_LOG_DIR/twin.log" 2>/dev/null || :
@@ -752,6 +815,50 @@ update_from_fixtures() {
       fail "waited 120 s for the page's word that v99.0.2-e2e is ready"
     fi
     ok "Check now, in the page's settings, downloaded and checked v99.0.2-e2e at once, and the page says it's ready to install"
+
+    # A member with one den may never open Home, so the den shows the
+    # notice too, until they dismiss it there; Home shows it still.
+    # The settings close from their list of sections, which System's Back
+    # leads to.
+    for _ in 1 2 3; do
+      shows_text 'Add a den' && break
+      tap 1 'Close' || adb shell input keyevent KEYCODE_BACK
+      sleep 1
+    done
+    loop_den up
+    adb reverse "tcp:$LOOP_DEN_PORT" "tcp:$LOOP_DEN_PORT" >/dev/null
+    tap 20 'Add a den' || fail "Home offers no Add a den"
+    type_field 1 "$(loop_den invite)" || fail "Add a den has no field for the invite"
+    adb shell input keyevent KEYCODE_ENTER
+    tap 30 'Join as someone new' || fail "the invite showed no den to join"
+    for n in 1 2 3 4; do
+      type_field "$n" "$(sed -n "${n}p" <<<$'release\nRelease\nrelease den password\nrelease den password')" || fail "joining has no field $n"
+    done
+    adb shell input keyevent KEYCODE_ENTER
+    waitfor 30 "the recovery codes" shows_text 'Copy codes'
+    # They run past the screen, their box and Done below them.
+    for _ in 1 2 3; do
+      adb shell input swipe 540 1700 540 600 300
+      sleep 1
+    done
+    tap 10 'I[^"]*ve stored my[^"]*' || fail "the recovery codes have no box to tick"
+    tap 10 'Done' || fail "the recovery codes have no Done"
+    tap 30 'Open' || fail "Home lists no den to open"
+    in_den() { shows_text 'Dens v99\.0\.2-e2e is ready to install\.' && shows_text 'Dismiss'; }
+    waitfor 30 "the update's notice in the den" in_den
+    tap 10 'Dismiss' || fail "the den's notice has no Dismiss"
+    sleep 2
+    ! shows_text 'Dens v99\.0\.2-e2e is ready to install\.' || fail "the den's notice stayed once dismissed"
+    for _ in 1 2 3 4; do
+      shows_text 'Add a den' && break
+      adb shell input keyevent KEYCODE_BACK
+      sleep 1
+    done
+    shows_text 'Add a den' || fail "Back never reached Home"
+    shows_text 'Dens v99\.0\.2-e2e is ready to install\.' || fail "Home doesn't show the update's notice once it was dismissed in the den"
+    ok "the app joined a den, which showed the update's notice until it was dismissed there, and Home shows it still"
+    loop_den down
+    adb reverse --remove "tcp:$LOOP_DEN_PORT" >/dev/null 2>&1 || :
   else
     adb shell input keyevent KEYCODE_HOME
     adb shell am force-stop "$RELEASE_APP"

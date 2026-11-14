@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { ALWAYS, HoverRow, ON_HOVER, Shown, animations, setAnimations, usePicture } from '../assets/js/src/animations.js';
 import { animatedImage, wholeRect } from '../assets/js/src/crop.jsx';
+import { Avatar, DenContext } from '../assets/js/src/avatar.jsx';
+import { DenEmoji, EmojiContext } from '../assets/js/src/denemoji.jsx';
+import { BadgePicture, Banner } from '../assets/js/src/people.jsx';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -84,6 +87,57 @@ test("On hover plays a row's pictures while a pointer that hovers is over the ro
     setAnimations(ALWAYS);
     await settle();
     assert.deepEqual(seen, { row: 'file', still: 'file', 'other row': 'file', profile: 'file', elsewhere: 'file' }, 'Always plays them all');
+    mount(null, root);
+    done();
+});
+
+// An animated picture playing on hover is drawn over its preview, which
+// shows through wherever the picture is transparent, until it hides once
+// the picture over it has loaded.
+test("an animated picture's preview hides once the picture over it has loaded", async () => {
+    system({ on: false });
+    setAnimations(ON_HOVER);
+    const image = { id: 'f1', animated: true };
+    const pictures = {
+        avatar: h(Avatar, { member: { id: '7', username: 'gif', avatar: image } }),
+        badge: h(BadgePicture, { denID: 'D', image }),
+        banner: h(Banner, { denID: 'D', image }),
+        emoji: h(DenEmoji, { emoji: { id: '1', name: 'party', image } }),
+    };
+    const root = document.createElement('div');
+    mount(
+        h(DenContext.Provider, { value: 'D' },
+            h(EmojiContext.Provider, { value: { denID: 'D', list: [], byName: new Map(), on: true } },
+                h('ul', null, Object.entries(pictures).map(([name, picture]) => h(HoverRow, { as: 'li', key: name, 'data-row': name }, picture))))),
+        root,
+    );
+    await settle();
+    const images = (row) => {
+        const out = [];
+        (function walk(n) {
+            if (n.localName === 'img') out.push(n);
+            for (const c of n.childNodes || []) walk(c);
+        })(row);
+        return out;
+    };
+    const hidden = (img) => /(^|\s)opacity-0(\s|$)/.test(img.attributes.class || '');
+    for (const name of Object.keys(pictures)) {
+        const row = root.find((n) => n.attributes?.['data-row'] === name);
+        row.dispatch('pointerenter', { pointerType: 'mouse' });
+        await settle();
+        let [preview, file] = images(row);
+        assert.match(preview.attributes.src, /\/thumb$/, `${name}: the preview under it`);
+        assert.ok(file && !/\/thumb$/.test(file.attributes.src), `${name}: the picture over it`);
+        assert.ok(!hidden(preview), `${name}: the preview shows while the picture loads`);
+        if (file.listeners.load) file.dispatch('load');
+        await settle();
+        [preview] = images(row);
+        assert.ok(hidden(preview), `${name}: the preview hides once the picture loaded`);
+        row.dispatch('pointerleave', { pointerType: 'mouse' });
+        await settle();
+        [preview, file] = images(row);
+        assert.ok(!file && !hidden(preview), `${name}: the preview alone once the pointer leaves`);
+    }
     mount(null, root);
     done();
 });

@@ -15,6 +15,57 @@ const HINTS = ['detail', 'motion'];
 // MAX_WATCHING is how many shares a member watches at once.
 export const MAX_WATCHING = 4;
 
+// A watched share plays at its level, which the browser keeps by den and
+// sharer, so a loud sharer starts turned down every time; muting it plays
+// 0, and unmuting goes back to the level. A level is above 0 and at most
+// full, in steps of 5%, and full unless kept.
+
+const levelKey = (den, member) => `${den}:${member}`;
+const step = (v) => Math.min(1, Math.max(0, Math.round(Number(v) * 20) / 20)) || 0;
+
+/** readShareLevels reads the levels the browser kept, skipping anything
+    that isn't one */
+export function readShareLevels(text) {
+    let kept;
+    try {
+        kept = JSON.parse(text || '{}');
+    } catch {
+        return {};
+    }
+    const out = {};
+    if (!kept || typeof kept !== 'object' || Array.isArray(kept)) return out;
+    for (const [key, v] of Object.entries(kept)) {
+        if (typeof v === 'number' && v > 0 && v < 1) out[key] = step(v) || 0.05;
+    }
+    return out;
+}
+
+/** shareLevel is how loud a den's sharer plays as a watch of them starts */
+export function shareLevel(levels, den, member) {
+    return levels[levelKey(den, member)] ?? 1;
+}
+
+/** withShareLevel returns the levels with a sharer's set; full drops out */
+export function withShareLevel(levels, den, member, level) {
+    const next = { ...levels };
+    if (level >= 1) delete next[levelKey(den, member)];
+    else next[levelKey(den, member)] = level;
+    return next;
+}
+
+/** slidShare is a watched share's volume and level as its slider sets
+    the volume: a volume above 0 is its level from then on */
+export function slidShare(w, volume) {
+    const v = step(volume);
+    return { volume: v, level: v > 0 ? v : w.level };
+}
+
+/** toggledShare is a watched share's volume once muted, or unmuted to its
+    level */
+export function toggledShare(w) {
+    return w.volume === 0 ? w.level : 0;
+}
+
 // readShare reads the choices the browser kept, falling back to the
 // defaults for anything that isn't one.
 export function readShare(text) {

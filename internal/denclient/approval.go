@@ -332,7 +332,6 @@ func (m *Manager) waitForApproval(ctx context.Context, a *api, denID denproto.By
 		return SignInView{}, errors.New("the den's answer to signing in is malformed")
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.signInSeq++
 	fctx, stop := context.WithCancel(m.ctx)
 	p := &pendingSignIn{
@@ -340,13 +339,16 @@ func (m *Manager) waitForApproval(ctx context.Context, a *api, denID denproto.By
 		denID: denID, api: a, url: url, username: username, key: key, context: xctx, starter: starter, token: pending.PendingToken, stop: stop,
 	}
 	m.signIns[p.view.ID] = p
+	view := p.view
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
 		m.followSignIn(fctx, p)
 	}()
+	m.mu.Unlock()
+	m.notify()
 	m.log.Infof("Asked to sign in to a den, waiting for approval")
-	return p.view, nil
+	return view, nil
 }
 
 // followSignIn waits on the den for a sign-in to move on: an answer to

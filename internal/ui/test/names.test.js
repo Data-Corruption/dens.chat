@@ -166,7 +166,10 @@ test('a name wears its style: a font, a color the theme shows, or a gradient cut
     const [name] = names(page);
     assert.equal(name.textContent, 'Bob');
     assert.equal(name.attributes.class, 'truncate');
-    assert.deepEqual({ ...name.style }, { fontFamily: fontFamily('pacifico'), paddingBlock: '0.3em', marginBlock: '-0.3em', color: readable('#5c0a0a', DARK.backs, DARK.text) });
+    assert.deepEqual({ ...name.style }, {
+        fontFamily: fontFamily('pacifico'), paddingBlock: '0.3em', marginBlock: '-0.3em', paddingInline: '0.25em 0.25em', marginInline: '-0.25em -0.25em',
+        color: readable('#5c0a0a', DARK.backs, DARK.text),
+    });
 
     // Another theme shows the color as picked, where it reads there.
     setTheme('light');
@@ -178,7 +181,10 @@ test('a name wears its style: a font, a color the theme shows, or a gradient cut
     await settle();
     const [gradient] = names(page);
     assert.equal(gradient.attributes.class, 'bg-clip-text');
-    assert.deepEqual({ ...gradient.style }, { fontFamily: '', paddingBlock: '', marginBlock: '', backgroundImage: 'linear-gradient(90deg, #8b0000, #1d4ed8)', color: 'transparent' });
+    assert.deepEqual({ ...gradient.style }, {
+        fontFamily: '', paddingBlock: '', marginBlock: '', paddingInline: '', marginInline: '', backgroundImage: 'linear-gradient(90deg, #8b0000, #1d4ed8)',
+        color: 'transparent',
+    });
     assert.equal(gradient.textContent, 'Bob 🦊🇨🇦 fox');
     assert.deepEqual(all(gradient, (n) => n.localName === 'span' && n !== gradient).map((s) => [s.textContent, s.attributes.class]), [['🦊🇨🇦', 'text-base-content']]);
     assert.equal(nameText('Bob', { gradient: true }), 'Bob');
@@ -187,7 +193,7 @@ test('a name wears its style: a font, a color the theme shows, or a gradient cut
     // a style that isn't one shows as none.
     setNameStyles(STYLES_OFF);
     await until(() => !names(page)[0].style.backgroundImage);
-    assert.deepEqual({ ...names(page)[0].style }, { fontFamily: '', paddingBlock: '', marginBlock: '', backgroundImage: '', color: '' });
+    assert.deepEqual({ ...names(page)[0].style }, { fontFamily: '', paddingBlock: '', marginBlock: '', paddingInline: '', marginInline: '', backgroundImage: '', color: '' });
     assert.equal(names(page)[0].attributes.class, undefined);
     setNameStyles(STYLES_ALL);
     mount(h(Name, { member: null }), page);
@@ -204,7 +210,10 @@ test('the member list, a call and a message show a name as its member styled it'
     const bob = { id: '7', username: 'bob', display_name: 'Bob', name_style: { font: 'orbitron', color: '#ff6b6b' } };
     mount(h(LongName, { name: bob.display_name, member: bob }), page);
     await settle();
-    assert.deepEqual({ ...names(page)[0].style }, { fontFamily: fontFamily('orbitron'), paddingBlock: '0.3em', marginBlock: '-0.3em', color: '#ff6b6b' });
+    assert.deepEqual({ ...names(page)[0].style }, {
+        fontFamily: fontFamily('orbitron'), paddingBlock: '0.3em', marginBlock: '-0.3em', paddingInline: '0.2em 0.05em', marginInline: '-0.2em -0.05em',
+        color: '#ff6b6b',
+    });
     assert.match(names(page)[0].attributes.class, /\bname-scroll truncate\b/);
 
     const me = { id: '3', username: 'alice', display_name: 'Alice' };
@@ -234,7 +243,8 @@ test('Edit profile takes a font and colors, shows the name as it will be, and sa
     const alice = { id: '1', username: 'alice', display_name: 'Alice', role: 'member', name_style: { color: '#ff6b6b' } };
     // The preview shows the name as this theme does, a blue lightened to read on Dark.
     setTheme('dark');
-    const shown = `linear-gradient(90deg, #ff6b6b, ${readable('#1d4ed8', DARK.backs, DARK.text)})`;
+    // With Pacifico, the box's room past the name keeps its ends' colors.
+    const shown = `linear-gradient(90deg, #ff6b6b 0.25em, ${readable('#1d4ed8', DARK.backs, DARK.text)} calc(100% - 0.25em))`;
     assert.notEqual(readable('#1d4ed8', DARK.backs, DARK.text), '#1d4ed8');
     const page = document.createElement('div');
     const fields = () => all(page, (n) => 'data-name-style' in n.attributes)[0];

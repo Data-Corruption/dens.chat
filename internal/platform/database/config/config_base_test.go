@@ -174,6 +174,57 @@ const v1_11_0Row = `{"logLevel":"info","hosting":true,"denExported":"2026-11-01T
 	`"startAtSignIn":false,"notifications":{"dms":true,"mentions":true,"eventsOff":true,` +
 	`"muted":{"abc":{"den":true}},"sounds":{"message":{"off":true}}},"backgroundDim":40}`
 
+// v1_12_0Row is the configuration as v1.12.0 kept it: v1.11.0's, with
+// Relay.
+var v1_12_0Row = v1_11_0Row[:len(v1_11_0Row)-1] + `,"relayID":"00112233445566778899aabbccddeeff","relayKeys":true,"relaySound":true}`
+
+// The configuration v1.12.0 kept reads as it was, with no hover set for
+// the chat's background, and takes one.
+func TestReadsV1_12_0Configuration(t *testing.T) {
+	tmp := t.TempDir()
+	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{DefaultLogLevel: "warn"}, database.ApplyPendingMigrations)
+	if err != nil {
+		logger.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		logger.Close()
+	})
+	if _, err := db.Exec(`UPDATE config SET value = ? WHERE key = ?`, v1_12_0Row, database.ConfigDataKey); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := View(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BackgroundHover != nil || cfg.BackgroundDim == nil || *cfg.BackgroundDim != 40 || !cfg.RelayKeys || !cfg.RelaySound {
+		t.Errorf("v1.12.0's configuration read as %+v", cfg)
+	}
+	for _, hover := range []int{-1, 101} {
+		if _, err := Update(db, func(c *types.Configuration) error {
+			c.BackgroundHover = &hover
+			return nil
+		}); err == nil {
+			t.Errorf("a hover of %d was kept", hover)
+		}
+	}
+	hover := 55
+	if _, err := Update(db, func(c *types.Configuration) error {
+		c.BackgroundHover = &hover
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err = View(db); err != nil || cfg.BackgroundHover == nil || *cfg.BackgroundHover != 55 || *cfg.BackgroundDim != 40 {
+		t.Errorf("the hover kept as %+v, %v", cfg.BackgroundHover, err)
+	}
+}
+
 // The configuration v1.11.0 kept reads as it was, with Relay off and no
 // Relay ID (M20), and takes them.
 func TestReadsTheReleasedConfiguration(t *testing.T) {

@@ -11,11 +11,14 @@
 #                               measured twice as loud as their stream (M19.3)
 #   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1),
 #                               and a Short's cover and player portrait (M19.2)
-#   share                       M4.2: screen shares, Chromium and Firefox
+#   share                       M4.2: screen shares, Chromium and Firefox; from M21.1 a share turned down,
+#                               muted, unmuted and watched again, playing where it was
 #   two-shares                  M4.2: two shares in a player, one the probe's
 #   retention                   M5.1: retention, Chromium and Firefox
 #   files                       M5.2: managing files, Chromium and Firefox, and from M17.2 a photo
-#                               sent as a spoiler in a channel and a DM, covered until clicked
+#                               sent as a spoiler in a channel and a DM, covered until clicked; and from M21.1
+#                               a message's GIF far up a channel, unfetched until it nears the screen, playing
+#                               there under Always, and under the pointer with On hover
 #   photos BROWSER              M5.3: smaller photos and the viewer
 #   videos BROWSER              M5.4: smaller videos
 #   webcodecs BROWSER           M5.5: copies the page makes
@@ -54,7 +57,8 @@
 #                               player's ring lit, the rest heard by who joins partway, 0 muting it
 #   pictures BROWSER            M15.1: an animated GIF and an animated WebP cropped into each member's
 #                               picture and banner, shown still or playing, row by row, as each page's
-#                               Animations says, which starts at On hover where the system asks for less motion
+#                               Animations says, which starts at On hover where the system asks for less motion;
+#                               from M21.1 bob's a transparent GIF, its preview hidden once it plays
 #   emoji BROWSER               M15.2: a still emoji and an animated one added in Manage, written by name,
 #                               picked and completed, with @ for members, shown on both pages, in a DM too,
 #                               and large alone; the picker led by the most used, in a skin tone; On hover;
@@ -78,6 +82,8 @@
 #                               den's database; bob removed by alice, who made it, his page reading nothing
 #                               after; and carol and alice leaving
 #   disappearing BROWSER        M16.4: a DM's time set from the profile beside it, its line and its header;
+#                               from M21.1 messages a moment apart either side of a change of the time, each
+#                               with its clock;
 #                               a message under a time of seconds marked, then gone from both pages, bob's
 #                               cache and the den's database, into its change log; a group's time set from
 #                               its members, and its message gone from both pages; and with the den stopped,
@@ -109,7 +115,8 @@
 #                               shown by a tap on a profile card, within the screen (M17.5); and a profile
 #                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6); and the
 #                               theme editor and the chat background's card with its Dim (M19.4); and Edit
-#                               profile's Name style, a font and a gradient picked (M19.5).
+#                               profile's Name style, a font and a gradient picked (M19.5); and Staff marks
+#                               and the background's Hover (M21.1).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -143,7 +150,8 @@
 #                               a chip and its card on bob's page, his Interested from the card; alice
 #                               earning the badge in its call, bob joining and leaving at once earning none;
 #                               the badge and its tip on alice's profile card; the card saying Ended; and the
-#                               den's database holding alice's award alone, the badge's title sealed
+#                               den's database holding alice's award alone, the badge's title sealed. M21.1:
+#                               Interested colored until marked, then plain with a tick
 #   settings BROWSER [PART...]  M19.1: every section of the settings and of Manage opened from the list down
 #                               the side, with the layout audit, every hint in them reading in a line; and
 #                               Appearance's sizes, a photo and a YouTube player each shown at the size
@@ -151,15 +159,18 @@
 #                               own made in the editor, the page wearing it color for color, saved, edited,
 #                               its code copied and pasted into bob's browser, a stranger's codes refused; and
 #                               a picture set behind general's messages, found there under its dim by the
-#                               screen's pixels, in a second browser too, and removed (M19.4). PART is
-#                               sections, sizes, themes or background; all unless given
+#                               screen's pixels, in a second browser too, and removed (M19.4); and Staff
+#                               marks, the message bar's hue on a green theme of her own, and the background's
+#                               Hover in both browsers (M21.1). PART is sections, sizes, themes or background;
+#                               all unless given
 #   names BROWSER               M19.5: alice picking a font and a gradient in Edit profile, its fonts as
 #                               tiles in their own faces; bob's page showing her name in them in the member
 #                               list, a message, a reply's quote, a call, the DM list, a DM's header and her
 #                               card, the dark end lightened on Dark and the pale one darkened on Light, by
 #                               the page's styles and the screen's pixels, no row taller, her font alone
 #                               fetched; a Cyrillic name in the page's font; bob's Name styles at Colors
-#                               only and Off; and alice clearing her style
+#                               only and Off; each font's letters inside a name's box (M21.1); and alice
+#                               clearing her style
 #   relay BROWSER               M20.1: bob in a call on his first install, his laptop's install linked to it
 #                               through the den's introduction, its stand-in helper's push to talk ringing
 #                               him on alice's page, its toggle mute muting him once, the ring out within half
@@ -171,12 +182,15 @@
 #                               no address in the den's database or his installs' logs; and from M20.3 the
 #                               laptop's page, as a phone's, holding the call's button for his call, under the
 #                               name of the device holding it, which rings him on alice's page while it's held
+#   signin BROWSER              M21.1: bob's laptop signing in from its page, saying at once that it waits for
+#                               his other device; his first device, at a phone's width, showing the request on
+#                               each pane; the digits typed both ways, and the laptop signed in
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,172p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,188p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

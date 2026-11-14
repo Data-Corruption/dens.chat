@@ -9,7 +9,8 @@
 // keeping its full screen button as the rest give way (M14.3); and from
 // M15, an unread channel told from a read one at a glance, and a video's
 // seek bar drawn thin; and from M19.2, the crown and the shield at one
-// height beside their names in the member list, a card and a message, a
+// height beside their names in the member list, a card and a message, the
+// last with Staff marks on (M21.1), a
 // long name scrolling to its end under the pointer and back, and a right
 // click opening a message's menu and a member's at the pointer, and a
 // link's the browser's own; and from M19.5, the den's name with no arrow
@@ -302,6 +303,9 @@ try {
     })()`;
     const LIST = `document.querySelector('nav[aria-label=Members]')`;
     const MEMBER = (name) => `[...${LIST}.querySelectorAll('button')].find((x) => x.textContent.includes(${JSON.stringify(name)}))`;
+    // Messages show them once the member turns on Staff marks, which the
+    // browser keeps.
+    await b.eval(`localStorage.setItem('DENS_STAFF_MARKS', 'on'), true`);
     await open(general);
     await waitFor(() => b.eval(`${LIST}?.querySelectorAll('[data-role-mark]').length === 2 && !!document.querySelector('[data-id] [data-role-mark]')`), 'the marks');
     const inList = JSON.parse(await b.eval(MARKS(LIST)));

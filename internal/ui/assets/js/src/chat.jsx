@@ -35,6 +35,7 @@ import { RelayBar } from './relay.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
+import { UpdateNotice } from './update.jsx';
 import { applyCalls, joinCall } from './voice.js';
 import { CallLock } from './calllock.jsx';
 import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, groupDrop, moveTargets } from './drag.js';
@@ -211,8 +212,9 @@ function expireTypers(typing, now) {
 }
 
 // pane is the pane the page's history shows on the phone layout: list,
-// chan or side.
-export function Chat({ denID, channelID, pane, navigate }) {
+// chan or side; service is the local service's status, which names an
+// update.
+export function Chat({ denID, channelID, pane, navigate, service }) {
     const [view, setView] = useState(null);
     const [error, setError] = useState('');
     const [dialog, setDialog] = useState(null);
@@ -531,6 +533,15 @@ export function Chat({ denID, channelID, pane, navigate }) {
             <DockedPlayer />
         </>
     );
+    // What waits on this device shows above the channel, and on the phone
+    // layout above whichever pane is open: an update's notice, and
+    // sign-ins waiting for this member's approval.
+    const notices = (
+        <div class="flex flex-col gap-2 p-2 empty:hidden" data-den-notices>
+            <UpdateNotice status={service} dismissible />
+            {status && !gone && <SignInRequests den={status} />}
+        </div>
+    );
     // What waits in the other dens, for the list's Home button.
     const away = { mentions: 0, unread: false };
     for (const d of dens) {
@@ -543,11 +554,13 @@ export function Chat({ denID, channelID, pane, navigate }) {
         <DenContext.Provider value={denID}>
             <EmojiContext.Provider value={emoji}>
             <LinkContext.Provider value={links}>
+                <div class="flex h-full min-h-0 flex-col">
+                {narrow && notices}
                 {/* On the phone layout a row that scrolls sideways, snapping to
                     each pane; the side panes take 85% of it, so the channel shows
                     at their edge, dimmed, and a tap there goes back to it. Panes
                     off screen are inert. */}
-                <div ref={row} class="relative flex h-full min-h-0 snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] md:snap-none md:overflow-x-visible [&::-webkit-scrollbar]:hidden"
+                <div ref={row} class="relative flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] md:snap-none md:overflow-x-visible [&::-webkit-scrollbar]:hidden"
                     onClick={(e) => at && at !== 'chan' && e.target === e.currentTarget && toPane('chan')}>
                     <aside data-pane="list" inert={!!at && at !== 'list'} class="flex w-[85%] shrink-0 snap-start flex-col overflow-y-auto bg-base-200 md:w-64">
                         <div class="border-b border-base-300 p-3">
@@ -625,7 +638,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                                 <button type="button" class="btn btn-sm" onClick={forget}>Remove from this device</button>
                             </div>
                         )}
-                        {status && !gone && <div class="mx-2"><SignInRequests den={status} /></div>}
+                        {!narrow && notices}
                         {newDevice && !gone && (
                             <div role="status" class="alert alert-info alert-soft m-2 flex flex-wrap">
                                 <span>
@@ -733,6 +746,7 @@ export function Chat({ denID, channelID, pane, navigate }) {
                             )}
                         </aside>
                     )}
+                </div>
                 </div>
                 {dialog?.kind === 'channel' && <ChannelDialog denID={denID} view={view} channel={dialog.channel} onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}

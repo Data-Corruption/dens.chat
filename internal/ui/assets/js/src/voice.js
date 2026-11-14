@@ -63,7 +63,10 @@
 import { api } from './api.js';
 import { onConnection, onEvent, sendCall } from './events.js';
 import { NO_CALLS, NO_SHARING, autoplays, canCall, canSeal, canShare, inApp } from './platform.js';
-import { MAX_WATCHING, displayOptions, fitPixels, readShare, receivingSections, refusalText, screenOwner, shareBlocked, shareQuality, watchersOf } from './share.js';
+import {
+    MAX_WATCHING, displayOptions, fitPixels, readShare, readShareLevels, receivingSections, refusalText, screenOwner, shareBlocked, shareLevel,
+    shareQuality, slidShare, toggledShare, watchersOf, withShareLevel,
+} from './share.js';
 import { setCallContext } from './relay.js';
 import { callSounds, playSound, setSoundRoute, warmSounds } from './sounds.js';
 import { soundRefusal } from './soundboard.js';
@@ -74,6 +77,7 @@ const MUTED = 'DENS_MUTED';
 const DEAFENED = 'DENS_DEAFENED';
 const RNNOISE = 'DENS_RNNOISE';
 const VOLUMES = 'DENS_VOLUMES';
+const SHARE_VOLUMES = 'DENS_SHARE_VOLUMES';
 // LOUDEST is the loudest a member plays, twice what they send. It stands
 // above the read of the kept volumes, which runs as the module loads.
 export const LOUDEST = 2;
@@ -184,6 +188,9 @@ let callEnded = -Infinity;
 let volumes = readVolumes(stored(VOLUMES));
 // wholeVolume is how loud the whole call plays here (M12).
 let wholeVolume = readCallVolume(stored(CALL_VOLUME));
+// shareLevels is how loud each sharer's share plays here, by den and
+// sharer.
+let shareLevels = readShareLevels(stored(SHARE_VOLUMES));
 // share is the page's screen share (M4.2), or null: its status ("picking"
 // while the browser asks, "starting" until the den says it's live, then
 // "live"), its stream, tracks and quality, and the timer that checks its
@@ -2498,7 +2505,8 @@ async function sendParams() {
 export function watchShare(member, label) {
     const c = call;
     if (!c || watched.has(member) || watched.size >= MAX_WATCHING) return;
-    watched.set(member, { member, label, stream: null, volume: 1 });
+    const level = shareLevel(shareLevels, c.den, member);
+    watched.set(member, { member, label, stream: null, volume: level, level });
     shareNotice = null;
     sendCall('voice.watch', { den: c.den, member_id: member, on: true });
     notify();
@@ -2531,11 +2539,27 @@ export async function joinAndWatch(den, channel, label, member, name) {
     if (call && call.den === den && call.channel === channel) watchShare(member, name);
 }
 
-// setShareVolume sets how loud a watched share's sound plays here.
+// setShareVolume sets how loud a watched share's sound plays here, and
+// keeps it for the sharer.
 export function setShareVolume(member, volume) {
     const w = watched.get(member);
+    if (!w || !call) return;
+    const { volume: v, level } = slidShare(w, volume);
+    w.volume = v;
+    if (level !== w.level) {
+        w.level = level;
+        shareLevels = withShareLevel(shareLevels, call.den, member, level);
+        store(SHARE_VOLUMES, Object.keys(shareLevels).length ? JSON.stringify(shareLevels) : '');
+    }
+    notify();
+}
+
+// toggleShareMute mutes a watched share, or plays it at its volume from
+// before.
+export function toggleShareMute(member) {
+    const w = watched.get(member);
     if (!w) return;
-    w.volume = clampVolume(volume);
+    w.volume = toggledShare(w);
     notify();
 }
 

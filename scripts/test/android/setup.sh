@@ -4,8 +4,10 @@
 # platform tools (adb), the emulator and its system images, from the
 # downloads vendor.sh verified; the emulator's devices, a17 on Android 17
 # and a12 on Android 12, the oldest the app runs on; the pinned Node.js;
-# and this directory's drivers. Its adb is also how phone.sh reaches a
-# phone over wireless debugging, which keeps its pairing.
+# and this directory's drivers; and a user, loopden, for the development
+# instance whose den the release's app joins (M21.1), which won't run as
+# root. Its adb is also how phone.sh reaches a phone over wireless
+# debugging, which keeps its pairing.
 #
 # Usage: scripts/test/android/setup.sh
 #
@@ -58,6 +60,7 @@ for file in "$downloads"/*.zip; do
     incus file push -q "$file" "$CONTAINER/opt/android/downloads/$name"
   fi
 done
+in_box id loopden >/dev/null 2>&1 || in_box useradd -m loopden
 incus file push -q --mode 0755 scripts/test/android/box.sh "$CONTAINER/root/box.sh"
 in_box /root/box.sh sdk
 in_box /root/box.sh avd a17 android-37.0/google_apis/x86_64

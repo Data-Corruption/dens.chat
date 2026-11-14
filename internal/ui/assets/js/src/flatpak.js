@@ -4,7 +4,7 @@
 
 import { api } from './api.js';
 
-// updateNotice is home's notice of an update, or null: the release host's
+// updateNotice is the page's notice of an update, or null: the release host's
 // for an installed Dens, with the command that installs it; the Android
 // app's, once its update is downloaded and checked, which Android's
 // installer installs once the member confirms (M12.4); or Flatpak's, with
@@ -27,6 +27,13 @@ export function updateNotice(status) {
     if (u.can_install) return { text: 'An update to Dens is available.', action: 'update', label: 'Update' };
     const why = /permission/i.test(u.refused || '') ? ', since it asks for a new permission' : '';
     return { text: `An update to Dens is available. Update it in your software center${why}.` };
+}
+
+// noticeKey names an update's notice for the running version, so its
+// dismissal holds until another update, or a restart into this one, makes
+// another notice.
+export function noticeKey(status, notice) {
+    return `${status.version || ''}|${notice.text}`;
 }
 
 // rememberNote is the line under Remember on this computer: where the key

@@ -6,7 +6,7 @@
 
 import { createContext } from 'preact';
 import { useContext, useState } from 'preact/hooks';
-import { usePicture } from './animations.js';
+import { Picture, usePicture } from './animations.js';
 
 // DenContext names the den a view shows, so pictures can be fetched from
 // it wherever they appear.
@@ -50,9 +50,8 @@ const DOTS = {
 // Avatar shows a member's picture. online, when given, adds a presence dot,
 // ringed in the color behind it, dotRing. A picture that fails to load
 // gives way to the default. An animated one that isn't playing shows its
-// preview, its first frame, which the picture covers while it plays, so it
-// never blinks out as it starts. It stands for its member, so a right click
-// on it opens the page's menu, not the browser's.
+// preview, its first frame (see Picture). It stands for its member, so a
+// right click on it opens the page's menu, not the browser's.
 export function Avatar({ member, size = 'md', online, dotRing = 'ring-base-200' }) {
     const denID = useContext(DenContext);
     const [failed, setFailed] = useState('');
@@ -61,13 +60,9 @@ export function Avatar({ member, size = 'md', online, dotRing = 'ring-base-200' 
     const file = `/api/dens/${denID}/files/${picture}`;
     const round = 'h-full w-full select-none rounded-full object-cover';
     return (
-        <span class={`relative inline-flex shrink-0 ${SIZES[size]}`} aria-hidden="true" data-avatar>
+        <span class={`relative inline-flex shrink-0 rounded-full ${picture ? 'bg-base-300' : ''} ${SIZES[size]}`} aria-hidden="true" data-avatar>
             {picture ? (
-                <>
-                    <img src={how === 'file' ? file : `${file}/thumb`} alt="" draggable={false} onError={() => setFailed(picture)}
-                        class={`${round} bg-base-300`} />
-                    {how === 'hover' && <img src={file} alt="" draggable={false} class={`absolute inset-0 ${round}`} />}
-                </>
+                <Picture how={how} file={file} preview={`${file}/thumb`} cls={round} onError={() => setFailed(picture)} />
             ) : (
                 <span class={`flex h-full w-full select-none items-center justify-center rounded-full font-semibold text-white ${avatarColor(member?.id)}`}>
                     {avatarLetter(member?.username)}

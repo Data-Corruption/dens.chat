@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { EXPIRY_TIMES, afterText, dueBy, expiryText, nextDue, placeAt, shortAfter } from '../assets/js/src/private.js';
 import { ExpiryBadge, ExpiryLine, ExpirySetting } from '../assets/js/src/disappearing.jsx';
+import { continues } from '../assets/js/src/messages.jsx';
 
 const names = new Map([['1', 'Alice'], ['2', 'Bob']]);
 const nameOf = (id) => names.get(id) || 'Unknown member';
@@ -44,6 +45,20 @@ test("a time's line says who set it, when, and to what, at the time they set it"
     mount(h(ExpiryLine, { channel: { id: '7', kind: 'dm', expires_after: 604800, expires_set: { by: '2', at } }, nameOf, me: '1' }), root);
     assert.equal(root.textContent, `${on}, Bob set messages to disappear 1 week after they're sent.`);
     mount(null, root);
+});
+
+// The clock shows in a run's header, so a run ends where the time its
+// messages disappear after changes.
+test('a run of messages ends where their time to disappear changes, or a line sits between them', () => {
+    const at = Date.UTC(2026, 10, 14, 12);
+    const hour = { id: '1', author_id: '7', created_at: at, expires_at: at + 3600_000 };
+    const next = { id: '2', author_id: '7', created_at: at + 60_000, expires_at: at + 60_000 + 3600_000 };
+    assert.equal(continues(hour, next, false), true, 'the same time, a minute apart');
+    assert.equal(continues(hour, { ...next, expires_at: next.created_at + 86400_000 }, false), false, 'a day after a changed time');
+    assert.equal(continues(hour, { ...next, expires_at: undefined }, false), false, "one that doesn't disappear");
+    assert.equal(continues({ ...hour, expires_at: undefined }, next, false), false, 'one that does, after one that never did');
+    assert.equal(continues({ ...hour, expires_at: undefined }, { ...next, expires_at: undefined }, false), true, 'neither disappearing');
+    assert.equal(continues(hour, next, false, true), false, 'a line between them');
 });
 
 test('messages whose time came are due, and the next of the rest goes at its time', () => {

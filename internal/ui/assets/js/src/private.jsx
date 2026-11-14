@@ -305,6 +305,10 @@ export function SignInSteps({ p, onRecover, onDone }) {
             </h3>
             {p.stage === 'waiting' && (
                 <>
+                    <p role="status" class="flex items-center gap-2 font-medium">
+                        <span class="loading loading-spinner loading-sm"></span>
+                        Waiting for your other device
+                    </p>
                     <p>
                         Open Dens on one of your other devices in this den, as @{p.username}: it asks whether this one is yours. It waits until{' '}
                         {clock(p.expires_at)}.

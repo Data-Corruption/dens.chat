@@ -1,8 +1,11 @@
+import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { h, render as mount } from 'preact';
+import { ALWAYS, HoverRow, ON_HOVER, setAnimations } from '../assets/js/src/animations.js';
 import { clampOffset, coverScale, sourceRect, zoomAt } from '../assets/js/src/crop.jsx';
 import {
-    attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize, step,
+    Attachments, attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize, step,
 } from '../assets/js/src/files.jsx';
 
 test('sizes read as people write them', () => {
@@ -108,4 +111,52 @@ test("a member's list of files says what uses each", () => {
     assert.equal(fileWhere({ message_id: '5', channel_id: '10' }, view), 'In #general');
     assert.equal(fileWhere({ message_id: '6', channel_id: '11' }, view), 'In your DM with Bob');
     assert.equal(fileWhere({ message_id: '7', channel_id: '12' }, view), "In a channel you can't see");
+});
+
+// A GIF in a message plays as Animations says, as every animated picture
+// does: under Always as it nears the screen, its file fetched no sooner,
+// and under On hover while the pointer is over its message.
+test("a message's GIF plays under Always, and under On hover while the pointer is over its message", async () => {
+    const kept = new Map();
+    globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) };
+    globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
+    const gif = { id: 'g1', name: 'dance.gif', type: 'image/gif', size: 4 << 20, width: 480, height: 270, thumb: true, animated: true };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const images = (node, out = []) => {
+        if (node.localName === 'img') out.push(node);
+        for (const c of node.childNodes || []) images(c, out);
+        return out;
+    };
+    const file = (img) => img && !/\/thumb$/.test(img.attributes.src) && !/\bopacity-0\b/.test(img.attributes.class);
+    const root = document.createElement('div');
+    const show = () => mount(h(HoverRow, { 'data-row': '' }, h(Attachments, { denID: 'D', files: [gif], onOpen() {} })), root);
+
+    setAnimations(ALWAYS);
+    show();
+    await settle();
+    let [preview, playing] = images(root);
+    assert.match(preview.attributes.src, /\/thumb$/, 'its preview first');
+    assert.equal(playing.attributes.src, '/api/dens/D/files/g1', 'the GIF over it');
+    assert.equal(playing.attributes.loading, 'lazy', 'fetched as it nears the screen');
+    playing.dispatch('load');
+    await settle();
+    assert.ok(/\bopacity-0\b/.test(images(root)[0].attributes.class), 'its preview hidden once it plays');
+
+    setAnimations(ON_HOVER);
+    await settle();
+    assert.deepEqual(images(root).map((i) => i.attributes.src), ['/api/dens/D/files/g1/thumb'], 'still, without the pointer');
+    const row = root.find((n) => n.attributes?.['data-row'] !== undefined);
+    row.dispatch('pointerenter', { pointerType: 'mouse' });
+    await settle();
+    [preview, playing] = images(root);
+    assert.ok(file(playing), 'playing under the pointer');
+    row.dispatch('pointerleave', { pointerType: 'mouse' });
+    await settle();
+    assert.equal(images(root).length, 1, 'and still again once it leaves');
+    row.dispatch('pointerenter', { pointerType: 'touch' });
+    await settle();
+    assert.equal(images(root).length, 1, "a finger's touch isn't a hover: a tap opens the viewer");
+    mount(null, root);
+    delete globalThis.localStorage;
+    delete globalThis.window;
 });

@@ -276,6 +276,34 @@ func TestSignInPinnedByAnOldInvite(t *testing.T) {
 	}
 }
 
+// A sign-in that starts waiting for approval reaches the pages at once, so
+// the new device says it waits before the other one answers.
+func TestASignInPublishesItsWait(t *testing.T) {
+	h, owner, _, denID, _ := chatDen(t)
+	joinWithCodes(t, owner, h.client(t, noOwnDen), denID, "hana")
+	laptop := h.client(t, noOwnDen)
+	// Run's start is the one change a manager with no dens makes.
+	deadline := time.Now().Add(10 * time.Second)
+	for _, n := laptop.Version(); n == 0; _, n = laptop.Version() {
+		if time.Now().After(deadline) {
+			t.Fatal("the manager never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	_, before := laptop.Version()
+	in, err := signIn(t, laptop, denclient.SignInRequest{Den: "https://example.com", Username: "hana", Password: "old password"})
+	if err != nil || in.Pending == nil {
+		t.Fatalf("%+v %v", in, err)
+	}
+	if _, after := laptop.Version(); after <= before {
+		t.Fatal("the sign-in's wait never reached the pages")
+	}
+	signIns := laptop.SignIns()
+	if len(signIns) != 1 || signIns[0].ID != in.Pending.ID || signIns[0].Stage != denclient.SignInWaiting {
+		t.Fatalf("the pages read %+v", signIns)
+	}
+}
+
 // An owner who signs out the machine that hosts their den, their only
 // device, signs in again there with a recovery code, by the den's address,
 // which needn't loop back from that machine. The password alone can't: no

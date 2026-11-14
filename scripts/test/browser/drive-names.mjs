@@ -9,7 +9,9 @@
 // chosen while the page shows, the pale end darkened instead; carol's
 // Cyrillic name draws in the page's font, her font never fetched; bob's
 // Name styles at Colors only drops the fonts, and at Off shows every name
-// plain, which a reload keeps; and alice clears her style.
+// plain, which a reload keeps; and alice clears her style. From M21.1 her
+// name in each font in turn, its box holding every Latin letter and digit
+// the font draws, by how far the browser measures each one's ink reaching.
 //
 //   run.sh names chromium|firefox
 import fs from 'node:fs';
@@ -305,6 +307,48 @@ try {
     await pick('all');
     await waitFor(async () => worn(await look(bob, LIST)), 'the style back at Colors and fonts');
     await bob.key('Escape');
+
+    step("each font's letters inside a name's box");
+    // ink is how far the farthest-reaching of a font's Latin letters and
+    // digits reach, at alice's name's size in bob's member list, against the
+    // room its box keeps: before and after the text, and above and below
+    // the baseline, where a box of no size at its end sits.
+    const INK = `(() => {
+        const el = ${LIST};
+        const s = getComputedStyle(el);
+        const ctx = document.createElement('canvas').getContext('2d');
+        ctx.font = s.fontWeight + ' ' + s.fontSize + ' ' + s.fontFamily;
+        const ink = { before: 0, after: 0, above: 0, below: 0 };
+        for (const ch of 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÅÉÑØßæøåéñ_') {
+            const m = ctx.measureText(ch);
+            ink.before = Math.max(ink.before, m.actualBoundingBoxLeft);
+            ink.after = Math.max(ink.after, m.actualBoundingBoxRight - m.width);
+            ink.above = Math.max(ink.above, m.actualBoundingBoxAscent);
+            ink.below = Math.max(ink.below, m.actualBoundingBoxDescent);
+        }
+        const mark = document.createElement('span');
+        mark.style.cssText = 'display:inline-block;width:0;height:0';
+        el.appendChild(mark);
+        const baseline = mark.getBoundingClientRect().bottom;
+        el.removeChild(mark);
+        const box = el.getBoundingClientRect();
+        const room = { before: parseFloat(s.paddingLeft), after: parseFloat(s.paddingRight), above: baseline - box.top, below: box.bottom - baseline };
+        const r = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Math.round(v * 10) / 10]));
+        return JSON.stringify({ font: s.fontFamily.split(',')[0].replace(/"/g, ''), ink: r(ink), room: r(room) });
+    })()`;
+    const short = [];
+    for (const font of ['pacifico', 'fredoka', 'zilla-slab', 'space-mono', 'orbitron', 'pixelify-sans', 'bangers', 'cinzel']) {
+        lib('api', 'alice', 'PATCH', `/api/dens/${den}/me`, q({ name_style: { font, color: FROM } }));
+        await waitFor(() => bob.eval(`getComputedStyle(${LIST}).fontFamily.replace(/"/g, '').startsWith('Dens name ${font},')
+            && [...document.fonts].some((f) => f.family.replace(/"/g, '') === 'Dens name ${font}' && f.status === 'loaded')`), `alice's name in ${font} on bob's page`);
+        const m = JSON.parse(await bob.eval(INK));
+        const over = Object.keys(m.ink).filter((side) => m.ink[side] > m.room[side] + 0.5);
+        if (over.length) short.push(`${font} past its ${over.join(' and ')}: ${q(m)}`);
+        else console.log(`     ${font}: ${q(m)}`);
+    }
+    c.report(short.length === 0, `every font's letters fit inside her name's box, before, after, above and below${short.length ? `; not ${short.join('; ')}` : ''}`);
+    lib('api', 'alice', 'PATCH', `/api/dens/${den}/me`, q({ name_style: { font: 'pacifico', color: FROM, color2: TO } }));
+    await waitFor(async () => worn(await look(bob, LIST)), 'her style back');
 
     step('alice clears her style');
     await editProfile();

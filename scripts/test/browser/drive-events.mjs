@@ -21,7 +21,8 @@
 // picture she crops and a title, which bob's page shows on its card; her
 // Copy link gives the event's link, which she sends in #general and in
 // their DM, where bob's page shows it as a chip naming the event and as its
-// card under the message, from which bob marks Interested. Once it's live,
+// card under the message, from which bob marks Interested, colored while
+// it asks and plain with a tick once marked (M21.1). Once it's live,
 // alice joins its call from her card and stays a stretch, the few seconds
 // a development instance's den takes, and earns its badge; bob joins and
 // leaves at once, and doesn't. Alice's profile card on bob's page shows
@@ -222,9 +223,17 @@ try {
     report(/Game night/.test(seen.text) && /Nobody interested yet/.test(seen.text) && seen.badge && seen.interested,
         `the card shows its name, its badge, nobody interested yet, and Interested: ${q(seen)}`);
     await B.b.shot(`${HOME}/shot-events-card-${which}.png`);
+    // interest is how Interested shows: its words, whether it's colored,
+    // and whether it's pressed.
+    const interest = async () => JSON.parse(await B.b.eval(`(() => { const x = ${linkCard(night.id)}.querySelector('[data-interested]');
+        return JSON.stringify({ text: x.textContent.trim(), primary: x.classList.contains('btn-primary'), pressed: x.getAttribute('aria-pressed') }); })()`));
+    const asks = await interest();
+    report(asks.text === 'Interested' && asks.primary && asks.pressed === 'false', `before he marks it, Interested is colored: ${q(asks)}`);
     await B.b.eval(`${linkCard(night.id)}.querySelector('[data-interested]').click(), true`);
     report(await may(waitFor(() => B.b.eval(`${linkCard(night.id)}.querySelector('[data-interested]').getAttribute('aria-pressed') === 'true'
         && ${linkCard(night.id)}.innerText.includes('1 interested')`), "bob's mark on the card")), "bob's card shows his mark, 1 interested");
+    const marked = await interest();
+    report(marked.text === '✓ Interested' && !marked.primary && marked.pressed === 'true', `once marked, it's plain with a tick: ${q(marked)}`);
     report(await may(waitFor(() => cardText(A, 'Game night').then((t) => /1 interested/.test(t)), "alice's count")),
         "alice's page counts 1 interested, as bob marked it from the card");
     step('and in their DM');

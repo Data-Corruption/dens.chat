@@ -15,7 +15,9 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
-import { DIM_MOST, DIM_STEP, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, slideDim } from './background.js';
+import {
+    DIM_MOST, DIM_STEP, HOVER_MOST, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, setHover, slideDim, slideHover,
+} from './background.js';
 import {
     Card, Choices, ColorField, CopyButton, DOCS, DocsLink, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords,
     useAction, useBackdrop, useBackground, useNotifications,
@@ -39,6 +41,7 @@ import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, set
 import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, readCode, themeCode, variables } from './themes.js';
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
+import { setStaffMarks, useStaffMarks } from './staffmarks.js';
 import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
@@ -333,8 +336,9 @@ function ThemeEditor({ start, onSave, onCancel }) {
 
 // ChatBackground sets the picture behind the member's messages: Choose
 // image, for a PNG, a JPEG or a WebP of theirs, Dim, how far the theme's
-// background covers it, and Remove. The service keeps both, so every
-// browser paired with it shows them.
+// background covers it, Hover, how far a message under the pointer does,
+// and Remove. The service keeps them, so every browser paired with it
+// shows them.
 function ChatBackground() {
     const background = useBackground();
     const file = useRef(null);
@@ -379,6 +383,19 @@ function ChatBackground() {
                     </span>
                 </label>
             )}
+            {background && (
+                <label class="flex flex-col gap-1">
+                    <span class="text-sm">Hover</span>
+                    <span class="flex items-center gap-3">
+                        <input type="range" class="range range-md min-w-0 flex-1" min="0" max={HOVER_MOST} step={DIM_STEP} value={background.hover}
+                            aria-label="Hover" aria-valuetext={`${background.hover}%`} data-background-hover
+                            onInput={(e) => slideHover(Number(e.currentTarget.value))}
+                            onChange={(e) => setHover(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
+                        <span class="w-10 text-right text-sm tabular-nums">{background.hover}%</span>
+                    </span>
+                    <span class="text-sm text-base-content/70">How far a message under the pointer covers the picture.</span>
+                </label>
+            )}
             <ErrorText message={act.error} />
         </Card>
     );
@@ -388,11 +405,13 @@ function ChatBackground() {
 const SIZE_NAMES = { small: 'Small', medium: 'Medium', large: 'Large', largest: 'Largest' };
 
 // MessagesPicker chooses how messages show: their Density, Default or
-// Compact, a line each of the time, the name and the text; and on a wide
+// Compact, a line each of the time, the name and the text; on a wide
 // window, how large their photos and videos show, and their YouTube
-// players. This browser keeps each, as it keeps the theme.
+// players; and whether staff's marks show beside names. This browser keeps
+// each, as it keeps the theme.
 function MessagesPicker() {
     const density = useDensity();
+    const marks = useStaffMarks();
     const media = useSize(MEDIA);
     const players = useSize(PLAYERS);
     const narrow = useNarrow();
@@ -407,6 +426,7 @@ function MessagesPicker() {
                     <Choices label="YouTube players" name="player-size" data="data-player-size" choice={players} onPick={(s) => setSize(PLAYERS, s)} choices={sizes} />
                 </>
             )}
+            <Toggle id="staff-marks" label="Staff marks" hint="A crown or a shield beside staff's names." checked={marks} onChange={setStaffMarks} />
         </Card>
     );
 }

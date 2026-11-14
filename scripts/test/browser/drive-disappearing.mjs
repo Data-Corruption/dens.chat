@@ -7,7 +7,8 @@
 // as its time passes, into the den's change log. Alice sets a group's time
 // from its members, and bob's message there goes from both pages too. And
 // with the den stopped, a message goes from bob's page and his cache all
-// the same.
+// the same. From M21.1 alice writes either side of a change of the time, a
+// moment apart, and both messages show their clocks.
 //
 //   run.sh disappearing chromium|firefox
 import { execFileSync } from 'node:child_process';
@@ -103,7 +104,7 @@ try {
     step("bob sets the DM's time from the profile beside it");
     await beside(B, 'Profile');
     const asked = await choose(B, 3600, 'Turn on');
-    report(/^New messages disappear for everyone 1 hour after they're sent\. How it works \| https:\/\/dens\.chat\/docs\/join\/#disappearing-messages _blank$/.test(asked),
+    report(/^New messages disappear for everyone 1 hour after they're sent\. How it works \| https:\/\/dens\.chat\/docs\/usage\/#disappearing-messages _blank$/.test(asked),
         `bob's pick asks first, linking to the guide: ${asked}`);
     report(await lineShown(A, "Bob set messages to disappear 1 hour after they're sent."), "alice's page shows the line where bob set the DM's time");
     report(await lineShown(B, "you set messages to disappear 1 hour after they're sent."), "bob's page says he set it");
@@ -111,6 +112,17 @@ try {
         "alice's header says the DM's messages go after an hour");
     await sleep(300);
     await B.b.shot(`${HOME}/shot-disappearing-setting-bob-${which}.png`);
+
+    step('alice writes either side of a change of the time, and both show their clocks');
+    await sends(A, 'under the hour');
+    await waitFor(() => marked(A, 'under the hour'), 'the first message, marked');
+    api('bob', 'PUT', `/api/dens/${den}/dms/${dm}/expiry`, { expires_after: 86400 });
+    report(await lineShown(A, "Bob set messages to disappear 1 day after they're sent."), "alice's page shows where bob changed the time");
+    await sends(A, 'under the day');
+    const clocks = await Promise.all([A, B].map((s) => waitFor(async () => (await marked(s, 'under the hour')) && (await marked(s, 'under the day')),
+        `both clocks on ${s.name}'s page`, 10000).then(() => true, () => false)));
+    report(clocks.every(Boolean), 'both of her messages show their clocks on both pages, though a moment apart');
+    await A.b.shot(`${HOME}/shot-disappearing-clocks-alice.png`);
 
     step(`a time of ${SECONDS} seconds, and a message alice writes under it`);
     api('bob', 'PUT', `/api/dens/${den}/dms/${dm}/expiry`, { expires_after: SECONDS });

@@ -27,10 +27,12 @@ func (rt *router) mountBackground(r chi.Router) {
 
 // backgroundView is what the page learns of the chat's background with the
 // dens view, so every page paired with the install shows the same: its
-// version, which the page asks for the file by, and its dim in percent.
+// version, which the page asks for the file by, its dim, and how far a
+// message under the pointer covers it, in percent.
 type backgroundView struct {
 	Version int64 `json:"version"`
 	Dim     int   `json:"dim"`
+	Hover   int   `json:"hover"`
 }
 
 // backgroundView returns the chat's background, or nil where there's none.
@@ -43,9 +45,12 @@ func (rt *router) backgroundView(ctx context.Context) (*backgroundView, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := &backgroundView{Version: version, Dim: types.BackgroundDefaultDim}
+	v := &backgroundView{Version: version, Dim: types.BackgroundDefaultDim, Hover: types.BackgroundDefaultHover}
 	if cfg.BackgroundDim != nil {
 		v.Dim = *cfg.BackgroundDim
+	}
+	if cfg.BackgroundHover != nil {
+		v.Hover = *cfg.BackgroundHover
 	}
 	return v, nil
 }

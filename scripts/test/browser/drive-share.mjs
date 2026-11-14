@@ -6,7 +6,8 @@
 // them, their workers opening its frames and dropping none, as alice's
 // seals them; and with a preload that sets the sound's transform a task
 // late, as the page did before M18, alice's page stops the sound within a
-// second and says so.
+// second and says so. From M21.1 bob turns alice's share down, mutes and
+// unmutes it, and it plays where it was, and again as he watches it anew.
 //
 //   run.sh share
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -253,6 +254,31 @@ try {
     await sleep(300);
     const bigger = JSON.parse(await B.b.eval(`JSON.stringify(${PLAYER}.getBoundingClientRect())`));
     report(Math.round(bigger.width - after.width) === 120 && Math.round(bigger.height - after.height) === 60, `the corner resized it to ${Math.round(bigger.width)}×${Math.round(bigger.height)}`);
+
+    // A share turned down, muted and unmuted plays where it was, and the
+    // next watch of the sharer starts there.
+    const VIDEO_EL = `${PLAYER}.querySelector('video:not([aria-label="Your screen"])')`;
+    const level = async () => JSON.parse(await B.b.eval(`(() => { const v = ${VIDEO_EL}; return JSON.stringify(v ? { volume: Math.round(v.volume * 100) / 100, muted: v.muted } : null); })()`));
+    const control = (label) => `${PLAYER}.querySelector('button[aria-label=${JSON.stringify(label)}]')`;
+    await B.b.eval(`(() => { const el = ${PLAYER}.querySelector('input[type=range][aria-label^="Volume of"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '0.4'); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const down = await waitFor(async () => ((await level())?.volume === 0.4 ? level() : null), 'the share turned down').catch(level);
+    await B.b.eval(`${control('Mute')}.click(), true`);
+    const mute = await waitFor(async () => ((await level())?.muted ? level() : null), 'the share muted').catch(level);
+    await B.b.eval(`${control('Unmute')}.click(), true`);
+    const back = await waitFor(async () => ((await level())?.muted === false ? level() : null), 'the share unmuted').catch(level);
+    report(down?.volume === 0.4 && mute?.muted && back?.volume === 0.4 && !back.muted,
+        `bob turns alice's share down, mutes and unmutes it, and it plays where it was: ${JSON.stringify([down, mute, back])}`);
+    const levels = await B.b.eval(`localStorage.getItem('DENS_SHARE_VOLUMES')`);
+    report(JSON.parse(levels || '{}')[`${den}:${A.me}`] === 0.4, `his browser keeps it for alice in this den: ${levels}`);
+    await B.b.eval(`${PLAYER}.querySelector('button[aria-label^="Stop watching"]').click(), true`);
+    await waitFor(async () => !(await B.b.eval(`!!${PLAYER}`)), 'the player closed');
+    await B.b.eval(`[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'LIVE').click(), true`, true);
+    const again = await waitFor(async () => {
+        const v = await level();
+        return v && (await B.b.eval(`${VIDEO_EL}.videoWidth > 0`)) ? v : null;
+    }, 'alice watched again', 15000).catch(level);
+    report(again?.volume === 0.4 && !again.muted, `watching her again starts where he left it: ${JSON.stringify(again)}`);
 
     // The browser's own stop ends alice's share, and bob's player closes.
     await A.b.eval(`window.__display.getVideoTracks()[0].dispatchEvent(new Event('ended')), true`);

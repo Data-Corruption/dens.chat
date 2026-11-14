@@ -19,6 +19,20 @@ export const FONTS = [
 ];
 const FONT_NAMES = FONTS.map(([name]) => name);
 
+// ROOM is how far each font's letters reach past their advance, before a
+// name and after it, in em, as the browsers measure its Latin letters and
+// digits, with room for a small size's rounding: Bangers' slant and
+// Cinzel's Q among them.
+const ROOM = {
+    pacifico: [0.25, 0.25], fredoka: [0.15, 0.05], 'zilla-slab': [0.05, 0.1], orbitron: [0.2, 0.05], bangers: [0.1, 0.25], cinzel: [0.05, 0.5],
+};
+
+/** fontRoom is how far a font's letters reach before a name and after it,
+    in em */
+export function fontRoom(font) {
+    return ROOM[font] || [0, 0];
+}
+
 const HEX = /^#[0-9a-f]{6}$/;
 // A font as a den may send it: one of FONTS, or one a later Dens added,
 // which shows as none.

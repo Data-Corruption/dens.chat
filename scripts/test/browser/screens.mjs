@@ -330,6 +330,10 @@ export async function memberScreens(h, ctx) {
         if (await h.has(`document.querySelector('${SETTINGS_FRAME} [data-section]')`)) await h.snap('settings-list');
         await settingsTab(h, 'Appearance');
         await h.snap('settings-appearance', { scroll: PANEL });
+        // Staff marks, in Messages (M21.1).
+        await h.ev(`document.getElementById('staff-marks').scrollIntoView({ block: 'center' }), true`);
+        await h.snap('settings-staff-marks');
+        await h.ev(`${PANEL}.scrollTop = 0, true`);
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
         // A theme of the member's own (M19.4): the editor, under the
@@ -348,6 +352,9 @@ export async function memberScreens(h, ctx) {
         await h.wait(`document.querySelector('[data-background-preview] img')?.naturalWidth`, "the background's card with its picture");
         await h.ev(`document.querySelector('[data-background-preview]').closest('section').scrollIntoView(), true`);
         await h.snap('settings-background');
+        // Its Hover, under Dim (M21.1).
+        await h.ev(`document.querySelector('[data-background-hover]').scrollIntoView({ block: 'center' }), true`);
+        await h.snap('settings-background-hover');
         await h.ev(`fetch('/api/background', { method: 'DELETE' }).then((r) => r.ok)`);
         await h.wait(`!document.querySelector('[data-background-preview]')`, 'the background removed');
         for (const [tab, name] of [['Chat', 'chat'], ['Notifications', 'notifications'], ['Voice', 'voice'], ['Relay', 'relay'], ['System', 'system']]) {

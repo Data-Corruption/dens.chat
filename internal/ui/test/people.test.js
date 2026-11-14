@@ -6,6 +6,7 @@ import { avatarColor, avatarLetter } from '../assets/js/src/avatar.jsx';
 import { MessageRow, typingLine } from '../assets/js/src/messages.jsx';
 import { EditProfile, MARK, MemberList, ProfileCard, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../assets/js/src/people.jsx';
 import { CallMembers } from '../assets/js/src/voice.jsx';
+import { setStaffMarks, staffMarks } from '../assets/js/src/staffmarks.js';
 
 test("an avatar's color depends only on the member's ID", () => {
     assert.equal(avatarColor('1000123'), avatarColor('1000123'));
@@ -105,12 +106,13 @@ test("a staff member's name has a crown or a shield with its tip, on the card an
     mount(null, root);
 });
 
-// A message's row, as density.test.js renders one.
+// A message's row, as density.test.js renders one, as the pane gives it
+// the marks' setting.
 function messageRow(author, line) {
     const none = () => {};
     const m = { id: '10', channel_id: '2', author_id: author.id, created_at: Date.UTC(2026, 10, 6, 12, 34), revision: 1, text: 'hi' };
     return h(MessageRow, {
-        m, author, me: { ...bob, id: '3' }, line, canReply: false, canEdit: false, canDelete: false, link: '', editorNames: [], candidates: [],
+        m, author, me: { ...bob, id: '3' }, line, marks: staffMarks(), canReply: false, canEdit: false, canDelete: false, link: '', editorNames: [], candidates: [],
         canReact: false, nameOf: () => '', onReact: none, onReactPick: none, onRemoveReactions: none, onUpdated: none, onPolled: none, onMenu: none,
         onReply: none, onEdit: none, onEditDone: none, onDelete: none, onJump: none, onView: none, onProfile: none, onToggle: none, denID: 'd', channelID: '2',
     });
@@ -127,6 +129,7 @@ function callRows(me, { volumes = {}, moving = null } = {}) {
 test("a crown or a shield is one mark, centered on the name wherever it stands: the list, a call, a card and a message's name", () => {
     const root = document.createElement('div');
     const moderator = { ...bob, role: 'moderator' };
+    setStaffMarks(true);
     const places = {
         list: h(MemberList, { members: [alice, moderator], online: new Set(['1']), onProfile() {} }),
         call: callRows({ ...moderator, id: '3' }),
@@ -149,6 +152,32 @@ test("a crown or a shield is one mark, centered on the name wherever it stands: 
             assert.match(mark.parentNode.attributes.class, /\bflex\b.*\bitems-center\b|\bitems-center\b.*\bflex\b/, `${place}: centered on its row`);
         }
     }
+    mount(null, root);
+    setStaffMarks(false);
+});
+
+test("staff's marks show in messages and calls once the member turns them on, and always in the list and on the card", async () => {
+    const root = document.createElement('div');
+    const moderator = { ...bob, role: 'moderator' };
+    const marked = (tree) => {
+        mount(tree, root);
+        return findAll(root, byAttr('data-role-mark')).length > 0;
+    };
+    assert.equal(staffMarks(), false, 'off until the member turns them on');
+    assert.equal(marked(messageRow(alice, false)), false, 'none on a message');
+    assert.equal(marked(callRows({ ...moderator, id: '3' })), false, "none in a call's rows");
+    assert.ok(marked(h(MemberList, { members: [alice, moderator], online: new Set(['1']), onProfile() {} })), 'the list shows them');
+    assert.ok(marked(card({ member: alice })), 'and the card');
+    setStaffMarks(true);
+    assert.equal(staffMarks(), true);
+    assert.ok(marked(messageRow(alice, false)), 'on a message once turned on');
+    mount(null, root);
+    mount(callRows({ ...moderator, id: '3' }), root);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(findAll(root, byAttr('data-role-mark')).length > 0, "and in a call's rows");
+    setStaffMarks(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(findAll(root, byAttr('data-role-mark')).length, 0, 'gone from a call as the member turns them off');
     mount(null, root);
 });
 

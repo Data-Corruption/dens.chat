@@ -31,6 +31,7 @@ import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { SoundboardButton } from './soundboard.jsx';
+import { useStaffMarks } from './staffmarks.js';
 import { createHold, useCoarse, useHoldsButton } from './touch.js';
 import {
     LOUDEST, byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened,
@@ -645,6 +646,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
     const [error, setError] = useState('');
     const narrow = useNarrow();
     const touch = useCoarse();
+    const marks = useStaffMarks();
     // An open menu closes on a click anywhere else, or on Escape; on the
     // phone layout it's a sheet, which closes itself (M13.2).
     useEffect(() => {
@@ -749,7 +751,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                     <Avatar member={member || { id: m.id }} size="sm" />
                                 </span>
                                 <LongName name={name} member={member} />
-                                <RoleMark role={member?.role} />
+                                {marks && <RoleMark role={member?.role} />}
                             </button>
                             {other && identities?.[m.id]?.verified && <VerifiedMark id={`call-verified-${m.id}`} name={name} />}
                             {other && keysChanged(identities?.[m.id], inCall ? since : Infinity) && (

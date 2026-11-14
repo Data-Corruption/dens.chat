@@ -58,6 +58,7 @@ type backgroundOf struct {
 	Background *struct {
 		Version int64 `json:"version"`
 		Dim     int   `json:"dim"`
+		Hover   int   `json:"hover"`
 	} `json:"background"`
 }
 
@@ -128,7 +129,8 @@ func TestChatBackground(t *testing.T) {
 		file := pics[ctype]
 		code, _, body := b.send("POST", "/api/background", "application/octet-stream", file, true)
 		var set backgroundOf
-		if code != http.StatusOK || json.Unmarshal(body, &set) != nil || set.Background == nil || set.Background.Version <= last || set.Background.Dim != 70 {
+		if code != http.StatusOK || json.Unmarshal(body, &set) != nil || set.Background == nil || set.Background.Version <= last || set.Background.Dim != 70 ||
+			set.Background.Hover != 100 {
 			t.Fatalf("setting a %s: %d %s", ctype, code, body)
 		}
 		last = set.Background.Version
@@ -159,6 +161,25 @@ func TestChatBackground(t *testing.T) {
 		if code, body := b.do("POST", "/api/settings", map[string]int{"backgroundDim": dim}); code != http.StatusBadRequest {
 			t.Errorf("a dim of %d: %d %s", dim, code, body)
 		}
+	}
+
+	// A message under the pointer covers it all until the member sets how
+	// far, which the dim keeps beside it.
+	b.expect(http.StatusOK, "set the hover", "POST", "/api/settings", map[string]int{"backgroundHover": 35})
+	if heard := page.lastDens(func(v backgroundOf) bool { return v.Background != nil && v.Background.Hover == 35 }); heard.Background.Dim != 80 {
+		t.Fatalf("the page heard %+v", heard.Background)
+	}
+	if cfg, err := config.View(a.DB); err != nil || cfg.BackgroundHover == nil || *cfg.BackgroundHover != 35 || *cfg.BackgroundDim != 80 {
+		t.Fatalf("the settings keep %+v, %v", cfg.BackgroundHover, err)
+	}
+	b.expect(http.StatusOK, "set the hover to 100", "POST", "/api/settings", map[string]int{"backgroundHover": 100})
+	for _, hover := range []int{-1, 101} {
+		if code, body := b.do("POST", "/api/settings", map[string]int{"backgroundHover": hover}); code != http.StatusBadRequest {
+			t.Errorf("a hover of %d: %d %s", hover, code, body)
+		}
+	}
+	if cfg, err := config.View(a.DB); err != nil || *cfg.BackgroundHover != 100 {
+		t.Fatalf("a refused hover left %+v, %v", cfg.BackgroundHover, err)
 	}
 
 	if code, _, body := b.send("DELETE", "/api/background", "", nil, false); code != http.StatusForbidden {

@@ -57,6 +57,10 @@ type Configuration struct {
 	// service keeps it with the picture, so every browser paired with the
 	// instance shows the same.
 	BackgroundDim *int `json:"backgroundDim,omitempty"`
+	// BackgroundHover is how far a message under the pointer, or with its
+	// menu open, covers the picture behind the chat, in percent, nil until
+	// the member sets it. It's kept with the dim.
+	BackgroundHover *int `json:"backgroundHover,omitempty"`
 	// RelayID names this install to the member's others it links with
 	// (M20): 16 random bytes in hex, made as a start finds none. A restore
 	// makes another, since it names the computer, not the data.
@@ -95,9 +99,13 @@ type Notifications struct {
 
 // The background's dim is at most BackgroundMaxDim percent, so the
 // picture always shows, and BackgroundDefaultDim until the member sets it.
+// A message under the pointer covers it all until the member sets its
+// hover, which runs to all of it.
 const (
-	BackgroundMaxDim     = 90
-	BackgroundDefaultDim = 70
+	BackgroundMaxDim       = 90
+	BackgroundDefaultDim   = 70
+	BackgroundMaxHover     = 100
+	BackgroundDefaultHover = 100
 )
 
 // SoundNames are the page's sounds (M14.2): a message, a member joining and

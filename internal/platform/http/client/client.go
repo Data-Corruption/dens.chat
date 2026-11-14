@@ -629,8 +629,10 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			Volume *int  `json:"volume"`
 		} `json:"sounds"`
 		// BackgroundDim is how far the page's background covers the
-		// picture behind the chat, in percent.
-		BackgroundDim *int `json:"backgroundDim"`
+		// picture behind the chat, in percent, and BackgroundHover how far
+		// a message under the pointer does.
+		BackgroundDim   *int `json:"backgroundDim"`
+		BackgroundHover *int `json:"backgroundHover"`
 		// RelayKeys turns Keybind relay on or off (M20), and RelaySound
 		// Share this computer's sound (M20.2).
 		RelayKeys  *bool `json:"relayKeys"`
@@ -641,6 +643,10 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if d := body.BackgroundDim; d != nil && (*d < 0 || *d > types.BackgroundMaxDim) {
 		http.Error(w, "the background's dim is 0 to 90", http.StatusBadRequest)
+		return
+	}
+	if h := body.BackgroundHover; h != nil && (*h < 0 || *h > types.BackgroundMaxHover) {
+		http.Error(w, "the background's hover is 0 to 100", http.StatusBadRequest)
 		return
 	}
 	if n := body.Notifications; n != nil {
@@ -697,6 +703,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		if body.BackgroundDim != nil {
 			cfg.BackgroundDim = body.BackgroundDim
 		}
+		if body.BackgroundHover != nil {
+			cfg.BackgroundHover = body.BackgroundHover
+		}
 		if body.RelayKeys != nil {
 			cfg.RelayKeys = *body.RelayKeys
 		}
@@ -724,7 +733,7 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	if body.VoiceKeys != nil {
 		rt.a.Shortcuts.SetKeys(cfg.VoiceKeys)
 	}
-	if body.BackgroundDim != nil {
+	if body.BackgroundDim != nil || body.BackgroundHover != nil {
 		rt.a.Dens.Changed()
 	}
 	if body.RelayKeys != nil {

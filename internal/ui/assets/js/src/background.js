@@ -1,8 +1,9 @@
 // The picture behind the chat: one of the member's own, which the service
-// keeps, with how far the theme's background covers it, the dim, so every
-// page paired with the install shows the same. The service names it in
-// the dens view, by its version, and the page draws it behind the message
-// list and nowhere else.
+// keeps, with how far the theme's background covers it, the dim, and how
+// far a message under the pointer does, the hover, so every page paired
+// with the install shows the same. The service names it in the dens view,
+// by its version, and the page draws it behind the message list and
+// nowhere else.
 
 import { APIError, api, pageHeaders, reloadIfStale } from './api.js';
 import { onEvent } from './events.js';
@@ -16,33 +17,43 @@ export const KINDS = ['image/png', 'image/jpeg', 'image/webp'];
 export const DIM_MOST = 90;
 export const DIM_STEP = 5;
 const DIM_UNSET = 70;
+/** The hover's most, all of the picture, which it is until the member
+    sets it */
+export const HOVER_MOST = 100;
 
 const listeners = new Set();
 let started = false;
 // heard is the background as the service last named it, and sliding the
-// dim the member is setting, until the service has it.
+// dim and the hover the member is setting, each until the service has it.
 let heard = null;
-let sliding = null;
+let sliding = {};
 
-/** readBackground is the background a dens view names, its version and
-    dim, or null for none */
+const percent = (v, most, unset) => (Number.isInteger(v) && v >= 0 && v <= most ? v : unset);
+
+/** readBackground is the background a dens view names, its version, dim
+    and hover, or null for none */
 export function readBackground(raw) {
     const version = Number(raw?.version);
-    const dim = Number(raw?.dim);
     if (!Number.isInteger(version) || version <= 0) return null;
-    return { version, dim: Number.isInteger(dim) && dim >= 0 && dim <= DIM_MOST ? dim : DIM_UNSET };
+    return { version, dim: percent(Number(raw?.dim), DIM_MOST, DIM_UNSET), hover: percent(Number(raw?.hover ?? HOVER_MOST), HOVER_MOST, HOVER_MOST) };
 }
 
 function shown() {
-    return heard && sliding !== null ? { ...heard, dim: sliding } : heard;
+    return heard && { ...heard, ...sliding };
+}
+
+function tell(before) {
+    const now = shown();
+    if (before?.version !== now?.version || before?.dim !== now?.dim || before?.hover !== now?.hover) listeners.forEach((fn) => fn(now));
 }
 
 function hear(raw) {
     const before = shown();
     heard = readBackground(raw);
-    if (!heard || heard.dim === sliding) sliding = null;
-    const now = shown();
-    if (before?.version !== now?.version || before?.dim !== now?.dim) listeners.forEach((fn) => fn(now));
+    for (const key of Object.keys(sliding)) {
+        if (!heard || heard[key] === sliding[key]) delete sliding[key];
+    }
+    tell(before);
 }
 
 /** startBackground follows the background as the dens view names it */
@@ -66,7 +77,8 @@ export function backgroundURL(version) {
 }
 
 /** backgroundStyle is the style that draws a background behind a list:
-    the picture, filling it, under the theme's background at the dim */
+    the picture, filling it, under the theme's background at the dim; and
+    how far a message under the pointer covers it, which its row reads */
 export function backgroundStyle(bg) {
     if (!bg) return undefined;
     const scrim = `color-mix(in oklab, var(--color-base-100) ${bg.dim}%, transparent)`;
@@ -74,6 +86,7 @@ export function backgroundStyle(bg) {
         backgroundImage: `linear-gradient(${scrim}, ${scrim}), url("${backgroundURL(bg.version)}")`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
+        '--row-cover': `${bg.hover}%`,
     };
 }
 
@@ -109,21 +122,31 @@ export async function removeBackground() {
     hear((await api.del('/api/background'))?.background);
 }
 
-/** slideDim shows a dim while the member moves its slider */
-export function slideDim(dim) {
+function slide(key, value) {
     const before = shown();
-    sliding = dim;
-    if (before && before.dim !== dim) listeners.forEach((fn) => fn(shown()));
+    sliding = { ...sliding, [key]: value };
+    tell(before);
 }
 
-/** setDim has the service keep the dim */
-export async function setDim(dim) {
-    slideDim(dim);
+async function keep(key, setting, value) {
+    slide(key, value);
     try {
-        await api.post('/api/settings', { backgroundDim: dim });
+        await api.post('/api/settings', { [setting]: value });
     } catch (e) {
-        sliding = null;
-        listeners.forEach((fn) => fn(shown()));
+        const before = shown();
+        const { [key]: _, ...rest } = sliding;
+        sliding = rest;
+        tell(before);
         throw e;
     }
 }
+
+/** slideDim shows a dim while the member moves its slider, and setDim has
+    the service keep it */
+export const slideDim = (dim) => slide('dim', dim);
+export const setDim = (dim) => keep('dim', 'backgroundDim', dim);
+
+/** slideHover shows a hover while the member moves its slider, and
+    setHover has the service keep it */
+export const slideHover = (hover) => slide('hover', hover);
+export const setHover = (hover) => keep('hover', 'backgroundHover', hover);

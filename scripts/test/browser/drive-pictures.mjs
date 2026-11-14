@@ -9,6 +9,9 @@
 // call's, plays it in each while the pointer is over it alone, and in his
 // profile while it's open, and a finger's tap plays nothing; bob's page
 // does the same with alice's, and once set to Always plays every row's.
+// From M21.1 bob's GIF has a transparent ground, and a picture playing
+// under the pointer hides its preview once it has loaded, so none of its
+// first frame shows through.
 //
 //   run.sh pictures chromium|firefox
 import fs from 'node:fs';
@@ -50,8 +53,9 @@ function lzw(indexes) {
 }
 
 // gif writes an animated GIF of 320 × 320: a square crossing a blue ground
-// over eight frames, a tenth of a second each, looping forever.
-function gif(file) {
+// over eight frames, a tenth of a second each, looping forever; with clear,
+// the ground is transparent, and each frame clears before the next.
+function gif(file, clear = false) {
     const w = 320;
     const h = 320;
     const b = [...Buffer.from('GIF89a'), w & 0xff, w >> 8, h & 0xff, h >> 8, 0xf7, 0, 0];
@@ -63,7 +67,7 @@ function gif(file) {
         for (let y = 0; y < h; y++) {
             for (let x = 0; x < w; x++) pix.push(x >= 20 + 30 * f && x < 100 + 30 * f && y >= 120 && y < 200 ? 1 : y < 10 * (f + 1) ? 2 : 0);
         }
-        b.push(0x21, 0xf9, 4, 1 << 2, 10, 0, 0, 0, 0x2c, 0, 0, 0, 0, w & 0xff, w >> 8, h & 0xff, h >> 8, 0, 8);
+        b.push(0x21, 0xf9, 4, clear ? (2 << 2) | 1 : 1 << 2, 10, 0, 0, 0, 0x2c, 0, 0, 0, 0, w & 0xff, w >> 8, h & 0xff, h >> 8, 0, 8);
         const data = lzw(pix);
         for (let i = 0; i < data.length; i += 255) {
             const part = data.slice(i, i + 255);
@@ -203,11 +207,13 @@ const rows = (name, msg) => ({
 });
 
 // shows says what a row's picture shows: the preview, the picture, or the
-// preview with the picture over it, and whether each loaded.
+// preview with the picture over it, whether each loaded, and whether the
+// preview is hidden.
 const shows = (s, row) => s.b.eval(`(() => {
     const imgs = [...(${row})?.querySelector('span[aria-hidden=true]')?.querySelectorAll('img') || []];
     const what = imgs.map((i) => (i.getAttribute('src').endsWith('/thumb') ? 'still' : 'file')).join('+');
-    return JSON.stringify({ what, loaded: imgs.every((i) => i.complete && i.naturalWidth > 0) });
+    const hidden = imgs.length > 1 && getComputedStyle(imgs[0]).opacity === '0';
+    return JSON.stringify({ what, loaded: imgs.every((i) => i.complete && i.naturalWidth > 0), hidden });
 })()`).then(JSON.parse);
 
 async function center(s, row) {
@@ -241,14 +247,14 @@ async function playsOnHover(s, name, msg) {
         await s.b.move(at.x, at.y);
         const over = await waitFor(async () => {
             const v = await shows(s, row);
-            return v.what === 'still+file' && v.loaded ? v : null;
+            return v.what === 'still+file' && v.loaded && v.hidden ? v : null;
         }, `${name}'s ${kind} row playing`, 5000).catch(() => null);
         await s.b.move(5, 5);
         const after = await waitFor(async () => {
             const v = await shows(s, row);
             return v.what === 'still' ? v : null;
         }, `${name}'s ${kind} row still again`, 5000).catch(() => null);
-        report(before && over && after, `${s.name}'s page, On hover: ${name}'s ${kind} row still, playing under the pointer, still again: ` +
+        report(before && over && after, `${s.name}'s page, On hover: ${name}'s ${kind} row still, playing under the pointer, its preview hidden, still again: ` +
             JSON.stringify({ before, over, after }));
         if (kind === 'dm') await back(s);
     }
@@ -256,6 +262,7 @@ async function playsOnHover(s, name, msg) {
 
 try {
     const animation = gif(`${HOME}/moving.gif`);
+    const clear = gif(`${HOME}/clear.gif`, true);
     const sticker = webp(`${HOME}/moving.webp`);
     A.b = await launch('chromium', 9571, { media: true, hover: true });
     B.b = await launch(which, which === 'chromium' ? 9572 : 9573, {
@@ -279,7 +286,7 @@ try {
 
     step('each crops an animated GIF and an animated WebP');
     for (const [s, picture, banner, want] of [
-        [B, animation, sticker, { avatar: [256, 256], banner: [480, 160] }],
+        [B, clear, sticker, { avatar: [256, 256], banner: [480, 160] }],
         [A, sticker, animation, { avatar: [240, 240], banner: [318, 106] }],
     ]) {
         for (const [shape, file] of [['avatar', picture], ['banner', banner]]) {
