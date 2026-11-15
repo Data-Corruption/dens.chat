@@ -34,6 +34,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
 - The shortcut helper opens the desktop's notifications before it reads keys or shares sound, so where the notification service hangs, as a `dunst` that can't start did in the Android e2e's container, the helper waits out D-Bus's two minutes first, with no voice keys and no Relay sound meanwhile. It could open them beside its run.
+- A DM's history read in the moment between its first message and that message's key reaching the reader's Dens shows the message as changed, until it's read again: the history could fetch the DM's keys before saying so. A slow CI runner hit it in a test (M21).
 
 ## Probably not doing
 

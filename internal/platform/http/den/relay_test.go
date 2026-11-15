@@ -85,6 +85,11 @@ func (f *fixture) relayDevices() relayDevices {
 	both := denproto.Focus{Channels: []string{r.general.ID, r.fence.ID}}
 	r.bob.send(denproto.EventFocus, both)
 	r.desktop.send(denproto.EventFocus, both)
+	// Focus has no answer, and bob's must land before alice types, or her
+	// typing never reaches him: he follows it with a join the den refuses,
+	// whose refusal comes once the den took what his socket sent before.
+	r.bob.send(denproto.EventVoiceJoin, denproto.VoiceJoin{ChannelID: "none"})
+	r.bob.wait("the den taking bob's focus", func(e denproto.Event) bool { return e.T == denproto.EventVoiceEnded })
 	return r
 }
 
