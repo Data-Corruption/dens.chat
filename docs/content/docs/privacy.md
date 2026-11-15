@@ -32,7 +32,7 @@ protect you from.
 
 How DMs stay between the two of you, and the code you compare to be sure of it,
 is in [Usage](../usage/#direct-messages). Calls use the same codes: the
-lock beside a call shows yours, and each member's, to compare with them.
+lock with a call's buttons shows yours, and each member's, to compare with them.
 The den decides who's in a call, so only the people listed there can hear
 it.
 
