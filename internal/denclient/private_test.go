@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
@@ -57,13 +58,33 @@ func sendDM(t *testing.T, m *denclient.Manager, denID, dm, text string) denclien
 	return msg
 }
 
+// history reads a channel's latest messages as a member's Dens gives
+// them. A DM's key reaches a Dens on its socket, which a read made as the
+// DM's first message is sent can outrun, so messages that name a key the
+// Dens doesn't hold yet are read again once it does.
 func history(t *testing.T, m *denclient.Manager, denID, channel string) []denclient.PageMessage {
 	t.Helper()
-	page, err := m.History(context.Background(), denID, channel, denclient.HistoryQuery{})
-	if err != nil {
-		t.Fatal(err)
+	read := func() []denclient.PageMessage {
+		page, err := m.History(context.Background(), denID, channel, denclient.HistoryQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page.Messages
 	}
-	return page.Messages
+	got := read()
+	waits := func() bool {
+		v, err := m.View(denID)
+		return err == nil && slices.ContainsFunc(got, func(pm denclient.PageMessage) bool {
+			return pm.Locked != "" && pm.KeyID != "" && !slices.ContainsFunc(v.DMKeys, func(k denclient.PageKey) bool { return k.ID == pm.KeyID })
+		})
+	}
+	if waits() {
+		for deadline := time.Now().Add(10 * time.Second); waits() && time.Now().Before(deadline); {
+			time.Sleep(20 * time.Millisecond)
+		}
+		got = read()
+	}
+	return got
 }
 
 // A DM's text and files leave each member's Dens sealed: the den stores
