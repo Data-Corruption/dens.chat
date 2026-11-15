@@ -89,6 +89,73 @@
     }
 }
 
+/* A call's length while it beats its channel's record (M21.2): a rainbow
+   that moves along it, held still where less motion is asked for. Each
+   color is mixed with the theme's text, so the figures read on a light
+   theme and a dark one. */
+@utility call-rainbow {
+    background-image: linear-gradient(90deg,
+        color-mix(in oklab, var(--color-base-content) 30%, #ff4040),
+        color-mix(in oklab, var(--color-base-content) 30%, #ff9a1f),
+        color-mix(in oklab, var(--color-base-content) 30%, #f2d000),
+        color-mix(in oklab, var(--color-base-content) 30%, #2fd14a),
+        color-mix(in oklab, var(--color-base-content) 30%, #26a8ff),
+        color-mix(in oklab, var(--color-base-content) 30%, #8b5cff),
+        color-mix(in oklab, var(--color-base-content) 30%, #ff40c8),
+        color-mix(in oklab, var(--color-base-content) 30%, #ff4040));
+    background-size: 200% 100%;
+    background-clip: text;
+    color: transparent;
+    animation: call-rainbow 3s linear infinite;
+    @media (prefers-reduced-motion: reduce) {
+        animation: none;
+    }
+}
+
+@keyframes call-rainbow {
+    to {
+        background-position: 200% 0;
+    }
+}
+
+/* The fireworks over a call's row as it passes its record: sparks that fly
+   out from a few points along the row and fade, each on its way, --dx and
+   --dy, in its color, --spark. None play where less motion is asked for. */
+@utility call-fireworks {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    @media (prefers-reduced-motion: reduce) {
+        display: none;
+    }
+}
+
+@utility call-spark {
+    position: absolute;
+    top: 50%;
+    width: 0.3125rem;
+    height: 0.3125rem;
+    border-radius: 9999px;
+    background: var(--spark);
+    opacity: 0;
+    animation: call-spark 1000ms ease-out forwards;
+}
+
+@keyframes call-spark {
+    0% {
+        transform: translate(0, 0) scale(1.2);
+        opacity: 1;
+    }
+    60% {
+        opacity: 1;
+    }
+    100% {
+        transform: translate(var(--dx), var(--dy)) scale(0.4);
+        opacity: 0;
+    }
+}
+
 /* A video's seek bar: a thin track whose played part, --seek of it, is as
    thin as the rest, and a small round thumb, in a box 24 pixels tall for a
    finger. DaisyUI's range draws the played part as tall as its thumb. */

@@ -42,6 +42,7 @@ import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, readCode, them
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
 import { setStaffMarks, useStaffMarks } from './staffmarks.js';
+import { setCallTimer, useCallTimer } from './calltimer.js';
 import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
 import {
@@ -97,7 +98,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'relay') panel = <RelaySettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><NameStylesPicker /><AnimationsPicker /><VerifiedMarksPicker /></>;
+    else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><NameStylesPicker /><AnimationsPicker /><VerifiedMarksPicker /><CallsPicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -503,6 +504,18 @@ function VerifiedMarksPicker() {
                     </label>
                 ))}
             </div>
+        </Card>
+    );
+}
+
+// CallsPicker chooses whether each call's length shows beside its channel
+// (M21.2), on until the member turns it off. This browser keeps it, as it
+// keeps the theme.
+function CallsPicker() {
+    const on = useCallTimer();
+    return (
+        <Card title="Calls">
+            <Toggle id="call-timer" label="Call timer" hint="Each call's length beside its channel." checked={on} onChange={setCallTimer} />
         </Card>
     );
 }

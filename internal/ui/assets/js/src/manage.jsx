@@ -1,8 +1,9 @@
 // The owner's channel and group settings. Changes go to the den, which
 // announces them as events; the sidebar updates from those.
 
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { callLength } from './calltimer.js';
 import { ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useBackdrop } from './components.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { Handle, useDragDown } from './sheet.jsx';
@@ -148,6 +149,7 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                     )}
                 </div>
             </form>
+            {editing && channel.kind === 'voice' && <CallRecord denID={denID} channel={channel} />}
             {editing && (
                 <div class="border-t border-base-300 pt-3">
                     {!confirmDelete ? (
@@ -175,6 +177,47 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                 </div>
             )}
         </Dialog>
+    );
+}
+
+// CallRecord shows staff a voice channel's longest call (M21.2), with
+// Reset, which asks first, since every member's timer counts against it.
+function CallRecord({ denID, channel }) {
+    const path = `/api/dens/${denID}/channels/${channel.id}/record`;
+    const [record, setRecord] = useState(null);
+    const [confirming, setConfirming] = useState(false);
+    const load = useAction();
+    const reset = useAction();
+    useEffect(() => {
+        load.run(async () => setRecord((await api.get(path)).record_ms));
+    }, [path]);
+    return (
+        <div class="flex flex-col gap-2 border-t border-base-300 pt-3" data-call-record>
+            <div class="flex min-h-8 items-center justify-between gap-2">
+                <span class="text-sm">
+                    Longest call:{' '}
+                    {record === null ? <span class="loading loading-dots loading-xs align-middle"></span>
+                        : <span class="tabular-nums" data-call-record-ms={record}>{record > 0 ? callLength(record) : 'none yet'}</span>}
+                </span>
+                {record > 0 && !confirming && <button type="button" class="btn btn-sm" onClick={() => setConfirming(true)}>Reset</button>}
+            </div>
+            {confirming && (
+                <div class="flex flex-col gap-2">
+                    <p class="text-sm">Clears the longest call for everyone. A call going on now won't set the next one.</p>
+                    <div class="flex gap-2">
+                        <button type="button" class="btn btn-error btn-sm" disabled={reset.busy} onClick={() => reset.run(async () => {
+                            await api.del(path);
+                            setRecord(0);
+                            setConfirming(false);
+                        })}>
+                            Reset it
+                        </button>
+                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
+                    </div>
+                </div>
+            )}
+            <ErrorText message={load.error || reset.error} />
+        </div>
     );
 }
 

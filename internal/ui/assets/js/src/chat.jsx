@@ -39,6 +39,7 @@ import { UpdateNotice } from './update.jsx';
 import { applyCalls, joinCall } from './voice.js';
 import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, groupDrop, moveTargets } from './drag.js';
 import { CallBar, CallBlock, CallMembers, callState, useCall, useCallButton } from './voice.jsx';
+import { CallLength } from './calltimer.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -1172,6 +1173,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
+                    {/* The call's length, to everyone who sees the channel (M21.2). */}
+                    {voice && <CallLength call={calls.get(c.id)} />}
                     {managed && (
                         <button type="button" class={`${settings} absolute right-1 top-1/2 -translate-y-1/2`} title="Channel settings"
                             aria-label={`Settings for ${c.name}`} onClick={() => onDialog({ kind: 'channel', channel: c })}>
