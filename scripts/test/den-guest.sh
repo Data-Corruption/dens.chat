@@ -455,6 +455,21 @@ wait-ready)
     done
     fail "the voice probe never heard the other side"
     ;;
+call-length)
+    # call-length DEN_ID CHANNEL_ID: print how long the call in a voice
+    # channel has gone on, in whole seconds by this machine's clock, from
+    # the start this install's view gives it (M21.2), or -1 for none.
+    api GET "/api/dens/$1/state" | python3 -c '
+import json, sys, time
+d = json.load(sys.stdin)
+c = next((c for c in d["calls"] if c["channel_id"] == sys.argv[1] and c.get("started_at")), None)
+print(int(time.time() * 1000 - c["started_at"]) // 1000 if c else -1)' "$2"
+    ;;
+call-record)
+    # call-record DEN_ID CHANNEL_ID: print a voice channel's longest call,
+    # in milliseconds, as staff read it (M21.2).
+    api GET "/api/dens/$1/channels/$2/record" | json 'd["record_ms"]'
+    ;;
 voice-mute)
     # voice-mute DEN_ID MEMBER_ID true|false: mute a member in calls, as
     # staff, or lift it.

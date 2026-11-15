@@ -330,9 +330,11 @@ export async function memberScreens(h, ctx) {
         if (await h.has(`document.querySelector('${SETTINGS_FRAME} [data-section]')`)) await h.snap('settings-list');
         await settingsTab(h, 'Appearance');
         await h.snap('settings-appearance', { scroll: PANEL });
-        // Staff marks, in Messages (M21.1).
+        // Staff marks, in Messages (M21.1), and Calls' Call timer (M21.2).
         await h.ev(`document.getElementById('staff-marks').scrollIntoView({ block: 'center' }), true`);
         await h.snap('settings-staff-marks');
+        await h.ev(`document.getElementById('call-timer').scrollIntoView({ block: 'center' }), true`);
+        await h.snap('settings-call-timer');
         await h.ev(`${PANEL}.scrollTop = 0, true`);
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
@@ -789,6 +791,34 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         const share = await h.has(`[...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Share your screen')`);
         const can = await h.ev(`typeof navigator.mediaDevices?.getDisplayMedia === 'function'`);
         did(share === can, `the call's block shows a share button only where the browser can share: ${share}`);
+        // The call's length at its row's right (M21.2), and no lock there:
+        // the block's arrow opens the rest of the call's controls, the lock
+        // among them, up from it and within the window.
+        const row = JSON.parse(await h.ev(`(() => {
+            const row = [...document.querySelectorAll('[data-channel-row]')].find((r) => r.textContent.includes('Lounge'));
+            const length = row?.querySelector('[data-call-length]');
+            const box = length?.closest('button')?.getBoundingClientRect();
+            const r = row?.getBoundingClientRect();
+            return JSON.stringify({ text: length?.textContent.trim(), right: box && r ? Math.round(r.right - box.right) : null,
+                lock: !!row?.querySelector('[data-call-lock]') });
+        })()`));
+        did(/^\d+:\d\d$/.test(row.text || '') && row.right !== null && row.right <= 40 && !row.lock,
+            `the call's row shows its length at its right and no lock: ${JSON.stringify(row)}`);
+        const MORE = `document.querySelector('[data-call-more-button]')`;
+        await h.click(MORE, "the block's arrow");
+        await h.wait(`document.querySelector('[data-call-more] [data-call-lock]')`, "the rest of the call's controls");
+        await h.snap('call-more');
+        const more = JSON.parse(await h.ev(`(() => {
+            const grid = document.querySelector('[data-call-more]').getBoundingClientRect();
+            const arrow = ${MORE}.getBoundingClientRect();
+            const keys = [...document.querySelectorAll('[data-call-more] button')];
+            return JSON.stringify({ up: grid.bottom <= arrow.top, within: grid.left >= 0 && grid.right <= innerWidth && grid.top >= 0,
+                keys: keys.length, smallest: Math.min(...keys.map((k) => Math.round(Math.min(k.getBoundingClientRect().width, k.getBoundingClientRect().height)))),
+                expanded: ${MORE}.getAttribute('aria-expanded') });
+        })()`));
+        did(more.up && more.within && more.keys >= 1 && more.smallest >= 32 && more.expanded === 'true', `the block's arrow opens the lock among the rest of the call's controls: ${JSON.stringify(more)}`);
+        await h.click(MORE, "the block's arrow again");
+        did(!(await h.has(`!!document.querySelector('[data-call-more]')`)), 'and closes them');
     });
     await h.step('call-menu', async () => {
         await h.click(`document.querySelector('button[data-call-menu]')`, "a member's ⋯ in the call");

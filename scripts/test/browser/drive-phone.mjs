@@ -38,7 +38,9 @@
 // with nothing marked unread, and the member's own profile card's Notes;
 // and events (M17.4): the Events row atop the Den tab opening them by a
 // tap, Interested marked and taken back by taps, the header's way back to
-// the list, and the owner's pane, its form as a sheet and Cancel's dialog.
+// the list, and the owner's pane, its form as a sheet and Cancel's dialog;
+// and the call timer (M21.2): Appearance's Call timer, and a call's length
+// at its row's right, the call's lock behind its block's arrow.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //

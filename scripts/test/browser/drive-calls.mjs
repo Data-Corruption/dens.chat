@@ -11,7 +11,10 @@
 // the call's lock opens the members' codes; a third member joining and
 // leaving, the voice probe as carol, changes both pages' keys; and a page
 // denied a member's keys, by a development build's hook, receives their
-// packets and hears nothing.
+// packets and hears nothing. From M21.2, a short call of alice's alone sets
+// the channel's record, and the call after it shows its length on both
+// pages a second apart, in the rainbow past the record, with fireworks as
+// it passes, and none of it for bob once he turns Call timer off.
 //
 //   run.sh calls chromium|firefox chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -47,6 +50,16 @@ const PRELOAD = `() => {
     const W = window.Worker;
     window.__workers = [];
     window.Worker = class extends W { constructor(...args) { super(...args); window.__workers.push(this); } };
+    // When the fireworks went off over a call's row (M21.2), which they do
+    // for a couple of seconds whenever the call passes its record.
+    window.__fireworks = [];
+    new MutationObserver((records) => {
+        for (const r of records) {
+            for (const n of r.addedNodes) {
+                if (n.nodeType === 1 && (n.matches('[data-fireworks]') || n.querySelector('[data-fireworks]'))) window.__fireworks.push(Date.now());
+            }
+        }
+    }).observe(document, { childList: true, subtree: true });
 }`;
 
 const STATS = `(async () => {
@@ -86,6 +99,20 @@ const RX = `(async () => {
 const TEXT = `document.body.innerText`;
 const rx = async (s) => s.b.eval(RX);
 const click = (s, selector) => s.b.eval(`(() => { const el = ${selector}; if (!el) return false; el.click(); return true; })()`);
+
+// The block's lock is among the rest of the call's controls (M21.2), which
+// its arrow opens and closes.
+const MORE = `document.querySelector('[data-call-more-button]')`;
+async function openMore(b) {
+    await b.eval(`${MORE}.click(), true`);
+    await waitFor(() => b.eval(`!!document.querySelector('[data-call-more]')`), "the rest of the call's controls", 5000);
+}
+async function lockOf(b) {
+    await openMore(b);
+    const lock = await b.eval(`document.querySelector('[data-call-more] [data-call-lock]')?.dataset.callLock || ''`);
+    await b.eval(`${MORE}.click(), true`);
+    return lock;
+}
 const byText = (text) => `[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === ${JSON.stringify(text)})`;
 const opened = [];
 const c = checks();
@@ -104,6 +131,17 @@ try {
         await waitFor(() => s.b.eval(`!!document.querySelector('a[href="/settings"]')`), `${s.browser} paired`);
         await s.b.go(`http://127.0.0.1:${s.port}/den/${den}`);
         await waitFor(() => s.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), `${s.browser} voice channel`);
+    }
+    // A short call of alice's alone ends as Lounge's first, which makes it
+    // the channel's record, for the call after it to pass while both pages
+    // show the channel (M21.2).
+    await A.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`);
+    await waitFor(async () => (await A.b.eval(STATS)).includes('Connected'), `${A.browser} in a call alone`, 30000);
+    await sleep(5000);
+    await A.b.eval(`document.querySelector('button[aria-label="Leave the call"]').click(), true`);
+    await waitFor(() => A.b.eval(`!document.querySelector('button[aria-label="Leave the call"]')`), `${A.browser} out of the call`, 10000);
+    await sleep(500);
+    for (const s of sides) {
         await s.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`);
     }
     for (const s of sides) await waitFor(async () => (await s.b.eval(STATS)).includes('Connected'), `${s.browser} in the call`, 30000);
@@ -146,10 +184,53 @@ try {
         await s.b.shot(`${HOME}/shot-calls-${s.browser}-call.png`).catch((e) => console.log('shot', e.message));
     }
 
+    // The call timer (M21.2): both pages show the call's length on its row,
+    // a second apart at most, in the rainbow once it passed the record
+    // alice's call alone set, which its tip names; the fireworks went off on
+    // both as it passed; and bob, with Call timer turned off, sees none of
+    // it, alice's page showing it all the while.
+    const LENGTH = `(() => {
+        const e = document.querySelector('[data-call-length="${loungeID}"]');
+        return e ? JSON.stringify({ text: e.textContent.trim(), beating: e.dataset.beating === 'true', tip: document.getElementById('call-length-${loungeID}')?.textContent.trim() || '' }) : 'null';
+    })()`;
+    const length = async (s) => JSON.parse(await s.b.eval(LENGTH));
+    const seconds = (text) => text.split(':').reduce((n, x) => n * 60 + Number(x), 0);
+    // Each page's timer reads the clock four times a second, from a start
+    // of its own, so the two pass the record moments apart.
+    const beaten = await waitFor(async () => (await length(A))?.beating && (await length(B))?.beating, 'both calls past the record', 30000).catch((e) => e.message);
+    const burst = () => Promise.all(sides.map((s) => s.b.eval(`window.__fireworks.length`)));
+    const fireworks = await waitFor(async () => { const n = await burst(); return n.every((x) => x >= 1) && n; }, 'fireworks on both pages', 5000).catch(burst);
+    const [a1, b1, a2] = [await length(A), await length(B), await length(A)];
+    const apart = !!(a1 && b1 && a2) && seconds(b1.text) >= seconds(a1.text) - 1 && seconds(b1.text) <= seconds(a2.text) + 1;
+    const record = a1 && /^Longest call: (\d+:\d\d)$/.exec(a1.tip);
+    await A.b.shot(`${HOME}/shot-calls-${A.browser}-timer.png`).catch((e) => console.log('shot', e.message));
+    // The record and the call past it can read the same second.
+    report(beaten === true && apart && b1.beating && !!record && seconds(record[1]) >= 5 && seconds(record[1]) <= seconds(a1.text) && b1.tip === a1.tip &&
+        fireworks.every((n) => n >= 1),
+        `both pages show the call's length a second apart at most, in the rainbow past its record, with fireworks as it passed: alice ${JSON.stringify(a1)} then ${a2?.text}, bob ${JSON.stringify(b1)}, fireworks ${fireworks} (${beaten})`);
+    const TIMER_SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
+    const flipTimer = async () => {
+        await B.b.eval(`document.querySelector('button[aria-label="App settings"]').click(), true`);
+        await waitFor(() => B.b.eval(`!!document.getElementById('call-timer')`), `${B.browser} Call timer`);
+        const was = await B.b.eval(`document.getElementById('call-timer').checked`);
+        await B.b.eval(`document.getElementById('call-timer').click(), true`);
+        await B.b.eval(`${TIMER_SETTINGS}.querySelector('button[aria-label=Close]').click(), true`);
+        await waitFor(() => B.b.eval(`!${TIMER_SETTINGS}`), `${B.browser} settings closed`, 3000);
+        return was;
+    };
+    const wasOn = await flipTimer();
+    const hidden = await waitFor(() => B.b.eval(`!document.querySelector('[data-call-length]') && !document.querySelector('[data-fireworks]')`), `${B.browser} without the timer`, 3000).catch((e) => e.message);
+    const kept = await B.b.eval(`localStorage.getItem('DENS_CALL_TIMER')`);
+    const stillShown = (await length(A)) !== null;
+    const wasOff = !(await flipTimer());
+    const shownAgain = await waitFor(async () => (await length(B))?.beating, `${B.browser}'s timer back`, 3000).catch((e) => e.message);
+    report(wasOn && hidden === true && kept === 'off' && stillShown && wasOff && shownAgain === true,
+        `${B.browser}'s Call timer, on to start, turned off hides the call's length (${hidden}, kept ${kept}) while alice's shows it (${stillShown}), and turned on shows it again (${shownAgain})`);
+
     // Sealed (M16.2): each page seals its voice and opens the other
     // member's, so the rings above came from frames each page opened, as
     // its worker counts them, dropping none while it holds the call's keys
-    // (M18); the call's lock says so, beside the call's channel.
+    // (M18); the call's lock in the call's block says so.
     const COUNTS = `(async () => {
         const w = (window.__workers || []).at(-1);
         if (!w) return 'null';
@@ -167,7 +248,7 @@ try {
     const voices1 = await Promise.all(sides.map(counts));
     for (const [i, s] of sides.entries()) {
         const [v0, v1] = [voices0[i]?.voice, voices1[i]?.voice];
-        const lock = await s.b.eval(`document.querySelector('[data-call-lock]')?.dataset.callLock || ''`);
+        const lock = await lockOf(s.b);
         const sealed = v1 && v1.seen > v0.seen && v1.sealed > 0;
         const opened = v1 ? v1.opened - v0.opened : 0;
         report(sealed && opened >= 30 && droppedOf(v1) === droppedOf(v0) && lock === 'sealed',
@@ -208,7 +289,9 @@ try {
     // The call's lock opens the member's code to read out, and each other
     // member to compare with in place.
     const LOCK_DIALOG = `document.querySelector('[data-call-lock-dialog]')`;
-    await B.b.eval(`document.querySelector('[data-call-lock]').click(), true`);
+    await openMore(B.b);
+    await B.b.shot(`${HOME}/shot-calls-${B.browser}-more.png`).catch((e) => console.log('shot', e.message));
+    await B.b.eval(`document.querySelector('[data-call-more] [data-call-lock]').click(), true`);
     const lockShown = await waitFor(() => B.b.eval(`(() => {
         const d = ${LOCK_DIALOG};
         if (!d || !/[0-9]{4} [0-9]{4} [0-9]{4} [0-9]{4} [0-9]{4}/.test(d.textContent)) return false;
@@ -659,7 +742,7 @@ try {
         return JSON.stringify({ home: !!home && home.getAttribute('href') === '/', homeFirst: home?.nextElementSibling?.textContent.trim(), dot: !!aside.querySelector('.badge-xs.badge-warning, .badge-xs.badge-success'), header: !!document.querySelector('header.navbar') });
     })()`));
     report(outOfCall.panel === outOfCall.bar && inCall.panel === inCall.bar && inCall.avatar === outOfCall.avatar && outOfCall.avatar >= 32
-        && row.labels === 'Share your screen|Mute|Deafen|Voice settings|Leave the call' && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
+        && row.labels === "More|Share your screen|Mute|Deafen|Voice settings|Leave the call" && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
         && row.status === lounge && row.said && !row.line && row.shade && row.standsOut >= 15
         && speaker.state === 'connected' && speaker.green && speaker.label === `${loungeName}, connected` && edit === true && cog === 'Appearance'
         && head.home && !head.dot && !head.header,
@@ -777,7 +860,7 @@ try {
     await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
     const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].map((t) => t.textContent.trim()).join('|')`);
     await closeSettings(B, 'close');
-    report(tabs === 'Appearance|Chat|Notifications|Voice|System', `${B.browser} settings sections: ${tabs}`);
+    report(tabs === 'Appearance|Chat|Notifications|Voice|Relay|System', `${B.browser} settings sections: ${tabs}`);
 
     // A join that waits on the microphone, as while the browser asks for
     // it, says so; the voice processor's context comes from the click.

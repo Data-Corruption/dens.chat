@@ -4,8 +4,8 @@
 // name opens too. Alice adds sounds from an MP3 and a WAV, each prepared by
 // her page, and a sound too long is refused; she raises the longest, and
 // makes bob a moderator, whose page prepares a video's sound and one of two
-// minutes. In the call, bob plays sounds from the call's block, up and to
-// the right of it, from Home's box, down from it, and at 390 pixels from
+// minutes. In the call, bob plays sounds from the call's block, behind its
+// arrow (M21.2), up and to the right of it, from Home's box, down from it, and at 390 pixels from
 // the phone's bar, as a sheet, beside its mute; each time alice's page
 // receives the soundboard's track playing, by its stats and its level, and
 // lights his ring, while his tiles wait as it plays and for his wait after.
@@ -97,6 +97,25 @@ function wav(file, seconds, tones = [440], into = -1) {
 const q = (s) => JSON.stringify(s);
 const button = (label) => `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(label)} || x.getAttribute('aria-label') === ${q(label)})`;
 const click = (s, expr) => s.b.eval(`(() => { const b = ${expr}; if (!b) return 'missing'; if (b.disabled) return 'disabled'; b.click(); return 'clicked'; })()`, true);
+
+// The block's soundboard is among the rest of the call's controls (M21.2):
+// the arrow opens them, and closes what one of them opened.
+const MORE = `document.querySelector('[data-call-more-button]')`;
+async function openMore(s) {
+    await click(s, MORE);
+    await waitFor(() => s.b.eval(`!!document.querySelector('[data-call-more]')`), `the rest of ${s.name}'s controls`, 5000);
+}
+async function openBoard(s) {
+    await openMore(s);
+    return click(s, `document.querySelector('[data-call-more] [data-soundboard-button=block]')`);
+}
+const closeBoard = (s) => click(s, MORE);
+async function hasBoard(s) {
+    await openMore(s);
+    const has = await s.b.eval(`!!document.querySelector('[data-call-more] [data-soundboard-button=block]')`);
+    await click(s, MORE);
+    return has;
+}
 const connected = (s) => waitFor(() => s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), `${s.name} in the call`, 30000);
 const joinLounge = async (s) => {
     await waitFor(() => s.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), `${s.name}'s voice channel`);
@@ -180,8 +199,8 @@ try {
         await click(s, `document.querySelector('[data-pane=list] button[aria-label=Mute]') || ${button('Mute')}`);
         await waitFor(() => s.b.eval(`!!${button('Unmute')}`), `${s.name} muted`, 5000);
     }
-    report(!(await B.b.eval(`!!document.querySelector('[data-soundboard-button]')`)), 'a member has no soundboard in a den with no sounds');
-    const empty = await click(A, `document.querySelector('[data-soundboard-button=block]')`);
+    report(!(await hasBoard(B)), 'a member has no soundboard in a den with no sounds');
+    const empty = await openBoard(A);
     const opened = await waitFor(() => A.b.eval(`!!${MANAGE} && !!document.querySelector('[data-add-sound]')`), 'Manage at the soundboard', 5000).catch(() => false);
     report(empty === 'clicked' && opened === true, `alice's soundboard with no sounds opens Manage on adding them: ${empty}, ${opened}`);
     await click(A, `${MANAGE}.querySelector('button[aria-label=Close]')`);
@@ -212,7 +231,7 @@ try {
     report(saved === true, 'the owner raises the longest sound in Limits');
     await click(A, `${MANAGE}.querySelector('button[aria-label=Close]')`);
     lib('api', 'alice', 'PUT', `/api/dens/${den}/members/${bobID}/role`, '{"role":"moderator"}');
-    await waitFor(() => B.b.eval(`!!document.querySelector('[data-soundboard-button=block]')`), "bob's soundboard", 15000);
+    await waitFor(() => hasBoard(B), "bob's soundboard", 15000);
     await click(B, `document.querySelector('[data-den-manage]')`);
     await soundboardSection(B);
     report(await addSound(B, video, '') === 'added', `bob adds a video's sound, which his ${which} prepares`);
@@ -237,11 +256,11 @@ try {
     await waitFor(async () => !(await B.b.eval(`!!${MANAGE}`)), "bob's Manage closed");
 
     step("bob plays a sound from the call's block; alice receives it and lights his ring");
-    await click(B, `document.querySelector('[data-soundboard-button=block]')`);
+    await openBoard(B);
     await waitFor(() => B.b.eval(`!!document.querySelector('[data-soundboard=block] [data-sound-tile]')`), "bob's soundboard");
-    const at = await rect(B, '[data-soundboard-button=block]');
+    const at = await rect(B, '[data-call-more-button]');
     const popup = await rect(B, '[data-soundboard=block]');
-    report(popup.bottom <= at.top && Math.abs(popup.left - at.left) <= 8, `it opens up and to the right of the block's button: ${JSON.stringify({ at, popup })}`);
+    report(popup.bottom <= at.top && Math.abs(popup.left - at.left) <= 8, `it opens up and to the right of the block's arrow: ${JSON.stringify({ at, popup })}`);
     const tiles = await B.b.eval(`[...document.querySelectorAll('[data-soundboard=block] [data-sound-tile]')].map((t) => t.querySelector('span').textContent).join('|')`);
     report(tiles === 'Chord|late-sound|Long|Tone', `its tiles are the den's sounds by name: ${tiles}`);
     await setValue(B, '[data-soundboard=block] input[type=search]', 'TO');
@@ -267,12 +286,12 @@ try {
     report(frame !== '0px' && managed === true, `the popup is framed (${frame}), and bob's cog beside its search opens Manage's Soundboard`);
     await click(B, `${MANAGE}.querySelector('button[aria-label=Close]')`);
     await waitFor(async () => !(await B.b.eval(`!!${MANAGE}`)), "bob's Manage closed");
-    await click(B, `document.querySelector('[data-soundboard-button=block]')`);
+    await openBoard(B);
     await waitFor(() => B.b.eval(`!!document.querySelector('[data-soundboard=block] [data-sound-tile]')`), "bob's soundboard again");
     await click(B, `document.querySelector('button[aria-label=Deafen]')`);
     const deaf = await waitFor(() => B.b.eval(`document.querySelector('[data-board-why]')?.textContent || false`), "bob's tiles while deafened", 3000).catch(() => '');
     report(deaf === 'Undeafen to play sounds.' && await B.b.eval(`document.querySelector('[data-sound-tile]').disabled`), `deafened, bob's tiles wait: ${deaf}`);
-    await click(A, `document.querySelector('[data-soundboard-button=block]')`);
+    await openBoard(A);
     await waitFor(() => A.b.eval(`!!document.querySelector('[data-soundboard=block] [data-sound-tile]')`), "alice's soundboard");
     before = await board(B);
     await tile(A, toneSound.id);
@@ -284,14 +303,14 @@ try {
         await sleep(200);
     }
     report(heard && herOwn && !rang, `bob's page, deafened, receives alice's sound but lights no ring, as hers does: ${JSON.stringify({ heard: !!heard, herOwn, rang })}`);
-    await click(A, `document.querySelector('[data-soundboard-button=block]')`);
+    await closeBoard(A);
     await click(B, `document.querySelector('button[aria-label=Undeafen]')`);
     // Alice's wait passes before the two ask at once.
     await sleep(6000);
 
     step('alice and bob ask for sounds at once: one plays, and the den refuses the other');
     await setValue(B, '[data-soundboard=block] input[type=search]', '');
-    await click(A, `document.querySelector('[data-soundboard-button=block]')`);
+    await openBoard(A);
     await waitFor(() => A.b.eval(`!!document.querySelector('[data-soundboard=block] [data-sound-tile]')`), "alice's soundboard");
     // Each page refuses a tap itself once it hears another's sound play,
     // so the two may need a few goes to reach the den together.
@@ -307,7 +326,7 @@ try {
         race = { go, clicks, notices, refused: notices?.filter((x) => x === 'A sound is playing already.').length === 1 };
     }
     report(race.refused, `one of them hears the den refuse: ${JSON.stringify(race)}`);
-    await click(A, `document.querySelector('[data-soundboard-button=block]')`);
+    await closeBoard(A);
     await sleep(6000);
 
     step("from Home's box, bob plays one, down from the box");
@@ -351,7 +370,7 @@ try {
     step("bob joins partway through alice's long sound, receives the rest, which ends as she leaves");
     await sleep(6000);
     await leave(B);
-    await click(A, `document.querySelector('[data-soundboard-button=block]')`);
+    await openBoard(A);
     await waitFor(() => A.b.eval(`!!document.querySelector('[data-soundboard=block] [data-sound-tile]')`), "alice's soundboard");
     await tile(A, longSound.id);
     await sleep(3000);
