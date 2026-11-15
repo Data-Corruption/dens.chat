@@ -1,5 +1,30 @@
 # Changelog
 
+## [v1.13.0] - 2026-11-15
+
+### Added
+
+- Call timer: each call's length shows beside its voice channel, to everyone who sees the channel, counted from the first person in to the last one out. A call that outlasts the channel's longest gets fireworks and a rainbow, and hovering the length names the record to beat. Moderators and the owner reset a channel's longest call from its settings. To hide the timer, turn off Call timer under Appearance's Calls. A den that hasn't been updated yet shows no lengths.
+- A notice that an update is ready shows above the channel in a den too, not only on Home, with Dismiss. Home keeps showing it.
+- Hover, under Appearance's Chat background: how far the message under your pointer covers your picture, from not at all to fully, as before.
+- Staff marks, under Appearance's Messages, shows the crown and the shield beside names in messages and calls.
+
+### Changed
+
+- In a call, an arrow in the call's controls opens the soundboard and the lock that shows the call's encryption and its codes to compare. The lock no longer sits beside the channel's name, and the soundboard no longer has a button of its own there. On a phone, the bar across the top of a channel keeps both.
+- The crown and the shield no longer show beside names in messages and calls unless you turn on Staff marks. The member list and profiles always show them.
+- A GIF in a message plays where it's posted, as Animations says: as it comes on screen under Always, and while the pointer is over its message under On hover. Before, it played only once opened.
+- An event's Interested is the colored button until you press it, then reads ✓ Interested.
+
+### Fixed
+
+- Signing in to your account on a new device showed only three dots until your other device answered. It says it's waiting for your other device, at once.
+- Unmuting a screen share's sound set it to full volume, whatever it was before. It returns to where you had it, and the next time you watch that person's share it starts there.
+- Since v1.9.0, in a run of disappearing messages from one person, only the first showed its clock, so messages sent after the time was changed looked as if they'd go with the rest. A run ends where the time changes, and each shows its own.
+- Since v1.8.0, an animated picture with a clear background, as a profile picture, a banner, an emoji or a badge, showed its still first frame behind it while it played.
+- The message bar and a call's controls showed in a tint that didn't match the theme in the newest Chromium browsers, seen in Edge's preview channel. They keep the theme's color in every browser.
+- Since v1.11.0, a name styled in Bangers lost the edge of its last letter.
+
 ## [v1.12.0] - 2026-11-13
 
 ### Added
