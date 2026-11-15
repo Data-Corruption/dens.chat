@@ -82,6 +82,11 @@ finish() {
   trap - EXIT
   "${INCUS[@]}" exec "$FLATPAK" -- sh -c 'cat /home/alice/.var/app/chat.dens.Dens/data/dens/main/data/logs/*.log' \
     >"$RUN_LOG_DIR/flatpak-service.log" 2>/dev/null || :
+  # What the member's session said, and what still ran: a build the portal
+  # starts to take over from another prints why it couldn't there, not in
+  # the service's log.
+  "${INCUS[@]}" exec "$FLATPAK" -- sh -c "journalctl --no-pager -o short-precise -n 500 _UID=\$(id -u alice); echo; ps -eo pid,etimes,args" \
+    >"$RUN_LOG_DIR/flatpak-session.log" 2>&1 || :
   if ! $passed && $KEEP_FAILED; then
     echo ">> Kept $PUBLISHER, $DEN and $FLATPAK for inspection: incus exec <name> -- bash"
   else
