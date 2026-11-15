@@ -290,6 +290,88 @@ func TestCallThroughTheClient(t *testing.T) {
 	holding(false)
 }
 
+// Two members' installs give one call's length alike, whatever their
+// clocks say (M21.2): each turns the den's elapsed_ms into a start on its
+// own clock, which the page counts from, and both get the channel's record
+// as the call began.
+func TestCallLengthOnEveryClock(t *testing.T) {
+	const behind = 10 * time.Minute
+	h, owner, member, denID, _ := chatDen(t, func(m *denclient.Manager) {
+		m.Now = func() time.Time { return time.Now().Add(-behind) }
+	})
+	h.startCalls()
+	name := "Lounge"
+	if err := owner.Manage(context.Background(), denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, Kind: denproto.KindVoice}); err != nil {
+		t.Fatal(err)
+	}
+	var lounge string
+	viewOf(t, member, denID, "the voice channel", func(v denclient.View) bool {
+		for _, c := range v.Channels {
+			if c.Name == name {
+				lounge = c.ID
+			}
+		}
+		return lounge != ""
+	})
+	alice := me(t, owner, denID).ID
+	// call reads the call in Lounge as a page would, its length as of the
+	// install's own clock.
+	call := func(m *denclient.Manager, now time.Time) (length, record int64) {
+		t.Helper()
+		v, err := m.View(denID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range v.Calls {
+			if c.ChannelID == lounge && c.StartedAt != 0 {
+				return now.UnixMilli() - c.StartedAt, c.RecordMS
+			}
+		}
+		return -1, -1
+	}
+	a := newPage(t, owner, "page-a")
+	a.join(denID, lounge)
+	viewOf(t, member, denID, "alice in the call", showsCall(lounge, alice))
+	time.Sleep(1200 * time.Millisecond)
+	ownLength, ownRecord := call(owner, time.Now())
+	length, record := call(member, time.Now().Add(-behind))
+	if ownLength < 1000 || length < 1000 || ownLength-length > 1000 || length-ownLength > 1000 || ownRecord != 0 || record != 0 {
+		t.Fatalf("the owner's install gives the call %d ms against %d, the member's %d ms against %d", ownLength, ownRecord, length, record)
+	}
+
+	// The call ends longer than no record, and the next one begins against
+	// its length.
+	owner.LeaveCall("page-a", denID)
+	viewOf(t, member, denID, "the call over", showsCall(lounge))
+	a.join(denID, lounge)
+	viewOf(t, member, denID, "alice back", showsCall(lounge, alice))
+	ownLength, ownRecord = call(owner, time.Now())
+	length, record = call(member, time.Now().Add(-behind))
+	if ownRecord < ownLength || ownRecord < 1000 || record != ownRecord || length > 1000 {
+		t.Fatalf("the next call is %d ms long against %d on the owner's install, %d against %d on the member's", ownLength, ownRecord, length, record)
+	}
+
+	// Staff read the record and reset it, and a member does neither.
+	if got, err := owner.CallRecord(context.Background(), denID, lounge); err != nil || got.RecordMS != ownRecord {
+		t.Fatalf("staff read the record as %+v, %v; want %d", got, err, ownRecord)
+	}
+	if _, err := member.CallRecord(context.Background(), denID, lounge); !denproto.IsCode(err, denproto.CodeForbidden) {
+		t.Fatalf("a member read the record: %v", err)
+	}
+	if err := member.ResetCallRecord(context.Background(), denID, lounge); !denproto.IsCode(err, denproto.CodeForbidden) {
+		t.Fatalf("a member reset the record: %v", err)
+	}
+	if err := owner.ResetCallRecord(context.Background(), denID, lounge); err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, member, denID, "the call with nothing to beat", func(v denclient.View) bool {
+		return slices.ContainsFunc(v.Calls, func(c denclient.PageCall) bool { return c.ChannelID == lounge && c.RecordMS == 0 && c.StartedAt != 0 })
+	})
+	if got, err := owner.CallRecord(context.Background(), denID, lounge); err != nil || got.RecordMS != 0 {
+		t.Fatalf("staff read the reset record as %+v, %v", got, err)
+	}
+}
+
 // TestCallRidesOutADroppedConnection checks that a call goes on when its
 // install's connection to the den drops, and that its page takes it back
 // once the connection returns, with its media flowing throughout.
@@ -432,7 +514,7 @@ func TestShareThroughTheClient(t *testing.T) {
 	b.caller.Share(true)
 	member.ShareCall("page-b", denID, true, true)
 	viewOf(t, owner, denID, "bob sharing", func(v denclient.View) bool {
-		return slices.ContainsFunc(v.Calls, func(c denproto.Call) bool {
+		return slices.ContainsFunc(v.Calls, func(c denclient.PageCall) bool {
 			return slices.ContainsFunc(c.Members, func(m denproto.CallMember) bool { return m.ID == bob && m.Sharing && m.Sound })
 		})
 	})
@@ -444,7 +526,7 @@ func TestShareThroughTheClient(t *testing.T) {
 		t.Fatal(err)
 	}
 	viewOf(t, member, denID, "alice watching bob", func(v denclient.View) bool {
-		return slices.ContainsFunc(v.Calls, func(c denproto.Call) bool {
+		return slices.ContainsFunc(v.Calls, func(c denclient.PageCall) bool {
 			return slices.ContainsFunc(c.Members, func(m denproto.CallMember) bool { return m.ID == alice && slices.Equal(m.Watching, []string{bob}) })
 		})
 	})
