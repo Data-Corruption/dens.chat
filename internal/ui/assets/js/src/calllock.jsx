@@ -24,18 +24,26 @@ export function keysChanged(kept, since) {
 // where the den seals its calls, open where it's older and doesn't.
 export function CallLock({ call, den }) {
     const [open, setOpen] = useState(false);
+    return (
+        <>
+            <LockKey call={call} onClick={() => setOpen(true)} />
+            {open && <CallLockDialog call={call} den={den} onClose={() => setOpen(false)} />}
+        </>
+    );
+}
+
+// LockKey is the lock's button; many makes it one of the call's buttons,
+// as large as they are, and a finger's size on a touch screen.
+export function LockKey({ call, many, onClick }) {
     // Until the page knows whether the den seals its calls, it says nothing.
     if (!call || call.sealed === undefined) return null;
     const sealed = call.sealed;
     const label = sealed ? 'The call is end-to-end encrypted: compare codes' : "The call isn't end-to-end encrypted: this den runs an older Dens";
     return (
-        <>
-            <button type="button" class={`btn btn-ghost btn-xs btn-square relative shrink-0 touch-room ${sealed ? 'text-base-content/60' : 'text-warning'}`}
-                aria-label={label} title={label} data-call-lock={sealed ? 'sealed' : 'open'} onClick={() => setOpen(true)}>
-                <LockIcon open={!sealed} />
-            </button>
-            {open && <CallLockDialog call={call} den={den} onClose={() => setOpen(false)} />}
-        </>
+        <button type="button" class={`btn btn-ghost btn-square relative shrink-0 ${many ? 'btn-sm pointer-coarse:btn-md' : 'btn-xs touch-room'} ${!sealed ? 'text-warning' : many ? '' : 'text-base-content/60'}`}
+            aria-label={label} title={label} data-call-lock={sealed ? 'sealed' : 'open'} onClick={onClick}>
+            <LockIcon open={!sealed} size={many ? 'h-[18px] w-[18px]' : undefined} />
+        </button>
     );
 }
 
