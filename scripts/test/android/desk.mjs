@@ -3,7 +3,8 @@
 // answering the walk in the Android container over HTTP, on PORT at this
 // container's address, with what desk's page shows of the call:
 //
-//   GET  /call    who is in it, by name, and whether each rings or is muted
+//   GET  /call    who is in it, by name, and whether each rings or is
+//                 muted, and its length on Lounge's row (M21.2)
 //   POST /share   shares desk's screen, its fake capture
 //   POST /rejoin  leaves the call and joins it again, for its sounds (M14.2)
 //   POST /mute    mutes desk, so its ring lights for its sound alone (M14.3)
@@ -90,7 +91,9 @@ http.createServer(async (req, res) => {
         res.end(JSON.stringify(body));
     };
     try {
-        if (req.method === 'GET' && req.url === '/call') return answer(200, { members: await page.eval(CALL) });
+        if (req.method === 'GET' && req.url === '/call') {
+            return answer(200, { members: await page.eval(CALL), length: await page.eval(`document.querySelector('[data-call-length]')?.textContent.trim() || ''`) });
+        }
         if (req.method === 'POST' && req.url === '/share') {
             await waitFor(() => page.eval(SHAREABLE), "desk's share button", 15000).catch(() => {});
             return answer(200, { share: await page.eval(SHARE, true) });
@@ -111,7 +114,10 @@ http.createServer(async (req, res) => {
         }
         if (req.method === 'POST' && req.url.startsWith('/sound?')) {
             const name = new URL(req.url, 'http://desk').searchParams.get('name');
-            await page.eval(`document.querySelector('[data-soundboard-button=block]').click(), true`);
+            // The soundboard is among the rest of the call's controls, behind the block's arrow.
+            await page.eval(`document.querySelector('[data-call-more-button]').click(), true`);
+            await waitFor(() => page.eval(`!!document.querySelector('[data-call-more] [data-soundboard-button=block]')`), "the rest of desk's controls", 5000);
+            await page.eval(`document.querySelector('[data-call-more] [data-soundboard-button=block]').click(), true`);
             const TILE = `[...document.querySelectorAll('[data-soundboard] [data-sound-tile]')].find((t) => t.querySelector('span').textContent === ${JSON.stringify(name)})`;
             await waitFor(() => page.eval(`!!${TILE}`), `desk's tile ${name}`, 5000);
             await page.eval(`(${TILE}.click(), true)`, true);

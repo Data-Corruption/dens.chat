@@ -107,7 +107,10 @@ try {
     await dragOnto(alice, member, row(games), 'middle');
     await waitFor(() => callOf(games).some((m) => m.id === bobID && m.muted) && callOf(lounge).length === 0, 'bob in Games, muted, and Lounge empty', 30000);
     await waitFor(() => bob.eval(`!!${row(games)}.querySelector('[data-call-state="connected"]')`), "bob's page connected in Games", 30000);
-    const lock = await bob.eval(`document.querySelector('[data-call-lock]')?.dataset.callLock || ''`);
+    // The lock is among the rest of the call's controls, behind the block's arrow.
+    await bob.eval(`document.querySelector('[data-call-more-button]').click(), true`);
+    const lock = await waitFor(() => bob.eval(`document.querySelector('[data-call-more] [data-call-lock]')?.dataset.callLock || ''`), "bob's lock", 5000).catch(() => '');
+    await bob.eval(`document.querySelector('[data-call-more-button]').click(), true`);
     c.report(lock === 'sealed', `${aliceBrowser} → ${bobBrowser}: bob dragged onto Games, whose call his page joined, sealed (${lock}) and muted as he was`);
     await bob.shot(`${HOME}/shot-drag-${bobBrowser}-moved.png`);
 

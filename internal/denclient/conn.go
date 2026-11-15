@@ -662,17 +662,20 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if err := json.Unmarshal(e.D, &r); err != nil {
 			return e, false, fmt.Errorf("malformed ready: %w", err)
 		}
-		// Only the members changed since the list this socket named.
+		// Only the members changed since the list this socket named, and
+		// the calls' starts as they were, which a call going on keeps.
 		var prev map[string]denproto.Member
-		if since := r.Sync.MembersSince; since != nil {
-			c.mu.Lock()
-			if c.den != nil && c.sentMembers != nil && *since == c.sentMembers.version {
-				prev = c.den.members
-			}
-			c.mu.Unlock()
+		var starts map[string]int64
+		c.mu.Lock()
+		if since := r.Sync.MembersSince; since != nil && c.den != nil && c.sentMembers != nil && *since == c.sentMembers.version {
+			prev = c.den.members
 		}
+		if c.den != nil {
+			starts = c.den.starts
+		}
+		c.mu.Unlock()
 		state := newState()
-		if err := state.load(c.j.denID, r, prev); err != nil {
+		if err := state.load(c.j.denID, r, prev, starts, c.m.wall()); err != nil {
 			return e, false, err
 		}
 		state.groupDMs, state.notes = c.speaking >= denproto.GroupsVersion, c.speaking >= denproto.NotesVersion
@@ -763,7 +766,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.mu.Unlock()
 			return e, false, nil
 		}
-		if _, _, err := c.den.applyEvent(c.j.denID, e, c.profile.Member); err != nil {
+		if _, _, err := c.den.applyEvent(c.j.denID, e, c.profile.Member, c.m.wall()); err != nil {
 			c.mu.Unlock()
 			return e, false, err
 		}
@@ -815,7 +818,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.mu.Unlock()
 		return e, false, nil
 	}
-	out, ok, err := c.den.applyEvent(c.j.denID, e, c.profile.Member)
+	out, ok, err := c.den.applyEvent(c.j.denID, e, c.profile.Member, c.m.wall())
 	me := c.profile.Member.ID
 	gone := c.den.gone
 	c.den.gone = nil

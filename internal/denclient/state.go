@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -42,8 +43,11 @@ type denState struct {
 	// which one older than M16.1 doesn't.
 	signed     map[string]denproto.SignedKey
 	identities bool
-	// calls are who is in each voice channel's call (M2).
-	calls map[string]denproto.Call
+	// calls are who is in each voice channel's call (M2), and starts when
+	// each began on this computer's clock, as Unix milliseconds, for a den
+	// that gives calls' lengths (M21.2).
+	calls  map[string]denproto.Call
+	starts map[string]int64
 	// sounds are the den's soundboard's, by ID, and soundLimits its limits
 	// for them, none from a den older than the soundboard (M14.3).
 	sounds      map[string]denproto.Sound
@@ -99,7 +103,7 @@ type View struct {
 	Identities      map[string]PageIdentity `json:"identities"`
 	KeepsIdentities bool                    `json:"keeps_identities"`
 	// Calls are the calls with someone in them.
-	Calls []denproto.Call `json:"calls"`
+	Calls []PageCall `json:"calls"`
 	// Sounds are the den's soundboard's, by name, and SoundLimits its
 	// limits for them (M14.3).
 	Sounds      []denproto.Sound     `json:"sounds"`
@@ -137,11 +141,52 @@ type View struct {
 	EventLimits *denproto.EventLimits `json:"event_limits"`
 }
 
+// PageCall is a call as the page sees it: the den's, its length given as
+// StartedAt, when it began on this computer's clock, which the page's timer
+// counts from, so the den's clock and this one may disagree (M21.2). A den
+// older than M21.2 gives no length, and its calls none.
+type PageCall struct {
+	denproto.Call
+	StartedAt int64 `json:"started_at,omitempty"`
+}
+
+// pageVoiceState is voice.state as the page gets it.
+type pageVoiceState struct {
+	Calls []PageCall `json:"calls"`
+	Full  bool       `json:"full,omitempty"`
+}
+
+func (s *denState) pageCall(c denproto.Call) PageCall {
+	c.ElapsedMS = nil
+	return PageCall{Call: c, StartedAt: s.starts[c.ChannelID]}
+}
+
+// startSlack is how much later than the start kept a frame's may put a
+// call's: each frame's start is its arrival less its elapsed_ms, late by
+// however long it took to come, so the earliest is the nearest, and the
+// start kept moves only earlier, so a page's timer never steps back. One
+// later by more is a new call, or a clock that was set.
+const startSlack = 5 * time.Second
+
+// timeCall keeps when a call began, as a frame carrying it arrives at now,
+// against the start kept before it in kept.
+func (s *denState) timeCall(c denproto.Call, kept map[string]int64, now time.Time) {
+	if c.ElapsedMS == nil {
+		delete(s.starts, c.ChannelID)
+		return
+	}
+	at := now.UnixMilli() - *c.ElapsedMS
+	if was, ok := kept[c.ChannelID]; ok && at >= was && at-was <= startSlack.Milliseconds() {
+		at = was
+	}
+	s.starts[c.ChannelID] = at
+}
+
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
 		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
-		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, sounds: map[string]denproto.Sound{},
+		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, starts: map[string]int64{}, sounds: map[string]denproto.Sound{},
 		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}}
 }
 
@@ -189,11 +234,11 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		v.DMKeys = append(v.DMKeys, pageSignedKey(k))
 	}
 	slices.SortFunc(v.DMKeys, func(a, b PageKey) int { return compareIDs(a.ID, b.ID) })
-	v.Calls = []denproto.Call{}
+	v.Calls = []PageCall{}
 	for _, c := range s.calls {
-		v.Calls = append(v.Calls, c)
+		v.Calls = append(v.Calls, s.pageCall(c))
 	}
-	slices.SortFunc(v.Calls, func(a, b denproto.Call) int { return compareIDs(a.ChannelID, b.ChannelID) })
+	slices.SortFunc(v.Calls, func(a, b PageCall) int { return compareIDs(a.ChannelID, b.ChannelID) })
 	slices.SortFunc(v.Members, func(a, b denproto.Member) int { return compareIDs(a.ID, b.ID) })
 	// Positions count within a group, so IDs break ties between groups.
 	slices.SortFunc(v.Groups, func(a, b denproto.Group) int { return cmp.Or(a.Position-b.Position, compareIDs(a.ID, b.ID)) })
@@ -383,11 +428,13 @@ func cleanSounds(list []denproto.Sound) (map[string]denproto.Sound, bool) {
 	return out, true
 }
 
-// load replaces the state with a snapshot of the den with denID. Anything
-// malformed in it is a protocol violation. A snapshot that sends only the
-// members changed since the client's list (M6.2) changes that list, prev,
-// which the client named on the socket's upgrade.
-func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto.Member) error {
+// load replaces the state with a snapshot of the den with denID, which
+// arrived at now. Anything malformed in it is a protocol violation. A
+// snapshot that sends only the members changed since the client's list
+// (M6.2) changes that list, prev, which the client named on the socket's
+// upgrade; starts are when the calls the state held before began, which a
+// call going on keeps (M21.2).
+func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto.Member, starts map[string]int64, now time.Time) error {
 	next := newState()
 	if !cleanLimits(r.Den) || denproto.CheckSync(r.Sync) != nil {
 		return errMalformed
@@ -506,6 +553,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		}
 		if len(c.Members) > 0 {
 			next.calls[c.ChannelID] = c
+			next.timeCall(c, starts, now)
 		}
 	}
 	*s = *next
@@ -657,7 +705,8 @@ const maxCallMembers = 1000
 
 // cleanCall checks who a den says is in a call.
 func cleanCall(c denproto.Call) bool {
-	if !validID(c.ChannelID) || len(c.Members) > maxCallMembers {
+	if !validID(c.ChannelID) || len(c.Members) > maxCallMembers || c.RecordMS < 0 || c.RecordMS > denproto.MaxCallMS ||
+		(c.ElapsedMS != nil && (*c.ElapsedMS < 0 || *c.ElapsedMS > denproto.MaxCallMS)) {
 		return false
 	}
 	seen := map[string]bool{}
@@ -682,7 +731,7 @@ const maxRequests = 16
 // may be forwarded to the page: decoded, checked and re-encoded, so no
 // byte from a den reaches the page unchecked. ok is false for an event the
 // client ignores.
-func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member) (denproto.Event, bool, error) {
+func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member, now time.Time) (denproto.Event, bool, error) {
 	var data any
 	switch e.T {
 	case denproto.EventMemberJoined, denproto.EventMemberUpdated:
@@ -750,20 +799,23 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 				return e, false, errMalformed
 			}
 		}
+		kept := s.starts
 		if v.Full {
 			clear(s.calls)
+			s.starts = map[string]int64{}
 		}
+		page := pageVoiceState{Calls: []PageCall{}, Full: v.Full}
 		for _, c := range v.Calls {
 			if len(c.Members) == 0 {
 				delete(s.calls, c.ChannelID)
+				delete(s.starts, c.ChannelID)
 			} else {
 				s.calls[c.ChannelID] = c
+				s.timeCall(c, kept, now)
 			}
+			page.Calls = append(page.Calls, s.pageCall(c))
 		}
-		if v.Calls == nil {
-			v.Calls = []denproto.Call{}
-		}
-		data = v
+		data = page
 	case denproto.EventTyping:
 		var t denproto.Typing
 		if json.Unmarshal(e.D, &t) != nil || !validID(t.ChannelID) || !validID(t.MemberID) {

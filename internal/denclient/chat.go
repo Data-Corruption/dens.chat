@@ -421,6 +421,37 @@ func (m *Manager) MarkRead(ctx context.Context, denID, channelID, messageID stri
 	return c.call(ctx, http.MethodPut, "/api/channels/"+channelID+"/read", denproto.ReadRequest{MessageID: messageID}, nil)
 }
 
+// CallRecord reads a voice channel's longest call, as staff (M21.2).
+func (m *Manager) CallRecord(ctx context.Context, denID, channelID string) (denproto.CallRecord, error) {
+	var rec denproto.CallRecord
+	c, err := m.find(denID)
+	if err != nil {
+		return rec, err
+	}
+	if err := checkID("channel", channelID); err != nil {
+		return rec, err
+	}
+	if err := c.call(ctx, http.MethodGet, "/api/channels/"+channelID+"/record", nil, &rec); err != nil {
+		return rec, err
+	}
+	if rec.RecordMS < 0 || rec.RecordMS > denproto.MaxCallMS {
+		return denproto.CallRecord{}, errMalformed
+	}
+	return rec, nil
+}
+
+// ResetCallRecord clears a voice channel's longest call, as staff.
+func (m *Manager) ResetCallRecord(ctx context.Context, denID, channelID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	if err := checkID("channel", channelID); err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodDelete, "/api/channels/"+channelID+"/record", nil, nil)
+}
+
 // Manage creates (POST, empty id), changes (PATCH) or deletes (DELETE) a
 // channel or group; kind is "channels" or "groups". The den announces the
 // change as events, so the result comes back through the stream.

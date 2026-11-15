@@ -81,6 +81,8 @@ func New(a *app.App) http.Handler {
 			r.Post("/channels", h.createChannel)
 			r.Patch("/channels/{id}", h.updateChannel)
 			r.Delete("/channels/{id}", h.deleteChannel)
+			r.Get("/channels/{id}/record", h.callRecord)
+			r.Delete("/channels/{id}/record", h.resetCallRecord)
 			r.Post("/groups", h.createGroup)
 			r.Patch("/groups/{id}", h.updateGroup)
 			r.Delete("/groups/{id}", h.deleteGroup)

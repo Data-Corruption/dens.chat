@@ -8,7 +8,9 @@
 # The checks, by milestone, and the arguments their drivers take:
 #   calls BROWSER BROWSER       M2, M3: two members in a call; from M19.2 staff sliding a member's
 #                               volume with the mouse, their menu staying put; and a member at 200%,
-#                               measured twice as loud as their stream (M19.3)
+#                               measured twice as loud as their stream (M19.3); and the call's length on
+#                               both pages a second apart, in the rainbow past a short record with
+#                               fireworks, and none of it with the timer off (M21.2)
 #   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1),
 #                               and a Short's cover and player portrait (M19.2)
 #   share                       M4.2: screen shares, Chromium and Firefox; from M21.1 a share turned down,
@@ -116,7 +118,8 @@
 #                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6); and the
 #                               theme editor and the chat background's card with its Dim (M19.4); and Edit
 #                               profile's Name style, a font and a gradient picked (M19.5); and Staff marks
-#                               and the background's Hover (M21.1).
+#                               and the background's Hover (M21.1); and Call timer, and a call's length at
+#                               its row's right, its lock behind the call's block's arrow (M21.2).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each

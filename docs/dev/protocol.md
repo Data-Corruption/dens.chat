@@ -829,7 +829,8 @@ A call is a session between one member's browser and the den, in a voice channel
 
 ```
 call = {"channel_id", "members": [{"id", "muted"?, "deafened"? (M3.3), "staff_muted"? (M3),
-                                   "sharing"? (M4.2), "sound"? (M4.2), "watching"? (M4.2)}, …]}
+                                   "sharing"? (M4.2), "sound"? (M4.2), "watching"? (M4.2)}, …],
+        "elapsed_ms"? (M21.2), "record_ms"? (M21.2)}
 ```
 
 Client frames, with `resume` and `voice.restart` from M3, `voice.share` and `voice.watch` from M4.2, `voice.talk` from M11, `voice.sound` from M14.3, and `sealed` and `voice.key` from M16.2:
@@ -892,6 +893,7 @@ Den events, all ephemeral, with `voice.resumed` from M3, `voice.refused` from M4
 
 - `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce, and so is `deafened` (M3.3), which says the member hears nothing of the call either; a deafened member is muted too. `staff_muted` (M3) is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls-m3)). `sharing` (M4.2) says the member is sharing their screen, and `sound` that the share has sound; `watching` lists the members whose shares they watch (see [Screen share](#screen-share-m42)).
 - `ready` carries `calls`, those the member can see that have someone in them. Calls aren't replayed, so after `resumed` the den sends `voice.state` with `"full": true`, which replaces every call the client held.
+- From M21.2 every call the den sends carries `elapsed_ms`, how long it has gone on in milliseconds, from its first member's join, held calls counting, and `record_ms`, its channel's longest call as the call began, absent for none (see [Call records](#call-records-m212)). A client turns `elapsed_ms` into a start on its own clock as the frame arrives, and refuses either below 0 or past a hundred years. An older den sends neither, and a client shows its calls without a length. Additive: no version bump.
 
 ### Riding out a dropped connection (M3)
 
@@ -982,6 +984,19 @@ DELETE /api/soundboard/{id}                         204              (staff only
 - `sound_limits`: `sounds` is how many sounds the den keeps, 0 to 500, where 0 turns the soundboard off and keeps its sounds; `longest` is the longest a sound may be, 1 to 300 seconds; and `wait` how long a member waits after their sound ends before playing another, 0 to 600 seconds. A new den allows 50, 10 and 5. The owner changes them with `PATCH /api/den`, all together. A lower limit applies to sounds added afterwards: the sounds already added stay.
 - An older den sends no `sound_limits`, no `sounds` and no soundboard section, and clients show no soundboard for it; clients check `sound_limits` as they arrive, as they check `call_limits`, and refuse a den whose limits are out of range. An older client plays the soundboard's section as it would a member's voice.
 - Playing a sound, and adding, renaming and deleting one, count toward the member's other writes.
+
+### Call records (M21.2)
+
+A voice channel keeps its longest call, which each call's `record_ms` gives as the call began, and which staff read and reset.
+
+```
+GET    /api/channels/{id}/record   200 {"record_ms"}   (staff only)
+DELETE /api/channels/{id}/record   204                 (staff only)
+```
+
+- A call that ends longer than the record becomes it, the den's stop ending it too, and the den writes a call's length at each whole minute past the record it kept, so a den that stops without ending its calls loses a minute at most. `record_ms` is 0 while the channel has none.
+- Anyone but staff gets `403 forbidden`, and a channel that isn't a voice channel the staff member sees `404 not_found`.
+- `DELETE` clears the record. A call going on then gets `voice.state` with no `record_ms`, and writes no record as it ends; the next call to end sets one. Resetting counts toward the member's other writes.
 
 ## Emoji (M15.2)
 
@@ -1133,7 +1148,7 @@ The den limits per IP, taken from `X-Forwarded-For` only on connections from loo
 | Uploads, and a video's preview | 20, then 1 every 3 seconds per member; an upload that sends nothing for a minute is dropped |
 | A request's body, other than an upload's | A minute to arrive in full (M8) |
 | Joining a call, but for the join a move asked for (M17.2) | 10 per minute per member |
-| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting, muting and from M17.2 moving, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, from M16.4 setting a DM's or a group's time, from M17.4 making, changing, canceling and ending an event, and marking Interested, and from M17.6 hiding or showing a badge | 30 per 10 seconds per member |
+| Other writes, including mute, ICE restarts, sharing and watching, staff disconnecting, muting and from M17.2 moving, from M14.3 playing a sound and adding, renaming and deleting one, from M15.2 adding, renaming and deleting an emoji, from M15.3 adding a reaction, taking one back, staff taking an emoji's off, and setting a DM's set, from M15.4 voting and ending a poll, from M16.1 publishing an identity, making a DM's key and writing the record, from M16.4 setting a DM's or a group's time, from M17.4 making, changing, canceling and ending an event, and marking Interested, from M17.6 hiding or showing a badge, and from M21.2 staff resetting a channel's longest call | 30 per 10 seconds per member |
 | Lighting the push-to-talk ring (M11) | 5 per second per member; a release always passes |
 | A member's keys for calls (M16.2) | 30 per 10 seconds per member; the rest are dropped |
 | Boxes between a member's devices (M20) | 30 per 10 seconds per member, all their devices together; the rest are dropped |

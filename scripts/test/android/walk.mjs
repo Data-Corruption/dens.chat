@@ -22,8 +22,9 @@
 // share, the viewer swiped through a message's photos, zoomed by a double
 // tap and closed by Back, a dialog swiped down, and the system bars
 // taking the page's background as its theme changes; call, M13.4's: in
-// a call with desk, whose desk.mjs answers at CTX's desk, from a text
-// channel and without going to the list, the call's bar and button, desk's
+// a call with desk, whose desk.mjs answers at CTX's desk, its length on
+// Lounge's row as desk's page shows it (M21.2), from a text channel and
+// without going to the list, the call's bar and button, desk's
 // share docked above the channel, full screen and back, a tap on the
 // button muting and unmuting, then, with its role push to talk, held
 // through Android's own touch while desk sees the member ring, with no
@@ -277,6 +278,13 @@ async function callWalk(h, d, c) {
         await h.wait(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`, 'the call', 30000);
         await waitFor(onDesk, 'desk to see the member in the call', 15000);
         report(!(await h.has(`document.querySelector('button[aria-label="Share your screen"]')`)), "the WebView's call has no share button");
+        // The call's length on Lounge's row (M21.2), as desk's page shows it,
+        // read a moment apart.
+        const seconds = (text) => (text || '').split(':').reduce((n, x) => n * 60 + Number(x), 0);
+        const length = await h.ev(`document.querySelector('[data-call-length]')?.textContent.trim() || ''`);
+        const onDeskPage = (await desk('/call')).length;
+        report(/^\d+:\d\d$/.test(length) && /^\d+:\d\d$/.test(onDeskPage) && Math.abs(seconds(length) - seconds(onDeskPage)) <= 2,
+            `the WebView shows the call's length on Lounge's row, ${length}, as desk's page does, ${onDeskPage}`);
         await h.snap('call-list');
     });
     await step('call-docked', async () => {

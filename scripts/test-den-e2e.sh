@@ -15,10 +15,12 @@
 # member must reconnect with the whole history. The two then call each other
 # in a voice channel, a test binary with Pion standing in for each one's
 # browser, and each must hear the other: over UDP, and with the member's
-# side over TCP alone. The member's call must ride out Caddy restarting,
+# side over TCP alone. Both installs must give the call's length a second
+# apart at most (M21.2). The member's call must ride out Caddy restarting,
 # and then its own service restarting, the den holding it while the member
 # is away and the member taking it back on the same connection. A staff
-# mute must silence the member, and a staff disconnect end their call. The
+# mute must silence the member, and a staff disconnect end their call, and
+# the voice channel's longest call must hold through a den restart. The
 # member sends a phone photo that must arrive
 # stripped, a phone video that must arrive stripped with its preview and
 # play from any byte, and an iPhone HEIC that must arrive as a JPEG. The
@@ -317,6 +319,18 @@ run() {
     cat "$RUN_LOG_DIR/ride-member.log" "$RUN_LOG_DIR/ride-owner.log" >&2
     return 1
   fi
+  # Each install gives the call's length from the den's, the member's
+  # through Caddy, on its own clock (M21.2): a second apart at most.
+  local owner_length member_length owner_after
+  owner_length=$(guest "$DEN" call-length "$den_id" "$lounge")
+  member_length=$(guest "$CLIENT" call-length "$den_id" "$lounge")
+  owner_after=$(guest "$DEN" call-length "$den_id" "$lounge")
+  if ((owner_length < 0 || member_length < 0 || member_length < owner_length - 1 || member_length > owner_after + 1)); then
+    wait "$member_probe" "$owner" || :
+    echo "error: the call's length is ${owner_length}-${owner_after} s on the owner's install, $member_length s on the member's" >&2
+    return 1
+  fi
+  echo ">> Both installs gave the call's length, $member_length s, the member's through Caddy"
   "${INCUS[@]}" exec "$DEN" -- systemctl restart caddy-e2e
   if ! wait "$member_probe"; then
     wait "$owner" || :
@@ -406,6 +420,19 @@ run() {
   fi
   wait "$member_probe" || { cat "$RUN_LOG_DIR/bitrate-member.log" >&2; return 1; }
   echo ">> Both members' next offers asked for the channel's new bitrate"
+
+  # Lounge keeps its longest call, which the calls above set, through a
+  # restart of the den (M21.2).
+  echo ">> A voice channel's longest call holds after the den restarts"
+  local record
+  record=$(guest "$DEN" call-record "$den_id" "$lounge")
+  ((record > 0)) || { echo "error: Lounge has no longest call after its calls" >&2; return 1; }
+  "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
+  since=$(guest "$CLIENT" wait-connected "$since")
+  guest "$DEN" wait-connected 0 >/dev/null
+  [[ "$(guest "$DEN" call-record "$den_id" "$lounge")" == "$record" ]] ||
+    { echo "error: Lounge's longest call, $record ms, is $(guest "$DEN" call-record "$den_id" "$lounge") ms after the restart" >&2; return 1; }
+  echo ">> Lounge's longest call, $record ms, held after the den restarted"
 
 
   echo ">> A phone photo with GPS data, through Caddy"

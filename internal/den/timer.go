@@ -9,15 +9,16 @@ import (
 
 // The den's timer: set for whatever comes due next, it ends polls at their
 // time (M15.4), deletes disappearing messages at theirs (M16.4), starts and
-// ends events at theirs (M17.4), and gives a live event's badge as a
-// member's stretch in its call comes due (M17.5). It's set as the den
+// ends events at theirs (M17.4), gives a live event's badge as a member's
+// stretch in its call comes due (M17.5), and writes a call's length each
+// minute it runs past its channel's record (M21.2). It's set as the den
 // starts, which catches up on what came due while it was stopped, as for a
 // den restored from a backup, and again as polls are posted and ended,
 // messages that disappear are sent, events are made, moved, canceled and
 // ended, badges attached, and calls joined.
 
 // dueTimer runs the passes that end polls, delete disappearing messages,
-// start and end events, and give badges.
+// start and end events, give badges, and write calls' records.
 type dueTimer struct {
 	// pass lets one pass run at a time, and Stop wait for one under way.
 	pass sync.Mutex
@@ -57,18 +58,19 @@ func (d *Den) StopTimer() {
 }
 
 // planTimer sets the timer for the next poll to end, message to go, event
-// to start or end, or badge to give.
+// to start or end, badge to give, or call's length to write.
 func (d *Den) planTimer() {
 	t := &d.timer
 	t.mu.Lock()
 	running := t.started && !t.closed
 	t.mu.Unlock()
-	// The badges come due by the call registry, whose lock is taken with the
-	// timer's let go: a call that starts takes the timer's after the
-	// registry's.
-	var award int64
+	// The badges and the calls' records come due by the call registry,
+	// whose lock is taken with the timer's let go: a call that starts takes
+	// the timer's after the registry's.
+	var award, record int64
 	if running {
 		award = d.nextAward(context.Background())
+		record = d.nextRecord()
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -87,8 +89,10 @@ func (d *Den) planTimer() {
 		d.log.Errorf("plan the den's timer: %v", err)
 		next = sql.NullInt64{Int64: d.now().Add(time.Minute).UnixMilli(), Valid: true}
 	}
-	if award != 0 && (!next.Valid || award < next.Int64) {
-		next = sql.NullInt64{Int64: award, Valid: true}
+	for _, at := range []int64{award, record} {
+		if at != 0 && (!next.Valid || at < next.Int64) {
+			next = sql.NullInt64{Int64: at, Valid: true}
+		}
 	}
 	if !next.Valid {
 		return
@@ -110,10 +114,10 @@ func (d *Den) dueAt(at int64) {
 	}
 }
 
-// runTimer ends the polls, deletes the messages, gives the badges, and
-// ends and starts the events whose time came, then plans the next pass. A
-// badge comes before its event's end, so a stretch that came due by then
-// counts.
+// runTimer ends the polls, deletes the messages, gives the badges, writes
+// the calls' records, and ends and starts the events whose time came, then
+// plans the next pass. A badge comes before its event's end, so a stretch
+// that came due by then counts.
 func (d *Den) runTimer() {
 	t := &d.timer
 	t.pass.Lock()
@@ -134,6 +138,7 @@ func (d *Den) runTimer() {
 	if err := d.awardDue(ctx); err != nil {
 		d.log.Errorf("give badges: %v", err)
 	}
+	d.recordDue()
 	if err := d.endDueEvents(ctx); err != nil {
 		d.log.Errorf("end events: %v", err)
 	}

@@ -26,6 +26,8 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Post("/api/dens/{den}/messages/{message}/reactions/clear", rt.handleClearReaction)
 	r.Post("/api/dens/{den}/messages/{message}/poll/vote", rt.handleVote)
 	r.Post("/api/dens/{den}/messages/{message}/poll/end", rt.handleEndPoll)
+	r.Get("/api/dens/{den}/channels/{channel}/record", rt.handleCallRecord)
+	r.Delete("/api/dens/{den}/channels/{channel}/record", rt.handleResetCallRecord)
 	for _, kind := range []string{"channels", "groups"} {
 		r.Post("/api/dens/{den}/"+kind, rt.handleManage(kind, http.MethodPost))
 		r.Patch("/api/dens/{den}/"+kind+"/{id}", rt.handleManage(kind, http.MethodPatch))
@@ -194,6 +196,25 @@ func (rt *router) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleCallRecord reads a voice channel's longest call, for staff's
+// dialog (M21.2).
+func (rt *router) handleCallRecord(w http.ResponseWriter, r *http.Request) {
+	rec, err := rt.a.Dens.CallRecord(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, rec)
+}
+
+func (rt *router) handleResetCallRecord(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.ResetCallRecord(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel")); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleManage passes channel and group management to the den; the

@@ -97,6 +97,16 @@ export function PlayIcon({ size = 'h-3.5 w-3.5' }) {
     );
 }
 
+// ChevronIcon points up, at what its button opens over it, and down once
+// that's open.
+export function ChevronIcon({ down, size = 'h-[18px] w-[18px]' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d={down ? 'M4 6.25 8 10.25l4-4' : 'M4 9.75 8 5.75l4 4'} />
+        </svg>
+    );
+}
+
 // SoundboardIcon is the soundboard (M14.3): a sampler's pads, one lit.
 export function SoundboardIcon({ size = 'h-[18px] w-[18px]' }) {
     return (

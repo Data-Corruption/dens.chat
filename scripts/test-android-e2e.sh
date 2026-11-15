@@ -659,7 +659,8 @@ ok "desk's poll showed on the phone's page, the member voted on it by Android's 
 # Calls on a phone (M13.4): desk, the den's owner in Chromium in
 # dens-browsers, shares its screen in Lounge and answers the walk over
 # HTTP with what its page shows of the call. The member joins from the
-# list, and from general, never going back to the list, watches desk's
+# list, whose Lounge row shows the call's length as desk's page does
+# (M21.2), and from general, never going back to the list, watches desk's
 # share docked there, full screen and back, mutes and unmutes with the
 # call's button, holds it to talk through Android's own touch, which desk
 # sees ring only while it's held, holds it again as the notification shade
@@ -681,7 +682,7 @@ phone start
 waitfor 20 "the page in front" front
 walk call || fail "a call by the call's button"
 wait "$desk" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/desk.log")"
-ok "in a call with desk, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, desk's sound played from the call's track through the call's context and the phone's from its bar to desk, and the call left from the bar"
+ok "in a call with desk, its length on Lounge's row as desk's page showed it, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, desk's sound played from the call's track through the call's context and the phone's from its bar to desk, and the call left from the bar"
 # Relay (M20.3): an install of the member's own on desk's computer, its
 # sign-in approved on the phone, as a member's second device's is, so both
 # hold the member's seal; it shares that computer's sound, which the phone

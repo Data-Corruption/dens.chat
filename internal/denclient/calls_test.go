@@ -3,6 +3,7 @@ package denclient
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -145,7 +146,7 @@ func TestDenSoundsAreChecked(t *testing.T) {
 		{denproto.EventSoundDeleted, denproto.SoundDeleted{ID: "1"}, true},
 	} {
 		ev, _ := denproto.NewEvent(e.t, 1, e.data)
-		if _, _, err := s.applyEvent(nil, ev, denproto.Member{ID: "1"}); (err == nil) != e.ok {
+		if _, _, err := s.applyEvent(nil, ev, denproto.Member{ID: "1"}, time.Now()); (err == nil) != e.ok {
 			t.Errorf("%s %+v: %v", e.t, e.data, err)
 		}
 	}

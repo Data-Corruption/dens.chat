@@ -92,9 +92,10 @@ compares with you. Your own code is in the den's **Manage**, under **Your
 code**. Comparing is up to you, any time, and the den never learns whether you
 did. The check shows on your other devices too, within the hour.
 
-Calls are end-to-end encrypted too, with the same codes: the lock beside a call
-shows yours, and everyone in the call, to compare with right there. A
-comparison holds wherever you meet them after, in DMs, groups and calls.
+Calls are end-to-end encrypted too, with the same codes: the lock behind the
+arrow beside a call's buttons shows yours, and everyone in the call, to
+compare with right there. A comparison holds wherever you meet them after, in
+DMs, groups and calls.
 Whether the check shows beside people in lists is yours to choose, under
 **Settings** → **Appearance** → **Verified mark**.
 
@@ -135,8 +136,13 @@ read them. Resetting that key, or leaving the den, loses them.
 Channels, calls, screen shares, reactions, polls, emoji, events and the
 soundboard work as you'd expect. What's different:
 
-- **Calls** are end-to-end encrypted, and the lock beside one lists who's in
-  it, to compare codes with. Everyone in a call hears the soundboard, and
+- **Calls** are end-to-end encrypted. The arrow beside a call's buttons opens
+  the soundboard and the lock, which lists who's in the call, to compare
+  codes with. Each call's length shows beside
+  its channel, counted from the first person in to the last one out, and
+  turns to a rainbow once it beats the channel's longest call; staff reset
+  that in the channel's settings. Turn the timer off under **Settings** →
+  **Appearance** → **Calls**. Everyone in a call hears the soundboard, and
   one sound plays at a time. Turn anyone up to 200% from their **⋯** in the
   call; past 100% a loud voice may crackle. **Settings** → **Voice** holds
   push to talk's **Release delay** and a **Toggle deafen** shortcut.

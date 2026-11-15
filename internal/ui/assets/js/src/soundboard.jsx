@@ -1,9 +1,10 @@
 // The den's soundboard (M14.3): its button among the call's controls,
-// which opens it, up from the list's block and down from Home's box, and
-// on the phone layout as a sheet from the screen's foot; and its section
-// in Manage, where staff add sounds, and hear, rename or delete each.
+// which opens it, up from the list's block, where it's among the rest of
+// the controls (M21.2), and down from Home's box, and on the phone layout
+// as a sheet from the screen's foot; and its section in Manage, where
+// staff add sounds, and hear, rename or delete each.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { ErrorText, Field, TextInput, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
@@ -12,6 +13,7 @@ import { upload } from './files.jsx';
 import { CogIcon, PlayIcon, SoundboardIcon } from './icons.jsx';
 import { useNarrow } from './nav.js';
 import { rank } from './people.jsx';
+import { usePopup } from './popup.js';
 import { Sheet } from './sheet.jsx';
 import { boardWhy, matching, nameOf, prepareSound, seconds } from './soundboard.js';
 import { boardVolume, clearBoardNotice, playBoardSound, readSoundLimits, setBoardVolume, speakerID } from './voice.js';
@@ -27,79 +29,55 @@ export function shows(call, den) {
 // WIDTH is the popup's width, in pixels.
 const WIDTH = 288;
 
-// popupAt places the popup by its button's place on screen: up and to the
-// right of it, or down, kept within the window. It stands over the page,
-// past the list's edge, which would clip it within the list.
-export function popupAt(rect, down, vw, vh) {
-    const left = Math.max(8, Math.min(rect.left, vw - WIDTH - 8));
-    return down ? { left, top: rect.bottom + 8 } : { left, bottom: vh - rect.top + 8 };
-}
-
-// SoundboardButton opens the soundboard of the den of the page's call:
-// from the list's block, up and to the right; from Home's box, down; and on
-// the phone layout as a sheet. With no sounds in the den, staff's opens on
-// adding them, in Manage. where says which, for the checks.
+// SoundboardButton opens the soundboard of the den of the page's call from
+// Home's box, down, and from the phone's bar. where says which, for the
+// checks.
 export function SoundboardButton({ call, den, board, sounding, where }) {
     const [open, setOpen] = useState(false);
-    const [place, setPlace] = useState(null);
-    const narrow = useNarrow();
     const anchor = useRef(null);
-    // The popup follows its button as the page scrolls or the window
-    // changes size.
-    useLayoutEffect(() => {
-        if (!open || narrow) return undefined;
-        const follow = () => anchor.current && setPlace(popupAt(anchor.current.getBoundingClientRect(), where === 'box', window.innerWidth, window.innerHeight));
-        follow();
-        window.addEventListener('resize', follow);
-        document.addEventListener('scroll', follow, true);
-        return () => {
-            window.removeEventListener('resize', follow);
-            document.removeEventListener('scroll', follow, true);
-        };
-    }, [open, narrow, where]);
-    // The popup closes on a press anywhere else, or on Escape; the sheet
-    // closes itself.
-    useEffect(() => {
-        if (!open || narrow) return undefined;
-        const away = (e) => {
-            if (!anchor.current?.contains(e.target)) setOpen(false);
-        };
-        const escape = (e) => e.key === 'Escape' && setOpen(false);
-        document.addEventListener('pointerdown', away);
-        document.addEventListener('keydown', escape);
-        return () => {
-            document.removeEventListener('pointerdown', away);
-            document.removeEventListener('keydown', escape);
-        };
-    }, [open, narrow]);
     if (!shows(call, den)) return null;
-    const close = () => {
-        setOpen(false);
-        clearBoardNotice();
-    };
-    const body = <Board den={den} board={board} sounding={sounding} deafened={call.deafened} sheet={narrow} onClose={close} />;
-    const empty = den.sounds.length === 0;
-    const click = () => {
-        if (empty) openManage(den.den, 'soundboard');
-        else if (open) close();
-        else setOpen(true);
-    };
     return (
         <span ref={anchor} class="relative inline-flex">
-            <button type="button" class={`btn btn-ghost btn-sm btn-square ${open ? 'text-success' : ''}`} aria-label={empty ? 'Add sounds to the soundboard' : 'Soundboard'}
-                title={empty ? 'Add sounds to the soundboard' : 'Soundboard'} aria-haspopup="dialog" aria-expanded={open} data-soundboard-button={where} onClick={click}>
-                <SoundboardIcon />
-            </button>
-            {open && narrow && (
-                <Sheet label="Soundboard" title={<span class="font-semibold">Soundboard</span>} onClose={close}>{body}</Sheet>
-            )}
-            {open && !narrow && place && (
-                <div role="dialog" aria-label="Soundboard" data-soundboard={where} class="fixed z-40 rounded-box border border-base-300 bg-base-100 shadow-xl"
-                    style={{ ...place, width: `${WIDTH}px` }}>
-                    {body}
-                </div>
-            )}
+            <SoundboardKey den={den} open={open} where={where} onClick={(empty) => empty || setOpen(!open)} />
+            {open && <Soundboard anchor={anchor} call={call} den={den} board={board} sounding={sounding} where={where} onClose={() => setOpen(false)} />}
         </span>
+    );
+}
+
+// SoundboardKey is the soundboard's button, lit while it's open. With no
+// sounds in the den, staff's opens on adding them, in Manage, and onClick
+// hears of it too. many makes it a finger's size on a touch screen, for
+// one among others.
+export function SoundboardKey({ den, open, where, many, onClick }) {
+    const empty = den.sounds.length === 0;
+    const label = empty ? 'Add sounds to the soundboard' : 'Soundboard';
+    return (
+        <button type="button" class={`btn btn-ghost btn-sm btn-square ${many ? 'pointer-coarse:btn-md' : ''} ${open ? 'text-success' : ''}`} aria-label={label}
+            title={label} aria-haspopup="dialog" aria-expanded={!!open} data-soundboard-button={where}
+            onClick={() => {
+                if (empty) openManage(den.den, 'soundboard');
+                onClick(empty);
+            }}>
+            <SoundboardIcon />
+        </button>
+    );
+}
+
+// Soundboard is the soundboard, open: by anchor, which holds its button
+// and it, up and to the right, or down from Home's box, and on the phone
+// layout as a sheet from the screen's foot. What it had to say goes as it
+// closes.
+export function Soundboard({ anchor, call, den, board, sounding, where, onClose }) {
+    const narrow = useNarrow();
+    const place = usePopup(!narrow, anchor, { down: where === 'box', width: WIDTH, onClose });
+    useEffect(() => clearBoardNotice, []);
+    const body = <Board den={den} board={board} sounding={sounding} deafened={call.deafened} sheet={narrow} onClose={onClose} />;
+    if (narrow) return <Sheet label="Soundboard" title={<span class="font-semibold">Soundboard</span>} onClose={onClose}>{body}</Sheet>;
+    return place && (
+        <div role="dialog" aria-label="Soundboard" data-soundboard={where} class="fixed z-40 rounded-box border border-base-300 bg-base-100 shadow-xl"
+            style={{ ...place, width: `${WIDTH}px` }}>
+            {body}
+        </div>
     );
 }
 

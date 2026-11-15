@@ -33,6 +33,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
+- The shortcut helper opens the desktop's notifications before it reads keys or shares sound, so where the notification service hangs, as a `dunst` that can't start did in the Android e2e's container, the helper waits out D-Bus's two minutes first, with no voice keys and no Relay sound meanwhile. It could open them beside its run.
 
 ## Probably not doing
 

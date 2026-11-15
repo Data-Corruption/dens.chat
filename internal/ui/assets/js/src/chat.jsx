@@ -37,9 +37,9 @@ import { DockedPlayer } from './player.jsx';
 import { openSettings } from './settings.jsx';
 import { UpdateNotice } from './update.jsx';
 import { applyCalls, joinCall } from './voice.js';
-import { CallLock } from './calllock.jsx';
 import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, groupDrop, moveTargets } from './drag.js';
 import { CallBar, CallBlock, CallMembers, callState, useCall, useCallButton } from './voice.jsx';
+import { CallLength } from './calltimer.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -990,7 +990,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         store(FOLDED + denID, JSON.stringify([...next]));
         setFolded(next);
     }
-    const { call, speaking, sounding, volumes, watched, share, den } = useCall();
+    const { call, speaking, sounding, volumes, watched, share } = useCall();
     const watching = new Set(watched.map((w) => w.member));
     // Staff reach each channel's and group's settings from a ⋯ beside it
     // (M4.2), which shows on hover or focus. It shows once its row has the
@@ -1169,12 +1169,12 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                         </span>
                         <span class={`truncate ${readStyle(isUnread, c.id === open || inCall)}`}>{c.name}</span>
                     </button>
-                    {/* The call's lock, beside how it stands (M16.2). */}
-                    {inCall && <CallLock call={call} den={den} />}
                     {isUnread && <UnreadPill />}
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
+                    {/* The call's length, to everyone who sees the channel (M21.2). */}
+                    {voice && <CallLength call={calls.get(c.id)} />}
                     {managed && (
                         <button type="button" class={`${settings} absolute right-1 top-1/2 -translate-y-1/2`} title="Channel settings"
                             aria-label={`Settings for ${c.name}`} onClick={() => onDialog({ kind: 'channel', channel: c })}>

@@ -17,6 +17,7 @@ import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
 import { CallLock, KeysChangedMark, keysChanged } from './calllock.jsx';
+import { CallMore } from './callmore.jsx';
 import { LongName, Tip } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { sendRelayKey } from './events.js';
@@ -177,7 +178,7 @@ export function CallBlock({ denID, staffMuted, roomy }) {
     return (
         <div class={`flex flex-col gap-1 border-t border-base-300 bg-bar py-1.5 pl-2 ${roomy && call ? 'pr-10' : 'pr-2'}`}>
             {lines.length > 0 && <div class="flex flex-col gap-1 px-1 py-0.5 text-xs">{lines}</div>}
-            {call && <StatusLine denID={denID} call={call} den={den} />}
+            {call && <StatusLine denID={denID} call={call} />}
             {call && share && <ShareRow call={call} share={share} den={den} />}
             {call && <CallControls denID={denID} call={call} share={share} den={den} sounding={sounding} board={board} />}
         </div>
@@ -187,7 +188,7 @@ export function CallBlock({ denID, staffMuted, roomy }) {
 // StatusLine says how the call stands, in the list's block, only while it
 // isn't connected, or while it's in another den, which it names, a tap on
 // it going there (M14.3); the channel's row shows the rest.
-function StatusLine({ denID, call, den }) {
+function StatusLine({ denID, call }) {
     const elsewhere = call.den !== denID;
     if (call.status === 'connected' && !elsewhere) return null;
     const said = STATUS[call.status](elsewhere ? `${call.label.channel} in ${call.label.den}` : call.label.channel);
@@ -197,14 +198,11 @@ function StatusLine({ denID, call, den }) {
         return <p role="status" class={`${line} ${color}`} data-call-status><SpeakerIcon size="h-4 w-4" /><span class="truncate text-base-content/80">{said}</span></p>;
     }
     return (
-        <div class="flex items-center gap-1">
-            <button type="button" class={`${line} min-w-0 flex-1 rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().den(call.den, '', 'list')}>
-                <SpeakerIcon size="h-4 w-4" />
-                <span role="status" class="truncate text-base-content/80">{said}</span>
-                <span class="sr-only">Go to its den</span>
-            </button>
-            <CallLock call={call} den={den} />
-        </div>
+        <button type="button" class={`${line} min-w-0 rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().den(call.den, '', 'list')}>
+            <SpeakerIcon size="h-4 w-4" />
+            <span role="status" class="truncate text-base-content/80">{said}</span>
+            <span class="sr-only">Go to its den</span>
+        </button>
     );
 }
 
@@ -422,24 +420,23 @@ function ShareButton({ call, share, den }) {
     );
 }
 
-// CallControls are the call, in this den or another, in a row: the
-// soundboard (M14.3), where the den has one, and the buttons to share,
-// mute, deafen, open the voice settings and leave, spread evenly, with how
-// the call stands for a screen reader, which the block's line and the
+// CallControls are the call, in this den or another, in a row: the arrow
+// that opens the rest of them (M21.2), and the buttons to share, mute,
+// deafen, open the voice settings and leave, spread evenly, with how the
+// call stands for a screen reader, which the block's line and the
 // channel's row show. labeled spells out where and how it stands, before
-// the buttons, for pages with room for it, Home's box, whose soundboard
-// opens down. They show only what the browser can do: a share where it can
-// share (M13.4).
+// the buttons, for pages with room for it, Home's box, which holds the
+// lock and the soundboard (M14.3), where the den has one, in the row. They
+// show only what the browser can do: a share where it can share (M13.4).
 function CallControls({ denID, call, share, den, sounding, board, labeled }) {
     const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
     const said = STATUS[call.status](where);
     const color = call.status === 'connected' ? 'text-success' : 'text-warning';
     const sharing = canShare() && <ShareButton call={call} share={share} den={den} />;
-    const soundboard = <SoundboardButton call={call} den={den} board={board} sounding={sounding} where={labeled ? 'box' : 'block'} />;
     const buttons = (
         <>
             {labeled && sharing}
-            {labeled && soundboard}
+            {labeled && <SoundboardButton call={call} den={den} board={board} sounding={sounding} where="box" />}
             <IconButton label={call.muted ? 'Unmute' : 'Mute'} pressed={call.muted} danger={call.muted} onClick={() => setMuted(!call.muted)}>
                 <MicIcon off={call.muted} size="h-[18px] w-[18px]" />
             </IconButton>
@@ -470,7 +467,7 @@ function CallControls({ denID, call, share, den, sounding, board, labeled }) {
     return (
         <div class="flex items-center justify-between">
             <span role="status" class="sr-only">{said}</span>
-            {soundboard}
+            <CallMore call={call} den={den} board={board} sounding={sounding} />
             {sharing}
             {buttons}
         </div>
