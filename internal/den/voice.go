@@ -68,6 +68,15 @@ type callRoom struct {
 	staffOnly bool
 	members   []*call // in the order they joined
 	sound     *sounding
+	// began is when the call's first member joined, and record its
+	// channel's longest call then, in milliseconds, 0 for none (M21.2).
+	// kept is the longest the den has decided to write for the channel
+	// since, and counts is false once staff reset the record, after which
+	// the call writes none.
+	began  time.Time
+	record int64
+	kept   int64
+	counts bool
 }
 
 // sounding is a sound of the soundboard's playing in a call: the member
@@ -116,11 +125,20 @@ type callRegistry struct {
 	// moves holds, by member, the move staff made of their call whose join
 	// hasn't come yet (M17.2).
 	moves map[int64]pendingMove
+	// records holds each voice channel's record as this process last
+	// decided it (M21.2), which the database may not hold yet; writes,
+	// the records decided and not yet written, in order. writing orders
+	// the writes: it's taken before mu is let go, so a record lands in the
+	// order it was decided.
+	records map[int64]int64
+	writes  []recordWrite
+	writing sync.Mutex
 }
 
 func newCallRegistry() callRegistry {
 	return callRegistry{byMember: map[int64]*call{}, rooms: map[int64]*callRoom{},
-		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}, waits: map[int64]time.Time{}, moves: map[int64]pendingMove{}}
+		staffMuted: map[int64]bool{}, ended: map[string]endedCall{}, waits: map[int64]time.Time{}, moves: map[int64]pendingMove{},
+		records: map[int64]int64{}}
 }
 
 // StartCalls runs calls on the den's media ports. The SFU's notes on each
@@ -144,7 +162,8 @@ func (d *Den) StartCalls(udp *net.UDPConn, tcp net.Listener, cfg sfu.Config) err
 
 // StopCalls ends every call and closes the media ports. The den is
 // stopping, so nobody is told, and staff mutes go as they do when it
-// restarts.
+// restarts. A call longer than its channel's record writes its length, as
+// any call does as it ends.
 func (d *Den) StopCalls() error {
 	r := &d.calls
 	r.mu.Lock()
@@ -155,13 +174,20 @@ func (d *Den) StopCalls() error {
 			c.hold.Stop()
 		}
 	}
+	now := d.now()
+	for cid, room := range r.rooms {
+		d.recordLocked(cid, room, now)
+	}
 	clear(r.byMember)
 	clear(r.rooms)
 	clear(r.staffMuted)
 	clear(r.ended)
 	clear(r.waits)
 	clear(r.moves)
-	r.mu.Unlock()
+	// Its records are written before it returns, and read from the
+	// database as the den starts again.
+	clear(r.records)
+	d.unlockCalls()
 	if s == nil {
 		return nil
 	}
@@ -208,12 +234,16 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		return
 	}
 	// A call that starts may earn a live event's badge once it's lasted a
-	// stretch (M17.5): the den's timer looks then, its lock taken once the
-	// registry's is let go.
-	var awardBy time.Time
+	// stretch (M17.5), and a room that starts writes its length a minute
+	// past its record (M21.2): the den's timer looks then, its lock taken
+	// once the registry's is let go.
+	var awardBy, markAt time.Time
 	defer func() {
 		if !awardBy.IsZero() {
 			d.dueAt(awardBy.Add(d.badgeStretch()).UnixMilli())
+		}
+		if !markAt.IsZero() {
+			d.dueAt(markAt.UnixMilli())
 		}
 	}()
 	cid, err := denproto.ParseID(req.ChannelID)
@@ -235,9 +265,15 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		refuse(denproto.VoiceNotFound)
 		return
 	}
+	record, err := storedRecord(ctx, d.db, cid)
+	if err != nil {
+		d.log.Errorf("join call: %v", err)
+		refuse(denproto.VoiceFailed)
+		return
+	}
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	if r.sfu == nil {
 		refuse(denproto.VoiceFailed)
 		return
@@ -287,8 +323,13 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	r.byMember[s.MemberID] = nc
 	room := r.rooms[cid]
 	if room == nil {
-		room = &callRoom{staffOnly: c.StaffOnly}
+		// A record this process decided may not be in the database yet.
+		if v, ok := r.records[cid]; ok {
+			record = v
+		}
+		room = &callRoom{staffOnly: c.StaffOnly, began: nc.joined, record: record, kept: record, counts: true}
 		r.rooms[cid] = room
+		markAt = room.nextMark()
 	}
 	room.members = append(room.members, nc)
 	d.publishCallsLocked(changed...)
@@ -530,7 +571,7 @@ func (d *Den) passKeysLocked(c *call) {
 func (d *Den) leaveCall(sock *socket) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	c := r.byMember[sock.member]
 	if c == nil || c.sock.Load() != sock {
 		return
@@ -547,7 +588,7 @@ func (d *Den) leaveCall(sock *socket) {
 func (d *Den) socketClosed(sock *socket) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	c := r.byMember[sock.member]
 	if c == nil || c.sock.Load() != sock {
 		return
@@ -570,7 +611,7 @@ func (d *Den) socketClosed(sock *socket) {
 func (d *Den) endHeld(c *call) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	if r.byMember[c.member] != c || c.sock.Load() != nil {
 		return
 	}
@@ -582,7 +623,7 @@ func (d *Den) endHeld(c *call) {
 func (d *Den) endCall(c *call, reason string) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	if r.byMember[c.member] != c {
 		return
 	}
@@ -971,7 +1012,7 @@ func (d *Den) channelChanged(c denproto.Channel, deleted bool) {
 	}
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	room := r.rooms[cid]
 	if room == nil {
 		return
@@ -996,7 +1037,7 @@ func (d *Den) channelChanged(c denproto.Channel, deleted bool) {
 func (d *Den) roleChanged(member int64, staff bool) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	c := r.byMember[member]
 	if c == nil {
 		return
@@ -1013,7 +1054,7 @@ func (d *Den) roleChanged(member int64, staff bool) {
 func (d *Den) memberGone(member int64) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	delete(r.staffMuted, member)
 	if c := r.byMember[member]; c != nil {
 		d.endCallLocked(c, denproto.VoiceForbidden)
@@ -1026,7 +1067,7 @@ func (d *Den) memberGone(member int64) {
 func (d *Den) devicesSignedOut(keys [][]byte) {
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	for _, c := range r.byMember {
 		for _, key := range keys {
 			if bytes.Equal(c.key, key) {
@@ -1082,7 +1123,7 @@ func (d *Den) DisconnectFromCall(ctx context.Context, s *Session, id string) err
 	}
 	r := &d.calls
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	defer d.unlockCalls()
 	if c := r.byMember[mid]; c != nil {
 		d.endCallLocked(c, denproto.VoiceDisconnectedByStaff)
 		d.publishCallsLocked(c.channel)
@@ -1197,28 +1238,33 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 }
 
 // publishCallsLocked tells everyone who can see each of the channels who
-// is in its call now: no one, for a call that ended.
+// is in its call now: no one, for a call that ended, whose length becomes
+// its channel's record if it's longer (M21.2).
 func (d *Den) publishCallsLocked(channels ...int64) {
 	r := &d.calls
+	now := d.now()
 	slices.Sort(channels)
 	for _, cid := range slices.Compact(channels) {
 		room := r.rooms[cid]
 		if room == nil {
 			continue
 		}
-		state := denproto.VoiceState{Calls: []denproto.Call{r.callOf(cid, room)}}
+		state := denproto.VoiceState{Calls: []denproto.Call{r.callOf(cid, room, now)}}
 		staffOnly := room.staffOnly
 		if err := d.Hub.Ephemeral(denproto.EventVoiceState, state, func(sub *Sub) bool { return !staffOnly || sub.staff }); err != nil {
 			d.log.Errorf("announce call: %v", err)
 		}
 		if len(room.members) == 0 {
+			d.recordLocked(cid, room, now)
 			delete(r.rooms, cid)
 		}
 	}
 }
 
-func (r *callRegistry) callOf(cid int64, room *callRoom) denproto.Call {
-	c := denproto.Call{ChannelID: denproto.FormatID(cid), Members: []denproto.CallMember{}}
+// callOf is a call as members see it, its length as of now.
+func (r *callRegistry) callOf(cid int64, room *callRoom, now time.Time) denproto.Call {
+	elapsed := max(now.Sub(room.began).Milliseconds(), 0)
+	c := denproto.Call{ChannelID: denproto.FormatID(cid), Members: []denproto.CallMember{}, ElapsedMS: &elapsed, RecordMS: room.record}
 	for _, x := range room.members {
 		m := denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, Deafened: x.deafened,
 			StaffMuted: r.staffMuted[x.member], Sharing: x.sharing, Sound: x.sound}
@@ -1236,10 +1282,11 @@ func (d *Den) visibleCalls(staff bool) []denproto.Call {
 	r := &d.calls
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	now := d.now()
 	out := []denproto.Call{}
 	for cid, room := range r.rooms {
 		if len(room.members) > 0 && (staff || !room.staffOnly) {
-			out = append(out, r.callOf(cid, room))
+			out = append(out, r.callOf(cid, room, now))
 		}
 	}
 	slices.SortFunc(out, func(a, b denproto.Call) int {

@@ -282,10 +282,26 @@ type VoiceEnded struct {
 	Reason    string `json:"reason"`
 }
 
-// Call is who is in a voice channel's call, in the order they joined.
+// Call is who is in a voice channel's call, in the order they joined. From
+// M21.2, ElapsedMS is how long it has gone on since its first member
+// joined, held calls counting, and RecordMS its channel's longest call as
+// it began, 0 for none. A den older than M21.2 sends neither, and its
+// calls show no length.
 type Call struct {
 	ChannelID string       `json:"channel_id"`
 	Members   []CallMember `json:"members"`
+	ElapsedMS *int64       `json:"elapsed_ms,omitempty"`
+	RecordMS  int64        `json:"record_ms,omitempty"`
+}
+
+// MaxCallMS bounds a call's length and a record as a client takes them:
+// a hundred years, past which it's a den's mistake.
+const MaxCallMS = int64(100 * 365 * 24 * time.Hour / time.Millisecond)
+
+// CallRecord is a voice channel's longest call, in milliseconds, 0 for
+// none (M21.2), which staff read and reset.
+type CallRecord struct {
+	RecordMS int64 `json:"record_ms"`
 }
 
 // CallMember is one member of a call: Muted is their own mark, and

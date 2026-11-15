@@ -34,6 +34,9 @@ var releasedSchema = []struct {
 	// v1.10.0 added M17.2's spoilers, M17.3's notes, M17.4's events,
 	// M17.5's badges and M17.6's hidden ones, and v1.10.1 nothing more.
 	{"v1.10.1", 14, m19Tables},
+	// v1.11.0 added M19.4's chat background and M19.5's name styles, and
+	// v1.12.0 nothing more.
+	{"v1.12.0", 16, nil},
 }
 
 // m16Tables are the tables M16's steps add: M16.1's identities and
@@ -78,7 +81,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // award's hidden mark, which an award starts without; a database v1.10.1
 // left, with a spoiler, notes, an event, a badge and a hidden award, keeps
 // them all. M19.4 adds the chat's background, which starts with none, and
-// M19.5 each member's name style, which none has.
+// M19.5 each member's name style, which none has; a database v1.12.0 left,
+// with a background and a name style, keeps them. M21.2 adds each voice
+// channel's longest call, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -276,11 +281,30 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				}
 				// No name has a style until its member sets one (M19.5).
 				var styled int
-				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE name_style IS NOT NULL`).Scan(&styled); err != nil || styled != 0 {
+				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE name_style IS NOT NULL`).Scan(&styled); err != nil ||
+					(released.version < 16 && styled != 0) {
 					t.Errorf("%s holds %d name styles after the migration, %v", what, styled, err)
 				}
 				if _, err := db.Exec(`UPDATE den_members SET name_style = '{"font":"pacifico"}' WHERE id = 1`); err != nil {
 					t.Errorf("%s takes no name style after the migration: %v", what, err)
+				}
+				// No voice channel has a record until a call there ends
+				// (M21.2), and only a voice channel takes one, longer than 0.
+				var records int
+				if err := db.QueryRow(`SELECT count(*) FROM den_channels WHERE call_record IS NOT NULL`).Scan(&records); err != nil || records != 0 {
+					t.Errorf("%s holds %d call records after the migration, %v", what, records, err)
+				}
+				if _, err := db.Exec(`UPDATE den_channels SET call_record = 5000 WHERE id = 2`); err != nil {
+					t.Errorf("%s takes no call record after the migration: %v", what, err)
+				}
+				for _, q := range []string{
+					`UPDATE den_channels SET call_record = 5000 WHERE id = 1`,
+					`UPDATE den_channels SET call_record = 0 WHERE id = 2`,
+					`UPDATE den_channels SET call_record = -1 WHERE id = 2`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
@@ -360,7 +384,8 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 // a group DM with its members and its first change, and a DM's time with a
 // message sent under it; from version 14, v1.10.1's, a spoiler, a member's
 // notes, an event of staff's with a member interested, its badge and a
-// hidden award, and the den's limit for members' events.
+// hidden award, and the den's limit for members' events; from version 16,
+// v1.12.0's, the chat's background and a member's name style.
 func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 	rows := []string{
@@ -451,6 +476,12 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 			`INSERT INTO den_named_files (id, kind, name, file_id, added_by, added_at) VALUES (3, 'badge', '1', 5, 1, 9)`,
 			`INSERT INTO den_badges (event_id, named_id, title) VALUES (1, 3, x'84')`,
 			`INSERT INTO den_badge_awards (event_id, member_id, earned_at, hidden) VALUES (1, 3, 11, 1)`,
+		)
+	}
+	if version >= 16 {
+		rows = append(rows,
+			`INSERT INTO background (id, set_at, file) VALUES (1, 12, x'91')`,
+			`UPDATE den_members SET name_style = '{"font":"bangers","colors":["#ff8800"]}' WHERE id = 3`,
 		)
 	}
 	for _, q := range rows {

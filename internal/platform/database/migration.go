@@ -789,6 +789,17 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// A voice channel's longest call, in milliseconds; NULL until a call
+	// there ends, and again once staff reset it.
+	m.Add("Call records", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_channels ADD COLUMN call_record INTEGER CHECK (call_record IS NULL OR (kind = 'voice' AND call_record > 0));
+		`); err != nil {
+			return fmt.Errorf("add call records: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

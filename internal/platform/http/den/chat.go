@@ -222,6 +222,28 @@ func (h *handler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusOK, c)
 }
 
+// callRecord reads a voice channel's longest call, for staff (M21.2).
+func (h *handler) callRecord(w http.ResponseWriter, r *http.Request) {
+	rec, err := h.d.CallRecord(r.Context(), session(r), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, rec)
+}
+
+// resetCallRecord clears a voice channel's longest call, at staff's word.
+func (h *handler) resetCallRecord(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	if err := h.d.ResetCallRecord(r.Context(), session(r), chi.URLParam(r, "id")); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handler) deleteChannel(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
