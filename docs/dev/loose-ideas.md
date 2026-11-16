@@ -17,7 +17,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - Bookmarks, per member and per den, so a den's bookmarks always resolve against that den. Maybe bookmarks bypass the cache limit cause opening them and missing could result in non contiguous random reads across a channels.
 - Search (a different algorithm than Discord's. Exact match + fuzzy? Future AI metadata generation?)
 - Onboarding in the page's own first steps: a few screens the first time someone uses Dens, each saying in a line what's unusual about it (the local password and den passwords, recovery codes, the DM recovery key, approving a device, who can read what) and linking the guide, their words tried on people who haven't seen Dens. Until then the page's links to the guides stand in for it (design.md's Public site).
-- x.com and reddit embeds
+- x.com and reddit embeds, as Steam's cards (M22), once either has a source that needs no key.
 - TPM binding for the Windows data key.
 - Optional TOTP on the password fallback.
 - An optional idle lock.
@@ -33,8 +33,6 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
-- The shortcut helper opens the desktop's notifications before it reads keys or shares sound, so where the notification service hangs, as a `dunst` that can't start did in the Android e2e's container, the helper waits out D-Bus's two minutes first, with no voice keys and no Relay sound meanwhile. It could open them beside its run.
-- A DM's history read in the moment between its first message and that message's key reaching the reader's Dens shows the message as changed, until it's read again: the history could fetch the DM's keys before saying so. A slow CI runner hit it in a test (M21).
 
 ## Probably not doing
 
