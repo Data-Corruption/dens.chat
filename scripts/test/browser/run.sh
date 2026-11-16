@@ -188,12 +188,18 @@
 #   signin BROWSER              M21.1: bob's laptop signing in from its page, saying at once that it waits for
 #                               his other device; his first device, at a phone's width, showing the request on
 #                               each pane; the digits typed both ways, and the laptop signed in
+#   review [PASS...] [-- PART...]  M22.1: every screen for a review of the page, in Chromium at 1280 by 800
+#                               with a mouse and at 390 by 844 by touch, each on Dark and on Light: the phone
+#                               check's screens and those it lacks, a call with a share, the owner's, the first
+#                               run, and a second device signing in. It checks only that each was reached; the
+#                               pictures land in ~/shot-review/PASS. PASS is desk-dark, desk-light, phone-dark
+#                               or phone-light; PART is member, more, call, owner, before or signin
 # BROWSER is chromium or firefox.
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,188p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,197p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"
