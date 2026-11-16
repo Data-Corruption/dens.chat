@@ -2,6 +2,22 @@
 
 Ideas and fixes no milestone has taken up yet. A lot of these are still loose, and not all of them may turn out possible or practical. One leaves this list when a milestone's plan in [milestones.md](milestones.md) takes it up. Those weighed and set aside are under Probably not doing, with why.
 
+## Probably M23
+
+From M22's review of the page (docs/local, uncommitted) and what it found members would want.
+
+- A call gets a pane of its own: a voice channel opens in the main pane as a text channel does, each member a tile that lights as they talk, shares as large tiles, the controls along its foot, the lock and the timer in its header. Leaving for a text channel keeps the call, as today's strip and floating player; the phone's docked player becomes the same pane. With it, the call's row loses its cog, which sits 50 pixels above the settings' and opens something else.
+- Members in Manage: a searchable list of everyone, with role, joined and last seen, and the member's menu on each row.
+- A quick switcher: Ctrl+K finds any channel, DM or den by a few letters, unread first; the front door for search when that comes. With it, a list of the page's keyboard shortcuts, and a few more: Alt+↑/↓ between channels, Esc to mark read.
+- #channel links: # completes a channel as @ does a member, and shows as a chip that opens it, in messages and descriptions.
+- A channel's bell with three levels: everything, mentions, nothing.
+- Do not disturb: one switch that holds every notification and sound for an hour, until tomorrow, or until turned off.
+- Pinned messages: a channel's own, pinned by staff and listed from its header, with no cap on how many.
+- Mark as read, in a channel's and a den's menu.
+- Forward a message to another channel or DM, from its menu.
+- Names for a member's devices, given by them, shown in Devices, Relay and a sign-in's approval.
+- A status line under a member's name, set from their own card, cleared after a time they pick, or never.
+
 ## Big
 
 - Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app and M13 its phone layout; staying connected while the phone sleeps is under Medium; more in [android.md](android.md).

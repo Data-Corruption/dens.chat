@@ -34,21 +34,22 @@ Each milestone ends usable on its own and is tested on Linux and Windows, in Chr
 
 **M22, polish.** No new mechanism but the scanner: M22 reviews the page as a whole, builds what the review finds and what members asked for since M21, and makes signing in on a phone a matter of two scans. Left in loose-ideas.md: the shared YouTube player, which wants a milestone and a decision on reading a player's state; X's and Reddit's cards, which have no source that needs no key; the Android asks, search and bookmarks.
 
-**M22 steps.** Four pull requests, tested by the automated checks; the manual test and v1.14.0 wait for M22's end:
+**M22 steps.** Five pull requests, tested by the automated checks; the manual test and v1.14.0 wait for M22's end:
 
 | Step | Scope | Done when |
 | --- | --- | --- |
 | M22.1 The review | Every screen and flow shot and read, at a desktop's width and a phone's; the findings written beside their screenshots; the picks written here as M22.3's scope | The user has ticked through the findings, and M22.3 lists what it builds |
 | M22.2 The asks | Channels and groups from menus; Mute in a call's member menu, and that menu made over; Appearance's preview; the DM dot in red, and on the tab; Steam's cards; the helper's notifications opened beside its run; a DM's keys fetched before a message reads as changed | Each holds in its check, in Chromium and Firefox, and the phone check's audits hold |
-| M22.3 The review's picks | What M22.1 picked, split in two if the picks call for it | Written with the picks |
-| M22.4 Scanning in | Add device and its code; the digits' code; Add a den made over, with Scan; then M22's manual test and v1.14.0 | A phone scans a den's code on a computer, then the digits' code once that computer approves, and is signed in; a computer with no camera signs in as now; and v1.14.0 ships |
+| M22.3 One look | The review's picks that run across the page: four kinds of button, one place for a dialog's actions, one slider, one frame for the settings and Manage with each member's own sections under the cog, and the settings' and Manage's sections tidied | The `settings` and `phone` checks' audits hold, and the review's shots, taken again, show each pick |
+| M22.4 The screens | The review's picks screen by screen: the first run and Home, a message's hover bar, the composer, editing, polls, the viewer, the writing guide, menus' edges, the profile card beside its click, a group's members | Each holds in its check, in Chromium and Firefox, and the phone check's audits hold |
+| M22.5 Scanning in | Add device and its code; the digits' code; Add a den made over, with Scan; a device's approval as a dialog; then M22's manual test and v1.14.0 | A phone scans a den's code on a computer, then the digits' code once that computer approves, and is signed in; a computer with no camera signs in as now; and v1.14.0 ships |
 
 M22.1:
 
 - *What it covers.* Every screen `screens.mjs` shoots and those it lacks, at 1280 and 390 pixels, on a dark theme and a light one, and each flow walked start to end: the first run and pairing, joining, signing in on a second device, a message with files, a call and a share, DMs and groups, events, the settings and Manage.
 - *What it looks for.* One action done two ways; controls that look alike and act differently; where things sit against where a member looks first; spacing, type and color that vary without meaning anything; words that explain where a label would do; steps a flow could lose. Larger changes count: a flow redone, something moved across the page.
 - *Its form.* `docs/local/m22-review/review.md` with `shots/` beside it, neither committed. It opens with the principles it judges by, a page a reader new to design learns from. Then findings by area, each with its screenshot, what's off, the principle, the change and a size (S, M, L), and a box to tick. Then the larger changes, and last what most members would want that loose-ideas.md lacks.
-- *After it.* Ticked findings that fit become M22.3's scope here; the ones too big go to loose-ideas.md; the rest go. Fable runs it at medium.
+- *After it.* The review ran on 2026-11-16, and its picks are below, by the letters it gave them: those about menus and Appearance in M22.2, those about signing in in M22.5, the rest in M22.3 and M22.4. Left for M23, in loose-ideas.md: a call's own pane, Members in Manage, the quick switcher, and what the review found members would want. `run.sh review` takes its pictures again.
 
 M22.2, each open to what the review says of its area:
 
@@ -59,13 +60,35 @@ M22.2, each open to what the review says of its area:
 - *Steam.* A store link shows as a card, from Steam's store API, fetched by the member's service as YouTube's covers are. What the card holds, and what would make it better than Discord's, is planned as the step begins.
 - *The helper.* It opens the desktop's notifications beside its run, so a notification service that hangs costs neither the voice keys nor Relay's sound.
 - *A DM's first message.* History that finds a message whose key it lacks fetches the DM's keys before calling it changed.
+- *From the review.* The den's name shows a chevron and opens a menu: Manage, and for staff New channel and New group (D4). The tabs' row ends in a +, New group on Direct messages and staff's Channel and Group on Den, in place of the lists' text buttons (D3). Every menu's items carry icons (A6). Move up and Move down leave a channel's and a group's dialog for their menus (I3). Appearance becomes three cards under the preview, Theme, Messages and Calls, each choice a label with its radios in a row and its hint a tooltip (H1).
 
-M22.4:
+M22.3, one look, each kind written into design.md as it's made:
+
+- *Buttons (A1).* Four kinds, as components: primary, filled in the theme's color, one to a view or dialog; secondary, filled neutral; quiet, a ghost, for a row's or a toolbar's actions; danger, red text in a row, and filled red only as a dialog's confirming button. No outlines. Then every button in the page takes one.
+- *Dialogs (A2).* Actions in a row at the foot, the primary first at the left, Cancel or Back after it; full width only in a phone's sheet.
+- *Sliders (A3).* One component: a thin track filled in the primary color, a small thumb, 32 pixels to touch.
+- *Frames (A4, A5, L2).* The settings and Manage share one section component: the section's name in a phone's bar, groups as cards, one toggle size, one label style above its control. Options for a member's own sections of a den (Devices, Password and recovery, Your code, Your files, Leave): (a) they stay in Manage; (b) inside a den, the cog's settings show them as that den's group, above the app's, and Manage keeps what staff manage. Pick (b): the cog is where a member looks for their password.
+- *Color and type (A7, A8, A9).* Status text in the text color, its state an icon and an edge in the status color; a message's time without a leading zero; a spoiler's cover in the neutral surface.
+- *Pickers (A10).* A sound's and an emoji's file through the page's button, as a picture's; an event's date and time as fields of the page's own.
+- *Settings (H2, H3, H5, H6).* Notifications loses its three sentences, the third to the guide. A sound is one row on a wide window. Edit profile keeps Save in a foot that stays, and on a wide window shows the card beside its fields, changing as they do. Your code holds one line on a phone; Relay's and the sounds' hints reworded or made tooltips.
+- *Manage (I1, I2).* Soundboard's, Emoji's and Events' limits move to their sections, Events gaining one; Limits keeps Uploads, Messages and Calls, its call presets a row of tiles and its auto-delete a toggle over a select.
+
+M22.4, the screens:
+
+- *First run and Home (B1 to B4).* The first-run cards centered, with the mark. With no dens, Home is the mark, a line and a primary Add a den, Host one on this computer under it. The settings' cog sits in Your dens' header. Set a local password says one line. Recovery codes save as one file, named for the den, or copy; either lets Done through, in the checkbox's place.
+- *Messages (E1, E3, E7).* The hover bar holds react, Reply, Edit on the member's own, then ⋯. Editing shows one row, Save, Cancel and the keys; who else may edit moves to the message's ⋯. Menus get one surface, a step off the page's with a border.
+- *The composer (E2, E4, E6).* The + sits inside the box as the smiley does, and its menu ends in Formatting help, the ? gone. The poll editor says the message is its question. The writing guide keeps its formatting table and keys, and links the site's guide for the rest.
+- *The viewer (E5).* The viewer and Compare close by an × at the top right, the viewer's arrows at the photo's edges, Compare's bar on a solid surface.
+- *The profile card (E8).* On a wide window it opens beside the name or picture clicked, without the dim; a phone keeps its sheet.
+- *DMs and groups (F1, F2, D2).* A group's member row is the picture and the name, Compare codes and Remove in its ⋯ and right click, and who made the group marked under their name. A DM's header opens its profile by a one-person icon. A sharer's own LIVE sits in line with the others'.
+
+M22.5:
 
 - *The codes.* The sign-in stays as it is underneath: the new device names the den and the account, another approves, and its digits finish it. Two codes carry what's typed now. Add device, left of Manage on a den's row in Home, shows the first: the den's address and the member's name there. The second holds the digits, above them once a device approves. Neither holds anything its screen doesn't show.
 - *Making them.* Options: (a) `rsc.io/qr` in the service, which has no dependencies; (b) an encoder of Dens's own in the page. Pick (a): a few hundred lines Dens doesn't keep, and the page draws the squares it's handed as an SVG.
 - *Reading them.* The page asks for the camera, which the Android shell grants as it does the microphone, with CAMERA in its manifest. Options for decoding: (a) the browser's `BarcodeDetector`; (b) a decoder of Dens's own in the page; (c) frames sent to the service, and a Go decoder there. The step begins with a probe of (a) in the WebViews of the S24 and both emulators: where it holds, pick (a), and Scan shows only where the page finds a detector and a camera, a computer's browser among them; where it doesn't, (b), tested against shared cases. (c) drags a tree in.
-- *Add a den.* Three ways, an "or" between them: Scan, where the page can; the den's address, with or without `https://`; an invite. Each field has its Continue to its right. A caption under Scan says where the code is.
+- *Add a den.* Three ways, an "or" between them: Scan, where the page can; the den's address, with or without `https://`; an invite. Each field has its Continue to its right. A caption under Scan says where the code is. Every step is titled with the den's name, its address small beneath, and says nothing of what the den proved (B5).
+- *Approving (C1).* A device's request opens as a dialog over whatever is on screen, a sheet on a phone: who asks, It's mine or Refuse, then the digits and their code. It closes once the new device connects. That a new device signed in is one notice, gone in a minute, and a mark on its row in Devices.
 
 Each step's docs land with it, and the changelog carries v1.14.0.
 
@@ -73,8 +96,8 @@ Each step's docs land with it, and the changelog carries v1.14.0.
 
 - *Go tests:* the code's payload, made and parsed, with the page's against one shared file of cases, and refused when it's malformed or names an address that isn't one; Steam's answers checked as untrusted, against recorded ones; the helper running while its notifier hangs; History fetching a DM's keys.
 - *Page tests:* the menus' rows for staff and for members, on a touch screen too; Mute and Unmute keeping the volume; the tab's icon across unread DMs and mentions in two dens; the address field with and without its scheme; Scan shown only with a detector.
-- *Browser checks:* `drag` and `phone` make a channel and a group from each menu; `calls` mutes a member, unmutes, and opens Move to; `settings` finds the preview following a theme, a name style and Density; `notify` reads the tab's icon; a `steam` check against a stand-in for Steam; `signin` scans both codes in Chromium, its camera fed a video of them, and signs in by typing in Firefox. M22.3's are written with its picks.
+- *Browser checks:* `drag` and `phone` make a channel and a group from each menu; `calls` mutes a member, unmutes, and opens Move to; `settings` finds the preview following a theme, a name style and Density; `notify` reads the tab's icon; a `steam` check against a stand-in for Steam; `signin` scans both codes in Chromium, its camera fed a video of them, and signs in by typing in Firefox. M22.3: `settings` and `phone` audit the one frame, a member's own sections reached from the cog inside a den, and each button's kind by its classes; `review` takes its pictures again, read against the picks. M22.4: `messages` replies and edits from the hover bar; `fixes` opens a profile card beside its click; `groups` reads a member's row; `phone`'s before part saves the recovery codes as a file; `signin` approves in the dialog, which closes by itself.
 - *The Android e2e* signs in by typing as now: the emulator's camera sees no code.
-- *The manual test*, at M22's end on v1.14.0's build: in Chromium and Firefox on Windows and Fedora KDE, M22.2's asks and M22.3's picks; on the S24 Ultra, both scans from a computer's screen, and the phone layout of everything else.
+- *The manual test*, at M22's end on v1.14.0's build: in Chromium and Firefox on Windows and Fedora KDE, M22.2's asks and the review's picks; on the S24 Ultra, both scans from a computer's screen, and the phone layout of everything else.
 
 M23 gets its plan as it begins.
