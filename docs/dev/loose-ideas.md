@@ -2,6 +2,22 @@
 
 Ideas and fixes no milestone has taken up yet. A lot of these are still loose, and not all of them may turn out possible or practical. One leaves this list when a milestone's plan in [milestones.md](milestones.md) takes it up. Those weighed and set aside are under Probably not doing, with why.
 
+## Probably M23
+
+From M22's review of the page (docs/local, uncommitted) and what it found members would want.
+
+- A call gets a pane of its own: a voice channel opens in the main pane as a text channel does, each member a tile that lights as they talk, shares as large tiles, the controls along its foot, the lock and the timer in its header. Leaving for a text channel keeps the call, as today's strip and floating player; the phone's docked player becomes the same pane. With it, the call's row loses its cog, which sits 50 pixels above the settings' and opens something else.
+- Members in Manage: a searchable list of everyone, with role, joined and last seen, and the member's menu on each row.
+- A quick switcher: Ctrl+K finds any channel, DM or den by a few letters, unread first; the front door for search when that comes. With it, a list of the page's keyboard shortcuts, and a few more: Alt+↑/↓ between channels, Esc to mark read.
+- #channel links: # completes a channel as @ does a member, and shows as a chip that opens it, in messages and descriptions.
+- A channel's bell with three levels: everything, mentions, nothing.
+- Do not disturb: one switch that holds every notification and sound for an hour, until tomorrow, or until turned off.
+- Pinned messages: a channel's own, pinned by staff and listed from its header, with no cap on how many.
+- Mark as read, in a channel's and a den's menu.
+- Forward a message to another channel or DM, from its menu.
+- Names for a member's devices, given by them, shown in Devices, Relay and a sign-in's approval.
+- A status line under a member's name, set from their own card, cleared after a time they pick, or never.
+
 ## Big
 
 - Android build, best effort feature parity. Target text and voice call support, streaming a nice to have. M12 built the app and M13 its phone layout; staying connected while the phone sleeps is under Medium; more in [android.md](android.md).
@@ -17,7 +33,7 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - Bookmarks, per member and per den, so a den's bookmarks always resolve against that den. Maybe bookmarks bypass the cache limit cause opening them and missing could result in non contiguous random reads across a channels.
 - Search (a different algorithm than Discord's. Exact match + fuzzy? Future AI metadata generation?)
 - Onboarding in the page's own first steps: a few screens the first time someone uses Dens, each saying in a line what's unusual about it (the local password and den passwords, recovery codes, the DM recovery key, approving a device, who can read what) and linking the guide, their words tried on people who haven't seen Dens. Until then the page's links to the guides stand in for it (design.md's Public site).
-- x.com and reddit embeds
+- x.com and reddit embeds, as Steam's cards (M22), once either has a source that needs no key.
 - TPM binding for the Windows data key.
 - Optional TOTP on the password fallback.
 - An optional idle lock.
@@ -33,8 +49,6 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 - On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then (M13.4).
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection (M13.2).
-- The shortcut helper opens the desktop's notifications before it reads keys or shares sound, so where the notification service hangs, as a `dunst` that can't start did in the Android e2e's container, the helper waits out D-Bus's two minutes first, with no voice keys and no Relay sound meanwhile. It could open them beside its run.
-- A DM's history read in the moment between its first message and that message's key reaching the reader's Dens shows the message as changed, until it's read again: the history could fetch the DM's keys before saying so. A slow CI runner hit it in a test (M21).
 
 ## Probably not doing
 

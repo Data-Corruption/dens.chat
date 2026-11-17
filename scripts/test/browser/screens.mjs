@@ -37,6 +37,8 @@
 //                            picker's sheet to react
 //   files (M17.2)            Compact's messages a line each, and a spoiler covered,
 //                            then shown
+//   review (M22.1)           reviewScreens and callReview: what the walk above lacks,
+//                            at any width, by script, for drive-review.mjs
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 
@@ -271,6 +273,14 @@ export function helpers(b, origin, out, prefix = '') {
     return h;
 }
 
+// openMembers shows the member list beside a channel, which a wide
+// window may have open already, where the header's button would close it.
+const MEMBERS_SHOWN = `(() => { const n = document.querySelector('nav[aria-label=Members]'); return !!n && !n.closest('[inert]') && n.getClientRects().length > 0; })()`;
+async function openMembers(h) {
+    if (await h.ev(MEMBERS_SHOWN)) return;
+    await h.click(h.label('Members'));
+}
+
 const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
 const PANEL = `document.querySelector('[role=dialog][aria-label="App settings"] [data-panel]')`;
 const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
@@ -482,7 +492,7 @@ export async function memberScreens(h, ctx) {
     });
     await h.step('members', async () => {
         await h.go(`/den/${den}/${general}`);
-        await h.click(h.label('Members'));
+        await openMembers(h);
         await h.snap('members');
         await h.click(`document.querySelector('nav[aria-label=Members] button')`, 'a member');
         await h.snap('profile-card');
@@ -513,6 +523,9 @@ export async function memberScreens(h, ctx) {
             await h.go(`/den/${den}/${dm}`);
             await h.wait(`document.querySelector('[data-expiry-line]')`, "the line where the DM's time was set");
             await h.click(`document.querySelector('[data-expiry-badge]')`, "the DM's time in its header");
+            // In a wide window with the profile open beside the DM, the
+            // time's click closes it: another opens it again.
+            if (!(await h.has(`document.querySelector('[data-expiry-setting]')`))) await h.click(`document.querySelector('[data-expiry-badge]')`, "the DM's time again");
             await h.wait(`document.querySelector('[data-expiry-setting]')`, "the DM's time beside it");
             await h.ev(`document.querySelector('[data-expiry-setting]').scrollIntoView({ block: 'center' }), true`);
             await sleep(400);
@@ -537,7 +550,7 @@ export async function memberScreens(h, ctx) {
             await h.wait(`document.querySelector('[data-group-change]')`, "the group's lines");
             await sleep(1200);
             await h.snap('group');
-            await h.click(h.label("The group's members"));
+            if (!(await h.has(`document.querySelector('[data-group-members]')`))) await h.click(h.label("The group's members"));
             await h.wait(`document.querySelector('[data-group-members]')`, "the group's members");
             await h.snap('group-members', { scroll: `document.querySelector('[data-pane=side]')`, max: 3 });
         });
@@ -580,7 +593,7 @@ export async function ownerScreens(h, ctx) {
     await h.step('owner-den-manage', async () => {
         await h.go(`/den/${den}`);
         await h.click(`document.querySelector('[data-den-manage]')`, "the den's name");
-        await h.wait(`document.querySelector('${MANAGE_FRAME} [data-section]')`, "Manage's sections, from the den's name", 5000);
+        await h.wait(`document.querySelector('${MANAGE_FRAME} [data-section], ${MANAGE_FRAME} nav button')`, "Manage's sections, from the den's name", 5000);
         await h.snap('manage-from-den');
         await h.escape();
         await waitFor(async () => !(await h.has(MANAGE)), 'Manage to close', 5000);
@@ -608,14 +621,14 @@ export async function ownerScreens(h, ctx) {
     // ⋯, a sheet on a phone, from which Remove from den… asks first.
     await h.step('profile-staff', async () => {
         await h.go(`/den/${den}/${general}`);
-        await h.click(h.label('Members'));
+        await openMembers(h);
         await h.click(`[...document.querySelectorAll('nav[aria-label=Members] button')].find((b) => b.textContent.includes('Bob'))`);
         await h.wait(`document.querySelector('[role=dialog] [data-member-since]')`, "bob's card");
         await h.snap('profile-card-staff');
         await h.click(`document.querySelector('[role=dialog] [data-profile-more]')`, "the card's ⋯");
-        await h.wait(`document.querySelector('[data-sheet] [role=menuitem]')`, "the ⋯'s sheet");
+        await h.wait(`document.querySelector('[role=menuitem]')`, "the ⋯'s sheet, or its menu in a wide window");
         await h.snap('profile-more');
-        await h.click(`[...document.querySelectorAll('[data-sheet] [role=menuitem]')].find((b) => /Remove/.test(b.textContent))`, 'Remove from den…');
+        await h.click(`[...document.querySelectorAll('[role=menuitem]')].find((b) => /Remove/.test(b.textContent))`, 'Remove from den…');
         await h.snap('remove-member', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
     });
     // The den's events, with + Event, the form as a sheet, and a card's
@@ -1668,3 +1681,229 @@ export async function noting(h, ctx, d, report) {
     did(again, "a tap on Notes on the profile card opens the notes");
 }
 
+
+// setValue sets a field's value as typing would, for Preact to hear.
+const setValue = (field, value) => `(() => { const el = ${field}; const set = Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set;
+    set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`;
+
+// reviewScreens are the screens memberScreens lacks, for a review of the
+// page (M22.1), reached by script at any width: the emoji picker and
+// completion, a reaction made and the picker to react, the composer's poll
+// and a poll sent and voted on, the notes, the events, a message's and a
+// member's right-click menus where ctx.right clicks so, the member's own
+// card, a channel in Compact, and a spoiler.
+export async function reviewScreens(h, ctx) {
+    const { den, general, random } = ctx;
+    const channel = async () => {
+        await h.go(`/den/${den}/${general}`);
+        await h.wait(COMPOSER, 'the composer');
+        await sleep(1200);
+    };
+    await h.step('emoji-picker', async () => {
+        await channel();
+        await h.click(`document.querySelector('button[data-emoji-button]')`, "the composer's smiley");
+        await h.wait(`document.querySelectorAll('[data-emoji-tile]').length > 1000`, 'the emoji');
+        await h.snap('emoji-picker');
+        await h.escape();
+    });
+    await h.step('complete', async () => {
+        await channel();
+        await h.ev(`${COMPOSER}.focus(), true`);
+        await h.ev(setValue(COMPOSER, ':par'));
+        await sleep(600);
+        await h.snap('complete-emoji');
+        await h.ev(setValue(COMPOSER, '@al'));
+        await sleep(600);
+        await h.snap('complete-member');
+        await h.ev(setValue(COMPOSER, ''));
+    });
+    await h.step('react', async () => {
+        await channel();
+        const row = `[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes('hi all'))`;
+        await h.ev(`${row}.scrollIntoView({ block: 'center' }), true`);
+        await h.click(`${row}.querySelector('button[aria-label="Message actions"]')`, 'a ⋯');
+        const had = await h.has(`${row}.querySelector('[data-reaction]')`);
+        if (await h.has(QUICK_ROW)) {
+            await h.snap('reactions-sheet');
+            if (had) await h.escape();
+            else await h.click(`${QUICK_ROW}.querySelector('[data-quick-reaction]')`, 'a quick reaction');
+        } else {
+            await h.click(`[...document.querySelectorAll('[role=menuitem]')].find((b) => b.textContent.trim() === 'Add reaction')`, 'Add reaction');
+            await h.wait(`document.querySelectorAll('[data-emoji-tile]').length > 1000`, 'the picker');
+            await h.snap('reaction-picker');
+            if (had) await h.escape();
+            else await h.click(`document.querySelector('[data-emoji-tile]')`, 'an emoji');
+        }
+        await h.wait(`${row}.querySelector('[data-reaction]')`, 'the chip');
+        await h.ev(`${row}.scrollIntoView({ block: 'center' }), true`);
+        await h.snap('reaction-chips');
+    });
+    await h.step('poll', async () => {
+        await channel();
+        await h.click(h.label('Add to this message'));
+        await h.click(`[...document.querySelectorAll('[role=menuitem]')].find((x) => x.textContent.trim() === 'Poll')`, 'Poll');
+        await h.wait(POLL_EDITOR, "the poll's editor");
+        await h.snap('poll-editor-empty');
+        await h.ev(setValue(`${POLL_EDITOR}.querySelector('[data-choice-input="0"]')`, 'Friday'));
+        await h.ev(setValue(`${POLL_EDITOR}.querySelector('[data-choice-input="1"]')`, 'Saturday, after lunch'));
+        await h.ev(setValue(POLL_BOX, 'Which day for the lake?'));
+        await h.snap('poll-editor', { scroll: `${POLL_EDITOR}.parentElement`, max: 2 });
+        if (await h.has(SEND)) {
+            await h.click(SEND, 'Send');
+        } else {
+            await h.ev(`${POLL_BOX}.focus(), true`);
+            await h.b.key('Enter');
+        }
+        const target = `[...document.querySelectorAll('[data-scroller] [data-id]')].filter((r) => r.querySelector('[data-poll]')).at(-1)`;
+        await h.wait(target, 'the poll', 10000);
+        await sleep(600);
+        await h.snap('poll');
+        await h.click(`${target}.querySelector('[data-choice="0"] label')`, 'a choice');
+        await h.click(`[...${target}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Vote')`, 'Vote');
+        await h.wait(`${target}.querySelector('[data-choice="0"][data-mine]')`, 'the vote', 10000);
+        await h.snap('poll-voted');
+    });
+    await h.step('notes', async () => {
+        await h.go(`/den/${den}/dms`);
+        await h.wait(`document.querySelector('[data-notes-row] button')`, "the notes' row");
+        await h.snap('dm-list');
+        await h.click(`document.querySelector('[data-notes-row] button')`, "the notes' row");
+        await h.wait(`document.querySelector('textarea[placeholder="Write a note"]')`, 'the notes');
+        await h.snap('notes-empty');
+    });
+    await h.step('events', async () => {
+        await h.go(`/den/${den}/events`);
+        await h.wait(`document.querySelector('[data-event]')`, 'the events');
+        await h.snap('events', { scroll: `document.querySelector('[data-pane=chan] .overflow-y-auto')`, max: 2 });
+    });
+    await h.step('own-card', async () => {
+        await channel();
+        await openMembers(h);
+        const me = await h.ev(`fetch('/api/dens/${den}/state').then((r) => r.json()).then((v) => v.me.display_name)`);
+        await h.click(h.withText('nav[aria-label="Members"] button', me), 'the member');
+        await h.wait(`document.querySelector('[data-own-notes]')`, 'their own card');
+        await h.snap('own-card');
+        await h.escape();
+    });
+    if (ctx.right) {
+        await h.step('right-click', async () => {
+            await channel();
+            await ctx.right(`[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes("Bob's last word")).querySelector('p')`);
+            await h.snap('right-click-message');
+            await h.escape();
+            await openMembers(h);
+            await ctx.right(`[...document.querySelectorAll('nav[aria-label=Members] button')].find((b) => b.textContent.includes('Carol'))`);
+            await h.snap('right-click-member');
+            await h.escape();
+            await ctx.right(IN_LIST('random'));
+            await h.snap('right-click-channel');
+            await h.escape();
+        });
+    }
+    if (ctx.hover) {
+        await h.step('hover', async () => {
+            await channel();
+            await ctx.hover(`[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes("party time"))`);
+            await h.snap('message-hover');
+        });
+    }
+    await h.step('spoiler', async () => {
+        await h.go(`/den/${den}/${random}`);
+        await h.wait(COMPOSER, 'the composer');
+        await sleep(1500);
+        await h.snap('spoiler');
+    });
+    await h.step('compact', async () => {
+        await h.ev(`localStorage.setItem('DENS_DENSITY', 'compact'), true`);
+        await channel();
+        await h.snap('compact', { scroll: SCROLLER, up: true, max: 3 });
+        await h.ev(`localStorage.removeItem('DENS_DENSITY'), true`);
+    });
+}
+
+// callReview joins the den's voice channel and shoots the call at any
+// width, by script (M22.1): its block on the list, the rest of its
+// controls, a member's menu, the soundboard, the lock, the call from a
+// channel and from Home, and a share, where ctx.share says one comes.
+export async function callReview(h, ctx) {
+    const { den } = ctx;
+    const one = async (name, open, opts) => {
+        await h.step(name, async () => {
+            await open();
+            await sleep(500);
+            await h.snap(name, opts);
+            await h.escape();
+            await sleep(300);
+        });
+    };
+    await h.step('call', async () => {
+        await h.go(`/den/${den}`);
+        await h.click(h.byText('[role=tab]', 'Den'));
+        await h.click(IN_LIST('Lounge'), 'Lounge');
+        await waitFor(() => h.ev(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), 'connected', 30000);
+        await sleep(2500);
+        await h.snap('call-list');
+    });
+    await h.step('call-more', async () => {
+        await h.click(`document.querySelector('[data-call-more-button]')`, "the block's arrow");
+        await h.snap('call-more');
+        await h.click(`document.querySelector('[data-call-more] [data-call-lock]')`, "the call's lock");
+        await h.wait(`document.querySelector('[data-call-lock-dialog]')`, "the lock's dialog");
+        await sleep(800);
+        await h.snap('call-lock');
+        await h.escape();
+    });
+    await one('call-member-menu', () => h.click(`document.querySelector('button[data-call-menu]')`, "a member's ⋯ in the call"));
+    await one('call-soundboard', async () => {
+        for (let i = 0; i < 3 && !(await h.has(`document.querySelector('[data-soundboard-button]')`)); i++) {
+            await h.click(`document.querySelector('[data-call-more-button]')`, "the block's arrow");
+        }
+        await h.click(`document.querySelector('[data-soundboard-button]')`, 'the soundboard');
+        await h.wait(`document.querySelector('[data-board]')`, "the soundboard's sounds");
+    });
+    await h.step('call-channel', async () => {
+        await h.click(IN_LIST('general'), 'general');
+        await h.wait(COMPOSER, 'the composer');
+        await sleep(600);
+        await h.snap('call-in-channel');
+    });
+    await h.step('call-voice-channel', async () => {
+        if (await h.has(`document.querySelector('button[aria-label^="Channels"]')`)) await h.click(`document.querySelector('button[aria-label^="Channels"]')`);
+        await h.click(IN_LIST('Lounge'), 'Lounge again');
+        await sleep(800);
+        await h.snap('call-voice-channel');
+    });
+    await h.step('call-home', async () => {
+        if (await h.has(`document.querySelector('button[aria-label^="Channels"]')`)) await h.click(`document.querySelector('button[aria-label^="Channels"]')`);
+        await h.click(`document.querySelector('a[aria-label^="Home"]')`, 'Home');
+        await sleep(800);
+        await h.snap('call-home');
+        await h.click(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Open')`, "the den's Open");
+    });
+    if (ctx.share) {
+        await h.step('share', async () => {
+            const live = `[...document.querySelectorAll('ul[aria-label="In the call"] button')].find((b) => b.textContent.trim() === 'LIVE')`;
+            await h.wait(live, 'a LIVE mark', 60000);
+            await h.snap('share-live');
+            await h.click(live, 'LIVE');
+            await sleep(1500);
+            await h.snap('share-watching');
+            if (ctx.own) {
+                await h.click(`document.querySelector('button[aria-label="Share your screen"]')`, 'share');
+                await sleep(1500);
+                await h.snap('share-own');
+                await h.click(`document.querySelector('button[aria-label="Show your screen in the player"]')`, 'the preview');
+                await sleep(2500);
+                await h.snap('share-own-shown');
+            }
+            await h.click(IN_LIST('general'), 'general');
+            await sleep(1500);
+            await h.snap('share-in-channel');
+        });
+    }
+    await h.step('leave', async () => {
+        await h.click(`document.querySelector('button[aria-label="Leave the call"]')`, 'leave');
+        await sleep(800);
+        await h.snap('call-left');
+    });
+}
