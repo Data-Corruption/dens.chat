@@ -9,7 +9,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { useBackdrop } from './components.jsx';
+import { Slider, StatusText, useBackdrop } from './components.jsx';
 import { useLayer } from './nav.js';
 import { fitBox, formatSize, step } from './files.jsx';
 import { useCoarse } from './touch.js';
@@ -321,7 +321,8 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const others = othersToSwitch(files, entry.key, to);
     const several = files.length > 1;
     const side = 'btn btn-circle btn-ghost absolute top-1/2 z-10 -translate-y-1/2 text-3xl text-white hover:bg-white/15';
-    const toggle = (on) => `btn btn-sm join-item ${on ? 'btn-active' : 'btn-ghost text-white'}`;
+    // A pressed choice is filled, which reads over the black on any theme.
+    const toggle = (on) => `btn btn-sm join-item ${on ? 'btn-soft' : 'btn-ghost text-white'}`;
     const label = (which) => `${entry.result.name}, ${which === 'full' ? 'full size' : 'smaller copy'}`;
     const layer = (which) => `absolute inset-0 h-full w-full object-fill ${visible === which ? '' : 'opacity-0'}`;
     return (
@@ -372,7 +373,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                                 <svg viewBox="0 0 16 16" class="h-4 w-4" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" /></svg>
                             )}
                         </button>
-                        <input type="range" class="range range-md flex-1" min="0" max={length || 0} step="any" value={time}
+                        <Slider class="min-w-0 flex-1" min="0" max={length || 0} step="any" value={time} style={{ '--track': 'rgb(255 255 255 / 0.3)' }}
                             aria-label="Where in the video" onInput={(e) => seek(Number(e.currentTarget.value))} />
                         <span class="shrink-0 cursor-default select-none tabular-nums text-white/60">{formatTime(time)} / {formatTime(length)}</span>
                     </div>
@@ -417,7 +418,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                     <button ref={close} type="button" class="btn btn-ghost btn-sm text-white" onClick={onClose}>Close</button>
                 </div>
                 {(blocked || entry.switchError) && (
-                    <p role="alert" class="text-warning">{entry.switchError || blocked}</p>
+                    <StatusText kind="warning" role="alert">{entry.switchError || blocked}</StatusText>
                 )}
             </div>
         </div>

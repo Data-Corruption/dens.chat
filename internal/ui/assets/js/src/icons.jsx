@@ -217,6 +217,8 @@ export const MENU_ICONS = {
     info: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM8 7.25v4M8 4.75v.01',
     thumb: 'M5 7v6.5H2.5V7zM5 7l2.5-5c1 0 1.75.75 1.75 1.75V6h3.6a1.25 1.25 0 0 1 1.23 1.47l-.95 5a1.25 1.25 0 0 1-1.23 1.03H5',
     thumbdown: 'M5 9V2.5H2.5V9zM5 9l2.5 5c1 0 1.75-.75 1.75-1.75V10h3.6a1.25 1.25 0 0 0 1.23-1.47l-.95-5A1.25 1.25 0 0 0 11.9 2.5H5',
+    replace: 'M3.5 1.75H9l3 3v9.5H3.5zM9 1.75v3h3M7.75 12.5V7.75M5.75 9.5l2-2 2 2',
+    reset: 'M2.75 8a5.25 5.25 0 1 0 1.6-3.8M2.75 2.5v2.75H5.5',
     back: 'M10 3.5 5.5 8l4.5 4.5',
     onward: 'M6 3.5 10.5 8 6 12.5',
 };
@@ -228,6 +230,24 @@ export function MenuIcon({ name, size = 'h-4 w-4' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
             <path d={d} />
+        </svg>
+    );
+}
+
+// STATUS_PATHS draw a status's state (M22.3): an i for news, a tick for
+// done, a triangle for a warning and a circled ! for what failed.
+const STATUS_PATHS = {
+    info: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM8 7.25v4M8 4.75v.01',
+    success: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM5.25 8.25l1.9 1.9 3.6-4',
+    warning: 'M8 1.75 14.75 13.5H1.25zM8 6.25v3.25M8 11.5v.01',
+    error: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM8 4.5v4.25M8 11.25v.01',
+};
+
+// StatusIcon is a status's state, drawn in its color by what holds it.
+export function StatusIcon({ kind, size = 'h-4 w-4' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON} data-status-icon={kind}>
+            <path d={STATUS_PATHS[kind] || STATUS_PATHS.info} />
         </svg>
     );
 }

@@ -10,7 +10,7 @@
 
 import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { ErrorText, TIP, useAction, useTip } from './components.jsx';
+import { Button, ErrorText, TIP, useAction, useTip } from './components.jsx';
 import { DenEmoji, EmojiContext } from './denemoji.jsx';
 import { emojiList, inTone, loadEmoji, quickRow, skinTone } from './emoji.js';
 import { EmojiPicker } from './emoji.jsx';
@@ -203,10 +203,10 @@ export function RemoveReactions({ denID, m, me, myRank, rankOf, nameOf, onClose 
                                 {shownEmoji(c, ctx, all, 'h-5 w-5')}
                             </span>
                             <span class="min-w-0 flex-1 text-sm text-base-content/80">{whoReacted(c.members, me.id, nameOf)}</span>
-                            <button type="button" class="btn btn-sm shrink-0" disabled={!lower || act.busy}
+                            <Button kind="danger" class="shrink-0" disabled={!lower || act.busy}
                                 onClick={() => act.run(() => api.post(`/api/dens/${denID}/messages/${m.id}/reactions/clear`, reactionOf(c)))}>
                                 {lower ? `Remove ${lower}` : 'None to remove'}
-                            </button>
+                            </Button>
                         </li>
                     );
                 })}

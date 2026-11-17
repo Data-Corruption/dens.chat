@@ -10,7 +10,7 @@ import { watchTab } from './tabmark.js';
 import { api } from './api.js';
 import { startBackground } from './background.js';
 import { onConnection, onUnpaired } from './events.js';
-import { Card, DocsTip, ErrorText, Field, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
+import { Card, DocsTip, ErrorText, Field, Notice, PasswordFields, SubmitButton, TextInput, buttonClass, checkPasswords, useAction } from './components.jsx';
 import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
 import { CogIcon } from './icons.jsx';
@@ -52,12 +52,13 @@ function openThere({ message, event, open }) {
 }
 
 // takeSettingsPath opens the settings over the home page for /settings,
-// where they were a page of their own: '' is the settings open at their
-// first section, or on the phone layout their list, and null closed.
+// where they were a page of their own: a section of '' is the settings
+// open at their first, or on the phone layout their list, and null is
+// closed.
 function takeSettingsPath() {
     if (window.location.pathname !== '/settings') return null;
     history.replaceState(null, '', '/');
-    return '';
+    return { section: '', denID: '' };
 }
 
 export function App({ instance, version, pair, pairLink }) {
@@ -202,9 +203,7 @@ export function App({ instance, version, pair, pairLink }) {
     return (
         <div class="flex h-screen flex-col">
             {open && !live && (
-                <div role="status" class="alert alert-warning alert-soft shrink-0 rounded-none">
-                    <span>Lost touch with the Dens service on this device; reconnecting…</span>
-                </div>
+                <Notice kind="warning" class="shrink-0 rounded-none">Lost touch with the Dens service on this device; reconnecting…</Notice>
             )}
             {chat ? (
                 <div class="min-h-0 flex-1">
@@ -221,10 +220,10 @@ export function App({ instance, version, pair, pairLink }) {
                         {page}
                     </div>
                     {open && (
-                        <a href="/settings" class="btn fixed bottom-4 left-4 shadow-sm" aria-label="App settings"
+                        <a href="/settings" class={`${buttonClass('secondary', 'md')} fixed bottom-4 left-4 bg-base-100 shadow-sm`} aria-label="Settings"
                             onClick={(e) => { e.preventDefault(); openSettings(); }}>
                             <CogIcon size="h-5 w-5" />
-                            App settings
+                            Settings
                         </a>
                     )}
                 </main>
@@ -233,12 +232,14 @@ export function App({ instance, version, pair, pairLink }) {
                 the call's button floats over them on a touch screen (M13.4). */}
             {open && <SharePlayer />}
             {open && <CallButton />}
+            {/* A den's page opens them with its den's own sections (M22.3). */}
             {open && settings !== null && (
-                <SettingsDialog section={settings} onSection={setSettings} onClose={closeSettings} instance={instance} version={version}
+                <SettingsDialog section={settings.section} denID={settings.denID || chat?.denID || ''} navigate={navigate}
+                    onSection={(section) => setSettings((v) => ({ ...v, section }))} onClose={closeSettings} instance={instance} version={version}
                     pair={pair} />
             )}
             {open && manage && (
-                <ManageDialog key={manage.denID} denID={manage.denID} section={manage.section} navigate={navigate}
+                <ManageDialog key={manage.denID} denID={manage.denID} section={manage.section}
                     onSection={(section) => setManage((m) => ({ ...m, section }))} onClose={() => setManage(null)} />
             )}
         </div>
@@ -319,7 +320,7 @@ function Unlock({ remembered, onDone }) {
                 </Field>
                 <Remember checked={remember} onChange={setRemember} />
                 <ErrorText message={error} />
-                <SubmitButton busy={busy}>Unlock</SubmitButton>
+                <SubmitButton busy={busy} size="md">Unlock</SubmitButton>
             </form>
         </Card>
     );
@@ -356,7 +357,7 @@ function SetPassword({ canRemember, onDone }) {
                 <PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
                 {canRemember && <Remember checked={remember} onChange={setRemember} />}
                 <ErrorText message={error} />
-                <SubmitButton busy={busy}>Set password</SubmitButton>
+                <SubmitButton busy={busy} size="md">Set password</SubmitButton>
             </form>
         </Card>
     );

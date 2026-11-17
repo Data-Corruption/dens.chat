@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { HoverRow } from './animations.js';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
-import { ErrorText, Field, TextInput, useAction } from './components.jsx';
+import { Actions, Button, Card, ErrorText, Field, FilePick, Notice, StatusText, SubmitButton, TextInput, useAction } from './components.jsx';
 import { animatedImage } from './crop.jsx';
 import { DenEmoji, EmojiContext } from './denemoji.jsx';
 import {
@@ -143,7 +143,7 @@ export function EmojiPicker({ emoji, onPick, onClose, sheet, place, label = 'Emo
     const body = (
         <>
             <div ref={grid} class={sheet ? 'px-2 pb-2' : 'min-h-0 flex-1 overflow-y-auto px-2'} data-emoji-grid>
-                {failed && <p role="alert" class="p-2 text-sm text-error">{failed}</p>}
+                {failed && <StatusText kind="error" role="alert" class="p-2">{failed}</StatusText>}
                 {!list && !failed && <div class="p-4 text-center"><span class="loading loading-spinner"></span></div>}
                 {list && sections.length === 0 && <p class="p-2 text-sm text-base-content/70">No emoji matches.</p>}
                 {sections.map((s) => (
@@ -273,9 +273,9 @@ export async function prepareEmoji(denID, file) {
 // ManageEmoji is the den's Emoji section in Manage, for staff: how many
 // emoji the den keeps of how many it allows, an emoji added by a file and
 // a name, which the page suggests from the file's, and the den's emoji by
-// name, each to rename or delete. owner says whether the member sets the
-// count, in Limits.
-export function ManageEmoji({ denID, owner, onLimits }) {
+// name, each to rename or delete; and limits, the owner's limit for them,
+// if given.
+export function ManageEmoji({ denID, limits: owners }) {
     const [view, setView] = useState(null);
     const act = useAction();
     const load = () => api.get(`/api/dens/${denID}/state`).then(setView);
@@ -296,34 +296,33 @@ export function ManageEmoji({ denID, owner, onLimits }) {
     const ctx = { denID, list: emoji, all: emoji, byName: new Map(emoji.map((e) => [e.name, e])), on: true, known: !!limits };
     return (
         <EmojiContext.Provider value={ctx}>
-            <h3 class="text-lg font-semibold">Emoji</h3>
-            <p class="text-sm text-base-content/70">The den's own emoji, typed as :name: or picked with the rest.</p>
-            {!limits ? (
-                <p class="text-sm">This den runs a version of Dens without emoji.</p>
-            ) : (
-                <>
-                    {limits.emojis === 0 ? (
-                        <p role="status" class="text-sm text-warning">
-                            Emoji are off: messages show their names as text.
-                            {owner && <> <button type="button" class="link link-primary" onClick={onLimits}>Turn them on in Limits</button></>}
+            <Card title="Emoji">
+                <p class="text-sm text-base-content/70">The den's own emoji, typed as :name: or picked with the rest.</p>
+                {!limits ? (
+                    <p class="text-sm">This den runs a version of Dens without emoji.</p>
+                ) : (
+                    <>
+                        {limits.emojis === 0 ? (
+                            <Notice kind="warning">Emoji are off: messages show their names as text.</Notice>
+                        ) : (
+                            <p class="text-sm" data-emoji-count>{emoji.length} of {limits.emojis} emoji.</p>
+                        )}
+                        {limits.emojis > 0 && emoji.length < limits.emojis && <AddEmoji denID={denID} taken={ctx.byName} onAdded={() => load().catch(() => {})} />}
+                    </>
+                )}
+                {emoji.length > 0 && (
+                    <>
+                        <p class="text-xs text-base-content/60">
+                            Messages write an emoji by its name, so renaming or deleting one turns those it was in back into text, and a name given to
+                            another emoji shows the new one in them.
                         </p>
-                    ) : (
-                        <p class="text-sm" data-emoji-count>{emoji.length} of {limits.emojis} emoji.</p>
-                    )}
-                    {limits.emojis > 0 && emoji.length < limits.emojis && <AddEmoji denID={denID} taken={ctx.byName} onAdded={() => load().catch(() => {})} />}
-                </>
-            )}
-            {emoji.length > 0 && (
-                <>
-                    <p class="text-xs text-base-content/60">
-                        Messages write an emoji by its name, so renaming or deleting one turns those it was in back into text, and a name given to
-                        another emoji shows the new one in them.
-                    </p>
-                    <ul class="flex flex-col divide-y divide-base-300" aria-label="The den's emoji">
-                        {emoji.map((e) => <EmojiRow key={e.id} denID={denID} emoji={e} by={names.get(e.added_by)} onChange={() => load().catch(() => {})} />)}
-                    </ul>
-                </>
-            )}
+                        <ul class="flex flex-col divide-y divide-base-300" aria-label="The den's emoji">
+                            {emoji.map((e) => <EmojiRow key={e.id} denID={denID} emoji={e} by={names.get(e.added_by)} onChange={() => load().catch(() => {})} />)}
+                        </ul>
+                    </>
+                )}
+            </Card>
+            {owners}
         </EmojiContext.Provider>
     );
 }
@@ -334,7 +333,6 @@ function AddEmoji({ denID, taken, onAdded }) {
     const [file, setFile] = useState(null);
     const [name, setName] = useState('');
     const [stage, setStage] = useState('');
-    const [picker, setPicker] = useState(0);
     const add = useAction();
     const clean = cleanName(name);
     function submit(e) {
@@ -352,31 +350,26 @@ function AddEmoji({ denID, taken, onAdded }) {
             }
             setFile(null);
             setName('');
-            setPicker((n) => n + 1);
             onAdded();
         });
     }
     return (
-        <form class="flex flex-col gap-2 rounded-box bg-base-200 p-3" onSubmit={submit} data-add-emoji>
-            <p class="font-medium">Add an emoji</p>
-            <input key={picker} type="file" class="file-input w-full" accept="image/*" aria-label="The emoji's image"
-                onChange={(e) => {
-                    const f = e.currentTarget.files?.[0] || null;
+        <form class="flex flex-col gap-2 rounded-box bg-base-100 p-3 max-md:bg-base-200" onSubmit={submit} data-add-emoji>
+            <p class="text-sm font-medium">Add an emoji</p>
+            <FilePick label="Choose an image" accept="image/*" file={file} inputProps={{ 'aria-label': "The emoji's image" }}
+                onPick={(f) => {
                     setFile(f);
-                    if (f && !name.trim()) setName(nameFromFile(f.name));
+                    if (!name.trim()) setName(nameFromFile(f.name));
                     add.setError('');
                 }} />
             <Field label="Name" hint="Letters, digits and _, written as :name:">
                 <TextInput value={name} onInput={setName} maxlength="34" required placeholder="party_parrot" aria-label="The emoji's name"
                     autocapitalize="none" autocorrect="off" spellcheck={false} />
             </Field>
-            <div class="flex flex-wrap items-center gap-2">
-                <button type="submit" class="btn btn-primary btn-sm" disabled={!file || add.busy}>
-                    {add.busy && <span class="loading loading-spinner loading-sm"></span>}
-                    Add
-                </button>
+            <Actions>
+                <SubmitButton busy={add.busy} disabled={!file}>Add</SubmitButton>
                 {stage && <span role="status" class="text-sm text-base-content/70">{stage}</span>}
-            </div>
+            </Actions>
             <ErrorText message={add.error} />
         </form>
     );
@@ -408,12 +401,12 @@ function EmojiRow({ denID, emoji, by, onChange }) {
                     <form class="flex min-w-0 flex-1 items-center gap-1" onSubmit={rename}>
                         <input class="input input-sm min-w-0 flex-1" value={name} maxlength="34" required aria-label={`New name for :${emoji.name}:`}
                             autocapitalize="none" autocorrect="off" spellcheck={false} onInput={(e) => setName(e.currentTarget.value)} />
-                        <button type="submit" class="btn btn-primary btn-sm" disabled={act.busy}>Save</button>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                        <SubmitButton busy={act.busy}>Save</SubmitButton>
+                        <Button kind="quiet" onClick={() => {
                             setRenaming(false);
                             setName(emoji.name);
                             act.setError('');
-                        }}>Cancel</button>
+                        }}>Cancel</Button>
                     </form>
                 ) : (
                     <>
@@ -425,25 +418,27 @@ function EmojiRow({ denID, emoji, by, onChange }) {
                         </span>
                         {deleting ? (
                             <>
-                                <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => act.run(async () => {
-                                    await api.del(`/api/dens/${denID}/emoji/${emoji.id}`);
-                                    onChange();
-                                })}>Delete</button>
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
-                                    setDeleting(false);
-                                    act.setError('');
-                                }}>Keep</button>
+                                <Actions>
+                                    <Button kind="danger" filled busy={act.busy} onClick={() => act.run(async () => {
+                                        await api.del(`/api/dens/${denID}/emoji/${emoji.id}`);
+                                        onChange();
+                                    })}>Delete</Button>
+                                    <Button kind="quiet" onClick={() => {
+                                        setDeleting(false);
+                                        act.setError('');
+                                    }}>Keep</Button>
+                                </Actions>
                             </>
                         ) : (
                             <>
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                                <Button kind="quiet" onClick={() => {
                                     setRenaming(true);
                                     act.setError('');
-                                }}>Rename</button>
-                                <button type="button" class="btn btn-ghost btn-sm text-error" onClick={() => {
+                                }}>Rename</Button>
+                                <Button kind="danger" onClick={() => {
                                     setDeleting(true);
                                     act.setError('');
-                                }}>Delete</button>
+                                }}>Delete</Button>
                             </>
                         )}
                     </>

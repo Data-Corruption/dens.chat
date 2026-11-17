@@ -18,7 +18,7 @@ import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { backgroundStyle } from './background.js';
 import { copyText } from './clipboard.js';
-import { ErrorText, PLAIN, Tip, dayTime, useAction, useBackground } from './components.jsx';
+import { Actions, Button, ErrorText, Notice, PLAIN, StatusText, Tip, buttonClass, dayTime, useAction, useBackground } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
@@ -51,7 +51,7 @@ import { GroupGate, GroupLine } from './groups.jsx';
 import { ExpiryLine } from './disappearing.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
-import { SmileyIcon, TimerIcon } from './icons.jsx';
+import { SmileyIcon, StatusIcon, TimerIcon } from './icons.jsx';
 import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
 import { Games } from './steam.jsx';
@@ -910,7 +910,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         </button>
                     </div>
                 )}
-                {error && <div role="alert" class="alert alert-error alert-soft mx-4 my-1 py-1 text-sm">{error}</div>}
+                {error && <Notice kind="error" class="mx-4 my-1">{error}</Notice>}
                 {!closed && (channel.kind === 'dm' || notes) && gate !== '' && (
                     <DMGate denID={denID} gate={gate} dm={dm} notes={notes} onCompare={() => dm && onCompare?.(dm)} />
                 )}
@@ -988,7 +988,9 @@ function name(member) {
 }
 
 function clock(ms) {
-    return new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    // A 12-hour clock without its leading zero, as 6:09 PM; a 24-hour
+    // locale keeps its two digits by itself.
+    return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 // Quoted shows the first line of a message a reply quotes, that it has
@@ -1123,7 +1125,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
             {!m.locked && !editing && m.text && <Games text={m.text} />}
             {!m.locked && !editing && m.text && <EventCards text={m.text} />}
             <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
-            {error && <p class="text-xs text-error">{error}</p>}
+            {error && <StatusText kind="error" role="alert">{error}</StatusText>}
         </>
     );
     // Its pictures, and that of the message it replies to, play under the
@@ -1347,13 +1349,13 @@ function DeleteDialog({ denID, m, author, me, onClose }) {
             </HoverRow>
             <p class="text-sm">{whose}It goes for everyone{files}, and can't be brought back.</p>
             <ErrorText message={act.error} />
-            <div class="flex gap-2">
-                <button ref={confirm} type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={remove}>
+            <Actions>
+                <button ref={confirm} type="button" class={buttonClass('danger', 'sm', true)} disabled={act.busy} onClick={remove}>
                     {act.busy && <span class="loading loading-spinner loading-sm"></span>}
                     Delete
                 </button>
-                <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-            </div>
+                <Button kind="quiet" onClick={onClose}>Cancel</Button>
+            </Actions>
         </Dialog>
     );
 }
@@ -1402,7 +1404,7 @@ function Fold({ onToggle, children }) {
             {folded && (
                 <button
                     type="button"
-                    class="btn btn-xs absolute bottom-1 left-0 shadow-sm"
+                    class={`${buttonClass('secondary', 'xs')} absolute bottom-1 left-0 shadow-sm`}
                     aria-expanded="false"
                     onClick={() => {
                         onToggle?.();
@@ -1415,7 +1417,7 @@ function Fold({ onToggle, children }) {
             {over && open && (
                 <button
                     type="button"
-                    class="btn btn-xs mt-1"
+                    class={`${buttonClass('secondary', 'xs')} mt-1`}
                     aria-expanded="true"
                     onClick={() => {
                         onToggle?.();
@@ -1452,10 +1454,10 @@ function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
                 </ul>
             )}
             {p.failed && (
-                <div class="flex items-center gap-2 text-xs text-error">
-                    <span>{p.error}</span>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={onRetry}>Retry</button>
-                    <button type="button" class="btn btn-ghost btn-xs" onClick={onDiscard}>Discard</button>
+                <div class="flex items-center gap-2 text-xs">
+                    <SmallProblem>{p.error}</SmallProblem>
+                    <Button kind="quiet" size="xs" onClick={onRetry}>Retry</Button>
+                    <Button kind="danger" size="xs" onClick={onDiscard}>Discard</Button>
                 </div>
             )}
         </>
@@ -1562,12 +1564,12 @@ function EditBox({ m, denID, channelID, mine, candidates, touch, onDone }) {
                     <button type="button" class="btn btn-ghost btn-xs pointer-coarse:btn-sm" onClick={() => setSharing(true)}>Change</button>
                 </div>
             ))}
-            {error && <p class="text-xs text-error">{error}</p>}
-            <div class="flex gap-2 text-xs">
-                <button type="button" class="btn btn-primary btn-xs pointer-coarse:btn-sm" onClick={save} disabled={busy}>Save</button>
-                <button type="button" class="btn btn-ghost btn-xs pointer-coarse:btn-sm" onClick={onDone}>Cancel</button>
-                {!touch && <span class="cursor-default select-none self-center text-base-content/50">Enter to save, Escape to cancel</span>}
-            </div>
+            {error && <StatusText kind="error" role="alert">{error}</StatusText>}
+            <Actions class="text-xs">
+                <Button kind="primary" size="xs" class="pointer-coarse:btn-sm" onClick={save} disabled={busy}>Save</Button>
+                <Button kind="quiet" size="xs" class="pointer-coarse:btn-sm" onClick={onDone}>Cancel</Button>
+                {!touch && <span class="cursor-default select-none text-base-content/50">Enter to save, Escape to cancel</span>}
+            </Actions>
         </div>
     );
 }
@@ -1827,7 +1829,10 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                 ) : uploading ? (
                     <span class="rounded bg-base-100 px-1" aria-live="polite">Uploading… the message sends once the files are up.</span>
                 ) : failed ? (
-                    <span class="rounded bg-base-100 px-1 text-error" aria-live="polite">Remove the files that couldn't be sent to send the rest.</span>
+                    <span class="inline-flex items-center gap-1 rounded bg-base-100 px-1 text-base-content" aria-live="polite">
+                        <span class="text-error"><StatusIcon kind="error" size="h-3 w-3" /></span>
+                        Remove the files that couldn't be sent to send the rest.
+                    </span>
                 ) : (
                     <span aria-live="polite"></span>
                 )}
@@ -2175,6 +2180,17 @@ const GUIDE_FORMATS = [
     ['> a quote', 'A line that starts with >.'],
 ];
 
+// SmallProblem is what failed, in a line as small as what it sits in, as a
+// file's chip: its words in the text's color, an icon in the error's.
+function SmallProblem({ children }) {
+    return (
+        <p role="alert" class="flex items-start gap-1 text-base-content">
+            <span class="mt-0.5 text-error"><StatusIcon kind="error" size="h-3 w-3" /></span>
+            <span class="min-w-0">{children}</span>
+        </p>
+    );
+}
+
 // MetadataRemoved marks a file whose metadata came out before it left this
 // computer, and says what that can be on hover, focus or a tap.
 function MetadataRemoved({ id }) {
@@ -2243,7 +2259,7 @@ function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }
             <div class="min-w-0 flex-1 text-xs">
                 <p class="truncate font-medium" title={name}>{name}</p>
                 {f.error ? (
-                    <p class="text-error" role="alert">{f.error}</p>
+                    <SmallProblem>{f.error}</SmallProblem>
                 ) : done ? (
                     <>
                         <p class="flex items-center gap-1 text-base-content/60">
@@ -2261,7 +2277,7 @@ function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }
                         {f.result.converted && (
                             <p class="text-base-content/60">Sent as {f.result.type === 'image/png' ? 'PNG' : 'JPEG'}, which every browser shows</p>
                         )}
-                        {f.switchError && <p class="text-error" role="alert">{f.switchError}</p>}
+                        {f.switchError && <SmallProblem>{f.switchError}</SmallProblem>}
                         {busy && <progress class="progress progress-primary h-1.5 w-full"></progress>}
                     </>
                 ) : busy && counting ? (
@@ -2273,7 +2289,7 @@ function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }
                                 Send full size instead
                             </button>
                         )}
-                        {fullError && <p class="text-error" role="alert">{fullError}</p>}
+                        {fullError && <SmallProblem>{fullError}</SmallProblem>}
                     </>
                 ) : busy ? (
                     <progress class="progress progress-primary h-1.5 w-full"></progress>
@@ -2281,7 +2297,7 @@ function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }
                     <progress class="progress progress-primary h-1.5 w-full" value={Math.round(f.progress * 100)} max="100"></progress>
                 )}
                 {canSpoil && !f.error && spoilable(f) && (
-                    <button type="button" class={`btn btn-xs mt-0.5 ${f.spoiler ? 'btn-active' : 'btn-ghost'}`} aria-pressed={!!f.spoiler}
+                    <button type="button" class={`btn btn-ghost btn-xs mt-0.5 ${f.spoiler ? 'btn-active' : ''}`} aria-pressed={!!f.spoiler}
                         title="Covered until it's clicked" onClick={() => onSpoiler(!f.spoiler)} data-spoiler-toggle>
                         Spoiler
                     </button>

@@ -7,6 +7,7 @@
 // which a canvas can't (M15.1).
 
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Actions, Button, ErrorText, Slider } from './components.jsx';
 import { Dialog } from './manage.jsx';
 
 // The frame each kind of picture is cut to, as it shows here and as it's
@@ -212,7 +213,7 @@ export function CropDialog({ file, shape, busy, error, onCrop, onClose }) {
     return (
         <Dialog title={spec.title} onClose={onClose}>
             {failed ? (
-                <p role="alert" class="text-sm text-error">{failed}</p>
+                <ErrorText message={failed} />
             ) : (
                 <div class="flex flex-col items-center gap-3">
                     <canvas
@@ -230,7 +231,7 @@ export function CropDialog({ file, shape, busy, error, onCrop, onClose }) {
                     ></canvas>
                     <label class="flex w-full max-w-xs items-center gap-2 text-sm">
                         <span class="cursor-default select-none">Zoom</span>
-                        <input type="range" class="range range-md flex-1" min="1" max={MAX_ZOOM} step="0.01" value={zoom}
+                        <Slider class="min-w-0 flex-1" min="1" max={MAX_ZOOM} step="0.01" value={zoom}
                             disabled={!bitmap} onInput={(e) => zoomTo(Number(e.currentTarget.value))} />
                     </label>
                     <p class="cursor-default select-none text-xs text-base-content/60">Drag the picture to choose what shows.</p>
@@ -239,14 +240,11 @@ export function CropDialog({ file, shape, busy, error, onCrop, onClose }) {
                     )}
                 </div>
             )}
-            {error && <p role="alert" class="text-sm text-error">{error}</p>}
-            <div class="flex gap-2">
-                <button type="button" class="btn btn-primary btn-sm" disabled={!bitmap || animated === null || busy} onClick={save}>
-                    {busy && <span class="loading loading-spinner loading-sm"></span>}
-                    Save
-                </button>
-                <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-            </div>
+            <ErrorText message={error} />
+            <Actions>
+                <Button kind="primary" busy={busy} disabled={!bitmap || animated === null} onClick={save}>Save</Button>
+                <Button kind="quiet" onClick={onClose}>Cancel</Button>
+            </Actions>
         </Dialog>
     );
 }

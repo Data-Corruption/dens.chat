@@ -11,7 +11,10 @@ import { keepTheme, ownChoice, setTheme } from '../assets/js/src/theme.js';
 import { variables } from '../assets/js/src/themes.js';
 
 // A wide window with a mouse: wider than the phone layout, and not coarse.
-globalThis.window = { matchMedia: (q) => ({ matches: q.includes('min-width'), addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
+globalThis.window = {
+    matchMedia: (q) => ({ matches: q.includes('min-width'), addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {},
+    history: { state: null, pushState() {}, replaceState() {}, go() {} }, location: { protocol: 'http:', host: 'localhost', pathname: '/', href: 'http://localhost/' },
+};
 
 function all(node, match, found = []) {
     if (node.nodeType === 1 && match(node)) found.push(node);
@@ -22,11 +25,12 @@ function all(node, match, found = []) {
 test('the sections are Appearance, Chat, Notifications, Voice, Relay and System, and openSettings opens each', () => {
     assert.deepEqual(SECTIONS.map(([, name]) => name), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
     const opened = [];
-    const off = onOpenSettings((section) => opened.push(section));
+    const off = onOpenSettings(({ section, denID }) => opened.push(denID ? `${section} of ${denID}` : section));
     for (const [id] of SECTIONS) openSettings(id);
     openSettings();
+    openSettings('password', 'd1');
     off();
-    assert.deepEqual(opened, ['appearance', 'chat', 'notifications', 'voice', 'relay', 'system', '']);
+    assert.deepEqual(opened, ['appearance', 'chat', 'notifications', 'voice', 'relay', 'system', '', 'password of d1']);
 });
 
 test("a device's row says how its link stands, or what it offers", () => {
@@ -139,17 +143,55 @@ test('the dialog lists the sections down its side, the one shown marked, and ope
     const root = document.createElement('div');
     const picked = [];
     mount(h(SettingsDialog, { section: '', onSection: (s) => picked.push(s), onClose() {}, instance: 'main', version: 'v0', pair: '' }), root);
-    const nav = all(root, (n) => n.localName === 'nav' && n.attributes['aria-label'] === 'Sections')[0];
-    assert.ok(nav, 'a list of the sections');
-    const items = all(nav, (n) => n.localName === 'button');
-    assert.deepEqual(items.map((b) => b.textContent.trim()), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
-    assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['page', '', '', '', '', '']);
-    const titles = all(root, (n) => n.localName === 'h2' && /\bcard-title\b/.test(n.attributes.class || '')).map((t) => t.textContent.trim());
-    assert.deepEqual(titles, ['App settings', 'Theme', 'Messages', 'Calls'], 'Theme first, with the chat\'s background, then messages, and calls last');
-    assert.equal(all(root, (n) => 'data-appearance-preview' in n.attributes).length, 1, 'over them, the preview');
-    items[3].dispatch('click');
-    assert.deepEqual(picked, ['voice']);
-    mount(null, root);
+    try {
+        const nav = all(root, (n) => n.localName === 'nav' && n.attributes['aria-label'] === 'Sections')[0];
+        assert.ok(nav, 'a list of the sections');
+        const items = all(nav, (n) => n.localName === 'button');
+        assert.deepEqual(items.map((b) => b.textContent.trim()), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
+        assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['page', '', '', '', '', '']);
+        const titles = all(root, (n) => n.localName === 'h2' && /\bcard-title\b/.test(n.attributes.class || '')).map((t) => t.textContent.trim());
+        assert.deepEqual(titles, ['Settings', 'Theme', 'Messages', 'Calls'], 'Theme first, with the chat\'s background, then messages, and calls last');
+        assert.equal(all(root, (n) => 'data-appearance-preview' in n.attributes).length, 1, 'over them, the preview');
+        items[3].dispatch('click');
+        assert.deepEqual(picked, ['voice']);
+    } finally {
+        mount(null, root);
+    }
+});
+
+// Socket stands in for the event stream's socket, which the den's status
+// starts, and which says nothing here.
+class Socket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    readyState = Socket.OPEN;
+    addEventListener() {}
+    send() {}
+    close() {}
+}
+
+test("on a den's page, the member's own sections of it are a group above the app's, Leave den at the column's foot", async () => {
+    globalThis.WebSocket = Socket;
+    document.addEventListener ||= () => {};
+    document.removeEventListener ||= () => {};
+    const den = { den_id: 'd1', name: 'Voice Den', state: 'connected', role: 'member', own: false, username: 'bob' };
+    globalThis.fetch = async (path) => {
+        const body = path === '/api/dens' ? { dens: [den] } : path === '/api/dens/d1/state' ? { me: { id: 'm1' }, keeps_identities: true } : { ok: true };
+        return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(body) };
+    };
+    const root = document.createElement('div');
+    mount(h(SettingsDialog, { section: 'code', denID: 'd1', onSection() {}, onClose() {}, navigate() {}, instance: 'main', version: 'v0', pair: '' }), root);
+    try {
+        for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 5));
+        const nav = all(root, (n) => n.localName === 'nav' && n.attributes['aria-label'] === 'Sections')[0];
+        const read = all(nav, (n) => n.localName === 'p' || n.localName === 'button')
+            .map((x) => (x.localName === 'p' ? `[${x.textContent.trim()}]` : x.textContent.trim() + (x.attributes['aria-current'] ? '*' : '')));
+        assert.deepEqual(read, ['[Voice Den]', 'Devices', 'Password and recovery', 'Your code*', 'Your files', '[App]', 'Appearance', 'Chat', 'Notifications',
+            'Voice', 'Relay', 'System', 'Leave den']);
+        assert.equal(all(root, (n) => n.localName === 'h2' && n.textContent.trim().startsWith('Your code')).length, 1, 'with the section shown');
+    } finally {
+        mount(null, root);
+    }
 });
 
 test("a theme of the member's own is listed under Your themes in its colors, with its buttons once chosen", () => {

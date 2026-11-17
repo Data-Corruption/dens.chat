@@ -6,7 +6,8 @@
 // each with Stop; and why the page's last listening ended.
 
 import { useEffect, useState } from 'preact/hooks';
-import { SpeakerIcon } from './icons.jsx';
+import { Button } from './components.jsx';
+import { SpeakerIcon, StatusIcon } from './icons.jsx';
 import { clearNotice, onRelay, stopListening, stopSharing } from './relay.js';
 
 // LISTENING says how the page's listening stands, by the device's name.
@@ -47,9 +48,10 @@ export function RelayBar({ look = 'block' }) {
                     onStop={stopSharing} stop="Stop sharing" />
             )}
             {s.notice && (
-                <div role="status" class="flex items-start gap-2 px-1 text-xs" data-relay-notice>
-                    <span class="min-w-0 flex-1 text-warning">{s.notice}</span>
-                    <button type="button" class="btn btn-ghost btn-xs" aria-label="Dismiss" onClick={clearNotice}>✕</button>
+                <div role="status" class="flex items-start gap-1.5 px-1 text-xs" data-relay-notice>
+                    <span class="mt-px shrink-0 text-warning"><StatusIcon kind="warning" size="h-3.5 w-3.5" /></span>
+                    <span class="min-w-0 flex-1">{s.notice}</span>
+                    <Button kind="quiet" size="xs" aria-label="Dismiss" onClick={clearNotice}>✕</Button>
                 </div>
             )}
         </div>
@@ -63,9 +65,14 @@ function Row({ row, status, label, problem, onStop, stop }) {
             <span class={`shrink-0 ${color}`}><SpeakerIcon size="h-4 w-4" /></span>
             <span class="min-w-0 flex-1">
                 <span role="status" class="block truncate text-sm">{label}</span>
-                {problem && <span class="block text-xs text-warning">{problem[0].toUpperCase() + problem.slice(1)}</span>}
+                {problem && (
+                    <span class="flex items-center gap-1 text-xs">
+                        <span class="shrink-0 text-warning"><StatusIcon kind="warning" size="h-3 w-3" /></span>
+                        {problem[0].toUpperCase() + problem.slice(1)}
+                    </span>
+                )}
             </span>
-            <button type="button" class="btn btn-ghost btn-xs shrink-0" aria-label={stop} onClick={onStop}>Stop</button>
+            <Button kind="quiet" size="xs" class="shrink-0" aria-label={stop} onClick={onStop}>Stop</Button>
         </div>
     );
 }

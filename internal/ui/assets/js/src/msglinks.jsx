@@ -8,6 +8,7 @@
 import { createContext } from 'preact';
 import { useContext, useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { StatusText } from './components.jsx';
 import { onEvent } from './events.js';
 import { ICON } from './icons.jsx';
 import { isPrivate } from './private.js';
@@ -191,7 +192,7 @@ export function MessageLink({ url, link }) {
                     <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 13.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
                 </svg>
             </a>
-            {refusal ? <span role="status" class="ml-1 text-xs text-error">{refusal}</span> : null}
+            {refusal ? <StatusText kind="error" inline role="status" class="ml-1 align-bottom">{refusal}</StatusText> : null}
         </>
     );
 }

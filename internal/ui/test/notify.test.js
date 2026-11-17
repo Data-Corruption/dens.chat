@@ -105,13 +105,14 @@ test('mutes and kinds, as the service says them', () => {
     assert.ok(!none.den && none.channels.size === 0);
 });
 
-test('the settings say where notifications show', () => {
+test('the settings say where notifications show only what calls for a line', () => {
     const on = { dms: true };
     const helper = { helper: true, notifies: true };
-    assert.match(whereTheyShow(on, 'granted', helper).join('\n'), /^A Dens tab shows them.*\nWith no Dens tab open, your desktop shows them\.$/);
-    assert.match(whereTheyShow(on, 'denied', { helper: false }).join('\n'), /blocks them.*\nWith no tab open, Dens's helper shows them/);
-    assert.match(whereTheyShow(on, 'default', helper).join(' '), /asks to show them/);
-    assert.match(whereTheyShow(on, 'unsupported', helper).join(' '), /can't show notifications/);
-    assert.match(whereTheyShow({ ...on, shell: { allowed: true } }, 'unsupported', null).join(' '), /^Android shows them/);
-    assert.match(whereTheyShow({ ...on, shell: { allowed: false } }, 'unsupported', null).join(' '), /^Android doesn't let Dens show notifications/);
+    const said = (...args) => whereTheyShow(...args).map(([kind, line]) => `${kind}: ${line}`);
+    assert.deepEqual(said(on, 'granted', helper), ['success: With no Dens tab open, your desktop shows them.']);
+    assert.deepEqual(said(on, 'default', { helper: false }), []);
+    assert.deepEqual(said(on, 'denied', { helper: false }), ['warning: This browser blocks them; allow them in its site settings.']);
+    assert.match(said(on, 'unsupported', helper).join('\n'), /^warning: This browser can't show notifications\.\nsuccess: /);
+    assert.deepEqual(said({ ...on, shell: { allowed: true } }, 'unsupported', null), []);
+    assert.match(said({ ...on, shell: { allowed: false } }, 'unsupported', null).join(' '), /^warning: Android doesn't let Dens show notifications/);
 });

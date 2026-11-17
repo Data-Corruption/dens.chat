@@ -20,8 +20,8 @@ import {
     DIM_MOST, DIM_STEP, HOVER_MOST, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, setHover, slideDim, slideHover,
 } from './background.js';
 import {
-    Card, Choices, ColorField, CopyButton, DOCS, DocsLink, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords,
-    useAction, useBackdrop, useBackground, useNotifications,
+    Actions, Button, Card, Choices, ColorField, CopyButton, DOCS, DocsLink, DocsTip, ErrorText, Field, Notice, PLAIN, PasswordFields, Slider, StatusText,
+    SubmitButton, TILE, TextInput, Tip, Toggle, buttonClass, checkPasswords, useAction, useBackground, useNotifications,
 } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
@@ -35,7 +35,9 @@ import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js
 import { HEIGHTS, RATES, shareAudio } from './share.js';
 import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './sounds.js';
 import { cacheSizes, cacheUsage } from './storage.js';
-import { PLAIN_CARDS, PageHeader, SectionList, useSectionPage } from './pages.jsx';
+import { SectionsFrame, useSectionPage } from './pages.jsx';
+import { MenuButton } from './menus.jsx';
+import { YOUR_SECTIONS, YourDen, useYourDen, yourSections } from './yourden.jsx';
 import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, listen, setBufferChoice, stopListening } from './relay.js';
 import { useRelay } from './relay.jsx';
 import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
@@ -53,20 +55,7 @@ import {
     setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
 } from './voice.js';
 
-const openers = new Set();
-
-// openSettings opens the settings at a section, "appearance", "chat",
-// "notifications", "voice", "relay" or "system", from anywhere on the
-// page; with none, at the first, or on the phone layout at the list of
-// them.
-export function openSettings(section = '') {
-    openers.forEach((fn) => fn(section));
-}
-
-export function onOpenSettings(fn) {
-    openers.add(fn);
-    return () => openers.delete(fn);
-}
+export { onOpenSettings, openSettings } from './dialogs.js';
 
 // SECTIONS are the settings' sections, by the id openSettings takes and
 // the name the list shows.
@@ -82,79 +71,40 @@ export const SECTIONS = [
 // SettingsDialog shows a section of the settings. It closes with its ✕,
 // Escape, a click outside it, or Back. On the phone layout it takes the
 // screen, its sections a list of pages, and Back and Escape go from a page
-// to the list.
-export function SettingsDialog({ section, onSection, onClose, instance, version, pair }) {
+// to the list. With denID, as on a den's page, it holds that den's
+// sections of the member's own as a group above the app's (M22.3).
+export function SettingsDialog({ section, denID, onSection, onClose, instance, version, pair, navigate }) {
     useLayer(onClose);
     const narrow = useNarrow();
     useSectionPage(narrow && !!section, () => onSection(''));
-    const at = section || (narrow ? '' : 'appearance');
+    const { den, view } = useYourDen(denID);
+    const yours = den ? yourSections(den) : [];
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && (narrow && section ? onSection('') : onClose());
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     }, [onClose, narrow, section]);
-    const sections = SECTIONS;
+    // A den's section waits for the den, which may not show it after all.
+    const waiting = denID && YOUR_SECTIONS.includes(section) && !den;
+    let at = narrow ? '' : 'appearance';
+    if (SECTIONS.some(([id]) => id === section) || yours.some(([id]) => id === section) || waiting) at = section;
     let panel;
-    if (at === 'chat') panel = <ChatSettings />;
+    if (waiting) panel = <span class="loading loading-spinner"></span>;
+    else if (YOUR_SECTIONS.includes(at)) panel = <YourDen key={at} den={den} view={view} at={at} onClose={onClose} navigate={navigate} />;
+    else if (at === 'chat') panel = <ChatSettings />;
     else if (at === 'notifications') panel = <><NotificationSettings /><SoundSettings /></>;
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'relay') panel = <RelaySettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
     else panel = <><AppearancePreview /><ThemePicker /><MessagesPicker /><CallsPicker /></>;
-    const backdrop = useBackdrop(onClose);
-    if (narrow) {
-        return (
-            <div role="dialog" aria-modal="true" aria-label="App settings" class="fixed inset-0 z-50 flex flex-col bg-base-100">
-                {at ? (
-                    <>
-                        <PageHeader title={sections.find(([id]) => id === at)?.[1]} onBack={() => onSection('')} />
-                        <div data-panel class={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))] ${PLAIN_CARDS}`}>{panel}</div>
-                    </>
-                ) : (
-                    <>
-                        <PageHeader title="App settings" onClose={onClose} />
-                        <SectionList label="Settings" groups={[['', sections]]} onPick={onSection} />
-                    </>
-                )}
-            </div>
-        );
-    }
+    const groups = den
+        ? [[den.name, yours.filter(([, , danger]) => !danger)], ['App', SECTIONS], ['', yours.filter(([, , danger]) => danger)]]
+        : [['', SECTIONS]];
     return (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
-            <div role="dialog" aria-modal="true" aria-label="App settings" class="card flex h-full max-h-[48rem] w-full max-w-3xl flex-col bg-base-100 shadow-xl">
-                <div class="flex items-center gap-2 border-b border-base-300 px-4 py-3">
-                    <h2 class="card-title min-w-0 flex-1 truncate">App settings</h2>
-                    <button type="button" class="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
-                </div>
-                <div class="flex min-h-0 flex-1 flex-row">
-                    <nav aria-label="Sections" class="flex w-52 shrink-0 flex-col gap-1 border-r border-base-300 p-2">
-                        {sections.map(([id, name]) => (
-                            <button key={id} type="button" aria-current={at === id ? 'page' : undefined}
-                                class={`btn btn-ghost btn-sm shrink-0 justify-start font-normal ${at === id ? 'btn-active' : ''}`} onClick={() => onSection(id)}>
-                                {name}
-                            </button>
-                        ))}
-                    </nav>
-                    <div data-panel class="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// Toggle is a setting that's on or off: its label, a line on what it
-// does, and a tip for the rest.
-function Toggle({ id, label, hint, tip, checked, disabled, onChange }) {
-    return (
-        <div class="flex items-start gap-3">
-            <input id={id} type="checkbox" class="toggle mt-0.5 shrink-0" checked={checked} disabled={disabled}
-                onChange={(e) => onChange(e.currentTarget.checked)} />
-            <div class="min-w-0">
-                <label for={id} class={disabled ? '' : 'cursor-pointer'}>{label}</label>
-                {tip && <> <Tip id={`${id}-tip`}>{tip}</Tip></>}
-                {hint && <p class="text-sm text-base-content/70">{hint}</p>}
-            </div>
-        </div>
+        <SectionsFrame label="Settings" title="Settings" groups={groups} at={at} narrow={narrow} onPick={onSection} onList={() => onSection('')}
+            onClose={onClose}>
+            {panel}
+        </SectionsFrame>
     );
 }
 
@@ -208,7 +158,7 @@ function ThemePicker() {
         <Card title="Theme">
             <div role="radiogroup" aria-label="Theme" class="grid grid-cols-3 gap-2">
                 {[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([theme, name]) => (
-                    <label key={theme} class={`flex cursor-pointer flex-col items-center gap-2 rounded-box bg-base-100 px-2 py-3 hover:bg-base-300 max-md:bg-base-200 ${ring}`}>
+                    <label key={theme} class={TILE}>
                         <input type="radio" name="theme" class="sr-only" value={theme} checked={choice === theme} onChange={() => pick(theme)} />
                         {theme === 'system' ? <SystemSwatch large /> : <Swatch theme={theme} large />}
                         <span class="text-sm font-medium">{name}</span>
@@ -216,7 +166,7 @@ function ThemePicker() {
                 ))}
             </div>
             <div>
-                <button type="button" class="btn btn-ghost btn-sm" aria-expanded={more} onClick={() => setMore(!more)}>
+                <button type="button" class={buttonClass('quiet')} aria-expanded={more} onClick={() => setMore(!more)}>
                     {other ? `More themes: ${themeName(choice)}` : 'More themes'}
                     <svg viewBox="0 0 16 16" class={`h-3 w-3 transition-transform ${more ? 'rotate-180' : ''}`} fill="none" stroke="currentColor"
                         stroke-width="2" aria-hidden="true">
@@ -255,28 +205,26 @@ function ThemePicker() {
                     <form class="flex flex-wrap gap-2" onSubmit={paste}>
                         <input class="input input-sm min-w-40 flex-1 font-mono" aria-label="A theme's code" placeholder="dens-theme:…" value={code}
                             onInput={(e) => setCode(e.currentTarget.value)} required autofocus {...PLAIN} />
-                        <button type="submit" class="btn btn-primary btn-sm">Add</button>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={reread}>Cancel</button>
+                        <SubmitButton>Add</SubmitButton>
+                        <Button kind="quiet" onClick={reread}>Cancel</Button>
                     </form>
                 ) : (
                     <>
                         {chosen && (
                             <div class="flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-sm" onClick={() => setEditing({ id: chosen.id, start: chosen })}>Edit</button>
+                                <Button onClick={() => setEditing({ id: chosen.id, start: chosen })}>Edit</Button>
                                 <CopyButton text={themeCode(chosen)} label="Copy code" />
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                                <Button kind="danger" onClick={() => {
                                     forgetTheme(chosen.id);
                                     reread();
                                 }}>
                                     Delete
-                                </button>
+                                </Button>
                             </div>
                         )}
                         <div class="flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-sm" disabled={full} onClick={() => setEditing({ id: '', start: shownTheme('My theme') })}>
-                                New theme
-                            </button>
-                            <button type="button" class="btn btn-sm" disabled={full} onClick={() => setPasting(true)}>Paste a code</button>
+                            <Button disabled={full} onClick={() => setEditing({ id: '', start: shownTheme('My theme') })}>New theme</Button>
+                            <Button disabled={full} onClick={() => setPasting(true)}>Paste a code</Button>
                         </div>
                     </>
                 )}
@@ -330,11 +278,11 @@ function ThemeEditor({ start, onSave, onCancel }) {
             </div>
             <Choices label="Corners" name="theme-corners" data="data-theme-corners" choice={draft.corners} onPick={(corners) => change({ corners })}
                 choices={CORNER_NAMES.map((c) => [c, CORNER_LABELS[c]])} />
-            <div class="flex gap-2">
-                <button type="submit" class="btn btn-primary btn-sm">Save</button>
-                <button type="button" class="btn btn-ghost btn-sm" onClick={onCancel}>Cancel</button>
-            </div>
             <ErrorText message={error} />
+            <Actions>
+                <SubmitButton>Save</SubmitButton>
+                <Button kind="quiet" onClick={onCancel}>Cancel</Button>
+            </Actions>
         </form>
     );
 }
@@ -368,11 +316,8 @@ function ChatBackground() {
                 </div>
             )}
             <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => file.current?.click()}>
-                    {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                    {background ? 'Change image' : 'Choose image'}
-                </button>
-                {background && <button type="button" class="btn btn-ghost btn-sm" disabled={act.busy} onClick={() => act.run(removeBackground)}>Remove</button>}
+                <Button busy={act.busy} onClick={() => file.current?.click()}>{background ? 'Change image' : 'Choose image'}</Button>
+                {background && <Button kind="quiet" disabled={act.busy} onClick={() => act.run(removeBackground)}>Remove</Button>}
                 <input ref={file} type="file" accept={KINDS.join(',')} class="hidden" onChange={(e) => {
                     const picked = e.currentTarget.files?.[0];
                     e.currentTarget.value = '';
@@ -383,7 +328,7 @@ function ChatBackground() {
                 <label class="flex flex-col gap-1">
                     <span class="text-sm">Dim</span>
                     <span class="flex items-center gap-3">
-                        <input type="range" class="range range-md min-w-0 flex-1" min="0" max={DIM_MOST} step={DIM_STEP} value={background.dim}
+                        <Slider class="min-w-0 flex-1" min="0" max={DIM_MOST} step={DIM_STEP} value={background.dim}
                             aria-label="Dim" aria-valuetext={`${background.dim}%`}
                             onInput={(e) => slideDim(Number(e.currentTarget.value))}
                             onChange={(e) => setDim(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
@@ -398,7 +343,7 @@ function ChatBackground() {
                         <Tip id="background-hover-tip" label="About Hover" wrap="-my-1 inline-flex">How far a message under the pointer covers the picture.</Tip>
                     </span>
                     <span class="flex items-center gap-3">
-                        <input type="range" class="range range-md min-w-0 flex-1" min="0" max={HOVER_MOST} step={DIM_STEP} value={background.hover}
+                        <Slider class="min-w-0 flex-1" min="0" max={HOVER_MOST} step={DIM_STEP} value={background.hover}
                             aria-label="Hover" aria-valuetext={`${background.hover}%`} data-background-hover
                             onInput={(e) => slideHover(Number(e.currentTarget.value))}
                             onChange={(e) => setHover(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
@@ -584,7 +529,8 @@ function NotificationSettings() {
     }
     if (!status) return null;
     return (
-        <Card title="Notifications">
+        <Card title={<>Notifications <DocsTip id="docs-notifications" page="usage/#notifications" side="right">
+            Where they show, and muting a den or a channel from the bell beside its name.</DocsTip></>}>
             <Toggle id="notify-dms" label="Direct messages" checked={!!status.dms} disabled={act.busy} onChange={(on) => change('dms', on)} />
             <Toggle id="notify-mentions" label="Mentions" hint="Messages in channels that mention your username."
                 checked={!!status.mentions} disabled={act.busy} onChange={(on) => change('mentions', on)} />
@@ -597,8 +543,7 @@ function NotificationSettings() {
                 checked={!status.eventsOff} disabled={act.busy} onChange={(on) => change('events', on)} />
             <Toggle id="notify-text" label="Show the message" hint="The start of each message, in its notification."
                 checked={!status.hideText} disabled={act.busy || !notifying(status)} onChange={(on) => change('hideText', !on)} />
-            {notifying(status) && whereTheyShow(status, browser, elsewhere).map((line) => <p key={line} class="text-sm text-base-content/70">{line}</p>)}
-            <p class="text-sm text-base-content/70">Mute a den or a channel from the bell beside its name.</p>
+            {notifying(status) && whereTheyShow(status, browser, elsewhere).map(([kind, line]) => <StatusText key={line} kind={kind}>{line}</StatusText>)}
             <ErrorText message={act.error} />
         </Card>
     );
@@ -661,7 +606,7 @@ function SoundSettings() {
                                 onReset={() => act.run(() => api.del(`/api/sounds/${name}`))} />
                         );
                     })}
-                    <p class="text-sm text-base-content/70">{group === 'Messages' ? message : "Deafened, you hear only your microphone's."}</p>
+                    <p class="text-sm text-base-content/70">{group === 'Messages' ? message : 'While deafened, only the microphone sounds play.'}</p>
                 </div>
             ))}
             <ErrorText message={act.error} />
@@ -670,45 +615,46 @@ function SoundSettings() {
 }
 
 // SoundRow is one of the page's sounds in the settings: its switch, its
-// name, ▶, Replace… or Reset, and under them its volume.
+// name, its volume, ▶, and ⋯ with Replace and, once replaced, Reset, all
+// on one line on a wide window; a phone puts the volume on a line of its
+// own, under the name.
 function SoundRow({ name, label, s, volume, busy, onOn, onMove, onVolume, onReplace, onReset }) {
     const file = useRef(null);
+    const narrow = useNarrow();
     const id = `sound-${name}`;
+    const items = [
+        { key: 'replace', label: 'Replace with a file…', icon: 'replace', disabled: busy, run: () => file.current?.click() },
+        ...(s.own > 0 ? [{ key: 'reset', label: "Reset to Dens's sound", icon: 'reset', disabled: busy, run: onReset }] : []),
+    ];
+    const slider = (
+        <span class={`flex min-w-0 items-center gap-3 ${narrow ? 'pl-13' : 'w-36 shrink-0'}`}>
+            <Slider class="min-w-0 flex-1" min="0" max="100" step="5" value={volume} disabled={!s.on}
+                aria-label={`${label} volume`} aria-valuetext={`${volume}%`}
+                onInput={(e) => onMove(Number(e.currentTarget.value))} onChange={(e) => onVolume(Number(e.currentTarget.value))} />
+            <span class="w-10 text-right text-sm tabular-nums">{volume}%</span>
+        </span>
+    );
     return (
-        <div class="flex flex-col gap-1" data-sound={name}>
+        <div class="flex flex-col gap-1" data-sound={name} data-own={s.own > 0 ? '' : undefined}>
             <div class="flex items-center gap-3">
                 <input id={id} type="checkbox" class="toggle shrink-0" checked={s.on} onChange={(e) => onOn(e.currentTarget.checked)} />
-                <label for={id} class="min-w-0 flex-1 cursor-pointer">
+                <label for={id} class="min-w-0 flex-1 cursor-pointer truncate">
                     {label}
                     {s.own > 0 && <span class="text-sm text-base-content/60"> · your file</span>}
                 </label>
-                <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label={`Play ${label}`} title={`Play ${label}`}
+                {!narrow && slider}
+                <button type="button" class={`${buttonClass('quiet')} btn-square`} aria-label={`Play ${label}`} title={`Play ${label}`}
                     onClick={() => playSound(name, { preview: true, volume })}>
                     <PlayIcon />
                 </button>
-                {s.own > 0 ? (
-                    <button type="button" class="btn btn-ghost btn-sm min-w-24" aria-label={`Reset ${label} to Dens's sound`} disabled={busy} onClick={onReset}>
-                        Reset
-                    </button>
-                ) : (
-                    <button type="button" class="btn btn-ghost btn-sm min-w-24" aria-label={`Replace ${label} with a file of yours`} disabled={busy}
-                        onClick={() => file.current?.click()}>
-                        Replace…
-                    </button>
-                )}
+                <MenuButton label={`More for ${label}`} items={items} button={{ class: `${buttonClass('quiet')} btn-square`, title: 'More', children: '⋯' }} />
                 <input ref={file} type="file" accept="audio/*" class="hidden" onChange={(e) => {
                     const picked = e.currentTarget.files?.[0];
                     e.currentTarget.value = '';
                     if (picked) onReplace(picked);
                 }} />
             </div>
-            {/* Under the name: the switch is 40 pixels, and its gap 12. */}
-            <div class="flex items-center gap-3 pl-13">
-                <input type="range" class="range range-md min-w-0 flex-1" min="0" max="100" step="5" value={volume} disabled={!s.on}
-                    aria-label={`${label} volume`} aria-valuetext={`${volume}%`}
-                    onInput={(e) => onMove(Number(e.currentTarget.value))} onChange={(e) => onVolume(Number(e.currentTarget.value))} />
-                <span class="w-10 text-right text-sm tabular-nums">{volume}%</span>
-            </div>
+            {narrow && slider}
         </div>
     );
 }
@@ -822,7 +768,7 @@ function VoiceSettings() {
     else if (v.keys.ptt) talk = `Hold ${keyLabel(v.keys.ptt)} to talk.`;
     return (
         <>
-            {!canCall() && <p role="status" class="text-sm text-warning">{NO_CALLS}</p>}
+            {!canCall() && <Notice kind="warning">{NO_CALLS}</Notice>}
             <Card title="Microphone and speaker">
                 {!list ? (
                     <span class="loading loading-dots loading-sm"></span>
@@ -846,7 +792,7 @@ function VoiceSettings() {
                 )}
                 <Field label="Call volume" hint="Everyone in the call, before their own volumes.">
                     <div class="flex items-center gap-3">
-                        <input type="range" class="range range-md min-w-0 flex-1" min="0" max="100" step="5" value={Math.round(loud * 100)}
+                        <Slider class="min-w-0 flex-1" min="0" max="100" step="5" value={Math.round(loud * 100)}
                             aria-label="Call volume" aria-valuetext={`${Math.round(loud * 100)}%`}
                             onInput={(e) => pickLoudness(Number(e.currentTarget.value) / 100)} />
                         <span class="w-10 text-right text-sm tabular-nums">{Math.round(loud * 100)}%</span>
@@ -856,8 +802,8 @@ function VoiceSettings() {
                     hint="Removes keyboard, fan and background noise."
                     tip="It adds 30 ms of delay and uses a little of this device's processor. Off, the built-in suppression takes out only steady noise, such as a fan's." />
                 {suppression.processorFailed ? (
-                    <p class="text-sm text-warning">Voice processing can't run here; voice activity sends everything.</p>
-                ) : suppression.failed && <p class="text-sm text-warning">Noise suppression couldn't start; the built-in one is on.</p>}
+                    <StatusText kind="warning">Voice processing can't run here; voice activity sends everything.</StatusText>
+                ) : suppression.failed && <StatusText kind="warning">Noise suppression couldn't start; the built-in one is on.</StatusText>}
             </Card>
             <Card title={holds ? "The call's button" : 'Sending your voice'}>
                 {holds ? (
@@ -890,7 +836,7 @@ function VoiceSettings() {
                         {!auto && (
                             <label class="flex flex-col gap-1">
                                 <span class="text-sm">Sensitivity</span>
-                                <input type="range" class="range range-md w-full" min="-100" max="0" step="1" value={v.threshold}
+                                <Slider class="w-full" min="-100" max="0" step="1" value={v.threshold}
                                     aria-label="Sensitivity" aria-valuetext={`${v.threshold} dB`} onInput={(e) => change({ threshold: Number(e.currentTarget.value) })} />
                             </label>
                         )}
@@ -901,7 +847,7 @@ function VoiceSettings() {
                         <label class="flex flex-col gap-1">
                             <span class="text-sm">Release delay</span>
                             <span class="flex items-center gap-3">
-                                <input type="range" class="range range-md min-w-0 flex-1" min="0" max={RELEASE_MOST} step={RELEASE_STEP}
+                                <Slider class="min-w-0 flex-1" min="0" max={RELEASE_MOST} step={RELEASE_STEP}
                                     value={v.releaseDelay} aria-label="Release delay" aria-valuetext={`${v.releaseDelay} ms`}
                                     onInput={(e) => change({ releaseDelay: Number(e.currentTarget.value) })} />
                                 <span class="w-16 text-right text-sm tabular-nums">{v.releaseDelay} ms</span>
@@ -914,7 +860,7 @@ function VoiceSettings() {
                         <Meter report={report} threshold={v.mode === 'voice' && !auto ? v.threshold : null} />
                     </div>
                     {!inCall && (
-                        <button type="button" class="btn btn-sm shrink-0" onClick={test}>{testing ? 'Stop test' : 'Test microphone'}</button>
+                        <Button class="shrink-0" onClick={test}>{testing ? 'Stop test' : 'Test microphone'}</Button>
                     )}
                 </div>
             </Card>
@@ -930,7 +876,7 @@ function VoiceSettings() {
                         ) : (
                             <span class="flex items-center gap-1.5">
                                 {elsewhere.covers.includes(name) && v.keys[name] && <WorksElsewhere id={`elsewhere-${name}`} />}
-                                <button type="button" class="btn btn-sm min-w-28 font-normal" disabled={!!capturing && capturing !== name}
+                                <button type="button" class={`${buttonClass('secondary')} min-w-28 font-normal`} disabled={!!capturing && capturing !== name}
                                     aria-label={`${title}: ${v.keys[name] ? keyLabel(v.keys[name]) : 'not set'}. Record a shortcut`}
                                     onClick={() => bind(name)}>
                                     {capturing === name ? (
@@ -942,10 +888,7 @@ function VoiceSettings() {
                                     )}
                                 </button>
                                 {v.keys[name] && (
-                                    <button type="button" class="btn btn-ghost btn-sm" disabled={!!capturing}
-                                        onClick={() => saveKeys({ ...v.keys, [name]: undefined })}>
-                                        Clear
-                                    </button>
+                                    <Button kind="quiet" disabled={!!capturing} onClick={() => saveKeys({ ...v.keys, [name]: undefined })}>Clear</Button>
                                 )}
                             </span>
                         )}
@@ -1006,8 +949,8 @@ function KeysNote({ elsewhere, onDesktop }) {
                     <p class={text}>Your desktop runs these in every app; Dens acts on them in a call.</p>
                     {elsewhere.note && <p class={text}>{elsewhere.note}</p>}
                     <div class="flex flex-wrap gap-2">
-                        {elsewhere.configurable && <button type="button" class="btn btn-sm" onClick={() => onDesktop('configure')}>Change them</button>}
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDesktop('stop')}>Stop using them</button>
+                        {elsewhere.configurable && <Button onClick={() => onDesktop('configure')}>Change them</Button>}
+                        <Button kind="quiet" onClick={() => onDesktop('stop')}>Stop using them</Button>
                     </div>
                 </div>
             );
@@ -1021,8 +964,8 @@ function KeysNote({ elsewhere, onDesktop }) {
                     <p class={text}>None are set on your desktop, so they work while Dens is focused.</p>
                     {elsewhere.note && <p class={text}>{elsewhere.note}</p>}
                     <div class="flex flex-wrap gap-2">
-                        {elsewhere.configurable && <button type="button" class="btn btn-sm" onClick={() => onDesktop('configure')}>Change them</button>}
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDesktop('stop')}>Start over</button>
+                        {elsewhere.configurable && <Button onClick={() => onDesktop('configure')}>Change them</Button>}
+                        <Button kind="quiet" onClick={() => onDesktop('stop')}>Start over</Button>
                     </div>
                 </div>
             );
@@ -1031,9 +974,7 @@ function KeysNote({ elsewhere, onDesktop }) {
             <div class="flex flex-col gap-2">
                 <p class={text}>Work while Dens is focused. Set them up to work in every app.</p>
                 <div>
-                    <button type="button" class="btn btn-sm" onClick={() => onDesktop('bind')}>
-                        Set up with your desktop
-                    </button>
+                    <Button onClick={() => onDesktop('bind')}>Set up with your desktop</Button>
                 </div>
             </div>
         );
@@ -1102,17 +1043,8 @@ function ShareSettings() {
                     This call's den allows up to {resolution(limits.share_height)} at {limits.share_fps} fps.
                 </p>
             )}
-            <div role="radiogroup" aria-label="Optimize for" class="flex flex-wrap items-center gap-4">
-                <span>Optimize for</span>
-                <label class="label gap-2">
-                    <input type="radio" class="radio radio-sm" name="hint" checked={s.hint === 'detail'} onChange={() => change({ hint: 'detail' })} />
-                    Clarity
-                </label>
-                <label class="label gap-2">
-                    <input type="radio" class="radio radio-sm" name="hint" checked={s.hint === 'motion'} onChange={() => change({ hint: 'motion' })} />
-                    Smoothness
-                </label>
-            </div>
+            <Choices label="Optimize for" name="hint" data="data-share-hint" choice={s.hint} onPick={(hint) => change({ hint })}
+                choices={[['detail', 'Clarity'], ['motion', 'Smoothness']]} />
             <Toggle id="share-audio" label="Share audio" hint={audio.text} checked={audio.supported && s.sound} disabled={!audio.supported}
                 onChange={(on) => change({ sound: on })} />
         </Card>
@@ -1162,9 +1094,7 @@ export function RelaySettings() {
     return (
         <>
             {refused && (
-                <p role="status" class="text-sm text-warning" data-relay-refused>
-                    Android keeps Dens off your network. Allow it in Android's settings, under Apps.
-                </p>
+                <Notice kind="warning" data-relay-refused>Android keeps Dens off your network. Allow it in Android's settings, under Apps.</Notice>
             )}
             {relay.can?.includes('keys') && (
                 <Card title="Keybind relay">
@@ -1177,15 +1107,15 @@ export function RelaySettings() {
             <Card title="Audio relay">
                 {relay.can?.includes('sound') && (
                     <Toggle id="relay-sound" label="Share this computer's sound" checked={!!relay.sound} disabled={save.busy}
-                        hint="Muted, it still sends; at volume 0, Windows sends silence."
+                        tip="Muted, it still sends; at volume 0, Windows sends silence."
                         onChange={(on) => set('relaySound', on)} />
                 )}
                 <Choices label="Buffer" name="relay-buffer" data="data-relay-buffer" choice={buffer} choices={[[BUFFER_LOW, 'Low'], [BUFFER_HIGH, 'High']]}
+                    tip="High plays a little later, and rides out a busy Wi-Fi."
                     onPick={(b) => {
                         setBufferChoice(b);
                         setBuffer(b);
                     }} />
-                <p class="text-sm text-base-content/70">High plays a little later, and rides out a busy Wi-Fi.</p>
             </Card>
             <Card title="Your devices">
                 <RelayDevices devices={devices} listening={sound?.listening} />
@@ -1221,13 +1151,12 @@ function RelayDevices({ devices, listening }) {
                 return (
                     <li key={d.id} data-device={d.id} class="flex min-h-11 items-center gap-3">
                         <span class="min-w-0 flex-1 truncate">{d.name}</span>
-                        <span class={`shrink-0 text-sm ${d.linked ? 'text-success' : 'text-base-content/70'}`}>{relayState(d)}</span>
+                        {d.linked ? <StatusText kind="success" inline class="shrink-0">{relayState(d)}</StatusText>
+                            : <span class="shrink-0 text-sm text-base-content/70">{relayState(d)}</span>}
                         {mine ? (
-                            <button type="button" class="btn btn-sm shrink-0" data-listen={d.id} onClick={stopListening}>Stop</button>
+                            <Button class="shrink-0" data-listen={d.id} onClick={stopListening}>Stop</Button>
                         ) : d.offers?.includes('sound') ? (
-                            <button type="button" class="btn btn-sm shrink-0" data-listen={d.id} onClick={() => listen({ id: d.id, name: d.name })}>
-                                Listen
-                            </button>
+                            <Button class="shrink-0" data-listen={d.id} onClick={() => listen({ id: d.id, name: d.name })}>Listen</Button>
                         ) : null}
                     </li>
                 );
@@ -1300,7 +1229,7 @@ function SystemSettings({ instance, version, pair }) {
                     them. */}
                 <p class="text-sm text-base-content/70">What Dens did and when, with no messages, keys or addresses.</p>
                 <div>
-                    <a class="btn btn-outline btn-sm" href="/api/logs" download>Download the newest logs</a>
+                    <a class={buttonClass('secondary')} href="/api/logs" download>Download the newest logs</a>
                 </div>
             </Card>
             <ErrorText message={save.error} />
@@ -1313,12 +1242,12 @@ function SystemSettings({ instance, version, pair }) {
                             : 'To pair it again, open Dens from your apps menu.'}
                 </p>
                 <div>
-                    <button type="button" class="btn btn-outline btn-sm" onClick={() => save.run(async () => {
+                    <Button onClick={() => save.run(async () => {
                         await api.post('/api/logout');
                         window.location.replace('/');
                     })}>
                         Sign out
-                    </button>
+                    </Button>
                 </div>
             </Card>
             <Card title="About">
@@ -1354,19 +1283,15 @@ function CheckNow() {
     return (
         <div class="flex flex-col gap-2" data-check-now>
             <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <button type="button" class="btn btn-outline btn-sm" disabled={check.busy} onClick={run}>
-                    {check.busy && <span class="loading loading-spinner loading-sm"></span>}
-                    {check.busy ? 'Checking…' : 'Check now'}
-                </button>
-                {found && !found.update && <span class="text-sm">Dens is up to date.</span>}
+                <Button busy={check.busy} onClick={run}>{check.busy ? 'Checking…' : 'Check now'}</Button>
+                {found && !found.update && <StatusText kind="success" inline>Dens is up to date.</StatusText>}
                 {found?.update && (
                     <>
                         {/* One string, which a screen reader reads as one. */}
                         <span class="text-sm">{`Dens ${found.update} is ready to install.`}</span>
-                        <button type="button" class="btn btn-primary btn-sm" disabled={install.busy}
-                            onClick={() => install.run(() => api.post('/api/update'))}>
+                        <Button kind="primary" disabled={install.busy} onClick={() => install.run(() => api.post('/api/update'))}>
                             {install.busy ? 'Opening the installer…' : 'Install'}
-                        </button>
+                        </Button>
                     </>
                 )}
             </div>
@@ -1428,15 +1353,15 @@ function OnThisComputer({ settings, onChange }) {
                     <Field label="Local password" hint="Your Dens password on this device, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
                     </Field>
-                    <div class="flex gap-2">
+                    <Actions>
                         <SubmitButton busy={act.busy}>Remember</SubmitButton>
-                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</button>
-                    </div>
+                        <Button kind="quiet" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</Button>
+                    </Actions>
                 </form>
             ) : (
                 <>
                     <p class="text-sm text-base-content/70" role={remember.asking ? 'status' : undefined}>{note.text}</p>
-                    {note.problem && <p class="text-sm text-warning">{note.problem}</p>}
+                    {note.problem && <StatusText kind="warning">{note.problem}</StatusText>}
                 </>
             )}
             {remember.on && !asking && (
@@ -1457,12 +1382,12 @@ function OnThisComputer({ settings, onChange }) {
                 </>
             )}
             <div>
-                <button type="button" class="btn btn-outline btn-sm" disabled={act.busy} onClick={() => act.run(async () => {
+                <Button disabled={act.busy} onClick={() => act.run(async () => {
                     await api.post('/api/quit');
                     setQuit(true);
                 })}>
                     Quit Dens
-                </button>
+                </Button>
             </div>
             <ErrorText message={act.error} />
         </Card>
@@ -1505,18 +1430,16 @@ function BackUp() {
                     <Field label="Local password" hint="Your Dens password on this device, not a den password.">
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
                     </Field>
-                    <div class="flex flex-wrap items-center gap-2">
+                    <Actions>
                         <SubmitButton busy={act.busy}>Download the backup</SubmitButton>
-                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</button>
+                        <Button kind="quiet" disabled={act.busy} onClick={() => setAsking(false)}>Cancel</Button>
                         {size != null && <span class="text-sm text-base-content/70">About {formatSize(size)}</span>}
-                    </div>
+                    </Actions>
                 </form>
             ) : (
                 <div class="flex flex-wrap items-center gap-3">
-                    <button type="button" class="btn btn-sm" onClick={ask}>
-                        Back up
-                    </button>
-                    {done && <span class="text-sm text-success" role="status">Your browser is downloading the backup.</span>}
+                    <Button onClick={ask}>Back up</Button>
+                    {done && <StatusText kind="success" inline role="status">Your browser is downloading the backup.</StatusText>}
                 </div>
             )}
             <ErrorText message={act.error} />
@@ -1627,36 +1550,33 @@ function Hosting() {
             <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required autofocus />
         </Field>
     );
-    const cancel = <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => begin('')}>Cancel</button>;
+    const cancel = <Button kind="quiet" disabled={act.busy} onClick={() => begin('')}>Cancel</Button>;
     return (
         <Card title={title}>
             <Toggle id="hosting" label="Host a den on this computer" checked={on} disabled={act.busy} onChange={ask}
                 hint="Needs this computer on, a domain, and Caddy in front." />
             {asking === 'on' && (
                 <form class="flex flex-col gap-2" onSubmit={turnOn}>
-                    {warning && <p class="text-sm text-warning">{warning}</p>}
+                    {warning && <Notice kind="warning">{warning}</Notice>}
                     <p class="text-sm text-base-content/70">Opening ports to the internet takes your local password.</p>
                     {passwordField}
-                    <div class="flex gap-2">
+                    <Actions>
                         <SubmitButton busy={act.busy}>Turn hosting on</SubmitButton>
-                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</button>
-                    </div>
+                        <Button kind="quiet" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</Button>
+                    </Actions>
                 </form>
             )}
             {asking === 'off' && (
                 <div class="flex flex-col gap-2">
                     <p class="text-sm">Members can't reach your den until hosting is back on.</p>
                     <p class="text-sm text-base-content/70">Everything in it stays.</p>
-                    <div class="flex gap-2">
-                        <button type="button" class="btn btn-error" disabled={act.busy} onClick={turnOff}>
-                            {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                            Turn hosting off
-                        </button>
-                        <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</button>
-                    </div>
+                    <Actions>
+                        <Button kind="danger" filled busy={act.busy} onClick={turnOff}>Turn hosting off</Button>
+                        <Button kind="quiet" disabled={act.busy} onClick={() => ask(hosting.enabled)}>Cancel</Button>
+                    </Actions>
                 </div>
             )}
-            {note?.problem && <p role="status" class="text-sm text-warning">{note.problem}</p>}
+            {note?.problem && <Notice kind="warning">{note.problem}</Notice>}
             {note?.address && (
                 <>
                     <p class="text-sm text-base-content/70">
@@ -1682,11 +1602,11 @@ function Hosting() {
                             <p class="text-sm">Members can't reach {moves.den} until the other computer hosts it.</p>
                             <p class="text-sm text-base-content/70">The file holds the den alone, none of your own data.</p>
                             {passwordField}
-                            <div class="flex flex-wrap items-center gap-2">
+                            <Actions>
                                 <SubmitButton busy={act.busy}>Download the den's export</SubmitButton>
                                 {cancel}
                                 {size != null && <span class="text-sm text-base-content/70">About {formatSize(size)}</span>}
-                            </div>
+                            </Actions>
                         </form>
                     )}
                     {asking === 'remove' && (
@@ -1695,24 +1615,22 @@ function Hosting() {
                             <p class="text-sm text-base-content/70">Dens first checks that another computer serves it at {moves.url}.</p>
                             <p class="text-sm text-base-content/70">Your account stays; Dens here reaches the den at its address.</p>
                             {passwordField}
-                            <div class="flex gap-2">
-                                <SubmitButton busy={act.busy} class="btn-error">Remove from this computer</SubmitButton>
+                            <Actions>
+                                <SubmitButton busy={act.busy} kind="danger" filled>Remove from this computer</SubmitButton>
                                 {cancel}
-                            </div>
+                            </Actions>
                         </form>
                     )}
                     {!asking && (
                         <div class="flex flex-wrap gap-2">
-                            {moves.exported && <button type="button" class="btn btn-sm" onClick={() => begin('remove')}>Remove from this computer</button>}
-                            <button type="button" class="btn btn-sm" onClick={askMove}>Move the den to another computer</button>
+                            <Button onClick={askMove}>Move the den to another computer</Button>
+                            {moves.exported && <Button kind="danger" onClick={() => begin('remove')}>Remove from this computer</Button>}
                         </div>
                     )}
                 </div>
             )}
             {removed && (
-                <p role="status" class="text-sm text-success">
-                    Removed {removed.name} from this computer. Dens reaches it at {removed.url} now.
-                </p>
+                <StatusText kind="success" role="status">Removed {removed.name} from this computer. Dens reaches it at {removed.url} now.</StatusText>
             )}
             <ErrorText message={act.error} />
         </Card>
@@ -1752,12 +1670,12 @@ function Cache({ settings, onChange }) {
                 </select>
             </Field>
             <div>
-                <button type="button" class="btn btn-outline btn-sm" disabled={save.busy || !settings.cacheUsed} onClick={() => save.run(async () => {
+                <Button disabled={save.busy || !settings.cacheUsed} onClick={() => save.run(async () => {
                     await api.post('/api/cache/clear');
                     await reload();
                 })}>
                     Clear cache
-                </button>
+                </Button>
             </div>
             <ErrorText message={save.error} />
         </Card>
@@ -1803,20 +1721,20 @@ function LocalPassword() {
                     </Field>
                     <PasswordFields password={next} setPassword={setNext} confirm={confirm} setConfirm={setConfirm} />
                     <ErrorText message={error} />
-                    <div class="flex gap-2">
+                    <Actions>
                         <SubmitButton busy={busy}>Change password</SubmitButton>
-                        <button type="button" class="btn btn-ghost" onClick={close}>Cancel</button>
-                    </div>
+                        <Button kind="quiet" onClick={close}>Cancel</Button>
+                    </Actions>
                 </form>
             ) : (
                 <div class="flex flex-wrap items-center gap-3">
-                    <button type="button" class="btn btn-sm" onClick={() => {
+                    <Button onClick={() => {
                         setDone(false);
                         setOpen(true);
                     }}>
                         Change password
-                    </button>
-                    {done && <span class="text-sm text-success">Password changed.</span>}
+                    </Button>
+                    {done && <StatusText kind="success" inline>Password changed.</StatusText>}
                 </div>
             )}
         </Card>

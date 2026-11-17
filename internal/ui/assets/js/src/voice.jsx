@@ -18,17 +18,16 @@ import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
 import { CallLock, KeysChangedMark, keysChanged } from './calllock.jsx';
 import { CallMore } from './callmore.jsx';
-import { LongName, Tip } from './components.jsx';
-import { openManage } from './dialogs.js';
+import { Button, LongName, Slider, StatusText, Tip } from './components.jsx';
 import { sendRelayKey } from './events.js';
-import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
+import { CogIcon, ICON, SpeakerIcon, StatusIcon } from './icons.jsx';
 import { MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { nav, useNarrow } from './nav.js';
 import { RoleMark, isStaff, rank } from './people.jsx';
 import { canShare } from './platform.js';
 import { VerifiedMark } from './private.jsx';
 import { onRelay } from './relay.js';
-import { openSettings } from './settings.jsx';
+import { openSettings } from './dialogs.js';
 import { shareBlocked, watchersOf } from './share.js';
 import { Sheet } from './sheet.jsx';
 import { SoundboardButton } from './soundboard.jsx';
@@ -122,15 +121,19 @@ const WEBVIEW = 'https://play.google.com/store/apps/details?id=com.google.androi
 function notices(call, notice, denID, staffMuted, shareNotice, holds) {
     const ptt = voiceSettings();
     const lines = [];
+    // The block's lines are small, so each draws its state's icon itself,
+    // as StatusText does, its words in the text's color.
+    const warn = () => <span class="mt-px shrink-0 text-warning"><StatusIcon kind="warning" size="h-3.5 w-3.5" /></span>;
     if (!call && notice) {
         lines.push(
-            <div key="notice" role="status" class="flex items-start gap-2" data-call-notice>
-                <span class="min-w-0 flex-1 text-warning">
+            <div key="notice" role="status" class="flex items-start gap-1.5" data-call-notice>
+                {warn()}
+                <span class="min-w-0 flex-1">
                     {notice.text}
                     {notice.seal && (
                         <>
                             {' '}
-                            <button type="button" class="link link-primary" onClick={() => openManage(notice.den, 'password')}>Enter it</button>
+                            <button type="button" class="link link-primary" onClick={() => openSettings('password', notice.den)}>Enter it</button>
                         </>
                     )}
                     {notice.update && (
@@ -140,26 +143,28 @@ function notices(call, notice, denID, staffMuted, shareNotice, holds) {
                         </>
                     )}
                 </span>
-                <button type="button" class="btn btn-ghost btn-xs" aria-label="Dismiss" onClick={clearNotice}>✕</button>
+                <Button kind="quiet" size="xs" aria-label="Dismiss" onClick={clearNotice}>✕</Button>
             </div>,
         );
     }
     if (call && shareNotice) {
         lines.push(
-            <div key="share" role="status" class="flex items-start gap-2">
-                <span class="min-w-0 flex-1 text-warning">{shareNotice.text}</span>
-                <button type="button" class="btn btn-ghost btn-xs" aria-label="Dismiss" onClick={clearShareNotice}>✕</button>
+            <div key="share" role="status" class="flex items-start gap-1.5">
+                {warn()}
+                <span class="min-w-0 flex-1">{shareNotice.text}</span>
+                <Button kind="quiet" size="xs" aria-label="Dismiss" onClick={clearShareNotice}>✕</Button>
             </div>,
         );
     }
     if (call?.waitingForMic) lines.push(<p key="mic">Waiting for the microphone. If your browser asks for it, allow it.</p>);
-    if (call && staffMuted && call.den === denID) lines.push(<p key="staff" class="text-warning">Muted by staff: nobody hears you</p>);
+    if (call && staffMuted && call.den === denID) lines.push(<p key="staff" class="flex items-start gap-1.5">{warn()}Muted by staff: nobody hears you</p>);
     // A key the desktop runs counts as much as one the page knows (M7.2).
     if (call && ptt.mode === 'ptt' && !holds && !ptt.keys.ptt && !keysElsewhere().covers.includes('ptt')) {
         lines.push(
-            <button key="ptt" type="button" class="link text-left text-warning" onClick={() => openSettings('voice')}>
-                Push to talk has no key: set one
-            </button>,
+            <p key="ptt" class="flex items-start gap-1.5">
+                {warn()}
+                <button type="button" class="link link-primary text-left" onClick={() => openSettings('voice')}>Push to talk has no key: set one</button>
+            </p>,
         );
     }
     return lines;
@@ -385,7 +390,7 @@ function ShareRow({ call, share, den }) {
                 onClick={() => setPreview(!share.preview)}>
                 <PreviewIcon />
             </button>
-            <button type="button" class="btn btn-error btn-xs shrink-0" onClick={stopShare}>Stop</button>
+            <Button kind="danger" size="xs" class="shrink-0" onClick={stopShare}>Stop</Button>
         </div>
     );
 }
@@ -700,7 +705,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                 {/* Full, at the track's middle, is marked under it. */}
                 <span class="relative isolate flex min-w-0 flex-1 items-center">
                     <span class="absolute inset-y-0 left-1/2 -z-10 w-0.5 -translate-x-1/2 rounded-full bg-base-content/30" aria-hidden="true" data-full></span>
-                    <input type="range" class={`range w-full ${narrow ? 'range-xl' : 'range-md'}`} min="0" max={LOUDEST * 100} step="5" value={pct}
+                    <Slider class="w-full" min="0" max={LOUDEST * 100} step="5" value={pct}
                         aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
                         onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
                 </span>
@@ -794,7 +799,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                     );
                 })}
             </ul>
-            {error && <p class="ml-8 text-xs text-error">{error}</p>}
+            {error && <StatusText kind="error" role="alert" class="ml-8">{error}</StatusText>}
         </>
     );
 }

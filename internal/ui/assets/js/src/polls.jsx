@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { ErrorText, TIP, Tip, useAction, useTip } from './components.jsx';
+import { Button, ErrorText, StatusText, TIP, Tip, useAction, useTip } from './components.jsx';
 import { DURATIONS, MAX_CHOICES, TOTALS, VOTERS, pollView, rulesOf, rulesTip, shareOf, timeLeft, votesLine, whoVoted } from './polls.js';
 
 /** PollEditor is the poll being written, whose question the box below it
@@ -72,7 +72,7 @@ export function PollEditor({ draft, problem, onChange, onRemove }) {
             {draft.show_totals === 'voted' && (
                 <p class="text-xs text-base-content/70">Each member sees the totals once they vote, and their vote is then final.</p>
             )}
-            {problem && <p class="text-xs text-error" role="alert">{problem}</p>}
+            {problem && <StatusText kind="error" role="alert">{problem}</StatusText>}
         </div>
     );
 }
@@ -155,23 +155,23 @@ export function Poll({ m, me, denID, nameOf, onPolled }) {
             {(choosing || (v.voted && v.canVote) || (m.author_id === me.id && !v.ended)) && (
                 <div class="mt-2 flex flex-wrap items-center gap-1">
                     {choosing && (
-                        <button type="button" class="btn btn-primary btn-xs" disabled={!chosen.length || act.busy} onClick={() => vote(chosen)}>Vote</button>
+                        <Button kind="primary" size="xs" disabled={!chosen.length || act.busy} onClick={() => vote(chosen)}>Vote</Button>
                     )}
-                    {choosing && v.voted && <button type="button" class="btn btn-ghost btn-xs" onClick={() => setPicked(null)}>Cancel</button>}
+                    {choosing && v.voted && <Button kind="quiet" size="xs" onClick={() => setPicked(null)}>Cancel</Button>}
                     {!choosing && v.voted && v.canVote && (
                         <>
-                            <button type="button" class="btn btn-ghost btn-xs" disabled={act.busy} onClick={() => setPicked(mine)}>Change vote</button>
-                            <button type="button" class="btn btn-ghost btn-xs" disabled={act.busy} onClick={() => vote([])}>Remove vote</button>
+                            <Button kind="quiet" size="xs" disabled={act.busy} onClick={() => setPicked(mine)}>Change vote</Button>
+                            <Button kind="quiet" size="xs" disabled={act.busy} onClick={() => vote([])}>Remove vote</Button>
                         </>
                     )}
                     {m.author_id === me.id && !v.ended && (ending ? (
                         <span class="ml-auto flex items-center gap-1 text-xs">
                             End it now, for everyone?
-                            <button type="button" class="btn btn-error btn-xs" disabled={act.busy} onClick={end}>End poll</button>
-                            <button type="button" class="btn btn-ghost btn-xs" onClick={() => setEnding(false)}>Keep it</button>
+                            <Button kind="danger" filled size="xs" disabled={act.busy} onClick={end}>End poll</Button>
+                            <Button kind="quiet" size="xs" onClick={() => setEnding(false)}>Keep it</Button>
                         </span>
                     ) : (
-                        <button type="button" class="btn btn-ghost btn-xs ml-auto" onClick={() => setEnding(true)}>End now</button>
+                        <Button kind="danger" size="xs" class="ml-auto" onClick={() => setEnding(true)}>End now</Button>
                     ))}
                 </div>
             )}

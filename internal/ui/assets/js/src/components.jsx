@@ -1,25 +1,70 @@
 // Small shared pieces. Everything shown here goes through Preact's text
 // rendering; nothing sets HTML from a string.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { createContext } from 'preact';
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { useOver } from './animations.js';
 import { onBackground } from './background.js';
 import { copyText } from './clipboard.js';
-import { InfoIcon } from './icons.jsx';
+import { InfoIcon, StatusIcon } from './icons.jsx';
 import { nameText, useNameLook } from './names.jsx';
 import { onNotifications } from './notify.js';
 import { hexColor } from './themes.js';
 import { tipShift } from './touch.js';
 
-export function Card({ title, children, class: extra = '' }) {
+export function Card({ title, children, class: extra = '', ...rest }) {
     return (
-        <section class={`card bg-base-200 ${extra}`}>
+        <section class={`card bg-base-200 ${extra}`} {...rest}>
             <div class="card-body gap-3">
                 {title && <h2 class="card-title">{title}</h2>}
                 {children}
             </div>
         </section>
     );
+}
+
+// The page's four kinds of button (M22.3), each with one job, so a look
+// means the same wherever it shows. Spelled out so Tailwind keeps every
+// class.
+const KINDS = { primary: 'btn-primary', secondary: 'btn-soft', quiet: 'btn-ghost', danger: 'btn-ghost text-error' };
+const BUTTON_SIZES = { xs: 'btn-xs', sm: 'btn-sm', md: '', lg: 'btn-lg' };
+
+/** buttonClass is a button's classes by its kind and size, for what can't
+    be a Button, as a link or a menu's own button. A danger button filled
+    is the one that confirms in a dialog; a danger button anywhere else is
+    red words. */
+export function buttonClass(kind = 'secondary', size = 'sm', filled = false) {
+    const look = kind === 'danger' && filled ? 'btn-error' : KINDS[kind] || KINDS.secondary;
+    return `btn ${look} ${BUTTON_SIZES[size] ?? ''}`.trim();
+}
+
+/** Button is a button of one of the page's kinds: primary, the one action
+    a view or a dialog leads with; secondary, any other that stands alone;
+    quiet, a row's or a toolbar's; and danger. busy shows a spinner and
+    holds it until the action ends. */
+export function Button({ kind, size, filled, busy = false, type = 'button', class: extra = '', disabled, children, ...rest }) {
+    return (
+        <button type={type} class={`${buttonClass(kind, size, filled)} ${extra}`.trim()} disabled={disabled || busy} {...rest}>
+            {busy && <span class="loading loading-spinner loading-sm"></span>}
+            {children}
+        </button>
+    );
+}
+
+// TILE is a choice of a few shown as a row of equal tiles, its radio
+// hidden inside it, ringed while chosen: a theme, or a den's call limits.
+export const TILE = 'flex cursor-pointer flex-col items-center gap-1 rounded-box bg-base-100 px-2 py-3 text-center hover:bg-base-300 max-md:bg-base-200 has-[:checked]:ring-2 has-[:checked]:ring-primary has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary';
+
+// InSheet says a dialog shows as a phone's sheet, where its actions share
+// its width.
+export const InSheet = createContext(false);
+
+/** Actions are a dialog's buttons, or a step's within a section: a row at
+    its foot, its primary first, at the left, then Cancel or Back; in a
+    phone's sheet they share its width. */
+export function Actions({ class: extra = '', children }) {
+    const sheet = useContext(InSheet);
+    return <div data-actions class={`flex flex-wrap items-center gap-2 ${sheet ? '*:flex-1' : ''} ${extra}`}>{children}</div>;
 }
 
 // Where a tip opens, spelled out so Tailwind keeps every class. Below,
@@ -298,13 +343,64 @@ export function DocsLink({ page, label, icon = false }) {
     return <a {...props} class="link link-primary" data-docs-link>{label}</a>;
 }
 
+// Field is a control under its label, in the one style a label takes
+// (M22.3): regular weight, in the text's color, above its control, and a
+// hint under it if it needs one.
 export function Field({ label, hint, children }) {
     return (
         <fieldset class="fieldset">
-            <legend class="fieldset-legend">{label}</legend>
+            <legend class="fieldset-legend text-sm font-normal">{label}</legend>
             {children}
-            {hint && <p class="label whitespace-normal">{hint}</p>}
+            {hint && <p class="text-sm text-base-content/70">{hint}</p>}
         </fieldset>
+    );
+}
+
+// Toggle is a setting that's on or off, one size wherever it shows
+// (M22.3): its switch, its label beside it, a line on what it does if it
+// needs one, and a tip for the rest.
+export function Toggle({ id, label, hint, tip, checked, disabled, onChange, ...rest }) {
+    return (
+        <div class="flex items-start gap-3">
+            <input id={id} type="checkbox" class="toggle mt-0.5 shrink-0" checked={checked} disabled={disabled}
+                onChange={(e) => onChange(e.currentTarget.checked)} {...rest} />
+            <div class="min-w-0">
+                <label for={id} class={disabled ? '' : 'cursor-pointer'}>{label}</label>
+                {tip && <> <Tip id={`${id}-tip`}>{tip}</Tip></>}
+                {hint && <p class="text-sm text-base-content/70">{hint}</p>}
+            </div>
+        </div>
+    );
+}
+
+/** Slider is the page's one slider (M22.3): a thin track filled in the
+    theme's primary color up to its value, a small thumb, and a box tall
+    enough for a finger. Chromium draws the fill from --fill alone, which
+    runs to the thumb's middle. */
+export function Slider({ value, min = 0, max = 100, class: extra = '', style, ...rest }) {
+    const at = Number(max) > Number(min) ? (Number(value) - Number(min)) / (Number(max) - Number(min)) : 0;
+    const fill = Math.min(1, Math.max(0, at));
+    return (
+        <input type="range" class={`slider ${extra}`} min={min} max={max} value={value}
+            style={{ '--fill': `calc(0.5rem + (100% - 1rem) * ${fill.toFixed(4)})`, ...style }} {...rest} />
+    );
+}
+
+/** FilePick takes a file through the page's own button (M22.3), the same
+    in every browser, the chosen one's name beside it; inputProps reach
+    the browser's input, hidden behind it. */
+export function FilePick({ label, accept, file, onPick, disabled, inputProps = {} }) {
+    const input = useRef(null);
+    return (
+        <div class="flex min-w-0 items-center gap-3">
+            <Button disabled={disabled} class="shrink-0" onClick={() => input.current?.click()}>{label}</Button>
+            {file && <span class="min-w-0 truncate text-sm" data-picked>{file.name}</span>}
+            <input ref={input} type="file" class="hidden" accept={accept} {...inputProps} onChange={(e) => {
+                const picked = e.currentTarget.files?.[0];
+                e.currentTarget.value = '';
+                if (picked) onPick(picked);
+            }} />
+        </div>
     );
 }
 
@@ -362,22 +458,50 @@ export function Waiting({ label }) {
     );
 }
 
-export function ErrorText({ message }) {
-    if (!message) return null;
+// NOTICE_LOOKS are a status's colors: its edge and its icon's, while its
+// words keep the text's color, which reads on every theme.
+const NOTICE_LOOKS = {
+    info: ['border-info', 'text-info'],
+    success: ['border-success', 'text-success'],
+    warning: ['border-warning', 'text-warning'],
+    error: ['border-error', 'text-error'],
+};
+
+/** Notice is status in words (M22.3): what happened, or what waits, in the
+    text's color, its state an icon and an edge in the state's color. role
+    is the status's own unless given, an alert for an error. */
+export function Notice({ kind = 'info', role, class: extra = '', children, ...rest }) {
+    const [edge, mark] = NOTICE_LOOKS[kind] || NOTICE_LOOKS.info;
     return (
-        <div role="alert" class="alert alert-error alert-soft">
-            <span>{message}</span>
+        <div role={role ?? (kind === 'error' ? 'alert' : 'status')} data-notice={kind}
+            class={`flex items-start gap-2 rounded-box border-l-4 bg-base-content/5 px-3 py-2 text-sm ${edge} ${extra}`} {...rest}>
+            <span class={`mt-0.5 ${mark}`}><StatusIcon kind={kind} /></span>
+            <div class="flex min-w-0 flex-1 flex-col items-start gap-2">{children}</div>
         </div>
     );
 }
 
-export function SubmitButton({ busy, children, class: extra = 'btn-primary' }) {
+/** StatusText is a line of status beside what it's about, as "Saved." is
+    beside Save: its words in the text's color, its state an icon in the
+    state's color; inline, it sits in a line of other things. */
+export function StatusText({ kind = 'info', inline = false, size = 'sm', class: extra = '', children, ...rest }) {
+    const [, mark] = NOTICE_LOOKS[kind] || NOTICE_LOOKS.info;
+    const Tag = inline ? 'span' : 'p';
     return (
-        <button type="submit" class={`btn ${extra}`} disabled={busy}>
-            {busy && <span class="loading loading-spinner loading-sm"></span>}
-            {children}
-        </button>
+        <Tag data-status={kind} class={`${inline ? 'inline-flex' : 'flex'} items-center gap-1.5 ${size === 'xs' ? 'text-xs' : 'text-sm'} ${extra}`} {...rest}>
+            <span class={mark}><StatusIcon kind={kind} size={size === 'xs' ? 'h-3 w-3' : 'h-3.5 w-3.5'} /></span>
+            <span class="min-w-0">{children}</span>
+        </Tag>
     );
+}
+
+export function ErrorText({ message }) {
+    if (!message) return null;
+    return <Notice kind="error">{message}</Notice>;
+}
+
+export function SubmitButton({ busy, kind = 'primary', children, ...rest }) {
+    return <Button type="submit" kind={kind} busy={busy} {...rest}>{children}</Button>;
 }
 
 // useBackdrop gives a dialog's backdrop what closes the dialog on a click
@@ -435,9 +559,9 @@ export function CopyButton({ text, label = 'Copy' }) {
         timer.current = setTimeout(() => setSaid(''), 2000);
     }
     return (
-        <button type="button" class="btn btn-sm" onClick={copy}>
+        <Button class="shrink-0" onClick={copy}>
             {said || label}
-        </button>
+        </Button>
     );
 }
 

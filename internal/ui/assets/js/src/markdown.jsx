@@ -193,7 +193,7 @@ const DELIMITERS = ['**', '~~', '||', '*', '_'];
 const MAKE = [
     (c, k) => <strong key={k}>{c}</strong>,
     (c, k) => <del key={k}>{c}</del>,
-    (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-content/40 px-0.5 text-transparent select-none [&_img]:invisible">{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
+    (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-300 px-0.5 text-transparent select-none [&_img]:invisible">{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
     (c, k) => <em key={k}>{c}</em>,
     (c, k) => <em key={k}>{c}</em>,
 ];
@@ -375,13 +375,15 @@ function Task({ n, checked, text, onTask, children }) {
     );
 }
 
+// Spoiler covers its text in the neutral surface, which hides it on a dark
+// theme and a light one without outshining the message around it.
 function Spoiler({ children }) {
     const [shown, setShown] = useState(false);
     return (
         <span
             role="button"
             tabIndex={0}
-            class={`rounded px-0.5 ${shown ? 'bg-base-300' : 'cursor-pointer bg-base-content text-transparent select-none [&_img]:invisible'}`}
+            class={`rounded bg-base-300 px-0.5 ${shown ? '' : 'cursor-pointer text-transparent select-none [&_img]:invisible'}`}
             onClick={() => setShown(true)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setShown(true)}
             title={shown ? undefined : 'Spoiler: click to show'}

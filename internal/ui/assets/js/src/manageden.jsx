@@ -1,41 +1,34 @@
-// A den's Manage dialog (M8.3), in two parts by who they're for. This den:
-// its address and Den ID, which everyone sees, and the name and address
-// its owner changes; invites, bans, the soundboard (M14.3) and emoji
-// (M15.2), for staff; and the owner's limits.
-// You in this den: the member's devices, their den password, recovery
-// codes and DM recovery key, their code for others to compare (M16.1), and
-// their files. The owner's edits gather in one draft, saved from one bar.
+// A den's Manage dialog (M8.3), for what staff manage: its address and Den
+// ID, which everyone sees, and the name and address its owner changes;
+// invites, bans, the soundboard (M14.3) and emoji (M15.2), for staff, each
+// with its limits for the owner; and the owner's events and limits. A
+// member's own sections of a den are the settings' (M22.3). The owner's
+// edits gather in one draft, saved from one bar.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { progressKey, progressLabel, sendSmaller } from './compare.jsx';
 import {
-    CopyButton, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, checkPasswords, day, dayTime, useAction, useBackdrop, useLater,
+    Button, Card, CopyButton, ErrorText, Field, PLAIN, StatusText, SubmitButton, TILE, TextInput, Tip, Toggle, day, dayTime, useAction,
 } from './components.jsx';
 import { MAX_RETENTION, callFields, callLimitsOf, changed, changesOf, draftOf, hasBoard, hasEmoji, hasEvents } from './dendraft.js';
 import { ManageEmoji } from './emoji.jsx';
 import { onEvent } from './events.js';
 import { useLayer, useNarrow } from './nav.js';
-import { addPreview, fileWhere, formatSize, needsPreview, thumbURL, upload } from './files.jsx';
-import { openAt } from './messages.jsx';
-import { PageHeader, SectionList, useSectionPage } from './pages.jsx';
-import { leaveOffer } from './offline.js';
+import { SectionsFrame, useSectionPage } from './pages.jsx';
 import { rank } from './people.jsx';
-import { DMKey, RecoveryCodes } from './private.jsx';
 import { deletesNow, keptFor } from './retention.js';
 import { CALL_PRESETS, HEIGHTS, mbps, presetOf, uploadNeeded } from './share.js';
 import { ManageSoundboard } from './soundboard.jsx';
 
-// sectionsFor lists the sections a member sees for a den, each with the
-// part it's in: everything but General needs the den connected.
+// sectionsFor lists the sections of a den's Manage a member sees, each
+// [id, name]: everything but General needs the den connected; Invites,
+// Bans, the Soundboard and Emoji are staff's, and Events and Limits the
+// owner's.
 export function sectionsFor(den) {
-    const list = [['general', 'General', 'den']];
+    const list = [['general', 'General']];
     if (den.state !== 'connected') return list;
-    if (rank(den.role) > 0) {
-        list.push(['invites', 'Invites', 'den'], ['bans', 'Bans', 'den'], ['soundboard', 'Soundboard', 'den'], ['emoji', 'Emoji', 'den']);
-    }
-    if (den.role === 'owner') list.push(['limits', 'Limits', 'den']);
-    list.push(['devices', 'Devices', 'you'], ['password', 'Password and recovery', 'you'], ['code', 'Your code', 'you'], ['files', 'Your files', 'you']);
+    if (rank(den.role) > 0) list.push(['invites', 'Invites'], ['bans', 'Bans'], ['soundboard', 'Soundboard'], ['emoji', 'Emoji']);
+    if (den.role === 'owner') list.push(['events', 'Events'], ['limits', 'Limits']);
     return list;
 }
 
@@ -43,20 +36,19 @@ export function sectionsFor(den) {
 // Escape, a click outside it, or Back (M13.1), asking first when edits
 // aren't saved. On the phone layout it takes the screen, its sections a
 // list of pages, and Back and Escape go from a page to the list (M13.3).
-export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
+export function ManageDialog({ denID, section, onSection, onClose }) {
     const [den, setDen] = useState(null);
     const [view, setView] = useState(null);
     const [base, setBase] = useState(null);
     const [draft, setDraft] = useState(null);
-    const [shown, setShown] = useState(null);
     const [leaving, setLeaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const save = useAction();
     const narrow = useNarrow();
 
     // The den's status on this computer comes with every change to the
-    // list; its state, which the owner's settings and the files need,
-    // loads once it's connected.
+    // list; its state, which the owner's settings need, loads once it's
+    // connected.
     useEffect(() => {
         const take = (v) => setDen(v.dens.find((d) => d.den_id === denID) || null);
         api.get('/api/dens').then(take, () => {});
@@ -85,11 +77,7 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
         if (dirty) setLeaving(true);
         else onClose();
     }
-    // toList goes from a section's page to the list of them.
-    function toList() {
-        setShown(null);
-        onSection('');
-    }
+    const toList = () => onSection('');
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && (narrow && section ? toList() : close());
         document.addEventListener('keydown', escape);
@@ -133,47 +121,30 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
 
     if (!den) {
         return (
-            <Frame title="Manage" narrow={narrow} onClose={onClose}>
-                <div class="p-4"><span class="loading loading-spinner"></span></div>
-            </Frame>
+            <SectionsFrame label="Manage" title="Manage" groups={[]} at="loading" narrow={narrow} onPick={() => {}} onList={onClose} onClose={onClose}>
+                <span class="loading loading-spinner"></span>
+            </SectionsFrame>
         );
     }
-    const sections = sectionsFor(den);
+    // A den older than events has no limit for them to set.
+    const sections = sectionsFor(den).filter(([id]) => id !== 'events' || !view || view.event_limits);
     let at = 'general';
     if (sections.find(([id]) => id === section)) at = section;
-    else if (section === 'leave' && !den.own) at = 'leave';
     else if (narrow && !section) at = '';
-    const showCodes = (codes) => setShown({ codes, seal: '', sealNew: false });
-    const showKey = (seal) => setShown({ codes: [], seal, sealNew: true });
+    const ready = (panel) => (draft && view ? panel : <span class="loading loading-spinner"></span>);
     let panel;
-    if (shown) {
-        panel = <RecoveryCodes denName={den.name} codes={shown.codes} seal={shown.seal} sealNew={shown.sealNew} onDone={() => setShown(null)} />;
-    } else if (at === 'invites') {
+    if (at === 'invites') {
         panel = <Invites denID={denID} />;
     } else if (at === 'bans') {
         panel = <Bans denID={denID} role={den.role} />;
     } else if (at === 'soundboard') {
-        panel = <ManageSoundboard denID={denID} owner={owner} onLimits={() => onSection('limits')} />;
+        panel = <ManageSoundboard denID={denID} limits={owner && draft && hasBoard(draft) ? <SoundboardLimits draft={draft} base={base} onEdit={edit} /> : null} />;
     } else if (at === 'emoji') {
-        panel = <ManageEmoji denID={denID} owner={owner} onLimits={() => onSection('limits')} />;
+        panel = <ManageEmoji denID={denID} limits={owner && draft && hasEmoji(draft) ? <EmojiLimits draft={draft} base={base} onEdit={edit} /> : null} />;
+    } else if (at === 'events') {
+        panel = ready(draft && hasEvents(draft) && <EventLimits draft={draft} base={base} onEdit={edit} />);
     } else if (at === 'limits') {
-        panel = draft && view ? <Limits denID={denID} view={view} draft={draft} base={base} onEdit={edit} /> : <span class="loading loading-spinner"></span>;
-    } else if (at === 'devices') {
-        panel = <Devices den={den} />;
-    } else if (at === 'password') {
-        panel = <PasswordAndRecovery den={den} onCodes={showCodes} onKey={showKey} />;
-    } else if (at === 'code') {
-        panel = <YourCode den={den} view={view} />;
-    } else if (at === 'files') {
-        panel = <Files den={den} navigate={(to) => {
-            onClose();
-            navigate(to);
-        }} />;
-    } else if (at === 'leave') {
-        panel = <Leave den={den} onLeft={() => {
-            onClose();
-            navigate('/');
-        }} />;
+        panel = ready(<Limits denID={denID} view={view} draft={draft} base={base} onEdit={edit} />);
     } else {
         panel = <General den={den} draft={owner ? draft : null} base={base} onEdit={edit} />;
     }
@@ -182,109 +153,33 @@ export function ManageDialog({ denID, section, onSection, onClose, navigate }) {
             {leaving ? (
                 <>
                     <span class="min-w-0 flex-1 text-sm">Discard your unsaved changes?</span>
-                    <button type="button" class="btn btn-ghost btn-sm" onClick={() => setLeaving(false)}>Keep editing</button>
-                    <button type="button" class="btn btn-error btn-sm" onClick={onClose}>Discard</button>
+                    <Button kind="danger" filled onClick={onClose}>Discard</Button>
+                    <Button kind="quiet" onClick={() => setLeaving(false)}>Keep editing</Button>
                 </>
             ) : dirty ? (
                 <>
-                    <span class="min-w-0 flex-1 text-sm">{save.error ? <span class="text-error">{save.error}</span> : 'You have unsaved changes.'}</span>
-                    <button type="button" class="btn btn-ghost btn-sm" disabled={save.busy} onClick={discard}>Discard</button>
-                    <button type="button" class="btn btn-primary btn-sm" disabled={save.busy} onClick={saveAll}>
-                        {save.busy && <span class="loading loading-spinner loading-sm"></span>}
-                        Save changes
-                    </button>
+                    <span class="min-w-0 flex-1 text-sm">{save.error ? <StatusText kind="error" inline>{save.error}</StatusText> : 'You have unsaved changes.'}</span>
+                    <Button kind="primary" busy={save.busy} onClick={saveAll}>Save changes</Button>
+                    <Button kind="quiet" disabled={save.busy} onClick={discard}>Discard</Button>
                 </>
             ) : (
-                <span class="text-sm text-success">Saved.</span>
+                <StatusText kind="success">Saved.</StatusText>
             )}
         </div>
     );
-    const yours = sections.filter(([, , part]) => part === 'you');
-    if (narrow) {
-        const rows = (part) => sections.filter(([, , p]) => p === part).map(([id, label]) => [id, label]);
-        const groups = [['This den', rows('den')], ['You in this den', rows('you')]];
-        if (!den.own) groups.push(['', [['leave', 'Leave den', true]]]);
-        return (
-            <Frame title={den.name} narrow onClose={at ? toList : close} back={!!at}>
-                {at ? (
-                    <div data-panel class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
-                ) : (
-                    <SectionList label="Sections" groups={groups} onPick={onSection} />
-                )}
-                {bar}
-            </Frame>
-        );
-    }
-    const item = ([id, label]) => (
-        <button key={id} type="button" aria-current={at === id ? 'page' : undefined}
-            class={`btn btn-ghost btn-sm shrink-0 justify-start font-normal ${at === id ? 'btn-active' : ''}`}
-            onClick={() => {
-                setShown(null);
-                onSection(id);
-            }}>
-            {label}
-        </button>
-    );
-    const group = (name) => <p class="px-3 pt-2 text-xs font-semibold uppercase text-base-content/60">{name}</p>;
     return (
-        <Frame title={den.name} onClose={close}>
-            <div class="flex min-h-0 flex-1 flex-row">
-                <nav aria-label="Sections" class="flex w-52 shrink-0 flex-col gap-1 border-r border-base-300 p-2">
-                    {group('This den')}
-                    {sections.filter(([, , part]) => part === 'den').map(item)}
-                    {yours.length > 0 && group('You in this den')}
-                    {yours.map(item)}
-                    {!den.own && (
-                        <button type="button" class={`btn btn-ghost btn-sm mt-auto shrink-0 justify-start font-normal text-error ${at === 'leave' ? 'btn-active' : ''}`}
-                            onClick={() => onSection('leave')}>
-                            Leave den
-                        </button>
-                    )}
-                </nav>
-                <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-                    <div data-panel class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{panel}</div>
-                    {bar}
-                </div>
-            </div>
-        </Frame>
+        <SectionsFrame label={`Manage ${den.name}`} title={den.name} groups={[['', sections]]} at={at} narrow={narrow} bar={bar}
+            onPick={onSection} onList={toList} onClose={close}>
+            {panel}
+        </SectionsFrame>
     );
-}
-
-// Frame frames Manage: a card over the page, or on the phone layout the
-// whole screen, headed by title with ✕, or ← where back says it goes back
-// to the list.
-function Frame({ title, narrow, back, onClose, children }) {
-    const backdrop = useBackdrop(onClose);
-    if (narrow) {
-        return (
-            <div role="dialog" aria-modal="true" aria-label={`Manage ${title}`} class="fixed inset-0 z-50 flex flex-col bg-base-100">
-                <PageHeader title={title} onBack={back ? onClose : undefined} onClose={back ? undefined : onClose} />
-                {children}
-            </div>
-        );
-    }
-    return (
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" {...backdrop}>
-            <div role="dialog" aria-modal="true" aria-label={`Manage ${title}`} class="card flex h-full max-h-[48rem] w-full max-w-3xl flex-col bg-base-100 shadow-xl">
-                <div class="flex items-center gap-2 border-b border-base-300 px-4 py-3">
-                    <h2 class="card-title min-w-0 flex-1 truncate">{title}</h2>
-                    <button type="button" class="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
-                </div>
-                {children}
-            </div>
-        </div>
-    );
-}
-
-function Heading({ children }) {
-    return <h3 class="text-lg font-semibold">{children}</h3>;
 }
 
 // Copyable is a value to copy: the den's address or its ID.
 function Copyable({ text, mono }) {
     return (
         <div class="flex items-center gap-2">
-            <span class={`min-w-0 flex-1 truncate rounded bg-base-200 px-3 py-2 text-sm select-all ${mono ? 'font-mono' : ''}`}>{text}</span>
+            <span class={`min-w-0 flex-1 truncate rounded bg-base-100 px-3 py-2 text-sm select-all max-md:bg-base-200 ${mono ? 'font-mono' : ''}`}>{text}</span>
             <CopyButton text={text} />
         </div>
     );
@@ -305,42 +200,38 @@ function General({ den, draft, base, onEdit }) {
     }
     return (
         <>
-            <Heading>General</Heading>
             {den.state === 'offline' && !den.own && <NewAddress den={den} />}
-            {draft ? (
-                <>
-                    <Field label="Den name">
-                        <TextInput value={draft.name} onInput={(v) => onEdit({ name: v })} required maxlength="32" />
+            <Card>
+                {draft ? (
+                    <>
+                        <Field label="Den name">
+                            <TextInput value={draft.name} onInput={(v) => onEdit({ name: v })} required maxlength="32" />
+                        </Field>
+                        <Field label={<>Public address{moved && <> <Tip id="moved-tip">Members who were offline, and invites already sent, find the new address through the old one.</Tip></>}</>}
+                            hint={moved ? 'Keep the old address pointing at the den for a while.' : 'The address members use to connect.'}>
+                            <div class="flex gap-2">
+                                <TextInput type="url" value={draft.url} onInput={(v) => onEdit({ url: v })} required {...PLAIN} />
+                                <Button size="md" busy={check.busy} disabled={moved} title={moved ? 'Save the new address first' : undefined} onClick={test}>Test</Button>
+                            </div>
+                        </Field>
+                        {reached && <StatusText kind="success">This device reached the den at {den.url}, and it proved its identity there.</StatusText>}
+                        {check.error && (
+                            <>
+                                <ErrorText message={check.error} />
+                                {den.own && <p class="text-sm text-base-content/70">Your router may not reach itself from inside; test from a phone.</p>}
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <Field label="Address">
+                        <Copyable text={den.url} />
                     </Field>
-                    <Field label={<>Public address{moved && <> <Tip id="moved-tip">Members who were offline, and invites already sent, find the new address through the old one.</Tip></>}</>}
-                        hint={moved ? 'Keep the old address pointing at the den for a while.' : 'The address members use to connect.'}>
-                        <div class="flex gap-2">
-                            <TextInput type="url" value={draft.url} onInput={(v) => onEdit({ url: v })} required {...PLAIN} />
-                            <button type="button" class="btn" onClick={test} disabled={check.busy || moved} title={moved ? 'Save the new address first' : undefined}>
-                                {check.busy && <span class="loading loading-spinner loading-sm"></span>}
-                                Test
-                            </button>
-                        </div>
-                    </Field>
-                    {reached && <p class="text-sm text-success">This device reached the den at {den.url}, and it proved its identity there.</p>}
-                    {check.error && (
-                        <>
-                            <ErrorText message={check.error} />
-                            {den.own && (
-                                <p class="text-sm text-base-content/70">Your router may not reach itself from inside; test from a phone.</p>
-                            )}
-                        </>
-                    )}
-                </>
-            ) : (
-                <Field label="Address">
-                    <Copyable text={den.url} />
+                )}
+                <Field label={<>Den ID <Tip id={`den-id-${den.den_id}`} side="right">The start of the den's identity. Everyone in this den sees the same one.</Tip></>}>
+                    <Copyable text={den.fingerprint} mono />
                 </Field>
-            )}
-            <Field label={<>Den ID <Tip id={`den-id-${den.den_id}`} side="right">The start of the den's identity. Everyone in this den sees the same one.</Tip></>}>
-                <Copyable text={den.fingerprint} mono />
-            </Field>
-            {den.retention > 0 && <p class="text-sm text-base-content/70">Messages here are deleted after {keptFor(den.retention)}.</p>}
+                {den.retention > 0 && <p class="text-sm text-base-content/70">Messages here are deleted after {keptFor(den.retention)}.</p>}
+            </Card>
         </>
     );
 }
@@ -359,16 +250,17 @@ function NewAddress({ den }) {
         });
     }
     return (
-        <form class="flex flex-col gap-2 rounded-box bg-base-200 p-3" onSubmit={submit}>
-            <p class="font-medium">Den moved?</p>
-            <p class="text-sm text-base-content/70">Enter the new address the owner gave it.</p>
-            <p class="text-sm text-base-content/70">Dens uses it only if the den there proves it's the same one.</p>
-            <div class="flex gap-2">
-                <TextInput type="url" value={url} onInput={setURL} placeholder="https://den.example.com" autocomplete="off" required {...PLAIN} />
-                <SubmitButton busy={act.busy}>Use it</SubmitButton>
-            </div>
-            <ErrorText message={act.error} />
-        </form>
+        <Card title="Den moved?">
+            <form class="flex flex-col gap-2" onSubmit={submit}>
+                <p class="text-sm text-base-content/70">Enter the new address the owner gave it.</p>
+                <p class="text-sm text-base-content/70">Dens uses it only if the den there proves it's the same one.</p>
+                <div class="flex gap-2">
+                    <TextInput type="url" value={url} onInput={setURL} placeholder="https://den.example.com" autocomplete="off" required {...PLAIN} />
+                    <SubmitButton busy={act.busy} size="md">Use it</SubmitButton>
+                </div>
+                <ErrorText message={act.error} />
+            </form>
+        </Card>
     );
 }
 
@@ -404,28 +296,28 @@ function Invites({ denID }) {
 
     return (
         <>
-            <Heading>Invites</Heading>
-            <form class="flex flex-wrap items-end gap-3" onSubmit={submit}>
-                <Field label="Expires after">
-                    <select class="select" value={expiresIn} onChange={(e) => setExpiresIn(e.currentTarget.value)}>
-                        {EXPIRIES.map(([seconds, label]) => <option key={seconds} value={seconds}>{label}</option>)}
-                    </select>
-                </Field>
-                <Field label="Max uses">
-                    <input class="input w-24" type="number" inputmode="numeric" min="1" max="100" step="1" value={maxUses} onInput={(e) => setMaxUses(e.currentTarget.value)}
-                        required />
-                </Field>
-                <SubmitButton busy={create.busy}>Create invite</SubmitButton>
-            </form>
-            <ErrorText message={create.error} />
-            {created && (
-                <div class="flex flex-col gap-2">
-                    <p class="text-sm">Send this to the people you're inviting. It's shown only once.</p>
-                    <Copyable text={created} mono />
-                </div>
-            )}
-            <div class="flex flex-col gap-2">
-                <h4 class="font-medium">Active invites{list ? ` (${list.length})` : ''}</h4>
+            <Card title="New invite">
+                <form class="flex flex-wrap items-end gap-3" onSubmit={submit}>
+                    <Field label="Expires after">
+                        <select class="select" value={expiresIn} onChange={(e) => setExpiresIn(e.currentTarget.value)}>
+                            {EXPIRIES.map(([seconds, label]) => <option key={seconds} value={seconds}>{label}</option>)}
+                        </select>
+                    </Field>
+                    <Field label="Max uses">
+                        <input class="input w-24" type="number" inputmode="numeric" min="1" max="100" step="1" value={maxUses}
+                            onInput={(e) => setMaxUses(e.currentTarget.value)} required />
+                    </Field>
+                    <SubmitButton busy={create.busy} size="md" class="mb-1">Create invite</SubmitButton>
+                </form>
+                <ErrorText message={create.error} />
+                {created && (
+                    <div class="flex flex-col gap-2">
+                        <p class="text-sm">Send this to the people you're inviting. It's shown only once.</p>
+                        <Copyable text={created} mono />
+                    </div>
+                )}
+            </Card>
+            <Card title={`Active invites${list ? ` (${list.length})` : ''}`}>
                 {list === null ? (
                     !manage.error && <span class="loading loading-dots loading-sm"></span>
                 ) : list.length === 0 ? (
@@ -435,18 +327,18 @@ function Invites({ denID }) {
                         {list.map((inv) => (
                             <li key={inv.id} class="flex items-center gap-2 py-1.5">
                                 <span class="min-w-0 flex-1">Used {inv.uses} of {inv.max_uses} · Expires {dayTime(inv.expires_at)}</span>
-                                <button type="button" class="btn btn-ghost btn-xs" disabled={manage.busy} onClick={() => manage.run(async () => {
+                                <Button kind="danger" size="xs" disabled={manage.busy} onClick={() => manage.run(async () => {
                                     await api.del(`/api/dens/${denID}/invites/${inv.id}`);
                                     await refresh();
                                 })}>
                                     Revoke
-                                </button>
+                                </Button>
                             </li>
                         ))}
                     </ul>
                 )}
                 <ErrorText message={manage.error} />
-            </div>
+            </Card>
         </>
     );
 }
@@ -461,14 +353,11 @@ function Bans({ denID, role }) {
         act.run(load);
     }, [denID]);
     return (
-        <>
-            <Heading>
-                Bans{' '}
-                <Tip id="bans-tip" side="right">
-                    A ban signs them out at once and keeps their username out, even with a new invite. Unbanning doesn't bring them back:
-                    they can join again with an invite.
-                </Tip>
-            </Heading>
+        <Card title={<>Banned{' '}
+            <Tip id="bans-tip" side="right">
+                A ban signs them out at once and keeps their username out, even with a new invite. Unbanning doesn't bring them back:
+                they can join again with an invite.
+            </Tip></>}>
             <ErrorText message={act.error} />
             {list === null ? (
                 !act.error && <span class="loading loading-dots loading-sm"></span>
@@ -482,18 +371,18 @@ function Bans({ denID, role }) {
                                 <span class="font-medium">{b.member.display_name}</span> (@{b.member.username}) · Banned {day(b.banned_at)}
                             </span>
                             {rank(role) >= rank(b.banned_by_role) && (
-                                <button type="button" class="btn btn-ghost btn-xs" disabled={act.busy} onClick={() => act.run(async () => {
+                                <Button kind="quiet" size="xs" disabled={act.busy} onClick={() => act.run(async () => {
                                     await api.del(`/api/dens/${denID}/bans/${b.member.id}`);
                                     await load();
                                 })}>
                                     Unban
-                                </button>
+                                </Button>
                             )}
                         </li>
                     ))}
                 </ul>
             )}
-        </>
+        </Card>
     );
 }
 
@@ -509,13 +398,91 @@ function Unit({ unit, value, onInput, ...rest }) {
     );
 }
 
+// SoundboardLimits are the owner's limits for the den's soundboard, in its
+// section: whether it plays at all, how many sounds it keeps, how long one
+// may be, and how long a member waits between theirs.
+function SoundboardLimits({ draft, base, onEdit }) {
+    const on = Number(draft.sounds) > 0;
+    const field = (key) => (value) => onEdit({ [key]: value });
+    return (
+        <Card title="Limits" data-limits-soundboard>
+            <Toggle id="allow-soundboard" label="Allow the soundboard" checked={on}
+                tip="The den streams each sound to the whole call, so a long one costs its upload as long as it plays."
+                onChange={(yes) => onEdit({ sounds: yes ? String(Number(base.sounds) || 50) : '0' })} />
+            {on && (
+                <div class="grid gap-x-3 sm:grid-cols-3">
+                    <Field label="Max sounds">
+                        <Unit unit="sounds" min="1" max="500" step="1" value={draft.sounds} onInput={field('sounds')} required />
+                    </Field>
+                    <Field label="Longest sound">
+                        <Unit unit="seconds" min="1" max="300" step="1" value={draft.longest} onInput={field('longest')} required />
+                    </Field>
+                    <Field label="Wait between sounds">
+                        <Unit unit="seconds" min="0" max="600" step="1" value={draft.wait} onInput={field('wait')} required />
+                    </Field>
+                </div>
+            )}
+            <p class="text-sm text-base-content/70">Lowering these leaves the sounds already added.</p>
+        </Card>
+    );
+}
+
+// EmojiLimits are the owner's limit for the den's emoji, in their
+// section.
+function EmojiLimits({ draft, base, onEdit }) {
+    const on = Number(draft.emojis) > 0;
+    return (
+        <Card title="Limits" data-limits-emoji>
+            <Toggle id="allow-emoji" label="Allow emoji" checked={on}
+                onChange={(yes) => onEdit({ emojis: yes ? String(Number(base.emojis) || 50) : '0' })} />
+            {on && (
+                <div class="grid gap-x-3 sm:grid-cols-3">
+                    <Field label="Max emoji">
+                        <Unit unit="emoji" min="1" max="500" step="1" value={draft.emojis} onInput={(v) => onEdit({ emojis: v })} required />
+                    </Field>
+                </div>
+            )}
+            <p class="text-sm text-base-content/70">Lowering it or turning emoji off keeps the emoji already added.</p>
+        </Card>
+    );
+}
+
+// EventLimits is the owner's limit for members' events (M17.4): staff
+// always make them, and members may too, each this many at a time.
+function EventLimits({ draft, base, onEdit }) {
+    const on = Number(draft.memberEvents) > 0;
+    return (
+        <Card title="Who makes events" data-limits-events>
+            <Toggle id="member-events" label="Members make events" hint="Staff always can." checked={on} data-member-events
+                onChange={(yes) => onEdit({ memberEvents: yes ? String(Number(base.memberEvents) || 1) : '0' })} />
+            {on && (
+                <div class="grid gap-x-3 sm:grid-cols-3">
+                    <Field label="Events per member">
+                        <Unit unit="events" min="1" max="10" step="1" value={draft.memberEvents} onInput={(v) => onEdit({ memberEvents: v })} required />
+                    </Field>
+                </div>
+            )}
+            <p class="text-sm text-base-content/70">Lowering this leaves the events already made.</p>
+        </Card>
+    );
+}
+
+// RETAIN_DAYS are the periods Auto-delete offers, up to the longest a den
+// keeps messages.
+export const RETAIN_DAYS = [1, 7, 14, 30, 90, 180, 365, 730, 1825, MAX_RETENTION];
+
+// retainChoices are Auto-delete's periods with their names, and the den's
+// own among them where it's none of them.
+export function retainChoices(days) {
+    const list = RETAIN_DAYS.includes(days) || !Number.isInteger(days) || days < 1 ? RETAIN_DAYS : [...RETAIN_DAYS, days].sort((a, b) => a - b);
+    return list.map((d) => [d, d >= 365 && d % 365 === 0 ? (d === 365 ? '1 year' : `${d / 365} years`) : keptFor(d)]);
+}
+
 const PRESET_NAMES = { small: 'Small group', large: 'Large group' };
 
 // Limits sets how large a file may be and how much space files take, how
-// long the den keeps messages, its limits for calls, from a preset or field
-// by field, with the upload they need as they change, from M14.3 for its
-// soundboard, from M15.2 how many emoji it keeps, and from M17.4 how many
-// events each member may have.
+// long the den keeps messages, and its limits for calls, from a preset or
+// field by field, with the upload they need as they change.
 function Limits({ denID, view, draft, base, onEdit }) {
     const [custom, setCustom] = useState(() => presetOf(callLimitsOf(draft)) === 'custom');
     const [preview, setPreview] = useState(null);
@@ -526,7 +493,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
     const days = Number(draft.days);
     const was = base.retain ? Number(base.days) : 0;
     // The den counts what a new period would delete at once, as the owner
-    // types one.
+    // picks one.
     useEffect(() => {
         setPreview(null);
         if (!draft.retain || !Number.isInteger(days) || days < 1 || days > MAX_RETENTION || days === was) return undefined;
@@ -542,11 +509,13 @@ function Limits({ denID, view, draft, base, onEdit }) {
     const field = (key) => (value) => onEdit({ [key]: value });
     const sharing = Number(draft.shares) > 0;
     const board = hasBoard(draft) && Number(draft.sounds) > 0;
+    const presets = [
+        ...Object.entries(CALL_PRESETS).map(([name, limits]) => [name, PRESET_NAMES[name], `About ${mbps(uploadNeeded(limits, voice, board))}`, limits]),
+        ['custom', 'Custom', 'Set each', null],
+    ];
     return (
         <>
-            <Heading>Limits</Heading>
-            <section class="flex flex-col gap-2">
-                <h4 class="font-medium">Uploads</h4>
+            <Card title="Uploads">
                 <div class="grid gap-x-3 sm:grid-cols-3">
                     <Field label="Max file size">
                         <Unit unit="MB" min="1" max="1024" step="1" value={draft.file} onInput={field('file')} required />
@@ -558,36 +527,32 @@ function Limits({ denID, view, draft, base, onEdit }) {
                         <Unit unit="GB" min="0.01" step="0.01" value={draft.den} onInput={field('den')} required />
                     </Field>
                 </div>
-            </section>
-            <section class="flex flex-col gap-2 border-t border-base-300 pt-3">
-                <h4 class="font-medium">Messages</h4>
-                <div class="flex flex-wrap items-center gap-2">
-                    <input id="auto-delete" type="checkbox" class="toggle" checked={draft.retain} onChange={(e) => onEdit({ retain: e.currentTarget.checked })} />
-                    <label for="auto-delete" class="cursor-pointer">Auto-delete messages after</label>
-                    <input type="number" inputmode="numeric" class="input input-sm w-20" min="1" max={String(MAX_RETENTION)} step="1" value={draft.days}
-                        disabled={!draft.retain} aria-label="Days to keep messages" onInput={(e) => onEdit({ days: e.currentTarget.value })} />
-                    <span>days</span>
-                </div>
-                <p class="text-sm text-base-content/70">Applies to channels and DMs. Members can see this.</p>
+            </Card>
+            <Card title="Messages">
+                <Toggle id="auto-delete" label="Auto-delete messages" hint="In channels and DMs. Members see the period." checked={draft.retain}
+                    onChange={(on) => onEdit({ retain: on })} />
+                {draft.retain && (
+                    <Field label="After">
+                        <select class="select w-full sm:w-48" value={draft.days} aria-label="Days to keep messages" onChange={(e) => onEdit({ days: e.currentTarget.value })}>
+                            {retainChoices(days).map(([d, label]) => <option key={d} value={String(d)}>{label}</option>)}
+                        </select>
+                    </Field>
+                )}
                 {preview && <p class="text-sm">{deletesNow(preview)}</p>}
-            </section>
-            <section class="flex flex-col gap-2 border-t border-base-300 pt-3">
-                <h4 class="font-medium">Calls</h4>
+            </Card>
+            <Card title="Calls">
                 <p class="text-sm text-base-content/70">Calls use the host's upload. Lower these if they stutter.</p>
-                <div role="radiogroup" aria-label="Call limits" class="flex flex-wrap gap-4">
-                    {Object.entries(CALL_PRESETS).map(([name, limits]) => (
-                        <label key={name} class="label gap-2">
-                            <input type="radio" class="radio radio-sm" name="call-preset" checked={preset === name} onChange={() => {
-                                setCustom(false);
-                                onEdit(callFields(limits));
+                <div role="radiogroup" aria-label="Call limits" class="grid grid-cols-3 gap-2">
+                    {presets.map(([name, title, upload, limits]) => (
+                        <label key={name} class={TILE} data-preset={name}>
+                            <input type="radio" class="sr-only" name="call-preset" checked={preset === name} onChange={() => {
+                                setCustom(!limits);
+                                if (limits) onEdit(callFields(limits));
                             }} />
-                            {PRESET_NAMES[name]} (about {mbps(uploadNeeded(limits, voice, board))})
+                            <span class="text-sm font-medium">{title}</span>
+                            <span class="text-xs text-base-content/70">{upload}</span>
                         </label>
                     ))}
-                    <label class="label gap-2">
-                        <input type="radio" class="radio radio-sm" name="call-preset" checked={preset === 'custom'} onChange={() => setCustom(true)} />
-                        Custom
-                    </label>
                 </div>
                 {preset === 'custom' && (
                     <div class="grid gap-x-3 sm:grid-cols-2">
@@ -597,12 +562,9 @@ function Limits({ denID, view, draft, base, onEdit }) {
                         <Field label="Max people in calls (whole den)">
                             <Unit unit="people" min="2" max="100" step="1" value={draft.callers} onInput={field('callers')} required />
                         </Field>
-                        <div class="sm:col-span-2">
-                            <label class="label mt-2 gap-2">
-                                <input type="checkbox" class="toggle toggle-sm" checked={sharing}
-                                    onChange={(e) => onEdit({ shares: e.currentTarget.checked ? String(Number(base.shares) || 1) : '0' })} />
-                                Allow screen sharing
-                            </label>
+                        <div class="mt-2 sm:col-span-2">
+                            <Toggle id="allow-sharing" label="Allow screen sharing" checked={sharing}
+                                onChange={(on) => onEdit({ shares: on ? String(Number(base.shares) || 1) : '0' })} />
                         </div>
                         {sharing && (
                             <>
@@ -630,554 +592,7 @@ function Limits({ denID, view, draft, base, onEdit }) {
                 {Object.values(calls).every(Number.isFinite) && (
                     <p class="text-sm">Upload needed at full load: about {mbps(uploadNeeded(calls, voice, board))}</p>
                 )}
-            </section>
-            {hasBoard(draft) && (
-                <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-soundboard>
-                    <h4 class="font-medium">Soundboard <Tip id="soundboard-tip">The den streams each sound to the whole call, so a long one costs its upload as long as it plays.</Tip></h4>
-                    <p class="text-sm text-base-content/70">Sounds staff add, which anyone in a call plays for everyone in it.</p>
-                    <label class="label gap-2">
-                        <input type="checkbox" class="toggle toggle-sm" checked={board}
-                            onChange={(e) => onEdit({ sounds: e.currentTarget.checked ? String(Number(base.sounds) || 50) : '0' })} />
-                        Allow the soundboard
-                    </label>
-                    {board && (
-                        <div class="grid gap-x-3 sm:grid-cols-3">
-                            <Field label="Max sounds">
-                                <Unit unit="sounds" min="1" max="500" step="1" value={draft.sounds} onInput={field('sounds')} required />
-                            </Field>
-                            <Field label="Longest sound">
-                                <Unit unit="seconds" min="1" max="300" step="1" value={draft.longest} onInput={field('longest')} required />
-                            </Field>
-                            <Field label="Wait between a member's sounds">
-                                <Unit unit="seconds" min="0" max="600" step="1" value={draft.wait} onInput={field('wait')} required />
-                            </Field>
-                        </div>
-                    )}
-                    <p class="text-sm text-base-content/70">Lowering these leaves the sounds already added.</p>
-                </section>
-            )}
-            {hasEmoji(draft) && (
-                <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-emoji>
-                    <h4 class="font-medium">Emoji</h4>
-                    <p class="text-sm text-base-content/70">Staff's emoji for the den, kept by every member's Dens.</p>
-                    <label class="label gap-2">
-                        <input type="checkbox" class="toggle toggle-sm" checked={Number(draft.emojis) > 0}
-                            onChange={(e) => onEdit({ emojis: e.currentTarget.checked ? String(Number(base.emojis) || 50) : '0' })} />
-                        Allow emoji
-                    </label>
-                    {Number(draft.emojis) > 0 && (
-                        <div class="grid gap-x-3 sm:grid-cols-3">
-                            <Field label="Max emoji">
-                                <Unit unit="emoji" min="1" max="500" step="1" value={draft.emojis} onInput={field('emojis')} required />
-                            </Field>
-                        </div>
-                    )}
-                    <p class="text-sm text-base-content/70">Lowering it or turning emoji off keeps the emoji already added.</p>
-                </section>
-            )}
-            {hasEvents(draft) && (
-                <section class="flex flex-col gap-2 border-t border-base-300 pt-3" data-limits-events>
-                    <h4 class="font-medium">Events</h4>
-                    <p class="text-sm text-base-content/70">Staff make events. Members may too, each this many at a time.</p>
-                    <label class="label gap-2">
-                        <input type="checkbox" class="toggle toggle-sm" checked={Number(draft.memberEvents) > 0} data-member-events
-                            onChange={(e) => onEdit({ memberEvents: e.currentTarget.checked ? String(Number(base.memberEvents) || 1) : '0' })} />
-                        Members make events
-                    </label>
-                    {Number(draft.memberEvents) > 0 && (
-                        <div class="grid gap-x-3 sm:grid-cols-3">
-                            <Field label="Events per member">
-                                <Unit unit="events" min="1" max="10" step="1" value={draft.memberEvents} onInput={field('memberEvents')} required />
-                            </Field>
-                        </div>
-                    )}
-                    <p class="text-sm text-base-content/70">Lowering this leaves the events already made.</p>
-                </section>
-            )}
-        </>
-    );
-}
-
-// labelParts splits a device's label into its name and, from the
-// parentheses at its end, what it is: a computer's system or a phone's
-// model, which shows under the name (M13.3). A label with none is all
-// name.
-export function labelParts(label) {
-    const m = /^(.*\S)\s*\(([^()]+)\)$/.exec(label || '');
-    return m ? { name: m[1], detail: m[2] } : { name: label || '', detail: '' };
-}
-
-// Devices lists this member's devices in the den, each by its name with
-// what it is under it, and signs any of them out, after saying what that
-// does.
-function Devices({ den }) {
-    const [list, setList] = useState(null);
-    const [confirm, setConfirm] = useState('');
-    const act = useAction();
-    const load = async () => setList(await api.get(`/api/dens/${den.den_id}/devices`));
-    const slow = useLater(list === null && !act.error, 1000);
-    useEffect(() => {
-        act.run(load);
-    }, [den.den_id]);
-
-    function signOut(d) {
-        act.run(async () => {
-            await api.del(`/api/dens/${den.den_id}/devices/${d.key_id}`);
-            setConfirm('');
-            if (!d.current) await load();
-        });
-    }
-
-    return (
-        <>
-            <Heading>Devices</Heading>
-            <ErrorText message={act.error} />
-            {list === null ? (
-                slow && <span class="loading loading-dots loading-sm"></span>
-            ) : (
-                <ul class="flex flex-col divide-y divide-base-300">
-                    {list.devices.map((d) => {
-                        const { name, detail } = labelParts(d.label);
-                        return (
-                            <li key={d.key_id} class="flex flex-col gap-2 py-2 text-sm">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="min-w-0 flex-1">
-                                        <span class="font-medium">{name}</span>
-                                        {d.current && <span class="badge badge-soft badge-success badge-sm ml-2">This device</span>}
-                                        {detail && <span class="block text-base-content/70">{detail}</span>}
-                                        <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
-                                    </span>
-                                    {confirm !== d.key_id && (
-                                        <button type="button" class="btn btn-ghost btn-xs text-error" onClick={() => setConfirm(d.key_id)}>Sign out</button>
-                                    )}
-                                </div>
-                                {confirm === d.key_id && (
-                                    <div class="flex flex-col gap-2 rounded-box bg-base-200 p-3">
-                                        <p>
-                                            {d.current ? 'Sign this device out?' : `Sign out ${name}?`} It loses access at once. Signing in again takes your
-                                            den password and approval from another of your devices.
-                                        </p>
-                                        {list.devices.length === 1 && (
-                                            <p class="text-warning">
-                                                It's your only device here, so signing in again takes a recovery code, and your DM recovery key to read
-                                                your direct messages.
-                                            </p>
-                                        )}
-                                        <div class="flex gap-2">
-                                            <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => signOut(d)}>Sign out</button>
-                                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirm('')}>Cancel</button>
-                                        </div>
-                                    </div>
-                                )}
-                            </li>
-                        );
-                    })}
-                </ul>
-            )}
-        </>
-    );
-}
-
-// signedOut says how many of the member's other devices a new den password
-// signed out.
-function signedOut(n) {
-    if (!n) return '';
-    return n === 1 ? ' 1 other device was signed out.' : ` ${n} other devices were signed out.`;
-}
-
-// PasswordAndRecovery changes the member's den password, makes new
-// recovery codes, and shows or resets their DM recovery key.
-function PasswordAndRecovery({ den, onCodes, onKey }) {
-    const [left, setLeft] = useState(null);
-    const load = () => api.get(`/api/dens/${den.den_id}/devices`).then((d) => setLeft(d.recovery_codes_left), () => {});
-    useEffect(() => {
-        load();
-    }, [den.den_id]);
-    return (
-        <>
-            <Heading>
-                Password and recovery{' '}
-                <DocsTip id={`docs-recovery-${den.den_id}`} page="usage/#your-passwords-and-keys">
-                    What your den password, recovery codes and DM recovery key are each for.</DocsTip>
-            </Heading>
-            <section class="flex flex-col gap-2">
-                <h4 class="font-medium">Den password</h4>
-                <ChangePassword den={den} onDone={load} />
-            </section>
-            <section class="flex flex-col gap-2 border-t border-base-300 pt-3">
-                <h4 class="font-medium">Recovery codes</h4>
-                {left !== null && <NewCodes den={den} left={left} onCodes={(codes) => {
-                    load();
-                    onCodes(codes);
-                }} />}
-            </section>
-            <section class="flex flex-col gap-2 border-t border-base-300 pt-3">
-                <h4 class="font-medium">DM recovery key</h4>
-                <DMKey den={den} onSeal={onKey} />
-            </section>
-        </>
-    );
-}
-
-// YourCode shows the member's code in this den (M16.1), which others
-// compare with what their Dens shows for them, from a DM, a profile or a
-// call, to check nobody sits between them.
-function YourCode({ den, view }) {
-    const [code, setCode] = useState('');
-    const [error, setError] = useState('');
-    const me = view?.me?.id;
-    useEffect(() => {
-        if (me) api.get(`/api/dens/${den.den_id}/members/${me}/code`).then((v) => setCode(v.mine), (e) => setError(e.message));
-    }, [den.den_id, me]);
-    return (
-        <>
-            <Heading>
-                Your code{' '}
-                <DocsTip id={`docs-code-${den.den_id}`} page="usage/#comparing-codes">Why members compare codes, and where it's safe to.</DocsTip>
-            </Heading>
-            {view && !view.keeps_identities ? (
-                <p class="text-sm">This den's Dens is older, and has no codes to compare yet.</p>
-            ) : (
-                <>
-                    <p class="text-sm">Read it out when someone asks to compare codes.</p>
-                    <p class="text-sm text-base-content/70">It changes only if you reset your DM recovery key.</p>
-                    {code ? <p class="select-all font-mono text-2xl tracking-wider" data-own-code>{code}</p> : <ErrorText message={error} />}
-                </>
-            )}
-        </>
-    );
-}
-
-function useForm(initial) {
-    const [form, setForm] = useState(initial);
-    return [form, (key, value) => setForm((f) => ({ ...f, [key]: value })), setForm];
-}
-
-// ChangePassword sets the member's den password, with the current one or a
-// recovery code, which signs out their other devices.
-function ChangePassword({ den, onDone }) {
-    const empty = { current: '', code: '', password: '', confirm: '' };
-    const [open, setOpen] = useState(false);
-    const [form, set, setForm] = useForm(empty);
-    const [withCode, setWithCode] = useState(false);
-    const [saved, setSaved] = useState('');
-    const act = useAction();
-
-    function close() {
-        setOpen(false);
-        setForm(empty);
-        setWithCode(false);
-        act.setError('');
-    }
-
-    function submit(e) {
-        e.preventDefault();
-        const problem = checkPasswords(form.password, form.confirm);
-        if (problem) return act.setError(problem);
-        act.run(async () => {
-            const result = await api.post(`/api/dens/${den.den_id}/password`, {
-                current: withCode ? '' : form.current, recovery_code: withCode ? form.code : '', password: form.password,
-            });
-            close();
-            setSaved(`Password changed.${signedOut(result.signed_out)}`);
-            await onDone();
-        });
-    }
-
-    if (!open) {
-        return (
-            <div class="flex flex-wrap items-center gap-3">
-                <button type="button" class="btn btn-sm" onClick={() => {
-                    setSaved('');
-                    setOpen(true);
-                }}>
-                    Change password
-                </button>
-                {saved && <span class="text-sm text-success">{saved}</span>}
-            </div>
-        );
-    }
-    return (
-        <form class="flex flex-col gap-2" onSubmit={submit}>
-            <p class="text-sm text-base-content/70">Signs out your other devices.</p>
-            {withCode ? (
-                <Field label="Recovery code" hint="One of the codes you saved. It works once.">
-                    <TextInput value={form.code} onInput={(v) => set('code', v)} autocomplete="off" required class="input w-full font-mono" {...PLAIN} />
-                </Field>
-            ) : (
-                <Field label="Current password">
-                    <TextInput type="password" value={form.current} onInput={(v) => set('current', v)} autocomplete="current-password" required />
-                </Field>
-            )}
-            <PasswordFields password={form.password} setPassword={(v) => set('password', v)} confirm={form.confirm} setConfirm={(v) => set('confirm', v)} />
-            <ErrorText message={act.error} />
-            <div class="flex flex-wrap items-center gap-2">
-                <SubmitButton busy={act.busy}>Change password</SubmitButton>
-                <button type="button" class="btn btn-ghost btn-sm" onClick={() => setWithCode(!withCode)}>
-                    {withCode ? 'Use my current password' : 'Use a recovery code instead'}
-                </button>
-                <button type="button" class="btn btn-ghost btn-sm" onClick={close}>Cancel</button>
-            </div>
-        </form>
-    );
-}
-
-// NewCodes replaces the member's recovery codes, after saying the old ones
-// stop working, which takes their den password.
-function NewCodes({ den, left, onCodes }) {
-    const [asking, setAsking] = useState(false);
-    const [password, setPassword] = useState('');
-    const act = useAction();
-
-    function submit(e) {
-        e.preventDefault();
-        act.run(async () => {
-            const result = await api.post(`/api/dens/${den.den_id}/recovery-codes`, { password });
-            setPassword('');
-            setAsking(false);
-            onCodes(result.recovery_codes);
-        });
-    }
-
-    return (
-        <form class="flex flex-col gap-2" onSubmit={submit}>
-            <p class={`text-sm ${left <= 3 ? 'text-warning' : 'text-base-content/70'}`}>
-                {left === 1 ? '1 code left' : `${left} codes left`}, to sign in if you forget your password.
-            </p>
-            {asking ? (
-                <>
-                    <p class="text-sm">New codes replace all the old ones, which stop working.</p>
-                    <Field label="Den password">
-                        <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
-                    </Field>
-                    <ErrorText message={act.error} />
-                    <div class="flex gap-2">
-                        <SubmitButton busy={act.busy}>Generate new codes</SubmitButton>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setAsking(false)}>Cancel</button>
-                    </div>
-                </>
-            ) : (
-                <div><button type="button" class="btn btn-sm" onClick={() => setAsking(true)}>Generate new codes</button></div>
-            )}
-        </form>
-    );
-}
-
-// Files lists this member's files in a den, largest first, with what uses
-// each, and deletes or swaps them (M5): a member at their limit frees
-// space here. A swap is a new upload that takes the old file's place.
-function Files({ den, navigate }) {
-    const [shown, setShown] = useState(null);
-    const [confirm, setConfirm] = useState('');
-    const [progress, setProgress] = useState({});
-    const act = useAction();
-    const pick = useRef(null);
-    const swapping = useRef(null);
-    const base = `/api/dens/${den.den_id}`;
-    const slow = useLater(shown === null && act.busy, 1000);
-
-    async function load() {
-        const [view, storage, page] = await Promise.all([api.get(`${base}/state`), api.get(`${base}/storage`), api.get(`${base}/files`)]);
-        setShown({ view, storage, files: page.files, next: page.next || '' });
-    }
-    useEffect(() => {
-        act.run(load);
-    }, [den.den_id]);
-
-    function more() {
-        act.run(async () => {
-            const page = await api.get(`${base}/files?after=${encodeURIComponent(shown.next)}`);
-            setShown((s) => ({ ...s, files: [...s.files, ...page.files], next: page.next || '' }));
-        });
-    }
-
-    function open(f) {
-        openAt(den.den_id, f.channel_id, f.message_id);
-        navigate(`/den/${den.den_id}/${f.channel_id}`);
-    }
-
-    function remove(f) {
-        act.run(async () => {
-            if (f.profile) await api.patch(`${base}/me`, { [f.profile]: '' });
-            else if (!f.message_id) await api.del(`${base}/uploads/${f.id}`);
-            else await api.post(`${base}/messages/${f.message_id}/files/${f.id}/remove?channel=${f.channel_id}`);
-            setConfirm('');
-            await load();
-        });
-    }
-
-    function startSwap(f) {
-        swapping.current = f;
-        pick.current.value = '';
-        pick.current.click();
-    }
-
-    function swapPicked(e) {
-        const file = e.currentTarget.files?.[0];
-        const f = swapping.current;
-        if (!file || !f) return;
-        const kind = shown.view.channels.find((c) => c.id === f.channel_id)?.kind;
-        const dm = kind === 'dm' || kind === 'group_dm' || kind === 'notes';
-        // The row follows the upload while a video's copy is made (M5.4).
-        const key = progressKey();
-        const track = (sent) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], sent } }));
-        const follow = (following) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], following } }));
-        track(0);
-        act.run(async () => {
-            try {
-                // A photo or video swapped in goes compressed like any
-                // other, unless the member turned that off (M5).
-                const send = sendSmaller() ? 'smaller' : 'full';
-                let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send, key, follow).done;
-                if (needsPreview(up)) up = await addPreview(den.den_id, up);
-                await api.post(`${base}/messages/${f.message_id}/files/${f.id}/swap?channel=${f.channel_id}`, { upload: up.id });
-                await load();
-            } finally {
-                setProgress((cur) => {
-                    const next = { ...cur };
-                    delete next[f.id];
-                    return next;
-                });
-            }
-        });
-    }
-
-    const limit = shown?.view.limits.member_storage || 0;
-    return (
-        <>
-            <Heading>Your files</Heading>
-            <ErrorText message={act.error} />
-            {shown === null ? (
-                slow && <span class="loading loading-dots loading-sm"></span>
-            ) : (
-                <>
-                    <div class="flex flex-col gap-1 text-sm">
-                        <p>{formatSize(shown.storage.used)} of {formatSize(limit)} used</p>
-                        <progress class="progress progress-primary w-full" value={shown.storage.used} max={limit}></progress>
-                        {den.role === 'owner' && (
-                            <p class="text-xs text-base-content/60">
-                                The den's files take {formatSize(shown.storage.den_used)} of {formatSize(shown.view.limits.den_storage)}.
-                            </p>
-                        )}
-                    </div>
-                    {shown.files.length === 0 ? (
-                        <p class="text-sm text-base-content/70">You have no files here.</p>
-                    ) : (
-                        <ul class="flex flex-col divide-y divide-base-300">
-                            {shown.files.map((f) => (
-                                <FileRow key={f.id} denID={den.den_id} f={f} view={shown.view} confirming={confirm === f.id} busy={act.busy}
-                                    progress={progress[f.id]} onOpen={() => open(f)} onSwap={() => startSwap(f)}
-                                    onConfirm={() => setConfirm(f.id)} onCancel={() => setConfirm('')} onRemove={() => remove(f)} />
-                            ))}
-                        </ul>
-                    )}
-                    {shown.next && (
-                        <div>
-                            <button type="button" class="btn btn-sm" disabled={act.busy} onClick={more}>Show more</button>
-                        </div>
-                    )}
-                </>
-            )}
-            <input ref={pick} type="file" class="hidden" onChange={swapPicked} />
-        </>
-    );
-}
-
-// FileRow is one of a member's files in their list: its preview, name,
-// size and what uses it, and what they can do with it. A file being
-// swapped shows how far its replacement is, and how far a video's copy.
-function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, onConfirm, onCancel, onRemove }) {
-    const following = progress?.following;
-    const counting = progressLabel(following);
-    const onMessage = !!f.message_id;
-    const what = f.profile ? 'Take it off your profile?' : onMessage ? 'Delete it for good? It comes off its message for everyone.' : 'Drop this upload?';
-    const action = f.profile ? 'Remove' : onMessage ? 'Delete' : 'Drop';
-    return (
-        <li class="flex flex-wrap items-center gap-2 py-2">
-            {f.thumb && !f.locked ? (
-                <img src={thumbURL(denID, f.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" loading="lazy" draggable={false} />
-            ) : (
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
-            )}
-            <span class="min-w-0 flex-1 text-sm">
-                <span class="block truncate font-medium" title={f.name}>{f.locked ? "A file in a DM this device can't open" : f.name}</span>
-                <span class="block truncate text-xs text-base-content/60">
-                    {formatSize(f.size)} · {fileWhere(f, view)} · {day(f.created_at)}
-                </span>
-                {f.excerpt && <span class="block truncate text-xs text-base-content/50">{f.excerpt}</span>}
-            </span>
-            {progress !== undefined ? (
-                <span class="flex flex-col items-end gap-0.5">
-                    {counting && <span class="text-xs text-base-content/60">{counting}</span>}
-                    <progress class="progress progress-primary w-24" value={Math.round((counting ? following.done : progress.sent) * 100)} max="100"></progress>
-                </span>
-            ) : confirming ? (
-                <span class="flex flex-col items-end gap-1">
-                    <span class="max-w-xs text-right text-xs">{what}</span>
-                    <span class="flex gap-1">
-                        <button type="button" class="btn btn-error btn-xs" disabled={busy} onClick={onRemove}>{action}</button>
-                        <button type="button" class="btn btn-ghost btn-xs" onClick={onCancel}>Cancel</button>
-                    </span>
-                </span>
-            ) : (
-                <span class="flex gap-1">
-                    {onMessage && <button type="button" class="btn btn-ghost btn-xs" onClick={onOpen}>Open</button>}
-                    {onMessage && !f.locked && <button type="button" class="btn btn-ghost btn-xs" disabled={busy} onClick={onSwap}>Swap</button>}
-                    {!f.locked && <button type="button" class="btn btn-ghost btn-xs text-error" onClick={onConfirm}>{action}</button>}
-                </span>
-            )}
-        </li>
-    );
-}
-
-// Leave takes this member out of a den and forgets it on this computer.
-// A den Dens can't reach, as one whose server is gone for good, can't hear
-// of a leave, so it's removed from this computer alone, as one that let
-// this device go is (M10).
-function Leave({ den, onLeft }) {
-    const act = useAction();
-    const offer = leaveOffer(den);
-    if (offer !== 'leave') {
-        return (
-            <>
-                <Heading>Leave {den.name}</Heading>
-                <p>
-                    {offer === 'unreachable'
-                        ? "Dens can't reach this den right now, so it can't take you out of it. If it's gone for good, remove it from this device instead."
-                        : den.error || 'This den no longer accepts this device.'}
-                </p>
-                <p>
-                    That deletes your keys for the den on this device, and the messages and files it kept.
-                    {offer === 'unreachable' && ' Your account stays in the den, so if it comes back, you can sign in again from Add a den.'}
-                </p>
-                <ErrorText message={act.error} />
-                <div>
-                    <button type="button" class="btn btn-error" disabled={act.busy} onClick={() => act.run(async () => {
-                        await api.del(`/api/dens/${den.den_id}`);
-                        onLeft();
-                    })}>
-                        Remove from this device
-                    </button>
-                </div>
-            </>
-        );
-    }
-    return (
-        <>
-            <Heading>Leave {den.name}</Heading>
-            <p>
-                You're signed out on every device, and your messages stay. You can come back as @{den.username} if someone invites you
-                again.
-            </p>
-            <ErrorText message={act.error} />
-            <div>
-                <button type="button" class="btn btn-error" disabled={act.busy} onClick={() => act.run(async () => {
-                    await api.post(`/api/dens/${den.den_id}/leave`);
-                    onLeft();
-                })}>
-                    Leave den
-                </button>
-            </div>
+            </Card>
         </>
     );
 }
