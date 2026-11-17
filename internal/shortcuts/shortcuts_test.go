@@ -764,7 +764,9 @@ func TestTheHelperShowsNotifications(t *testing.T) {
 func TestAHelperWithoutNotifications(t *testing.T) {
 	me, _ := host.CurrentUser()
 	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
-	run(t, helperFor(t, "v1.0.0", serve(t, hub, me), newFakeKeys()))
+	h := helperFor(t, "v1.0.0", serve(t, hub, me), newFakeKeys())
+	h.OpenNotifier = func() (Notifier, error) { return nil, errors.New("no notification service") }
+	run(t, h)
 	events, stop := hub.Watch()
 	defer stop()
 	if st := waitStatus(t, events, func(s *Status) bool { return s.Helper && len(s.Covers) > 0 }); st.Notifies {
@@ -773,6 +775,70 @@ func TestAHelperWithoutNotifications(t *testing.T) {
 	if hub.Show(notify.Notification{Key: "d1/7"}) {
 		t.Fatal("the hub showed a notification through a helper that can't")
 	}
+}
+
+// The desktop's notifications open beside the helper's run: while they
+// hang, the keys reach the pages and the helper says it shows nothing;
+// once they open, it says it does, and shows what it was sent meanwhile
+// but for what was taken back.
+func TestTheHelperRunsWhileTheDesktopsNotificationsHang(t *testing.T) {
+	me, _ := host.CurrentUser()
+	hub := NewHub("v1.0.0", "http://localhost:18484", keysV, testLog(t))
+	keys := newFakeKeys()
+	notes := newFakeNotifier()
+	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+	h := helperFor(t, "v1.0.0", serve(t, hub, me), keys)
+	h.OpenNotifier = func() (Notifier, error) {
+		<-release
+		return notes, nil
+	}
+	run(t, h)
+	events, stop := hub.Watch()
+	defer stop()
+	if st := waitStatus(t, events, func(s *Status) bool { return s.Helper && len(s.Covers) > 0 }); st.Notifies {
+		t.Fatalf("status = %+v while the notifications hang", st)
+	}
+	hub.SetCall(true)
+	keys.set(1, true)
+	waitPress(t, events, Press{Action: "ptt", Down: true})
+	keys.set(1, false)
+	waitPress(t, events, Press{Action: "ptt", Down: false})
+
+	h.mu.Lock()
+	var r *remote
+	for x := range h.remotes {
+		r = x
+	}
+	h.mu.Unlock()
+	waiting := notify.Notification{Key: "d1/7", Den: "d1", DenName: "Den", Channel: "7", Message: "10", Title: "Alice", Text: "hello", Path: "/den/d1/7#message=10"}
+	gone := waiting
+	gone.Key, gone.Channel = "d1/8", "8"
+	h.notify(r, waiting)
+	h.notify(r, gone)
+	h.unnotify(r, []string{gone.Key})
+	if len(notes.showing()) != 0 {
+		t.Fatal("shown before the desktop's notifications opened")
+	}
+
+	close(release)
+	waitStatus(t, events, func(s *Status) bool { return s.Helper && s.Notifies })
+	waitFor(t, "the notification that waited", func() bool { return notes.showing()["main/d1/7"].Body == "hello" })
+	if len(notes.showing()) != 1 {
+		t.Fatalf("showing %v", notes.showing())
+	}
+	next := waiting
+	next.Key, next.Channel, next.Text = "d1/9", "9", "again"
+	if !hub.Show(next) {
+		t.Fatal("the hub couldn't show a notification once the helper could")
+	}
+	waitFor(t, "the next notification", func() bool { return notes.showing()["main/d1/9"].Body == "again" })
 }
 
 func waitFor(t *testing.T, what string, ok func() bool) {

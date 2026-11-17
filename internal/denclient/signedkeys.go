@@ -341,6 +341,47 @@ func (c *conn) makeKey(ctx context.Context, channel string) error {
 	return nil
 }
 
+// fetchKeys fetches a DM's or a group's keys where one of its messages, or
+// what one replies to, names a key this Dens doesn't hold, so it doesn't
+// read as changed: a key's event can come a moment after a message sealed
+// with it, as a DM's first message's does. A den that doesn't answer
+// leaves the messages to read as they would have.
+func (c *conn) fetchKeys(ctx context.Context, channel string, msgs []denproto.Message) {
+	if !c.lacksKeys(channel, msgs) {
+		return
+	}
+	var keys denproto.SignedKeyList
+	if err := c.call(ctx, http.MethodGet, "/api/dms/"+channel+"/signed-keys", nil, &keys); err != nil {
+		return
+	}
+	c.addSignedKeys(keys.Keys...)
+}
+
+// lacksKeys reports whether a DM's or a group's messages name a key this
+// Dens doesn't hold, while the den is connected: history read offline
+// from the cache doesn't wait on a den that can't answer.
+func (c *conn) lacksKeys(channel string, msgs []denproto.Message) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil || c.state != StateConnected {
+		return false
+	}
+	if k := c.den.channels[channel].Kind; k != denproto.KindDM && k != denproto.KindGroupDM {
+		return false
+	}
+	lacks := func(id string) bool {
+		_, old := c.den.keys[id]
+		_, signed := c.den.signed[id]
+		return id != "" && !old && !signed
+	}
+	for _, m := range msgs {
+		if m.Sealed != nil && lacks(m.KeyID) || m.Reply != nil && m.Reply.Sealed != nil && lacks(m.Reply.KeyID) {
+			return true
+		}
+	}
+	return false
+}
+
 // addSignedKeys keeps signed keys the den answered a request with, as its
 // events would.
 func (c *conn) addSignedKeys(keys ...denproto.SignedKey) {
