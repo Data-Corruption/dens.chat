@@ -556,7 +556,7 @@ export async function memberScreens(h, ctx) {
         });
         await h.step('new-group', async () => {
             await h.go(`/den/${den}/dms`);
-            await h.click(`document.querySelector('[data-new-group]')`, '+ New group');
+            await h.click(`document.querySelector('[data-tab-add=dms]')`, "the Direct messages tab's +");
             await h.wait(`document.querySelector('[role=dialog][aria-label="New group"]')`, 'the New group dialog');
             await h.snap('new-group', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
             await h.escape();
@@ -564,35 +564,47 @@ export async function memberScreens(h, ctx) {
     }
 }
 
-// ownerScreens are those only the den's owner reaches: a channel's and a
-// group's settings, a new channel, the list with its ⋯, Manage's every
-// section, the System tab with hosting, and removing a member.
+// MENU_ROW is a row of the menu open, by its key.
+const MENU_ROW = (key) => `document.querySelector('[data-menu-item=${JSON.stringify(key)}]')`;
+
+// ownerScreens are those only the den's owner reaches: a channel's menu
+// and settings, a group's, the den's name's menu and the Den tab's +, a
+// new channel, the list with its ⋯, Manage's every section, the System
+// tab with hosting, and removing a member.
 export async function ownerScreens(h, ctx) {
     const { den, general } = ctx;
     await h.step('channel-dialog', async () => {
         await h.go(`/den/${den}`);
-        await h.click(h.label('Settings for general'));
+        await h.click(h.label('Options for general'));
+        await h.snap('channel-menu');
+        await h.click(MENU_ROW('edit'), 'Edit channel');
         await h.snap('channel-dialog', { scroll: `document.querySelector('[role=dialog]')`, max: 3 });
         await h.escape();
     });
     await h.step('group-dialog', async () => {
-        await h.click(h.label('Settings for the group Projects'));
+        await h.click(h.label('Options for the group Projects'));
+        await h.snap('group-menu');
+        await h.click(MENU_ROW('edit'), 'Edit group');
         await h.snap('group-dialog');
         await h.escape();
     });
     await h.step('new-channel', async () => {
-        await h.click(h.byText('button', '+ Channel'));
+        await h.click(`document.querySelector('[data-tab-add=den]')`, "the Den tab's +");
+        await h.snap('den-add-menu');
+        await h.click(MENU_ROW('channel'), 'New channel');
         await h.snap('new-channel');
         await h.escape();
     });
     await h.step('owner-list', async () => {
         await h.snap('owner-list', { scroll: `document.querySelector('aside')`, max: 2 });
     });
-    // The den's name opens its Manage, on the phone layout at the list of
-    // its sections (M14.3).
+    // The den's name opens its menu, and Manage from it, on the phone
+    // layout at the list of its sections (M14.3).
     await h.step('owner-den-manage', async () => {
         await h.go(`/den/${den}`);
-        await h.click(`document.querySelector('[data-den-manage]')`, "the den's name");
+        await h.click(`document.querySelector('[data-den-menu]')`, "the den's name");
+        await h.snap('den-menu');
+        await h.click(MENU_ROW('manage'), 'Manage');
         await h.wait(`document.querySelector('${MANAGE_FRAME} [data-section], ${MANAGE_FRAME} nav button')`, "Manage's sections, from the den's name", 5000);
         await h.snap('manage-from-den');
         await h.escape();
@@ -1007,32 +1019,89 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
 }
 
 // staffPress walks staff's long press on a touch screen (M13.4): a
-// channel's row opens its settings, and a group's the group's, where a
-// touch screen shows no ⋯ for them, and a tap on a row still opens its
-// channel.
+// channel's row opens its menu, whose Edit channel opens its settings,
+// and a group's the group's, where a touch screen shows no ⋯ for them, and
+// a tap on a row still opens its channel. Then staff make a channel and a
+// group from each menu a finger reaches (M22.2): the den's name, the Den
+// tab's +, and a group's, whose channel goes in it.
 export async function staffPress(h, ctx, d, report) {
     const { den, random } = ctx;
     const did = (good, what) => report(good, `${d.name}: ${what}`);
-    const dialog = () => h.ev(`document.querySelector('[role=dialog]')?.getAttribute('aria-label') || ''`);
+    const dialog = () => h.ev(`document.querySelector('[role=dialog]:not([data-sheet])')?.getAttribute('aria-label') || ''`);
+    const sheet = () => h.has(`document.querySelector('[data-sheet]')`);
     await h.go(`/den/${den}`);
     if (!(await h.has(IN_LIST('general')))) await h.click(h.byText('[role=tab]', 'Den'));
     await h.wait(IN_LIST('general'), 'the channel list');
-    const dots = await h.ev(`[...document.querySelectorAll('nav[aria-label=Channels] button[aria-label^="Settings for"]')].filter((b) => getComputedStyle(b).display !== 'none').length`);
+    const dots = await h.ev(`[...document.querySelectorAll('nav[aria-label=Channels] button[aria-label^="Options for"]')].filter((b) => getComputedStyle(b).display !== 'none').length`);
     did(dots === 0, `staff's channels and groups show no ⋯ on a touch screen (${dots} show)`);
     await d.press(IN_LIST('general'));
-    const channel = await waitFor(dialog, "general's settings", 5000).catch(() => '');
+    const rows = await waitFor(async () => (await sheet()) && h.ev(`[...document.querySelectorAll('[data-sheet] [data-menu-item]')].map((r) => r.textContent.trim()).join(' | ')`),
+        "general's menu", 5000).catch(() => '');
     await h.snap('staff-press-channel');
-    did(channel === '#general', `a long press on a channel's row opens its settings: ${channel || 'nothing'}`);
+    did(rows === 'Edit channel | Move up | Move down', `a long press on a channel's row opens its menu: ${rows || 'nothing'}`);
+    await d.tap(MENU_ROW('edit'));
+    const channel = await waitFor(dialog, "general's settings", 5000).catch(() => '');
+    did(channel === '#general', `whose Edit channel opens its settings: ${channel || 'nothing'}`);
     await d.back();
     await waitFor(async () => !(await dialog()), 'the settings to close', 5000);
     await d.press(`[...document.querySelectorAll('nav[aria-label=Channels] button[aria-expanded]')].find((b) => b.textContent.trim().toLowerCase() === 'projects')`);
+    await waitFor(sheet, "Projects' menu", 5000).catch(() => false);
+    await d.tap(MENU_ROW('edit'));
     const group = await waitFor(dialog, "Projects' settings", 5000).catch(() => '');
-    did(group === 'Projects', `and a long press on a group's row opens the group's: ${group || 'nothing'}`);
+    did(group === 'Projects', `and a long press on a group's row opens the group's menu, then its settings: ${group || 'nothing'}`);
     await d.back();
     await waitFor(async () => !(await dialog()), 'the settings to close', 5000);
     await d.tap(IN_LIST('random'));
     const opened = await waitFor(async () => (await h.ev('location.pathname')) === `/den/${den}/${random}` && !(await dialog()), 'random', 5000).catch(() => false);
     did(opened, 'a tap on a row still opens its channel');
+    await makeFromMenus(h, ctx, d, did);
+}
+
+// typeIn sets a field's value as typing does, for the page's onInput.
+const typeIn = (x, text) => `(() => { const e = ${x}; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, ${JSON.stringify(text)});
+    e.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`;
+
+// makeFromMenus has staff make channels and groups by a finger's taps
+// from each menu that makes one: the den's name, the Den tab's +, and a
+// group's, by its long press, whose channel lands in it; then takes them
+// away through the page's API.
+async function makeFromMenus(h, ctx, d, did) {
+    const { den } = ctx;
+    const tag = Date.now().toString(36).slice(-4);
+    const state = () => h.ev(`fetch('/api/dens/${den}/state').then((r) => r.json())`);
+    // make opens a menu with open, taps pick in it, names what its dialog
+    // makes, and says whether its dialog closed, made.
+    async function make(open, pick, name, title) {
+        await open();
+        await h.wait(MENU_ROW(pick), `the menu's ${pick}`, 5000);
+        await d.tap(MENU_ROW(pick));
+        const box = `document.querySelector('[role=dialog][aria-label=${JSON.stringify(title)}]')`;
+        await h.wait(box, `the ${title} dialog`, 5000);
+        await h.ev(typeIn(`${box}.querySelector('input')`, name));
+        await d.tap(`${box}.querySelector('button[type=submit]')`);
+        return waitFor(async () => !(await h.has(box)), `${name} made`, 8000).then(() => true, () => false);
+    }
+    const name = `document.querySelector('[data-den-menu]')`;
+    await h.go(`/den/${den}`);
+    if (!(await h.has(IN_LIST('general')))) await h.click(h.byText('[role=tab]', 'Den'));
+    await make(() => d.tap(name), 'channel', `from-name-${tag}`, 'New channel');
+    await make(() => d.tap(name), 'group', `Name ${tag}`, 'New group');
+    await make(() => d.tap(`document.querySelector('[data-tab-add=den]')`), 'channel', `from-plus-${tag}`, 'New channel');
+    await make(() => d.tap(`document.querySelector('[data-tab-add=den]')`), 'group', `Plus ${tag}`, 'New group');
+    await make(() => d.press(`[...document.querySelectorAll('nav[aria-label=Channels] button[aria-expanded]')].find((b) => b.textContent.trim().toLowerCase() === 'projects')`),
+        'channel', `in-group-${tag}`, 'New channel');
+    const v = await waitFor(async () => {
+        const s = await state();
+        return s.channels.some((c) => c.name === `in-group-${tag}`) && s.groups.filter((g) => g.name.endsWith(tag)).length === 2 && s;
+    }, 'what was made', 8000).catch(() => null);
+    const projects = v?.groups.find((g) => g.name === 'Projects');
+    const made = (n) => v?.channels.find((c) => c.name === n);
+    did(!!made(`from-name-${tag}`) && !!made(`from-plus-${tag}`), "a channel made from the den's name, and one from the Den tab's +");
+    did(v?.groups.filter((g) => g.name.endsWith(tag)).length === 2, "a group made from each");
+    did(!!projects && made(`in-group-${tag}`)?.group_id === projects.id, "and a channel made from a group's menu lands in the group");
+    await h.snap('made-from-menus', { scroll: `document.querySelector('aside')`, max: 2 });
+    for (const c of v?.channels.filter((x) => x.name.endsWith(tag)) || []) await h.ev(`fetch('/api/dens/${den}/channels/${c.id}', { method: 'DELETE' }).then((r) => r.ok)`);
+    for (const g of v?.groups.filter((x) => x.name.endsWith(tag)) || []) await h.ev(`fetch('/api/dens/${den}/groups/${g.id}', { method: 'DELETE' }).then((r) => r.ok)`);
 }
 
 // PANE is what the page shows of a den: the pane on screen, by the panes

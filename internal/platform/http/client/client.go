@@ -33,6 +33,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/cookies"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
+	"github.com/Data-Corruption/dens.chat/internal/steam"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/internal/ui"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
@@ -53,6 +54,7 @@ type router struct {
 	// pageOrigin is where browsers load the page (M4.1).
 	pageOrigin string
 	youTube    *youtube.Lookup
+	steam      *steam.Lookup
 	backups    backups
 	// sounds are the page's own sounds' addresses, by name, as JSON
 	// (M14.2), and fonts those of the names' fonts.
@@ -67,6 +69,7 @@ func New(a *app.App) http.Handler {
 		cookieName: "dens_session_" + strconv.Itoa(a.Instance.ClientPort),
 		pageOrigin: guard.PageOrigin(a.Instance.ClientPort),
 		youTube:    youtube.New(),
+		steam:      steam.New(),
 		backups:    backups{links: map[string]backupLink{}},
 		sounds:     soundAssets(a.UI),
 		fonts:      fontAssets(a.UI),
@@ -111,6 +114,7 @@ func New(a *app.App) http.Handler {
 			rt.mountFlatpak(r)
 			rt.mountDens(r)
 			rt.mountYouTube(r)
+			rt.mountSteam(r)
 			rt.mountSounds(r)
 			rt.mountBackground(r)
 		})

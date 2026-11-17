@@ -34,7 +34,7 @@
 //   run.sh events chromium|firefox
 import { execFileSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, LOUNGE: lounge, BACKSTAGE: backstage, DM: dm } = process.env;
@@ -255,7 +255,7 @@ try {
 
     step('alice lets members make events, and bob makes one, then cancels it');
     const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
-    await A.b.eval(`document.querySelector('button[data-den-manage]').click(), true`);
+    await manageFromName(A.b);
     await waitFor(() => A.b.eval(`!!${MANAGE}`), "alice's Manage");
     const limits = `[...${MANAGE}.querySelectorAll('nav button')].find((x) => x.textContent.trim() === 'Limits')`;
     await waitFor(() => A.b.eval(`!!${limits}`), "Manage's Limits");

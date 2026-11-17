@@ -1,8 +1,9 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
 // a call stay in view, its sections listed down the side as Manage's are,
-// or on the phone layout a list of them, each a page. Appearance holds the
-// theme, the member's own among them, the picture behind the chat, how
-// messages and styled names show and the verified mark; Chat compressing photos
+// or on the phone layout a list of them, each a page. Appearance holds a
+// preview of the chat, then the theme, the member's own among them, and
+// the picture behind the chat; how messages, styled names and the verified
+// mark show; and the call timer; Chat compressing photos
 // and videos and what happens to links; Notifications what notifies the
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
@@ -25,7 +26,7 @@ import {
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
-import { oldReddit, setOldReddit, setYouTubePlayers, youTubePlayers } from './links.js';
+import { oldReddit, setOldReddit, setSteamCards, setYouTubePlayers, steamCards, youTubePlayers } from './links.js';
 import { PlayIcon } from './icons.jsx';
 import { STYLES_ALL, STYLES_COLORS, STYLES_OFF, setNameStyles, useNameStyles } from './names.js';
 import { useLayer, useNarrow } from './nav.js';
@@ -45,6 +46,7 @@ import { setStaffMarks, useStaffMarks } from './staffmarks.js';
 import { setCallTimer, useCallTimer } from './calltimer.js';
 import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
+import { AppearancePreview } from './preview.jsx';
 import {
     RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
     inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise,
@@ -98,7 +100,7 @@ export function SettingsDialog({ section, onSection, onClose, instance, version,
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'relay') panel = <RelaySettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><ThemePicker /><ChatBackground /><MessagesPicker /><NameStylesPicker /><AnimationsPicker /><VerifiedMarksPicker /><CallsPicker /></>;
+    else panel = <><AppearancePreview /><ThemePicker /><MessagesPicker /><CallsPicker /></>;
     const backdrop = useBackdrop(onClose);
     if (narrow) {
         return (
@@ -160,7 +162,8 @@ function Toggle({ id, label, hint, tip, checked, disabled, onChange }) {
 // or Dark, one of the others, or one of the member's own, each shown in
 // its colors. It takes hold at once, and this browser keeps it. Under
 // them the member makes a theme, edits or deletes the one chosen, copies
-// its code for another member, and pastes one.
+// its code for another member, and pastes one; and last, the picture
+// behind the chat.
 function ThemePicker() {
     const [choice, setChoice] = useState(themeChoice);
     const [own, setOwn] = useState(ownThemes);
@@ -280,6 +283,7 @@ function ThemePicker() {
                 {full && !editing && <p class="text-sm text-base-content/70">You have {MOST_THEMES} themes. Delete one to add another.</p>}
                 <ErrorText message={error} />
             </div>
+            <ChatBackground />
         </Card>
     );
 }
@@ -352,8 +356,11 @@ function ChatBackground() {
         });
     }
     return (
-        <Card title="Chat background">
-            <p class="text-sm text-base-content/70">A picture behind your messages. Only you see it.</p>
+        <div class="flex flex-col gap-3" data-chat-background>
+            <h3 class="flex items-center text-sm font-semibold">
+                Chat background
+                <Tip id="chat-background-tip" label="About Chat background" wrap="-my-1 inline-flex">A picture behind your messages. Only you see it.</Tip>
+            </h3>
             {background && (
                 <div class="relative h-24 w-40 overflow-hidden rounded-box border border-base-content/10" data-background-preview aria-hidden="true">
                     <img src={backgroundURL(background.version)} alt="" class="size-full object-cover" />
@@ -386,7 +393,10 @@ function ChatBackground() {
             )}
             {background && (
                 <label class="flex flex-col gap-1">
-                    <span class="text-sm">Hover</span>
+                    <span class="flex items-center text-sm">
+                        Hover
+                        <Tip id="background-hover-tip" label="About Hover" wrap="-my-1 inline-flex">How far a message under the pointer covers the picture.</Tip>
+                    </span>
                     <span class="flex items-center gap-3">
                         <input type="range" class="range range-md min-w-0 flex-1" min="0" max={HOVER_MOST} step={DIM_STEP} value={background.hover}
                             aria-label="Hover" aria-valuetext={`${background.hover}%`} data-background-hover
@@ -394,11 +404,10 @@ function ChatBackground() {
                             onChange={(e) => setHover(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
                         <span class="w-10 text-right text-sm tabular-nums">{background.hover}%</span>
                     </span>
-                    <span class="text-sm text-base-content/70">How far a message under the pointer covers the picture.</span>
                 </label>
             )}
             <ErrorText message={act.error} />
-        </Card>
+        </div>
     );
 }
 
@@ -408,14 +417,24 @@ const SIZE_NAMES = { small: 'Small', medium: 'Medium', large: 'Large', largest: 
 // MessagesPicker chooses how messages show: their Density, Default or
 // Compact, a line each of the time, the name and the text; on a wide
 // window, how large their photos and videos show, and their YouTube
-// players; and whether staff's marks show beside names. This browser keeps
-// each, as it keeps the theme.
+// players; how the names members styled show, their colors and fonts,
+// their colors alone, or plain; when animated pictures and the den's
+// emoji play, always or while the pointer is over their row, which the
+// system's asking for less motion makes the default; whether staff's marks
+// show beside names; and whether the check beside a member this member
+// compared codes with shows: always, on hover or never, and on a touch
+// screen, which has no hover, shown or not. This browser keeps each, as it
+// keeps the theme.
 function MessagesPicker() {
     const density = useDensity();
     const marks = useStaffMarks();
     const media = useSize(MEDIA);
     const players = useSize(PLAYERS);
+    const styles = useNameStyles();
+    const animations = useAnimations();
+    const verified = useVerifiedMarks();
     const narrow = useNarrow();
+    const touch = useCoarse();
     const sizes = SIZES.map((s) => [s, SIZE_NAMES[s]]);
     return (
         <Card title="Messages">
@@ -427,83 +446,16 @@ function MessagesPicker() {
                     <Choices label="YouTube players" name="player-size" data="data-player-size" choice={players} onPick={(s) => setSize(PLAYERS, s)} choices={sizes} />
                 </>
             )}
-            <Toggle id="staff-marks" label="Staff marks" hint="A crown or a shield beside staff's names." checked={marks} onChange={setStaffMarks} />
-        </Card>
-    );
-}
-
-// NameStylesPicker chooses how the names members styled show here: their
-// colors and fonts, their colors alone, or plain. This browser keeps it,
-// as it keeps the theme.
-function NameStylesPicker() {
-    const choice = useNameStyles();
-    return (
-        <Card title="Name styles">
-            <p class="text-sm text-base-content/70">The colors and fonts members give their names.</p>
-            <div role="radiogroup" aria-label="Name styles" class="flex flex-wrap gap-x-6 gap-y-2" data-name-styles>
-                {[[STYLES_ALL, 'Colors and fonts'], [STYLES_COLORS, 'Colors only'], [STYLES_OFF, 'Off']].map(([value, label]) => (
-                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
-                        <input type="radio" class="radio radio-sm" name="name-styles" value={value} checked={choice === value}
-                            onChange={() => setNameStyles(value)} />
-                        <span>{label}</span>
-                    </label>
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-// AnimationsPicker chooses when animated pictures and the den's emoji
-// play: always, or while the pointer is over their row, which the system's
-// asking for less motion makes the default. This browser keeps it, as it
-// keeps the theme.
-function AnimationsPicker() {
-    const choice = useAnimations();
-    return (
-        <Card title="Animations">
-            <div role="radiogroup" aria-label="Animations" class="flex flex-col gap-3">
-                {[
-                    [ALWAYS, 'Always', 'Animated pictures and emoji play wherever they show.', ''],
-                    [ON_HOVER, 'On hover', 'They play while the pointer is over their message or member.', 'And in a profile you open. On a touch screen, only in profiles.'],
-                ].map(([value, label, hint, tip]) => (
-                    <div key={value} class="flex flex-col gap-0.5">
-                        <div class="flex items-center gap-1">
-                            <label class="flex min-h-6 cursor-pointer items-center gap-3">
-                                <input type="radio" class="radio radio-sm" name="animations" value={value} checked={choice === value}
-                                    onChange={() => setAnimations(value)} />
-                                <span>{label}</span>
-                            </label>
-                            {tip && <Tip id={`animations-${value}-tip`}>{tip}</Tip>}
-                        </div>
-                        {/* Under the label: the radio is 20 pixels, and its gap 12. */}
-                        <p class="pl-8 text-sm text-base-content/70">{hint}</p>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-}
-
-// VerifiedMarksPicker chooses whether the check beside a member this
-// member compared codes with shows beside their name: always, on hover or
-// never, and on a touch screen, which has no hover, shown or not. This
-// browser keeps it, as it keeps the theme.
-function VerifiedMarksPicker() {
-    const touch = useCoarse();
-    const choice = useVerifiedMarks();
-    const choices = touch ? [[MARKS_ALWAYS, 'Yes'], [MARKS_NEVER, 'No']] : [[MARKS_ALWAYS, 'Always'], [MARKS_HOVER, 'On hover'], [MARKS_NEVER, 'No']];
-    return (
-        <Card title="Verified mark">
-            <p class="text-sm text-base-content/70">Beside people you've compared codes with.</p>
-            <div role="radiogroup" aria-label="Verified mark" class="flex flex-wrap gap-x-6 gap-y-2" data-verified-marks>
-                {choices.map(([value, label]) => (
-                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
-                        <input type="radio" class="radio radio-sm" name="verified-marks" value={value} checked={choice === value}
-                            onChange={() => setVerifiedMarks(value)} />
-                        <span>{label}</span>
-                    </label>
-                ))}
-            </div>
+            <Choices label="Name styles" name="name-styles" data="data-name-styles" choice={styles} onPick={setNameStyles}
+                tip="The colors and fonts members give their names."
+                choices={[[STYLES_ALL, 'Colors and fonts'], [STYLES_COLORS, 'Colors only'], [STYLES_OFF, 'Off']]} />
+            <Choices label="Animations" name="animations" data="data-animations" choice={animations} onPick={setAnimations}
+                tip="Animated pictures and emoji. On hover, they play while the pointer is over their message or member, and in a profile you open; on a touch screen, only in profiles."
+                choices={[[ALWAYS, 'Always'], [ON_HOVER, 'On hover']]} />
+            <Choices label="Verified mark" name="verified-marks" data="data-verified-marks" choice={verified} onPick={setVerifiedMarks}
+                tip="Beside people you've compared codes with."
+                choices={touch ? [[MARKS_ALWAYS, 'Yes'], [MARKS_NEVER, 'No']] : [[MARKS_ALWAYS, 'Always'], [MARKS_HOVER, 'On hover'], [MARKS_NEVER, 'No']]} />
+            <Toggle id="staff-marks" label="Staff marks" tip="A crown or a shield beside staff's names." checked={marks} onChange={setStaffMarks} />
         </Card>
     );
 }
@@ -515,7 +467,7 @@ function CallsPicker() {
     const on = useCallTimer();
     return (
         <Card title="Calls">
-            <Toggle id="call-timer" label="Call timer" hint="Each call's length beside its channel." checked={on} onChange={setCallTimer} />
+            <Toggle id="call-timer" label="Call timer" tip="Each call's length beside its channel." checked={on} onChange={setCallTimer} />
         </Card>
     );
 }
@@ -563,6 +515,7 @@ function ChatSettings() {
     const [compress, setCompress] = useState(sendSmaller);
     const [old, setOld] = useState(oldReddit);
     const [players, setPlayers] = useState(youTubePlayers);
+    const [steam, setSteam] = useState(steamCards);
     return (
         <>
             <Card title="Photos and videos">
@@ -590,6 +543,11 @@ function ChatSettings() {
                     hint="YouTube will see your IP address when previews load." onChange={(on) => {
                         setYouTubePlayers(on);
                         setPlayers(on);
+                    }} />
+                <Toggle id="steam" label="Show Steam games as cards" checked={steam}
+                    hint="Steam will see your IP address when cards load." onChange={(on) => {
+                        setSteamCards(on);
+                        setSteam(on);
                     }} />
             </Card>
         </>

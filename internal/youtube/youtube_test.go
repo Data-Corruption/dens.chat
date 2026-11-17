@@ -479,24 +479,3 @@ func TestWhatWasFoundIsKeptAnHourAndAFailureAMinute(t *testing.T) {
 		}
 	}
 }
-
-func TestTheCacheStaysWithinItsBudget(t *testing.T) {
-	l := newLookup("", "", nil)
-	for i := range maxEntries + 10 {
-		l.mu.Lock()
-		l.store(&entry{key: string(rune('a'+i%26)) + strings.Repeat("x", i), until: time.Now().Add(time.Hour), size: 64})
-		l.mu.Unlock()
-	}
-	if l.order.Len() != maxEntries || len(l.entries) != maxEntries {
-		t.Errorf("%d entries kept, want %d", l.order.Len(), maxEntries)
-	}
-	big := make([]byte, maxPicture)
-	for i := range maxBytes/maxPicture + 5 {
-		l.mu.Lock()
-		l.store(&entry{key: "picture " + strings.Repeat("y", i), value: big, until: time.Now().Add(time.Hour), size: len(big)})
-		l.mu.Unlock()
-	}
-	if l.bytes > maxBytes {
-		t.Errorf("%d bytes kept, over %d", l.bytes, maxBytes)
-	}
-}

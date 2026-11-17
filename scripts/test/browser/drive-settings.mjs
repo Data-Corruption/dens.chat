@@ -20,11 +20,14 @@
 // Staff marks, off until she turns them on, the crown then on her
 // messages and always in the member list; the bars on a green theme of her
 // own, their hue the page's; and Hover, how far a message under the
-// pointer covers the picture, in both browsers.
+// pointer covers the picture, in both browsers. From M22.2 Appearance's
+// preview: Light and Dark, a name style turned off and on, and Compact,
+// each showing in it as it's chosen, and the preview holding its place
+// while the settings under it scroll.
 //
 //   run.sh settings chromium|firefox [PART...]
 //
-// PART is sections, sizes, themes or background; all unless given.
+// PART is sections, preview, sizes, themes or background; all unless given.
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import zlib from 'node:zlib';
@@ -241,6 +244,63 @@ try {
         await b.eval(`document.getElementById('staff-marks').click(), true`);
         await closeSettings(b);
         c.report(await waitFor(async () => (await marks()) === 0, 'the crowns gone').then(() => true, () => false), 'turned off, they go again');
+    }
+
+    if (runs('preview')) {
+        step("Appearance's preview: a theme, a name style and Density, as each is chosen");
+        await openSettings(b, 'Appearance');
+        const PREVIEW = `document.querySelector('[data-appearance-preview]')`;
+        await waitFor(() => b.eval(`!!${PREVIEW}?.querySelector('[data-id="preview-1"] [data-name]')`), 'the preview');
+        const look = async () => JSON.parse(await b.eval(`JSON.stringify((() => {
+            const p = ${PREVIEW}, box = p.querySelector('[role=group]'), name = p.querySelector('[data-id="preview-1"] [data-name]');
+            const s = getComputedStyle(name);
+            return { page: getComputedStyle(box).backgroundColor, font: s.fontFamily.split(',')[0].replace(/["']/g, '').trim(), painted: s.backgroundImage !== 'none' || s.color !== getComputedStyle(box).color,
+                lines: p.querySelectorAll('[data-line]').length, crown: p.querySelectorAll('[data-role-mark=owner]').length, timer: !!p.querySelector('[data-call-length]') };
+        })())`));
+        const pick = (name, value) => b.eval(`document.querySelector('input[name=${name}][value=${value}]').click(), true`);
+        await pick('theme', 'light');
+        await sleep(300);
+        const light = await look();
+        await pick('theme', 'dark');
+        await sleep(300);
+        const dark = await look();
+        c.report(light.page !== dark.page, `the preview wears Light, then Dark: ${light.page}, ${dark.page}`);
+        await pick('name-styles', 'off');
+        await sleep(300);
+        const plain = await look();
+        await pick('name-styles', 'all');
+        await sleep(600);
+        const styled = await look();
+        c.report(/fredoka/i.test(styled.font) && styled.painted && !/fredoka/i.test(plain.font) && !plain.painted,
+            `Alice's name in the preview, in her font and colors, then plain with name styles off: ${JSON.stringify(styled)}, ${JSON.stringify(plain)}`);
+        await pick('density', 'compact');
+        await sleep(300);
+        const compact = await look();
+        await pick('density', 'default');
+        await sleep(300);
+        const roomy = await look();
+        c.report(compact.lines === 3 && roomy.lines === 0, `Compact makes the preview's messages a line each (${compact.lines} of 3), Default gives them back (${roomy.lines})`);
+        await b.eval(`document.getElementById('call-timer').click(), true`);
+        await sleep(300);
+        const untimed = await look();
+        await b.eval(`document.getElementById('call-timer').click(), true`);
+        await sleep(300);
+        c.report(roomy.timer && !untimed.timer, `the preview's call shows its length, and none with the call timer off`);
+        // Held: the panel scrolls under it.
+        const held = JSON.parse(await b.eval(`(async () => {
+            const panel = ${PANEL}, p = ${PREVIEW};
+            const top = () => Math.round(p.getBoundingClientRect().top - panel.getBoundingClientRect().top);
+            const before = top();
+            panel.scrollTop = panel.scrollHeight;
+            await new Promise((r) => setTimeout(r, 300));
+            const after = top();
+            const scrolled = panel.scrollTop;
+            panel.scrollTop = 0;
+            return JSON.stringify({ before, after, scrolled });
+        })()`));
+        c.report(held.scrolled > 200 && held.after === held.before, `the preview holds its place while Appearance scrolls under it: ${JSON.stringify(held)}`);
+        await h.snap('appearance-preview');
+        await closeSettings(b);
     }
 
     if (runs('sizes')) {

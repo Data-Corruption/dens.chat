@@ -13,28 +13,17 @@
 package youtube
 
 import (
-	"bytes"
-	"container/list"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
-	"strings"
-	"sync"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
-	"github.com/Data-Corruption/dens.chat/internal/media"
-
-	"golang.org/x/time/rate"
+	"github.com/Data-Corruption/dens.chat/internal/lookup"
 )
 
 const (
@@ -52,13 +41,7 @@ const (
 	maxLarge     = 1 << 20
 	maxLargeSide = 1920
 
-	fetchTimeout = 10 * time.Second
-	// A failure is kept for a minute, so a YouTube that was down is asked
-	// again soon, but not by every cover on the page.
-	keepFound  = time.Hour
-	keepFailed = time.Minute
-	maxBytes   = 16 << 20
-	maxEntries = 1024
+	keepFound = time.Hour
 
 	maxTitle   = 200
 	maxChannel = 100
@@ -91,61 +74,25 @@ type Video struct {
 // Lookup fetches covers' details and keeps them. Use New.
 type Lookup struct {
 	oEmbed, pictures string
-	client           *http.Client
-	limit            *rate.Limiter
+	fetch            *lookup.Fetcher
+	cache            *lookup.Cache
 	now              func() time.Time
-
-	mu      sync.Mutex
-	entries map[string]*list.Element
-	order   *list.List // of *entry, the most recently used first
-	bytes   int
-	calls   map[string]*call
-}
-
-type entry struct {
-	key   string
-	value any
-	err   error
-	until time.Time
-	size  int
-}
-
-// call is a fetch under way, which everyone asking for the same key waits
-// on.
-type call struct {
-	done  chan struct{}
-	value any
-	err   error
 }
 
 // New returns a Lookup that asks YouTube.
 func New() *Lookup {
-	return newLookup(oEmbedURL, picturesURL, &http.Transport{
-		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
-		ResponseHeaderTimeout: fetchTimeout,
-		IdleConnTimeout:       90 * time.Second,
-	})
+	return newLookup(oEmbedURL, picturesURL, lookup.Transport())
 }
 
 func newLookup(oEmbed, pictures string, transport http.RoundTripper) *Lookup {
-	return &Lookup{
+	l := &Lookup{
 		oEmbed:   oEmbed,
 		pictures: pictures,
-		client: &http.Client{
-			Transport: transport,
-			Timeout:   fetchTimeout,
-			// An answer that sends Dens elsewhere is taken as it is, and
-			// fails: Dens asks only at the addresses it built.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-		// A page asks only for the covers on screen, but a busy channel
-		// can show many at once.
-		limit:   rate.NewLimiter(8, 16),
-		now:     time.Now,
-		entries: map[string]*list.Element{},
-		order:   list.New(),
-		calls:   map[string]*call{},
+		fetch:    lookup.NewFetcher(transport, ErrUnavailable, ErrNotFound),
+		now:      time.Now,
 	}
+	l.cache = lookup.NewCache(ErrNotFound, func() time.Time { return l.now() })
+	return l
 }
 
 // Video returns what a cover shows of the video id.
@@ -215,70 +162,14 @@ func (l *Lookup) Portrait(ctx context.Context, id string) ([]byte, error) {
 }
 
 // get returns what's kept under key, or fetches it once for everyone who
-// asks meanwhile. The fetch runs on its own deadline, so a caller who
-// leaves, as a page does when a cover scrolls away, fails nobody else.
+// asks meanwhile.
 func (l *Lookup) get(ctx context.Context, key string, fetch func(context.Context) (any, int, error)) (any, error) {
-	l.mu.Lock()
-	if el, ok := l.entries[key]; ok {
-		e := el.Value.(*entry)
-		if l.now().Before(e.until) {
-			l.order.MoveToFront(el)
-			l.mu.Unlock()
-			return e.value, e.err
-		}
-		l.drop(el)
-	}
-	c, ok := l.calls[key]
-	if !ok {
-		c = &call{done: make(chan struct{})}
-		l.calls[key] = c
-		go l.run(key, c, fetch)
-	}
-	l.mu.Unlock()
-	select {
-	case <-c.done:
-		return c.value, c.err
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-func (l *Lookup) run(key string, c *call, fetch func(context.Context) (any, int, error)) {
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-	defer cancel()
-	value, size, err := fetch(ctx)
-	keep := keepFound
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		keep = keepFailed
-	}
-	l.mu.Lock()
-	delete(l.calls, key)
-	l.store(&entry{key: key, value: value, err: err, until: l.now().Add(keep), size: size + len(key) + 64})
-	l.mu.Unlock()
-	c.value, c.err = value, err
-	close(c.done)
-}
-
-func (l *Lookup) store(e *entry) {
-	if el, ok := l.entries[e.key]; ok {
-		l.drop(el)
-	}
-	l.entries[e.key] = l.order.PushFront(e)
-	l.bytes += e.size
-	for l.bytes > maxBytes || l.order.Len() > maxEntries {
-		l.drop(l.order.Back())
-	}
-}
-
-func (l *Lookup) drop(el *list.Element) {
-	e := l.order.Remove(el).(*entry)
-	delete(l.entries, e.key)
-	l.bytes -= e.size
+	return l.cache.Get(ctx, key, keepFound, fetch)
 }
 
 func (l *Lookup) fetchVideo(ctx context.Context, id string) (any, int, error) {
 	q := url.Values{"url": {"https://www.youtube.com/watch?v=" + id}, "format": {"json"}}
-	resp, err := l.ask(ctx, l.oEmbed+"?"+q.Encode(), "application/json")
+	resp, err := l.fetch.Ask(ctx, l.oEmbed+"?"+q.Encode(), "application/json")
 	if err != nil {
 		return nil, 0, err
 	}
@@ -297,7 +188,7 @@ func (l *Lookup) fetchVideo(ctx context.Context, id string) (any, int, error) {
 	if t, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); t != "application/json" {
 		return nil, 0, fmt.Errorf("%w: oEmbed's answer isn't JSON", ErrUnavailable)
 	}
-	body, err := readAll(resp.Body, maxAnswer)
+	body, err := l.fetch.ReadAll(resp.Body, maxAnswer)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -312,7 +203,7 @@ func (l *Lookup) fetchVideo(ctx context.Context, id string) (any, int, error) {
 	if err := json.Unmarshal(body, &answer); err != nil || answer.Type != "video" {
 		return nil, 0, fmt.Errorf("%w: oEmbed's answer doesn't describe a video", ErrUnavailable)
 	}
-	v := Video{Title: clean(answer.Title, maxTitle), Channel: clean(answer.Author, maxChannel), Playable: true}
+	v := Video{Title: lookup.Clean(answer.Title, maxTitle), Channel: lookup.Clean(answer.Author, maxChannel), Playable: true}
 	if v.Channel != "" {
 		v.ChannelURL = channelURL(answer.AuthorURL)
 	}
@@ -336,93 +227,9 @@ func channelURL(s string) string {
 }
 
 func (l *Lookup) fetchPicture(ctx context.Context, id, name string, maxBytes int64, side int) (any, int, error) {
-	resp, err := l.ask(ctx, l.pictures+id+"/"+name, "image/jpeg")
+	jpeg, err := l.fetch.JPEG(ctx, l.pictures+id+"/"+name, maxBytes, side)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusOK:
-	case http.StatusNotFound:
-		return nil, 0, ErrNotFound
-	default:
-		return nil, 0, fmt.Errorf("%w: the picture's host answered %d", ErrUnavailable, resp.StatusCode)
-	}
-	body, err := readAll(resp.Body, maxBytes)
-	if err != nil {
-		return nil, 0, err
-	}
-	if media.Sniff(body[:min(len(body), media.SniffLen)]) != media.JPEG {
-		return nil, 0, fmt.Errorf("%w: the picture isn't a JPEG", ErrUnavailable)
-	}
-	var out bytes.Buffer
-	res, err := media.Strip(&out, bytes.NewReader(body), media.JPEG)
-	if err != nil {
-		return nil, 0, fmt.Errorf("%w: the picture doesn't read as a JPEG", ErrUnavailable)
-	}
-	if res.Width < 1 || res.Height < 1 || res.Width > side || res.Height > side {
-		return nil, 0, fmt.Errorf("%w: the picture is %d by %d", ErrUnavailable, res.Width, res.Height)
-	}
-	return out.Bytes(), out.Len(), nil
-}
-
-// ask sends a GET with nothing that identifies the member's browser or
-// Dens itself.
-func (l *Lookup) ask(ctx context.Context, address, accept string) (*http.Response, error) {
-	if err := l.limit.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("%w: too many asks at once", ErrUnavailable)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return nil, fmt.Errorf("%w: the request couldn't be made", ErrUnavailable)
-	}
-	req.Header.Set("Accept", accept)
-	// Go sends a user agent of its own unless the header is there, empty.
-	req.Header.Set("User-Agent", "")
-	resp, err := l.client.Do(req)
-	if err != nil {
-		// The error names the address, which holds the ID; say only what
-		// went wrong.
-		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() {
-			return nil, fmt.Errorf("%w: it timed out", ErrUnavailable)
-		}
-		return nil, fmt.Errorf("%w: the connection failed", ErrUnavailable)
-	}
-	return resp, nil
-}
-
-// readAll reads a body of at most max bytes, and fails on a longer one
-// rather than cut it.
-func readAll(r io.Reader, max int64) ([]byte, error) {
-	b, err := io.ReadAll(io.LimitReader(r, max+1))
-	if err != nil {
-		return nil, fmt.Errorf("%w: the answer broke off", ErrUnavailable)
-	}
-	if int64(len(b)) > max {
-		return nil, fmt.Errorf("%w: the answer is over %d bytes", ErrUnavailable, max)
-	}
-	return b, nil
-}
-
-// clean makes text from YouTube fit to show as a name is: without the
-// characters that let it disguise itself or reorder the text around it,
-// with its spaces collapsed, and cut to max characters.
-func clean(s string, max int) string {
-	// A line break or tab parts words, which CleanName, dropping it as a
-	// control character, would join.
-	s = strings.Map(func(r rune) rune {
-		if unicode.IsSpace(r) {
-			return ' '
-		}
-		return r
-	}, strings.ToValidUTF8(s, ""))
-	name, err := denproto.CleanName(s, utf8.RuneCountInString(s))
-	if err != nil {
-		return ""
-	}
-	if r := []rune(name); len(r) > max {
-		name = strings.TrimSpace(string(r[:max-1])) + "…"
-	}
-	return name
+	return jpeg, len(jpeg), nil
 }

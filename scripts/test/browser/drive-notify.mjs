@@ -11,7 +11,9 @@
 // open, Dens's helper, dens shortcuts, shows a DM
 // through the desktop's notification service, dunst here, as Dens's, and
 // its click opens the page at the message, paired as dens open pairs it;
-// read elsewhere, it's taken back from the desktop too.
+// read elsewhere, it's taken back from the desktop too. From M22.2 the
+// tab's icon: the mark, then with its dot while the DM waits behind
+// another tab, and the mark again once it's read.
 //
 //   run.sh notify chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -96,14 +98,18 @@ try {
     await waitFor(() => b.eval(`!!document.getElementById('notify-dms')`), 'the notifications card');
     await b.eval(`document.getElementById('notify-dms').click(), true`, true);
     await waitFor(() => settings().dms, 'DMs on, kept by the service');
-    const where = await may(waitFor(() => has('This browser shows them while a Dens tab is open'), 'where they show', 5000));
+    const where = await may(waitFor(() => has('A Dens tab shows them'), 'where they show', 5000));
     await shot('settings');
     c.report(where, 'DMs turned on in the settings, kept by the service, which say the browser shows them');
     await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
 
     step("a DM from bob, with alice's tab behind another");
+    const ICON = `(() => { const l = document.querySelector('link[rel=icon]'); return l.getAttribute('href') === l.dataset.unread ? 'dotted' : 'mark'; })()`;
+    const plain = await b.eval(ICON);
     await hide();
     const first = send('a DM for alice, with ||a secret||');
+    const dotted = await may(waitFor(async () => (await b.eval(ICON)) === 'dotted', 'the dot on the tab', 10000));
+    c.report(plain === 'mark' && dotted, `the tab's icon is the mark, then takes its dot as the DM waits behind another tab (${plain}, ${dotted})`);
     const [one] = await waitFor(async () => {
         const n = await notes();
         return n.length > 0 && n;
@@ -118,6 +124,8 @@ try {
     const shut = (await notes())[0].shut;
     c.report(opened && litFirst && shut, `its click opened the DM (${opened}) at the message (${litFirst}), and closed the notification (${shut})`);
     await front();
+    const undotted = await may(waitFor(async () => (await b.eval(ICON)) === 'mark', 'the dot gone', 10000));
+    c.report(undotted, "read, the tab's icon is the mark again");
     await shot('opened');
 
     step('read on another device, it goes');

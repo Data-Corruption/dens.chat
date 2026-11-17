@@ -1,6 +1,6 @@
 // The M16.3 check of group DMs: alice, who owns the den, in Chromium, and
 // bob in the browser named; carol and dave through their pages' API. Alice
-// makes a group of bob, carol and herself from the DM list's + New group,
+// makes a group of bob, carol and herself from the DM tab's +,
 // naming it, and each change shows in it as a line: bob writes and sends a
 // photo, which alice reads, and carol, through her Dens; bob adds dave from
 // the group's members, who reads from his joining on; bob renames it, which
@@ -76,8 +76,8 @@ try {
     }
 
     step('alice makes a group from the DM list, and names it');
-    await waitFor(() => A.b.eval(`!!document.querySelector('[data-new-group]')`), "alice's + New group");
-    await A.b.eval(`document.querySelector('[data-new-group]').click(), true`);
+    await waitFor(() => A.b.eval(`!!document.querySelector('[data-tab-add=dms]')`), "alice's + for a new group");
+    await A.b.eval(`document.querySelector('[data-tab-add=dms]').click(), true`);
     await waitFor(() => A.b.eval(`!!${dialog('New group')}`), 'the New group dialog');
     await pick(A, 'New group', ['Bob', 'Carol']);
     await A.b.eval(setValue(`${dialog('New group')}.querySelector('fieldset input')`, 'Weekend'));

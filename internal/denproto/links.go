@@ -550,6 +550,8 @@ func siteTracking(host string) []string {
 		return []string{"s", "t", "ref_src", "ref_url"}
 	case onSite(host, "reddit.com", "redd.it"):
 		return []string{"share_id"}
+	case onSite(host, "steampowered.com", "steamcommunity.com"):
+		return []string{"snr"}
 	}
 	return nil
 }

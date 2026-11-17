@@ -1,8 +1,8 @@
 // Staff dragging channels and groups into order, and members from one call
 // to another, on a desktop (M17.2), by HTML's drag and drop, as the message
-// pane takes files. A channel's drop sends what Move up, Move down and
-// Group send from its settings, its place in its list, which the den
-// already takes; a group's, its place among the groups; and a member's,
+// pane takes files. A channel's drop sends what Move up and Move down in
+// its menu and Group in its settings send, its place in its list, which
+// the den already takes; a group's, its place among the groups; and a member's,
 // the voice channel to move their call to, which Move to in their menu in
 // the call sends too, for touch screens and keyboards.
 
@@ -75,4 +75,22 @@ export function moveTargets(view, member, from) {
     return [siblings(view, ''), ...groups.map((g) => siblings(view, g.id))]
         .flat()
         .filter((c) => c.kind === 'voice' && c.id !== from && (staff || !c.staff_only));
+}
+
+// channelMoves is what Move up and Move down in a channel's menu send the
+// den, as touch screens and keyboards have them in the drag's place: its
+// place one up or one down among its list's channels, or null at that end.
+export function channelMoves(view, id) {
+    const moving = view.channels.find((c) => c.id === id && listedKind(c));
+    const list = moving ? siblings(view, moving.group_id || '') : [];
+    const at = list.findIndex((c) => c.id === id);
+    return { up: at > 0 ? { position: at - 1 } : null, down: at >= 0 && at < list.length - 1 ? { position: at + 1 } : null };
+}
+
+// groupMoves is what Move up and Move down in a group's menu send: its
+// place one up or one down among the groups, or null at that end.
+export function groupMoves(view, id) {
+    const groups = [...view.groups].sort(byPosition);
+    const at = groups.findIndex((g) => g.id === id);
+    return { up: at > 0 ? { position: at - 1 } : null, down: at >= 0 && at < groups.length - 1 ? { position: at + 1 } : null };
 }

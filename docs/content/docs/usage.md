@@ -108,8 +108,8 @@ them, the DM waits until you compare again, or choose **Send anyway**.
 ### Group DMs
 
 A group DM is a DM of three to ten people, end-to-end encrypted as a DM is.
-Start one from **+ New group** above your DMs, or from **Add people** on the
-profile beside a DM. Someone added reads it from when they joined, not before,
+Start one from the **+** at the end of the **Direct messages** tab, or from
+**Add people** on the profile beside a DM. Someone added reads it from when they joined, not before,
 and someone removed, or who left, reads nothing written after. Anyone in it can
 add people, rename it or leave; whoever made it can remove people. Each change
 is signed by the member who made it, so the den can't add anyone on its own.
@@ -144,7 +144,8 @@ soundboard work as you'd expect. What's different:
   that in the channel's settings. Turn the timer off under **Settings** →
   **Appearance** → **Calls**. Everyone in a call hears the soundboard, and
   one sound plays at a time. Turn anyone up to 200% from their **⋯** in the
-  call; past 100% a loud voice may crackle. **Settings** → **Voice** holds
+  call, or **Mute** them just for you; past 100% a loud voice may crackle.
+  **Unmute** brings back the volume they had. **Settings** → **Voice** holds
   push to talk's **Release delay** and a **Toggle deafen** shortcut.
 - **Polls** can be anonymous to everyone in the den, its owner included; the
   den itself still knows, since it counts each vote once. With **After
@@ -169,6 +170,8 @@ soundboard work as you'd expect. What's different:
   on someone else's theme, so it stays readable there. To see names plain,
   or in their colors alone, set **Settings** → **Appearance** → **Name
   styles**.
+- **Appearance** shows a preview of the chat at its top, which changes as you
+  pick a theme, a name style or **Compact**.
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
   → **Messages**. On a computer, the sizes of photos and videos and of
   YouTube players are there too, up to **Largest**.
@@ -179,6 +182,12 @@ soundboard work as you'd expect. What's different:
   theme** makes one of your own from three colors. **Copy code** turns yours
   into a line of text to send someone, who adds it with **Paste a code**.
   Your themes stay in the browser you made them in.
+- **Steam games** you link show as cards, with the price, reviews and who's
+  playing, once you turn on **Show Steam games as cards** in **Settings** →
+  **Chat**. Steam then sees your IP address as each card loads.
+- **Staff** make channels and groups from the **+** at the end of the **Den**
+  tab, from the den's name, or with a right click on the channel list, and
+  move a channel from its **⋯** or by dragging it.
 - **Chat background** puts a picture of yours behind your messages, as dim
   as you set it, and **Hover** sets how much of it a message under your
   pointer covers. Your Dens keeps it, so each browser you open Dens in shows
@@ -214,8 +223,8 @@ to turn off, turn down, or replace with a file of your own.
 
 ## Leaving
 
-Open the den's **Manage**, from the den's name at the top of its channel list,
-and choose **Leave den** at the bottom. You can come back with a new invite, as
+Open the den's **Manage**, from the menu under the den's name at the top of
+its channel list, and choose **Leave den** at the bottom. You can come back with a new invite, as
 yourself: join with your old username and den password, and your history comes
 back with you. Your notes don't.
 

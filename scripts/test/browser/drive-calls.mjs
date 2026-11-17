@@ -381,6 +381,29 @@ try {
         && zero.volume === 0 && zero.row === '' && zero.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0 }),
         `${B.browser} turns Alice down: ${full} -> ${JSON.stringify(thirty)} -> ${JSON.stringify(zero)}`);
 
+    // Mute, in her menu, for Bob alone (M22.2): from 30% to 0, and Unmute
+    // back to 30%, which the browser keeps, as it keeps her volume.
+    await slide(30);
+    await sleep(300);
+    const MUTE_ROW = `document.querySelector('[data-call-menu] [data-menu-item=mute]')`;
+    const rowText = () => B.b.eval(`${MUTE_ROW}?.textContent.trim() || ''`);
+    const unmutedRow = await rowText();
+    await B.b.eval(`${MUTE_ROW}.click(), true`);
+    await sleep(300);
+    const muted = { volume: await B.b.eval(VOLUME()), kept: await B.b.eval(KEPT), back: await B.b.eval(`localStorage.getItem('DENS_UNMUTED_VOLUMES')`) };
+    await B.b.eval(`document.querySelector('button[aria-label="Options for Alice in the call"]').click(), true`);
+    await sleep(300);
+    const mutedRow = await rowText();
+    await B.b.eval(`${MUTE_ROW}.click(), true`);
+    await sleep(300);
+    const unmuted = { volume: await B.b.eval(VOLUME()), kept: await B.b.eval(KEPT), back: await B.b.eval(`localStorage.getItem('DENS_UNMUTED_VOLUMES')`) };
+    report(unmutedRow === 'Mute' && muted.volume === 0 && muted.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0 }) && muted.back === JSON.stringify({ [`${den}:${aliceID}`]: 0.3 })
+        && mutedRow === 'Unmute' && unmuted.volume === 0.3 && unmuted.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0.3 }) && !unmuted.back,
+    `${B.browser} mutes Alice for itself and unmutes her to 30%: ${unmutedRow} ${JSON.stringify(muted)}, then ${mutedRow} ${JSON.stringify(unmuted)}`);
+    // Back to 0, which the next call keeps.
+    await slide(0);
+    await sleep(300);
+
     // A name in the call opens its profile; the menu closes on a click
     // elsewhere, and on Escape. The volume step left it open.
     await B.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
@@ -519,6 +542,22 @@ try {
     await sleep(200);
     await B.b.eval(`document.getElementById('auto-sensitivity').click(), true`);
     await closeSettings(B, 'close');
+
+    // Staff's menu on Bob: his own Mute first, then staff's, Move to
+    // opening the other voice channels beside it, and Disconnect last
+    // (M22.2).
+    await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);
+    await waitFor(() => A.b.eval(`!!document.querySelector('[data-call-menu] [data-menu-item=move]')`), `${A.browser}'s menu on Bob`, 5000);
+    const rows = await A.b.eval(`[...document.querySelectorAll('[data-call-menu] [role=menuitem]')].map((r) => r.textContent.trim()).join(' | ')`);
+    await click(A, `document.querySelector('[data-call-menu] [data-menu-item=move]')`);
+    const targets = await waitFor(() => A.b.eval(`[...document.querySelectorAll('[data-flyout=move] [role=menuitem]')].map((r) => r.textContent.trim()).join(' | ')`),
+        'Move to opened', 5000).catch(() => '');
+    const beside = await A.b.eval(`(() => { const f = document.querySelector('[data-flyout=move]'); return !!f && f.getBoundingClientRect().left >= document.querySelector('[data-call-menu]').getBoundingClientRect().right - 1; })()`);
+    await A.b.shot(`${HOME}/shot-calls-${A.browser}-move-to.png`).catch((e) => console.log('shot', e.message));
+    report(rows === 'Mute | Mute for everyone | Move to | Disconnect from the call' && targets === 'Games' && beside,
+        `${A.browser}'s menu on Bob: ${rows}; Move to opens ${targets || 'nothing'} ${beside ? 'beside it' : 'not beside it'}`);
+    await A.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    await sleep(200);
 
     // Staff mute: the owner mutes Bob, whose packets stop reaching her.
     await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);

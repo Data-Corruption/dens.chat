@@ -53,7 +53,7 @@
 #   sounds BROWSER              M14.2: the page's sounds in a call, as each change plays them, from
 #                               a file of the member's own, quieted and off, and a DM's sound, once
 #                               with the browser's popup, alone with DMs off, none muted or on screen
-#   soundboard BROWSER          M14.3: sounds staff add from Manage, opened from the den's name, each
+#   soundboard BROWSER          M14.3: sounds staff add from Manage, opened from the den's name's menu, each
 #                               prepared by the page, played in a call from the call's block, Home's box
 #                               and the phone's bar, received by the other page, one at a time, its
 #                               player's ring lit, the rest heard by who joins partway, 0 muting it
@@ -78,7 +78,7 @@
 #                               digits and wrong ones refused; the mark on bob's laptop within its shortened
 #                               hour; and bob starting over: the line where his keys changed, his mark gone,
 #                               the hold, Send anyway, and his new code compared
-#   groups BROWSER              M16.3: a group made from the DM list's + New group and named, each change a line
+#   groups BROWSER              M16.3: a group made from the DM tab's + and named, each change a line
 #                               in it; written in, a photo sent, read through its members' Dens; dave added from
 #                               its members, reading from his joining on; renamed, the name only sealed in the
 #                               den's database; bob removed by alice, who made it, his page reading nothing
@@ -188,6 +188,11 @@
 #   signin BROWSER              M21.1: bob's laptop signing in from its page, saying at once that it waits for
 #                               his other device; his first device, at a phone's width, showing the request on
 #                               each pane; the digits typed both ways, and the laptop signed in
+#   steam BROWSER               M22.2: Steam's cards against a stand-in for Steam: off until bob turns them on,
+#                               asking nothing; each game once, three to a message, none in code or a
+#                               spoiler; a sale's card in full, held to its size as it loads, its arrows
+#                               stepping through the screenshots; a free game, one coming, one Steam lacks;
+#                               and one for adults only, covered and unasked until shown
 #   review [PASS...] [-- PART...]  M22.1: every screen for a review of the page, in Chromium at 1280 by 800
 #                               with a mouse and at 390 by 844 by touch, each on Dark and on Light: the phone
 #                               check's screens and those it lacks, a call with a share, the owner's, the first
@@ -199,7 +204,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,197p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,202p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

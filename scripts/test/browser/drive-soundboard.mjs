@@ -19,7 +19,7 @@
 //   run.sh soundboard chromium|firefox
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, MANAGE, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, DEN_NAME, HOME, MANAGE, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, BOB_ID: bobID } = process.env;
@@ -207,8 +207,8 @@ try {
     await waitFor(async () => !(await A.b.eval(`!!${MANAGE}`)), "Manage closed");
 
     step("Manage, from the den's name: alice adds an MP3 and a WAV; one too long is refused");
-    const name = await A.b.eval(`document.querySelector('[data-den-manage]')?.textContent.trim() || ''`);
-    await click(A, `document.querySelector('[data-den-manage]')`);
+    const name = await A.b.eval(`${DEN_NAME}?.textContent.trim() || ''`);
+    await manageFromName(A.b);
     const general = await waitFor(() => A.b.eval(`${MANAGE}?.querySelector('h3')?.textContent || false`), "Manage from the den's name", 5000).catch(() => false);
     report(name === 'Voice Den' && general === 'General', `the den's name, ${name}, opens its Manage, at ${general}`);
     await soundboardSection(A);
@@ -232,7 +232,7 @@ try {
     await click(A, `${MANAGE}.querySelector('button[aria-label=Close]')`);
     lib('api', 'alice', 'PUT', `/api/dens/${den}/members/${bobID}/role`, '{"role":"moderator"}');
     await waitFor(() => hasBoard(B), "bob's soundboard", 15000);
-    await click(B, `document.querySelector('[data-den-manage]')`);
+    await manageFromName(B.b);
     await soundboardSection(B);
     report(await addSound(B, video, '') === 'added', `bob adds a video's sound, which his ${which} prepares`);
     report(await addSound(B, long, 'Long') === 'added', 'and one of two minutes');

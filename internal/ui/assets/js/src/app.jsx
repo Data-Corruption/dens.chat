@@ -6,6 +6,7 @@
 // page shows, and which of a den's panes, is the page's history's (M13.1).
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
+import { watchTab } from './tabmark.js';
 import { api } from './api.js';
 import { startBackground } from './background.js';
 import { onConnection, onUnpaired } from './events.js';
@@ -136,6 +137,7 @@ export function App({ instance, version, pair, pairLink }) {
     // with it the chat's background and the notifications this page shows
     // (M12.3), whose click opens their message.
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
+    useEffect(() => (open ? watchTab() : undefined), [open]);
     useEffect(() => {
         if (!open) return;
         startBackground();

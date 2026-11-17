@@ -145,8 +145,8 @@ test('the dialog lists the sections down its side, the one shown marked, and ope
     assert.deepEqual(items.map((b) => b.textContent.trim()), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
     assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['page', '', '', '', '', '']);
     const titles = all(root, (n) => n.localName === 'h2' && /\bcard-title\b/.test(n.attributes.class || '')).map((t) => t.textContent.trim());
-    assert.deepEqual(titles, ['App settings', 'Theme', 'Chat background', 'Messages', 'Name styles', 'Animations', 'Verified mark', 'Calls'],
-        'Theme first, then the chat\'s background and how messages and names show, and calls last');
+    assert.deepEqual(titles, ['App settings', 'Theme', 'Messages', 'Calls'], 'Theme first, with the chat\'s background, then messages, and calls last');
+    assert.equal(all(root, (n) => 'data-appearance-preview' in n.attributes).length, 1, 'over them, the preview');
     items[3].dispatch('click');
     assert.deepEqual(picked, ['voice']);
     mount(null, root);

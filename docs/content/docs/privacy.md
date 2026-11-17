@@ -50,6 +50,8 @@ it.
   software center does too, on its own schedule.
 - **To YouTube**, only if you turn on YouTube videos in the settings: your IP
   address for each video whose cover shows, and which videos you play.
+- **To Steam**, only if you turn on Steam's cards in the settings: your IP
+  address for each game whose card shows.
 
 That's all. There's no analytics or telemetry.
 

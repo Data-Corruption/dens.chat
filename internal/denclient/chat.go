@@ -78,6 +78,7 @@ func (m *Manager) History(ctx context.Context, denID, channelID string, q Histor
 	if err != nil {
 		return PageHistory{}, err
 	}
+	c.fetchKeys(ctx, channelID, h.Messages)
 	out := PageHistory{Messages: make([]PageMessage, 0, len(h.Messages)), HasOlder: h.HasOlder, HasNewer: h.HasNewer}
 	for _, msg := range h.Messages {
 		// One whose time to disappear came is about to go (M16.4).

@@ -15,7 +15,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DenEmoji, EmojiContext } from './denemoji.jsx';
 import { emojiAlone, nameAt } from './emoji.js';
-import { eventLink, messageLink, shownLink, trimLink, videoOf } from './links.js';
+import { eventLink, messageLink, shownLink, steamApp, trimLink, videoOf } from './links.js';
 import { MessageLink } from './msglinks.jsx';
 import { EventLink } from './eventlinks.jsx';
 
@@ -89,6 +89,19 @@ export function videosIn(text) {
     blocks(text, ctx);
     const seen = new Set();
     return ctx.videos.filter((v) => !seen.has(v.id) && seen.add(v.id)).slice(0, MAX_VIDEOS);
+}
+
+// MAX_GAMES is how many Steam cards a message gets at most.
+export const MAX_GAMES = 3;
+
+// gamesIn lists the Steam apps a message's cards show: those its links
+// point to, found exactly as the renderer finds links, so none in code,
+// and none in a spoiler, whose card would show what it hides. Each comes
+// once.
+export function gamesIn(text) {
+    const ctx = { games: [] };
+    blocks(text, ctx);
+    return [...new Set(ctx.games)].slice(0, MAX_GAMES);
 }
 
 // MAX_EVENT_CARDS is how many events' cards a message gets at most
@@ -265,6 +278,8 @@ function inline(line, marks, ctx, key, start, end) {
                 const shown = shownLink(url);
                 const video = ctx.videos && !ctx.spoiler && videoOf(url);
                 if (video) ctx.videos.push(video);
+                const game = ctx.games && !ctx.spoiler && steamApp(url);
+                if (game) ctx.games.push(game);
                 // A link to a message is a chip naming where it points (M11),
                 // and one to an event a chip naming it, with its card under
                 // the message (M17.5).

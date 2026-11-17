@@ -58,12 +58,14 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 			}
 			// Notifications show as the desktop's own where it has something
 			// to show them with (M12.3), and a click opens the page paired,
-			// as dens open opens it.
-			if notes, err := openNotifier(l); err != nil {
-				h.Logf("Notifications show only in a Dens tab: %v", err)
-			} else {
-				defer notes.Close()
-				h.Notifier = notes
+			// as dens open opens it. They open beside the helper's run, which
+			// a notification service that hangs would otherwise hold up.
+			h.OpenNotifier = func() (shortcuts.Notifier, error) {
+				notes, err := openNotifier(l)
+				if err != nil {
+					return nil, err
+				}
+				return notes, nil
 			}
 			h.OpenPage = func(instance string, n notify.Notification) error {
 				client, _, err := controlClient(bi, instance)

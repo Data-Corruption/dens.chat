@@ -7,7 +7,6 @@ import (
 	"io"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
@@ -59,32 +58,14 @@ func sendDM(t *testing.T, m *denclient.Manager, denID, dm, text string) denclien
 }
 
 // history reads a channel's latest messages as a member's Dens gives
-// them. A DM's key reaches a Dens on its socket, which a read made as the
-// DM's first message is sent can outrun, so messages that name a key the
-// Dens doesn't hold yet are read again once it does.
+// them.
 func history(t *testing.T, m *denclient.Manager, denID, channel string) []denclient.PageMessage {
 	t.Helper()
-	read := func() []denclient.PageMessage {
-		page, err := m.History(context.Background(), denID, channel, denclient.HistoryQuery{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return page.Messages
+	page, err := m.History(context.Background(), denID, channel, denclient.HistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	got := read()
-	waits := func() bool {
-		v, err := m.View(denID)
-		return err == nil && slices.ContainsFunc(got, func(pm denclient.PageMessage) bool {
-			return pm.Locked != "" && pm.KeyID != "" && !slices.ContainsFunc(v.DMKeys, func(k denclient.PageKey) bool { return k.ID == pm.KeyID })
-		})
-	}
-	if waits() {
-		for deadline := time.Now().Add(10 * time.Second); waits() && time.Now().Before(deadline); {
-			time.Sleep(20 * time.Millisecond)
-		}
-		got = read()
-	}
-	return got
+	return page.Messages
 }
 
 // A DM's text and files leave each member's Dens sealed: the den stores
@@ -172,6 +153,27 @@ func TestDMsStaySealed(t *testing.T) {
 	r.Close()
 	if media.Sniff(blob[:media.SniffLen]) != media.Other || bytes.Contains(blob, data[:64]) {
 		t.Fatal("the den can read the photo")
+	}
+}
+
+// A DM's history read before its key reaches the reader's Dens, as its
+// first message's can be, fetches the DM's keys rather than reading the
+// message as changed.
+func TestADMsHistoryFetchesAKeyItLacks(t *testing.T) {
+	_, owner, member, denID, _ := chatDen(t)
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	first := sendDM(t, owner, denID, dm, "first")
+	viewOf(t, member, denID, "the DM's key", func(v denclient.View) bool {
+		return slices.ContainsFunc(v.DMKeys, func(k denclient.PageKey) bool { return k.ID == first.KeyID })
+	})
+	denclient.ForgetSignedKeys(member, denID)
+	page, err := member.History(context.Background(), denID, dm, denclient.HistoryQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 1 || page.Messages[0].Text != "first" || page.Messages[0].Locked != "" {
+		t.Fatalf("bob's history: %+v", page.Messages)
 	}
 }
 

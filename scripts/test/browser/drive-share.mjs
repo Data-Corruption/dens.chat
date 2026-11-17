@@ -11,7 +11,7 @@
 //
 //   run.sh share
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, CAROL, HOME, MANAGE, SETTINGS, checks, launch, openManage, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CAROL, HOME, MANAGE, SETTINGS, checks, fromMenu, launch, openManage, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
 
 const { DEN: den } = process.env;
 // The preload keeps each page's peer connections and workers, what it
@@ -157,9 +157,9 @@ try {
     report(at > 0 && order[at + 1] === 'Mute', `both in the call; the share button sits just before mute: ${row}`);
 
     // The channel list: a ⋯ for each channel and group, for the owner, and no cog in the header.
-    await waitFor(() => A.b.eval(`!!document.querySelector('button[aria-label="Settings for general"]')`), 'the text channel', 5000).catch(() => {});
-    const menus = await A.b.eval(`JSON.stringify({ lounge: !!document.querySelector('button[aria-label="Settings for Lounge"]'), general: !!document.querySelector('button[aria-label="Settings for general"]'), group: !!document.querySelector('button[aria-label="Settings for the group Chat"]'), cog: !!document.querySelector('header button[aria-label="Channel settings"]') })`);
-    const bobMenus = await B.b.eval(`!!document.querySelector('button[aria-label="Settings for Lounge"]')`);
+    await waitFor(() => A.b.eval(`!!${rowMenu('general')}`), 'the text channel', 5000).catch(() => {});
+    const menus = await A.b.eval(`JSON.stringify({ lounge: !!${rowMenu('Lounge')}, general: !!${rowMenu('general')}, group: !!${rowMenu('the group Chat')}, cog: !!document.querySelector('header button[aria-label="Channel settings"]') })`);
+    const bobMenus = await B.b.eval(`!!${rowMenu('Lounge')}`);
     report(menus === JSON.stringify({ lounge: true, general: true, group: true, cog: false }) && !bobMenus, `the owner has a ⋯ per channel and group and no header cog, a member none: ${menus}, member ${bobMenus}`);
 
     // Alice shares; nobody watches yet, so her encoder waits.
@@ -324,7 +324,7 @@ try {
         `alice sends ${kbps} kbps against a 250 kbps cap; her offer has ${JSON.stringify(bandwidth)}; her sender ${max}`);
 
     // A voice channel's ⋯ opens its settings, and a new bitrate reaches the call.
-    await A.b.eval(`document.querySelector('button[aria-label="Settings for Lounge"]').click(), true`);
+    await fromMenu(A.b, rowMenu('Lounge'), 'edit');
     await waitFor(() => A.b.eval(`!!document.querySelector('input[aria-label="Voice quality"]')`), 'the voice channel dialog');
     await A.b.shot(`${HOME}/shot-share-channel-dialog.png`);
     await A.b.eval(`(() => { const i = document.querySelector('input[aria-label="Voice quality"]'); i.value = '48000'; i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);

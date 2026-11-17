@@ -229,22 +229,35 @@ test('a moderator moves another moderator, and mutes and disconnects only those 
     const root = document.createElement('div');
     const carol = { id: '3', display_name: 'Carol', username: 'carol', role: 'moderator', joined_at: 1 };
     const moving = { targets: () => [{ id: '9', name: 'Games' }], lift() {}, letGo() {} };
+    // offered is the menu's rows under the volume, in order, and Move to's
+    // channels once it opens.
     const offered = async (name) => {
         findAll(root, buttonNamed(`Options for ${name} in the call`))[0].dispatch('click', {});
         await settle();
-        const out = ['Mute for everyone', 'Games', 'Disconnect from the call'].filter((label) => findAll(root, buttonNamed(label)).length > 0);
+        const out = findAll(root, byAttr('role', 'menuitem')).map((b) => b.textContent.trim());
+        const move = findAll(root, buttonNamed('Move to'))[0];
+        if (move) {
+            move.dispatch('click', {});
+            await settle();
+            out.push(...findAll(root, byAttr('data-flyout', 'move'))
+                .flatMap((f) => findAll(f, byAttr('role', 'menuitem')).map((b) => `Move to ${b.textContent.trim()}`)));
+        }
         findAll(root, buttonNamed(`Options for ${name} in the call`))[0].dispatch('click', {});
         await settle();
         return out;
     };
     const row = (id) => findAll(root, byAttr('data-call-member', id))[0];
-    for (const [role, mine, drags] of [['moderator', ['Games'], 'true'], ['member', ['Mute for everyone', 'Games', 'Disconnect from the call'], 'true']]) {
+    // The member's own Mute leads, then staff's, and Disconnect goes last.
+    for (const [role, mine, drags] of [
+        ['moderator', ['Mute', 'Move to', 'Move to Games'], 'true'],
+        ['member', ['Mute', 'Mute for everyone', 'Move to', 'Disconnect from the call', 'Move to Games'], 'true'],
+    ]) {
         const members = new Map([alice, { ...bob, role }, carol].map((m) => [m.id, m]));
         mount(h(CallMembers, { denID: 'd', call: { channel_id: '5', members: [{ id: alice.id }, { id: bob.id }, { id: carol.id }] }, members, me: carol,
             speaking: new Set(), sounding: '', deafened: false, volumes: {}, onProfile() {}, inCall: false, label: { den: 'Den', channel: 'Lounge' }, moving }), root);
         assert.deepEqual(await offered('Bob'), mine, `carol, on bob as a ${role}`);
         assert.equal(row(bob.id).attributes.draggable, drags, `carol drags bob as a ${role}`);
-        assert.deepEqual(await offered('Alice'), [], 'nothing on the owner');
+        assert.deepEqual(await offered('Alice'), ['Mute'], "the owner muted for carol alone, and nothing of staff's");
         assert.equal(row(alice.id).attributes.draggable, undefined, "the owner's row doesn't drag");
         mount(null, root);
     }
