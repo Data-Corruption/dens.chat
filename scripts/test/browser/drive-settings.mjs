@@ -9,8 +9,7 @@
 // preview again; a YouTube player at Small, then Large with the larger
 // cover; neither moving the other, nor running past the pane. From M19.4,
 // a theme of her own: the editor starting from the
-// theme the page shows, the page wearing each color as it's typed or
-// picked, Cancel putting the one before back, the theme saved, chosen and
+// theme the page shows, Cancel keeping nothing, the theme saved, chosen and
 // kept across a reload, edited, its code copied and pasted into bob's
 // browser, which then wears the same, a stranger's codes refused there
 // with nothing reaching a style, and the theme deleted; and a picture
@@ -28,7 +27,14 @@
 // size and regular labels, every button one of the page's kinds by the
 // layout audit; Manage holding what staff manage, the owner's Events among
 // it; and her own sections of the den, from the cog on its page, as its
-// group above the app's.
+// group above the app's. From M22.5 the theme editor as a dialog beside a
+// den in the theme being made, which alone wears it until it's saved: a
+// color edited against the preview, one too near the background said so,
+// the corners and border in its buttons, Escape closing the editor alone;
+// the code a block in the generator's shape; a stranger's blocks read for
+// what the page reads alone; a block from DaisyUI's generator pasted,
+// the page setting every variable as it gives it; and a v1.13.0 code read
+// as it was.
 //
 //   run.sh settings chromium|firefox [PART...]
 //
@@ -156,9 +162,74 @@ const WEARS = `JSON.stringify((() => {
         base: of('--color-base-100'), base200: of('--color-base-200'), base300: of('--color-base-300'), primary: of('--color-primary'),
         secondary: of('--color-secondary'), accent: of('--color-accent'), error: of('--color-error'),
         button: primary ? hex(getComputedStyle(primary).backgroundColor) : '', radius: primary ? getComputedStyle(primary).borderTopLeftRadius : '',
+        radiusField: root.getPropertyValue('--radius-field').trim(), border: root.getPropertyValue('--border').trim(), depth: root.getPropertyValue('--depth').trim(),
         set: document.documentElement.style.length, styled: document.documentElement.getAttribute('style') || '' };
 })())`;
 const wears = async (on) => JSON.parse(await on.eval(WEARS));
+// The theme editor's dialog, its preview, and what the preview wears: its
+// box's background and text, its variables, its channel list's
+// background, and its primary button's color, corners and border.
+const EDITOR = `document.querySelector('[data-theme-editor]')`;
+const DIALOG = `${EDITOR}.closest('[role=dialog]')`;
+const FOOT = `${DIALOG}.querySelector('[data-dialog-foot]')`;
+const PREVIEW = `document.querySelector('[data-theme-preview]')`;
+const PREVIEW_WEARS = `JSON.stringify((() => {
+    const hex = ${HEX};
+    const box = ${PREVIEW};
+    const style = getComputedStyle(box);
+    const of = (v) => hex(style.getPropertyValue(v));
+    const primary = box.querySelector('.btn-primary');
+    const p = getComputedStyle(primary);
+    return { theme: box.dataset.theme, page: hex(style.backgroundColor), text: hex(style.color), base200: of('--color-base-200'), base300: of('--color-base-300'),
+        primary: of('--color-primary'), secondary: of('--color-secondary'), accent: of('--color-accent'), error: of('--color-error'),
+        list: hex(getComputedStyle(box.querySelector('[data-preview-list]')).backgroundColor),
+        button: hex(p.backgroundColor), radius: p.borderTopLeftRadius, borderWidth: p.borderTopWidth };
+})())`;
+const previewWears = async (on) => JSON.parse(await on.eval(PREVIEW_WEARS));
+// STYLED is the root's style as a theme of the member's own leaves it:
+// DaisyUI's variables alone, each a color or a number the page wrote.
+const STYLED = /^(--[a-z0-9-]+: (#[0-9a-f]{6}|oklch\([0-9.]+% [0-9.]+ [0-9.]+\)|[0-9.]+(rem|px)?);\s?)+$/;
+// PASTE is the field a theme's code is pasted into.
+const PASTE = '[data-own-themes] form textarea';
+// GENERATOR is a block as DaisyUI's theme generator copies it, its line
+// before it among it, and OLD_CODE a v1.13.0 code, Plum, on Dark.
+const GENERATOR = `
+@plugin "daisyui/theme" {
+  name: "mytheme";
+  default: false;
+  prefersdark: false;
+  color-scheme: "light";
+  --color-base-100: oklch(97.788% 0.004 56.375);
+  --color-base-200: oklch(93.982% 0.007 61.449);
+  --color-base-300: oklch(91.586% 0.006 53.44);
+  --color-base-content: oklch(23.574% 0.066 313.189);
+  --color-primary: oklch(85% 0.138 181.071);
+  --color-primary-content: oklch(43% 0.078 188.216);
+  --color-secondary: oklch(89% 0.061 343.231);
+  --color-secondary-content: oklch(45% 0.187 3.815);
+  --color-accent: oklch(90% 0.076 70.697);
+  --color-accent-content: oklch(47% 0.157 37.304);
+  --color-neutral: oklch(27% 0.006 286.033);
+  --color-neutral-content: oklch(92% 0.004 286.32);
+  --color-info: oklch(68% 0.169 237.323);
+  --color-info-content: oklch(29% 0.066 243.157);
+  --color-success: oklch(69% 0.17 162.48);
+  --color-success-content: oklch(26% 0.051 172.552);
+  --color-warning: oklch(79% 0.184 86.047);
+  --color-warning-content: oklch(28% 0.066 53.813);
+  --color-error: oklch(64% 0.246 16.439);
+  --color-error-content: oklch(27% 0.105 12.094);
+  --radius-selector: 1rem;
+  --radius-field: 0.75rem;
+  --radius-box: 2rem;
+  --size-selector: 0.21875rem;
+  --size-field: 0.28125rem;
+  --border: 1.5px;
+  --depth: 0;
+  --noise: 1;
+}
+`;
+const OLD_CODE = 'dens-theme:1.d.r.2b1d3aeae0f5c084fc7dd3fcfbbf2409090b00bafe00d390fcb700ff627d.506c756d';
 // hue is a color's hue in OKLCH, in degrees, from its #rrggbb.
 function hue(hex) {
     const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
@@ -174,12 +245,11 @@ const q = JSON.stringify;
 // picking would: the value, then the event Preact listens for.
 const set = (on, selector, value, events = ['input']) => on.eval(`(() => {
     const el = document.querySelector(${q(selector)});
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${q(value)});
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, ${q(value)});
     for (const e of ${q(events)}) el.dispatchEvent(new Event(e, { bubbles: true }));
     return true;
 })()`);
 const OWN = `document.querySelector('[data-own-themes]')`;
-const EDITOR = `document.querySelector('[data-theme-editor]')`;
 const button = (text, within = OWN) => `[...${within}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)})`;
 const press = async (on, text, within) => {
     await waitFor(() => on.eval(`!!${button(text, within)} && !${button(text, within)}.disabled`), `the ${text} button`);
@@ -416,7 +486,7 @@ try {
     }
 
     if (runs('themes')) {
-        step('a theme of her own: the editor, and Cancel');
+        step('a theme of her own: the editor beside its preview, and Cancel');
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
         await waitFor(() => b.eval(`document.querySelectorAll('[data-scroller] [data-id]').length >= 5`), "general's messages");
         await openSettings(b, 'Appearance');
@@ -431,129 +501,189 @@ try {
         const dracula = await wears(b);
         c.report(dracula.theme === 'dracula' && dracula.set === 0, `Dracula sets nothing on the root: ${q(dracula.styled)}`);
         await press(b, 'New theme');
-        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        const started = JSON.parse(await b.eval(`JSON.stringify({
-            name: ${EDITOR}.querySelector('input[type=text]').value,
-            colors: [...${EDITOR}.querySelectorAll('[data-color]')].map((r) => [r.dataset.color, r.querySelector('input[type=color]').value, r.querySelector('input[type=text]').value]),
-            base: ${EDITOR}.querySelector('[data-theme-base] input:checked').value, corners: ${EDITOR}.querySelector('[data-theme-corners] input:checked').value })`));
-        const starts = Object.fromEntries(started.colors.map(([label, picked]) => [label, picked]));
-        c.report(started.colors.map(([label]) => label).join('|') === 'Background|Text|Primary' && started.colors.every(([, picked, typed]) => picked === typed),
-            `the editor asks for three colors, each picked and as hex: ${q(started.colors)}`);
-        c.report(starts.Background === dracula.base && starts.Text === dracula.text && starts.Primary === dracula.primary
-            && started.base === 'dark' && started.corners === 'rounded',
-        `it starts from the theme the page shows, Dracula: ${q(started)} of ${q(dracula)}`);
+        await waitFor(() => b.eval(`!!${EDITOR} && !!${PREVIEW}`), 'the editor and its preview');
+        const started = JSON.parse(await b.eval(`JSON.stringify((() => { const hex = ${HEX}; return {
+            title: ${DIALOG}.getAttribute('aria-label'), name: ${EDITOR}.querySelector('input[type=text]').value,
+            colors: [...${EDITOR}.querySelectorAll('[data-color]')].map((r) => [r.dataset.color, r.querySelector('input[type=color]').value, hex(r.querySelector('input[type=text]').value)]),
+            base: ${EDITOR}.querySelector('[data-theme-base] input:checked').value,
+            radii: [...${EDITOR}.querySelectorAll('[data-radius]')].map((s) => s.value), border: ${EDITOR}.querySelector('[data-border]').value,
+            depth: document.getElementById('theme-depth').checked, noise: document.getElementById('theme-noise').checked }; })())`));
+        const starts = Object.fromEntries(started.colors.map(([label, , typed]) => [label, typed]));
+        c.report(started.title === 'New theme' && started.colors.map(([label]) => label).join('|') === 'Background|Text|Primary|Neutral|Info|Success|Warning|Error',
+            `the editor is a dialog asking for the colors the page draws with: ${q(started.colors)}`);
+        c.report(starts.Background === dracula.base && starts.Text === dracula.text && starts.Primary === dracula.primary && starts.Error === dracula.error
+            && started.base === 'dark' && started.radii.join() === '1,0.5,1' && started.border === '1' && started.depth === false && started.noise === false,
+        `it starts from the theme the page shows, Dracula, its corners, border and effects among it: ${q(started)} of ${q(dracula)}`);
         const before = await wears(b);
-        c.report(before.page === dracula.page && before.error === dracula.error && before.secondary === dracula.secondary && before.accent === dracula.accent
-            && before.theme === 'dark',
-        `opened, the page looks as it did, over Dark, the colors it doesn't ask for carried: ${q(before)}`);
+        const inPreview = await previewWears(b);
+        c.report(before.page === dracula.page && before.theme === 'dracula' && before.set === 0,
+            `opened, the page keeps Dracula: ${q(before)}`);
+        c.report(inPreview.theme === 'dark' && inPreview.page === dracula.page && inPreview.primary === dracula.primary && inPreview.secondary === dracula.secondary,
+            `the preview wears the theme being made, on Dark: ${q(inPreview)}`);
         await set(b, field('Background', 'text'), '#102030');
         await sleep(250);
-        const typed = await wears(b);
-        c.report(typed.page === '#102030' && typed.base === '#102030' && typed.base200 !== '#102030' && typed.base300 !== typed.base200
+        const typed = await previewWears(b);
+        const page = await wears(b);
+        c.report(typed.page === '#102030' && typed.base200 !== '#102030' && typed.base300 !== typed.base200 && typed.list === typed.base200
             && (await b.eval(`document.querySelector(${q(field('Background', 'color'))}).value`)) === '#102030',
-        `a background typed as hex is the page's at once, the deeper two derived, the picker following: ${q(typed)}`);
-        await press(b, 'Cancel', EDITOR);
+        `a background typed as hex is the preview's at once, the deeper two derived, its channel list among them, the picker following: ${q(typed)}`);
+        c.report(page.page === dracula.page && page.set === 0, `and the page keeps its own until it's saved: ${q(page)}`);
+        await h.snap('theme-editor', { scroll: `${FOOT}.previousElementSibling`, max: 3 });
+        await press(b, 'Cancel', FOOT);
         await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
         const canceled = await wears(b);
         c.report(canceled.theme === 'dracula' && canceled.page === dracula.page && canceled.set === 0 && (await ownNames(b)) === ''
-            && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null,
-        `Cancel puts Dracula back and keeps nothing: ${q(canceled)}`);
-
-        step('the theme made, saved and chosen');
+            && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null && (await b.eval(`!!${SETTINGS}`)),
+        `Cancel keeps nothing, and leaves the settings open: ${q(canceled)}`);
         await press(b, 'New theme');
         await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        await set(b, '[data-theme-editor] label input[type=text]', 'Check theme');
+        await b.key('Escape');
+        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
+        c.report(await b.eval(`!!${SETTINGS}`), 'Escape closes the editor alone');
+
+        step('the theme made against the preview, saved and chosen');
+        await press(b, 'New theme');
+        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
+        await set(b, '[data-theme-editor] fieldset input[type=text]', 'Check theme');
         await choose(b, 'data-theme-base', 'Light');
         await set(b, field('Background', 'text'), '#f4efe6');
         await set(b, field('Text', 'text'), '2a2118');
+        await set(b, field('Primary', 'text'), '#f0e6da');
+        await sleep(250);
+        const low = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
         await set(b, field('Primary', 'text'), '#c41');
         await set(b, field('Primary', 'color'), '#c2410c');
-        await choose(b, 'data-theme-corners', 'Square');
+        await set(b, '[data-radius=radiusField]', '0', ['change']);
+        await set(b, '[data-border]', '2', ['change']);
         await sleep(300);
-        const made = await wears(b);
-        const wanted = { theme: 'light', page: '#f4efe6', text: '#2a2118', base: '#f4efe6', primary: '#c2410c', button: '#c2410c', radius: '0px' };
+        const lowAfter = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
+        c.report(low.split('|').includes('Primary') && !lowAfter.split('|').includes('Primary'),
+            `a primary too near the background says so beside it, and stops once it reads: ${q(low)}, then ${q(lowAfter)}`);
+        const made = await previewWears(b);
+        const wanted = { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', button: '#c2410c', radius: '0px', borderWidth: '2px' };
         const holds = (got, want) => Object.entries(want).every(([k, v]) => got[k] === v);
         c.report(holds(made, wanted) && made.error === dracula.error && made.secondary === dracula.secondary && made.accent === dracula.accent,
-            `the page wears the theme as it's made, every color and the corners, its Save button among them, the rest Dracula's: ${q(made)}`);
-        c.report(/^(--[a-z0-9-]+: (#[0-9a-f]{6}|[0-9.]+rem); ?)+$/.test(made.styled),
-            `the root's style holds variables alone, each a hex color or a radius: ${q(made.styled)}`);
+            `the preview wears each color as it's made, its buttons' corners and border, the rest Dracula's: ${q(made)}`);
+        c.report((await wears(b)).page === dracula.page, 'the page still its own');
         await b.shot(`${HOME}/shot-settings-${which}-editor.png`);
-        await h.snap('theme-editor', { scroll: PANEL, max: 3 });
-        const editorWrapped = await b.eval(WRAPPED);
-        c.report(editorWrapped.length === 0, `the editor: every hint reads in a line${editorWrapped.length ? `; wrapped: ${editorWrapped.join('; ')}` : ''}`);
-        await press(b, 'Save', EDITOR);
+        await h.snap('theme-made', { scroll: `${FOOT}.previousElementSibling`, max: 3 });
+        await press(b, 'Save', FOOT);
         await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
         const saved = await wears(b);
         const stored = await b.eval(`localStorage.getItem('DENS_THEME')`);
-        c.report(holds(saved, { ...wanted, button: saved.button, radius: saved.radius }) && (await ownNames(b)) === 'Check theme*' && /^custom:[a-z0-9]{8}$/.test(stored),
-            `saved, it's chosen among Your themes, which the browser keeps: ${await ownNames(b)}, ${stored}, ${q(saved)}`);
+        c.report(holds(saved, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', radiusField: '0rem', border: '2px' })
+            && (await ownNames(b)) === 'Check theme*' && /^custom:[a-z0-9]{8}$/.test(stored),
+        `saved, the page wears it, chosen among Your themes, which the browser keeps: ${await ownNames(b)}, ${stored}, ${q(saved)}`);
+        c.report(STYLED.test(saved.styled), `the root's style holds variables alone, each a value the page wrote: ${q(saved.styled)}`);
         const swatch = await b.eval(`(() => { const hex = ${HEX}; const s = document.querySelector('[role=radiogroup][aria-label="Your themes"] [data-theme]');
             return [hex(getComputedStyle(s).backgroundColor), ...[...s.children].map((d) => hex(getComputedStyle(d).backgroundColor))].join(' '); })()`);
-        c.report(swatch === '#f4efe6 #2a2118 #c2410c', `its swatch shows the colors it asked for: ${swatch}`);
+        c.report(swatch === '#f4efe6 #2a2118 #c2410c', `its swatch shows its text and primary: ${swatch}`);
         await h.snap('theme-own', { scroll: PANEL, max: 3 });
         await closeSettings(b);
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
         await waitFor(() => b.eval(`document.querySelectorAll('[data-scroller] [data-id]').length >= 5`), "general's messages");
         const reloaded = await wears(b);
-        c.report(holds(reloaded, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c' }), `a reload wears it from the start: ${q(reloaded)}`);
+        c.report(holds(reloaded, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', border: '2px' }), `a reload wears it from the start: ${q(reloaded)}`);
         await b.shot(`${HOME}/shot-settings-${which}-theme.png`);
 
-        step('edited, and its code copied');
+        step('edited, and its code copied as a block');
         await openSettings(b, 'Appearance');
         await waitFor(() => b.eval(`!!${OWN}`), 'Your themes');
         await press(b, 'Edit');
         await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        c.report((await b.eval(`${EDITOR}.querySelector('input[type=text]').value`)) === 'Check theme'
+        c.report((await b.eval(`${DIALOG}.getAttribute('aria-label')`)) === 'Edit theme' && (await b.eval(`${EDITOR}.querySelector('input[type=text]').value`)) === 'Check theme'
             && (await b.eval(`document.querySelector(${q(field('Primary', 'text'))}).value`)) === '#c2410c', 'Edit opens the editor at the theme');
         await set(b, field('Primary', 'text'), '#7c3aed');
-        await choose(b, 'data-theme-corners', 'Round');
-        await press(b, 'Save', EDITOR);
+        await set(b, '[data-radius=radiusBox]', '1', ['change']);
+        await b.eval(`document.getElementById('theme-depth').click(), true`);
+        await press(b, 'Save', FOOT);
         await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
         const edited = await wears(b);
-        c.report(edited.primary === '#7c3aed' && edited.page === '#f4efe6' && (await ownNames(b)) === 'Check theme*', `the edit took the theme's place: ${q(edited)}`);
+        c.report(edited.primary === '#7c3aed' && edited.page === '#f4efe6' && edited.depth === '1' && (await ownNames(b)) === 'Check theme*',
+            `the edit took the theme's place: ${q(edited)}`);
         await b.eval(`(() => { window.copied = []; navigator.clipboard.writeText = async (t) => { window.copied.push(t); }; return true; })()`);
         await press(b, 'Copy code');
         const code = await waitFor(async () => JSON.parse(await b.eval('JSON.stringify(window.copied || [])'))[0], 'the copied code');
-        c.report(new RegExp(`^dens-theme:1\\.l\\.o\\.f4efe62a21187c3aed${dracula.secondary.slice(1)}${dracula.accent.slice(1)}[0-9a-f]{30}\\.[0-9a-f]+$`).test(code),
-            `Copy code gives the theme as a code, ten colors still: ${code}`);
+        const lines = code.split('\n');
+        c.report(lines[0] === '@plugin "daisyui/theme" {' && lines.at(-1) === '}' && lines.length === 34 && lines.includes('  name: "Check theme";')
+            && lines.includes('  color-scheme: "light";') && lines.includes('  --color-base-100: #f4efe6;') && lines.includes('  --color-primary: #7c3aed;')
+            && lines.includes('  --radius-box: 1rem;') && lines.includes('  --radius-field: 0rem;') && lines.includes('  --border: 2px;') && lines.includes('  --depth: 1;'),
+        `Copy code gives the theme as a block in the generator's shape, every variable in it: ${q(code)}`);
         await closeSettings(b);
 
-        step("pasted into bob's browser, and a stranger's codes refused");
+        step("pasted into bob's browser, and a stranger's blocks read for their colors alone");
         b2 = await launch(which, which === 'chromium' ? 9573 : 9574, { size: [1400, 900], hover: true });
         await pair(b2, BOB);
         await openSettings(b2, 'Appearance');
         await waitFor(() => b2.eval(`!!${OWN}`), "bob's themes");
         const plain = await wears(b2);
+        const block = (...lines) => `@plugin "daisyui/theme" {\n${lines.map((l) => `  ${l};`).join('\n')}\n}`;
         const hostile = [
-            ['a url where a color goes', code.replace(/\.[0-9a-f]{60}\./, `.${code.split('.')[3].slice(0, 30)}url(https://evil.example/x.png)).`)],
-            ['a color in words', code.replace(/\.[0-9a-f]{60}\./, '.red.')],
-            ['a field more', `${code}.2f2a`],
-            ['a later version', code.replace(':1.', ':2.')],
-            ['a name of 41 characters', `${code.split('.').slice(0, 4).join('.')}.${'78'.repeat(41)}`],
-            ["a name that isn't text", `${code.split('.').slice(0, 4).join('.')}.ff`],
-            ['a style', 'dens-theme:1.l.o.;background:url(https://evil.example/x.png).78'],
-            ['JSON', 'dens-theme:{"name":"x","base":"url(https://evil.example/x.png)"}'],
+            ['a url where a color goes', block('name: "x"', '--color-base-100: url(https://evil.example/x.png)')],
+            ['a color in words', block('--color-primary: red')],
+            ['a style after a color', block('--color-primary: #ff0000 ;background:url(https://evil.example/x.png)}').replace(';background', 'x;background')],
+            ['a variable it doesn\'t know', block('--fx-noise: url(https://evil.example/n.svg)', 'background-image: url(https://evil.example/z.png)')],
+            ['a radius past the range', block('--radius-box: 99rem', '--border: calc(1px)')],
+            ['a v1.13.0 code with a url where a color goes', 'dens-theme:1.l.o.url(https://evil.example/x.png).78'],
+            ['JSON', '{"name":"x","base":"url(https://evil.example/x.png)"}'],
         ];
         await press(b2, 'Paste a code');
         const refused = [];
         for (const [what, bad] of hostile) {
-            await set(b2, '[data-own-themes] form input', bad);
+            await set(b2, PASTE, bad);
             await press(b2, 'Add');
             const said = await b2.eval(`${OWN}.querySelector('[role=alert], .text-error')?.textContent.trim() || ''`);
             const after = await wears(b2);
             if (said !== "That isn't a theme's code." || after.set !== 0 || after.page !== plain.page || (await ownNames(b2)) !== '') refused.push(`${what}: ${q(said)}, ${q(after.styled)}`);
         }
         c.report(refused.length === 0 && (await b2.eval(`localStorage.getItem('DENS_THEMES')`)) === null,
-            `each of a stranger's ${hostile.length} codes is refused, and nothing of them kept or styled${refused.length ? `: ${refused.join('; ')}` : ''}`);
+            `each of a stranger's ${hostile.length} pastes with nothing the page reads is refused, and nothing of them kept or styled${refused.length ? `: ${refused.join('; ')}` : ''}`);
+        // A block with hostile lines among its own reads for its own alone.
+        const mixed = code.replace('  --color-base-200:', '  --color-accent: url(https://evil.example/x.png);\n  background: url(https://evil.example/y.png);\n  --color-base-200:')
+            .replace('  --noise: 0;', '  --noise: 0 ; --border: 9px;');
+        await set(b2, PASTE, mixed);
+        await press(b2, 'Add');
+        await waitFor(async () => (await ownNames(b2)) === 'Check theme*', 'the mixed block kept');
+        const fromMixed = await wears(b2);
+        c.report(STYLED.test(fromMixed.styled) && !/url|evil|9px/.test(fromMixed.styled) && fromMixed.accent === edited.accent && fromMixed.border === '2px',
+            `a block with hostile lines keeps its own values, and nothing hostile reaches the root: ${q(fromMixed.styled)}`);
         await b2.shot(`${HOME}/shot-settings-${which}-refused.png`);
-        await set(b2, '[data-own-themes] form input', `  ${code}\n`);
+        await press(b2, 'Delete');
+        await waitFor(async () => (await ownNames(b2)) === '', 'the mixed theme leaving');
+        await press(b2, 'Paste a code');
+        await set(b2, PASTE, `  ${code}\n`);
         await press(b2, 'Add');
         await waitFor(async () => (await ownNames(b2)) === 'Check theme*', "the pasted theme among bob's");
         const pasted = await wears(b2);
-        c.report(holds(pasted, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#7c3aed', secondary: edited.secondary, accent: edited.accent, error: edited.error })
-            && pasted.base200 === edited.base200 && pasted.base300 === edited.base300,
-        `bob's page wears alice's theme, color for color: ${q(pasted)}`);
+        c.report(holds(pasted, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#7c3aed', secondary: edited.secondary, accent: edited.accent,
+            error: edited.error, base200: edited.base200, base300: edited.base300, radiusField: '0rem', border: '2px', depth: '1' }),
+        `bob's page wears alice's theme, variable for variable: ${q(pasted)}`);
         await b2.shot(`${HOME}/shot-settings-${which}-pasted.png`);
+
+        step("DaisyUI's generator's block, pasted, shows as it does there");
+        await press(b2, 'Paste a code');
+        await set(b2, PASTE, GENERATOR);
+        await press(b2, 'Add');
+        await waitFor(async () => (await ownNames(b2)) === 'Check theme|mytheme*', 'the generator\'s theme');
+        const given = Object.fromEntries(GENERATOR.split('\n').filter((l) => l.trim().startsWith('--')).map((l) => l.trim().slice(0, -1).split(': ')));
+        const set$ = JSON.parse(await b2.eval(`JSON.stringify(Object.fromEntries(${q(Object.keys(given))}.map((v) => [v, document.documentElement.style.getPropertyValue(v)])))`));
+        const differ = Object.keys(given).filter((v) => set$[v] !== given[v]);
+        const generated = await wears(b2);
+        const drawn = await b2.eval(`(() => { const hex = ${HEX}; return [hex(${q(given['--color-base-100'])}), hex(${q(given['--color-base-content'])})].join(' '); })()`);
+        c.report(differ.length === 0 && generated.theme === 'light' && `${generated.page} ${generated.text}` === drawn,
+            `the page sets each of its ${Object.keys(given).length} variables as the block gives it, and draws them${differ.length ? `; differ: ${differ.map((v) => `${v} ${set$[v]}`).join(', ')}` : ''}: ${q(generated)}`);
+        await helpers(b2, `http://localhost:${BOB.port}`, out, 'bob-').snap('theme-generator', { scroll: PANEL, max: 2 });
+        await b2.shot(`${HOME}/shot-settings-${which}-generator.png`);
+
+        step("a v1.13.0 code reads as it did");
+        await press(b2, 'Paste a code');
+        await set(b2, PASTE, OLD_CODE);
+        await press(b2, 'Add');
+        await waitFor(async () => (await ownNames(b2)) === 'Check theme|mytheme|Plum*', 'the old code\'s theme');
+        const old = await wears(b2);
+        c.report(holds(old, { theme: 'dark', page: '#2b1d3a', text: '#eae0f5', primary: '#c084fc', radiusField: '0.25rem' }) && old.set === 23,
+            `a v1.13.0 code's theme sets what it set then: ${q(old)}`);
+        await closeSettings(b2);
 
         step('deleted');
         await openSettings(b, 'Appearance');
@@ -570,12 +700,12 @@ try {
         await openSettings(b, 'Appearance');
         await press(b, 'New theme');
         await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        await set(b, '[data-theme-editor] label input[type=text]', 'Green');
+        await set(b, '[data-theme-editor] fieldset input[type=text]', 'Green');
         await choose(b, 'data-theme-base', 'Dark');
         await set(b, field('Background', 'text'), '#14321f');
         await set(b, field('Text', 'text'), '#e2efe6');
         await set(b, field('Primary', 'text'), '#3fae6a');
-        await press(b, 'Save', EDITOR);
+        await press(b, 'Save', FOOT);
         await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
         await closeSettings(b);
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);

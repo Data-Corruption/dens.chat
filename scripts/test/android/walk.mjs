@@ -210,8 +210,8 @@ async function bars(h, d) {
     // A theme of the member's own (M19.4), pasted as its code: the WebView
     // wears it, and the bars its background.
     await h.click(h.byText('[data-own-themes] button', 'Paste a code'));
-    await h.ev(`(() => { const el = document.querySelector('[data-own-themes] form input');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(OWN_THEME)});
+    await h.ev(`(() => { const el = document.querySelector('[data-own-themes] form textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(OWN_THEME)});
         el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
     await h.click(h.byText('[data-own-themes] button', 'Add'));
     await waitFor(() => h.has(`document.querySelector('[role=radiogroup][aria-label="Your themes"] input:checked')`), 'the pasted theme chosen');

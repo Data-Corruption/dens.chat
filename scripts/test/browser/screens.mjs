@@ -371,16 +371,15 @@ export async function memberScreens(h, ctx) {
         await h.ev(`${PANEL}.scrollTop = 0, true`);
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.snap('settings-themes', { scroll: PANEL, max: 2 });
-        // A theme of the member's own (M19.4): the editor, under the
-        // themes, which Cancel closes; and the chat's background, a
-        // picture the page draws and sends as the card would, for the
-        // card's Dim, and then removes.
+        // A theme of the member's own (M19.4): the editor, a dialog over
+        // the settings beside its preview (M22.5), which Cancel closes;
+        // and the chat's background, a picture the page draws and sends as
+        // the card would, for the card's Dim, and then removes.
         await h.click(h.withText('[role=dialog] button', 'More themes'));
         await h.click(h.byText('[data-own-themes] button', 'New theme'));
         await h.wait(`document.querySelector('[data-theme-editor]')`, 'the theme editor');
-        await h.ev(`document.querySelector('[data-own-themes]').scrollIntoView(), true`);
-        await h.snap('settings-theme-editor', { scroll: PANEL, max: 2 });
-        await h.click(h.byText('[data-theme-editor] button', 'Cancel'));
+        await h.snap('settings-theme-editor', { scroll: `document.querySelector('[data-theme-editor]').closest('[role=dialog]').querySelector('[data-dialog-foot]').previousElementSibling`, max: 3 });
+        await h.click(h.byText('[role=dialog] [data-dialog-foot] button', 'Cancel'));
         await h.ev(`new Promise((done) => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
             x.fillStyle = '#335566'; x.fillRect(0, 0, 64, 64);
             c.toBlob((blob) => fetch('/api/background', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob }).then((r) => done(r.ok)), 'image/png'); })`);
