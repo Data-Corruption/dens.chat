@@ -337,7 +337,11 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
         fs.rmSync(`${HOME}/jar-m2d`, { force: true });
         lib('start', 'm2d', '--port', '18489');
         const invite = lib('invite');
-        const b = await browser(mode, port++);
+        // The recovery codes save as a file, which lands here.
+        const downloads = `${HOME}/downloads-before-${mode}`;
+        fs.rmSync(downloads, { recursive: true, force: true });
+        fs.mkdirSync(downloads, { recursive: true });
+        const b = await browser(mode, port++, { downloads });
         try {
             const origin = 'http://localhost:18489';
             const h = helpers(b, origin, out, 'dave-');
@@ -374,6 +378,24 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
                 await h.click(`[...document.querySelectorAll('[role=dialog] button[type=submit]')].find((b) => b.textContent.trim() === 'Join')`);
                 await waitFor(() => h.has(`document.body.textContent.includes('recovery')`), 'the recovery codes', 30000);
                 await h.snap('recovery-codes', { scroll: `document.querySelector('main')`, max: 4 });
+            });
+            await h.step('codes-saved', async () => {
+                // Saving them, as a file named for the den, lets Done through
+                // (M22.4).
+                const done = h.byText('main button', 'Done');
+                const waited = await h.ev(`${done}?.disabled === true`);
+                await h.click(h.byText('main button', 'Save as a file'));
+                const file = await waitFor(() => fs.readdirSync(downloads).find((f) => f.endsWith(' recovery codes.txt')), 'the codes saved', 10000).catch(() => '');
+                const text = file ? fs.readFileSync(`${downloads}/${file}`, 'utf8') : '';
+                const codes = text.split('\n').filter((l) => /^[A-Z0-9]{4}(-[A-Z0-9]{4}){3}$/.test(l));
+                const key = /DM recovery key[^\n]*\n[A-Z0-9-]{20,}\n/.test(text);
+                const shown = await h.ev(`[...document.querySelectorAll('main ol li')].map((li) => li.textContent.trim()).join()`);
+                const freed = await waitFor(() => h.ev(`${done}?.disabled === false`), 'Done let through', 5000).then(() => true, () => false);
+                report(waited && file === 'Voice Den recovery codes.txt' && codes.length === 10 && codes.join() === shown && key && /Username: dave_/.test(text) && freed,
+                    `${mode}: Done waited (${waited}), Save as a file saved ${JSON.stringify(file)} holding the ${codes.length} codes shown and the key (${key}), and let Done through (${freed})`);
+                await h.click(done);
+                await h.wait(h.byText('button', 'Open'), "the den on Home", 15000);
+                await h.snap('after-codes');
             });
             log.push(...h.log);
         } catch (e) {

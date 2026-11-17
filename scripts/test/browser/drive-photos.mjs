@@ -48,7 +48,7 @@ try {
         return v?.loaded ? v : null;
     }, 'both versions loaded');
     if (p.shown !== 'smaller' || !(await bob.eval(pressed('Version shown')))?.startsWith('Smaller')) throw new Error(`shown: ${JSON.stringify(p)}`);
-    if (Math.abs(p.height - (await bob.eval(`${dialog}.firstElementChild.clientHeight`))) > 1) throw new Error(`fitted at ${p.width} × ${p.height}`);
+    if (Math.abs(p.height - (await bob.eval(`${dialog}.querySelector('[data-stage]').clientHeight`))) > 1) throw new Error(`fitted at ${p.width} × ${p.height}`);
     const natural = Object.fromEntries(p.natural.map(([w, x, y]) => [w, [x, y]]));
     if (natural.full[0] !== 3024 || natural.full[1] !== 4032 || natural.smaller[0] !== 1920 || natural.smaller[1] !== 2560) {
         throw new Error(`the versions' pixels: ${JSON.stringify(natural)}`);

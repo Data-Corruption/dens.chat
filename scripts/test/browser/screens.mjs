@@ -497,7 +497,8 @@ export async function memberScreens(h, ctx) {
     });
     await h.step('guide', async () => {
         await h.go(`/den/${den}/${general}`);
-        await h.click(h.label('How to write a message'));
+        await h.click(h.label('Add to this message'));
+        await h.click(`document.querySelector('[data-menu-item="help"]')`, 'Formatting help');
         await h.snap('guide', { scroll: `document.querySelector('[role=dialog]')`, max: 4 });
         await h.escape();
     });
@@ -562,10 +563,14 @@ export async function memberScreens(h, ctx) {
             await h.go(`/den/${den}/${dm}`);
             await h.wait(`document.querySelector('[data-expiry-line]')`, "the line where the DM's time was set");
             await h.click(`document.querySelector('[data-expiry-badge]')`, "the DM's time in its header");
-            // In a wide window with the profile open beside the DM, the
-            // time's click closes it: another opens it again.
-            if (!(await h.has(`document.querySelector('[data-expiry-setting]')`))) await h.click(`document.querySelector('[data-expiry-badge]')`, "the DM's time again");
-            await h.wait(`document.querySelector('[data-expiry-setting]')`, "the DM's time beside it");
+            await sleep(600);
+            // With the profile open beside the DM, as the address reloaded
+            // can leave it, the time's click closes it: another opens it
+            // again. On the phone layout it's open once the channel's pane
+            // stands inert beside it.
+            const beside = `(innerWidth < 768 ? !!document.querySelector('[data-pane=chan]')?.inert : !!document.querySelector('[data-expiry-setting]'))`;
+            if (!(await h.has(beside))) await h.click(`document.querySelector('[data-expiry-badge]')`, "the DM's time again");
+            await h.wait(`${beside} && document.querySelector('[data-expiry-setting]')`, "the DM's time beside it");
             await h.ev(`document.querySelector('[data-expiry-setting]').scrollIntoView({ block: 'center' }), true`);
             await sleep(400);
             await h.snap('dm-disappearing');
@@ -1265,8 +1270,9 @@ export async function touching(h, ctx, d, report) {
     await h.go(`/den/${den}/${general}`);
     await h.wait(COMPOSER, 'the composer');
     await sleep(1500);
-    // A finger has no ⋯ on a message, and a mouse has one on each.
-    const dots = await h.ev(`[...document.querySelectorAll('[data-scroller] button[aria-label="Message actions"]')].filter((b) => getComputedStyle(b).display !== 'none').length`);
+    // A finger has no ⋯ on a message, its hover bar left out, and a mouse
+    // has one on each.
+    const dots = await h.ev(`[...document.querySelectorAll('[data-scroller] button[aria-label="Message actions"]')].filter((b) => b.getClientRects().length > 0).length`);
     did(d.touch ? dots === 0 : dots > 0, d.touch ? 'no message shows a ⋯' : 'each message has its ⋯');
     let s = await open();
     did(s?.label === 'Message actions' && s.rows.includes('Reply') && s.rows.includes('Copy link') && s.title && s.layers === 1,
@@ -1476,15 +1482,18 @@ export async function pages(h, ctx, d, report) {
         did(gone && path === `/den/${den}/${general}`, `Back closes the viewer, and the channel stays (${path})`);
     }
 
-    // The writing guide, a dialog, is a sheet, which a swipe down its top
-    // closes.
-    await d.tap(`document.querySelector('[aria-label="How to write a message"]')`);
-    const sheet = await waitFor(() => h.ev(`(() => { const s = document.querySelector('[role=dialog][aria-label="Writing a message"]'); if (!s) return null;
+    // The writing guide, a dialog from the + sheet's last row, is a sheet,
+    // which a swipe down its top closes.
+    await d.tap(`document.querySelector('button[aria-label="Add to this message"]')`);
+    await waitFor(() => h.ev(`!!document.querySelector('[data-menu-item="help"]')`), 'the + sheet', 4000);
+    await sleep(400);
+    await d.tap(`document.querySelector('[data-menu-item="help"]')`);
+    const sheet = await waitFor(() => h.ev(`(() => { const s = document.querySelector('[role=dialog][aria-label="Formatting help"]'); if (!s) return null;
         const r = s.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.bottom), innerHeight]; })()`), 'the guide', 4000).catch(() => null);
     did(!!sheet && sheet[0] === 0 && sheet[2] >= 389 && sheet[3] >= sheet[4] - 1, `the writing guide opens as a sheet from the screen's foot: ${JSON.stringify(sheet)}`);
     if (sheet) {
         await d.drag([sheet[2] / 2, sheet[1] + 14], [sheet[2] / 2, sheet[1] + 14 + 0.6 * (sheet[3] - sheet[1])]);
-        const shut = await waitFor(async () => !(await h.has(`document.querySelector('[role=dialog][aria-label="Writing a message"]')`)), 'the guide closed', 4000).then(() => true, () => false);
+        const shut = await waitFor(async () => !(await h.has(`document.querySelector('[role=dialog][aria-label="Formatting help"]')`)), 'the guide closed', 4000).then(() => true, () => false);
         did(shut, 'a swipe down its top closes it');
     }
 }

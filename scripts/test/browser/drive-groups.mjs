@@ -127,6 +127,21 @@ try {
     report(await waitFor(() => history('dave', g).some((m) => m.text === 'welcome, dave' && !m.locked), "carol's message in dave's Dens").then(() => true, () => false),
         'dave reads what carol wrote after he joined');
     await B.b.shot(`${HOME}/shot-groups-members-bob-${which}.png`);
+    // A member's row is their picture and name, the one who made the group
+    // marked under theirs; comparing codes is each row's ⋯ (M22.4).
+    const rows = JSON.parse(await B.b.eval(`JSON.stringify([...${PANEL}.querySelectorAll('[data-member]')].map((li) => ({
+        name: li.querySelector('[data-member-name]')?.textContent.trim(), under: li.querySelector('[data-remover]')?.textContent.trim() || '',
+        buttons: [...li.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || 'row'),
+        clipped: [...li.querySelectorAll('[data-member-name]')].some((n) => n.scrollWidth > n.clientWidth) })))`));
+    report(rows.length === 4 && rows[0].name === 'Alice' && rows[0].under === 'Made the group' && rows.slice(1).every((r) => r.under === '')
+        && rows.every((r) => !r.clipped) && rows.find((r) => r.name === 'Bob (you)')?.buttons.join() === 'row'
+        && rows.filter((r) => r.name !== 'Bob (you)').every((r) => r.buttons.join() === `row,Options for ${r.name}`),
+    `each of the group's rows is a picture and a whole name, alice's marked Made the group, and the others' a ⋯: ${q(rows)}`);
+    await B.b.eval(`${PANEL}.querySelector('button[aria-label="Options for Carol"]').click(), true`);
+    const carolItems = await waitFor(() => B.b.eval(`[...document.querySelectorAll('[role=menu][aria-label="Options for Carol"] [role=menuitem]')].map((i) => i.textContent.trim()).join('|')`),
+        "carol's menu on bob's page", 3000).catch(() => '');
+    report(carolItems === 'Compare codes', `carol's ⋯ on bob's page compares codes, and removes nobody: ${q(carolItems)}`);
+    await B.b.eval(`document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })), true`);
 
     step('bob renames the group');
     await B.b.eval(`${button(PANEL + '.parentElement.parentElement', 'Rename')}.click(), true`);
@@ -143,8 +158,11 @@ try {
 
     step('alice, who made the group, removes bob');
     await openPanel(A);
-    const remove = `document.querySelector('button[aria-label="Remove Bob from the group"]')`;
-    await waitFor(() => A.b.eval(`!!${remove}`), "Remove beside bob on alice's page");
+    const more = `${PANEL}.querySelector('button[aria-label="Options for Bob"]')`;
+    await waitFor(() => A.b.eval(`!!${more}`), "bob's ⋯ on alice's page");
+    await A.b.eval(`${more}.click(), true`);
+    const remove = `[...document.querySelectorAll('[role=menu][aria-label="Options for Bob"] [role=menuitem]')].find((i) => i.textContent.trim() === 'Remove from the group')`;
+    await waitFor(() => A.b.eval(`!!${remove}`), "Remove in bob's menu on alice's page");
     await A.b.eval(`${remove}.click(), true`);
     report(await lineShown(A, 'You removed Bob.'), "alice's page shows she removed bob");
     report(await waitFor(() => B.b.eval(`!${row}`), "the group gone from bob's page").then(() => true, () => false), "bob's page no longer lists the group");

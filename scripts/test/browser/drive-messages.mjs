@@ -1,7 +1,8 @@
 // The M11.2 check of each message's ⋯ menu and links to messages, as bob
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
 // keyboard, Reply, Copy text and Copy link, Edit, and Delete through its
-// dialog; the menu by touch, through a long press, a touch screen having
+// dialog; from M22.4 the hover bar's Reply and Edit, an edit's one row,
+// and who else edits from the ⋯; the menu by touch, through a long press, a touch screen having
 // no ⋯ (M13.2); a message's link in its color, underlined only on hover
 // and keyboard focus (M14.1); the chips of links to messages, opening one
 // in its channel, in another channel, from another den and at an address
@@ -25,13 +26,17 @@ const b = await launch(which, which === 'chromium' ? 9533 : 9534, { hover: true 
 const shot = (name, on = b) => on.shot(`${HOME}/shot-messages-${which}-${name}.png`);
 const at = (on, sel) => on.eval(`(() => { const el = ${sel}; if (!el) return ''; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return JSON.stringify([r.x + r.width / 2, r.y + r.height / 2]); })()`).then((r) => r && JSON.parse(r));
 const may = (p) => p.catch(() => false);
+// spot is where an element's middle is, scrolling nothing, as for a button
+// that shows only while the pointer rests where it is.
+const spotOf = (on, sel) => on.eval(`(() => { const r = ${sel}.getBoundingClientRect(); return JSON.stringify([r.x + r.width / 2, r.y + r.height / 2]); })()`).then(JSON.parse);
 const ROW = (text) => `[...document.querySelectorAll('[data-id]')].find((r) => r.textContent.includes(${JSON.stringify(text)}))`;
 const DOTS = (text) => `${ROW(text)}?.querySelector('button[aria-label="Message actions"]')`;
 const MENU = `document.querySelector('[role=menu][aria-label="Message actions"]')`;
 const DIALOG = `document.querySelector('[role=dialog][aria-label="Delete this message?"]')`;
 const CHIP = (href) => `document.querySelector('[data-id] a[href="${href}"]')`;
 const link = (channel, message) => `${DEN_URL}/#m/${den}/${channel}/${message}`;
-const shown = (on, text) => on.eval(`getComputedStyle(${DOTS(text)}.parentElement).opacity`);
+const BAR = (text) => `${ROW(text)}?.querySelector('[data-message-bar]')`;
+const shown = (on, text) => on.eval(`getComputedStyle(${BAR(text)}.parentElement).opacity`);
 const items = (on = b) => on.eval(`[...(${MENU}?.querySelectorAll('[role=menuitem]') || [])].map((x) => x.textContent.trim())`);
 const focused = (on = b) => on.eval(`(() => { const el = document.activeElement; return el?.getAttribute('aria-label') || el?.textContent.trim() || el?.tagName; })()`);
 const has = (text, on = b) => on.eval(`document.body.innerText.includes(${JSON.stringify(text)})`);
@@ -84,7 +89,7 @@ try {
     const end = await focused();
     await press('Escape');
     const closed = !(await b.eval(`!!${MENU}`)) && (await focused()) === 'Message actions';
-    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Add reaction', 'Edit', 'Copy text', 'Copy link', 'Delete']) &&
+    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy link', 'Delete']) &&
         down === 'Add reaction' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
         `Enter opened ${JSON.stringify(all)} at Reply (${opened}); the arrows moved to ${down} and round to ${wrapped}, Home to ${home}, End to ${end}, and Escape closed it back to the ⋯ (${closed})`);
 
@@ -97,7 +102,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const text = await may(waitFor(async () => (await copied())?.includes("Bob's first") && (await has('Text copied')), 'the text copied', 5000));
     await press('Enter');
     await menuWith('Reply');
@@ -115,6 +120,64 @@ try {
     await press('Enter');
     const edited = await may(waitFor(() => b.eval(`!!${ROW("Bob's first (fixed)")}?.textContent.includes('(edited)')`), 'the edit saved', 5000));
     c.report(editing && edited, `Edit opened the box with the caret at the end (${editing}), and Enter saved it (${edited})`);
+
+    step('the hover bar: react, Reply and Edit on his own, then ⋯');
+    const bar = (text) => b.eval(`[...(${BAR(text)}?.querySelectorAll('button') || [])].map((x) => x.getAttribute('aria-label'))`);
+    const mine = await bar("Bob's second");
+    const alices = await bar("Alice's first");
+    const spotBar = await at(b, ROW("Bob's second"));
+    await b.move(spotBar[0], spotBar[1]);
+    await may(waitFor(async () => (await shown(b, "Bob's second")) === '1', 'the bar on hover', 3000));
+    await shot('bar');
+    const reply = await spotOf(b, `${BAR("Bob's second")}.querySelector('[data-reply-button]')`);
+    await b.click(reply[0], reply[1]);
+    const barReply = await may(waitFor(async () => (await has('Replying to Bob')) && (await b.eval(`document.activeElement?.tagName === 'TEXTAREA'`)), 'a reply from the bar', 5000));
+    await press('Escape');
+    const again = await at(b, ROW("Bob's second"));
+    await b.move(again[0], again[1]);
+    await may(waitFor(async () => (await shown(b, "Bob's second")) === '1', 'the bar on hover again', 3000));
+    const edit = await spotOf(b, `${BAR("Bob's second")}.querySelector('[data-edit-button]')`);
+    await b.click(edit[0], edit[1]);
+    const barEdit = await may(waitFor(() => b.eval(`document.activeElement?.tagName === 'TEXTAREA' && document.activeElement.value === "Bob's second"`), 'an edit from the bar', 5000));
+    // Under the box, one row: Save, Cancel and the keys, nothing of who else edits.
+    const under = JSON.parse(await b.eval(`(() => {
+        const box = document.activeElement, below = [...box.parentElement.children].filter((e) => e !== box);
+        const row = below[0], tops = row ? [...row.children].map((e) => Math.round(e.getBoundingClientRect().top + e.getBoundingClientRect().height / 2)) : [];
+        return JSON.stringify({ below: below.length, items: row ? [...row.children].map((e) => e.textContent.trim()) : [], level: tops.length > 0 && Math.max(...tops) - Math.min(...tops) <= 2,
+            sharing: box.closest('[data-id]').innerText.includes('can edit this') });
+    })()`));
+    await shot('edit');
+    await b.type(' (from the bar)');
+    await press('Enter');
+    const barSaved = await may(waitFor(() => b.eval(`!!${ROW("Bob's second (from the bar)")}?.textContent.includes('(edited)')`), 'the edit from the bar saved', 5000));
+    c.report(JSON.stringify(mine) === JSON.stringify(['Add a reaction', 'Reply', 'Edit', 'Message actions'])
+        && JSON.stringify(alices) === JSON.stringify(['Add a reaction', 'Reply', 'Message actions']) && barReply && barEdit && barSaved
+        && under.below === 1 && JSON.stringify(under.items) === JSON.stringify(['Save', 'Cancel', 'Enter to save, Escape to cancel']) && under.level && !under.sharing,
+    `the bar holds ${JSON.stringify(mine)} on his own and ${JSON.stringify(alices)} on alice's; its Reply started a reply (${barReply}), its Edit opened the box (${barEdit}) under which is one row ${JSON.stringify(under)}, and saved (${barSaved})`);
+
+    step('who else edits, from the ⋯');
+    const EDITORS = `document.querySelector('[role=dialog][aria-label="Who else can edit this"]')`;
+    await b.eval(`${DOTS("Bob's second")}.focus(), true`);
+    await press('Enter');
+    await menuWith('Reply');
+    await b.eval(`[...${MENU}.querySelectorAll('[role=menuitem]')].find((x) => x.textContent.trim() === 'Let others edit').click(), true`);
+    const asks = await may(waitFor(() => b.eval(`!!${EDITORS}?.querySelector('label input[type=checkbox]')`), 'the editors dialog', 5000));
+    await b.eval(`[...${EDITORS}.querySelectorAll('label')].find((l) => l.textContent.includes('Alice')).querySelector('input').click(), true`);
+    await b.eval(`[...${EDITORS}.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Save').click(), true`);
+    const sharedNow = await may(waitFor(() => b.eval(`!${EDITORS} && !!${ROW("Bob's second")}?.textContent.includes('(shared)')`), 'the message shared', 5000));
+    // Taken back, as the dialog opens on who edits it now, for alice's
+    // menu of it later.
+    await b.eval(`${DOTS("Bob's second")}.focus(), true`);
+    await press('Enter');
+    await menuWith('Reply');
+    await b.eval(`[...${MENU}.querySelectorAll('[role=menuitem]')].find((x) => x.textContent.trim() === 'Let others edit').click(), true`);
+    await waitFor(() => b.eval(`!!${EDITORS}?.querySelector('label input[type=checkbox]')`), 'the editors dialog again', 5000);
+    const ticked = await b.eval(`[...${EDITORS}.querySelectorAll('label')].find((l) => l.textContent.includes('Alice')).querySelector('input').checked`);
+    await b.eval(`[...${EDITORS}.querySelectorAll('label')].find((l) => l.textContent.includes('Alice')).querySelector('input').click(), true`);
+    await b.eval(`[...${EDITORS}.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Save').click(), true`);
+    const unshared = await may(waitFor(() => b.eval(`!${EDITORS} && !${ROW("Bob's second")}?.textContent.includes('(shared)')`), 'the message unshared', 5000));
+    c.report(asks && sharedNow && ticked && unshared,
+        `Let others edit, in the ⋯, asked who (${asks}), Save shared the message with alice (${sharedNow}), and the dialog opened on her ticked (${ticked}) to take it back (${unshared})`);
 
     step('Delete asks first');
     await b.eval(`${DOTS("Bob's third")}.focus(), true`);
@@ -243,7 +306,7 @@ try {
         await t.eval(`document.activeElement?.blur(), true`);
         // A touch screen's messages have no ⋯: a long press opens the menu,
         // which a wide window keeps beside the message (M13.2).
-        const none = await t.eval(`getComputedStyle(${DOTS("Alice's first")}).display === 'none'`);
+        const none = await t.eval(`getComputedStyle(${BAR("Alice's first")}).display === 'none'`);
         const p = await waitFor(() => at(t, `${ROW("Alice's first")}.querySelector('.wrap-break-word')`), "alice's first");
         await t.tap(p[0], p[1]);
         await sleep(800);
@@ -255,7 +318,7 @@ try {
         await t.tap(item[0], item[1]);
         const took = await may(waitFor(async () => (await copied(t))?.includes("Alice's first"), 'the text copied by touch', 5000));
         c.report(coarse && none && tapped && menu && took,
-            `on a touch screen (${coarse}) no message shows its ⋯ (${none}), a tap opens nothing (${tapped}), a long press opens the menu (${menu}), and a tap on Copy text copies (${took})`);
+            `on a touch screen (${coarse}) no message shows its bar (${none}), a tap opens nothing (${tapped}), a long press opens the menu (${menu}), and a tap on Copy text copies (${took})`);
     } finally {
         if (t === b) await b.touch(false);
         else await Promise.race([t.close(), sleep(5000)]);

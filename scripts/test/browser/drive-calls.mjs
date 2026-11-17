@@ -927,7 +927,7 @@ try {
     report(dropped === 'TEXTAREA', `${B.browser}: after a file is dropped, focus is on ${dropped}`);
 
     const ADD = `document.querySelector('button[aria-label="Add to this message"]')`;
-    const MENU = `document.querySelector('[data-compose-menu] [role=menu]')`;
+    const MENU = `document.querySelector('[role=menu][aria-label="Add to this message"]')`;
     await waitFor(() => B.b.eval(`!!${ADD}`), `${B.browser} composer`);
     await B.b.eval(`(${ADD}.click(), true)`);
     await sleep(200);
@@ -941,26 +941,35 @@ try {
     await sleep(200);
     const clickClosed = !(await B.b.eval(`!!${MENU}`));
     const caption = await B.b.eval(`document.body.innerText.includes('Enter to send')`);
-    const bordered = JSON.parse(await B.b.eval(`(() => {
+    // The + sits inside the message box at its left, as the smiley does at
+    // its right, and no ? stays there (M22.4).
+    const inside = JSON.parse(await B.b.eval(`(() => {
         document.activeElement?.blur();
-        const look = (e) => { const s = getComputedStyle(e); return [s.borderTopColor, s.borderTopWidth, s.borderTopLeftRadius].join(' '); };
-        const plus = look(${ADD}), box = look(document.querySelector('textarea'));
-        return JSON.stringify({ plus, same: plus === box });
+        const t = document.querySelector('textarea').getBoundingClientRect();
+        const within = (e) => { const r = e.getBoundingClientRect(); return r.left > t.left && r.right < t.right && r.top >= t.top && r.bottom <= t.bottom; };
+        const plus = ${ADD}, smiley = document.querySelector('[data-emoji-button]');
+        return JSON.stringify({ plus: within(plus), smiley: within(smiley), order: plus.getBoundingClientRect().right < smiley.getBoundingClientRect().left,
+            question: !!document.querySelector('button[aria-label="How to write a message"]') });
     })()`));
-    // The guide's ? sits inside the message box, at its right.
-    const inside = await B.b.eval(`(() => { const q = document.querySelector('button[aria-label="How to write a message"]').getBoundingClientRect(); const t = document.querySelector('textarea').getBoundingClientRect(); return q.left > t.left && q.right <= t.right && q.top >= t.top && q.bottom <= t.bottom; })()`);
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-composer.png`).catch((e) => console.log('shot', e.message));
-    const GUIDE = `document.querySelector('[role=dialog][aria-label="Writing a message"]')`;
-    await B.b.eval(`(document.querySelector('button[aria-label="How to write a message"]').click(), true)`);
-    const guide = await waitFor(() => B.b.eval(`${GUIDE}?.innerText.includes('Formatting') || false`), `${B.browser} guide`, 3000).catch(() => false);
+    // The guide is the + menu's last item: the formatting table and the
+    // keys, and the site's guide for the rest.
+    const GUIDE = `document.querySelector('[role=dialog][aria-label="Formatting help"]')`;
+    await B.b.eval(`(${ADD}.click(), true)`);
+    await waitFor(() => B.b.eval(`!!${MENU}`), `${B.browser} + menu`, 3000);
+    await B.b.eval(`([...${MENU}.querySelectorAll('[role=menuitem]')].find((b) => b.textContent.trim() === 'Formatting help').click(), true)`);
+    const guide = await waitFor(() => B.b.eval(`(() => { const g = ${GUIDE}; return g && JSON.stringify({ table: !!g.querySelector('table[aria-label="Formatting"]'),
+        keys: !!g.querySelector('table[aria-label="Keys"]'), link: g.querySelector('a[data-docs-link]')?.getAttribute('href') || '', words: g.innerText.length }); })()`),
+    `${B.browser} guide`, 3000).then(JSON.parse, () => null);
     await sleep(300);
     await B.b.shot(`${HOME}/shot-calls-${B.browser}-guide.png`).catch((e) => console.log('shot', e.message));
     await B.b.eval(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
     await sleep(200);
     const guideClosed = !(await B.b.eval(`!!${GUIDE}`));
     // A channel's + makes a poll too (M15.4).
-    report(items === 'Attach files|Let others edit|Poll' && escClosed && clickClosed && !caption && inside && guide === true && guideClosed && bordered.same,
-        `${B.browser} composer: + bordered as the box ${JSON.stringify(bordered)}, menu ${items}, closed by Escape ${escClosed} and a click ${clickClosed}, old caption ${caption}, ? inside the box ${inside}, guide ${guide}, closed ${guideClosed}`);
+    report(items === 'Attach files|Let others edit|Poll|Formatting help' && escClosed && clickClosed && !caption && inside.plus && inside.smiley && inside.order
+        && !inside.question && guide?.table && guide.keys && guide.link.endsWith('/docs/usage/#writing-messages') && guideClosed,
+        `${B.browser} composer: menu ${items}, closed by Escape ${escClosed} and a click ${clickClosed}, old caption ${caption}, inside the box ${JSON.stringify(inside)}, guide ${JSON.stringify(guide)}, closed ${guideClosed}`);
 
     // Who's typing floats above the message box, which keeps its place.
     const boxTop = () => B.b.eval(`Math.round(document.querySelector('textarea').getBoundingClientRect().top)`);
@@ -1027,10 +1036,12 @@ try {
         `${B.browser} video volume shared: ${JSON.stringify(shared)}`);
     await B.b.go(`http://127.0.0.1:${B.port}/`);
     await waitFor(() => B.b.eval(`!!document.querySelector('a[aria-label="Settings"]')`), `${B.browser} home`);
+    // Home's cog sits in Your dens' header, beside Add a den (M22.4).
     const home = JSON.parse(await B.b.eval(`(() => {
         const cog = document.querySelector('a[aria-label="Settings"]');
-        const r = cog.getBoundingClientRect();
-        return JSON.stringify({ fixed: getComputedStyle(cog).position, left: Math.round(r.left), fromBottom: Math.round(innerHeight - r.bottom), header: !!document.querySelector('header.navbar'), title: document.title, label: cog.textContent.trim() });
+        const head = cog.parentElement;
+        return JSON.stringify({ fixed: getComputedStyle(cog).position, header: !!document.querySelector('header.navbar'), title: document.title, label: cog.textContent.trim(),
+            beside: [...head.children].map((e) => e.textContent.trim() || e.getAttribute('aria-label')).join('|') });
     })()`));
     await B.b.eval(`(document.querySelector('a[aria-label="Settings"]').click(), true)`);
     const homeSettings = await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings from home`, 3000).catch(() => false);
@@ -1038,7 +1049,7 @@ try {
     await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'System').click(), true)`);
     const about = await waitFor(() => B.b.eval(`[...${SETTINGS}.querySelectorAll('section')].find((x) => x.querySelector('h2')?.textContent === 'About')?.innerText || ''`), `${B.browser} About`, 5000).catch(() => '');
     await closeSettings(B, 'close');
-    report(home.fixed === 'fixed' && home.left <= 24 && home.fromBottom <= 24 && !home.header && home.title === 'Dens (m2b)' && home.label === 'Settings'
+    report(home.fixed !== 'fixed' && home.beside === 'Your dens|Add a den|Settings' && !home.header && home.title === 'Dens (m2b)' && home.label === ''
         && about.includes('instance m2b') && homeSettings === true,
         `${B.browser} home: ${JSON.stringify(home)}, settings ${homeSettings}, about ${JSON.stringify(about)}`);
 } catch (e) {

@@ -86,7 +86,7 @@ try {
     await PHONE.b.eval(`document.querySelector('button[aria-label="Add to this message"]').click(), true`);
     await waitFor(() => PHONE.b.eval(`!!document.querySelector('[role=menu]')`), 'the composer\'s + menu');
     const offered = await PHONE.b.eval(`JSON.stringify([...document.querySelectorAll('[role=menu] [role=menuitem]')].map((x) => x.textContent.trim()))`);
-    report(offered === '["Attach files"]', `the composer's + offers files alone: ${offered}`);
+    report(offered === '["Attach files","Formatting help"]', `the composer's + offers files and Formatting help alone: ${offered}`);
     await PHONE.b.eval(`document.querySelector('button[aria-label="Add to this message"]').click(), true`);
     await PHONE.b.attach('input[type=file][multiple]', [`${HOME}/photo.jpg`]);
     await waitFor(() => PHONE.b.eval(`!!document.querySelector('button[aria-label="Remove photo.jpg"]') && !document.querySelector('form progress, li progress')`),
