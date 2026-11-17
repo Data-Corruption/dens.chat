@@ -72,6 +72,57 @@ export function onYouTubePlayers(fn) {
     return () => playersListeners.delete(fn);
 }
 
+const STEAM = 'DENS_STEAM';
+const steamListeners = new Set();
+let steam = null;
+
+// steamCards reports whether this browser shows Steam's cards where games
+// are linked. It's off until the member turns it on, since it means Steam
+// hears from them.
+export function steamCards() {
+    if (steam === null) {
+        try {
+            steam = localStorage.getItem(STEAM) === '1';
+        } catch {
+            // Storage can be unavailable; links stay links.
+            steam = false;
+        }
+    }
+    return steam;
+}
+
+export function setSteamCards(on) {
+    steam = on;
+    try {
+        if (on) localStorage.setItem(STEAM, '1');
+        else localStorage.removeItem(STEAM);
+    } catch {
+        // As above; the choice lasts until the page reloads.
+    }
+    steamListeners.forEach((fn) => fn(on));
+}
+
+// onSteamCards calls fn with the choice whenever it changes, until the
+// function it returns is called.
+export function onSteamCards(fn) {
+    steamListeners.add(fn);
+    return () => steamListeners.delete(fn);
+}
+
+// A link to a game on Steam: its store page, its age check, or its
+// community hub, by the app's ID, with a name or anything else after it.
+// The den doesn't shorten Steam's links, so they come as members wrote
+// them; the ID is all the page takes from one.
+const STEAM_APP = /^https:\/\/(?:store\.steampowered\.com\/(?:agecheck\/)?app|steamcommunity\.com\/app)\/([1-9][0-9]{0,9})(?:[/?#].*)?$/;
+const MAX_APP = 4294967295;
+
+// steamApp is the app a link to a game on Steam names, as its ID, or null
+// for any other link.
+export function steamApp(url) {
+    const m = STEAM_APP.exec(url);
+    return m && Number(m[1]) <= MAX_APP ? m[1] : null;
+}
+
 // The forms the den writes a YouTube link in: the video's ID, and its
 // start time if it has one; or a Short's ID. Anything else, which a hostile
 // den or sender could send, isn't played.

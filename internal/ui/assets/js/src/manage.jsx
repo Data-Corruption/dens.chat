@@ -59,20 +59,20 @@ export function Dialog({ title, onClose, bare = false, children }) {
 // Voice channels' bitrates, in bits a second (M4.2).
 const BITRATE = { min: 16000, max: 128000, step: 8000, default: 96000 };
 
-// ChannelDialog creates a channel, or changes or deletes one, a voice
-// channel's bitrate included.
-export function ChannelDialog({ denID, view, channel, onClose }) {
+// ChannelDialog creates a channel, in the group inGroup if given, or
+// changes or deletes one, a voice channel's bitrate included. Moving one
+// is its menu's, and the drag's.
+export function ChannelDialog({ denID, view, channel, group: inGroup, onClose }) {
     const editing = !!channel;
     const [name, setName] = useState(channel?.name || '');
     const [kind, setKind] = useState(channel?.kind || 'text');
     const [description, setDescription] = useState(channel?.description || '');
     const [bitrate, setBitrate] = useState(channel?.bitrate || BITRATE.default);
-    const [group, setGroup] = useState(channel?.group_id || '');
+    const [group, setGroup] = useState(channel?.group_id || inGroup || '');
     const [staffOnly, setStaffOnly] = useState(channel?.staff_only || false);
     const save = useAction();
     const remove = useAction();
     const [confirmDelete, setConfirmDelete] = useState(false);
-    const siblings = view.channels.filter((c) => (c.group_id || '') === (channel?.group_id || ''));
 
     function submit(e) {
         e.preventDefault();
@@ -91,13 +91,6 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                 if (kind === 'voice' && bitrate !== channel.bitrate) body.bitrate = bitrate;
                 await api.patch(`/api/dens/${denID}/channels/${channel.id}`, body);
             }
-            onClose();
-        });
-    }
-
-    function move(delta) {
-        save.run(async () => {
-            await api.patch(`/api/dens/${denID}/channels/${channel.id}`, { position: Math.max(0, channel.position + delta) });
             onClose();
         });
     }
@@ -141,12 +134,6 @@ export function ChannelDialog({ denID, view, channel, onClose }) {
                 <ErrorText message={save.error} />
                 <div class="flex flex-wrap gap-2">
                     <SubmitButton busy={save.busy}>{editing ? 'Save' : 'Create channel'}</SubmitButton>
-                    {editing && (
-                        <>
-                            <button type="button" class="btn" disabled={save.busy || channel.position === 0} onClick={() => move(-1)}>Move up</button>
-                            <button type="button" class="btn" disabled={save.busy || channel.position >= siblings.length - 1} onClick={() => move(1)}>Move down</button>
-                        </>
-                    )}
                 </div>
             </form>
             {editing && channel.kind === 'voice' && <CallRecord denID={denID} channel={channel} />}
@@ -221,7 +208,8 @@ function CallRecord({ denID, channel }) {
     );
 }
 
-// GroupDialog creates a group, or renames, moves or deletes one.
+// GroupDialog creates a group, or renames or deletes one; moving one is
+// its menu's, and the drag's.
 export function GroupDialog({ denID, view, group, onClose }) {
     const editing = !!group;
     const [name, setName] = useState(group?.name || '');
@@ -252,18 +240,6 @@ export function GroupDialog({ denID, view, group, onClose }) {
                 <ErrorText message={save.error} />
                 <div class="flex flex-wrap gap-2">
                     <SubmitButton busy={save.busy}>{editing ? 'Save' : 'Create group'}</SubmitButton>
-                    {editing && (
-                        <>
-                            <button type="button" class="btn" disabled={save.busy || group.position === 0}
-                                onClick={() => act(() => api.patch(`/api/dens/${denID}/groups/${group.id}`, { position: group.position - 1 }))}>
-                                Move up
-                            </button>
-                            <button type="button" class="btn" disabled={save.busy || group.position >= view.groups.length - 1}
-                                onClick={() => act(() => api.patch(`/api/dens/${denID}/groups/${group.id}`, { position: group.position + 1 }))}>
-                                Move down
-                            </button>
-                        </>
-                    )}
                 </div>
             </form>
             {editing && (

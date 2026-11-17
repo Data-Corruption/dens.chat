@@ -424,3 +424,25 @@ test("a den's sounds follow its events: added, renamed and deleted", () => {
     assert.deepEqual(sounds, [{ id: '2', name: 'Bell' }, { id: '1', name: 'Big horn' }]);
     assert.deepEqual(applySounds(sounds, { t: 'sound.deleted', d: { id: '2' } }), [{ id: '1', name: 'Big horn' }]);
 });
+
+test("a member muted for the member here plays at 0, and unmuted plays at the volume they had, or full", async () => {
+    const { memberMuted, muting } = await import('../assets/js/src/voice.js');
+    let state = { volumes: withVolume({}, 'den', '2', 1.5), unmuted: {} };
+    state = muting(state.volumes, state.unmuted, 'den', '2', true);
+    assert.equal(volumeIn(state.volumes, 'den', '2'), 0);
+    assert.ok(memberMuted(state.volumes, 'den', '2'));
+    assert.equal(state.unmuted['den:2'], 1.5, 'what they played at is kept');
+    assert.deepEqual(muting(state.volumes, state.unmuted, 'den', '2', true), state, 'muting again changes nothing');
+    state = muting(state.volumes, state.unmuted, 'den', '2', false);
+    assert.equal(volumeIn(state.volumes, 'den', '2'), 1.5, 'back to 150%');
+    assert.deepEqual(state.unmuted, {});
+    // At full, nothing is kept but the mute; unmuted, full again.
+    state = muting({}, {}, 'den', '3', true);
+    assert.deepEqual([state.volumes, state.unmuted], [{ 'den:3': 0 }, {}]);
+    assert.deepEqual(muting(state.volumes, state.unmuted, 'den', '3', false).volumes, {});
+    // One slid to 0 by hand unmutes to full.
+    assert.deepEqual(muting({ 'den:4': 0 }, {}, 'den', '4', false).volumes, {});
+    // Each den's member is their own.
+    state = muting({ 'a:2': 0.5, 'b:2': 0.7 }, {}, 'a', '2', true);
+    assert.deepEqual(state.volumes, { 'a:2': 0, 'b:2': 0.7 });
+});

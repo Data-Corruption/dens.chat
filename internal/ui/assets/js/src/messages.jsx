@@ -39,7 +39,7 @@ import { QuickReactions, ReactionPicker, Reactions, RemoveReactions, useChips } 
 import { keptFor } from './retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
-import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
+import { MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { Name } from './names.jsx';
 import { useNarrow } from './nav.js';
 import { RoleMark, isStaff, rank } from './people.jsx';
@@ -54,6 +54,7 @@ import { createPress, useCoarse } from './touch.js';
 import { SmileyIcon, TimerIcon } from './icons.jsx';
 import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
+import { Games } from './steam.jsx';
 import { EventCards } from './denevents.jsx';
 
 const EDGE = 600; // px from an end at which the next page loads
@@ -1003,8 +1004,9 @@ function Quoted({ text, locked, me }) {
 // none of, and on the phone layout, narrow, it's a sheet (M13.2); a mouse's
 // right click opens it at the pointer, menuAt. compact is a run's
 // later message, under its first's name; line is Compact's row, each a
-// line of its own (M17.2).
-export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID }) {
+// line of its own (M17.2). children go under its files, as Appearance's
+// preview puts its photo.
+export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1032,13 +1034,13 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
     // Add reaction opens the picker beside the ⋯ it was picked from, or as
     // a sheet (M15.3).
     const actions = [
-        canReply && { label: 'Reply', run: onReply },
-        canReact && { label: 'Add reaction', run: (from) => onReactPick(from) },
-        canEdit && { label: 'Edit', run: onEdit },
-        !m.locked && m.text.trim() && { label: 'Copy text', run: () => copy(m.text, 'Text copied') },
-        link && { label: 'Copy link', run: () => copy(link, 'Link copied') },
-        canRemoveReactions && { label: 'Remove reactions', run: onRemoveReactions },
-        canDelete && { label: 'Delete', run: onDelete, danger: true },
+        canReply && { key: 'reply', label: 'Reply', icon: 'reply', run: onReply },
+        canReact && { key: 'react', label: 'Add reaction', icon: 'react', run: (from) => onReactPick(from) },
+        canEdit && { key: 'edit', label: 'Edit', icon: 'edit', run: onEdit },
+        !m.locked && m.text.trim() && { key: 'copy', label: 'Copy text', icon: 'copy', run: () => copy(m.text, 'Text copied') },
+        link && { key: 'link', label: 'Copy link', icon: 'link', run: () => copy(link, 'Link copied') },
+        canRemoveReactions && { key: 'unreact', label: 'Remove reactions', icon: 'unreact', run: onRemoveReactions },
+        canDelete && { key: 'delete', label: 'Delete', icon: 'delete', run: onDelete, danger: true },
     ].filter(Boolean);
     const { chips } = useChips(m, me.id);
     async function tick(n, checked, text) {
@@ -1116,7 +1118,9 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         <>
             {m.poll && !m.locked && !editing && <Poll m={m} me={me} denID={denID} nameOf={nameOf} onPolled={onPolled} />}
             {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
+            {children}
             {!m.locked && !editing && m.text && <Videos text={m.text} />}
+            {!m.locked && !editing && m.text && <Games text={m.text} />}
             {!m.locked && !editing && m.text && <EventCards text={m.text} />}
             <Reactions m={m} me={me} nameOf={nameOf} canReact={canReact} onToggle={(c, on) => onReact(reactionOf(c), on)} onAdd={onReactPick} />
             {error && <p class="text-xs text-error">{error}</p>}
@@ -1201,14 +1205,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
                                 onReactPick(null);
                             }} />
                     )}
-                    {actions.filter((a) => a.label !== 'Add reaction').map((a) => (
-                        <SheetRow key={a.label} danger={a.danger} onClick={() => {
-                            onMenu(false);
-                            a.run();
-                        }}>
-                            {a.label}
-                        </SheetRow>
-                    ))}
+                    <SheetItems items={actions.filter((a) => a.key !== 'react')} picked={() => onMenu(false)} />
                 </Sheet>
             )}
         </HoverRow>
@@ -1279,25 +1276,13 @@ function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact }) {
     function toggle() {
         onOpen(!open);
     }
-    // close gives the focus back to the ⋯, unless what was picked takes it.
+    // close gives the focus back to the ⋯, unless what was picked takes
+    // it, and hands what was picked the ⋯, beside which Add reaction opens
+    // its picker.
     function close() {
         onOpen(false);
         button.current?.focus();
-    }
-    function keys(e) {
-        const items = [...list.current.querySelectorAll('[role="menuitem"]')];
-        const at = items.indexOf(document.activeElement);
-        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
-        if (to !== undefined) {
-            e.preventDefault();
-            items[(to + items.length) % items.length].focus();
-        } else if (e.key === 'Escape') {
-            e.preventDefault();
-            e.stopPropagation();
-            close();
-        } else if (e.key === 'Tab') {
-            onOpen(false);
-        }
+        return button.current;
     }
     const hidden = 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:opacity-100';
     // An open menu stands over the rows below it, and their ⋯.
@@ -1320,19 +1305,9 @@ function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact }) {
                 ⋯
             </button>
             {dropdown && (
-                <ul ref={list} role="menu" aria-label="Message actions" onKeyDown={keys}
-                    class={`menu absolute z-20 w-44 rounded-box bg-base-100 p-1 shadow ${at ? 'left-0 top-0' : up ? 'right-0 bottom-full mb-1' : 'right-0 top-full mt-1'}`}>
-                    {actions.map((a) => (
-                        <li key={a.label} role="none">
-                            <button type="button" role="menuitem" tabIndex={-1} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
-                                onClick={() => {
-                                    close();
-                                    a.run(button.current);
-                                }}>
-                                {a.label}
-                            </button>
-                        </li>
-                    ))}
+                <ul ref={list} role="menu" aria-label="Message actions" onKeyDown={(e) => menuKeys(e, list.current, close, () => onOpen(false))}
+                    class={`menu absolute z-20 w-48 flex-nowrap rounded-box bg-base-100 p-1 shadow ${at ? 'left-0 top-0' : up ? 'right-0 bottom-full mb-1' : 'right-0 top-full mt-1'}`}>
+                    <MenuItems items={actions} picked={close} />
                 </ul>
             )}
         </div>

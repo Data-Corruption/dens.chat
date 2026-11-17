@@ -5,7 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="referrer" content="no-referrer">
         <title>{{ .Title }}</title>
-        <link rel="icon" href="{{ .Favicon }}">
+        <link rel="icon" href="{{ .Favicon }}" data-unread="{{ .FaviconUnread }}">
         <link rel="stylesheet" href="{{ .CSS }}">
         <!-- Not deferred: it applies the theme before the first paint, then
              renders the app once the document has loaded. -->

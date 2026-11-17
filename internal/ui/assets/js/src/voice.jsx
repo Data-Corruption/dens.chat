@@ -22,7 +22,7 @@ import { LongName, Tip } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { sendRelayKey } from './events.js';
 import { CogIcon, ICON, SpeakerIcon } from './icons.jsx';
-import { ownsMenu, rightClick, usePlaced } from './menus.jsx';
+import { MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { nav, useNarrow } from './nav.js';
 import { RoleMark, isStaff, rank } from './people.jsx';
 import { canShare } from './platform.js';
@@ -30,13 +30,13 @@ import { VerifiedMark } from './private.jsx';
 import { onRelay } from './relay.js';
 import { openSettings } from './settings.jsx';
 import { shareBlocked, watchersOf } from './share.js';
-import { Sheet, SheetRow } from './sheet.jsx';
+import { Sheet } from './sheet.jsx';
 import { SoundboardButton } from './soundboard.jsx';
 import { useStaffMarks } from './staffmarks.js';
 import { createHold, useCoarse, useHoldsButton } from './touch.js';
 import {
     LOUDEST, byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened,
-    setMuted, setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
+    setMemberMuted, setMuted, setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
@@ -517,23 +517,23 @@ function LiveMark({ denID, call, member, name, mine, inCall, label, watching, me
 }
 
 // CallMenu is the menu of a member in the call on a wider layout: under
-// its ⋯, or opened by a right click at the pointer, at.
-function CallMenu({ at, children }) {
+// its ⋯, or opened by a right click at the pointer, at: their volume, and
+// under it items, as MenuItems takes them. The arrow keys move through
+// the items, and Escape closes it. It doesn't scroll, so Move to's
+// channels can open beside it.
+function CallMenu({ at, label, items, onClose, children }) {
     const box = useRef(null);
+    const list = useRef(null);
     usePlaced(at, box);
     return (
         <div ref={box} data-call-menu
-            class={`absolute z-10 flex max-h-96 w-52 flex-col gap-1 overflow-y-auto rounded-box bg-base-100 p-2 shadow ${at ? 'left-0 top-0' : 'right-0 top-full'}`}>
+            class={`absolute z-10 flex w-60 flex-col rounded-box bg-base-100 p-1 shadow ${at ? 'left-0 top-0' : 'right-0 top-full'}`}>
             {children}
+            <ul ref={list} role="menu" aria-label={label} class="menu w-full flex-nowrap p-0"
+                onKeyDown={(e) => menuKeys(e, list.current, onClose, onClose)}>
+                <MenuItems items={items} picked={() => null} tabbable />
+            </ul>
         </div>
-    );
-}
-
-// CallMenuRow is an action in the menu of a member in the call, in a wider
-// window; the phone layout's sheet has SheetRows.
-function CallMenuRow({ danger, onClick, children }) {
-    return (
-        <button type="button" class={`btn btn-ghost btn-xs justify-start pointer-coarse:btn-sm ${danger ? 'text-error' : ''}`} onClick={onClick}>{children}</button>
     );
 }
 
@@ -671,43 +671,41 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
             setError(e.message);
         }
     }
-    // options are what the menu of a member other than this one holds: how
-    // loud they play here, on the phone layout's sheet a slider a finger
-    // can hold (M13.4); for staff who outrank them, muting them for
-    // everyone and disconnecting them; and for staff, moving anyone but
-    // the owner to another call (M17.2).
-    function options(m, name, pct, moderate, movable, Row) {
+    // menuItems are what the menu of a member other than this one holds
+    // under their volume, in order: muting them for the member here alone;
+    // for staff who outrank them, muting them for everyone; for staff,
+    // moving anyone but the owner to another call (M17.2), its channels
+    // opening beside it; and for staff who outrank them, disconnecting
+    // them.
+    function menuItems(m, moderate, movable, muted) {
         const targets = movable && moving ? moving.targets(members.get(m.id)) : [];
+        return [
+            { key: 'mute', label: muted ? 'Unmute' : 'Mute', icon: muted ? 'unmute' : 'mute', run: () => {
+                setMenu(null);
+                setMemberMuted(denID, m.id, !muted);
+            } },
+            moderate && { key: 'staff-mute', label: m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone', icon: 'micoff',
+                run: () => act(m.id, 'voice-mute', { muted: !m.staff_muted }) },
+            targets.length > 0 && { key: 'move', label: 'Move to', icon: 'move',
+                items: targets.map((t) => ({ key: t.id, label: t.name, icon: 'voice', run: () => act(m.id, 'move', { channel_id: t.id }) })) },
+            moderate && { key: 'disconnect', label: 'Disconnect from the call', icon: 'leave', danger: true, run: () => act(m.id, 'disconnect') },
+        ].filter(Boolean);
+    }
+    // volume is how loud a member plays here, on the phone layout's sheet a
+    // slider a finger can hold (M13.4).
+    function volume(m, name, pct) {
         return (
-            <>
-                <label class={`flex items-center ${narrow ? 'h-14 gap-3 px-4 text-sm' : 'min-h-6 gap-2 text-xs'}`} title="How loud they play for you">
-                    <span>Volume</span>
-                    {/* Full, at the track's middle, is marked under it. */}
-                    <span class="relative isolate flex min-w-0 flex-1 items-center">
-                        <span class="absolute inset-y-0 left-1/2 -z-10 w-0.5 -translate-x-1/2 rounded-full bg-base-content/30" aria-hidden="true" data-full></span>
-                        <input type="range" class={`range w-full ${narrow ? 'range-xl' : 'range-md'}`} min="0" max={LOUDEST * 100} step="5" value={pct}
-                            aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
-                            onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
-                    </span>
-                    <span class="w-9 text-right tabular-nums">{pct}%</span>
-                </label>
-                {moderate && (
-                    <Row onClick={() => act(m.id, 'voice-mute', { muted: !m.staff_muted })}>
-                        {m.staff_muted ? 'Unmute for everyone' : 'Mute for everyone'}
-                    </Row>
-                )}
-                {targets.length > 0 && (
-                    <div role="group" aria-label="Move to" class="flex flex-col" data-move-to>
-                        <p class={`cursor-default select-none text-base-content/60 ${narrow ? 'px-4 pb-1 pt-3 text-xs' : 'px-2 pt-1 text-xs'}`}>Move to</p>
-                        {targets.map((t) => (
-                            <Row key={t.id} onClick={() => act(m.id, 'move', { channel_id: t.id })}>
-                                <span class="flex min-w-0 items-center gap-2"><SpeakerIcon size="h-3.5 w-3.5" /><span class="truncate">{t.name}</span></span>
-                            </Row>
-                        ))}
-                    </div>
-                )}
-                {moderate && <Row danger onClick={() => act(m.id, 'disconnect')}>Disconnect from the call</Row>}
-            </>
+            <label class={`flex items-center ${narrow ? 'h-14 gap-3 px-4 text-sm' : 'min-h-8 gap-2 px-3 text-xs'}`} title="How loud they play for you">
+                <span>Volume</span>
+                {/* Full, at the track's middle, is marked under it. */}
+                <span class="relative isolate flex min-w-0 flex-1 items-center">
+                    <span class="absolute inset-y-0 left-1/2 -z-10 w-0.5 -translate-x-1/2 rounded-full bg-base-content/30" aria-hidden="true" data-full></span>
+                    <input type="range" class={`range w-full ${narrow ? 'range-xl' : 'range-md'}`} min="0" max={LOUDEST * 100} step="5" value={pct}
+                        aria-label={`Volume for ${name}`} aria-valuetext={`${pct}%`}
+                        onInput={(e) => setVolume(denID, m.id, Number(e.currentTarget.value) / 100)} />
+                </span>
+                <span class="w-9 text-right tabular-nums">{pct}%</span>
+            </label>
         );
     }
     return (
@@ -781,10 +779,15 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                     aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={open}
                                     onClick={() => setMenu(open ? null : { id: m.id, at: null })}>⋯</button>
                             )}
-                            {other && open && !narrow && <CallMenu at={menu.at}>{options(m, name, pct, moderate, movable, CallMenuRow)}</CallMenu>}
+                            {other && open && !narrow && (
+                                <CallMenu at={menu.at} label={`Options for ${name} in the call`} items={menuItems(m, moderate, movable, pct === 0)} onClose={() => setMenu(null)}>
+                                    {volume(m, name, pct)}
+                                </CallMenu>
+                            )}
                             {other && open && narrow && (
                                 <Sheet label={`Options for ${name} in the call`} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu(null)}>
-                                    {options(m, name, pct, moderate, movable, SheetRow)}
+                                    {volume(m, name, pct)}
+                                    <SheetItems items={menuItems(m, moderate, movable, pct === 0)} picked={() => setMenu(null)} />
                                 </Sheet>
                             )}
                         </HoverRow>

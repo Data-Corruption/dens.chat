@@ -58,14 +58,24 @@ type UI struct {
 	routeMap map[string]*Asset
 }
 
+// unreadDot is the red dot the tab's icon takes while a DM or a mention
+// waits, ringed in white so it reads on the mark's magenta.
+const unreadDot = `<circle cx="37" cy="11" r="9" fill="#E11D48" stroke="#FFFFFF" stroke-width="3"/>`
+
+// iconURL is an SVG as a data URL a link's href takes.
+func iconURL(svg string) template.URL {
+	return template.URL("data:image/svg+xml," + strings.NewReplacer("#", "%23", `"`, "'").Replace(svg))
+}
+
 // PageData returns the fields shared by every HTML page.
 func (ui *UI) PageData(title, version string) map[string]any {
 	return map[string]any{
-		"CSS":     ui.CSS.URLPath,
-		"JS":      ui.JS.URLPath,
-		"Favicon": template.URL("data:image/svg+xml," + strings.NewReplacer("#", "%23", `"`, "'").Replace(build.Mark)),
-		"Title":   title,
-		"Version": version,
+		"CSS":           ui.CSS.URLPath,
+		"JS":            ui.JS.URLPath,
+		"Favicon":       iconURL(build.Mark),
+		"FaviconUnread": iconURL(strings.Replace(build.Mark, "</svg>", unreadDot+"</svg>", 1)),
+		"Title":         title,
+		"Version":       version,
 	}
 }
 

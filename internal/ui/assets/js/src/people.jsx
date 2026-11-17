@@ -1,7 +1,7 @@
 // Members: the member list, profile cards, editing your own profile, and
 // staff removing someone.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Picture, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
@@ -11,14 +11,14 @@ import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.j
 import { CalendarIcon, CrownIcon, EyeIcon, ShieldIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { Markdown } from './markdown.jsx';
-import { PointerMenu, ownsMenu, rightClick } from './menus.jsx';
+import { MenuButton, PointerMenu, SheetItems, ownsMenu, rightClick } from './menus.jsx';
 import { FONTS, cleanStyle, fontFamily } from './names.js';
 import { Name } from './names.jsx';
 import { useNarrow } from './nav.js';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
 import { badgeTip, zone } from './denevents.js';
-import { Sheet, SheetRow } from './sheet.jsx';
+import { Sheet } from './sheet.jsx';
 import { useCoarse } from './touch.js';
 
 const MAX_BIO = 300;
@@ -76,10 +76,10 @@ export function cardMenu({ self, role, member, kept }) {
     if (self) return [];
     const left = !!member.left_at;
     const out = [];
-    if (kept && member.identity && !left) out.push({ key: 'compare', label: kept.verified ? 'Compare codes again' : 'Compare codes' });
-    if (role === 'owner' && !left && member.role === 'member') out.push({ key: 'promote', label: 'Promote to moderator' });
-    if (role === 'owner' && !left && member.role === 'moderator') out.push({ key: 'demote', label: 'Demote to member' });
-    if (rank(role) > rank(member.role)) out.push({ key: 'remove', label: left ? 'Ban…' : 'Remove from den…', danger: true });
+    if (kept && member.identity && !left) out.push({ key: 'compare', label: kept.verified ? 'Compare codes again' : 'Compare codes', icon: 'compare' });
+    if (role === 'owner' && !left && member.role === 'member') out.push({ key: 'promote', label: 'Promote to moderator', icon: 'up' });
+    if (role === 'owner' && !left && member.role === 'moderator') out.push({ key: 'demote', label: 'Demote to member', icon: 'down' });
+    if (rank(role) > rank(member.role)) out.push({ key: 'remove', label: left ? 'Ban…' : 'Remove from den…', icon: 'ban', danger: true });
     return out;
 }
 
@@ -89,10 +89,10 @@ export function cardMenu({ self, role, member, kept }) {
 export function memberMenu({ self, role, member, kept, notes }) {
     const left = !!member.left_at;
     return [
-        { key: 'profile', label: 'Profile' },
-        self && { key: 'edit', label: 'Edit profile' },
-        self && notes && { key: 'notes', label: 'Notes' },
-        !self && !left && { key: 'message', label: 'Message' },
+        { key: 'profile', label: 'Profile', icon: 'profile' },
+        self && { key: 'edit', label: 'Edit profile', icon: 'edit' },
+        self && notes && { key: 'notes', label: 'Notes', icon: 'notes' },
+        !self && !left && { key: 'message', label: 'Message', icon: 'message' },
         ...cardMenu({ self, role, member, kept }),
     ].filter(Boolean);
 }
@@ -175,14 +175,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
             {section('Offline', off, true)}
             {opened && narrow && (
                 <Sheet label={`Options for ${opened.display_name}`} title={<span class="font-semibold">{opened.display_name}</span>} onClose={() => setMenu(null)}>
-                    {items(opened).map((a) => (
-                        <SheetRow key={a.key} danger={a.danger} disabled={a.disabled} onClick={() => {
-                            setMenu(null);
-                            a.run();
-                        }}>
-                            {a.label}
-                        </SheetRow>
-                    ))}
+                    <SheetItems items={items(opened)} picked={() => setMenu(null)} />
                 </Sheet>
             )}
         </nav>
@@ -349,92 +342,12 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
 }
 
 // MoreMenu is a profile card's ⋯ and the menu of the rest of what the
-// member may do (M17.6), as a message's is: under the ⋯, or over it where
-// the card has no room below, arrow keys moving through it, and Escape, Tab
-// or a press elsewhere closing it; on the phone layout, narrow, a sheet.
-// Each item has a label, a run, and maybe danger or disabled.
+// member may do (M17.6), as a message's is, or on the phone layout a
+// sheet. Each item is as MenuItems takes it.
 function MoreMenu({ items }) {
-    const narrow = useNarrow();
-    const [open, setOpen] = useState(false);
-    const [up, setUp] = useState(false);
-    const box = useRef(null);
-    const button = useRef(null);
-    const list = useRef(null);
-    const dropdown = open && !narrow;
-    useLayoutEffect(() => {
-        if (!dropdown || !list.current) return;
-        const view = box.current.closest('[role=dialog]')?.getBoundingClientRect();
-        const at = box.current.getBoundingClientRect();
-        const below = view ? view.bottom - at.bottom : Infinity;
-        setUp(below < list.current.offsetHeight + 8 && at.top - view.top > below);
-    }, [dropdown]);
-    useEffect(() => {
-        if (!dropdown) return undefined;
-        list.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
-        const away = (e) => !box.current?.contains(e.target) && setOpen(false);
-        document.addEventListener('pointerdown', away);
-        return () => document.removeEventListener('pointerdown', away);
-    }, [dropdown]);
-    // close gives the focus back to the ⋯, unless what was picked takes it.
-    function close() {
-        setOpen(false);
-        button.current?.focus();
-    }
-    function keys(e) {
-        const all = [...list.current.querySelectorAll('[role="menuitem"]:not(:disabled)')];
-        const at = all.indexOf(document.activeElement);
-        const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 }[e.key];
-        if (to !== undefined && all.length) {
-            e.preventDefault();
-            all[(to + all.length) % all.length].focus();
-        } else if (e.key === 'Escape') {
-            e.preventDefault();
-            e.stopPropagation();
-            close();
-        } else if (e.key === 'Tab') {
-            setOpen(false);
-        }
-    }
     return (
-        <div ref={box} class="relative">
-            <button ref={button} type="button" class="btn btn-sm btn-square" aria-label="More actions" title="More" aria-haspopup="menu"
-                aria-expanded={open} data-profile-more onClick={() => setOpen(!open)}
-                onKeyDown={(e) => {
-                    if (e.key !== 'ArrowDown' || open) return;
-                    e.preventDefault();
-                    setOpen(true);
-                }}>
-                ⋯
-            </button>
-            {dropdown && (
-                <ul ref={list} role="menu" aria-label="More actions" onKeyDown={keys}
-                    class={`menu absolute right-0 z-20 w-52 rounded-box bg-base-100 p-1 shadow ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
-                    {items.map((a) => (
-                        <li key={a.key} role="none">
-                            <button type="button" role="menuitem" tabIndex={-1} disabled={a.disabled} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
-                                onClick={() => {
-                                    close();
-                                    a.run();
-                                }}>
-                                {a.label}
-                            </button>
-                        </li>
-                    ))}
-                </ul>
-            )}
-            {open && narrow && (
-                <Sheet label="More actions" onClose={() => setOpen(false)}>
-                    {items.map((a) => (
-                        <SheetRow key={a.key} danger={a.danger} disabled={a.disabled} onClick={() => {
-                            setOpen(false);
-                            a.run();
-                        }}>
-                            {a.label}
-                        </SheetRow>
-                    ))}
-                </Sheet>
-            )}
-        </div>
+        <MenuButton label="More actions" items={items}
+            button={{ class: 'btn btn-sm btn-square', title: 'More', 'data-profile-more': true, children: '⋯' }} />
     );
 }
 

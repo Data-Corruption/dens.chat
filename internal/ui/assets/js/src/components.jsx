@@ -171,11 +171,15 @@ export function HoverTip({ side = 'bottom', label, tip: content, children }) {
     );
 }
 
-// Choices is a setting of a few, in a row under its label.
-export function Choices({ label, name, data, choice, choices, onPick }) {
+// Choices is a setting of a few, in a row under its label, and tip, if
+// given, says more beside the label.
+export function Choices({ label, name, data, choice, choices, onPick, tip }) {
     return (
         <div class="flex flex-col gap-1">
-            <span class="text-sm">{label}</span>
+            <span class="flex items-center text-sm">
+                {label}
+                {tip && <Tip id={`${name}-tip`} label={`About ${label}`} wrap="-my-1 inline-flex">{tip}</Tip>}
+            </span>
             <div role="radiogroup" aria-label={label} class="flex flex-wrap gap-x-6 gap-y-2" {...{ [data]: true }}>
                 {choices.map(([value, text]) => (
                     <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">

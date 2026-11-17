@@ -77,6 +77,7 @@ const MUTED = 'DENS_MUTED';
 const DEAFENED = 'DENS_DEAFENED';
 const RNNOISE = 'DENS_RNNOISE';
 const VOLUMES = 'DENS_VOLUMES';
+const UNMUTED = 'DENS_UNMUTED_VOLUMES';
 const SHARE_VOLUMES = 'DENS_SHARE_VOLUMES';
 // LOUDEST is the loudest a member plays, twice what they send. It stands
 // above the read of the kept volumes, which runs as the module loads.
@@ -186,6 +187,9 @@ let started = false;
 let callEnded = -Infinity;
 // volumes is how loud each member plays here, by den and member.
 let volumes = readVolumes(stored(VOLUMES));
+// unmuted is how loud each member the member here muted played before,
+// which Unmute gives back.
+let unmuted = readVolumes(stored(UNMUTED));
 // wholeVolume is how loud the whole call plays here (M12).
 let wholeVolume = readCallVolume(stored(CALL_VOLUME));
 // shareLevels is how loud each sharer's share plays here, by den and
@@ -2793,11 +2797,49 @@ export function setCallVolume(volume) {
 }
 
 // setVolume sets how loud a member plays here, mid-call too, and keeps it.
+// A volume past 0 unmutes them, so Unmute has nothing to give back.
 export function setVolume(den, member, volume) {
+    if (volume > 0 && volumeKey(den, member) in unmuted) keepUnmuted(withVolume(unmuted, den, member, 1));
     volumes = withVolume(volumes, den, member, volume);
     store(VOLUMES, Object.keys(volumes).length ? JSON.stringify(volumes) : '');
     if (call?.den === den) level(member);
     notify();
+}
+
+// muting returns the volumes and the volumes from before muting once a
+// member is muted for the member here, on, or unmuted: muting takes them
+// to 0 and keeps what they played at, and unmuting gives that back, full
+// for one muted at 0 already or never muted here.
+export function muting(volumes, unmuted, den, member, on) {
+    const key = volumeKey(den, member);
+    if (on) {
+        const before = volumeIn(volumes, den, member);
+        if (before === 0) return { volumes, unmuted };
+        return { volumes: withVolume(volumes, den, member, 0), unmuted: withVolume(unmuted, den, member, before) };
+    }
+    const back = unmuted[key] ?? 1;
+    return { volumes: withVolume(volumes, den, member, back), unmuted: withVolume(unmuted, den, member, 1) };
+}
+
+// memberMuted says whether a member plays at 0 here.
+export function memberMuted(volumes, den, member) {
+    return volumeIn(volumes, den, member) === 0;
+}
+
+// setMemberMuted mutes a member for the member here alone, or unmutes them
+// to the volume they played at before, and keeps both.
+export function setMemberMuted(den, member, on) {
+    const next = muting(volumes, unmuted, den, member, on);
+    keepUnmuted(next.unmuted);
+    volumes = next.volumes;
+    store(VOLUMES, Object.keys(volumes).length ? JSON.stringify(volumes) : '');
+    if (call?.den === den) level(member);
+    notify();
+}
+
+function keepUnmuted(next) {
+    unmuted = next;
+    store(UNMUTED, Object.keys(unmuted).length ? JSON.stringify(unmuted) : '');
 }
 
 // Devices -----------------------------------------------------------------

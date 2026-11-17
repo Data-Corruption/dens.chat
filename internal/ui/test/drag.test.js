@@ -61,3 +61,14 @@ test("a drag says what it carries by its types, and anything else, as files, is 
     assert.equal(dragged(drag('Files')), '');
     assert.equal(dragged({}), '');
 });
+
+test("Move up and Move down send a channel's place one up or down in its list, a group's among the groups, and nothing at an end", async () => {
+    const { channelMoves, groupMoves } = await import('../assets/js/src/drag.js');
+    assert.deepEqual(channelMoves(view, '1'), { up: null, down: { position: 1 } }, 'general, first of the ungrouped');
+    assert.deepEqual(channelMoves(view, '2'), { up: { position: 0 }, down: null }, 'Lounge, last of them');
+    assert.deepEqual(channelMoves(view, '4'), { up: { position: 0 }, down: null }, "Staff, in Talk");
+    assert.deepEqual(channelMoves(view, '5'), { up: null, down: null }, "Raid, alone in Games");
+    assert.deepEqual(channelMoves(view, '9'), { up: null, down: null }, 'a DM moves nowhere');
+    assert.deepEqual(groupMoves(view, 'g1'), { up: null, down: { position: 1 } });
+    assert.deepEqual(groupMoves(view, 'g2'), { up: { position: 0 }, down: null });
+});

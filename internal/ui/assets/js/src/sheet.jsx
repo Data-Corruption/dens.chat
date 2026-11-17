@@ -126,9 +126,9 @@ export function Handle() {
 
 // SheetRow is a sheet's row, 48 pixels tall, for an action, whose onClick
 // closes the sheet as it runs it.
-export function SheetRow({ danger, disabled, onClick, children }) {
+export function SheetRow({ danger, disabled, item, onClick, children }) {
     return (
-        <button type="button" role="menuitem" disabled={disabled} onClick={onClick}
+        <button type="button" role="menuitem" disabled={disabled} data-menu-item={item} onClick={onClick}
             class={`flex h-12 w-full shrink-0 items-center gap-3 px-4 text-left hover:bg-base-200 focus-visible:bg-base-200 focus-visible:outline-none active:bg-base-300 disabled:opacity-50 ${danger ? 'text-error' : ''}`}>
             {children}
         </button>

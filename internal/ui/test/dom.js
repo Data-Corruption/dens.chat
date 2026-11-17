@@ -54,6 +54,10 @@ class Node {
         this.attributes[name] = String(value);
     }
 
+    getAttribute(name) {
+        return name in this.attributes ? this.attributes[name] : null;
+    }
+
     removeAttribute(name) {
         delete this.attributes[name];
     }
@@ -86,6 +90,12 @@ class Node {
         return null;
     }
 
+    // A menu's flyout places itself by its item's box, which a page
+    // without a layout has none of.
+    getBoundingClientRect() {
+        return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    }
+
     // A sheet's effect looks for a row to focus, and may run after its
     // test ended; it finds none.
     querySelector() {
@@ -102,6 +112,7 @@ class Node {
 for (const handler of ['onchange', 'onclick', 'oninput', 'onkeydown', 'onload', 'onpointerdown', 'onpointerup', 'onpointerenter', 'onpointerleave']) Node.prototype[handler] = null;
 
 globalThis.document = {
+    documentElement: new Node(1, 'html'),
     createElement: (name) => new Node(1, name),
     createElementNS: (namespace, name) => Object.assign(new Node(1, name), { namespaceURI: namespace }),
     createTextNode: (data) => Object.assign(new Node(3), { data: String(data) }),
