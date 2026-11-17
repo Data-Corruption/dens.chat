@@ -209,7 +209,7 @@ try {
     step("Manage, from the den's name: alice adds an MP3 and a WAV; one too long is refused");
     const name = await A.b.eval(`${DEN_NAME}?.textContent.trim() || ''`);
     await manageFromName(A.b);
-    const general = await waitFor(() => A.b.eval(`${MANAGE}?.querySelector('h3')?.textContent || false`), "Manage from the den's name", 5000).catch(() => false);
+    const general = await waitFor(() => A.b.eval(`${MANAGE}?.querySelector('nav [aria-current=page]')?.textContent.trim() || false`), "Manage from the den's name", 5000).catch(() => false);
     report(name === 'Voice Den' && general === 'General', `the den's name, ${name}, opens its Manage, at ${general}`);
     await soundboardSection(A);
     report(await addSound(A, tone, 'Tone') === 'added', 'alice adds an MP3, which her page prepares');
@@ -222,13 +222,12 @@ try {
         `the sounds last what their files did: ${toneSound?.duration_ms} ms and ${chordSound?.duration_ms} ms`);
 
     step('alice raises the longest to 130 seconds, and makes bob a moderator, who adds a video\'s sound and two minutes');
-    const limits = `[...document.querySelectorAll('[role=dialog] nav button')].find((x) => x.textContent.trim() === 'Limits')`;
-    await click(A, limits);
-    await waitFor(() => A.b.eval(`!!document.querySelector('[data-limits-soundboard]')`), "the Limits' soundboard");
+    // The soundboard's limits are in its own section (M22.3), open here.
+    await waitFor(() => A.b.eval(`!!document.querySelector('[data-limits-soundboard]')`), "the soundboard's limits");
     await setValue(A, '[data-limits-soundboard] input[type=number][max="300"]', 130);
     await click(A, button('Save changes'));
     const saved = await waitFor(async () => (await state(A)).sound_limits?.longest === 130, 'the longest raised', 10000).catch(() => false);
-    report(saved === true, 'the owner raises the longest sound in Limits');
+    report(saved === true, "the owner raises the longest sound in the soundboard's limits");
     await click(A, `${MANAGE}.querySelector('button[aria-label=Close]')`);
     lib('api', 'alice', 'PUT', `/api/dens/${den}/members/${bobID}/role`, '{"role":"moderator"}');
     await waitFor(() => hasBoard(B), "bob's soundboard", 15000);

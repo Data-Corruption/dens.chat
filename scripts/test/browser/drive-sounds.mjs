@@ -221,7 +221,7 @@ try {
     report(/Left: That sound lasts 12 seconds, and one plays for at most 10\./.test(refused) && !own().left, `a twelve-second file is refused, before it goes: ${refused}`);
 
     await B.b.attach('[data-sound=joined] input[type=file]', [wav(`${HOME}/sound-own.wav`, 0.5)]);
-    const replaced = await waitFor(() => B.b.eval(`!!${row('joined')}.querySelector('button[aria-label^="Reset Joined"]')`), 'Joined replaced', 10000).catch(() => false);
+    const replaced = await waitFor(() => B.b.eval(`${row('joined')}.hasAttribute('data-own')`), 'Joined replaced', 10000).catch(() => false);
     report(replaced && own().joined > 0, `bob replaces Joined with a file of his, which the service keeps: ${JSON.stringify(own())}`);
     await B.b.eval(`(() => { const r = ${row('left')}.querySelector('input[type=range]'); r.value = '10';
         r.dispatchEvent(new Event('input', { bubbles: true })); r.dispatchEvent(new Event('change', { bubbles: true })); return true; })()`);
@@ -245,7 +245,10 @@ try {
     await expect(B, b, ['left'], 'with Joined off, alice joining plays nothing');
 
     await soundsTab();
-    await B.b.eval(`${row('joined')}.querySelector('button[aria-label^="Reset Joined"]').click(), true`);
+    // Reset is in the row's ⋯ (M22.3).
+    await B.b.eval(`${row('joined')}.querySelector('button[aria-label="More for Joined"]').click(), true`);
+    await waitFor(() => B.b.eval(`!!document.querySelector('[data-menu-item=reset]')`), "Joined's Reset");
+    await B.b.eval(`document.querySelector('[data-menu-item=reset]').click(), true`);
     await waitFor(() => !own().joined, 'Joined reset');
     await B.b.eval(`document.getElementById('sound-joined').click(), true`);
     await waitFor(() => !settings().sounds?.joined, 'Joined on again');

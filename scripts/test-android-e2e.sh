@@ -798,7 +798,7 @@ update_from_fixtures() {
       adb shell input text 'local-password'
     done
     adb shell input keyevent KEYCODE_ENTER
-    tap 30 'App settings' || fail "Home shows no App settings"
+    tap 30 'Settings' || fail "Home shows no Settings"
     tap 10 'System' || fail "the settings list no System"
     for _ in 1 2 3 4 5 6; do
       shows_text 'Check now' && break

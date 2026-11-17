@@ -36,7 +36,7 @@ try {
     const home = await b.eval('location.href');
 
     step('binding V and Mouse 4 in the settings');
-    await clickOn(button('App settings'), 'the settings button');
+    await clickOn(button('Settings'), 'the settings button');
     await clickOn(button('Voice'), 'the voice tab');
     await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
     await waitFor(() => b.eval(`document.body.innerText.includes("Press a key, or a mouse's side button")`), 'the capture prompt');
@@ -54,7 +54,7 @@ try {
     const kept = settingsKeys();
     if (kept.ptt?.code !== 'KeyV' || kept.toggleMute?.code !== 'Mouse4') throw new Error(`the service kept ${JSON.stringify(kept)}`);
     ok('V and Mouse 4 bound, kept by the service, and the side button left the page where it was');
-    const unmarked = !(await marked('Push to talk')) && (await b.eval(`document.body.innerText.includes('To use them in other apps, keep the Dens helper running')`));
+    const unmarked = !(await marked('Push to talk')) && (await b.eval(`document.body.innerText.includes('Work while Dens is focused, or in every app with the helper.')`));
     if (!unmarked) throw new Error('the shortcuts card claims a helper that isn\'t there');
     await shot('keys-no-helper');
 
@@ -63,7 +63,7 @@ try {
     await waitFor(() => h.state(), "the service's state for the helper");
     h.send('source', { covers: ['ptt', 'toggleMute'], note: 'A test note from the helper.' });
     await waitFor(async () => (await marked('Push to talk')) && (await marked('Toggle mute')) && !(await marked('Push to mute')), 'the marks');
-    await waitFor(() => b.eval(`document.body.innerText.includes('Work in other apps too during a call') && document.body.innerText.includes('A test note from the helper.')`), 'the note');
+    await waitFor(() => b.eval(`document.body.innerText.includes('Work in every app during a call') && document.body.innerText.includes('A test note from the helper.')`), 'the note');
     ok('the shortcuts card marks the shortcuts the helper reads, with its note');
     await shot('keys-helper');
     await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);

@@ -23,7 +23,12 @@
 // pointer covers the picture, in both browsers. From M22.2 Appearance's
 // preview: Light and Dark, a name style turned off and on, and Compact,
 // each showing in it as it's chosen, and the preview holding its place
-// while the settings under it scroll.
+// while the settings under it scroll. From M22.3, each section held to the
+// one frame the settings and Manage share: its groups cards, one toggle
+// size and regular labels, every button one of the page's kinds by the
+// layout audit; Manage holding what staff manage, the owner's Events among
+// it; and her own sections of the den, from the cog on its page, as its
+// group above the app's.
 //
 //   run.sh settings chromium|firefox [PART...]
 //
@@ -62,6 +67,26 @@ const WRAPPED = `(() => {
     }
     return out;
 })()`;
+// FRAME reads a section as the one frame shows it (M22.3): what stands in
+// its panel outside a card, the toggles' heights and the labels' weights.
+const FRAME = `JSON.stringify((() => {
+    const panel = document.querySelector('[role=dialog] [data-panel]');
+    const seen = (e) => e.getClientRects().length > 0;
+    return {
+        nav: !!document.querySelector('[role=dialog] nav[aria-label=Sections]'),
+        loose: [...panel.children].filter((e) => !e.classList.contains('card') && !e.matches('[data-appearance-preview], [data-notice], .loading'))
+            .map((e) => e.localName + '.' + [...e.classList].slice(0, 3).join('.')),
+        toggles: [...new Set([...panel.querySelectorAll('input.toggle')].filter(seen).map((t) => Math.round(t.getBoundingClientRect().height)))],
+        labels: [...new Set([...panel.querySelectorAll('legend')].filter(seen).map((l) => getComputedStyle(l).fontWeight))],
+    };
+})())`;
+// frame reports a section held to the one frame: its groups cards, its
+// toggles one size and its labels regular.
+const frame = (name, read) => {
+    const f = JSON.parse(read);
+    c.report(f.nav && !f.loose.length && f.toggles.length <= 1 && f.labels.every((w) => w === '400'),
+        `${name} is in the one frame, its groups cards, ${f.toggles.length ? `its toggles ${f.toggles.join('/')} pixels` : 'no toggles'}, its labels regular: ${read}`);
+};
 const sections = (frame) => b.eval(`[...document.querySelectorAll('${frame} nav button')].map((x) => x.textContent.trim() + (x.getAttribute('aria-current') === 'page' ? '*' : '')).join('|')`);
 const slug = (s) => s.toLowerCase().replace(/[^a-z]+/g, '-');
 
@@ -177,8 +202,8 @@ try {
     if (runs('sections')) {
         step('every section of the settings, from the list down the side');
         await openSettings(b, 'Appearance');
-        c.report((await sections('[role=dialog][aria-label="App settings"]')) === 'Appearance*|Chat|Notifications|Voice|Relay|System',
-            `the settings list their sections down the side, open at Appearance: ${await sections('[role=dialog][aria-label="App settings"]')}`);
+        c.report((await sections('[role=dialog][aria-label="Settings"]')) === 'Appearance*|Chat|Notifications|Voice|Relay|System',
+            `the settings list their sections down the side, open at Appearance: ${await sections('[role=dialog][aria-label="Settings"]')}`);
         const ready = {
             Appearance: `document.querySelector('[data-media-size]')`,
             Chat: `document.getElementById('compress')`,
@@ -194,6 +219,7 @@ try {
             await h.snap(`settings-${slug(name)}`, { scroll: PANEL, max: 6 });
             const wrapped = await b.eval(WRAPPED);
             c.report(wrapped.length === 0, `${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
+            frame(name, await b.eval(FRAME));
         }
         // Push to talk shows its release delay in Voice, which the audit and
         // the hints' measure take too.
@@ -212,17 +238,38 @@ try {
         await openManage(b, 'General');
         await waitFor(() => b.eval(`!!${MANAGE}?.querySelector('input[type=url]')`), "Manage's General");
         const manage = await b.eval(`[...document.querySelectorAll('[role=dialog][aria-label^="Manage "] nav button')].map((x) => x.textContent.trim())`);
-        c.report(manage.join('|') === 'General|Invites|Bans|Soundboard|Emoji|Limits|Devices|Password and recovery|Your code|Your files',
-            `Manage lists the owner's sections: ${manage.join(', ')}`);
+        c.report(manage.join('|') === 'General|Invites|Bans|Soundboard|Emoji|Events|Limits',
+            `Manage lists what staff manage, the owner's Events and Limits last: ${manage.join(', ')}`);
         for (const name of manage) {
             await openManage(b, name);
             await sleep(900);
             await h.snap(`manage-${slug(name)}`, { scroll: PANEL, max: 4 });
             const wrapped = await b.eval(WRAPPED);
             c.report(wrapped.length === 0, `Manage's ${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
+            frame(`Manage's ${name}`, await b.eval(FRAME));
         }
         await b.key('Escape');
         await waitFor(async () => !(await b.eval(`!!${MANAGE}`)), 'Manage closing');
+
+        step("her own sections of the den, from the cog on its page (M22.3)");
+        await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
+        await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Settings"]')`), "the den's cog");
+        await b.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
+        await waitFor(() => b.eval(`!!${SETTINGS}?.querySelector('nav [data-section=devices]')`), "the den's group");
+        const listed = await b.eval(`[...document.querySelectorAll('[role=dialog][aria-label="Settings"] nav > *')]
+            .map((x) => (x.localName === 'p' ? '[' + x.textContent.trim() + ']' : x.textContent.trim())).join('|')`);
+        c.report(/^\[[^\]]+\]\|Devices\|Password and recovery\|Your code\|Your files\|\[App\]\|Appearance\|Chat\|Notifications\|Voice\|Relay\|System$/.test(listed),
+            `on the den's page the settings list her own sections of it first, under its name, then the app's; the den she hosts has no Leave den: ${listed}`);
+        for (const name of ['Devices', 'Password and recovery', 'Your code', 'Your files']) {
+            await openSettings(b, name);
+            await sleep(900);
+            await h.snap(`settings-den-${slug(name)}`, { scroll: PANEL, max: 4 });
+            const wrapped = await b.eval(WRAPPED);
+            c.report(wrapped.length === 0, `${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
+            frame(name, await b.eval(FRAME));
+        }
+        await closeSettings(b);
+        await b.go(`http://localhost:${ALICE.port}/`);
 
         step('Staff marks');
         lib('api', 'alice', 'POST', `/api/dens/${den}/channels/${general}/messages`, q({ nonce: lib('nonce'), text: "Alice's message, the owner's." }));
@@ -576,7 +623,7 @@ try {
         const none = await behind(b, 'background-none');
         c.report(none.image === 'none' && none.pixel.join() === '255,255,255', `with no background the list is the theme's: ${q(none)}`);
         await openSettings(b, 'Appearance');
-        const CARD = `[...document.querySelectorAll('[role=dialog] section')].find((s) => s.querySelector('h2')?.textContent.trim() === 'Chat background')`;
+        const CARD = `document.querySelector('[data-chat-background]')`;
         await waitFor(() => b.eval(`!!${CARD}`), 'the Chat background card');
         await b.eval(`${CARD}.querySelector('input[type=file]').dataset.check = 'background', true`);
         const gif = `${HOME}/background.gif`;
@@ -589,7 +636,7 @@ try {
         await h.snap('background-card', { scroll: PANEL, max: 3 });
         const cardWrapped = await b.eval(WRAPPED);
         c.report(cardWrapped.length === 0, `Chat background: every hint reads in a line${cardWrapped.length ? `; wrapped: ${cardWrapped.join('; ')}` : ''}`);
-        c.report((await b.eval(`${CARD}.querySelector('input[type=range]').value`)) === '70' && (await b.eval(`[...${CARD}.querySelectorAll('button')].map((x) => x.textContent.trim()).join('|')`)) === 'Change image|Remove',
+        c.report((await b.eval(`${CARD}.querySelector('input[type=range]').value`)) === '70' && (await b.eval(`[...${CARD}.querySelectorAll('button')].filter((x) => !x.closest('.tooltip')).map((x) => x.textContent.trim()).join('|')`)) === 'Change image|Remove',
             'the card shows the picture, its dim at 70%, Change image and Remove');
         const kept = await b.eval(`fetch(document.querySelector('[data-background-preview] img').src).then(async (r) => [r.status, r.headers.get('Content-Type'), r.headers.get('Cache-Control'),
             new TextDecoder('latin1').decode(await r.arrayBuffer()).includes('SecretText')].join(' '))`);

@@ -18,7 +18,8 @@
 //   keys, desktop, notify    the settings, each section, Relay's among them (M20.1)
 //   relay
 //   hosting, move, cache     the System section, as an owner
-//   retention, files         Manage, each section, as a member and as an owner
+//   retention, files         Manage, each section, as a member and as an owner; the
+//   (M22.3)                  member's own sections of the den, from the cog on its page
 //   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
 //   groups                   a group DM, its members beside it, a new group (M16.3)
 //   disappearing             a DM's time, from its header to its setting beside it (M16.4)
@@ -64,11 +65,12 @@ export async function waitFor(fn, what, ms = 15000) {
 // pixels tall (rows), those whose room for a finger reaches less than 44
 // each way (tight), and those hidden until a hover (hoverOnly); and the
 // controls whose middle another control's room for a finger covers
-// (covered); and whether a channel's message list scrolls sideways
-// (listSideways). Panes off screen are inert, and left out, as are
-// controls under a dialog, a control whose middle its list scrolled out
-// of view, a link within a line of text, which WCAG leaves to the text's
-// size, and a disabled control's hiding. A list's row is a menu's item, or
+// (covered); whether a channel's message list scrolls sideways
+// (listSideways); and the buttons of no one kind (kinds) and the dialogs
+// with more than one primary (leads). Panes off screen are inert, and left
+// out, as are controls under a dialog, a control whose middle its list
+// scrolled out of view, a link within a line of text, which WCAG leaves
+// to the text's size, and a disabled control's hiding. A list's row is a menu's item, or
 // a control across most of its list item or its list.
 export const AUDIT = `(() => {
     const vw = document.documentElement.clientWidth, vh = innerHeight;
@@ -168,17 +170,36 @@ export const AUDIT = `(() => {
     for (const e of document.querySelectorAll('button')) {
         if (e.getClientRects().length && getComputedStyle(e).visibility === 'hidden' && !disabled(e) && !e.closest('[aria-hidden=true], [inert]')) hoverOnly.push(desc(e));
     }
+    // Each button is one of the page's four kinds by its classes (M22.3):
+    // primary, secondary, quiet (danger's red words among them) or danger
+    // filled, never outlined; filled red only where it confirms, in a dialog
+    // or a step's actions; and one primary to a dialog, or to a frame's
+    // section.
+    const KINDS = ['btn-primary', 'btn-soft', 'btn-ghost', 'btn-error'];
+    const LOOKS = ['btn-outline', 'btn-dash', 'btn-link', 'btn-neutral', 'btn-secondary', 'btn-accent', 'btn-info', 'btn-success', 'btn-warning'];
+    const kinds = [], leads = [], counted = new Map();
+    for (const e of document.querySelectorAll('.btn')) {
+        if (!shown(e) || e.closest('[aria-hidden=true], [inert]')) continue;
+        const kind = KINDS.filter((k) => e.classList.contains(k));
+        const other = LOOKS.filter((k) => e.classList.contains(k));
+        if (kind.length !== 1 || other.length) kinds.push(desc(e) + ' ' + ([...kind, ...other].join(' ') || 'with no kind'));
+        else if (kind[0] === 'btn-error' && !e.closest('[role=dialog], [data-actions]')) kinds.push(desc(e) + ' filled red, confirming nothing');
+        const box = kind[0] === 'btn-primary' && e.closest('[data-panel], [role=dialog]');
+        if (box) counted.set(box, [...(counted.get(box) || []), desc(e)]);
+    }
+    for (const [box, list] of counted) if (list.length > 1) leads.push(desc(box).slice(0, 30) + ': ' + list.join(', '));
     return {
         vw, vh, sideways: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) > vw + 1, listSideways,
-        over: over.map((o) => o.what), small, rows, tight: tight.length, hoverOnly, covered,
+        over: over.map((o) => o.what), small, rows, tight: tight.length, hoverOnly, covered, kinds, leads,
     };
 })()`;
 
 // audits reports the audits' findings, screen by screen, for the browser
 // or phone mode names, a touch screen's where touch says. On every screen
 // nothing is under 24 pixels, nor under another control (M13.2), nor past
-// the right edge outside a scroller of its own (M13.3), and a channel's
-// message list never scrolls sideways (M13.4); on a touch screen
+// the right edge outside a scroller of its own (M13.3), a channel's
+// message list never scrolls sideways (M13.4), and each button is one of
+// the page's kinds, a dialog leading with one primary (M22.3); on a touch screen
 // no list's row is under 44, and nothing shows only on hover; and nothing
 // makes the page itself scroll sideways on a den's panes (M13.1). The rest
 // is noted.
@@ -195,6 +216,8 @@ export function audits(mode, log, report, touch) {
         if (a.covered?.length) bad.push(`covered: ${a.covered.join('; ')}`);
         if (a.over.length) bad.push(`past the edge: ${a.over.slice(0, 3).join('; ')}`);
         if (a.listSideways) bad.push('the message list scrolls sideways');
+        if (a.kinds?.length) bad.push(`buttons of no one kind: ${a.kinds.join('; ')}`);
+        if (a.leads?.length) bad.push(`more than one primary: ${a.leads.join('; ')}`);
         if (touch && a.rows.length) bad.push(`rows under 44: ${a.rows.join('; ')}`);
         if (touch && a.hoverOnly.length) bad.push(`on hover only: ${a.hoverOnly.join('; ')}`);
         const panes = /^(\d+-)?(den-list|channel|members|dm|description|video|around|touch)/.test(shot.name);
@@ -281,14 +304,14 @@ async function openMembers(h) {
     await h.click(h.label('Members'));
 }
 
-const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
-const PANEL = `document.querySelector('[role=dialog][aria-label="App settings"] [data-panel]')`;
+const SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
+const PANEL = `document.querySelector('[role=dialog][aria-label="Settings"] [data-panel]')`;
 const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
 const MANAGE_PANEL = `document.querySelector('[role=dialog][aria-label^="Manage "] [data-panel]')`;
 // A section of the settings or Manage by its name: its tab in a wide
 // window, or its button in the column or the list of them (M13.3).
 const section = (frame, name) => `[...document.querySelectorAll(${JSON.stringify(`${frame} [role=tab], ${frame} nav button`)})].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
-const SETTINGS_FRAME = '[role=dialog][aria-label="App settings"]';
+const SETTINGS_FRAME = '[role=dialog][aria-label="Settings"]';
 const MANAGE_FRAME = '[role=dialog][aria-label^="Manage "]';
 const SCROLLER = `document.querySelector('[data-scroller]')`;
 const COMPOSER = `document.querySelector('textarea[placeholder^="Message "]')`;
@@ -296,7 +319,7 @@ const HOME = `[...document.querySelectorAll('h2')].find((e) => e.textContent.tri
 
 async function openSettings(h) {
     if (await h.has(SETTINGS)) return;
-    await h.click(`document.querySelector('a[aria-label="App settings"], button[aria-label="App settings"]')`, 'the settings cog');
+    await h.click(`document.querySelector('a[aria-label="Settings"], button[aria-label="Settings"]')`, 'the settings cog');
     await h.wait(SETTINGS, 'the settings');
 }
 
@@ -385,6 +408,22 @@ export async function memberScreens(h, ctx) {
             await sleep(500);
             await h.snap(`manage-${s.toLowerCase().replace(/[^a-z]+/g, '-')}`, { scroll: MANAGE_PANEL, max: 3 });
         }
+    });
+    // A member's own sections of the den are the settings', from the cog
+    // on its page, as its group above the app's (M22.3).
+    await h.step('settings-den', async () => {
+        await h.go(`/den/${den}`);
+        await h.wait(`document.querySelector('button[aria-label="Settings"]')`, "the den's cog");
+        await h.click(`document.querySelector('button[aria-label="Settings"]')`, "the den's cog");
+        await h.wait(`document.querySelector('${SETTINGS_FRAME} [data-section=devices]')`, "the den's sections");
+        if (await h.has(`document.querySelector('${SETTINGS_FRAME} nav li')`)) await h.snap('settings-den-list');
+        for (const s of ['Devices', 'Password and recovery', 'Your code', 'Your files', 'Leave den']) {
+            await openSection(h, SETTINGS_FRAME, s);
+            await sleep(500);
+            await h.snap(`settings-den-${s.toLowerCase().replace(/[^a-z]+/g, '-')}`, { scroll: PANEL, max: 3 });
+        }
+        await h.escape();
+        await h.escape();
     });
     await h.step('den-list', async () => {
         await h.go(`/den/${den}`);
@@ -925,7 +964,7 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
             did(c.button.pressed === 'false' && c.button.label === 'Mute' && !c.button.struck, `another unmutes: ${JSON.stringify(c.button)}`);
             // Push to talk, from the settings, where the button's role takes
             // Sending your voice's place.
-            await h.click(`document.querySelector('[data-pane=list] button[aria-label="App settings"]')`, 'the settings');
+            await h.click(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`, 'the settings');
             await settingsTab(h, 'Voice');
             const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
             const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => [l.textContent.trim(), l.querySelector('input').checked])`);
@@ -1108,7 +1147,7 @@ async function makeFromMenus(h, ctx, d, did) {
 // not inert and where each sits, and whether the settings are open.
 const PANE = `(() => {
     const row = document.querySelector('[data-pane=chan]')?.parentElement;
-    const settings = !!document.querySelector('[role=dialog][aria-label="App settings"]');
+    const settings = !!document.querySelector('[role=dialog][aria-label="Settings"]');
     if (!row) return { path: location.pathname, home: !!(${HOME}), settings };
     const vw = document.documentElement.clientWidth;
     const on = [...row.children].filter((e) => e.dataset.pane && !e.inert).map((e) => {
@@ -1171,7 +1210,7 @@ export async function gettingAround(h, ctx, d, report) {
     await settles({ pane: 'chan', path: `/den/${den}/${random}` }, 'a channel tapped in the list opens');
     await d.swipe('right');
     await settles({ pane: 'list' }, 'the list once more');
-    await d.tap(`document.querySelector('[data-pane=list] button[aria-label="App settings"]')`);
+    await d.tap(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`);
     await settles({ settings: true, pane: 'list' }, 'the settings open over the list');
     await h.snap('around-settings');
     await d.back();
@@ -1297,13 +1336,13 @@ export async function touching(h, ctx, d, report) {
     // A tip opens on a tap within the screen, and the next tap closes it.
     await openSettings(h);
     await settingsTab(h, 'Chat');
-    const TIP = `document.querySelector('[role=dialog][aria-label="App settings"] button[aria-label="More about this"]')`;
+    const TIP = `document.querySelector('[role=dialog][aria-label="Settings"] button[aria-label="More about this"]')`;
     const shows = () => h.ev(`(() => { const t = document.getElementById(${TIP}.getAttribute('aria-describedby'));
         if (!t || t.hidden) return null; const r = t.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), vw: document.documentElement.clientWidth }; })()`);
     await d.tap(TIP);
     const tip = await waitFor(shows, 'the tip', 3000).catch(() => null);
     await h.snap('touch-tip');
-    await d.tap(`[...document.querySelectorAll('[role=dialog][aria-label="App settings"] h2')].at(-1)`);
+    await d.tap(`[...document.querySelectorAll('[role=dialog][aria-label="Settings"] h2')].at(-1)`);
     const shut = await waitFor(async () => !(await shows()), 'the tip closed', 3000).then(() => true, () => false);
     did(tip && tip.left >= 0 && tip.right <= tip.vw && shut, `a tap on an i opens its tip within the screen (${JSON.stringify(tip)}), and the next tap closes it (${shut})`);
     await d.back();
@@ -1341,13 +1380,15 @@ export async function pages(h, ctx, d, report) {
     const frame = (f) => `document.querySelector(${JSON.stringify(f)})`;
     const state = (f) => h.ev(`(() => { const s = ${frame(f)}; if (!s) return { open: false, path: location.pathname };
         return { open: true, path: location.pathname, title: s.querySelector('h2')?.textContent.trim(), rows: [...s.querySelectorAll('[data-section]')].map((b) => b.textContent.trim()),
-            page: !!s.querySelector('[data-panel]'), cards: [...s.querySelectorAll('[data-panel] .card-title')].map((t) => t.textContent.trim()) }; })()`);
+            page: !!s.querySelector('[data-panel]'),
+            cards: [...s.querySelectorAll('[data-panel] .card-title')].map((t) => [...t.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim()) }; })()`);
     const until = (f, test, what) => waitFor(async () => { const s = await state(f); return test(s) && s; }, what, 6000).catch(() => null);
-    // walk opens each section of a list from it, and Back from each.
-    const walk = async (f, name, title, check) => {
+    // walk opens each section of a list from it, or those only names, and
+    // Back from each, then from the list to path.
+    const walk = async (f, name, title, check, { only, path = '/' } = {}) => {
         const list = await until(f, (s) => s.open && s.rows.length, `${name}'s list`);
         did(!!list && !list.page, `${name}, opened, list their sections: ${JSON.stringify(list?.rows)}`);
-        for (const row of list?.rows || []) {
+        for (const row of (list?.rows || []).filter((r) => !only || only.includes(r))) {
             await d.tap(`[...document.querySelectorAll('${f} [data-section]')].find((b) => b.textContent.trim() === ${JSON.stringify(row)})`);
             const page = await until(f, (s) => s.page, `${row}'s page`);
             did(!!page && (title === null || page.title === (title || row)), `${row} opens as a page with ← back (${page?.title})`);
@@ -1358,12 +1399,12 @@ export async function pages(h, ctx, d, report) {
         }
         await d.back();
         const closed = await until(f, (s) => !s.open, `${name} closed`);
-        did(!!closed && closed.path === '/', `Back from the list closes ${name} (${closed?.path})`);
+        did(!!closed && closed.path.startsWith(path), `Back from the list closes ${name} (${closed?.path})`);
     };
 
     await h.go('/');
     await h.wait(HOME, 'home');
-    await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
+    await d.tap(`document.querySelector('a[aria-label="Settings"]')`);
     await walk(SETTINGS_FRAME, 'the settings', '', async (row, page) => {
         if (row === 'Notifications') {
             const shown = await until(SETTINGS_FRAME, (s) => s.cards.includes('Sounds'), 'the sounds card');
@@ -1378,8 +1419,19 @@ export async function pages(h, ctx, d, report) {
             : `a browser's Voice holds the keyboard shortcuts and screen share (${page.cards.join(', ')})`);
     });
     await d.tap(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Manage')`);
-    // A den's sections are headed by the den's name.
-    await walk(MANAGE_FRAME, 'Manage', null);
+    // Each section's page is headed by its name, in Manage as in the
+    // settings (M22.3).
+    await walk(MANAGE_FRAME, 'Manage', '');
+    // On a den's page, the settings list the member's own sections of it
+    // first, each a page of its own.
+    const yours = ['Devices', 'Password and recovery', 'Your code', 'Your files', 'Leave den'];
+    await h.go(`/den/${den}`);
+    await h.wait(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`, "the den's cog");
+    await d.tap(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`);
+    const den$ = await until(SETTINGS_FRAME, (s) => s.open && s.rows.includes('Devices'), "the den's settings");
+    did(JSON.stringify(den$?.rows.slice(0, 4)) === JSON.stringify(yours.slice(0, 4)) && den$?.rows.at(-1) === 'Leave den',
+        `on the den's page the settings list its sections first, and Leave den last: ${JSON.stringify(den$?.rows)}`);
+    await walk(SETTINGS_FRAME, "the den's settings", '', null, { only: yours, path: `/den/${den}` });
 
     await h.go(`/den/${den}/${general}`);
     await h.wait(COMPOSER, 'the composer');
