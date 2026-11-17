@@ -257,26 +257,42 @@ export function Choices({ label, name, data, choice, choices, onPick, tip }) {
 }
 
 // ColorField takes a color: the browser's picker, and beside it the
-// color's hex, the same in every browser, which takes a typed or pasted
-// one once it reads as a color.
-export function ColorField({ label, value, onChange }) {
+// color as text, the same in every browser, which takes a typed or pasted
+// one once read reads it as a color. hex is the color as the picker shows
+// it, where the color itself may be written another way; long puts the
+// label above them, giving the text the room such a color takes.
+export function ColorField({ label, value, onChange, read = hexColor, hex = value, long = false }) {
     const [typed, setTyped] = useState(value);
     useEffect(() => {
-        setTyped((t) => (hexColor(t) === value ? t : value));
+        setTyped((t) => (read(t) === value ? t : value));
     }, [value]);
-    return (
-        <div class="flex items-center gap-3" data-color={label}>
-            <span class="min-w-0 flex-1 text-sm">{label}</span>
+    const controls = (
+        <>
             <input type="color" class="h-8 w-12 shrink-0 cursor-pointer rounded-field border border-base-content/20 bg-transparent p-0.5"
-                aria-label={`${label}, picked`} value={value} onInput={(e) => onChange(e.currentTarget.value.toLowerCase())} />
-            <input type="text" class="input input-sm w-24 shrink-0 font-mono" aria-label={`${label}, as hex`} value={typed} maxlength="7" {...PLAIN}
+                aria-label={`${label}, picked`} value={hex} onInput={(e) => onChange(e.currentTarget.value.toLowerCase())} />
+            <input type="text" class={`input input-sm font-mono ${long ? 'min-w-0 flex-1' : 'w-24 shrink-0'}`} aria-label={`${label}, ${long ? 'as text' : 'as hex'}`}
+                value={typed} maxlength={long ? 40 : 7} {...PLAIN}
                 onInput={(e) => {
                     const text = e.currentTarget.value;
                     setTyped(text);
-                    const hex = hexColor(text);
-                    if (hex && hex !== value) onChange(hex);
+                    const color = read(text);
+                    if (color && color !== value) onChange(color);
                 }}
                 onBlur={() => setTyped(value)} />
+        </>
+    );
+    if (long) {
+        return (
+            <div class="flex flex-col gap-1" data-color={label}>
+                <span class="text-sm">{label}</span>
+                <div class="flex items-center gap-2">{controls}</div>
+            </div>
+        );
+    }
+    return (
+        <div class="flex items-center gap-3" data-color={label}>
+            <span class="min-w-0 flex-1 text-sm">{label}</span>
+            {controls}
         </div>
     );
 }

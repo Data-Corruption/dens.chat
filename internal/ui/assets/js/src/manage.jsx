@@ -8,6 +8,10 @@ import { Actions, Button, ErrorText, Field, InSheet, Slider, SubmitButton, TextI
 import { useLayer, useNarrow } from './nav.js';
 import { Handle, useDragDown } from './sheet.jsx';
 
+// WIDTHS are a dialog's widest on a wide window, spelled out so Tailwind
+// keeps every class.
+const WIDTHS = { false: 'md:max-w-md', true: 'md:max-w-3xl', xl: 'md:max-w-5xl' };
+
 // Dialog frames a dialog over the page, which Back closes, as do its ✕ and
 // a click outside it (M13.1). On the phone layout it's a sheet from the
 // screen's foot, as tall as it needs up to the screen's, its title and ✕
@@ -18,7 +22,8 @@ import { Handle, useDragDown } from './sheet.jsx';
 // the handle over its top, both staying there as it scrolls; a swipe down
 // closes it from the handle, or from what it shows marked as its top. One
 // with a foot keeps it at its bottom as the rest scrolls, as Edit
-// profile's Save (M22.3); a wide one takes room for two columns.
+// profile's Save (M22.3); a wide one takes room for two columns, and a
+// wider, wide="xl", for controls beside a preview, as the theme editor's.
 export function Dialog({ title, onClose, bare = false, wide = false, foot, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
@@ -28,7 +33,7 @@ export function Dialog({ title, onClose, bare = false, wide = false, foot, child
         <InSheet.Provider value={narrow}>
             <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4" {...backdrop}>
                 <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={title} style={drag.style} {...drag.handlers}
-                    class={`card max-h-[calc(100%-1.5rem)] w-full overscroll-contain bg-base-100 shadow-xl max-md:rounded-b-none md:max-h-full ${wide ? 'md:max-w-3xl' : 'md:max-w-md'} ${foot ? 'flex flex-col overflow-hidden' : 'overflow-y-auto max-md:pb-[env(safe-area-inset-bottom)]'}`}>
+                    class={`card max-h-[calc(100%-1.5rem)] w-full overscroll-contain bg-base-100 shadow-xl max-md:rounded-b-none md:max-h-full ${WIDTHS[wide] ?? WIDTHS.true} ${foot ? 'flex flex-col overflow-hidden' : 'overflow-y-auto max-md:pb-[env(safe-area-inset-bottom)]'}`}>
                     {bare ? (
                         <>
                             <div class="pointer-events-none sticky top-0 z-10 h-0">

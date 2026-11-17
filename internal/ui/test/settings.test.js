@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState } from '../assets/js/src/settings.jsx';
 import { keepTheme, ownChoice, setTheme } from '../assets/js/src/theme.js';
-import { variables } from '../assets/js/src/themes.js';
+import { cleanTheme, variables } from '../assets/js/src/themes.js';
 
 // A wide window with a mouse: wider than the phone layout, and not coarse.
 globalThis.window = {
@@ -218,10 +218,10 @@ test("a theme of the member's own is listed under Your themes in its colors, wit
     const kept = render();
     assert.deepEqual([kept.names, kept.checked, kept.buttons], [['Dusk'], [false], ['New theme', 'Paste a code']], 'kept, not chosen');
     assert.equal(kept.swatch.attributes['data-theme'], 'dark');
-    assert.deepEqual({ ...kept.swatch.style }, variables(dusk), 'its swatch wears its variables');
+    assert.deepEqual({ ...kept.swatch.style }, variables(cleanTheme(dusk)), 'its swatch wears its variables');
     setTheme(ownChoice(id));
     const chosen = render();
     assert.deepEqual([chosen.checked, chosen.buttons], [[true], ['Edit', 'Copy code', 'Delete', 'New theme', 'Paste a code']]);
-    assert.deepEqual({ ...document.documentElement.style }, variables(dusk), 'and the page wears it');
+    assert.deepEqual({ ...document.documentElement.style }, variables(cleanTheme(dusk)), 'and the page wears it');
     setTheme('system');
 });

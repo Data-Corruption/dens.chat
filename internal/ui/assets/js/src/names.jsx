@@ -4,18 +4,25 @@
 // and says how it shows on this theme, to this reader; here it becomes a
 // class and a style the page sets through the CSSOM, as it sets a theme's.
 
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { createContext } from 'preact';
+import { useContext, useEffect, useMemo, useState } from 'preact/hooks';
 import { STYLES_ALL, fontFamily, fontRoom, nameLook, useNameStyles } from './names.js';
 import { onTheme, themeColors } from './theme.js';
 
+/** ShownColors are the colors a theme other than the page's gives what's
+    inside it, as themeColors has them, for names to read against: the
+    theme editor's preview wears the theme being made. */
+export const ShownColors = createContext(null);
+
 function useThemeColors() {
+    const shown = useContext(ShownColors);
     const [colors, setColors] = useState(themeColors);
     useEffect(() => {
         const update = () => setColors(themeColors());
         update();
         return onTheme(update);
     }, []);
-    return colors;
+    return shown || colors;
 }
 
 const PLAIN = { class: '', style: undefined, gradient: false };
