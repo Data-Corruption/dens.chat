@@ -364,6 +364,7 @@ The den rewrites the links in a message's text when it's sent or edited, and in 
   - On `youtube.com`, `youtu.be`, `youtube-nocookie.com` and their subdomains, such as `music.youtube.com`: `si`, `pp` and `feature`.
   - On `x.com`, `twitter.com` and their subdomains: `s`, `t`, `ref_src` and `ref_url`.
   - On `reddit.com`, its subdomains and `redd.it`: `share_id`.
+  - On `steampowered.com`, `steamcommunity.com` and their subdomains: `snr` (M22.2).
   - On Amazon's stores and their `www.` and `smile.` hosts: `ref`, `ref_`, `qid`, `sr`, `crid`, `sprefix`, `keywords`, `content-id`, `_encoding`, `tag`, `linkCode`, `linkId`, `ascsubtag`, `creativeASIN`, `creative`, `camp`, and any whose name starts with `pd_rd_` or `pf_rd_`. Path segments starting with `ref=` come out of the link too.
 
   Everything else in the link stays as it was, the remaining parameters' order and spelling included. A link left with no parameters loses its `?` too, and empty ones between `&`s go.

@@ -124,8 +124,9 @@ your den's website can't carry its calls.
 ## Running the den
 
 Everything is in the den's **Manage**: click the den's name at the top of its
-channel list. Roles, invites, channels, limits and the soundboard work as
-you'd expect; what's different:
+channel list, then **Manage**. New channels and groups are in that menu too.
+Roles, invites, channels, limits and the soundboard work as you'd expect;
+what's different:
 
 - **Invites are the only way in.** Each expires and works a set number of
   times. Dens keeps no IP addresses, so someone banned can come back under a
