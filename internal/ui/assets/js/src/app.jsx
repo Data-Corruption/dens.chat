@@ -2,21 +2,20 @@
 // (M9.3), and the pages (home and a den's), chosen from what /api/status
 // says about this browser, with the app's settings and a den's Manage
 // dialog over them (M8.3). A den's page reaches home and the settings from
-// its channel list; home has a button of its own for the settings. Which
-// page shows, and which of a den's panes, is the page's history's (M13.1).
+// its channel list; home has a cog of its own for the settings. Which page
+// shows, and which of a den's panes, is the page's history's (M13.1).
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { watchTab } from './tabmark.js';
 import { api } from './api.js';
 import { startBackground } from './background.js';
 import { onConnection, onUnpaired } from './events.js';
-import { Card, DocsTip, ErrorText, Field, Notice, PasswordFields, SubmitButton, TextInput, buttonClass, checkPasswords, useAction } from './components.jsx';
+import { Card, DocsTip, ErrorText, Field, Lead, Notice, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
 import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
-import { CogIcon } from './icons.jsx';
 import { ManageDialog } from './manageden.jsx';
 import { RelayBar } from './relay.jsx';
-import { SettingsDialog, onOpenSettings, openSettings } from './settings.jsx';
+import { SettingsDialog, onOpenSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
 import { openAt } from './messages.jsx';
 import { EVENTS } from './denevents.js';
@@ -186,16 +185,18 @@ export function App({ instance, version, pair, pairLink }) {
         return () => clearInterval(timer);
     }, [locked]);
     let page;
+    // The first run's screens, and unlocking, are one thing to do each,
+    // in the middle of the window under the mark.
     if (state.phase === 'loading') {
         page = <span class="loading loading-spinner"></span>;
     } else if (state.phase === 'failed') {
         page = <ErrorText message={state.error} />;
     } else if (state.phase === 'unpaired') {
-        page = <Unpaired pair={pair} pairLink={pairLink} error={state.error} />;
+        page = <Lead><Unpaired pair={pair} pairLink={pairLink} error={state.error} /></Lead>;
     } else if (!passwordSet) {
-        page = <SetPassword canRemember={'remember' in state.status} onDone={load} />;
+        page = <Lead><SetPassword canRemember={'remember' in state.status} onDone={load} /></Lead>;
     } else if (locked) {
-        page = <Unlock remembered={!!state.status.remember?.on} onDone={load} />;
+        page = <Lead><Unlock remembered={!!state.status.remember?.on} onDone={load} /></Lead>;
     } else {
         page = <Home status={state.status} navigate={navigate} />;
     }
@@ -211,7 +212,7 @@ export function App({ instance, version, pair, pairLink }) {
                 </div>
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">
-                    <div class="mx-auto flex max-w-2xl flex-col gap-4 p-6 pb-20">
+                    <div class="mx-auto flex min-h-full max-w-2xl flex-col gap-4 p-6">
                         {open && <CallBox />}
                         {open && <RelayBar look="box" />}
                         {/* The phone layout docks the shares the member
@@ -219,13 +220,6 @@ export function App({ instance, version, pair, pairLink }) {
                         {open && narrow && <div class="overflow-hidden rounded-box empty:hidden"><DockedPlayer /></div>}
                         {page}
                     </div>
-                    {open && (
-                        <a href="/settings" class={`${buttonClass('secondary', 'md')} fixed bottom-4 left-4 bg-base-100 shadow-sm`} aria-label="Settings"
-                            onClick={(e) => { e.preventDefault(); openSettings(); }}>
-                            <CogIcon size="h-5 w-5" />
-                            Settings
-                        </a>
-                    )}
                 </main>
             )}
             {/* The shares this member watches play over every page (M4.2), and
@@ -344,15 +338,8 @@ function SetPassword({ canRemember, onDone }) {
 
     return (
         <Card title={<>Set a local password <DocsTip id="docs-local-password" page="usage/#your-passwords-and-keys">
-            How it differs from your den passwords, and what each one is for.</DocsTip></>}>
-            <p>
-                The local password protects your backups and your keys. You'll need it to make a backup, restore one on another
-                machine, or view your keys.
-            </p>
-            <p class="text-sm text-base-content/70">
-                Nobody can recover it for you. If you lose both this password and this device, your local data is gone; your den
-                accounts can still be recovered with their recovery codes.
-            </p>
+            What it protects, how it differs from your den passwords, and what's lost without it.</DocsTip></>}>
+            <p>Protects Dens on this device. Nobody can recover it for you.</p>
             <form class="flex flex-col gap-2" onSubmit={submit}>
                 <PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
                 {canRemember && <Remember checked={remember} onChange={setRemember} />}

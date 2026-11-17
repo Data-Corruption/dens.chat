@@ -16,6 +16,11 @@ import { BackIcon, MenuIcon, OnwardIcon } from './icons.jsx';
 import { useNarrow } from './nav.js';
 import { Sheet, SheetRow } from './sheet.jsx';
 
+// MENU is every menu's surface (M22.4): a step off the page's color, with
+// an edge and a shadow, so it reads as a layer over a list or a message
+// on every theme.
+export const MENU = 'menu flex-nowrap rounded-box border border-base-content/10 bg-base-200 p-1 shadow-lg';
+
 // What a right click leaves to the browser: links, players and fields,
 // a YouTube cover among the players. Pictures are left to it too, but for
 // a member's and an emoji, which stand for the row's member and the
@@ -185,7 +190,7 @@ function Flyout({ item, open, onOpen, picked, tab }) {
             {open && (
                 <div ref={box} class="fixed left-0 top-0 z-30">
                     <ul ref={list} role="menu" aria-label={item.label} data-flyout={item.key}
-                        class="menu max-h-80 w-52 flex-nowrap overflow-y-auto rounded-box bg-base-100 p-1 shadow"
+                        class={`${MENU} max-h-80 w-52 overflow-y-auto`}
                         onKeyDown={(e) => {
                             e.stopPropagation();
                             if (e.key === 'ArrowLeft') {
@@ -251,7 +256,7 @@ export function PointerMenu({ at, label, items, back, onClose }) {
     }
     return (
         <ul ref={list} role="menu" aria-label={label} onKeyDown={(e) => menuKeys(e, list.current, close, onClose)} data-pointer-menu
-            class="menu absolute left-0 top-0 z-20 w-52 flex-nowrap rounded-box bg-base-100 p-1 shadow">
+            class={`${MENU} absolute left-0 top-0 z-20 w-52`}>
             <MenuItems items={items} picked={close} />
         </ul>
     );
@@ -327,7 +332,7 @@ export function MenuButton({ label, items, button, align = 'right', title, box: 
             </button>
             {dropdown && (
                 <ul ref={list} role="menu" aria-label={label} onKeyDown={(e) => menuKeys(e, list.current, close, () => setOpen(false))}
-                    class={`menu absolute z-20 w-52 flex-nowrap rounded-box bg-base-100 p-1 font-normal normal-case shadow ${align === 'left' ? 'left-0' : 'right-0'} ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+                    class={`${MENU} absolute z-20 w-52 font-normal normal-case ${align === 'left' ? 'left-0' : 'right-0'} ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
                     <MenuItems items={items} picked={close} />
                 </ul>
             )}

@@ -142,7 +142,12 @@ async function first(h, d, c) {
             return ol && { n: ol.children.length, columns: new Set([...ol.children].map((li) => Math.round(li.getBoundingClientRect().left))).size,
                 whole: [...ol.children].every((li) => li.getClientRects().length === 1 && li.scrollWidth <= li.clientWidth), width: Math.round(r.width) }; })()`);
         report(codes?.n > 0 && codes.columns === 1 && codes.whole, `the recovery codes stand in one column, each whole: ${JSON.stringify(codes)}`);
-        await d.tap(`[...document.querySelectorAll('main label')].find((e) => e.textContent.includes("I've stored"))`);
+        // The app saves no file the page makes, so the codes copy, which
+        // lets Done through (M22.4).
+        const saves = await h.ev(`[...document.querySelectorAll('main button')].map((e) => e.textContent.trim())`);
+        report(saves.includes('Copy') && !saves.includes('Save as a file'), `the recovery codes copy, with no file to save in the app: ${JSON.stringify(saves)}`);
+        await d.tap(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Copy')`);
+        await h.wait(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Done' && !e.disabled)`, 'Done let through');
         await d.tap(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Done')`);
         const joined = await reached(`[...document.querySelectorAll('main li')].find((e) => [...e.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Open'))`, 'the den on Home');
         report(joined, "the den, joined through the page's forms, is on Home");

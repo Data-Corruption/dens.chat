@@ -14,11 +14,13 @@
 // long name scrolling to its end under the pointer and back, and a right
 // click opening a message's menu and a member's at the pointer, and a
 // link's the browser's own; and from M19.5, the den's name with no arrow
-// beside it, under a pointing hand.
+// beside it, under a pointing hand; and from M22.4 the composer's + inside
+// its box, and a profile card opening beside the name clicked, with
+// nothing dimmed.
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, DEN_NAME, HOME, SETTINGS, checks, fromMenu, launch, lib, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
+import { ALICE, CLOSE_CARD, DEN_NAME, HOME, SETTINGS, checks, fromMenu, launch, lib, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, CLIPS: clips, DM: dm } = process.env;
@@ -160,12 +162,13 @@ try {
     })()`), 'the New divider between messages 4 and 5', 5000));
     c.report(none && placed, `a message arriving in the open channel got no divider (${none}), and opening it with two unread put one before them (${placed})`);
 
-    step("the composer's + is bordered as its box is");
+    step("the composer's + sits inside its box, with no box of its own");
     await b.eval(`document.activeElement?.blur(), true`);
-    const look = (sel) => b.eval(`(() => { const s = getComputedStyle(${sel}); return [s.borderTopWidth, s.borderTopColor, s.boxShadow].join(' | '); })()`);
-    const plus = await look(`document.querySelector('button[aria-label="Add to this message"]')`);
-    const box = await look(BOX);
-    c.report(plus === box, `the + matches the box's border and shading: ${plus} / ${box}`);
+    const plus = JSON.parse(await b.eval(`(() => {
+        const p = document.querySelector('button[aria-label="Add to this message"]'), r = p.getBoundingClientRect(), t = ${BOX}.getBoundingClientRect();
+        return JSON.stringify({ inside: r.left > t.left && r.right < t.left + t.width / 2 && r.top >= t.top && r.bottom <= t.bottom, border: getComputedStyle(p).borderTopWidth });
+    })()`));
+    c.report(plus.inside && plus.border === '0px', `the + sits inside the box at its left, unbordered: ${JSON.stringify(plus)}`);
 
     step('Enter in a code block');
     const border = () => b.eval(`getComputedStyle(${BOX}).borderTopColor`);
@@ -315,11 +318,44 @@ try {
     await waitFor(() => b.eval(`!!${CARD}?.querySelector('[data-role-mark]')`), "alice's card");
     const onCard = JSON.parse(await b.eval(MARKS(CARD)));
     await shot('marks');
-    await b.eval(`${CARD}.querySelector('button[aria-label=Close]').click(), true`);
+    await b.eval(CLOSE_CARD);
     await waitFor(async () => !(await b.eval(`!!${CARD}`)), 'the card closing');
     const heights = [...inList, ...onCard, ...inMessages];
     c.report(inList.length === 2 && onCard.length === 1 && inMessages.length >= 3 && heights.every((d) => Math.abs(d) <= 1) && Math.max(...heights) - Math.min(...heights) <= 1,
         `each mark's middle is its name's, within a pixel: the list ${JSON.stringify(inList)}, a card ${JSON.stringify(onCard)}, messages ${JSON.stringify(inMessages)}`);
+
+    step('a profile card opens beside the name clicked, with nothing dimmed, and a click outside closes it');
+    // Where the card stands against what was clicked, and whether anything
+    // dims the page behind it.
+    const beside = (sel) => b.eval(`(() => {
+        const card = ${CARD}, from = ${sel};
+        if (!card || !from) return 'null';
+        const c = card.getBoundingClientRect(), f = from.getBoundingClientRect();
+        const dims = [...document.querySelectorAll('.fixed')].some((e) => e !== card && !card.contains(e)
+            && getComputedStyle(e).backgroundColor.startsWith('rgba(0, 0, 0, 0.') && e.getBoundingClientRect().width >= innerWidth - 1);
+        return JSON.stringify({ right: Math.round(c.left - f.right), left: Math.round(f.left - c.right), top: Math.round(c.top - f.top), focused: card.contains(document.activeElement),
+            inside: c.left >= 0 && c.right <= innerWidth && c.top >= 0 && c.bottom <= innerHeight, dims });
+    })()`).then(JSON.parse);
+    const NAME = `document.querySelector('[data-scroller] [data-id] button [data-name]')?.closest('button')`;
+    await waitFor(() => b.eval(`!!${NAME}`), "a message's name");
+    await clickOn(NAME, "a message's name");
+    await waitFor(() => b.eval(`!!${CARD}?.querySelector('[data-member-since]')`), 'the card from a message');
+    const fromName = await beside(NAME);
+    await shot('card-beside');
+    // A click outside the card, in the message box, closes it.
+    const elsewhere = await at(BOX);
+    await b.click(elsewhere[0], elsewhere[1]);
+    const outside = await may(waitFor(async () => !(await b.eval(`!!${CARD}`)), 'the card closing on a click outside', 3000));
+    // The member list sits at the window's right edge: the card opens to its left.
+    await clickOn(MEMBER('Alice'), "alice's row");
+    await waitFor(() => b.eval(`!!${CARD}?.querySelector('[data-member-since]')`), 'the card from the list');
+    const fromList = await beside(MEMBER('Alice'));
+    // A second click on the row closes it, as Escape does.
+    await clickOn(MEMBER('Alice'), "alice's row again");
+    const toggled = await may(waitFor(async () => !(await b.eval(`!!${CARD}`)), 'the card closing on a second click', 3000));
+    c.report(fromName && fromName.right >= 4 && fromName.right <= 12 && Math.abs(fromName.top) <= 1 && fromName.inside && !fromName.dims && fromName.focused && outside
+        && fromList && fromList.left >= 4 && fromList.left <= 12 && fromList.inside && !fromList.dims && toggled,
+    `a message's name opens its card to its right, its top at the name's, nothing dimmed (${JSON.stringify(fromName)}), and a click outside closed it (${outside}); the list's row opens it to its left (${JSON.stringify(fromList)}), and a second click closed it (${toggled})`);
 
     step('a long name scrolls to its end under the pointer, and back as it leaves');
     const LONG = `[...${LIST}.querySelectorAll('.name-scroll')].find((x) => x.textContent.startsWith('Bartholomew'))`;
@@ -380,7 +416,7 @@ try {
     const onMember = await where(MENU('Options for Bartholomew'), "the member's menu");
     await clickOn(`[...${MENU('Options for Bartholomew')}.querySelectorAll('[role=menuitem]')].find((i) => i.textContent.trim() === 'Profile')`, 'Profile');
     const card = await may(waitFor(() => b.eval(`${CARD}?.innerText.includes('@bob') || false`), "bob's card", 3000));
-    await b.eval(`${CARD}?.querySelector('button[aria-label=Close]').click(), true`);
+    await b.eval(CLOSE_CARD);
     const took = await b.eval(`JSON.stringify(window.__took)`);
     const near = (m, q) => m && Math.abs(m.x - q[0]) <= 2 && Math.abs(m.y - q[1]) <= 2;
     // The member list is at the window's edge, so their menu opens left of

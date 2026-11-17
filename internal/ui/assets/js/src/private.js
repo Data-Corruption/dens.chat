@@ -258,3 +258,23 @@ export function nextDue(messages, now) {
     }
     return next;
 }
+
+/** recoveryText is what the recovery codes' file and Copy hold: the den,
+    the member's username there, the codes and the DM recovery key, as
+    many of those as there are */
+export function recoveryText({ den, codes, seal }) {
+    const lines = [`Den: ${den.name}`];
+    if (den.url) lines.push(`Address: ${den.url}`);
+    if (den.username) lines.push(`Username: ${den.username}`);
+    if (codes.length) lines.push('', 'Recovery codes. Each signs you in once if you forget your den password.', ...codes);
+    if (seal) lines.push('', 'DM recovery key. It reads your DMs if you lose every device: keep it secret.', seal);
+    return `${lines.join('\n')}\n`;
+}
+
+/** recoveryFileName names the recovery codes' file for its den: the den's
+    name, less what a file's name can't hold */
+export function recoveryFileName(name) {
+    // eslint-disable-next-line no-control-regex
+    const safe = name.replace(/[\u0000-\u001f\u007f/\\:*?"<>|]/g, ' ').replace(/\s+/g, ' ').replace(/^[ .]+|[ .]+$/g, '');
+    return `${safe || 'Den'} recovery codes.txt`;
+}

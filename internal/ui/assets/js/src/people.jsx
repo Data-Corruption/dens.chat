@@ -1,7 +1,7 @@
 // Members: the member list, profile cards, editing your own profile, and
 // staff removing someone.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Picture, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
@@ -16,7 +16,7 @@ import { Markdown } from './markdown.jsx';
 import { MenuButton, PointerMenu, SheetItems, ownsMenu, rightClick } from './menus.jsx';
 import { FONTS, cleanStyle, fontFamily } from './names.js';
 import { Name } from './names.jsx';
-import { useNarrow } from './nav.js';
+import { useLayer, useNarrow } from './nav.js';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
 import { badgeTip, zone } from './denevents.js';
@@ -116,7 +116,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
     function items(m) {
         const setRole = (next) => act.run(() => api.put(`/api/dens/${denID}/members/${m.id}/role`, { role: next }));
         const run = {
-            profile: () => onProfile(m),
+            profile: () => onProfile(m, menu?.row),
             edit: card.onEdit,
             notes: () => act.run(card.onNotes),
             message: () => act.run(() => card.onMessage(m)),
@@ -153,7 +153,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
                                 as="button"
                                 type="button"
                                 class={`flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11 ${dim ? 'opacity-60' : ''} ${menu?.id === m.id ? 'bg-base-300/60' : ''}`}
-                                onClick={() => onProfile(m)}
+                                onClick={(e) => onProfile(m, e.currentTarget)}
                                 {...rightClicks(m)}
                             >
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />
@@ -308,8 +308,11 @@ function CompareCodes({ member, kept, onCompare }) {
 // ProfileCard shows a member, and what the viewer can do with them, with
 // one button standing out (M17.6): Message, or on the member's own card
 // Edit profile, with Notes beside it, which open their notes (M17.3) while
-// the den has them for this Dens. The rest is under ⋯.
-export function ProfileCard({ denID, member, me, role, online, kept, onClose, onMessage, onNotes, onCompare, onEdit, onRemove }) {
+// the den has them for this Dens. The rest is under ⋯. On a wide window it
+// opens beside from, the name or picture clicked, with nothing dimmed
+// (M22.4); a phone, or a card with nothing to open beside, keeps a dialog.
+export function ProfileCard({ denID, member, me, role, online, kept, from, onClose, onMessage, onNotes, onCompare, onEdit, onRemove }) {
+    const narrow = useNarrow();
     const act = useAction();
     const self = member.id === me.id;
     const left = !!member.left_at;
@@ -339,12 +342,77 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
         )
     );
 
+    const card = (
+        <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} actions={actions}>
+            <ErrorText message={act.error} />
+        </Profile>
+    );
+    if (!narrow && from?.isConnected) {
+        return <ProfilePopover from={from} onClose={onClose}>{card}</ProfilePopover>;
+    }
+    return <Dialog title="Profile" bare onClose={onClose}>{card}</Dialog>;
+}
+
+// CARD_WIDTH is a profile card's width beside what opened it, in pixels.
+const CARD_WIDTH = 352;
+
+/** cardAt is where a card of size opens beside from, the box clicked, in
+    a window of width and height: to its right, or to its left where only
+    that side has room, or else against the window's right edge; its top at
+    from's, and up as far as it takes to end inside the window */
+export function cardAt(from, size, width, height, gap = 8) {
+    let left = from.right + gap;
+    if (left + size.width > width - gap) left = from.left - gap - size.width >= gap ? from.left - gap - size.width : width - gap - size.width;
+    const top = Math.min(from.top, height - gap - size.height);
+    return { left: Math.round(Math.max(gap, left)), top: Math.round(Math.max(gap, top)) };
+}
+
+// ProfilePopover holds a profile card beside from, where cardAt says, and
+// keeps it there as its bio and badges come in. A press outside it closes
+// it, but on from, whose click does; so do Escape and Back, Escape giving
+// the focus back to from.
+function ProfilePopover({ from, onClose, children }) {
+    useLayer(onClose);
+    const box = useRef(null);
+    const closing = useRef(onClose);
+    closing.current = onClose;
+    useLayoutEffect(() => {
+        const el = box.current;
+        const place = () => {
+            const at = cardAt(from.getBoundingClientRect(), { width: el.offsetWidth, height: el.offsetHeight }, document.documentElement.clientWidth, innerHeight);
+            el.style.left = `${at.left}px`;
+            el.style.top = `${at.top}px`;
+        };
+        place();
+        el.focus({ preventScroll: true });
+        const watch = new ResizeObserver(place);
+        watch.observe(el);
+        window.addEventListener('resize', place);
+        return () => {
+            watch.disconnect();
+            window.removeEventListener('resize', place);
+        };
+    }, [from]);
+    useEffect(() => {
+        const away = (e) => !box.current?.contains(e.target) && !from.contains(e.target) && closing.current();
+        const escape = (e) => {
+            if (e.key !== 'Escape' || e.defaultPrevented) return;
+            closing.current();
+            if (from.isConnected) from.focus();
+        };
+        document.addEventListener('pointerdown', away);
+        document.addEventListener('keydown', escape);
+        return () => {
+            document.removeEventListener('pointerdown', away);
+            document.removeEventListener('keydown', escape);
+        };
+    }, [from]);
     return (
-        <Dialog title="Profile" bare onClose={onClose}>
-            <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} actions={actions}>
-                <ErrorText message={act.error} />
-            </Profile>
-        </Dialog>
+        <div ref={box} role="dialog" aria-label="Profile" tabIndex={-1} data-profile-popover
+            class="fixed left-0 top-0 z-50 max-h-[calc(100vh-1rem)] overflow-y-auto overscroll-contain rounded-box border border-base-content/10 bg-base-100 shadow-xl outline-none"
+            style={{ width: `${CARD_WIDTH}px` }}>
+            {children}
+        </div>
     );
 }
 

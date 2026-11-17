@@ -34,7 +34,7 @@
 //   run.sh events chromium|firefox
 import { execFileSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, LOUNGE: lounge, BACKSTAGE: backstage, DM: dm } = process.env;
@@ -339,7 +339,7 @@ try {
     const tip = await B.b.eval(`${PROFILE}?.querySelector('[data-badge="${night.id}"] [role=tooltip]')?.textContent || ''`);
     report(tip.startsWith('Was thereGame night, '), `its tip names it and its event, with the day: ${q(tip)}`);
     await B.b.shot(`${HOME}/shot-events-badge-${which}.png`);
-    await B.b.eval(`${PROFILE}.querySelector('button[aria-label="Close"]').click(), true`);
+    await B.b.eval(CLOSE_CARD);
     await waitFor(() => B.b.eval(`!${PROFILE}`), "alice's card closed");
 
     step("alice hides her badge in Edit profile, and bob's card of her shows it no more (M17.6)");
@@ -360,7 +360,7 @@ try {
     // The card shows its badges as its profile comes, which takes a moment.
     await sleep(1500);
     report(!(await B.b.eval(`!!${PROFILE}?.querySelector('[data-badge]')`)), "bob's card of alice shows her badge no more");
-    await B.b.eval(`${PROFILE}.querySelector('button[aria-label="Close"]').click(), true`);
+    await B.b.eval(CLOSE_CARD);
     await waitFor(() => B.b.eval(`!${PROFILE}`), "alice's card closed again");
     await openEvents(B);
 

@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { browserOf, canCall, canPopOut, canSeal, canShare, hasKeys, inApp, systemOf } from '../assets/js/src/platform.js';
+import { browserOf, canCall, canPopOut, canSaveFile, canSeal, canShare, hasKeys, inApp, markURL, systemOf } from '../assets/js/src/platform.js';
 
 const AGENTS = {
     chromeWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
@@ -85,4 +85,12 @@ test("the page has keys, and a browser's permissions, unless the service says it
     // A page that says nothing is a browser's, with keys.
     assert.deepEqual([inApp(page({})), hasKeys(page({}))], [false, true]);
     assert.deepEqual([inApp(page(null)), hasKeys(page(null))], [false, true]);
+});
+
+test("the page saves a file it makes but in Dens's app, and draws the mark its shell carries", () => {
+    assert.equal(canSaveFile(page({ inApp: 'true' })), false);
+    assert.equal(canSaveFile(page({ inApp: 'false' })), true);
+    assert.equal(canSaveFile(page(null)), true);
+    assert.equal(markURL(page({ mark: 'data:image/svg+xml,<svg/>' })), 'data:image/svg+xml,<svg/>');
+    assert.equal(markURL(page(null)), '');
 });

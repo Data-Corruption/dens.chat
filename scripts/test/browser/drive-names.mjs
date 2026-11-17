@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import zlib from 'node:zlib';
-import { ALICE, BOB, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , which = 'chromium'] = process.argv;
 const { DEN: den, GENERAL: general, LOUNGE: lounge, DM: dm, FIRST: first, SECOND: second, REPLY: reply } = process.env;
@@ -232,7 +232,7 @@ try {
     const seen = {};
     for (const [where, el] of Object.entries(places)) seen[where] = await look(bob, el);
     await shot(bob, 'dark-card');
-    await bob.eval(`document.querySelector('[data-profile]').closest('[role=dialog]').querySelector('button[aria-label="Close"]').click(), true`);
+    await bob.eval(CLOSE_CARD);
     await waitFor(async () => !(await bob.eval(`!!document.querySelector('[data-profile]')`)), 'the card closing');
     await bob.go(`http://localhost:${BOB.port}/den/${den}/${dm}`);
     await waitFor(() => bob.eval(`!!${named('nav[aria-label="Direct messages"]', 'Alice')} && !!document.querySelector('header [data-name]')`), "the DM on bob's page");

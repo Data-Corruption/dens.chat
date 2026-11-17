@@ -45,6 +45,12 @@ export async function openSettings(b, tab) {
     await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-current') === 'page'`), `the settings' ${tab} section`);
 }
 
+// CLOSE_CARD closes a profile card, as an expression for a page's eval:
+// beside its click on a wide window it has no ✕, and Escape closes it
+// (M22.4); as a phone's sheet, its ✕.
+export const CLOSE_CARD = `(document.querySelector('[role=dialog][aria-label="Profile"] button[aria-label="Close"]')?.click()
+    ?? document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`;
+
 // openYours opens one of a member's own sections of a den (M22.3): its
 // page, if the browser isn't on it, then the cog's settings, which list
 // them first.

@@ -12,7 +12,9 @@ import { useOver } from './animations.js';
 import { MARKS_HOVER, MARKS_NEVER, useVerifiedMarks } from './verified.js';
 import { openSettings } from './dialogs.js';
 import { Dialog } from './manage.jsx';
-import { sameDigits } from './private.js';
+import { canSaveFile } from './platform.js';
+import { recoveryFileName, recoveryText, sameDigits } from './private.js';
+import { copyText } from './clipboard.js';
 
 // Digits shows the digits a screen reads out, large and in groups, a size
 // smaller on a phone, where a code's five groups would wrap.
@@ -407,49 +409,81 @@ export function PendingSignIns({ list, onRecover }) {
 const KEY_WHY = 'Reads your DMs if you lose every device. Keep it secret.';
 
 // KeyShown shows a DM recovery key once, to keep, beside a den's recovery
-// codes or after a reset.
-export function KeyShown({ seal, fresh }) {
+// codes or after a reset, which save it with them.
+function KeyShown({ seal, fresh }) {
     return (
         <div class="flex flex-col gap-2">
-            <h3 class="font-semibold">Your DM recovery key</h3>
-            <p>{KEY_WHY}</p>
-            {!fresh && <p class="text-sm text-base-content/70">It's the same key your other dens on this device use.</p>}
-            <p class="select-all rounded bg-base-100 px-3 py-2 font-mono text-sm">{seal}</p>
-            <div><CopyButton text={seal} label="Copy key" /></div>
+            <h4 class="font-semibold">DM recovery key</h4>
+            <p class="text-sm">{KEY_WHY}{!fresh && " It's the one your other dens on this device use."}</p>
+            <p class="select-all break-all rounded bg-base-100 px-3 py-2 font-mono text-sm" data-seal>{seal}</p>
         </div>
     );
 }
 
+// saveText has the browser save text as a file named name.
+function saveText(text, name) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // RecoveryCodes shows a den's recovery codes once, and the DM recovery key
 // beside them when there is one to keep; after a reset, the key alone.
-export function RecoveryCodes({ denName, codes, seal, sealNew, onDone }) {
-    const [saved, setSaved] = useState(false);
-    const what = codes.length && seal ? 'recovery codes and DM recovery key' : codes.length ? 'recovery codes' : 'DM recovery key';
+// They save as one file, named for the den, or copy as its text, and
+// either lets Done through. den is its status: its name, address and the
+// member's username there, which the file names too. Android's app has
+// no file to save, so it copies.
+export function RecoveryCodes({ den, codes, seal, sealNew, onDone }) {
+    const [kept, setKept] = useState('');
+    const [problem, setProblem] = useState('');
+    const text = recoveryText({ den, codes, seal });
+    function said(what) {
+        setKept(what);
+        setProblem('');
+    }
+    async function copy() {
+        try {
+            await copyText(text);
+            said('copied');
+        } catch (e) {
+            setProblem(e.message);
+        }
+    }
     return (
         <div class="flex flex-col gap-3">
-            <h3 class="text-lg font-semibold">
-                Save your {what} for {denName}{' '}
-                <DocsTip id="docs-keys" page="usage/#your-passwords-and-keys">What each of these is for, and how to keep them.</DocsTip>
-            </h3>
+            <div>
+                <h3 class="text-lg font-semibold">
+                    {codes.length ? 'Save your recovery codes' : 'Save your DM recovery key'}{' '}
+                    <DocsTip id="docs-keys" page="usage/#your-passwords-and-keys">What each of these is for, and how to keep them.</DocsTip>
+                </h3>
+                <p class="text-sm text-base-content/70">{den.name} · shown only now</p>
+            </div>
             {codes.length > 0 && (
                 <>
-                    <p>
-                        If you forget your password for this den, one of these codes lets you set a new one. Each works once. They're
-                        shown only now: store them somewhere safe, away from this device.
-                    </p>
+                    <p class="text-sm">Each code signs you in once if you forget your password here.</p>
                     <ol class="grid gap-2 font-mono text-sm sm:grid-cols-2">
                         {codes.map((code) => <li key={code} class="whitespace-nowrap rounded bg-base-100 px-3 py-1">{code}</li>)}
                     </ol>
-                    <div><CopyButton text={codes.join('\n')} label="Copy codes" /></div>
                 </>
             )}
             {seal && <KeyShown seal={seal} fresh={sealNew} />}
-            <label class="label gap-2">
-                <input type="checkbox" class="checkbox" checked={saved} onChange={(e) => setSaved(e.currentTarget.checked)} />
-                I've stored my {what}
-            </label>
+            <div class="flex flex-wrap items-center gap-2" data-recovery-save>
+                {canSaveFile() && (
+                    <Button onClick={() => {
+                        saveText(text, recoveryFileName(den.name));
+                        said('saved');
+                    }}>{kept === 'saved' ? 'Saved' : 'Save as a file'}</Button>
+                )}
+                <Button onClick={copy}>{kept === 'copied' ? 'Copied' : 'Copy'}</Button>
+            </div>
+            <ErrorText message={problem} />
             <Actions>
-                <Button kind="primary" disabled={!saved} onClick={onDone}>Done</Button>
+                <Button kind="primary" disabled={!kept} title={kept ? undefined : 'Save or copy them first'} onClick={onDone}>Done</Button>
             </Actions>
         </div>
     );

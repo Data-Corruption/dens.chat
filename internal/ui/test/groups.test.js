@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { changeText, groupGate, groupTitle, isPrivate, placeAt } from '../assets/js/src/private.js';
-import { GroupGate, GroupLine, GroupPanel } from '../assets/js/src/groups.jsx';
+import { GroupGate, GroupLine, GroupPanel, memberItems, removerNote } from '../assets/js/src/groups.jsx';
 
 const members = new Map([
     ['1', { id: '1', display_name: 'Alice', username: 'alice', identity: 'a' }],
@@ -70,10 +70,28 @@ test("a group's members and lines are what its changes make them, each line befo
         onCompare() {}, onProfile() {}, onAdd() {}, onRename() {} }), root);
     const rows = findAll(root, (n) => attr(n, 'data-member') !== undefined).map((li) => attr(li, 'data-member'));
     assert.deepEqual(rows, ['1', '2', '4'], 'the members are in the order they joined, Carol removed');
-    assert.match(findAll(root, (n) => attr(n, 'data-member') === '1')[0].textContent, /Alice \(you\)\s*Removes/);
-    // The first member removes the others.
-    assert.equal(findAll(root, (n) => n.localName === 'button' && String(attr(n, 'aria-label') || '').startsWith('Remove ')).length, 2);
+    // A row is the picture and the name, the one who removes others marked
+    // under theirs; the rest is each row's ⋯.
+    assert.match(findAll(root, (n) => attr(n, 'data-member') === '1')[0].textContent, /Alice \(you\)\s*Made the group/);
+    assert.equal(findAll(root, (n) => attr(n, 'data-remover') !== undefined).length, 1);
+    assert.equal(findAll(root, (n) => n.localName === 'button' && n.textContent.trim() === 'Remove').length, 0, 'no Remove in the rows');
+    assert.deepEqual(findAll(root, (n) => attr(n, 'data-member-more') !== undefined).map((b) => attr(b, 'aria-label')),
+        ['Options for Bob', 'Options for Dave'], "the others' rows have a ⋯, the member's own none");
     mount(null, root);
+
+    // The first member removes the others, and is marked for why.
+    assert.equal(removerNote({ changes }, '1'), 'Made the group');
+    assert.equal(removerNote({ changes }, '2'), 'Can remove members', 'the maker left, and Bob has been in longest');
+    assert.equal(removerNote({ changes: changes.slice(1) }, '1'), 'Can remove members', 'the first change is past what the page holds');
+    const keys = (o) => memberItems(o).map((i) => i.key);
+    const bob = members.get('2');
+    const erin = members.get('5');
+    assert.deepEqual(keys({ self: false, member: bob, removes: true }), ['compare', 'remove']);
+    assert.deepEqual(keys({ self: false, member: erin, removes: true }), ['remove'], 'no comparing with a Dens that publishes no identity');
+    assert.deepEqual(keys({ self: false, member: bob, removes: false }), ['compare']);
+    assert.deepEqual(keys({ self: false, member: erin, removes: true, broken: true }), [], 'nothing removes in a group that fails its checks');
+    assert.deepEqual(keys({ self: true, member: bob, removes: true }), []);
+    assert.equal(memberItems({ self: false, member: bob, kept: { verified: true } })[0].label, 'Compare codes again');
 
     const line = document.createElement('div');
     mount(h(GroupLine, { change: changes[1], nameOf, me: '1' }), line);

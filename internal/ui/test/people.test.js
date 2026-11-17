@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { avatarColor, avatarLetter } from '../assets/js/src/avatar.jsx';
 import { MessageRow, typingLine } from '../assets/js/src/messages.jsx';
-import { EditProfile, MARK, MemberList, ProfileCard, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../assets/js/src/people.jsx';
+import { EditProfile, MARK, MemberList, ProfileCard, cardAt, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../assets/js/src/people.jsx';
 import { CallMembers } from '../assets/js/src/voice.jsx';
 import { setStaffMarks, staffMarks } from '../assets/js/src/staffmarks.js';
 
@@ -344,4 +344,18 @@ test("a card shows the badges its member shows, and Edit profile turns each by i
     for (let i = 0; i < 50 && state('41') !== 'false off'; i++) await settle();
     assert.deepEqual(asked.at(-1), { method: 'PUT', path: '/api/dens/d/me/badges/41', body: { hidden: true } });
     mount(null, root);
+});
+
+test("a profile card opens beside what was clicked: to its right, or its left where only that side has room, within the window", () => {
+    const size = { width: 352, height: 300 };
+    const box = (left, top, width = 60, height = 20) => ({ left, top, right: left + width, bottom: top + height });
+    // A message's name, at the window's middle: to its right, its top at the name's.
+    assert.deepEqual(cardAt(box(330, 400), size, 1280, 800), { left: 398, top: 400 });
+    // The member list at the right edge: to the row's left.
+    assert.deepEqual(cardAt(box(1048, 96, 224), size, 1280, 800), { left: 688, top: 96 });
+    // Near the foot, it moves up as far as it takes to end inside.
+    assert.deepEqual(cardAt(box(330, 760), size, 1280, 800), { left: 398, top: 492 });
+    // No room either side: against the window's right edge, never past its left.
+    assert.deepEqual(cardAt(box(100, 50, 300), size, 500, 800), { left: 140, top: 50 });
+    assert.deepEqual(cardAt(box(0, 50, 380), size, 360, 800), { left: 8, top: 50 });
 });

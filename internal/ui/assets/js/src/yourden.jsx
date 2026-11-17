@@ -57,7 +57,7 @@ export function useYourDen(denID) {
 export function YourDen({ den, view, at, onClose, navigate }) {
     const [shown, setShown] = useState(null);
     if (shown) {
-        return <RecoveryCodes denName={den.name} codes={shown.codes} seal={shown.seal} sealNew={shown.sealNew} onDone={() => setShown(null)} />;
+        return <RecoveryCodes den={den} codes={shown.codes} seal={shown.seal} sealNew={shown.sealNew} onDone={() => setShown(null)} />;
     }
     if (at === 'devices') return <Devices den={den} />;
     if (at === 'password') {

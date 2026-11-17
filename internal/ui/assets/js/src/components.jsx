@@ -9,8 +9,27 @@ import { copyText } from './clipboard.js';
 import { InfoIcon, StatusIcon } from './icons.jsx';
 import { nameText, useNameLook } from './names.jsx';
 import { onNotifications } from './notify.js';
+import { markURL } from './platform.js';
 import { hexColor } from './themes.js';
 import { tipShift } from './touch.js';
+
+// Mark is Dens's mark, where a screen says it's Dens: the first run's, and
+// Home with no den.
+export function Mark({ size = 'h-14 w-14' }) {
+    const src = markURL();
+    return src ? <img src={src} alt="Dens" class={`${size} shrink-0 rounded-box`} draggable={false} data-mark /> : null;
+}
+
+// Lead is a screen with one thing to do, as the first run's and an empty
+// Home: the mark over it, in the middle of the window.
+export function Lead({ children }) {
+    return (
+        <div class="my-auto flex w-full flex-col items-center gap-6 py-6" data-lead>
+            <Mark />
+            <div class="flex w-full flex-col gap-4">{children}</div>
+        </div>
+    );
+}
 
 export function Card({ title, children, class: extra = '', ...rest }) {
     return (

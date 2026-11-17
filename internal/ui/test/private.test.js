@@ -2,8 +2,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { LOCKED, dividerText, dmGate, keyChanges, keysChangedAt, sameDigits } from '../assets/js/src/private.js';
-import { Codes, DMGate, KeysChanged } from '../assets/js/src/private.jsx';
+import { LOCKED, dividerText, dmGate, keyChanges, keysChangedAt, recoveryFileName, recoveryText, sameDigits } from '../assets/js/src/private.js';
+import { Codes, DMGate, KeysChanged, RecoveryCodes } from '../assets/js/src/private.jsx';
 import { keysChanged } from '../assets/js/src/calllock.jsx';
 
 const names = (id) => ({ 1: 'Alice', 2: 'Bob' })[id] || 'Unknown member';
@@ -236,4 +236,42 @@ test("a call shows a member's keys changed since they were verified, or in the c
     assert.equal(keysChanged({ changes: [day - 1000], held: true }, began), true, 'held since they were verified');
     assert.equal(keysChanged({ changes: [day + 5000] }, began), true, 'a change in the call');
     assert.equal(keysChanged({ changes: [day + 5000] }, Infinity), false, "outside the page's call, only the hold shows");
+});
+
+test('the recovery codes save as one file named for the den, or copy as the same text', () => {
+    const den = { name: 'Voice Den', url: 'https://den.example.com', username: 'bob' };
+    assert.equal(recoveryText({ den, codes: ['AAAA-BBBB', 'CCCC-DDDD'], seal: 'KEY1-KEY2' }), [
+        'Den: Voice Den', 'Address: https://den.example.com', 'Username: bob', '',
+        'Recovery codes. Each signs you in once if you forget your den password.', 'AAAA-BBBB', 'CCCC-DDDD', '',
+        'DM recovery key. It reads your DMs if you lose every device: keep it secret.', 'KEY1-KEY2', '',
+    ].join('\n'));
+    // After a reset, the key alone; new codes, the codes alone.
+    assert.doesNotMatch(recoveryText({ den, codes: [], seal: 'KEY' }), /Recovery codes/);
+    assert.doesNotMatch(recoveryText({ den, codes: ['AAAA'], seal: '' }), /DM recovery key/);
+    assert.equal(recoveryFileName('Voice Den'), 'Voice Den recovery codes.txt');
+    // A den's name is its owner's: what a file's name can't hold goes.
+    assert.equal(recoveryFileName('a/b:c*d?"e<f>g|h\\i'), 'a b c d e f g h i recovery codes.txt');
+    assert.equal(recoveryFileName('x\u0000y\nz'), 'x y z recovery codes.txt');
+    assert.equal(recoveryFileName(' .. '), 'Den recovery codes.txt');
+});
+
+test('Done waits for the recovery codes to be saved or copied, which copies them all', async () => {
+    let copied = '';
+    Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { async writeText(t) { copied = t; } } }, configurable: true });
+    const den = { name: 'Voice Den', url: 'https://den.example.com', username: 'bob' };
+    const root = document.createElement('div');
+    let done = 0;
+    mount(h(RecoveryCodes, { den, codes: ['AAAA-BBBB'], seal: 'KEY1', sealNew: true, onDone: () => done++ }), root);
+    const button = (text) => root.find((n) => n.localName === 'button' && n.textContent.trim() === text);
+    assert.ok(button('Save as a file'), 'a browser saves them as a file');
+    assert.ok(!root.find((n) => n.localName === 'input' && n.attributes.type === 'checkbox'), 'no promise to tick');
+    assert.equal(button('Done').attributes.disabled, 'true', 'Done waits');
+    await button('Copy').dispatch('click');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(copied, recoveryText({ den, codes: ['AAAA-BBBB'], seal: 'KEY1' }));
+    assert.ok(button('Copied'));
+    assert.equal(button('Done').attributes.disabled, undefined, 'copying lets Done through');
+    button('Done').dispatch('click');
+    assert.equal(done, 1);
+    mount(null, root);
 });
