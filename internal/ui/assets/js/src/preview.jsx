@@ -65,14 +65,14 @@ const none = () => {};
 // sampleCall is the preview's call, on its Lounge, a while before at.
 const sampleCall = (at) => ({ channel_id: 'preview-lounge', started_at: at - 12 * MINUTE - 34 * 1000, record_ms: 3 * 60 * MINUTE });
 
-// ChatSample is the preview's messages, on the member's chat background.
-// They take no pointer, so nothing in them acts.
-function ChatSample({ at }) {
+// ChatSample is the preview's messages, on the member's chat background,
+// or with few its first two. They take no pointer, so nothing in them acts.
+function ChatSample({ at, few = false }) {
     const narrow = useNarrow();
     const line = useDensity() === DENSITY_COMPACT;
     const marks = useStaffMarks();
     const background = useBackground();
-    const messages = sampleMessages(at);
+    const messages = sampleMessages(at).slice(0, few ? 2 : undefined);
     return (
         <div class="pointer-events-none select-none px-2 pb-2 pt-1" style={backgroundStyle(background)} inert>
             {messages.map((m, i) => (
@@ -148,12 +148,26 @@ const CHANNELS = [
 const IN_CALL = { den: 'preview', channel: 'preview-lounge', label: { den: 'Den', channel: 'Lounge' }, status: 'connected', muted: false, deafened: false, sealed: true };
 const IN_DEN = { den: 'preview', me: YOU.id, role: 'member', calls: [], limits: null, sounds: [], soundLimits: null };
 
+// channelRow is one of the den preview's channels as the list draws it.
+const channelRow = (c) => (
+    <div class={`${ROW} ${rowShade(c.open)}`} data-preview-channel={c.id}>
+        <span class={ROW_BUTTON}>
+            <span class="text-base-content/50"><HashIcon /></span>
+            <span class={`truncate ${readStyle(c.unread, c.open)}`}>{c.name}</span>
+        </span>
+        {c.unread && <UnreadPill />}
+        {c.mentions > 0 && <span class="badge badge-error badge-xs ml-1">{c.mentions}</span>}
+    </div>
+);
+
 /** DenPreview is a small den in theme, which the box it's drawn on wears
     alone: its channel list, with an unread channel and a mention, the
     page's call and its controls; the channel open, its header, Appearance's
     sample of the chat and the composer; and under them a button of each
     kind, a notice of each status, a toggle and a slider. Nothing in it
-    acts. */
+    acts. On the phone layout, where it stays in view above the editor's
+    controls, it's cut to what they change: a channel's row on the list's
+    background, two messages, the buttons and the notices. */
 export function DenPreview({ theme }) {
     const vars = useMemo(() => variables(theme), [theme]);
     const colors = useMemo(() => ({
@@ -166,22 +180,17 @@ export function DenPreview({ theme }) {
         <div data-theme={theme.dark ? 'dark' : 'light'} style={vars} inert role="group" aria-label="Preview" data-theme-preview
             class="flex select-none flex-col overflow-hidden rounded-box border border-base-300 text-sm">
             <ShownColors.Provider value={colors}>
+                {narrow ? (
+                    <>
+                        <div class="bg-base-200 px-2 py-1" data-preview-list>{channelRow(CHANNELS[2])}</div>
+                        <ChatSample at={at} few />
+                    </>
+                ) : (
                 <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
                     <div class="flex min-h-0 flex-col bg-base-200" data-preview-list>
                         <div class="truncate border-b border-base-300 p-3 font-semibold">Den</div>
                         <ul class="flex flex-1 flex-col p-2">
-                            {CHANNELS.map((c) => (
-                                <li key={c.id}>
-                                    <div class={`${ROW} ${rowShade(c.open)}`} data-preview-channel={c.id}>
-                                        <span class={ROW_BUTTON}>
-                                            <span class="text-base-content/50"><HashIcon /></span>
-                                            <span class={`truncate ${readStyle(c.unread, c.open)}`}>{c.name}</span>
-                                        </span>
-                                        {c.unread && <UnreadPill />}
-                                        {c.mentions > 0 && <span class="badge badge-error badge-xs ml-1">{c.mentions}</span>}
-                                    </div>
-                                </li>
-                            ))}
+                            {CHANNELS.map((c) => <li key={c.id}>{channelRow(c)}</li>)}
                             <li class="flex flex-col gap-1"><CallSample at={at} /></li>
                         </ul>
                         <div class="border-t border-base-300 bg-bar px-2 py-1.5">
@@ -198,20 +207,21 @@ export function DenPreview({ theme }) {
                             onSpoiler={none} onCompare={none} onCancelReply={none} onSend={none} onEditLast={none} onTyping={none} narrow={narrow} touch={false} />
                     </div>
                 </div>
-                <div class="flex flex-col gap-3 border-t border-base-300 p-3" data-preview-controls>
+                )}
+                <div class={`flex flex-col border-t border-base-300 ${narrow ? 'gap-2 p-2' : 'gap-3 p-3'}`} data-preview-controls>
                     <div class="flex flex-wrap gap-2">
                         <Button kind="primary">Join</Button>
                         <Button>Invite</Button>
                         <Button kind="quiet">Later</Button>
                         <Button kind="danger">Leave</Button>
                     </div>
-                    <div class="grid gap-2 sm:grid-cols-2">
-                        <Notice kind="info">A new device signed in.</Notice>
+                    <div class="grid grid-cols-2 gap-2">
+                        <Notice kind="info">Update ready.</Notice>
                         <Notice kind="success">Saved.</Notice>
                         <Notice kind="warning">Reconnecting…</Notice>
                         <Notice kind="error">Couldn't send.</Notice>
                     </div>
-                    <div class="flex items-center gap-4">
+                    <div class={narrow ? 'hidden' : 'flex items-center gap-4'}>
                         <Toggle id="preview-toggle" label="On" checked onChange={none} />
                         <Slider value={60} aria-label="Volume" class="min-w-0 flex-1" onInput={none} />
                     </div>

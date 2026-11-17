@@ -303,7 +303,11 @@ function ThemeEditor({ title, start, onSave, onCancel }) {
             </Actions>
         }>
             <div class="grid gap-6 md:grid-cols-[20rem_minmax(0,1fr)]">
-                <div class="md:sticky md:top-0 md:order-last md:self-start">{shown && <DenPreview theme={shown} />}</div>
+                {/* On the phone layout it holds under the sheet's title, over
+                    the controls scrolling beneath. */}
+                <div class="sticky top-[52px] z-[5] -mx-1 self-start bg-base-100 px-1 pb-2 md:top-0 md:order-last md:mx-0 md:px-0 md:pb-0" data-preview-hold>
+                    {shown && <DenPreview theme={shown} />}
+                </div>
                 <form id="theme-editor" class="flex flex-col gap-4" data-theme-editor onSubmit={save}>
                     <Field label="Name">
                         <TextInput value={draft.name} onInput={(name) => change({ name })} maxlength={NAME_MOST * 2} required />

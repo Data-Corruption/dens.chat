@@ -287,14 +287,15 @@ export function textOn(color) {
     return contrast(light, color) >= contrast(dark, color) ? light : dark;
 }
 
-// ON_BACKGROUND are the colors the page draws on the background as text or
-// marks, as a link, a mention or an error's icon; the rest it draws as
-// surfaces under their own text.
-const ON_BACKGROUND = ['text', 'primary', 'info', 'success', 'warning', 'error'];
+// ON_BACKGROUND are the colors whose words the page draws on the
+// background, as a link's or a mention's are primary's. A status is an
+// icon and an edge beside words in the text's color, so a pale one costs
+// nothing to read.
+const ON_BACKGROUND = ['text', 'primary'];
 
-/** lowContrast is how a color the page draws on a theme's background reads
-    there where that's poorly, under 4.5 to 1 for the text and 3 to 1 for
-    the rest, or 0 where it reads well or isn't drawn there */
+/** lowContrast is how the text or primary reads on a theme's background
+    where that's poorly, under 4.5 to 1 for the text and 3 to 1 for
+    primary, or 0 where it reads well, or for any other color */
 export function lowContrast(theme, field) {
     if (!ON_BACKGROUND.includes(field)) return 0;
     const ratio = contrast(hexOf(theme[field]), hexOf(theme.base));

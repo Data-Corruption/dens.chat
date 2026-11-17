@@ -557,8 +557,8 @@ try {
         await set(b, '[data-border]', '2', ['change']);
         await sleep(300);
         const lowAfter = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
-        c.report(low.split('|').includes('Primary') && !lowAfter.split('|').includes('Primary'),
-            `a primary too near the background says so beside it, and stops once it reads: ${q(low)}, then ${q(lowAfter)}`);
+        c.report(low === 'Primary' && lowAfter === '',
+            `a primary too near the background says so beside it, alone, and stops once it reads: ${q(low)}, then ${q(lowAfter)}`);
         const made = await previewWears(b);
         const wanted = { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', button: '#c2410c', radius: '0px', borderWidth: '2px' };
         const holds = (got, want) => Object.entries(want).every(([k, v]) => got[k] === v);

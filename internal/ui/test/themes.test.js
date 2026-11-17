@@ -346,8 +346,9 @@ test('a color that reads poorly on the background says by how much', () => {
     assert.equal(lowContrast(gray, 'primary'), 0);
     assert.ok(lowContrast(gray, 'text') > 3.9);
     assert.equal(lowContrast({ ...DUSK, base: 'oklch(100% 0 0)', text: 'oklch(21% 0.006 285.885)' }, 'text'), 0);
-    // A surface, under its own text, and the background itself aren't measured.
-    for (const field of ['base', 'neutral', 'secondary', 'accent']) assert.equal(lowContrast({ ...DUSK, neutral: DUSK.base, secondary: DUSK.base, accent: DUSK.base }, field), 0, field);
+    // The text and primary alone are measured: a status is an icon and an edge.
+    const flat = Object.fromEntries(['neutral', 'secondary', 'accent', 'info', 'success', 'warning', 'error'].map((f) => [f, DUSK.base]));
+    for (const field of ['base', ...Object.keys(flat)]) assert.equal(lowContrast({ ...DUSK, ...flat }, field), 0, field);
 });
 
 test('a typed color reads with or without its #, and in three digits', () => {
