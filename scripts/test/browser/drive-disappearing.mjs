@@ -96,10 +96,10 @@ try {
         await waitFor(() => s.b.eval(`!!${COMPOSER}`), `${s.name}'s DM`);
     }
 
-    // The DM tab offers a group, and none of the den tab's buttons, to its
-    // owner too.
-    const plus = await A.b.eval(`JSON.stringify([...document.querySelectorAll('[data-pane=list] button')].map((b) => b.textContent.trim()).filter((t) => t.startsWith('+')))`);
-    report(plus === '["+ New group"]', `alice's DM tab offers + New group alone: ${plus}`);
+    // The DM tab's + makes a group, and the den tab's channels and groups
+    // aren't offered there, to its owner either.
+    const plus = await A.b.eval(`JSON.stringify([...document.querySelectorAll('[data-pane=list] [data-tab-add]')].map((b) => b.dataset.tabAdd + ':' + b.getAttribute('aria-label')))`);
+    report(plus === '["dms:New group"]', `alice's DM tab's + makes a group, alone: ${plus}`);
 
     step("bob sets the DM's time from the profile beside it");
     await beside(B, 'Profile');

@@ -18,7 +18,7 @@
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, DEN_NAME, HOME, SETTINGS, checks, fromMenu, launch, lib, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, CLIPS: clips, DM: dm } = process.env;
@@ -60,8 +60,7 @@ try {
     await waitFor(async () => (await rows()) >= 3, "general's messages");
     // The ⋯ shows on hover, which a pointer's arrival doesn't give it in
     // time for the press, so it's clicked as a script would.
-    await waitFor(() => b.eval(`!!${button('Settings for general')}`), "general's ⋯");
-    await b.eval(`${button('Settings for general')}.click(), true`);
+    await fromMenu(b, rowMenu('general'), 'edit');
     const DIALOG = `document.querySelector('[role=dialog][aria-label="#general"]')`;
     await waitFor(() => b.eval(`!!${DIALOG}`), "general's settings dialog");
     const name = await at(`${DIALOG}.querySelector('input')`);
@@ -283,10 +282,11 @@ try {
     c.report(bar.height === 24 && bar.utility && /%$/.test(bar.seek), `the seek bar is 24 pixels tall for a finger, drawn thin, with its played part set: ${JSON.stringify(bar)}`);
     await shot('seek');
 
-    step("the den's name is a button with no arrow, under a pointing hand");
-    const denName = JSON.parse(await b.eval(`JSON.stringify((() => { const t = document.querySelector('[data-den-manage]');
-        return { text: t.textContent.trim(), arrows: t.querySelectorAll('svg').length, cursor: getComputedStyle(t).cursor }; })())`));
-    c.report(denName.text === 'Voice Den' && denName.arrows === 0 && denName.cursor === 'pointer', `the den's name opens Manage, with no arrow beside it and a pointer over it: ${JSON.stringify(denName)}`);
+    step("the den's name is a button with its arrow, under a pointing hand");
+    const denName = JSON.parse(await b.eval(`JSON.stringify((() => { const t = ${DEN_NAME};
+        return { text: t.textContent.trim(), arrows: t.querySelectorAll('svg').length, cursor: getComputedStyle(t).cursor, menu: t.getAttribute('aria-haspopup') }; })())`));
+    c.report(denName.text === 'Voice Den' && denName.arrows === 1 && denName.cursor === 'pointer' && denName.menu === 'menu',
+        `the den's name opens its menu, with an arrow beside it and a pointer over it: ${JSON.stringify(denName)}`);
 
     step('the crown and the shield stand at one height beside their names, in the list, a card and a message');
     // Each mark's middle, less its name's text's, in pixels.

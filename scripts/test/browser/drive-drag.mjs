@@ -10,7 +10,12 @@
 // a mouse does, the drag handed over through the DevTools protocol, which
 // a headless Chromium needs; Firefox's drag under WebDriver starts but
 // never ends, so its drops are the page's own events, dispatched in order,
-// and at the end a mouse's drag in it starts one.
+// and at the end a mouse's drag in it starts one. From M22.2, alice makes
+// a channel and a group from each menu with the mouse, a right click on
+// the list's empty space among them, a channel in a group from the group's
+// menu, and one from the den's name by the keyboard alone, and moves a
+// channel down and back up from its menu; and Move to opens its channels
+// beside the menu.
 //
 //   run.sh drag chromium|firefox chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -66,6 +71,118 @@ async function dragOnto(b, from, to, where) {
     if (!dropped) throw new Error('the page took no drop');
 }
 
+// hoverOver moves the mouse over what x names, where its menu's flyout
+// opens.
+async function hoverOver(b, x) {
+    const p = JSON.parse(await b.eval(`(() => { const r = ${x}.getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
+    await b.move(p.x, p.y);
+}
+
+// MENU_ROW is a row of the menu open, by its key.
+const MENU_ROW = (key) => `document.querySelector('[data-menu-item=${JSON.stringify(key)}]')`;
+const DIALOG = (title) => `document.querySelector('[role=dialog][aria-label=${JSON.stringify(title)}]')`;
+
+// makeFromMenus has alice make channels and groups from each menu with the
+// mouse: a right click on the list's empty space, the den's name, the Den
+// tab's +, and a group's ⋯, whose channel lands in it; one from the den's
+// name by the keyboard alone; then move one down and back up from its
+// menu, and take them all away.
+async function makeFromMenus(b) {
+    const tag = Date.now().toString(36).slice(-4);
+    const made = [];
+    // name types into the dialog that opened, title, and makes it.
+    async function name(title, text) {
+        await waitFor(() => b.eval(`!!${DIALOG(title)}`), `the ${title} dialog`, 5000);
+        await b.eval(`${DIALOG(title)}.querySelector('input').focus(), true`);
+        await b.type(text);
+        await b.key('Enter');
+        await waitFor(async () => !(await b.eval(`!!${DIALOG(title)}`)), `${text} made`, 8000);
+        made.push(text);
+    }
+    async function pick(open, key, title, text) {
+        await open();
+        await waitFor(() => b.eval(`!!${MENU_ROW(key)}`), `the menu's ${key}`, 5000);
+        const p = JSON.parse(await b.eval(`(() => { const r = ${MENU_ROW(key)}.getBoundingClientRect(); return JSON.stringify({ x: r.left + 20, y: r.top + r.height / 2 }); })()`));
+        await b.click(p.x, p.y);
+        await name(title, text);
+    }
+    const at = async (x) => JSON.parse(await b.eval(`(() => { const r = ${x}.getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
+    const clickOn = async (x, button = 'left') => {
+        const p = await at(x);
+        await b.click(p.x, p.y, button);
+    };
+    // The list's empty space, under its last row.
+    const space = async () => {
+        const p = JSON.parse(await b.eval(`(() => { const n = document.querySelector('nav[aria-label=Channels]').getBoundingClientRect();
+            const rows = [...document.querySelectorAll('nav[aria-label=Channels] [data-channel-row], nav[aria-label=Channels] [data-group-row]')];
+            const last = Math.max(...rows.map((r) => r.getBoundingClientRect().bottom));
+            return JSON.stringify({ x: n.left + n.width / 2, y: Math.min(n.bottom - 10, last + 40) }); })()`));
+        await b.click(p.x, p.y, 'right');
+    };
+    const NAME = `document.querySelector('[data-den-menu]')`;
+    const PLUS = `document.querySelector('[data-tab-add=den]')`;
+    await pick(space, 'channel', 'New channel', `space-${tag}`);
+    await pick(space, 'group', 'New group', `Space ${tag}`);
+    await pick(() => clickOn(NAME), 'channel', 'New channel', `name-${tag}`);
+    await pick(() => clickOn(NAME), 'group', 'New group', `Name ${tag}`);
+    await pick(() => clickOn(PLUS), 'channel', 'New channel', `plus-${tag}`);
+    await pick(() => clickOn(PLUS), 'group', 'New group', `Plus ${tag}`);
+    await pick(() => clickOn(heading(talk), 'right'), 'channel', 'New channel', `talk-${tag}`);
+    // The keyboard: the den's name, its menu by the down arrow, then down
+    // to New channel.
+    await b.eval(`${NAME}.focus(), true`);
+    await b.key('ArrowDown');
+    await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === 'manage'`), "the den's menu, by the keyboard", 5000);
+    await b.key('ArrowDown');
+    await b.key('Enter');
+    await name('New channel', `keys-${tag}`);
+    const v = state();
+    const ch = (n) => v.channels.find((x) => x.name === n);
+    c.report(['space', 'name', 'plus', 'keys'].every((w) => ch(`${w}-${tag}`) && !ch(`${w}-${tag}`).group_id),
+        `${b.name}: a channel from the list's right click, the den's name, the Den tab's + and the den's name by the keyboard`);
+    c.report(['Space', 'Name', 'Plus'].every((w) => v.groups.some((g) => g.name === `${w} ${tag}`)), `${b.name}: a group from each of the first three`);
+    c.report(ch(`talk-${tag}`)?.group_id === talk, `${b.name}: a channel from Talk's menu, by its right click, lands in Talk`);
+    await b.shot(`${HOME}/shot-drag-${b.name}-made.png`);
+    // Move down, then up, from the channel's ⋯ by the keyboard.
+    const id = ch(`keys-${tag}`).id;
+    const place = () => channel(id).position;
+    const before = place();
+    const dots = `document.querySelector('button[aria-label=${JSON.stringify(`Options for keys-${tag}`)}]')`;
+    // The ⋯ shows once its row has the focus, and Tab reaches it from the
+    // row's channel.
+    const toDots = async () => {
+        await waitFor(() => b.eval(`!!${dots}`), "the new channel's row", 8000);
+        await b.eval(`${dots}.closest('[data-channel-row]').querySelector('button').focus(), true`);
+        await b.key('Tab');
+        await waitFor(() => b.eval(`document.activeElement === ${dots}`), "the channel's ⋯, by Tab", 5000);
+    };
+    await toDots();
+    await b.key('Enter');
+    await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === 'edit'`), "the channel's menu, by the keyboard", 5000);
+    const up = await b.eval(`${MENU_ROW('up')}.disabled`);
+    await b.key('ArrowDown');
+    await b.key('Enter');
+    const moved = await waitFor(() => place() === before - 1, 'the channel moved up', 8000).then(() => true, () => false);
+    // The page has the move once the menu offers Move down.
+    await waitFor(async () => {
+        await toDots();
+        await b.key('Enter');
+        await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === 'edit'`), "the channel's menu again", 5000);
+        if (await b.eval(`!${MENU_ROW('down')}.disabled`)) return true;
+        await b.key('Escape');
+        return false;
+    }, 'Move down offered', 8000);
+    await b.key('ArrowDown');
+    await b.key('ArrowDown');
+    await b.key('Enter');
+    const back = await waitFor(() => place() === before, 'the channel moved back down', 8000).then(() => true, () => false);
+    c.report(!up && moved && back, `${b.name}: Move up and Move down in a channel's menu, by the keyboard (up disabled: ${up}, moved: ${moved}, back: ${back})`);
+    for (const x of state().channels.filter((y) => y.name.endsWith(tag))) lib('api', 'alice', 'DELETE', `/api/dens/${den}/channels/${x.id}`);
+    for (const g of state().groups.filter((y) => y.name.endsWith(tag))) lib('api', 'alice', 'DELETE', `/api/dens/${den}/groups/${g.id}`);
+    await waitFor(async () => !(await b.eval(`[...document.querySelectorAll('nav[aria-label=Channels] [data-channel-row]')].some((r) => r.textContent.includes(${JSON.stringify(tag)}))`)),
+        'what was made gone', 8000);
+}
+
 const alice = await launch(aliceBrowser, 9351, { size: [1400, 900], hover: true });
 const bob = await launch(bobBrowser, 9352, { size: [1400, 900], media: bobBrowser === 'firefox' ? 'pulse' : true });
 try {
@@ -96,6 +213,9 @@ try {
     ok(`${aliceBrowser}: Play dragged above Talk`);
     await alice.shot(`${HOME}/shot-drag-${aliceBrowser}-list.png`);
 
+    // Channels and groups from each menu, by the mouse and the keyboard.
+    await makeFromMenus(alice);
+
     // Bob joins Lounge's call and mutes; alice drags him onto Games.
     const bobID = state().me.id;
     await bob.eval(`${row(lounge)}.querySelector('button[title^="Join the call"]').click(), true`, true);
@@ -118,9 +238,13 @@ try {
     const menuButton = `${row(games)}.parentElement.querySelector('[data-call-member="${bobID}"] button[aria-label^="Options for"]')`;
     await waitFor(() => alice.eval(`!!${menuButton}`), "bob's row under Games on alice's page");
     await alice.eval(`${menuButton}.click(), true`);
-    const target = `[...document.querySelectorAll('[data-move-to] button')].find((b) => b.textContent.trim() === 'Lounge')`;
-    await waitFor(() => alice.eval(`!!${target}`), 'Move to in the menu');
-    const listed = await alice.eval(`[...document.querySelectorAll('[data-move-to] button')].map((b) => b.textContent.trim()).join(', ')`);
+    await waitFor(() => alice.eval(`!!document.querySelector('[data-call-menu] [data-menu-item=move]')`), 'Move to in the menu');
+    await hoverOver(alice, `document.querySelector('[data-call-menu] [data-menu-item=move]')`);
+    const target = `[...document.querySelectorAll('[data-flyout=move] [role=menuitem]')].find((b) => b.textContent.trim() === 'Lounge')`;
+    await waitFor(() => alice.eval(`!!${target}`), "Move to's channels beside the menu");
+    const listed = await alice.eval(`[...document.querySelectorAll('[data-flyout=move] [role=menuitem]')].map((b) => b.textContent.trim()).join(', ')`);
+    const beside = await alice.eval(`document.querySelector('[data-flyout=move]').getBoundingClientRect().left >= document.querySelector('[data-call-menu]').getBoundingClientRect().right - 1`);
+    c.report(beside, `${aliceBrowser}: Move to opens its channels to the menu's right`);
     await alice.shot(`${HOME}/shot-drag-${aliceBrowser}-move-to.png`);
     await alice.eval(`${target}.click(), true`);
     await waitFor(() => callOf(lounge).some((m) => m.id === bobID && m.muted) && callOf(games).length === 0, 'bob back in Lounge', 30000);
@@ -145,8 +269,10 @@ try {
     const bobRow = (channel) => `${row(channel)}?.parentElement.querySelector('[data-call-member="${bobID}"]')`;
     await waitFor(() => alice.eval(`!!${bobRow(lounge)}`), "bob's row under Lounge on carol's page");
     await alice.eval(`${bobRow(lounge)}.querySelector('button[aria-label^="Options for"]').click(), true`);
-    await waitFor(() => alice.eval(`!!document.querySelector('[data-move-to]')`), "Move to in bob's menu");
-    const offered = await alice.eval(`[...document.querySelectorAll('[data-call-menu] button')].map((b) => b.textContent.trim()).filter(Boolean).join(', ')`);
+    await waitFor(() => alice.eval(`!!document.querySelector('[data-call-menu] [data-menu-item=move]')`), "Move to in bob's menu");
+    await alice.eval(`document.querySelector('[data-call-menu] [data-menu-item=move]').click(), true`);
+    await waitFor(() => alice.eval(`!!document.querySelector('[data-flyout=move]')`), "Move to's channels");
+    const offered = await alice.eval(`[...document.querySelectorAll('[data-call-menu] [role=menuitem]')].map((b) => b.textContent.trim()).filter(Boolean).join(', ')`);
     const draggable = await alice.eval(`${bobRow(lounge)}.getAttribute('draggable')`);
     await alice.shot(`${HOME}/shot-drag-${aliceBrowser}-moderator.png`);
     await alice.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
@@ -154,7 +280,7 @@ try {
     await dragOnto(alice, bobRow(lounge), row(games), 'middle');
     await waitFor(() => callOf(games).some((m) => m.id === bobID) && callOf(lounge).length === 0, 'bob in Games', 30000);
     await waitFor(() => bob.eval(`!!${row(games)}.querySelector('[data-call-state="connected"]')`), "bob's page connected in Games", 30000);
-    c.report(offered.includes('Games') && !/Mute for everyone|Disconnect/.test(offered),
+    c.report(/^Mute, Move to, .*Games/.test(offered) && !/Mute for everyone|Disconnect/.test(offered),
         `${aliceBrowser}: carol, a moderator, is offered ${offered} on bob, a moderator, and drags him onto Games (draggable with the menu open: ${draggable})`);
 } catch (e) {
     c.fail(e);

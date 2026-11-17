@@ -21,7 +21,9 @@
 // its role in the settings says, and absent with a mouse, a member's
 // volume dragged in a sheet, a share docked above the channel, full
 // screen and back, and the call left from its bar; and staff's long press
-// on a channel's or a group's row for its settings, on a touch screen; and
+// on a channel's or a group's row for its menu and settings, on a touch
+// screen, and from M22.2 a channel and a group made from each menu a finger
+// reaches; and
 // the soundboard (M14.3): the bar's mute and soundboard, its sheet, and
 // Manage opened from the den's name; and emoji (M15.2): the picker as a
 // sheet, its search staying at its top, a group's button and a tap's

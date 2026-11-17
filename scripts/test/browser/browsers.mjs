@@ -59,6 +59,22 @@ export async function openManage(b, section) {
     await b.eval(`${item}.click(), true`);
 }
 
+// The den's name opens its menu, whose first row is Manage, and a
+// channel's or a group's ⋯ its menu; a menu's rows are named by their
+// keys. manageFromName opens Manage from the name, and fromMenu picks a
+// row from the menu a button opens, as expressions for a page's eval.
+export const DEN_NAME = `document.querySelector('[data-den-menu]')`;
+export const menuRow = (key) => `document.querySelector('[data-menu-item=${JSON.stringify(key)}]')`;
+export async function fromMenu(b, opener, key) {
+    await waitFor(() => b.eval(`!!${opener}`), `the menu's button for ${key}`);
+    await b.eval(`${opener}.click(), true`);
+    await waitFor(() => b.eval(`!!${menuRow(key)}`), `the menu's ${key}`);
+    await b.eval(`${menuRow(key)}.click(), true`);
+}
+export const manageFromName = (b) => fromMenu(b, DEN_NAME, 'manage');
+// rowMenu is the ⋯ of a channel's row, by its name, or a group's.
+export const rowMenu = (name) => `document.querySelector('button[aria-label=${JSON.stringify(`Options for ${name}`)}]')`;
+
 // token is a pairing token for an instance's page.
 export const token = (instance) =>
     execFileSync(`${HOME}/dens-dev`, ['-i', instance, 'open', '--print']).toString().trim().split('#token=')[1];
@@ -325,10 +341,11 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             await cdp('Page.bringToFront');
         },
         // answer has the page's requests for a path get this answer, as
-        // well as those set before; intercepted lists the requests caught.
+        // well as those set before: JSON unless type says otherwise, and
+        // body a string or a Buffer; intercepted lists the requests caught.
         intercepted: [],
-        async answer(path, status, body) {
-            answers.set(path, { status, body });
+        async answer(path, status, body, type = 'application/json') {
+            answers.set(path, { status, body, type });
             await cdp('Fetch.enable', { patterns: [...answers.keys()].map((p) => ({ urlPattern: `*${p}`, requestStage: 'Request' })) });
             if (answering) return;
             answering = true;
@@ -341,7 +358,7 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
                         const [, a] = [...answers].find(([p]) => ev.params.request.url.endsWith(p)) || [];
                         await (a
                             ? cdp('Fetch.fulfillRequest', { requestId: ev.params.requestId, responseCode: a.status,
-                                responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(a.body).toString('base64') })
+                                responseHeaders: [{ name: 'Content-Type', value: a.type }], body: Buffer.from(a.body).toString('base64') })
                             : cdp('Fetch.continueRequest', { requestId: ev.params.requestId })).catch(() => {});
                     }
                     await sleep(100);
@@ -409,6 +426,8 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
     await bidi.send('session.new', { capabilities: {} });
     if (preload) await bidi.send('script.addPreloadScript', { functionDeclaration: preload });
     const { context } = await bidi.send('browsingContext.create', { type: 'tab' });
+    // The paths answer has set, and what each gets.
+    const firefoxAnswers = new Map();
     // The page's own windows are the top-level contexts that came after it.
     const before = new Set((await bidi.send('browsingContext.getTree', {})).contexts.map((x) => x.context));
     const windows = async () => (await bidi.send('browsingContext.getTree', {})).contexts.filter((x) => !before.has(x.context));
@@ -493,6 +512,38 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
         async type(text) {
             const actions = [...text].flatMap((c) => [{ type: 'keyDown', value: c }, { type: 'keyUp', value: c }]);
             await bidi.send('input.performActions', { context, actions: [{ type: 'key', id: 'keyboard', actions }] });
+        },
+        // answer has the page's requests for a path get this answer, as
+        // Chromium's does, through BiDi's network intercepts.
+        intercepted: [],
+        async answer(path, status, body, type = 'application/json') {
+            if (!firefoxAnswers.size) {
+                await bidi.send('session.subscribe', { events: ['network.beforeRequestSent'], contexts: [context] });
+                const intercepted = this.intercepted;
+                (async () => {
+                    for (;;) {
+                        const ev = bidi.events.find((e) => e.method === 'network.beforeRequestSent' && !e.handled);
+                        if (ev) {
+                            ev.handled = true;
+                            if (ev.params.isBlocked) {
+                                const url = ev.params.request.url;
+                                intercepted.push(url);
+                                const [, a] = [...firefoxAnswers].find(([p]) => new URL(url).pathname === p) || [];
+                                const request = ev.params.request.request;
+                                await (a ? bidi.send('network.provideResponse', { request, statusCode: a.status,
+                                    headers: [{ name: 'Content-Type', value: { type: 'string', value: a.type } }],
+                                    body: { type: 'base64', value: Buffer.from(a.body).toString('base64') } })
+                                    : bidi.send('network.continueRequest', { request })).catch(() => {});
+                            }
+                        }
+                        await sleep(50);
+                    }
+                })();
+            }
+            if (!firefoxAnswers.has(path)) {
+                await bidi.send('network.addIntercept', { phases: ['beforeRequestSent'], contexts: [context], urlPatterns: [{ type: 'pattern', pathname: path }] });
+            }
+            firefoxAnswers.set(path, { status, body, type });
         },
         async attach(selector, files) {
             const node = await evaluate(`document.querySelector(${JSON.stringify(selector)})`, context, { resultOwnership: 'root' });

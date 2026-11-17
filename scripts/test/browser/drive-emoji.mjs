@@ -15,7 +15,7 @@
 //
 //   run.sh emoji chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, SETTINGS, checks, launch, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, SETTINGS, checks, launch, manageFromName, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, DM: dm, ALICE_MSG: aliceMsg } = process.env;
@@ -94,7 +94,7 @@ async function addEmoji(file, name) {
 
 async function openManage(section) {
     if (!(await A.b.eval(`!!${MANAGE}`))) {
-        await A.b.eval(`document.querySelector('button[data-den-manage]').click(), true`);
+        await manageFromName(A.b);
         await waitFor(() => A.b.eval(`!!${MANAGE}`), "alice's Manage");
     }
     const item = `[...${MANAGE}.querySelectorAll('nav button')].find((x) => x.textContent.trim() === ${q(section)})`;
