@@ -39,7 +39,7 @@ try {
     await waitFor(() => h.state(), "the service's state for the helper");
     // A Wayland desktop with the portal, not set up.
     h.send('source', { covers: [], confirms: true, bindable: true, configurable: true });
-    await clickOn(button('App settings'), 'the settings button');
+    await clickOn(button('Settings'), 'the settings button');
     await clickOn(button('Voice'), 'the voice tab');
     await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
     await waitFor(() => has("Press a key, or a mouse's side button"), 'the capture prompt');

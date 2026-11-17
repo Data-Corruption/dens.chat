@@ -22,7 +22,7 @@ try {
     await waitFor(() => bob.eval(`document.body.innerText.includes('This is the start of #general.')`), "#general's start");
     const unread = () => bob.eval(`(() => {
         const name = [...document.querySelectorAll('li button span.truncate')].find((s) => s.textContent === 'random');
-        const row = name?.closest('button');
+        const row = name?.closest('[data-channel-row]');
         return JSON.stringify({ bold: !!name?.classList.contains('font-bold'), badge: row?.querySelector('.badge')?.textContent || '' });
     })()`);
     if ((await unread()) !== JSON.stringify({ bold: true, badge: '1' })) throw new Error(`#random before: ${await unread()}`);
@@ -35,10 +35,11 @@ try {
     const form = MANAGE;
     await waitFor(() => alice.eval(`!!document.getElementById('auto-delete')`), 'the auto-delete toggle');
     await alice.eval(`document.getElementById('auto-delete').click(), true`);
+    await waitFor(() => alice.eval(`!!document.querySelector('select[aria-label="Days to keep messages"]')`), 'the period');
     await alice.eval(`(() => {
-        const input = document.querySelector('input[aria-label="Days to keep messages"]');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '1');
-        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const select = document.querySelector('select[aria-label="Days to keep messages"]');
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, '1');
+        select.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
     })()`);
     const preview = await waitFor(() => alice.eval(`${form}.innerText.match(/Saving this deletes[^.]*\\./)?.[0]`), 'the preview');

@@ -7,13 +7,14 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
-import { ADDRESS, DocsTip, ErrorText, Field, PLAIN, PasswordFields, SubmitButton, TextInput, Tip, Waiting, checkPasswords, useAction } from './components.jsx';
-import { openManage } from './dialogs.js';
+import {
+    ADDRESS, Actions, Button, DocsTip, ErrorText, Field, PLAIN, PasswordFields, StatusText, SubmitButton, TextInput, Tip, Waiting, checkPasswords, useAction,
+} from './components.jsx';
+import { openManage, openSettings } from './dialogs.js';
 import { ownRowNote, setupNeeded } from './hosting.js';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
 import { KeyNeeded, PendingSignIns, RecoveryCodes, SignInRequests, SignInSteps } from './private.jsx';
-import { openSettings } from './settings.jsx';
 import { UpdateNotice } from './update.jsx';
 
 const PASSWORD_HINT = "You'll need it to sign in on a new device. The den never sees it, so reusing one across dens is safe.";
@@ -107,7 +108,7 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
             <div class="card-body gap-3">
                 <div class="flex items-center gap-2">
                     <h2 class="card-title flex-1">Your dens</h2>
-                    <button type="button" class="btn btn-sm" onClick={onAdd}>Add a den</button>
+                    <Button kind="primary" onClick={onAdd}>Add a den</Button>
                 </div>
                 {dens.length === 0 ? (
                     <p>You haven't joined any dens yet. Add one with an invite.</p>
@@ -154,23 +155,23 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
                         {note.text}{' '}
                         <button type="button" class="link link-primary" onClick={() => openSettings('system')}>{note.action}</button>
                     </p>
-                ) : den.error && <p class="text-sm text-warning">{den.error}</p>}
+                ) : den.error && <StatusText kind="warning">{den.error}</StatusText>}
                 <ErrorText message={forget.error} />
             </div>
             {gone ? (
                 <div class="flex flex-wrap justify-end gap-2">
-                    {den.state === 'revoked' && <button type="button" class="btn btn-primary btn-sm" onClick={() => onSignIn(den)}>Sign in again</button>}
-                    <button type="button" class="btn btn-sm" disabled={forget.busy} onClick={() => forget.run(async () => {
+                    {den.state === 'revoked' && <Button onClick={() => onSignIn(den)}>Sign in again</Button>}
+                    <Button kind="danger" busy={forget.busy} onClick={() => forget.run(async () => {
                         await api.del(`/api/dens/${den.den_id}`);
                         await onChanged();
                     })}>
                         Remove from this device
-                    </button>
+                    </Button>
                 </div>
             ) : (
                 <div class="flex items-center justify-end gap-2">
-                    <button type="button" class="btn btn-ghost btn-sm" onClick={() => openManage(den.den_id)}>Manage</button>
-                    <button type="button" class="btn btn-primary" onClick={() => navigate(`/den/${den.den_id}`)}>Open</button>
+                    <Button kind="quiet" onClick={() => openManage(den.den_id)}>Manage</Button>
+                    <Button size="md" onClick={() => navigate(`/den/${den.den_id}`)}>Open</Button>
                 </div>
             )}
         </li>
@@ -291,7 +292,7 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
         ) : (
             <div class="flex flex-col gap-2">
                 <span class="loading loading-dots loading-sm"></span>
-                <div><button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>Close</button></div>
+                <Actions><Button kind="quiet" onClick={onClose}>Close</Button></Actions>
             </div>
         );
     } else if (step === 'paste') {
@@ -301,7 +302,10 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
                     <TextInput value={text} onInput={setText} placeholder="dens1:… or https://den.example.com" autocomplete="off" required autofocus {...ADDRESS} />
                 </Field>
                 <ErrorText message={act.error} />
-                <div><SubmitButton busy={act.busy}>Continue</SubmitButton></div>
+                <Actions>
+                    <SubmitButton busy={act.busy}>Continue</SubmitButton>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
                 {offerHosting && (
                     <p class="mt-2 text-sm text-base-content/70">
                         Want a den of your own?{' '}
@@ -320,11 +324,11 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
         body = (
             <div class="flex flex-col gap-3">
                 <p class="text-sm text-base-content/70">The den at {preview.url} proved it's the one this invite names.</p>
-                <div class="flex flex-col gap-2">
-                    <button type="button" class="btn btn-primary" onClick={() => back('join')}>Join as someone new</button>
-                    <button type="button" class="btn" onClick={() => back('signin')}>Sign in to my account there</button>
-                </div>
-                <div><button type="button" class="btn btn-ghost btn-sm" onClick={() => back('paste')}>Back</button></div>
+                <Actions>
+                    <Button kind="primary" onClick={() => back('join')}>Join as someone new</Button>
+                    <Button onClick={() => back('signin')}>Sign in to my account there</Button>
+                    <Button kind="quiet" onClick={() => back('paste')}>Back</Button>
+                </Actions>
             </div>
         );
     } else if (step === 'join') {
@@ -333,10 +337,10 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
             <form class="flex flex-col gap-2" onSubmit={join}>
                 <AccountFields form={form} set={set} />
                 <ErrorText message={act.error} />
-                <div class="flex gap-2">
+                <Actions>
                     <SubmitButton busy={act.busy}>Join</SubmitButton>
-                    <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => back('choose')}>Back</button>
-                </div>
+                    <Button kind="quiet" disabled={act.busy} onClick={() => back('choose')}>Back</Button>
+                </Actions>
             </form>
         );
     } else if (step === 'signin') {
@@ -368,10 +372,10 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
                     </button>
                 </div>
                 <ErrorText message={act.error} />
-                <div class="flex gap-2">
+                <Actions>
                     <SubmitButton busy={act.busy}>Sign in</SubmitButton>
-                    {!again && <button type="button" class="btn btn-ghost" disabled={act.busy} onClick={() => back(preview ? 'choose' : 'paste')}>Back</button>}
-                </div>
+                    {!again && <Button kind="quiet" disabled={act.busy} onClick={() => back(preview ? 'choose' : 'paste')}>Back</Button>}
+                </Actions>
             </form>
         );
     } else if (step === 'done') {
@@ -384,7 +388,7 @@ function AddDen({ start, signIns, offerHosting, onJoined, onClose, onPending }) 
                     You're signed in to {done.name}, with {left}.{others}
                 </p>
                 {!done.key && <p class="text-sm text-base-content/70">To read your direct messages here, enter your DM recovery key: the home page asks for it.</p>}
-                <div><button type="button" class="btn btn-primary" onClick={onClose}>Done</button></div>
+                <Actions><Button kind="primary" onClick={onClose}>Done</Button></Actions>
             </div>
         );
     }
@@ -419,7 +423,7 @@ function HostDen({ hosting, onJoined }) {
                         ? "Your den exists, but its owner account doesn't yet. Create it to manage the den."
                         : 'Hosting is on. Name your den, give the address Caddy serves it at, and create your owner account.'}
                 </p>
-                {!hosting.serving && hosting.problem && <p role="status" class="text-sm text-warning">{hosting.problem}</p>}
+                {!hosting.serving && hosting.problem && <StatusText kind="warning" role="status">{hosting.problem}</StatusText>}
                 <form class="flex flex-col gap-2" onSubmit={submit}>
                     {!hosting.created && (
                         <>
@@ -433,7 +437,7 @@ function HostDen({ hosting, onJoined }) {
                     )}
                     <AccountFields form={form} set={set} />
                     <ErrorText message={error} />
-                    <div><SubmitButton busy={busy}>{hosting.created ? 'Create owner account' : 'Create den'}</SubmitButton></div>
+                    <Actions><SubmitButton busy={busy} size="md">{hosting.created ? 'Create owner account' : 'Create den'}</SubmitButton></Actions>
                 </form>
             </div>
         </section>

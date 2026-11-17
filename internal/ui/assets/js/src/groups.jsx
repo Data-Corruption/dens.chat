@@ -8,7 +8,7 @@ import { useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { DocsLink, ErrorText, Field, SubmitButton, TextInput, useAction } from './components.jsx';
+import { Actions, Button, DocsLink, ErrorText, Field, Notice, StatusText, SubmitButton, TextInput, useAction } from './components.jsx';
 import { LockIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { changeText } from './private.js';
@@ -50,13 +50,13 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
                     <p class="break-words font-semibold" data-group-title>{title}</p>
                     <p class="text-xs text-base-content/60">{list.length} member{list.length === 1 ? '' : 's'}</p>
                 </div>
-                <button type="button" class="btn btn-ghost btn-xs" onClick={onRename} disabled={!!group?.broken}>Rename</button>
+                <Button kind="quiet" size="xs" onClick={onRename} disabled={!!group?.broken}>Rename</Button>
             </div>
             <p class="flex items-start gap-1 text-xs text-base-content/60">
                 <span class="mt-0.5"><LockIcon size="h-3 w-3" /></span>
                 <span>End-to-end encrypted: only its members can read it. <DocsLink icon page="usage/#group-dms" label="How group DMs work" /></span>
             </p>
-            {group?.broken && <p role="alert" class="text-sm text-error">{BROKEN}</p>}
+            {group?.broken && <Notice kind="error">{BROKEN}</Notice>}
             <ul class="flex flex-col" aria-label="The group's members" data-group-members>
                 {list.map((id) => {
                     const m = members.get(id);
@@ -73,13 +73,13 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
                             </button>
                             {!self && kept?.verified && <VerifiedMark id={`group-verified-${channel.id}-${id}`} name={name} />}
                             {!self && m?.identity && !kept?.verified && (
-                                <button type="button" class="btn btn-ghost btn-xs" onClick={() => onCompare(m)}>Compare</button>
+                                <Button kind="quiet" size="xs" onClick={() => onCompare(m)}>Compare</Button>
                             )}
                             {me === remover && !self && !group?.broken && (
-                                <button type="button" class="btn btn-ghost btn-xs text-error" aria-label={`Remove ${name} from the group`} disabled={act.busy}
+                                <Button kind="danger" size="xs" aria-label={`Remove ${name} from the group`} disabled={act.busy}
                                     onClick={() => act.run(() => api.del(`/api/dens/${denID}/group-dms/${channel.id}/members/${id}`))}>
                                     Remove
-                                </button>
+                                </Button>
                             )}
                         </HoverRow>
                     );
@@ -87,13 +87,12 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
             </ul>
             <ErrorText message={act.error} />
             <div class="flex flex-wrap gap-2">
-                <button type="button" class="btn btn-sm" disabled={full || !!group?.broken} title={full ? 'A group holds at most ten members' : undefined} onClick={onAdd}>
+                <Button disabled={full || !!group?.broken} title={full ? 'A group holds at most ten members' : undefined} onClick={onAdd}>
                     Add people
-                </button>
-                <button type="button" class="btn btn-outline btn-error btn-sm" disabled={act.busy}
-                    onClick={() => act.run(() => api.post(`/api/dens/${denID}/group-dms/${channel.id}/leave`))}>
+                </Button>
+                <Button kind="danger" disabled={act.busy} onClick={() => act.run(() => api.post(`/api/dens/${denID}/group-dms/${channel.id}/leave`))}>
                     Leave
-                </button>
+                </Button>
             </div>
             {expiry && !group?.broken && <ExpirySetting denID={denID} channel={expiry} />}
         </div>
@@ -151,12 +150,10 @@ export function PickPeople({ view, title, action, leaveOut = [], picked: start =
                     {shown.length === 0 && <li class="p-2 text-sm text-base-content/60">Nobody to pick.</li>}
                 </ul>
                 <ErrorText message={act.error} />
-                <div class="flex justify-end">
-                    <button type="submit" class="btn btn-primary btn-sm" disabled={act.busy || picked.length < min}>
-                        {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                        {action}
-                    </button>
-                </div>
+                <Actions>
+                    <Button type="submit" kind="primary" busy={act.busy} disabled={picked.length < min}>{action}</Button>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
             </form>
         </Dialog>
     );
@@ -180,9 +177,10 @@ export function RenameGroup({ denID, channel, name, onClose }) {
                 </Field>
                 <p class="text-xs text-base-content/60">Its members see the name; the den sees it only sealed.</p>
                 <ErrorText message={act.error} />
-                <div class="flex justify-end">
-                    <SubmitButton busy={act.busy} class="btn-primary btn-sm">Save</SubmitButton>
-                </div>
+                <Actions>
+                    <SubmitButton busy={act.busy}>Save</SubmitButton>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
             </form>
         </Dialog>
     );
@@ -204,7 +202,7 @@ export function GroupGate({ denID, gate, member, onCompare }) {
     const name = member ? member.display_name : 'A member';
     let body;
     if (gate === 'checking') body = <p class="text-base-content/70">Checking the group's changes…</p>;
-    else if (gate === 'broken') body = <p class="text-error">{BROKEN}</p>;
+    else if (gate === 'broken') body = <StatusText kind="error">{BROKEN}</StatusText>;
     else if (gate === 'alone') body = <p class="text-base-content/70">Nobody else is in this group. Add people to write here.</p>;
     else if (gate === 'update') body = <p class="text-base-content/70">{name}'s Dens needs an update before you can write here.</p>;
     else if (gate === 'held') {
@@ -212,13 +210,12 @@ export function GroupGate({ denID, gate, member, onCompare }) {
             <div class="flex flex-col gap-2" data-hold>
                 <p>{name}'s keys changed since you compared codes. Compare again to check it's really them, or send anyway if you know why they changed.</p>
                 <ErrorText message={act.error} />
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-primary btn-sm" onClick={() => member && onCompare(member)}>Compare</button>
-                    <button type="button" class="btn btn-sm" disabled={act.busy || !member}
-                        onClick={() => act.run(() => api.post(`/api/dens/${denID}/members/${member.id}/send-anyway`))}>
+                <Actions>
+                    <Button kind="primary" onClick={() => member && onCompare(member)}>Compare</Button>
+                    <Button disabled={act.busy || !member} onClick={() => act.run(() => api.post(`/api/dens/${denID}/members/${member.id}/send-anyway`))}>
                         Send anyway
-                    </button>
-                </div>
+                    </Button>
+                </Actions>
             </div>
         );
     }

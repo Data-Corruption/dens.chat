@@ -5,16 +5,19 @@
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { CopyButton, DocsLink, DocsTip, ErrorText, Field, PLAIN, SubmitButton, TextInput, Tip, clock, day, useAction } from './components.jsx';
+import {
+    Actions, Button, CopyButton, DocsLink, DocsTip, ErrorText, Field, Notice, PLAIN, StatusText, SubmitButton, TextInput, Tip, clock, day, useAction,
+} from './components.jsx';
 import { useOver } from './animations.js';
 import { MARKS_HOVER, MARKS_NEVER, useVerifiedMarks } from './verified.js';
-import { openManage } from './dialogs.js';
+import { openSettings } from './dialogs.js';
 import { Dialog } from './manage.jsx';
 import { sameDigits } from './private.js';
 
-// Digits shows the digits a screen reads out, large and in groups.
+// Digits shows the digits a screen reads out, large and in groups, a size
+// smaller on a phone, where a code's five groups would wrap.
 export function Digits({ value }) {
-    return <p class="select-all font-mono text-2xl tracking-wider" aria-label={value.replace(/ /g, ', ')}>{value}</p>;
+    return <p class="select-all font-mono text-2xl tracking-wider max-[25rem]:text-xl" aria-label={value.replace(/ /g, ', ')}>{value}</p>;
 }
 
 // DigitsInput takes the digits the other side reads out.
@@ -101,12 +104,9 @@ export function Codes({ denID, member }) {
             ) : (
                 <form class="flex flex-col gap-3" onSubmit={compare} data-codes>
                     {view.verified && (
-                        <p role="status" class="flex items-center gap-1 text-success" data-verified>
-                            <CheckIcon />
-                            {matched ? 'The codes match.' : 'Verified.'}
-                        </p>
+                        <StatusText kind="success" role="status" data-verified>{matched ? 'The codes match.' : 'Verified.'}</StatusText>
                     )}
-                    {view.held && <p class="text-sm text-warning">Their keys changed since you compared codes.</p>}
+                    {view.held && <StatusText kind="warning">Their keys changed since you compared codes.</StatusText>}
                     <p class="text-sm">
                         Read out your code, and type theirs as they read it out.{' '}
                         <DocsLink icon page="usage/#comparing-codes" label="Where to compare codes, and why" />
@@ -117,7 +117,7 @@ export function Codes({ denID, member }) {
                     </div>
                     <DigitsInput value={digits} onInput={setDigits} label="Their code" placeholder="0000 0000 0000 0000 0000" />
                     <ErrorText message={act.error} />
-                    <div><SubmitButton busy={act.busy}>Compare</SubmitButton></div>
+                    <Actions><SubmitButton busy={act.busy}>Compare</SubmitButton></Actions>
                 </form>
             )}
         </>
@@ -128,10 +128,10 @@ export function Codes({ denID, member }) {
 // (M16.1), with Compare.
 export function KeysChanged({ name, at, onCompare }) {
     return (
-        <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs text-warning" data-keys-changed>
+        <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs" data-keys-changed>
             <span class="flex max-w-[80%] shrink-0 flex-wrap items-center justify-center gap-x-2 whitespace-normal text-center">
                 <span>{name}'s keys changed{at ? ` on ${day(at)}` : ''}.</span>
-                <button type="button" class="btn btn-ghost btn-xs" onClick={onCompare}>Compare</button>
+                <Button kind="quiet" size="xs" onClick={onCompare}>Compare</Button>
             </span>
         </div>
     );
@@ -155,7 +155,7 @@ export function DMGate({ denID, gate, dm, notes = false, onCompare }) {
                         ? "This device doesn't have your DM recovery key for this den, so it can't read or write your notes here."
                         : "This device doesn't have your DM recovery key for this den, so it can't read or send direct messages here."}
                 </p>
-                <button type="button" class="btn btn-sm" onClick={() => openManage(denID, 'password')}>Enter it</button>
+                <Button onClick={() => openSettings('password', denID)}>Enter it</Button>
             </div>
         );
     } else if (gate === 'den') {
@@ -167,12 +167,12 @@ export function DMGate({ denID, gate, dm, notes = false, onCompare }) {
             <div class="flex flex-col gap-2" data-hold>
                 <p>{name}'s keys changed since you compared codes.</p>
                 <ErrorText message={act.error} />
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-primary btn-sm" onClick={onCompare}>Compare</button>
-                    <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => act.run(() => api.post(`/api/dens/${denID}/members/${dm.id}/send-anyway`))}>
+                <Actions>
+                    <Button kind="primary" onClick={onCompare}>Compare</Button>
+                    <Button busy={act.busy} onClick={() => act.run(() => api.post(`/api/dens/${denID}/members/${dm.id}/send-anyway`))}>
                         Send anyway
-                    </button>
-                </div>
+                    </Button>
+                </Actions>
             </div>
         );
     }
@@ -190,13 +190,13 @@ export function SignInRequests({ den }) {
     const requests = den.requests || [];
     if (requests.length === 0) {
         return refused ? (
-            <div role="status" class="alert alert-warning alert-soft flex flex-wrap">
+            <Notice kind="warning">
                 <span>You refused a sign-in. Whoever asked has your den password, so change it: that signs out every other device.</span>
-                <span class="flex gap-2">
-                    <button type="button" class="btn btn-sm" onClick={() => openManage(den.den_id, 'password')}>Change password</button>
-                    <button type="button" class="btn btn-ghost btn-sm" onClick={() => setRefused(false)}>Dismiss</button>
-                </span>
-            </div>
+                <Actions>
+                    <Button onClick={() => openSettings('password', den.den_id)}>Change password</Button>
+                    <Button kind="quiet" onClick={() => setRefused(false)}>Dismiss</Button>
+                </Actions>
+            </Notice>
         ) : null;
     }
     const base = `/api/dens/${den.den_id}/requests`;
@@ -205,71 +205,87 @@ export function SignInRequests({ den }) {
             {requests.map((r) => r.approved ? (
                 // Approved here first, the new device may still be waiting
                 // for its member to type this device's digits.
-                <div key={r.id} role="status" class="alert alert-success alert-soft flex flex-col items-stretch gap-2 text-left">
+                <Notice key={r.id} kind="success">
                     <p>
                         You approved <span class="font-medium">{r.label}</span>. If it still asks for this device's digits, type these into
                         it:
                     </p>
                     <Digits value={r.half} />
-                    <div>
-                        <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => act.run(() => api.del(`${base}/${r.id}`))}>
-                            Done
-                        </button>
-                    </div>
-                </div>
+                    <Actions>
+                        <Button busy={act.busy} onClick={() => act.run(() => api.del(`${base}/${r.id}`))}>Done</Button>
+                    </Actions>
+                </Notice>
             ) : (
-                <div key={r.id} role="status" class="alert alert-info alert-soft flex flex-col items-stretch gap-2 text-left">
-                    <p>
-                        A new device asks to sign in to {den.name} as you: <span class="font-medium">{r.label}</span>. If it isn't yours,
-                        refuse it and change your den password.{' '}
-                        <DocsTip id={`docs-approve-${r.id}`} page="usage/#signing-in-from-another-computer">
-                            Why your devices approve each other, and what to do about one that isn't yours.</DocsTip>
-                    </p>
-                    {r.elsewhere ? (
-                        <p class="text-sm">Another of your devices is approving it.</p>
-                    ) : r.lost ? (
-                        <p class="text-sm">
-                            Dens on this device restarted while you were approving it, which lost its part of the check. Refuse it, and
-                            sign in again on the new device.
-                        </p>
-                    ) : !r.here ? (
-                        <p class="text-sm">Is it yours? Then check it's the device in front of you: both screens show digits to compare.</p>
-                    ) : !r.half ? (
-                        <p class="text-sm">Waiting for the new device…</p>
-                    ) : (
-                        <form class="flex flex-col gap-2" onSubmit={(e) => {
-                            e.preventDefault();
-                            act.run(async () => {
-                                await api.post(`${base}/${r.id}/approve`, { digits: digits[r.id] || '' });
-                                setDigits({ ...digits, [r.id]: '' });
-                            });
-                        }}>
-                            <p class="text-sm">Type these digits into the new device. They stay here after you approve, until you click Done.</p>
-                            <Digits value={r.half} />
-                            <DigitsInput value={digits[r.id] || ''} onInput={(v) => setDigits({ ...digits, [r.id]: v })}
-                                label="Then type the digits the new device shows" />
-                            <div><SubmitButton busy={act.busy}>Approve</SubmitButton></div>
-                        </form>
-                    )}
-                    <ErrorText message={act.error} />
-                    <div class="flex flex-wrap gap-2">
-                        {!r.here && !r.elsewhere && !r.lost && (
-                            <button type="button" class="btn btn-primary btn-sm" disabled={act.busy}
-                                onClick={() => act.run(() => api.post(`${base}/${r.id}/answer`))}>
-                                It's mine
-                            </button>
-                        )}
-                        <button type="button" class="btn btn-sm" disabled={act.busy} onClick={() => act.run(async () => {
-                            await api.post(`${base}/${r.id}/refuse`);
-                            setRefused(true);
-                        })}>
-                            Refuse
-                        </button>
-                    </div>
-                    <p class="text-xs text-base-content/60">It waits until {clock(r.expires_at)}.</p>
-                </div>
+                <ApprovalAsk key={r.id} den={den} r={r} base={base} act={act} digits={digits[r.id] || ''}
+                    onDigits={(v) => setDigits({ ...digits, [r.id]: v })} onRefused={() => setRefused(true)} />
             ))}
         </div>
+    );
+}
+
+// ApprovalAsk is one new device's request to sign in, waiting for this
+// member: where it stands, and It's mine or Approve beside Refuse, in one
+// row.
+function ApprovalAsk({ den, r, base, act, digits, onDigits, onRefused }) {
+    const typing = !r.elsewhere && !r.lost && r.here && !!r.half;
+    const refuse = (
+        <Button kind="quiet" disabled={act.busy} onClick={() => act.run(async () => {
+            await api.post(`${base}/${r.id}/refuse`);
+            onRefused();
+        })}>
+            Refuse
+        </Button>
+    );
+    return (
+        <Notice kind="info">
+            <p>
+                A new device asks to sign in to {den.name} as you: <span class="font-medium">{r.label}</span>. If it isn't yours,
+                refuse it and change your den password.{' '}
+                <DocsTip id={`docs-approve-${r.id}`} page="usage/#signing-in-from-another-computer">
+                    Why your devices approve each other, and what to do about one that isn't yours.</DocsTip>
+            </p>
+            {r.elsewhere ? (
+                <p>Another of your devices is approving it.</p>
+            ) : r.lost ? (
+                <p>
+                    Dens on this device restarted while you were approving it, which lost its part of the check. Refuse it, and
+                    sign in again on the new device.
+                </p>
+            ) : !r.here ? (
+                <p>Is it yours? Then check it's the device in front of you: both screens show digits to compare.</p>
+            ) : !r.half ? (
+                <p>Waiting for the new device…</p>
+            ) : (
+                <form class="flex flex-col gap-2 self-stretch" onSubmit={(e) => {
+                    e.preventDefault();
+                    act.run(async () => {
+                        await api.post(`${base}/${r.id}/approve`, { digits });
+                        onDigits('');
+                    });
+                }}>
+                    <p>Type these digits into the new device. They stay here after you approve, until you click Done.</p>
+                    <Digits value={r.half} />
+                    <DigitsInput value={digits} onInput={onDigits} label="Then type the digits the new device shows" />
+                    <ErrorText message={act.error} />
+                    <Actions>
+                        <SubmitButton busy={act.busy}>Approve</SubmitButton>
+                        {refuse}
+                    </Actions>
+                </form>
+            )}
+            {!typing && (
+                <>
+                    <ErrorText message={act.error} />
+                    <Actions>
+                        {!r.here && !r.elsewhere && !r.lost && (
+                            <Button kind="primary" disabled={act.busy} onClick={() => act.run(() => api.post(`${base}/${r.id}/answer`))}>It's mine</Button>
+                        )}
+                        {refuse}
+                    </Actions>
+                </>
+            )}
+            <p class="text-xs text-base-content/60">It waits until {clock(r.expires_at)}.</p>
+        </Notice>
     );
 }
 
@@ -292,6 +308,13 @@ export function SignInSteps({ p, onRecover, onDone }) {
         onDone?.();
     });
     const going = p.stage === 'waiting' || p.stage === 'check' || p.stage === 'approved';
+    // Check and Cancel share a row, as a dialog's actions do.
+    const checking = (p.stage === 'check' || p.stage === 'approved') && !p.checked;
+    const cancel = (
+        <Button kind={going ? 'quiet' : 'primary'} disabled={act.busy} onClick={dismiss}>
+            {going ? 'Cancel' : 'OK'}
+        </Button>
+    );
     let title = `Signing in to ${p.url} as @${p.username}`;
     if (p.stage === 'waiting') title = 'Approve this on another device';
     else if (p.stage === 'check' || p.stage === 'approved') title = 'Compare digits with your other device';
@@ -339,10 +362,14 @@ export function SignInSteps({ p, onRecover, onDone }) {
                         <p>Type these digits into your other device. They stay here until you're signed in.</p>
                     )}
                     <Digits value={p.half} />
-                    {!p.checked && (
+                    {checking && (
                         <>
                             <DigitsInput value={digits} onInput={setDigits} label="Then type the digits your other device shows" />
-                            <div><SubmitButton busy={act.busy}>Check</SubmitButton></div>
+                            <ErrorText message={act.error} />
+                            <Actions>
+                                <SubmitButton busy={act.busy}>Check</SubmitButton>
+                                {cancel}
+                            </Actions>
                         </>
                     )}
                     {p.stage === 'approved' && !p.checked && (
@@ -351,15 +378,15 @@ export function SignInSteps({ p, onRecover, onDone }) {
                     <p class="text-xs text-base-content/60">The digits only match between your two devices if nobody is in between.</p>
                 </form>
             )}
-            {p.stage === 'done' && <p class="text-success">You're signed in to {p.url}, and your DMs are readable here too.</p>}
+            {p.stage === 'done' && <StatusText kind="success">You're signed in to {p.url}, and your DMs are readable here too.</StatusText>}
             {SIGN_IN_ENDED[p.stage] && <p>{SIGN_IN_ENDED[p.stage]}</p>}
             {p.stage === 'failed' && <ErrorText message={p.error || 'Signing in failed.'} />}
-            <ErrorText message={act.error} />
-            <div>
-                <button type="button" class={`btn btn-sm ${going ? 'btn-ghost' : 'btn-primary'}`} disabled={act.busy} onClick={dismiss}>
-                    {going ? 'Cancel' : 'OK'}
-                </button>
-            </div>
+            {!checking && (
+                <>
+                    <ErrorText message={act.error} />
+                    <Actions>{cancel}</Actions>
+                </>
+            )}
         </div>
     );
 }
@@ -421,9 +448,9 @@ export function RecoveryCodes({ denName, codes, seal, sealNew, onDone }) {
                 <input type="checkbox" class="checkbox" checked={saved} onChange={(e) => setSaved(e.currentTarget.checked)} />
                 I've stored my {what}
             </label>
-            <div>
-                <button type="button" class="btn btn-primary" disabled={!saved} onClick={onDone}>Done</button>
-            </div>
+            <Actions>
+                <Button kind="primary" disabled={!saved} onClick={onDone}>Done</Button>
+            </Actions>
         </div>
     );
 }
@@ -435,16 +462,16 @@ export function KeyNeeded({ den, onSeal }) {
     const [seal, setSeal] = useState('');
     const act = useAction();
     return (
-        <div role="status" class="alert alert-warning alert-soft flex flex-col items-stretch gap-2 text-left">
+        <Notice kind="warning">
             <p>This device doesn't have your DM recovery key for {den.name}, so it can't read or send your direct messages there.</p>
             {mode === '' && (
-                <div class="flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm btn-primary" onClick={() => setMode('type')}>Enter my key</button>
-                    <button type="button" class="btn btn-sm" onClick={() => setMode('over')}>I've lost it</button>
-                </div>
+                <Actions>
+                    <Button kind="primary" onClick={() => setMode('type')}>Enter my key</Button>
+                    <Button onClick={() => setMode('over')}>I've lost it</Button>
+                </Actions>
             )}
             {mode === 'type' && (
-                <form class="flex flex-col gap-2" onSubmit={(e) => {
+                <form class="flex flex-col gap-2 self-stretch" onSubmit={(e) => {
                     e.preventDefault();
                     act.run(async () => {
                         await api.post(`/api/dens/${den.den_id}/seal`, { seal });
@@ -456,14 +483,14 @@ export function KeyNeeded({ den, onSeal }) {
                         <textarea class="textarea w-full font-mono" rows="2" value={seal} onInput={(e) => setSeal(e.currentTarget.value)} required {...PLAIN}></textarea>
                     </Field>
                     <ErrorText message={act.error} />
-                    <div class="flex gap-2">
+                    <Actions>
                         <SubmitButton busy={act.busy}>Use this key</SubmitButton>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setMode('')}>Back</button>
-                    </div>
+                        <Button kind="quiet" onClick={() => setMode('')}>Back</Button>
+                    </Actions>
                 </form>
             )}
             {mode === 'over' && <ResetKey den={den} onDone={onSeal} onBack={() => setMode('')} />}
-        </div>
+        </Notice>
     );
 }
 
@@ -473,7 +500,7 @@ export function ResetKey({ den, onDone, onBack }) {
     const [password, setPassword] = useState('');
     const act = useAction();
     return (
-        <form class="flex flex-col gap-2" onSubmit={(e) => {
+        <form class="flex flex-col gap-2 self-stretch" onSubmit={(e) => {
             e.preventDefault();
             act.run(async () => {
                 const result = await api.post(`/api/dens/${den.den_id}/seal/start-over`, { password });
@@ -490,10 +517,10 @@ export function ResetKey({ den, onDone, onBack }) {
                 <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
             </Field>
             <ErrorText message={act.error} />
-            <div class="flex gap-2">
-                <SubmitButton busy={act.busy} class="btn-error">Reset key</SubmitButton>
-                {onBack && <button type="button" class="btn btn-ghost btn-sm" onClick={onBack}>Cancel</button>}
-            </div>
+            <Actions>
+                <SubmitButton busy={act.busy} kind="danger" filled>Reset key</SubmitButton>
+                {onBack && <Button kind="quiet" onClick={onBack}>Cancel</Button>}
+            </Actions>
         </form>
     );
 }
@@ -513,9 +540,9 @@ export function DMKey({ den, onSeal }) {
             {shown ? (
                 <>
                     <p class="select-all rounded bg-base-100 px-3 py-2 font-mono text-sm">{shown}</p>
-                    <div class="flex gap-2">
+                    <div class="flex flex-wrap gap-2">
                         <CopyButton text={shown} label="Copy key" />
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setShown('')}>Hide</button>
+                        <Button kind="quiet" onClick={() => setShown('')}>Hide</Button>
                     </div>
                 </>
             ) : asking === 'show' ? (
@@ -532,10 +559,10 @@ export function DMKey({ den, onSeal }) {
                         <TextInput type="password" value={password} onInput={setPassword} autocomplete="current-password" required />
                     </Field>
                     <ErrorText message={act.error} />
-                    <div class="flex gap-2">
+                    <Actions>
                         <SubmitButton busy={act.busy}>Show key</SubmitButton>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setAsking('')}>Cancel</button>
-                    </div>
+                        <Button kind="quiet" onClick={() => setAsking('')}>Cancel</Button>
+                    </Actions>
                 </form>
             ) : asking === 'reset' ? (
                 <ResetKey den={den} onDone={(seal) => {
@@ -544,8 +571,8 @@ export function DMKey({ den, onSeal }) {
                 }} onBack={() => setAsking('')} />
             ) : (
                 <div class="flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-sm" onClick={() => setAsking('show')}>Show key</button>
-                    <button type="button" class="btn btn-ghost btn-sm text-error" onClick={() => setAsking('reset')}>Reset key</button>
+                    <Button onClick={() => setAsking('show')}>Show key</Button>
+                    <Button kind="danger" onClick={() => setAsking('reset')}>Reset key</Button>
                 </div>
             )}
         </div>
@@ -558,7 +585,7 @@ export function DMKey({ den, onSeal }) {
 // lines beside them take the rest (M13.4).
 export function KeyDivider({ text }) {
     return (
-        <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs text-warning">
+        <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs">
             <span class="max-w-[80%] shrink-0 whitespace-normal text-center">{text}</span>
         </div>
     );

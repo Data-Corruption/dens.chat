@@ -119,7 +119,9 @@
 #                               theme editor and the chat background's card with its Dim (M19.4); and Edit
 #                               profile's Name style, a font and a gradient picked (M19.5); and Staff marks
 #                               and the background's Hover (M21.1); and Call timer, and a call's length at
-#                               its row's right, its lock behind the call's block's arrow (M21.2).
+#                               its row's right, its lock behind the call's block's arrow (M21.2); and the den's
+#                               own sections from the cog on its page, Manage's pages headed by their names, and
+#                               every button one of the page's kinds, a dialog leading with one primary (M22.3).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -164,8 +166,11 @@
 #                               a picture set behind general's messages, found there under its dim by the
 #                               screen's pixels, in a second browser too, and removed (M19.4); and Staff
 #                               marks, the message bar's hue on a green theme of her own, and the background's
-#                               Hover in both browsers (M21.1). PART is sections, sizes, themes or background;
-#                               all unless given
+#                               Hover in both browsers (M21.1); and from M22.3 each section held to the one frame,
+#                               its groups cards, one toggle size, regular labels, every button one of the page's
+#                               kinds; Manage holding what staff manage; and her own sections of the den from the
+#                               cog on its page. PART is sections, preview, sizes, themes or background; all
+#                               unless given
 #   names BROWSER               M19.5: alice picking a font and a gradient in Edit profile, its fonts as
 #                               tiles in their own faces; bob's page showing her name in them in the member
 #                               list, a message, a reply's quote, a call, the DM list, a DM's header and her
@@ -204,7 +209,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 CONTAINER=${CONTAINER:-dens-browsers}
-[[ $# -ge 1 ]] || { sed -n '6,202p' "$0" >&2; exit 2; }
+[[ $# -ge 1 ]] || { sed -n '6,207p' "$0" >&2; exit 2; }
 [[ -f scripts/test/browser/drive-$1.mjs ]] || { echo "no check named $1" >&2; exit 2; }
 for file in scripts/test/browser/*; do
     incus file push --quiet --uid 1000 --gid 1000 --mode 0755 "$file" "$CONTAINER/home/tester/browser/$(basename "$file")"

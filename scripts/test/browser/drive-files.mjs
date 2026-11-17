@@ -10,7 +10,7 @@
 //
 //   run.sh files
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, lib, openManage, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, SETTINGS, checks, launch, lib, openSettings, openYours, pair, waitFor } from './browsers.mjs';
 
 const { DEN: den, GENERAL: general, THREE: three, CLIP: clip, DM: dm, GIF: gif, GIFS: gifs } = process.env;
 const c = checks();
@@ -41,10 +41,11 @@ const alice = await launch('firefox', 9312, { size: [1280, 900], hover: true });
 try {
     await pair(bob, BOB);
     await pair(alice, ALICE);
-    // The list, largest first, says what uses each file.
-    const section = MANAGE;
-    const rows = `[...${section}.querySelectorAll('li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim())`;
-    await openManage(bob, 'Your files');
+    // The list, largest first, says what uses each file, in the settings'
+    // sections of bob's own on the den's page (M22.3).
+    const section = SETTINGS;
+    const rows = `[...${section}.querySelectorAll('[data-panel] li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim())`;
+    await openYours(bob, BOB.port, den, 'Your files');
     const listed = await waitFor(async () => {
         const r = await bob.eval(rows);
         return r.length === 4 ? r : null;

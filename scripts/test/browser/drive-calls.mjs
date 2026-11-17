@@ -208,9 +208,9 @@ try {
     report(beaten === true && apart && b1.beating && !!record && seconds(record[1]) >= 5 && seconds(record[1]) <= seconds(a1.text) && b1.tip === a1.tip &&
         fireworks.every((n) => n >= 1),
         `both pages show the call's length a second apart at most, in the rainbow past its record, with fireworks as it passed: alice ${JSON.stringify(a1)} then ${a2?.text}, bob ${JSON.stringify(b1)}, fireworks ${fireworks} (${beaten})`);
-    const TIMER_SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
+    const TIMER_SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
     const flipTimer = async () => {
-        await B.b.eval(`document.querySelector('button[aria-label="App settings"]').click(), true`);
+        await B.b.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
         await waitFor(() => B.b.eval(`!!document.getElementById('call-timer')`), `${B.browser} Call timer`);
         const was = await B.b.eval(`document.getElementById('call-timer').checked`);
         await B.b.eval(`document.getElementById('call-timer').click(), true`);
@@ -427,10 +427,10 @@ try {
 
     // The settings open as a dialog over the den; their Voice section holds
     // RNNoise and how the member sends.
-    const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
+    const SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
     const inSection = (title, path) => `document.evaluate("//section[.//h2[text()='${title}']]${path}", document, null, 9, null).singleNodeValue`;
     const openVoice = async (s) => {
-        await s.b.eval(`document.querySelector('button[aria-label="App settings"]').click(), true`);
+        await s.b.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
         await waitFor(() => s.b.eval(`!!${SETTINGS}`), `${s.browser} settings`);
         await s.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'Voice').click(), true`);
         await waitFor(() => s.b.eval(`!!document.getElementById('noise')`), `${s.browser} voice settings`);
@@ -770,7 +770,7 @@ try {
     const EDIT = `document.querySelector('[role=dialog][aria-label="Your profile in this den"]')`;
     const edit = await waitFor(() => B.b.eval(`!!${EDIT}`), `${B.browser} edits the profile`, 3000).catch(() => false);
     await B.b.eval(`(${EDIT}?.querySelector('button[aria-label="Close"]').click(), true)`);
-    await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').parentElement.querySelector('[aria-label="App settings"]').click(), true)`);
+    await B.b.eval(`(document.querySelector('button[aria-label="Edit your profile"]').parentElement.querySelector('[aria-label="Settings"]').click(), true)`);
     const cog = await waitFor(() => B.b.eval(`${SETTINGS}?.querySelector('nav button[aria-current=page]')?.textContent.trim() || false`), `${B.browser} settings from the panel`, 3000).catch(() => false);
     await closeSettings(B, 'close');
     // The den's header: home at the left of its name, and no status while
@@ -793,7 +793,7 @@ try {
     const PICKER = `${SETTINGS}?.querySelector('[data-panel]')`;
     const MORE = `${SETTINGS}?.querySelector('[role=radiogroup][aria-label="More themes"]')`;
     const openGeneral = async () => {
-        if (!(await B.b.eval(`!!${SETTINGS}`))) await B.b.eval(`(document.querySelector('button[aria-label="App settings"]').click(), true)`);
+        if (!(await B.b.eval(`!!${SETTINGS}`))) await B.b.eval(`(document.querySelector('button[aria-label="Settings"]').click(), true)`);
         await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
         await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'Appearance').click(), true)`);
         await waitFor(() => B.b.eval(`!!${SETTINGS}?.querySelector('[role=radiogroup][aria-label=Theme]')`), `${B.browser} theme picker`);
@@ -895,11 +895,13 @@ try {
         `${B.browser} themes: picker ${JSON.stringify(menu)}, Dracula ${JSON.stringify(dracula)}, lighter in Dark ${JSON.stringify(dark)} and Light ${JSON.stringify(white)}, System ${JSON.stringify(system)}`);
 
     await B.b.eval(`(document.querySelector('button[aria-label="Leave the call"]').click(), true)`);
-    await B.b.eval(`(document.querySelector('button[aria-label="App settings"]').click(), true)`);
+    await B.b.eval(`(document.querySelector('button[aria-label="Settings"]').click(), true)`);
     await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
     const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].map((t) => t.textContent.trim()).join('|')`);
     await closeSettings(B, 'close');
-    report(tabs === 'Appearance|Chat|Notifications|Voice|Relay|System', `${B.browser} settings sections: ${tabs}`);
+    // On a den's page they list the member's own sections of it first (M22.3).
+    report(tabs === 'Devices|Password and recovery|Your code|Your files|Appearance|Chat|Notifications|Voice|Relay|System|Leave den',
+        `${B.browser} settings sections: ${tabs}`);
 
     // A join that waits on the microphone, as while the browser asks for
     // it, says so; the voice processor's context comes from the click.
@@ -1024,19 +1026,19 @@ try {
     report(shared.videos >= 1 && shared.volumes.length === 1 && shared.volumes[0] === 0.5 && shared.kept === '0.5',
         `${B.browser} video volume shared: ${JSON.stringify(shared)}`);
     await B.b.go(`http://127.0.0.1:${B.port}/`);
-    await waitFor(() => B.b.eval(`!!document.querySelector('a[aria-label="App settings"]')`), `${B.browser} home`);
+    await waitFor(() => B.b.eval(`!!document.querySelector('a[aria-label="Settings"]')`), `${B.browser} home`);
     const home = JSON.parse(await B.b.eval(`(() => {
-        const cog = document.querySelector('a[aria-label="App settings"]');
+        const cog = document.querySelector('a[aria-label="Settings"]');
         const r = cog.getBoundingClientRect();
         return JSON.stringify({ fixed: getComputedStyle(cog).position, left: Math.round(r.left), fromBottom: Math.round(innerHeight - r.bottom), header: !!document.querySelector('header.navbar'), title: document.title, label: cog.textContent.trim() });
     })()`));
-    await B.b.eval(`(document.querySelector('a[aria-label="App settings"]').click(), true)`);
+    await B.b.eval(`(document.querySelector('a[aria-label="Settings"]').click(), true)`);
     const homeSettings = await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings from home`, 3000).catch(() => false);
     // The version and instance moved from home's foot to the settings' About.
     await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'System').click(), true)`);
     const about = await waitFor(() => B.b.eval(`[...${SETTINGS}.querySelectorAll('section')].find((x) => x.querySelector('h2')?.textContent === 'About')?.innerText || ''`), `${B.browser} About`, 5000).catch(() => '');
     await closeSettings(B, 'close');
-    report(home.fixed === 'fixed' && home.left <= 24 && home.fromBottom <= 24 && !home.header && home.title === 'Dens (m2b)' && home.label === 'App settings'
+    report(home.fixed === 'fixed' && home.left <= 24 && home.fromBottom <= 24 && !home.header && home.title === 'Dens (m2b)' && home.label === 'Settings'
         && about.includes('instance m2b') && homeSettings === true,
         `${B.browser} home: ${JSON.stringify(home)}, settings ${homeSettings}, about ${JSON.stringify(about)}`);
 } catch (e) {

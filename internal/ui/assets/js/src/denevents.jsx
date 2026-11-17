@@ -14,11 +14,12 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { copyText } from './clipboard.js';
-import { ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useNotifications } from './components.jsx';
+import { Actions, Button, ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useNotifications } from './components.jsx';
 import { CropDialog } from './crop.jsx';
+import { DateField, TimeField } from './datefield.jsx';
 import {
-    MAX_BADGE_TITLE, badgeProblem, badgeRequest, canMake, cardWhen, current, eventRequest, formOf, formProblem, interestedText, lengthsFor,
-    mayChange, newForm, ordered, rowMark, whenText, willHaveBadge, zone,
+    MAX_AHEAD, MAX_BADGE_TITLE, badgeProblem, badgeRequest, canMake, cardWhen, current, eventRequest, formOf, formProblem, inputsAt, interestedText,
+    lengthsFor, mayChange, newForm, ordered, rowMark, whenText, willHaveBadge, zone,
 } from './denevents.js';
 import { useLinkedEvent, markRead } from './eventlinks.jsx';
 import { upload, uploadAnimated } from './files.jsx';
@@ -126,7 +127,7 @@ export function EventsPane({ denID, view, members, onList, onProfile }) {
                 <span class="text-base-content/50"><EventsIcon size="h-5 w-5" /></span>
                 <h2 class="min-w-0 flex-1 truncate font-semibold" data-events-header>Events</h2>
                 {making && (
-                    <button type="button" class="btn btn-sm btn-primary" data-new-event onClick={() => setDialog({ kind: 'make' })}>+ Event</button>
+                    <Button kind="primary" data-new-event onClick={() => setDialog({ kind: 'make' })}>+ Event</Button>
                 )}
             </header>
             <div class="min-h-0 flex-1 overflow-y-auto">
@@ -207,8 +208,8 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                                 </Tip>
                             )}
                             {e.live && channel && (
-                                <button type="button" class="btn btn-primary btn-xs" disabled={!canCall()} title={canCall() ? undefined : NO_CALLS}
-                                    data-join-event onClick={() => joinCall(denID, channel.id, { den: view.name, channel: channel.name })}>Join</button>
+                                <Button size="xs" disabled={!canCall()} title={canCall() ? undefined : NO_CALLS}
+                                    data-join-event onClick={() => joinCall(denID, channel.id, { den: view.name, channel: channel.name })}>Join</Button>
                             )}
                         </>
                     ) : (
@@ -227,13 +228,13 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                     <span class="text-sm text-base-content/70" data-interest-count>{interestedText(e.interested)}</span>
                     <span class="ml-auto flex flex-wrap justify-end gap-1">
                         {view.url && (
-                            <button type="button" class="btn btn-ghost btn-sm" data-copy-event-link onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</button>
+                            <Button kind="quiet" data-copy-event-link onClick={copyLink}>{copied ? 'Copied' : 'Copy link'}</Button>
                         )}
-                        {changes && <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDialog({ kind: 'edit', event: e })}>Edit</button>}
+                        {changes && <Button kind="quiet" onClick={() => onDialog({ kind: 'edit', event: e })}>Edit</Button>}
                         {changes && (e.live ? (
-                            <button type="button" class="btn btn-ghost btn-sm" onClick={() => onDialog({ kind: 'end', event: e })}>End now</button>
+                            <Button kind="quiet" onClick={() => onDialog({ kind: 'end', event: e })}>End now</Button>
                         ) : (
-                            <button type="button" class="btn btn-ghost btn-sm text-error" onClick={() => onDialog({ kind: 'cancel', event: e })}>Cancel…</button>
+                            <Button kind="danger" onClick={() => onDialog({ kind: 'cancel', event: e })}>Cancel…</Button>
                         ))}
                     </span>
                 </div>
@@ -251,14 +252,13 @@ function askOnInterest(on, notifications) {
 }
 
 /** InterestedButton marks the member interested in an event, or takes it
-    back: colored while it asks for the click, plain with a tick once
+    back: primary while it asks for the click, secondary with a tick once
     marked. onMark hears what to mark. */
 export function InterestedButton({ mine, disabled, onMark }) {
     return (
-        <button type="button" class={`btn btn-sm ${mine ? '' : 'btn-primary'}`} aria-pressed={!!mine} disabled={disabled} data-interested
-            onClick={() => onMark(!mine)}>
+        <Button kind={mine ? 'secondary' : 'primary'} aria-pressed={!!mine} disabled={disabled} data-interested onClick={() => onMark(!mine)}>
             {mine ? '✓ Interested' : 'Interested'}
-        </button>
+        </Button>
     );
 }
 
@@ -361,13 +361,12 @@ function EndDialog({ denID, event, cancel, onClose }) {
         <Dialog title={cancel ? 'Cancel the event?' : 'End the event now?'} onClose={onClose}>
             <p class="break-words">{cancel ? `${event.name} goes from the den's events.` : `${event.name} ends for everyone now.`}</p>
             <ErrorText message={act.error} />
-            <div class="flex justify-end gap-2">
-                <button type="button" class="btn btn-ghost" onClick={onClose}>Keep it</button>
-                <button type="button" class={`btn ${cancel ? 'btn-error' : 'btn-primary'}`} disabled={act.busy} onClick={go}>
-                    {act.busy && <span class="loading loading-spinner loading-sm"></span>}
+            <Actions>
+                <Button kind={cancel ? 'danger' : 'primary'} filled={cancel} busy={act.busy} onClick={go}>
                     {cancel ? 'Cancel the event' : 'End now'}
-                </button>
-            </div>
+                </Button>
+                <Button kind="quiet" onClick={onClose}>Keep it</Button>
+            </Actions>
         </Dialog>
     );
 }
@@ -437,13 +436,13 @@ export function EventDialog({ denID, view, event, onClose }) {
                         data-event-description></textarea>
                 </Field>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Banner</legend>
+                    <legend class="fieldset-legend text-sm font-normal">Banner</legend>
                     {shown?.id && <Banner denID={denID} image={shown} />}
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pick.current?.click()}>
+                        <Button disabled={picture.busy} onClick={() => pick.current?.click()}>
                             {shown?.id ? 'Change' : 'Add a banner'}
-                        </button>
-                        {shown?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => setBanner(null)}>Remove</button>}
+                        </Button>
+                        {shown?.id && <Button kind="quiet" disabled={picture.busy} onClick={() => setBanner(null)}>Remove</Button>}
                     </div>
                     <input ref={pick} type="file" accept="image/*" class="hidden" data-picture="event-banner" onChange={(e) => {
                         const file = e.currentTarget.files[0];
@@ -457,10 +456,9 @@ export function EventDialog({ denID, view, event, onClose }) {
                 </fieldset>
                 <Field label="Starts" hint={live ? 'It started; its start stays.' : 'In your time zone.'}>
                     <div class="flex flex-wrap gap-2">
-                        <input type="date" class="input min-w-0 flex-1 basis-36" value={form.date} disabled={live} required onInput={(e) => set('date')(e.currentTarget.value)}
-                            aria-label="Day" data-event-date />
-                        <input type="time" class="input min-w-0 flex-1 basis-36" value={form.time} disabled={live} required onInput={(e) => set('time')(e.currentTarget.value)}
-                            aria-label="Time" data-event-time />
+                        <DateField class="min-w-0 flex-1 basis-36" value={form.date} onChange={set('date')} disabled={live} label="Day" data-event-date
+                            min={live ? '' : inputsAt(Date.now(), tz).date} max={live ? '' : inputsAt(Date.now() + MAX_AHEAD, tz).date} />
+                        <TimeField class="min-w-0 flex-1 basis-36" value={form.time} onChange={set('time')} disabled={live} label="Time" data-event-time />
                     </div>
                 </Field>
                 <Field label="Lasts">
@@ -469,7 +467,7 @@ export function EventDialog({ denID, view, event, onClose }) {
                     </select>
                 </Field>
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Where</legend>
+                    <legend class="fieldset-legend text-sm font-normal">Where</legend>
                     <div class="flex flex-wrap gap-x-4 gap-y-1">
                         <label class="flex min-h-8 cursor-pointer items-center gap-2 pointer-coarse:min-h-11">
                             <input type="radio" class="radio radio-sm" name="where" checked={form.where === 'channel'} disabled={voice.length === 0}
@@ -492,7 +490,7 @@ export function EventDialog({ denID, view, event, onClose }) {
                 </fieldset>
                 {staff && form.where === 'channel' && (
                     <fieldset class="fieldset" data-event-badge-form>
-                        <legend class="fieldset-legend">Badge</legend>
+                        <legend class="fieldset-legend text-sm font-normal">Badge</legend>
                         {shownBadge?.id ? (
                             <div class="flex items-center gap-2">
                                 <BadgePicture denID={denID} image={shownBadge} size="h-12 w-12" />
@@ -500,14 +498,14 @@ export function EventDialog({ denID, view, event, onClose }) {
                                     data-badge-title />
                             </div>
                         ) : (
-                            <p class="label whitespace-normal">For whoever's in its call a minute while it's live.</p>
+                            <p class="text-sm text-base-content/70">For whoever's in its call a minute while it's live.</p>
                         )}
                         <div class="flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-sm" disabled={picture.busy} data-add-badge onClick={() => pickBadge.current?.click()}>
+                            <Button disabled={picture.busy} data-add-badge onClick={() => pickBadge.current?.click()}>
                                 {shownBadge?.id ? 'Change picture' : 'Add a badge'}
-                            </button>
+                            </Button>
                             {shownBadge?.id && (
-                                <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => setBadge(null)}>Remove</button>
+                                <Button kind="quiet" disabled={picture.busy} onClick={() => setBadge(null)}>Remove</Button>
                             )}
                         </div>
                         <input ref={pickBadge} type="file" accept="image/*" class="hidden" data-picture="event-badge" onChange={(e) => {
@@ -522,9 +520,10 @@ export function EventDialog({ denID, view, event, onClose }) {
                     </fieldset>
                 )}
                 <ErrorText message={save.error} />
-                <div>
+                <Actions>
                     <SubmitButton busy={save.busy || picture.busy}>{event ? 'Save' : 'Make the event'}</SubmitButton>
-                </div>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
             </form>
             {cropping && (
                 <CropDialog file={cropping.file} shape={cropping.shape} busy={picture.busy} error={picture.error} onCrop={cropped}

@@ -14,7 +14,7 @@
 //   run.sh move chromium|firefox
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
-import { ALICE, HOME, MANAGE, SETTINGS, checks, launch, lib, openManage, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, HOME, SETTINGS, checks, launch, lib, openSettings, openYours, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const c = checks();
@@ -64,10 +64,10 @@ try {
     await b.eval(`${button(card, 'Move the den to another computer')}.click(), true`);
     await waitFor(async () => /About \d/.test(await text(card)), "the export's size");
     const move = await text(card);
-    if (!move.includes("This turns hosting off: members can't reach Moving Den until the other computer hosts it.") || !move.includes('not any of your client data')) {
+    if (!move.includes("This turns hosting off. Members can't reach Moving Den until the other computer hosts it.") || !move.includes('none of your own data')) {
         throw new Error(`Move says: ${move}`);
     }
-    ok(`Move says: ${await said(/This turns hosting off.*?client data\./)}`);
+    ok(`Move says: ${await said(/This turns hosting off.*?your own data\./)}`);
     await shot('move');
     await password("Download the den's export");
     const file = await waitFor(() => fs.readdirSync(DOWNLOADS).find((f) => /^dens-m2a-den-\d{8}-\d{6}\.backup$/.test(f)), 'the export downloaded', 30000);
@@ -136,14 +136,16 @@ try {
     step('the server goes for good');
     lib('stop', 'm2c');
     await waitFor(() => b.eval(`!!${row} && /Offline|Connecting/.test(${row}.innerText)`), 'her den offline', 60000);
-    await openManage(b, 'Leave den');
-    await waitFor(async () => (await text(MANAGE)).includes("Dens can't reach this den right now"), "Leave den, for a den Dens can't reach");
-    ok(`Leave den says: ${(await text(MANAGE)).match(/Dens can't reach.*?Add a den\./)?.[0]}`);
+    // Leave den is the settings' on the den's page (M22.3), which opens
+    // from what this computer kept of it.
+    await openYours(b, ALICE.port, den, 'Leave den');
+    await waitFor(async () => (await text(SETTINGS)).includes("Dens can't reach this den right now"), "Leave den, for a den Dens can't reach");
+    ok(`Leave den says: ${(await text(SETTINGS)).match(/Dens can't reach.*?Add a den\./)?.[0]}`);
     await shot('leave-gone');
-    await b.eval(`${button(MANAGE, 'Remove from this computer')}.click(), true`);
-    await waitFor(() => b.eval(`!${MANAGE} && !${row}`), 'the den off home', 30000);
+    await b.eval(`${button(SETTINGS, 'Remove from this device')}.click(), true`);
+    await waitFor(() => b.eval(`!${SETTINGS} && !${row}`), 'the den off home', 30000);
     if (JSON.parse(lib('api', 'alice', 'GET', '/api/dens')).dens.length !== 0) throw new Error('the den is still listed');
-    ok('Remove from this computer took the den whose server is gone off her computer');
+    ok('Remove from this device took the den whose server is gone off her computer');
     await shot('home-gone');
 } catch (e) {
     c.fail(e);

@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { callLength } from './calltimer.js';
-import { ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useBackdrop } from './components.jsx';
+import { Actions, Button, ErrorText, Field, InSheet, Slider, SubmitButton, TextInput, Tip, Toggle, useAction, useBackdrop } from './components.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { Handle, useDragDown } from './sheet.jsx';
 
@@ -16,43 +16,56 @@ import { Handle, useDragDown } from './sheet.jsx';
 // title, which still names it for screen readers: what it shows runs to
 // its edges, the ✕ standing over its top right, and on the phone layout
 // the handle over its top, both staying there as it scrolls; a swipe down
-// closes it from the handle, or from what it shows marked as its top.
-export function Dialog({ title, onClose, bare = false, children }) {
+// closes it from the handle, or from what it shows marked as its top. One
+// with a foot keeps it at its bottom as the rest scrolls, as Edit
+// profile's Save (M22.3); a wide one takes room for two columns.
+export function Dialog({ title, onClose, bare = false, wide = false, foot, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
     const narrow = useNarrow();
     const drag = useDragDown(onClose, (e) => narrow && !!e.target.closest('[data-sheet-top]') && !e.target.closest('button'));
     return (
-        <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4" {...backdrop}>
-            <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={title} style={drag.style} {...drag.handlers}
-                class="card max-h-[calc(100%-1.5rem)] w-full overflow-y-auto overscroll-contain bg-base-100 shadow-xl max-md:rounded-b-none max-md:pb-[env(safe-area-inset-bottom)] md:max-h-full md:max-w-md">
-                {bare ? (
-                    <>
-                        <div class="pointer-events-none sticky top-0 z-10 h-0">
-                            <div data-sheet-top class="pointer-events-auto absolute left-1/2 top-0 h-7 w-24 -translate-x-1/2 touch-none md:hidden">
-                                <div class="flex justify-center pt-2" aria-hidden="true">
-                                    <span class="h-1 w-10 rounded-full bg-base-100/90 shadow-[0_0_0_1px] shadow-base-content/25"></span>
+        <InSheet.Provider value={narrow}>
+            <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4" {...backdrop}>
+                <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={title} style={drag.style} {...drag.handlers}
+                    class={`card max-h-[calc(100%-1.5rem)] w-full overscroll-contain bg-base-100 shadow-xl max-md:rounded-b-none md:max-h-full ${wide ? 'md:max-w-3xl' : 'md:max-w-md'} ${foot ? 'flex flex-col overflow-hidden' : 'overflow-y-auto max-md:pb-[env(safe-area-inset-bottom)]'}`}>
+                    {bare ? (
+                        <>
+                            <div class="pointer-events-none sticky top-0 z-10 h-0">
+                                <div data-sheet-top class="pointer-events-auto absolute left-1/2 top-0 h-7 w-24 -translate-x-1/2 touch-none md:hidden">
+                                    <div class="flex justify-center pt-2" aria-hidden="true">
+                                        <span class="h-1 w-10 rounded-full bg-base-100/90 shadow-[0_0_0_1px] shadow-base-content/25"></span>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-ghost btn-circle btn-sm pointer-events-auto absolute right-2 top-2 bg-base-100/85 shadow-sm hover:bg-base-100"
+                                    onClick={onClose} aria-label="Close">✕</button>
+                            </div>
+                            {children}
+                        </>
+                    ) : (
+                        <>
+                            <div class={foot ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain' : 'contents'}>
+                                <div class="card-body gap-3 max-md:px-4 max-md:pt-0">
+                                    <div data-sheet-top class="sticky top-0 z-10 -mx-1 bg-base-100 px-1 max-md:touch-none max-md:pb-1 md:static">
+                                        <div class="md:hidden"><Handle /></div>
+                                        <div class="flex items-center justify-between gap-2">
+                                            <h2 class="card-title min-w-0">{title}</h2>
+                                            <button type="button" class="btn btn-ghost btn-sm btn-square shrink-0" onClick={onClose} aria-label="Close">✕</button>
+                                        </div>
+                                    </div>
+                                    {children}
                                 </div>
                             </div>
-                            <button type="button" class="btn btn-circle btn-sm pointer-events-auto absolute right-2 top-2 border-0 bg-base-100/85 shadow-sm"
-                                onClick={onClose} aria-label="Close">✕</button>
-                        </div>
-                        {children}
-                    </>
-                ) : (
-                    <div class="card-body gap-3 max-md:px-4 max-md:pt-0">
-                        <div data-sheet-top class="sticky top-0 z-10 -mx-1 bg-base-100 px-1 max-md:touch-none max-md:pb-1 md:static">
-                            <div class="md:hidden"><Handle /></div>
-                            <div class="flex items-center justify-between gap-2">
-                                <h2 class="card-title min-w-0">{title}</h2>
-                                <button type="button" class="btn btn-ghost btn-sm shrink-0" onClick={onClose} aria-label="Close">✕</button>
-                            </div>
-                        </div>
-                        {children}
-                    </div>
-                )}
+                            {foot && (
+                                <div class="shrink-0 border-t border-base-300 px-6 py-3 max-md:px-4 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]" data-dialog-foot>
+                                    {foot}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
-        </div>
+        </InSheet.Provider>
     );
 }
 
@@ -117,7 +130,7 @@ export function ChannelDialog({ denID, view, channel, group: inGroup, onClose })
                 {kind === 'voice' && (
                     <Field label={<>Voice quality: {bitrate / 1000} kbps <Tip id="bitrate-tip">Each member who talks sends it to everyone else in the call. A change reaches a call in progress at once.</Tip></>}
                         hint="Higher sounds better and costs more of the den's upload.">
-                        <input type="range" class="range range-md w-full" min={BITRATE.min} max={BITRATE.max} step={BITRATE.step} value={bitrate}
+                        <Slider class="w-full" min={BITRATE.min} max={BITRATE.max} step={BITRATE.step} value={bitrate}
                             onInput={(e) => setBitrate(Number(e.currentTarget.value))} aria-label="Voice quality" aria-valuetext={`${bitrate / 1000} kbps`} />
                     </Field>
                 )}
@@ -127,37 +140,30 @@ export function ChannelDialog({ denID, view, channel, group: inGroup, onClose })
                         {view.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                 </Field>
-                <label class="label gap-2">
-                    <input type="checkbox" class="toggle" checked={staffOnly} onChange={(e) => setStaffOnly(e.currentTarget.checked)} />
-                    Staff only: only moderators and the owner can see it
-                </label>
+                <Toggle id="staff-only" label="Staff only" hint="Only moderators and the owner can see it." checked={staffOnly} onChange={setStaffOnly} />
                 <ErrorText message={save.error} />
-                <div class="flex flex-wrap gap-2">
+                <Actions>
                     <SubmitButton busy={save.busy}>{editing ? 'Save' : 'Create channel'}</SubmitButton>
-                </div>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
             </form>
             {editing && channel.kind === 'voice' && <CallRecord denID={denID} channel={channel} />}
             {editing && (
                 <div class="border-t border-base-300 pt-3">
                     {!confirmDelete ? (
-                        <button type="button" class="btn btn-outline btn-error btn-sm" onClick={() => setConfirmDelete(true)}>Delete channel</button>
+                        <Button kind="danger" onClick={() => setConfirmDelete(true)}>Delete channel</Button>
                     ) : (
                         <div class="flex flex-col gap-2">
                             <p class="text-sm">Deletes #{channel.name} and every message in it, for everyone, for good.</p>
-                            <div class="flex gap-2">
-                                <button
-                                    type="button"
-                                    class="btn btn-error btn-sm"
-                                    disabled={remove.busy}
-                                    onClick={() => remove.run(async () => {
-                                        await api.del(`/api/dens/${denID}/channels/${channel.id}`);
-                                        onClose();
-                                    })}
-                                >
+                            <Actions>
+                                <Button kind="danger" filled busy={remove.busy} onClick={() => remove.run(async () => {
+                                    await api.del(`/api/dens/${denID}/channels/${channel.id}`);
+                                    onClose();
+                                })}>
                                     Delete it
-                                </button>
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
-                            </div>
+                                </Button>
+                                <Button kind="quiet" onClick={() => setConfirmDelete(false)}>Cancel</Button>
+                            </Actions>
                             <ErrorText message={remove.error} />
                         </div>
                     )}
@@ -186,21 +192,21 @@ function CallRecord({ denID, channel }) {
                     {record === null ? <span class="loading loading-dots loading-xs align-middle"></span>
                         : <span class="tabular-nums" data-call-record-ms={record}>{record > 0 ? callLength(record) : 'none yet'}</span>}
                 </span>
-                {record > 0 && !confirming && <button type="button" class="btn btn-sm" onClick={() => setConfirming(true)}>Reset</button>}
+                {record > 0 && !confirming && <Button onClick={() => setConfirming(true)}>Reset</Button>}
             </div>
             {confirming && (
                 <div class="flex flex-col gap-2">
                     <p class="text-sm">Clears the longest call for everyone. A call going on now won't set the next one.</p>
-                    <div class="flex gap-2">
-                        <button type="button" class="btn btn-error btn-sm" disabled={reset.busy} onClick={() => reset.run(async () => {
+                    <Actions>
+                        <Button kind="danger" filled busy={reset.busy} onClick={() => reset.run(async () => {
                             await api.del(path);
                             setRecord(0);
                             setConfirming(false);
                         })}>
                             Reset it
-                        </button>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => setConfirming(false)}>Cancel</button>
-                    </div>
+                        </Button>
+                        <Button kind="quiet" onClick={() => setConfirming(false)}>Cancel</Button>
+                    </Actions>
                 </div>
             )}
             <ErrorText message={load.error || reset.error} />
@@ -238,17 +244,17 @@ export function GroupDialog({ denID, view, group, onClose }) {
                     <TextInput value={name} onInput={setName} required maxlength="32" />
                 </Field>
                 <ErrorText message={save.error} />
-                <div class="flex flex-wrap gap-2">
+                <Actions>
                     <SubmitButton busy={save.busy}>{editing ? 'Save' : 'Create group'}</SubmitButton>
-                </div>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
             </form>
             {editing && (
                 <div class="border-t border-base-300 pt-3">
                     <p class="mb-2 text-sm text-base-content/70">Its channels stay, moving to the ungrouped list.</p>
-                    <button type="button" class="btn btn-outline btn-error btn-sm" disabled={save.busy}
-                        onClick={() => act(() => api.del(`/api/dens/${denID}/groups/${group.id}`))}>
+                    <Button kind="danger" busy={save.busy} onClick={() => act(() => api.del(`/api/dens/${denID}/groups/${group.id}`))}>
                         Delete group
-                    </button>
+                    </Button>
                 </div>
             )}
         </Dialog>

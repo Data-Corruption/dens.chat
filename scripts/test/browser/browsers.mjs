@@ -36,13 +36,22 @@ export async function waitFor(fn, what, ms = 20000) {
 // The app's settings (M8.3): the dialog, a section of it by name in the
 // list down its side (M19.1), and opening it at a section from the cog on
 // either page, as expressions for a page's eval and a step that waits.
-export const SETTINGS = `document.querySelector('[role=dialog][aria-label="App settings"]')`;
-export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="App settings"] nav button')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
+export const SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
+export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="Settings"] nav button')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
 export async function openSettings(b, tab) {
-    if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="App settings"], a[aria-label="App settings"]').click(), true`);
+    if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="Settings"], a[aria-label="Settings"]').click(), true`);
     await waitFor(() => b.eval(`!!${settingsTab(tab)}`), 'the settings');
     await b.eval(`${settingsTab(tab)}.click(), true`);
     await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-current') === 'page'`), `the settings' ${tab} section`);
+}
+
+// openYours opens one of a member's own sections of a den (M22.3): its
+// page, if the browser isn't on it, then the cog's settings, which list
+// them first.
+export async function openYours(b, port, den, section) {
+    if (!(await b.eval(`location.pathname.startsWith(${JSON.stringify(`/den/${den}`)})`))) await b.go(`http://localhost:${port}/den/${den}`);
+    await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Settings"]')`), "the den's cog");
+    await openSettings(b, section);
 }
 
 // openManage opens the Manage dialog of the first den on home's list

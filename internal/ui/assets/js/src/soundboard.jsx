@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { ErrorText, Field, TextInput, useAction } from './components.jsx';
+import { Actions, Button, Card, ErrorText, Field, FilePick, Notice, Slider, SubmitButton, TextInput, buttonClass, useAction } from './components.jsx';
 import { openManage } from './dialogs.js';
 import { onEvent } from './events.js';
 import { upload } from './files.jsx';
@@ -52,7 +52,7 @@ export function SoundboardKey({ den, open, where, many, onClick }) {
     const empty = den.sounds.length === 0;
     const label = empty ? 'Add sounds to the soundboard' : 'Soundboard';
     return (
-        <button type="button" class={`btn btn-ghost btn-sm btn-square ${many ? 'pointer-coarse:btn-md' : ''} ${open ? 'text-success' : ''}`} aria-label={label}
+        <button type="button" class={`${buttonClass('quiet')} btn-square ${many ? 'pointer-coarse:btn-md' : ''} ${open ? 'text-success' : ''}`} aria-label={label}
             title={label} aria-haspopup="dialog" aria-expanded={!!open} data-soundboard-button={where}
             onClick={() => {
                 if (empty) openManage(den.den, 'soundboard');
@@ -99,14 +99,14 @@ function Board({ den, board, sounding, deafened, sheet, onClose }) {
     const why = boardWhy({ sounding, waitUntil: board.waitUntil, deafened }, now);
     const shown = matching(den.sounds, query);
     const staff = rank(den.role) > 0;
-    const tile = 'btn btn-sm h-auto min-h-8 justify-start gap-1 py-1 text-left font-normal pointer-coarse:min-h-11';
+    const tile = `${buttonClass('secondary')} h-auto min-h-8 justify-start gap-1 py-1 text-left font-normal pointer-coarse:min-h-11`;
     return (
         <div class={`flex flex-col gap-2 ${sheet ? 'px-4 pb-2' : 'p-3'}`} data-board>
             <div class="flex items-center gap-1">
                 <input type="search" class="input input-sm min-w-0 flex-1 pointer-coarse:input-md" placeholder="Search sounds" aria-label="Search sounds"
                     value={query} onInput={(e) => setQuery(e.currentTarget.value)} />
                 {staff && (
-                    <button type="button" class="btn btn-ghost btn-sm btn-square pointer-coarse:btn-md" aria-label="Manage sounds" title="Manage sounds"
+                    <button type="button" class={`${buttonClass('quiet')} btn-square pointer-coarse:btn-md`} aria-label="Manage sounds" title="Manage sounds"
                         onClick={() => {
                             onClose();
                             openManage(den.den, 'soundboard');
@@ -117,7 +117,7 @@ function Board({ den, board, sounding, deafened, sheet, onClose }) {
             </div>
             <label class={`flex items-center gap-2 ${sheet ? 'h-12 text-sm' : 'text-xs'}`} title="How loud the soundboard plays for you">
                 <span>Volume</span>
-                <input type="range" class={`range min-w-0 flex-1 ${sheet ? 'range-xl' : 'range-md'}`} min="0" max="100" step="5" value={volume}
+                <Slider class="min-w-0 flex-1" min="0" max="100" step="5" value={volume}
                     aria-label="Soundboard volume" aria-valuetext={volume === 0 ? 'muted' : `${volume}%`} data-board-volume
                     onInput={(e) => {
                         const v = Number(e.currentTarget.value);
@@ -127,7 +127,7 @@ function Board({ den, board, sounding, deafened, sheet, onClose }) {
                 <span class="w-12 text-right tabular-nums">{volume === 0 ? 'Muted' : `${volume}%`}</span>
             </label>
             {why && <p role="status" class="text-xs text-base-content/70" data-board-why>{why}</p>}
-            {board.notice && <p role="status" class="text-xs text-warning" data-board-notice>{board.notice}</p>}
+            {board.notice && <Notice kind="warning" class="text-xs" data-board-notice>{board.notice}</Notice>}
             {shown.length === 0 ? (
                 <p class="text-sm text-base-content/70">No sound matches.</p>
             ) : (
@@ -147,10 +147,10 @@ function Board({ den, board, sounding, deafened, sheet, onClose }) {
 }
 
 // ManageSoundboard is the soundboard's section in Manage, for staff: the
-// den's limits for it as they apply, a sound added by a file and a name,
-// prepared by this page, and the den's sounds, each to hear, rename or
-// delete. owner says whether the member sets the limits, in Limits.
-export function ManageSoundboard({ denID, owner, onLimits }) {
+// den's sounds, with how many it keeps and how long each may be, a sound
+// added by a file and a name, prepared by this page, and each sound to
+// hear, rename or delete; and limits, the owner's limits for it, if given.
+export function ManageSoundboard({ denID, limits: owners }) {
     const [view, setView] = useState(null);
     const act = useAction();
     const load = () => api.get(`/api/dens/${denID}/state`).then(setView);
@@ -169,30 +169,29 @@ export function ManageSoundboard({ denID, owner, onLimits }) {
     const sounds = matching(view.sounds, '');
     return (
         <>
-            <h3 class="text-lg font-semibold">Soundboard</h3>
-            <p class="text-sm text-base-content/70">Sounds anyone in a call can play for everyone in it.</p>
-            {!limits ? (
-                <p class="text-sm">This den runs a version of Dens without a soundboard.</p>
-            ) : (
-                <>
-                    {limits.sounds === 0 ? (
-                        <p role="status" class="text-sm text-warning">
-                            The soundboard is off: nobody can play its sounds.
-                            {owner && <> <button type="button" class="link link-primary" onClick={onLimits}>Turn it on in Limits</button></>}
-                        </p>
-                    ) : (
-                        <p class="text-sm" data-board-count>
-                            {sounds.length} of {limits.sounds} sounds, each up to {seconds(limits.longest * 1000)}.
-                        </p>
-                    )}
-                    {limits.sounds > 0 && sounds.length < limits.sounds && <AddSound denID={denID} limits={limits} onAdded={() => load().catch(() => {})} />}
-                </>
-            )}
-            {sounds.length > 0 && (
-                <ul class="flex flex-col divide-y divide-base-300" aria-label="The den's sounds">
-                    {sounds.map((s) => <SoundRow key={s.id} denID={denID} sound={s} by={names.get(s.added_by)} onChange={() => load().catch(() => {})} />)}
-                </ul>
-            )}
+            <Card title="Sounds">
+                <p class="text-sm text-base-content/70">Sounds anyone in a call can play for everyone in it.</p>
+                {!limits ? (
+                    <p class="text-sm">This den runs a version of Dens without a soundboard.</p>
+                ) : (
+                    <>
+                        {limits.sounds === 0 ? (
+                            <Notice kind="warning">The soundboard is off: nobody can play its sounds.</Notice>
+                        ) : (
+                            <p class="text-sm" data-board-count>
+                                {sounds.length} of {limits.sounds} sounds, each up to {seconds(limits.longest * 1000)}.
+                            </p>
+                        )}
+                        {limits.sounds > 0 && sounds.length < limits.sounds && <AddSound denID={denID} limits={limits} onAdded={() => load().catch(() => {})} />}
+                    </>
+                )}
+                {sounds.length > 0 && (
+                    <ul class="flex flex-col divide-y divide-base-300" aria-label="The den's sounds">
+                        {sounds.map((s) => <SoundRow key={s.id} denID={denID} sound={s} by={names.get(s.added_by)} onChange={() => load().catch(() => {})} />)}
+                    </ul>
+                )}
+            </Card>
+            {owners}
         </>
     );
 }
@@ -204,7 +203,6 @@ function AddSound({ denID, limits, onAdded }) {
     const [file, setFile] = useState(null);
     const [name, setName] = useState('');
     const [stage, setStage] = useState('');
-    const [picker, setPicker] = useState(0);
     const add = useAction();
     function submit(e) {
         e.preventDefault();
@@ -220,30 +218,25 @@ function AddSound({ denID, limits, onAdded }) {
             }
             setFile(null);
             setName('');
-            setPicker((n) => n + 1);
             onAdded();
         });
     }
     return (
-        <form class="flex flex-col gap-2 rounded-box bg-base-200 p-3" onSubmit={submit} data-add-sound>
-            <p class="font-medium">Add a sound</p>
-            <input key={picker} type="file" class="file-input w-full" accept="audio/*,video/*" aria-label="The sound's file"
-                onChange={(e) => {
-                    const f = e.currentTarget.files?.[0] || null;
+        <form class="flex flex-col gap-2 rounded-box bg-base-100 p-3 max-md:bg-base-200" onSubmit={submit} data-add-sound>
+            <p class="text-sm font-medium">Add a sound</p>
+            <FilePick label="Choose a file" accept="audio/*,video/*" file={file} inputProps={{ 'aria-label': "The sound's file" }}
+                onPick={(f) => {
                     setFile(f);
-                    if (f && !name.trim()) setName(nameOf(f.name));
+                    if (!name.trim()) setName(nameOf(f.name));
                     add.setError('');
                 }} />
             <Field label="Name">
                 <TextInput value={name} onInput={setName} maxlength="32" required placeholder="Air horn" aria-label="The sound's name" />
             </Field>
-            <div class="flex flex-wrap items-center gap-2">
-                <button type="submit" class="btn btn-primary btn-sm" disabled={!file || add.busy}>
-                    {add.busy && <span class="loading loading-spinner loading-sm"></span>}
-                    Add
-                </button>
+            <Actions>
+                <SubmitButton busy={add.busy} disabled={!file}>Add</SubmitButton>
                 {stage && <span role="status" class="text-sm text-base-content/70">{stage}</span>}
-            </div>
+            </Actions>
             <ErrorText message={add.error} />
         </form>
     );
@@ -282,7 +275,7 @@ function SoundRow({ denID, sound, by, onChange }) {
     return (
         <li class="flex flex-col gap-1 py-1.5" data-manage-sound={sound.id}>
             <div class="flex items-center gap-2 text-sm">
-                <button type="button" class={`btn btn-ghost btn-sm btn-square ${audio ? 'text-success' : ''}`} aria-pressed={!!audio}
+                <button type="button" class={`${buttonClass('quiet')} btn-square ${audio ? 'text-success' : ''}`} aria-pressed={!!audio}
                     aria-label={audio ? `Stop ${sound.name}` : `Hear ${sound.name}`} title={audio ? 'Stop' : 'Hear it'} onClick={hear}>
                     <PlayIcon />
                 </button>
@@ -290,12 +283,12 @@ function SoundRow({ denID, sound, by, onChange }) {
                     <form class="flex min-w-0 flex-1 items-center gap-1" onSubmit={rename}>
                         <input class="input input-sm min-w-0 flex-1" value={name} maxlength="32" required aria-label={`New name for ${sound.name}`}
                             onInput={(e) => setName(e.currentTarget.value)} />
-                        <button type="submit" class="btn btn-primary btn-sm" disabled={act.busy}>Save</button>
-                        <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                        <SubmitButton busy={act.busy}>Save</SubmitButton>
+                        <Button kind="quiet" onClick={() => {
                             setRenaming(false);
                             setName(sound.name);
                             act.setError('');
-                        }}>Cancel</button>
+                        }}>Cancel</Button>
                     </form>
                 ) : (
                     <>
@@ -305,25 +298,27 @@ function SoundRow({ denID, sound, by, onChange }) {
                         </span>
                         {deleting ? (
                             <>
-                                <button type="button" class="btn btn-error btn-sm" disabled={act.busy} onClick={() => act.run(async () => {
-                                    await api.del(`/api/dens/${denID}/soundboard/${sound.id}`);
-                                    onChange();
-                                })}>Delete</button>
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
-                                    setDeleting(false);
-                                    act.setError('');
-                                }}>Keep</button>
+                                <Actions>
+                                    <Button kind="danger" filled busy={act.busy} onClick={() => act.run(async () => {
+                                        await api.del(`/api/dens/${denID}/soundboard/${sound.id}`);
+                                        onChange();
+                                    })}>Delete</Button>
+                                    <Button kind="quiet" onClick={() => {
+                                        setDeleting(false);
+                                        act.setError('');
+                                    }}>Keep</Button>
+                                </Actions>
                             </>
                         ) : (
                             <>
-                                <button type="button" class="btn btn-ghost btn-sm" onClick={() => {
+                                <Button kind="quiet" onClick={() => {
                                     setRenaming(true);
                                     act.setError('');
-                                }}>Rename</button>
-                                <button type="button" class="btn btn-ghost btn-sm text-error" onClick={() => {
+                                }}>Rename</Button>
+                                <Button kind="danger" onClick={() => {
                                     setDeleting(true);
                                     act.setError('');
-                                }}>Delete</button>
+                                }}>Delete</Button>
                             </>
                         )}
                     </>

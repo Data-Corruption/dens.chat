@@ -304,9 +304,9 @@ try {
     report(renamed.emoji.length === 0 && renamed.text.includes(':party:'), `bob's page shows :party: as text once it's renamed: ${q(renamed)}`);
 
     step("alice lowers the den's count to what it holds");
-    await openManage('Limits');
+    // Emoji's limit is in its own section (M22.3).
     const field = `document.querySelector('[data-limits-emoji] input[type=number]')`;
-    await waitFor(() => A.b.eval(`!!${field}`), "Limits' emoji");
+    await waitFor(() => A.b.eval(`!!${field}`), "Emoji's limit");
     await A.b.eval(setValue(field, '2'));
     const save = `[...${MANAGE}.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save changes')`;
     await waitFor(() => A.b.eval(`!!${save}`), 'the bar');

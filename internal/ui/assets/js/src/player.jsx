@@ -9,6 +9,7 @@
 
 import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { Button } from './components.jsx';
 import { FullIcon, SoundIcon } from './files.jsx';
 import { holdLayout, useNarrow } from './nav.js';
 import { canPopOut } from './platform.js';
@@ -204,7 +205,7 @@ function Away({ w, win, deafened, hidden }) {
     return (
         <div class={`flex h-full min-h-0 min-w-0 flex-col items-center justify-center gap-2 bg-black p-2 text-center text-xs text-white/70 ${hidden ? 'hidden' : ''}`}>
             <span>{w.label}'s screen is in a window of its own</span>
-            <button type="button" class="btn btn-xs" onClick={() => popIn(w.member)}>Bring it back</button>
+            <Button size="xs" onClick={() => popIn(w.member)}>Bring it back</Button>
         </div>
     );
 }
@@ -282,7 +283,7 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
             )}
             {blocked && (
                 <span class="absolute inset-0 flex items-center justify-center p-2">
-                    <button type="button" class="btn btn-sm" onClick={play}>Play {w.label}'s screen</button>
+                    <Button onClick={play}>Play {w.label}'s screen</Button>
                 </span>
             )}
             {popped && <span role="status" class="absolute inset-x-0 top-0 bg-black/70 p-2 text-center text-xs text-white">{popped}</span>}

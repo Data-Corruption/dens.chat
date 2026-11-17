@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Avatar } from './avatar.jsx';
-import { DocsLink, ErrorText, Tip, day } from './components.jsx';
+import { Button, DocsLink, ErrorText, Tip, day } from './components.jsx';
 import { LockIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { Codes, Digits, VerifiedMark } from './private.jsx';
@@ -71,7 +71,7 @@ export function CallLockDialog({ call, den, onClose }) {
         return (
             <Dialog title="Compare codes" onClose={onClose}>
                 <div>
-                    <button type="button" class="btn btn-ghost btn-sm -ml-2" onClick={() => setComparing(null)}>← The call</button>
+                    <Button kind="quiet" class="-ml-2" onClick={() => setComparing(null)}>← The call</Button>
                 </div>
                 <Codes denID={call.den} member={comparing} />
             </Dialog>
@@ -106,7 +106,7 @@ export function CallLockDialog({ call, den, onClose }) {
                                             Verified
                                         </span>
                                     ) : (
-                                        <button type="button" class="btn btn-sm" onClick={() => setComparing(member)}>Compare</button>
+                                        <Button onClick={() => setComparing(member)}>Compare</Button>
                                     )}
                                 </li>
                             );

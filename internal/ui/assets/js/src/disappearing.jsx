@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
-import { DocsLink, ErrorText, useAction } from './components.jsx';
+import { Actions, Button, DocsLink, ErrorText, buttonClass, useAction } from './components.jsx';
 import { TimerIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
 import { EXPIRY_TIMES, afterText, expiryText, shortAfter } from './private.js';
@@ -63,8 +63,8 @@ export function ExpiryConfirm({ denID, channel, from, to, onDone, onClose }) {
                 <DocsLink page="usage/#disappearing-messages" label="How it works" />
             </p>
             <ErrorText message={act.error} />
-            <div class="flex gap-2">
-                <button ref={confirm} type="button" class="btn btn-primary btn-sm" disabled={act.busy}
+            <Actions>
+                <button ref={confirm} type="button" class={buttonClass('primary')} disabled={act.busy}
                     onClick={() => act.run(async () => {
                         await api.put(`/api/dens/${denID}/dms/${channel.id}/expiry`, { expires_after: to });
                         onDone();
@@ -72,8 +72,8 @@ export function ExpiryConfirm({ denID, channel, from, to, onDone, onClose }) {
                     {act.busy && <span class="loading loading-spinner loading-sm"></span>}
                     {action}
                 </button>
-                <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-            </div>
+                <Button kind="quiet" onClick={onClose}>Cancel</Button>
+            </Actions>
         </Dialog>
     );
 }

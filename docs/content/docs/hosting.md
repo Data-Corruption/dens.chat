@@ -136,7 +136,8 @@ what's different:
   promotes moderators from **⋯** on a profile, and sets the den's limits.
 - **Limits** cap files, storage, and how big calls and screen shares get; the
   calls section shows the upload they need when full. Lower them if calls
-  stutter.
+  stutter. The soundboard's, emoji's and events' limits are in their own
+  sections.
 - **Auto-delete** deletes messages older than a number of days, in channels
   and DMs, and members see the setting. A [backup](../backups/) keeps what it
   held until you delete the backup.

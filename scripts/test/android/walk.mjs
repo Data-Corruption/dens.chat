@@ -196,7 +196,7 @@ async function bars(h, d) {
     await h.go('/');
     await h.wait(`[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`, 'Home');
     await painted("system's");
-    await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
+    await d.tap(`document.querySelector('a[aria-label="Settings"]')`);
     await d.tap(`document.querySelector('[role=dialog] [data-section=appearance]')`);
     for (const theme of ['dark', 'light']) {
         await pick(theme);
@@ -327,7 +327,7 @@ async function callWalk(h, d, c) {
     });
     await step('call-role', async () => {
         // The settings open by script, from the list that stays off screen.
-        await h.click(`document.querySelector('[data-pane=list] button[aria-label="App settings"]')`, 'the settings');
+        await h.click(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`, 'the settings');
         await d.tap(`document.querySelector('[role=dialog] [data-section=voice]')`);
         const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
         const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => l.textContent.trim() + (l.querySelector('input').checked ? ' (chosen)' : ''))`);
@@ -523,7 +523,7 @@ async function pollsWalk(h, d, c) {
 
 // relayWalk is Relay on the phone (M20.3), from Home by Android's own taps.
 async function relayWalk(h, d, c) {
-    const SECTION = `[...document.querySelectorAll('[role=dialog][aria-label="App settings"] [data-section]')].find((b) => b.textContent.trim() === 'Relay')`;
+    const SECTION = `[...document.querySelectorAll('[role=dialog][aria-label="Settings"] [data-section]')].find((b) => b.textContent.trim() === 'Relay')`;
     const KEYS = `document.getElementById('relay-keys')`;
     // The member's one other device, the install beside desk's.
     const ROW = `document.querySelector('[data-device]')`;
@@ -543,7 +543,7 @@ async function relayWalk(h, d, c) {
     };
     await h.go('/');
     await h.wait(`[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`, 'Home');
-    await d.tap(`document.querySelector('a[aria-label="App settings"]')`);
+    await d.tap(`document.querySelector('a[aria-label="Settings"]')`);
     await h.wait(SECTION, "the settings' Relay");
     await d.tap(SECTION);
     await h.wait(KEYS, 'Keybind relay');

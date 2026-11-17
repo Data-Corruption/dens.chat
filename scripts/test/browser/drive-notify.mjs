@@ -98,9 +98,12 @@ try {
     await waitFor(() => b.eval(`!!document.getElementById('notify-dms')`), 'the notifications card');
     await b.eval(`document.getElementById('notify-dms').click(), true`, true);
     await waitFor(() => settings().dms, 'DMs on, kept by the service');
-    const where = await may(waitFor(() => has('A Dens tab shows them'), 'where they show', 5000));
+    // The card says only what calls for a line (M22.3): nothing, with the
+    // browser letting the page notify.
+    await sleep(500);
+    const explained = await b.eval(`['asks to show them', 'A Dens tab shows them', 'Mute a den'].filter((x) => document.querySelector('[role=dialog]').innerText.includes(x))`);
     await shot('settings');
-    c.report(where, 'DMs turned on in the settings, kept by the service, which say the browser shows them');
+    c.report(explained.length === 0, `DMs turned on in the settings, kept by the service, the card explaining nothing${explained.length ? `; it says: ${explained.join(', ')}` : ''}`);
     await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
 
     step("a DM from bob, with alice's tab behind another");

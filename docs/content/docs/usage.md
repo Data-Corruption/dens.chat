@@ -41,11 +41,12 @@ things most apps don't.
 | --- | --- | --- |
 | **Local password** | Protects Dens on this computer: backups, and seeing your keys | It never leaves this computer |
 | **Den password** | Signing in to a den from another device | One per den. The den never sees it, so reusing one across dens is safe |
-| **Recovery codes** | Signing in when you've forgotten your den password, or have no other device | Ten per den, and each works once. You can make new ones in **Manage** |
+| **Recovery codes** | Signing in when you've forgotten your den password, or have no other device | Ten per den, and each works once. You can make new ones in the den's **Settings** |
 | **DM recovery key** | Reading your DMs and notes if you lose every device | The same for every den on this computer. Keep it secret: it opens your DMs |
 
-You'll find the last three again under the den's **Manage**, in **You in this
-den**, and the local password in **Settings**, under **System**.
+On a den's page, the cog beside your name opens **Settings**, which list
+that den's sections first: the last three are under **Password and recovery**.
+The local password is in **System**.
 
 ## Signing in from another computer
 
@@ -88,8 +89,8 @@ digits don't match, don't trust the DM until you've compared somewhere else.
 {{% details title="Your code, calls and the check" closed="true" %}}
 
 Each of you has a code in each den, 20 digits, the same for everyone who
-compares with you. Your own code is in the den's **Manage**, under **Your
-code**. Comparing is up to you, any time, and the den never learns whether you
+compares with you. Your own code is in **Settings** on the den's page, under
+**Your code**. Comparing is up to you, any time, and the den never learns whether you
 did. The check shows on your other devices too, within the hour.
 
 Calls are end-to-end encrypted too, with the same codes: the lock behind the
@@ -223,8 +224,8 @@ to turn off, turn down, or replace with a file of your own.
 
 ## Leaving
 
-Open the den's **Manage**, from the menu under the den's name at the top of
-its channel list, and choose **Leave den** at the bottom. You can come back with a new invite, as
+On the den's page, open **Settings** from the cog beside your name, and choose
+**Leave den** at the bottom of its sections. You can come back with a new invite, as
 yourself: join with your old username and den password, and your history comes
 back with you. Your notes don't.
 

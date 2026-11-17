@@ -11,6 +11,7 @@
 
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { StatusText } from './components.jsx';
 import { onEvent } from './events.js';
 import { LinkContext, denOf, notJoined } from './msglinks.jsx';
 
@@ -182,7 +183,7 @@ export function EventLink({ url, link }) {
                 <EventIcon />
                 <span class="truncate">{eventChipLabel(link, at, links.denID)}</span>
             </a>
-            {refusal ? <span role="status" class="ml-1 text-xs text-error">{refusal}</span> : null}
+            {refusal ? <StatusText kind="error" inline role="status" class="ml-1 align-bottom">{refusal}</StatusText> : null}
         </>
     );
 }

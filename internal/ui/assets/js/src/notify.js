@@ -148,25 +148,16 @@ export function notifying(st) {
     return !!(st && (st.dms || st.mentions || !st.eventsOff));
 }
 
-// whereTheyShow says where the member's notifications show, for the
-// settings, a line each: through this browser, the desktop's helper with
-// no tab open, or Android, by what each allows. helper is the keys' status
-// from the service, which says whether a helper that shows notifications
-// runs.
+// whereTheyShow is what the settings say of where the member's
+// notifications show, each a [kind, line], only what calls for one (M22.3):
+// a browser or Android that won't show them, and the desktop's helper
+// showing them with no tab open. helper is the keys' status from the
+// service, which says whether a helper that shows notifications runs.
 export function whereTheyShow(st, browser, helper) {
-    if (st?.shell) {
-        return st.shell.allowed
-            ? ['Android shows them, unless Dens is open on that channel.']
-            : ["Android doesn't let Dens show notifications.", "Allow them for Dens in Android's settings, under Apps."];
-    }
-    const here = {
-        granted: 'A Dens tab shows them, unless it shows that channel.',
-        denied: 'This browser blocks them; allow them in its site settings.',
-        default: 'This browser asks to show them as you turn one on.',
-        unsupported: "This browser can't show notifications.",
-    }[browser];
-    const away = helper?.helper && helper.notifies
-        ? 'With no Dens tab open, your desktop shows them.'
-        : "With no tab open, Dens's helper shows them on your desktop.";
-    return [here, away];
+    if (st?.shell) return st.shell.allowed ? [] : [['warning', "Android doesn't let Dens show notifications. Allow them in Android's settings, under Apps."]];
+    const lines = [];
+    if (browser === 'denied') lines.push(['warning', 'This browser blocks them; allow them in its site settings.']);
+    if (browser === 'unsupported') lines.push(['warning', "This browser can't show notifications."]);
+    if (helper?.helper && helper.notifies) lines.push(['success', 'With no Dens tab open, your desktop shows them.']);
+    return lines;
 }

@@ -9,7 +9,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Picture, usePicture } from './animations.js';
 import { APIError, pageHeaders, reloadIfStale } from './api.js';
-import { useBackdrop } from './components.jsx';
+import { buttonClass, useBackdrop } from './components.jsx';
 import { PlayIcon } from './icons.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { canCopy, followUpload } from './copier.js';
@@ -337,7 +337,7 @@ function VideoTile({ denID, file, box }) {
             {failed ? (
                 <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 p-2 text-center text-xs text-white">
                     <span>{failed}</span>
-                    <a class="btn btn-xs" href={downloadURL(denID, file)} download={file.name}>Download</a>
+                    <a class={buttonClass('secondary', 'xs')} href={downloadURL(denID, file)} download={file.name}>Download</a>
                 </div>
             ) : (
                 (!started || (waiting && !paused)) && (
@@ -685,7 +685,7 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
                 {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
                 <span class="min-w-0 flex-1 truncate md:flex-initial" title={file.name}>{file.name}</span>
                 <span class="shrink-0 cursor-default select-none text-white/60">{formatSize(file.size)}</span>
-                <a class="btn btn-sm shrink-0" href={downloadURL(denID, file)} download={file.name}>Download</a>
+                <a class={`${buttonClass('secondary')} shrink-0`} href={downloadURL(denID, file)} download={file.name}>Download</a>
                 <button ref={close} type="button" class="btn btn-ghost btn-sm shrink-0 text-white" onClick={onClose}>Close</button>
             </div>
         </div>

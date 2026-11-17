@@ -7,7 +7,7 @@
 
 import { useState } from 'preact/hooks';
 import { api } from './api.js';
-import { ErrorText, useAction } from './components.jsx';
+import { Actions, Button, ErrorText, Notice, useAction } from './components.jsx';
 import { noticeKey, restartDens, updateNotice } from './flatpak.js';
 
 const DISMISSED = 'DENS_UPDATE_DISMISSED';
@@ -42,21 +42,22 @@ export function UpdateNotice({ status, dismissible = false }) {
         setDismissed(key);
     };
     return (
-        <div role="status" class="alert alert-info flex flex-wrap" data-update-notice>
+        <Notice kind="info" data-update-notice>
             <span>
                 {notice.text}
-                {notice.command && <> <code>{notice.command}</code></>}
+                {notice.command && <> <code class="rounded bg-base-300 px-1">{notice.command}</code></>}
             </span>
-            <span class="flex gap-2">
-                {notice.action && (
-                    <button type="button" class="btn btn-sm" disabled={act.busy} onClick={go}>
-                        {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                        {act.busy ? (notice.action === 'install' ? 'Opening the installer…' : 'Restarting…') : notice.label}
-                    </button>
-                )}
-                {dismissible && <button type="button" class="btn btn-ghost btn-sm" onClick={dismiss}>Dismiss</button>}
-            </span>
+            {(notice.action || dismissible) && (
+                <Actions>
+                    {notice.action && (
+                        <Button busy={act.busy} onClick={go}>
+                            {act.busy ? (notice.action === 'install' ? 'Opening the installer…' : 'Restarting…') : notice.label}
+                        </Button>
+                    )}
+                    {dismissible && <Button kind="quiet" onClick={dismiss}>Dismiss</Button>}
+                </Actions>
+            )}
             <ErrorText message={act.error} />
-        </div>
+        </Notice>
     );
 }

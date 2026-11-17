@@ -10,8 +10,8 @@ import { HoverRow } from './animations.js';
 import { Avatar, DenContext } from './avatar.jsx';
 import { EmojiContext, useDenEmoji } from './denemoji.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
-import { openManage } from './dialogs.js';
-import { Tip, useNotifications } from './components.jsx';
+import { openManage, openSettings } from './dialogs.js';
+import { Actions, Button, ErrorText, Notice, StatusText, Tip, useNotifications } from './components.jsx';
 import { BellIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, PlusIcon, ShieldIcon, SpeakerIcon } from './icons.jsx';
 import { MenuButton, RowMenu, ownsMenu, rightClick, underOf } from './menus.jsx';
 import { compareIds, unread } from './ids.js';
@@ -35,7 +35,6 @@ import { EventsPane, EventsRow, showEvent } from './denevents.jsx';
 import { RelayBar } from './relay.jsx';
 import { createPress, useCoarse } from './touch.js';
 import { DockedPlayer } from './player.jsx';
-import { openSettings } from './settings.jsx';
 import { UpdateNotice } from './update.jsx';
 import { applyCalls, joinCall } from './voice.js';
 import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, channelMoves, groupDrop, groupMoves, moveTargets } from './drag.js';
@@ -397,7 +396,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     // The den's emoji, for every text the den's page shows (M15.2).
     const emoji = useDenEmoji(denID, view?.emoji, view?.emoji_limits);
 
-    if (error && !view) return <div class="p-6"><div role="alert" class="alert alert-error">{error}</div></div>;
+    if (error && !view) return <div class="p-6"><ErrorText message={error} /></div>;
     if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
 
     if (channel) store(LAST_CHANNEL + denID, channel.id);
@@ -599,7 +598,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     </Tip>
                                 )}
                             </div>
-                            {live && view.state !== 'connected' && <p class="text-xs text-warning">{view.error || 'Reconnecting…'}</p>}
+                            {live && view.state !== 'connected' && <StatusText kind="warning" class="mt-1">{view.error || 'Reconnecting…'}</StatusText>}
                         </div>
                         <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id}
                             add={tab === 'dms' ? (view.has_group_dms && !gone && { label: 'New group', run: () => setDialog({ kind: 'new-group' }) })
@@ -627,26 +626,26 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                     <section data-pane="chan" inert={!!at && at !== 'chan'}
                         class="relative flex w-full min-w-0 shrink-0 snap-start snap-always flex-col md:w-auto md:flex-1 md:shrink">
                         {gone && (
-                            <div role="status" class="alert alert-warning alert-soft m-2 flex flex-wrap">
+                            <Notice kind="warning" class="m-2">
                                 <span>{closed}</span>
-                                {view.state === 'revoked' && (
-                                    <button type="button" class="btn btn-primary btn-sm" onClick={() => navigate('/')}>Sign in again</button>
-                                )}
-                                <button type="button" class="btn btn-sm" onClick={forget}>Remove from this device</button>
-                            </div>
+                                <Actions>
+                                    {view.state === 'revoked' && <Button kind="primary" onClick={() => navigate('/')}>Sign in again</Button>}
+                                    <Button kind="danger" onClick={forget}>Remove from this device</Button>
+                                </Actions>
+                            </Notice>
                         )}
                         {!narrow && notices}
                         {newDevice && !gone && (
-                            <div role="status" class="alert alert-info alert-soft m-2 flex flex-wrap">
+                            <Notice kind="info" class="m-2">
                                 <span>
                                     A new device signed in to your account here: <span class="font-medium">{newDevice.label}</span>. If it wasn't
                                     you, change your den password, which signs out every other device.
                                 </span>
-                                <span class="flex gap-2">
-                                    <button type="button" class="btn btn-sm" onClick={() => openManage(denID, 'password')}>Change password</button>
-                                    <button type="button" class="btn btn-ghost btn-sm" onClick={() => setNewDevice(null)}>Dismiss</button>
-                                </span>
-                            </div>
+                                <Actions>
+                                    <Button onClick={() => openSettings('password', denID)}>Change password</Button>
+                                    <Button kind="quiet" onClick={() => setNewDevice(null)}>Dismiss</Button>
+                                </Actions>
+                            </Notice>
                         )}
                         {channel ? (
                             <>
@@ -884,7 +883,7 @@ function UserPanel({ me, online, onEdit }) {
                     <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
                 </span>
             </HoverRow>
-            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="App settings" title="App settings" onClick={() => openSettings()}>
+            <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Settings" title="Settings" onClick={() => openSettings()}>
                 <CogIcon />
             </button>
         </div>
@@ -1329,7 +1328,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     </div>
                 );
             })}
-            {dragError && <p class="px-2 text-xs text-error" role="alert">{dragError}</p>}
+            {dragError && <StatusText kind="error" role="alert" class="px-2">{dragError}</StatusText>}
             {shown && <RowMenu at={menu.at} label={shown.label} title={shown.title} items={shown.items} back={menu.back} onClose={() => setMenu(null)} />}
         </nav>
     );

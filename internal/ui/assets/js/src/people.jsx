@@ -5,7 +5,9 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow, Picture, Shown, usePicture } from './animations.js';
 import { Avatar } from './avatar.jsx';
-import { Choices, ColorField, ErrorText, Field, HoverTip, LongName, SubmitButton, TextInput, Tip, day, useAction, useLater } from './components.jsx';
+import {
+    Actions, Button, Choices, ColorField, ErrorText, Field, HoverTip, LongName, StatusText, SubmitButton, TextInput, Tip, buttonClass, day, useAction, useLater,
+} from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './files.jsx';
 import { CalendarIcon, CrownIcon, EyeIcon, ShieldIcon } from './icons.jsx';
@@ -170,7 +172,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
         );
     return (
         <nav aria-label="Members" class="flex flex-col gap-2 p-2">
-            {act.error && <p role="alert" class="px-2 text-xs text-error">{act.error}</p>}
+            {act.error && <StatusText kind="error" size="xs" role="alert" class="px-2">{act.error}</StatusText>}
             {section('Online', on, false)}
             {section('Offline', off, true)}
             {opened && narrow && (
@@ -193,18 +195,23 @@ export function MemberList({ denID, members, online, card, onProfile }) {
 // card (M17.5). In a panel the bio runs its full length, which the panel
 // scrolls. Its pictures play while it shows, since the member opened it
 // (M15.1).
-function Profile({ denID, member, me, online, panel = false, verified = false, actions, children }) {
-    const [bio, setBio] = useState(null);
-    const [badges, setBadges] = useState([]);
+function Profile({ denID, member, me, online, panel = false, verified = false, actions, fixed, children }) {
+    const [fetched, setBio] = useState(null);
+    const [badgesFetched, setBadges] = useState([]);
     const [error, setError] = useState('');
+    // fixed, as Edit profile's preview of the card, holds the bio and
+    // badges as they're being edited, which nothing fetches.
+    const bio = fixed ? fixed.bio : fetched;
+    const badges = fixed ? fixed.badges : badgesFetched;
     // A bio usually arrives at once; the dots show only if it's slow.
     const slow = useLater(bio === null && !error, 1000);
     useEffect(() => {
+        if (fixed) return;
         api.get(`/api/dens/${denID}/members/${member.id}`).then((p) => {
             setBio(p.bio || '');
             setBadges(p.badges || []);
         }, (e) => setError(e.message));
-    }, [member.id, member.display_name]);
+    }, [member.id, member.display_name, !!fixed]);
     const left = !!member.left_at;
     const shown = shownBadges(badges);
     const ring = panel ? 'bg-base-200' : 'bg-base-100';
@@ -276,7 +283,7 @@ export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAdd
                     is (M16.3). */}
                 {onAddPeople && (
                     <div>
-                        <button type="button" class="btn btn-sm" data-add-people onClick={onAddPeople}>Add people</button>
+                        <Button data-add-people onClick={onAddPeople}>Add people</Button>
                     </div>
                 )}
                 {expiry && <ExpirySetting denID={denID} channel={expiry} />}
@@ -292,8 +299,8 @@ function CompareCodes({ member, kept, onCompare }) {
     if (!kept || !member.identity || member.left_at) return null;
     return (
         <div class="flex flex-col items-start gap-1">
-            {kept.held && <p class="text-sm text-warning">Their keys changed since you compared codes.</p>}
-            <button type="button" class="btn btn-sm" onClick={() => onCompare(member)}>{kept.verified ? 'Compare codes again' : 'Compare codes'}</button>
+            {kept.held && <StatusText kind="warning">Their keys changed since you compared codes.</StatusText>}
+            <Button onClick={() => onCompare(member)}>{kept.verified ? 'Compare codes again' : 'Compare codes'}</Button>
         </div>
     );
 }
@@ -320,13 +327,13 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
     const more = cardMenu({ self, role, member, kept }).map((item) => ({ ...item, disabled: act.busy && item.key !== 'compare', run: run[item.key] }));
     const actions = self ? (
         <>
-            <button type="button" class="btn btn-primary btn-sm" onClick={onEdit}>Edit profile</button>
-            {onNotes && <button type="button" class="btn btn-sm" data-own-notes onClick={onNotes}>Notes</button>}
+            <Button kind="primary" onClick={onEdit}>Edit profile</Button>
+            {onNotes && <Button data-own-notes onClick={onNotes}>Notes</Button>}
         </>
     ) : (
         (!left || more.length > 0) && (
             <>
-                {!left && <button type="button" class="btn btn-primary btn-sm" onClick={() => onMessage(member)}>Message</button>}
+                {!left && <Button kind="primary" onClick={() => onMessage(member)}>Message</Button>}
                 {more.length > 0 && <MoreMenu items={more} />}
             </>
         )
@@ -347,7 +354,7 @@ export function ProfileCard({ denID, member, me, role, online, kept, onClose, on
 function MoreMenu({ items }) {
     return (
         <MenuButton label="More actions" items={items}
-            button={{ class: 'btn btn-sm btn-square', title: 'More', 'data-profile-more': true, children: '⋯' }} />
+            button={{ class: `${buttonClass('quiet')} btn-square`, title: 'More', 'data-profile-more': true, children: '⋯' }} />
     );
 }
 
@@ -423,8 +430,11 @@ export function Banner({ denID, image, edge = false }) {
 // EditProfile changes the member's own display name, bio and pictures in
 // this den, and which of their badges their card shows (M17.6), which
 // takes at once, as a picture does; and, in a den that keeps them,
-// nameStyles, how their name shows to everyone.
+// nameStyles, how their name shows to everyone. Save stays at its foot,
+// and a wide window shows the card beside the fields as others will see
+// it, changing as they do (M22.3).
 export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) {
+    const narrow = useNarrow();
     const [name, setName] = useState(me.display_name);
     const [style, setStyle] = useState(() => cleanStyle(me.name_style) || {});
     const [bio, setBio] = useState(null);
@@ -492,72 +502,79 @@ export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) 
         });
     }
 
+    const card = { ...me, display_name: name.trim() || me.display_name, name_style: nameStyles ? style : me.name_style };
     return (
-        <Dialog title="Your profile in this den" onClose={onClose}>
+        <Dialog title="Your profile in this den" onClose={onClose} wide foot={(
+            <Actions>
+                <SubmitButton busy={save.busy} form="edit-profile">Save</SubmitButton>
+                <Button kind="quiet" onClick={onClose}>Cancel</Button>
+            </Actions>
+        )}>
             <Shown>
-                <p class="text-sm text-base-content/70">Each den has its own profile.</p>
-                <form class="flex flex-col gap-2" onSubmit={submit}>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">Picture</legend>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <Avatar member={me} size="lg" />
-                            <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickAvatar.current?.click()}>
-                                {me.avatar?.id ? 'Change' : 'Add a picture'}
-                            </button>
-                            {me.avatar?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('avatar')}>Remove</button>}
-                        </div>
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">Banner</legend>
-                        {me.banner?.id ? <Banner denID={denID} image={me.banner} /> : <p class="label whitespace-normal">A wide picture across the top of your profile.</p>}
-                        <div class="flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-sm" disabled={picture.busy} onClick={() => pickBanner.current?.click()}>
-                                {me.banner?.id ? 'Change' : 'Add a banner'}
-                            </button>
-                            {me.banner?.id && <button type="button" class="btn btn-ghost btn-sm" disabled={picture.busy} onClick={() => removePicture('banner')}>Remove</button>}
-                        </div>
-                        <input ref={pickAvatar} type="file" accept="image/*" class="hidden" data-picture="avatar" onChange={pick('avatar')} />
-                        <input ref={pickBanner} type="file" accept="image/*" class="hidden" data-picture="banner" onChange={pick('banner')} />
-                        {!cropping && <ErrorText message={picture.error} />}
-                    </fieldset>
-                    {badges.length > 0 && (
+                <div class="flex flex-col gap-6 md:flex-row md:items-start">
+                    <form id="edit-profile" class="flex min-w-0 flex-1 flex-col gap-2" onSubmit={submit}>
+                        <p class="text-sm text-base-content/70">Each den has its own profile.</p>
                         <fieldset class="fieldset">
-                            <legend class="fieldset-legend">Badges</legend>
-                            <ul class="flex flex-wrap gap-1" data-edit-badges>
-                                {badges.map((b) => (
-                                    <li key={b.event_id} class="flex">
-                                        <BadgeToggle denID={denID} badge={b} busy={turn.busy} onToggle={(hidden) => toggle(b, hidden)} />
-                                    </li>
-                                ))}
-                            </ul>
-                            <p class="label whitespace-normal">Your profile shows those with the eye open.</p>
-                            <ErrorText message={turn.error} />
+                            <legend class="fieldset-legend text-sm font-normal">Picture</legend>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <Avatar member={me} size="lg" />
+                                <Button disabled={picture.busy} onClick={() => pickAvatar.current?.click()}>{me.avatar?.id ? 'Change' : 'Add a picture'}</Button>
+                                {me.avatar?.id && <Button kind="quiet" disabled={picture.busy} onClick={() => removePicture('avatar')}>Remove</Button>}
+                            </div>
                         </fieldset>
+                        <fieldset class="fieldset">
+                            <legend class="fieldset-legend text-sm font-normal">Banner</legend>
+                            {me.banner?.id ? <Banner denID={denID} image={me.banner} /> : <p class="text-sm text-base-content/70">A wide picture across the top of your profile.</p>}
+                            <div class="flex flex-wrap gap-2">
+                                <Button disabled={picture.busy} onClick={() => pickBanner.current?.click()}>{me.banner?.id ? 'Change' : 'Add a banner'}</Button>
+                                {me.banner?.id && <Button kind="quiet" disabled={picture.busy} onClick={() => removePicture('banner')}>Remove</Button>}
+                            </div>
+                            <input ref={pickAvatar} type="file" accept="image/*" class="hidden" data-picture="avatar" onChange={pick('avatar')} />
+                            <input ref={pickBanner} type="file" accept="image/*" class="hidden" data-picture="banner" onChange={pick('banner')} />
+                            {!cropping && <ErrorText message={picture.error} />}
+                        </fieldset>
+                        {badges.length > 0 && (
+                            <fieldset class="fieldset">
+                                <legend class="fieldset-legend text-sm font-normal">Badges</legend>
+                                <ul class="flex flex-wrap gap-1" data-edit-badges>
+                                    {badges.map((b) => (
+                                        <li key={b.event_id} class="flex">
+                                            <BadgeToggle denID={denID} badge={b} busy={turn.busy} onToggle={(hidden) => toggle(b, hidden)} />
+                                        </li>
+                                    ))}
+                                </ul>
+                                <p class="text-sm text-base-content/70">Your profile shows those with the eye open.</p>
+                                <ErrorText message={turn.error} />
+                            </fieldset>
+                        )}
+                        <Field label="Display name">
+                            <TextInput value={name} onInput={setName} required maxlength="32" />
+                        </Field>
+                        {nameStyles && <NameStyleFields me={me} name={name} style={style} onChange={setStyle} />}
+                        <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
+                            {/* The form shows at once; only the bio waits for the den. */}
+                            <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
+                                placeholder={bio === null ? 'Loading…' : ''} onInput={(e) => setBio(e.currentTarget.value)}></textarea>
+                        </Field>
+                        {length > MAX_BIO - 50 && (
+                            <p class={`cursor-default select-none text-right text-xs ${length > MAX_BIO ? 'text-error' : 'text-base-content/60'}`}>
+                                {length} / {MAX_BIO}
+                            </p>
+                        )}
+                        <ErrorText message={save.error} />
+                        {storage && limits?.member_storage > 0 && (
+                            <p class="cursor-default select-none text-xs text-base-content/60">
+                                Your files here take {formatSize(storage.used)} of the {formatSize(limits.member_storage)} each member can use.
+                            </p>
+                        )}
+                    </form>
+                    {/* The card as others will see it, held in view while the fields scroll. */}
+                    {!narrow && (
+                        <aside class="sticky top-0 w-80 shrink-0 overflow-hidden rounded-box border border-base-300" aria-label="Your profile, as others see it" data-profile-preview>
+                            <Profile denID={denID} member={card} me={me} fixed={{ bio: bio ?? '', badges }} />
+                        </aside>
                     )}
-                    <Field label="Display name">
-                        <TextInput value={name} onInput={setName} required maxlength="32" />
-                    </Field>
-                    {nameStyles && <NameStyleFields me={me} name={name} style={style} onChange={setStyle} />}
-                    <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
-                        {/* The form shows at once; only the bio waits for the den. */}
-                        <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
-                            placeholder={bio === null ? 'Loading…' : ''} onInput={(e) => setBio(e.currentTarget.value)}></textarea>
-                    </Field>
-                    {length > MAX_BIO - 50 && (
-                        <p class={`cursor-default select-none text-right text-xs ${length > MAX_BIO ? 'text-error' : 'text-base-content/60'}`}>
-                            {length} / {MAX_BIO}
-                        </p>
-                    )}
-                    <ErrorText message={save.error} />
-                    <div>
-                        <SubmitButton busy={save.busy}>Save</SubmitButton>
-                    </div>
-                    {storage && limits?.member_storage > 0 && (
-                        <p class="cursor-default select-none text-xs text-base-content/60">
-                            Your files here take {formatSize(storage.used)} of the {formatSize(limits.member_storage)} each member can use.
-                        </p>
-                    )}
-                </form>
+                </div>
                 {cropping && (
                     <CropDialog file={cropping.file} shape={cropping.shape} busy={picture.busy} error={picture.error}
                         onCrop={savePicture} onClose={() => setCropping(null)} />
@@ -586,7 +603,7 @@ function NameStyleFields({ me, name, style, onChange }) {
     const tile = 'flex min-h-9 cursor-pointer items-center justify-center rounded-field bg-base-200 px-2 py-1 text-center hover:bg-base-300 has-[:checked]:ring-2 has-[:checked]:ring-primary has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary pointer-coarse:min-h-11';
     return (
         <fieldset class="fieldset" data-name-style>
-            <legend class="fieldset-legend">Name style</legend>
+            <legend class="fieldset-legend text-sm font-normal">Name style</legend>
             <div class="flex min-w-0 items-center gap-2 rounded-box bg-base-200 px-3 py-2 text-base" data-name-preview>
                 <Avatar member={me} size="sm" />
                 <Name member={{ ...me, display_name: name.trim() || me.display_name, name_style: style }} always class="truncate font-semibold" />
@@ -671,13 +688,10 @@ export function RemoveMember({ denID, member, onClose }) {
                         : 'They can come back if someone invites them again.'}
                 </p>
                 <ErrorText message={act.error} />
-                <div class="flex gap-2">
-                    <button type="submit" class="btn btn-error btn-sm" disabled={act.busy}>
-                        {act.busy && <span class="loading loading-spinner loading-sm"></span>}
-                        {ban ? 'Ban' : 'Remove'}
-                    </button>
-                    <button type="button" class="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-                </div>
+                <Actions>
+                    <SubmitButton kind="danger" filled busy={act.busy}>{ban ? 'Ban' : 'Remove'}</SubmitButton>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
             </form>
         </Dialog>
     );
