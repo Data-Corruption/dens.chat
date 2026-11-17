@@ -67,6 +67,18 @@ export function inApp(doc = globalThis.document) {
     return doc?.getElementById?.('app')?.dataset?.inApp === 'true';
 }
 
+// markURL is Dens's mark as the page's shell carries it, the tab's icon
+// without its dot, or '' where it carries none.
+export function markURL(doc = globalThis.document) {
+    return doc?.getElementById?.('app')?.dataset?.mark || '';
+}
+
+// canSaveFile says whether a file the page makes, as the recovery codes',
+// saves: Android's app saves only what the service serves.
+export function canSaveFile(doc = globalThis.document) {
+    return !inApp(doc);
+}
+
 // canPopOut says whether the browser opens a share in a window of its own
 // that the member can move to another monitor (M11). Phones' browsers and
 // Android's WebView open no such window, and capture no screen either,

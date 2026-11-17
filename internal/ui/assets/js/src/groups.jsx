@@ -11,6 +11,8 @@ import { Avatar } from './avatar.jsx';
 import { Actions, Button, DocsLink, ErrorText, Field, Notice, StatusText, SubmitButton, TextInput, useAction } from './components.jsx';
 import { LockIcon } from './icons.jsx';
 import { Dialog } from './manage.jsx';
+import { RowMenu, ownsMenu, rightClick, underOf } from './menus.jsx';
+import { useCoarse } from './touch.js';
 import { changeText } from './private.js';
 import { VerifiedMark } from './private.jsx';
 import { ExpirySetting } from './disappearing.jsx';
@@ -31,13 +33,36 @@ export function GroupIcon({ size = 'h-8 w-8' }) {
     );
 }
 
+/** removerNote says, under the name of the member who removes others, the
+    first of them, why they do: they made the group, as its first change
+    says, or else they've been in it longest */
+export function removerNote(group, remover) {
+    const made = (group?.changes || []).find((c) => c.n === 1);
+    return made && made.kind === 'made' && made.by === remover ? 'Made the group' : 'Can remove members';
+}
+
+/** memberItems lists a group member's menu: comparing codes, where their
+    Dens publishes an identity, and for the member who removes others,
+    removing them, unless the group's changes don't check out */
+export function memberItems({ self, member, kept, removes, broken }) {
+    if (self) return [];
+    return [
+        member?.identity && { key: 'compare', label: kept?.verified ? 'Compare codes again' : 'Compare codes', icon: 'compare' },
+        removes && !broken && { key: 'remove', label: 'Remove from the group', icon: 'leave', danger: true },
+    ].filter(Boolean);
+}
+
 // GroupPanel shows a group beside it, where a DM shows its other member's
 // profile: its name, which any member changes, its members in the order
-// they joined, each with their mark or Compare, and Remove for the member
-// who removes others, the first of them; then Add people and Leave, and
-// its time, which any member sets (M16.4), where expiry gives the group.
+// they joined, each a picture and a name, with their verified mark, and a
+// line under the name of the one who removes others; comparing codes and
+// removing are each row's ⋯ and right click (M22.4). Then Add people and
+// Leave, and its time, which any member sets (M16.4), where expiry gives
+// the group.
 export function GroupPanel({ denID, view, channel, group, title, members, online, onCompare, onProfile, onAdd, onRename, expiry }) {
     const act = useAction();
+    const touch = useCoarse();
+    const [menu, setMenu] = useState(null);
     const me = view.me.id;
     const list = group?.members || [];
     const remover = list[0];
@@ -63,23 +88,38 @@ export function GroupPanel({ denID, view, channel, group, title, members, online
                     const self = id === me;
                     const kept = view.identities?.[id];
                     const name = m ? m.display_name : 'Unknown member';
+                    const run = {
+                        compare: () => onCompare(m),
+                        remove: () => act.run(() => api.del(`/api/dens/${denID}/group-dms/${channel.id}/members/${id}`)),
+                    };
+                    const items = memberItems({ self, member: m, kept, removes: me === remover, broken: !!group?.broken })
+                        .map((item) => ({ ...item, disabled: item.key === 'remove' && act.busy, run: run[item.key] }));
+                    const open = menu?.id === id;
+                    const rightClicks = items.length && !touch ? {
+                        onContextMenu: (e) => {
+                            if (!ownsMenu(e.target, getSelection(), e.currentTarget)) return;
+                            e.preventDefault();
+                            setMenu({ id, at: rightClick(e, e.currentTarget), back: e.currentTarget.querySelector('button') });
+                        },
+                    } : {};
                     return (
-                        <HoverRow as="li" key={id} class="flex items-center gap-1" data-member={id}>
-                            <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11"
-                                onClick={() => m && onProfile(m)}>
+                        <HoverRow as="li" key={id} class="group relative flex items-center gap-1" data-member={id} {...rightClicks}>
+                            <button type="button" class={`flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left hover:bg-base-300/60 pointer-coarse:min-h-11 ${open ? 'bg-base-300/60' : ''}`}
+                                onClick={(e) => m && onProfile(m, e.currentTarget)}>
                                 <Avatar member={m} size="sm" online={m && !m.left_at ? online.has(id) : undefined} />
-                                <span class="min-w-0 truncate">{self ? `${name} (you)` : name}</span>
-                                {id === remover && <span class="badge badge-ghost badge-xs shrink-0" title="Removes members: they made the group, or have been in it longest">Removes</span>}
+                                <span class="min-w-0 leading-tight">
+                                    <span class="block truncate" data-member-name>{self ? `${name} (you)` : name}</span>
+                                    {id === remover && <span class="block truncate text-xs text-base-content/60" data-remover>{removerNote(group, remover)}</span>}
+                                </span>
                             </button>
                             {!self && kept?.verified && <VerifiedMark id={`group-verified-${channel.id}-${id}`} name={name} />}
-                            {!self && m?.identity && !kept?.verified && (
-                                <Button kind="quiet" size="xs" onClick={() => onCompare(m)}>Compare</Button>
+                            {items.length > 0 && (
+                                <button type="button" class="btn btn-ghost btn-xs relative opacity-0 touch-room focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+                                    aria-label={`Options for ${name}`} aria-haspopup="menu" aria-expanded={open} data-member-more
+                                    onClick={(e) => setMenu(open ? null : { id, at: underOf(e.currentTarget), back: e.currentTarget })}>⋯</button>
                             )}
-                            {me === remover && !self && !group?.broken && (
-                                <Button kind="danger" size="xs" aria-label={`Remove ${name} from the group`} disabled={act.busy}
-                                    onClick={() => act.run(() => api.del(`/api/dens/${denID}/group-dms/${channel.id}/members/${id}`))}>
-                                    Remove
-                                </Button>
+                            {open && (
+                                <RowMenu at={menu.at} label={`Options for ${name}`} title={name} items={items} back={menu.back} onClose={() => setMenu(null)} />
                             )}
                         </HoverRow>
                     );

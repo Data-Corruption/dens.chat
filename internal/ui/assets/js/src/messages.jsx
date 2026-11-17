@@ -18,7 +18,7 @@ import { onEvent } from './events.js';
 import { Avatar } from './avatar.jsx';
 import { backgroundStyle } from './background.js';
 import { copyText } from './clipboard.js';
-import { Actions, Button, ErrorText, Notice, PLAIN, StatusText, Tip, buttonClass, dayTime, useAction, useBackground } from './components.jsx';
+import { Actions, Button, DocsLink, ErrorText, Notice, PLAIN, StatusText, SubmitButton, Tip, buttonClass, dayTime, useAction, useBackground } from './components.jsx';
 import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmaller, sentLabel } from './compare.jsx';
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
@@ -39,7 +39,7 @@ import { QuickReactions, ReactionPicker, Reactions, RemoveReactions, useChips } 
 import { keptFor } from './retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from './manage.jsx';
-import { MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from './menus.jsx';
+import { MENU, MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from './menus.jsx';
 import { Name } from './names.jsx';
 import { useNarrow } from './nav.js';
 import { RoleMark, isStaff, rank } from './people.jsx';
@@ -51,7 +51,7 @@ import { GroupGate, GroupLine } from './groups.jsx';
 import { ExpiryLine } from './disappearing.jsx';
 import { Sheet, SheetRow } from './sheet.jsx';
 import { createPress, useCoarse } from './touch.js';
-import { SmileyIcon, StatusIcon, TimerIcon } from './icons.jsx';
+import { MenuIcon, PlusIcon, SmileyIcon, StatusIcon, TimerIcon } from './icons.jsx';
 import { setFoot } from './voice.jsx';
 import { Videos } from './youtube.jsx';
 import { Games } from './steam.jsx';
@@ -171,6 +171,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
+    // sharing is the member's own message whose other editors they're
+    // picking, from its ⋯ (M22.4).
+    const [sharing, setSharing] = useState(null);
     const [error, setError] = useState('');
     // files are the attachments the member is getting ready to send.
     const [files, setFiles] = useState([]);
@@ -787,6 +790,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 editing={editing === m.id}
                 canReply={!closed && canSend}
                 canEdit={!m.locked && !m.poll && (m.author_id === me.id || (m.editors || []).includes(me.id))}
+                canShare={!notes && !m.locked && !m.poll && m.author_id === me.id}
                 canDelete={m.author_id === me.id || (!sealed && rank(role) > rank(members.get(m.author_id)?.role))}
                 link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
                 menuOpen={menu?.id === m.id}
@@ -811,6 +815,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 onMenu={(open, at) => setMenu(open ? { id: m.id, at } : null)}
                 onReply={() => setReplyTo(m)}
                 onEdit={() => setEditing(m.id)}
+                onEditors={() => setSharing(m.id)}
                 onEditDone={() => setEditing(null)}
                 onDelete={() => setDeleting(m)}
                 onJump={jumpTo}
@@ -956,6 +961,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             {deleting && (
                 <DeleteDialog denID={denID} m={deleting} author={members.get(deleting.author_id)} me={me} onClose={() => setDeleting(null)} />
             )}
+            {sharing && byId.has(sharing) && (
+                <EditorsDialog denID={denID} channelID={channel.id} m={byId.get(sharing)} candidates={candidates} onClose={() => setSharing(null)} />
+            )}
             {reacting && byId.has(reacting.id) && (
                 <ReactingPicker m={byId.get(reacting.id)} me={me} anchor={reacting.anchor} sheet={narrow}
                     onPick={(item, chips) => pickReaction(reacting.id, item, chips)} onClose={() => setReacting(null)} />
@@ -1008,7 +1016,7 @@ function Quoted({ text, locked, me }) {
 // later message, under its first's name; line is Compact's row, each a
 // line of its own (M17.2). children go under its files, as Appearance's
 // preview puts its photo.
-export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, candidates, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
+export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1039,6 +1047,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         canReply && { key: 'reply', label: 'Reply', icon: 'reply', run: onReply },
         canReact && { key: 'react', label: 'Add reaction', icon: 'react', run: (from) => onReactPick(from) },
         canEdit && { key: 'edit', label: 'Edit', icon: 'edit', run: onEdit },
+        canShare && { key: 'editors', label: 'Let others edit', icon: 'people', run: onEditors },
         !m.locked && m.text.trim() && { key: 'copy', label: 'Copy text', icon: 'copy', run: () => copy(m.text, 'Text copied') },
         link && { key: 'link', label: 'Copy link', icon: 'link', run: () => copy(link, 'Link copied') },
         canRemoveReactions && { key: 'unreact', label: 'Remove reactions', icon: 'unreact', run: onRemoveReactions },
@@ -1076,7 +1085,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
     // whose box keeps the line's baseline.
     const authorName = (
         <span class="flex items-center gap-1">
-            <button type="button" class="font-semibold hover:underline" onClick={() => author && onProfile(author)}><Name member={author} /></button>
+            <button type="button" class="font-semibold hover:underline" onClick={(e) => author && onProfile(author, e.currentTarget)}><Name member={author} /></button>
             {marks && <RoleMark role={author?.role} />}
         </span>
     );
@@ -1097,7 +1106,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
             <>
                 {lead}
                 <div class={line ? 'clear-both' : ''}>
-                    <EditBox m={m} denID={denID} channelID={channelID} mine={m.author_id === me.id} candidates={candidates} touch={touch} onDone={onEditDone} />
+                    <EditBox m={m} denID={denID} channelID={channelID} touch={touch} onDone={onEditDone} />
                 </div>
             </>
         );
@@ -1173,7 +1182,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
                                 {clock(m.created_at)}
                             </span>
                         ) : (
-                            <button type="button" class="mt-0.5 rounded-full" onClick={() => author && onProfile(author)} aria-label={`${name(author)}'s profile`}>
+                            <button type="button" class="mt-0.5 rounded-full" onClick={(e) => author && onProfile(author, e.currentTarget)} aria-label={`${name(author)}'s profile`}>
                                 <Avatar member={author} />
                             </button>
                         )}
@@ -1192,7 +1201,8 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
                 </div>
             </div>
             {!editing && actions.length > 0 && (
-                <MessageMenu open={menuOpen} at={menuAt} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} onReact={canReact ? onReactPick : null} />
+                <MessageMenu open={menuOpen} at={menuAt} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} onReact={canReact ? onReactPick : null}
+                    onReply={canReply ? onReply : null} onEdit={canEdit && m.author_id === me.id ? onEdit : null} />
             )}
             {!editing && menuOpen && narrow && actions.length > 0 && (
                 <Sheet label="Message actions" title={<MessageHeading m={m} author={author} editorNames={editorNames} />} onClose={() => onMenu(false)}>
@@ -1246,15 +1256,15 @@ function Disappears({ at }) {
     );
 }
 
-// MessageMenu is a message's ⋯, which shows on hover or focus, for a mouse
-// and the keyboard, and the menu of what the member may do with the
-// message (M11), which a touch screen's long press opens without it
-// (M13.2), and a right click at the pointer, at. Under the ⋯, the
-// menu opens toward whichever side of the list has room for it. Arrow keys
-// move through it, and Escape, Tab or a press elsewhere closes it. On the
-// phone layout, narrow, the ⋯ opens the message's sheet instead. copied
-// says what the member just copied.
-function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact }) {
+// MessageMenu is a message's hover bar, which shows on hover or focus, for
+// a mouse and the keyboard: react, Reply, Edit on the member's own (M22.4),
+// then ⋯, the menu of what the member may do with the message (M11), which
+// a touch screen's long press opens without it (M13.2), and a right click
+// at the pointer, at. Under the ⋯, the menu opens toward whichever side of
+// the list has room for it. Arrow keys move through it, and Escape, Tab or
+// a press elsewhere closes it. On the phone layout, narrow, the ⋯ opens the
+// message's sheet instead. copied says what the member just copied.
+function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact, onReply, onEdit }) {
     const box = useRef(null);
     const button = useRef(null);
     const list = useRef(null);
@@ -1287,28 +1297,41 @@ function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact }) {
         return button.current;
     }
     const hidden = 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:opacity-100';
-    // An open menu stands over the rows below it, and their ⋯.
+    const tool = 'btn btn-ghost btn-xs btn-square h-7 w-7';
+    // An open menu stands over the rows below it, and their bar. A touch
+    // screen has none of the bar: its long press opens the sheet.
     return (
-        <div ref={box} class={`absolute -top-3 right-2 flex items-center gap-1 ${dropdown ? 'z-20' : 'z-10'} ${dropdown || copied ? '' : hidden}`}>
+        <div ref={box} class={`absolute -top-4 right-2 flex items-center gap-1 ${dropdown ? 'z-20' : 'z-10'} ${dropdown || copied ? '' : hidden}`}>
             {copied && <span role="status" class="cursor-default select-none rounded bg-base-100 px-1.5 py-0.5 text-xs shadow">{copied}</span>}
-            {onReact && (
-                <button type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:hidden" aria-label="Add a reaction"
-                    title="Add a reaction" data-react-button onClick={(e) => onReact(e.currentTarget)}>
-                    <SmileyIcon size="h-4 w-4" />
+            <div class="flex items-center rounded-box border border-base-content/10 bg-base-100 p-0.5 shadow pointer-coarse:hidden" data-message-bar>
+                {onReact && (
+                    <button type="button" class={tool} aria-label="Add a reaction" title="Add a reaction" data-react-button onClick={(e) => onReact(e.currentTarget)}>
+                        <SmileyIcon size="h-4 w-4" />
+                    </button>
+                )}
+                {onReply && (
+                    <button type="button" class={tool} aria-label="Reply" title="Reply" data-reply-button onClick={onReply}>
+                        <MenuIcon name="reply" />
+                    </button>
+                )}
+                {onEdit && (
+                    <button type="button" class={tool} aria-label="Edit" title="Edit" data-edit-button onClick={onEdit}>
+                        <MenuIcon name="edit" />
+                    </button>
+                )}
+                <button ref={button} type="button" class={tool}
+                    aria-label="Message actions" title="More" aria-haspopup="menu" aria-expanded={open} onClick={toggle}
+                    onKeyDown={(e) => {
+                        if (e.key !== 'ArrowDown' || open) return;
+                        e.preventDefault();
+                        toggle();
+                    }}>
+                    ⋯
                 </button>
-            )}
-            <button ref={button} type="button" class="btn btn-ghost btn-xs btn-square bg-base-100 shadow pointer-coarse:hidden"
-                aria-label="Message actions" title="More" aria-haspopup="menu" aria-expanded={open} onClick={toggle}
-                onKeyDown={(e) => {
-                    if (e.key !== 'ArrowDown' || open) return;
-                    e.preventDefault();
-                    toggle();
-                }}>
-                ⋯
-            </button>
+            </div>
             {dropdown && (
                 <ul ref={list} role="menu" aria-label="Message actions" onKeyDown={(e) => menuKeys(e, list.current, close, () => onOpen(false))}
-                    class={`menu absolute z-20 w-48 flex-nowrap rounded-box bg-base-100 p-1 shadow ${at ? 'left-0 top-0' : up ? 'right-0 bottom-full mb-1' : 'right-0 top-full mt-1'}`}>
+                    class={`${MENU} absolute z-20 w-48 ${at ? 'left-0 top-0' : up ? 'right-0 bottom-full mb-1' : 'right-0 top-full mt-1'}`}>
                     <MenuItems items={actions} picked={close} />
                 </ul>
             )}
@@ -1490,12 +1513,11 @@ function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
 
 // EditBox edits a message against the revision it started from. If the
 // message changed meanwhile, it shows the newer text and keeps the draft.
-// Its author also changes who else may edit it. With a finger, touch, ↵
-// starts a line, and Save saves (M13.2).
-function EditBox({ m, denID, channelID, mine, candidates, touch, onDone }) {
+// Under it, one row: Save, Cancel and the keys (M22.4); who else may edit
+// it is its ⋯'s. With a finger, touch, ↵ starts a line, and Save saves
+// (M13.2).
+function EditBox({ m, denID, channelID, touch, onDone }) {
     const [text, setText] = useState(m.text);
-    const [editors, setEditors] = useState(m.editors || []);
-    const [sharing, setSharing] = useState(false);
     const [base, setBase] = useState(m);
     const [conflict, setConflict] = useState(null);
     const [error, setError] = useState('');
@@ -1508,15 +1530,12 @@ function EditBox({ m, denID, channelID, mine, candidates, touch, onDone }) {
         el?.focus();
         el?.setSelectionRange(el.value.length, el.value.length);
     }, []);
-    const was = base.editors || [];
-    const shared = mine && (editors.length !== was.length || editors.some((id) => !was.includes(id)));
-    const names = editors.map((id) => name(candidates.find((c) => c.id === id)));
     async function save() {
-        if (text === base.text && !shared) return onDone();
+        if (text === base.text) return onDone();
         setBusy(true);
         setError('');
         try {
-            await api.patch(`/api/dens/${denID}/messages/${m.id}?channel=${channelID}`, { revision: base.revision, text, editors: shared ? editors : undefined });
+            await api.patch(`/api/dens/${denID}/messages/${m.id}?channel=${channelID}`, { revision: base.revision, text });
             onDone();
         } catch (e) {
             if (e.status === 409 && e.data?.message) {
@@ -1553,24 +1572,44 @@ function EditBox({ m, denID, channelID, mine, candidates, touch, onDone }) {
                     }
                 }}
             ></textarea>
-            {mine && (sharing ? (
-                <div class="flex flex-col gap-1 rounded border border-base-300 p-2">
-                    <span class="text-xs text-base-content/70">Who else can edit this message and tick its boxes?</span>
-                    <EditorList candidates={candidates} selected={editors} onChange={setEditors} />
-                </div>
-            ) : (
-                <div class="flex items-center gap-2 text-xs text-base-content/70">
-                    <span>{editors.length ? `${joinNames(names)} can edit this too.` : 'Only you can edit this.'}</span>
-                    <button type="button" class="btn btn-ghost btn-xs pointer-coarse:btn-sm" onClick={() => setSharing(true)}>Change</button>
-                </div>
-            ))}
             {error && <StatusText kind="error" role="alert">{error}</StatusText>}
             <Actions class="text-xs">
                 <Button kind="primary" size="xs" class="pointer-coarse:btn-sm" onClick={save} disabled={busy}>Save</Button>
                 <Button kind="quiet" size="xs" class="pointer-coarse:btn-sm" onClick={onDone}>Cancel</Button>
-                {!touch && <span class="cursor-default select-none text-base-content/50">Enter to save, Escape to cancel</span>}
+                {!touch && <span class="ml-auto cursor-default select-none text-base-content/50">Enter to save, Escape to cancel</span>}
             </Actions>
         </div>
+    );
+}
+
+// EditorsDialog picks who else may edit the member's own message and tick
+// its boxes, from its ⋯ (M22.4): the message as it stands, its text
+// unchanged, against the revision it opened at.
+function EditorsDialog({ denID, channelID, m, candidates, onClose }) {
+    const [editors, setEditors] = useState(m.editors || []);
+    const [base] = useState(m);
+    const act = useAction();
+    const was = base.editors || [];
+    const changed = editors.length !== was.length || editors.some((id) => !was.includes(id));
+    return (
+        <Dialog title="Who else can edit this" onClose={onClose}>
+            <form class="flex flex-col gap-3" onSubmit={(e) => {
+                e.preventDefault();
+                if (!changed) return onClose();
+                act.run(async () => {
+                    await api.patch(`/api/dens/${denID}/messages/${m.id}?channel=${channelID}`, { revision: base.revision, text: base.text, editors });
+                    onClose();
+                });
+            }}>
+                <p class="text-sm">They can edit it and tick its boxes, but not delete it.</p>
+                <EditorList candidates={candidates} selected={editors} onChange={setEditors} />
+                <ErrorText message={act.error} />
+                <Actions>
+                    <SubmitButton busy={act.busy}>Save</SubmitButton>
+                    <Button kind="quiet" onClick={onClose}>Cancel</Button>
+                </Actions>
+            </form>
+        </Dialog>
     );
 }
 
@@ -1692,8 +1731,16 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     }, [adding, narrow]);
     const box = useRef(null);
     const picker = useRef(null);
+    const plus = useRef(null);
+    const addList = useRef(null);
+    useEffect(() => {
+        if (adding && !narrow) addList.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+    }, [adding, narrow]);
     const lastTyping = useRef(0);
-    useEffect(() => box.current?.focus(), [replyTo]);
+    // The box takes the focus without scrolling to it: on the phone layout
+    // the row of panes is sliding to the channel as it opens, which Firefox
+    // stops short at a focus that scrolls.
+    useEffect(() => box.current?.focus({ preventScroll: true }), [replyTo]);
     // Files added however they came, dropped, pasted or picked, leave the
     // box ready for Enter.
     const fileCount = useRef(files.length);
@@ -1812,6 +1859,18 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
         setProblem('');
         box.current?.focus();
     }
+    function help() {
+        setAdding(false);
+        setGuide(true);
+    }
+    // The + menu's items: attaching, sharing the editing, a poll, and the
+    // guide to writing, last.
+    const adds = [
+        { key: 'attach', label: 'Attach files', icon: 'attach', disabled: files.length >= MAX_ATTACHMENTS || !!poll, run: attach },
+        shares && { key: 'share', label: 'Let others edit', icon: 'people', disabled: !!poll, on: editors.length > 0, run: share },
+        polls && { key: 'poll', label: 'Poll', icon: 'poll', disabled: files.length > 0 || editors.length > 0 || !!poll, on: !!poll, run: startPoll },
+        { key: 'help', label: 'Formatting help', icon: 'info', run: help },
+    ].filter(Boolean);
     const typers = typingLine(typing.map((m) => m.display_name));
     // While a touch screen's keyboard is up, the box stops growing sooner,
     // so the list keeps room above it.
@@ -1879,66 +1938,38 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                 )}
             </div>
             <div class="flex items-end gap-2">
-                <div class="relative" data-compose-menu>
-                    <button type="button" class={`btn btn-ghost btn-field btn-square h-12 w-12 ${adding ? 'btn-active' : ''}`} aria-label="Add to this message"
-                        title="Add to this message" aria-haspopup="menu" aria-expanded={adding} onClick={() => setAdding(!adding)}>
-                        <svg viewBox="0 0 16 16" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-                            <path d="M8 3v10M3 8h10" />
-                        </svg>
-                    </button>
-                    {adding && !narrow && (
-                        <ul role="menu" class="menu absolute bottom-full left-0 z-20 mb-1 w-56 rounded-box bg-base-100 p-1 shadow">
-                            <li role="none">
-                                <button type="button" role="menuitem" class="pointer-coarse:min-h-11" disabled={files.length >= MAX_ATTACHMENTS || !!poll} onClick={attach}>
-                                    <AttachIcon />
-                                    Attach files
-                                </button>
-                            </li>
-                            {shares && (
-                                <li role="none">
-                                    <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${editors.length ? 'text-primary' : ''}`} disabled={!!poll} onClick={share}>
-                                        <EditorsIcon />
-                                        Let others edit
-                                    </button>
-                                </li>
-                            )}
-                            {polls && (
-                                <li role="none">
-                                    <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${poll ? 'text-primary' : ''}`}
-                                        disabled={files.length > 0 || editors.length > 0 || !!poll} onClick={startPoll}>
-                                        <PollIcon />
-                                        Poll
-                                    </button>
-                                </li>
-                            )}
-                        </ul>
-                    )}
-                </div>
-                {adding && narrow && (
-                    <Sheet label="Add to this message" onClose={() => setAdding(false)}>
-                        <SheetRow disabled={files.length >= MAX_ATTACHMENTS || !!poll} onClick={attach}>
-                            <AttachIcon />
-                            Attach files
-                        </SheetRow>
-                        {shares && (
-                            <SheetRow disabled={!!poll} onClick={share}>
-                                <EditorsIcon />
-                                <span class={editors.length ? 'text-primary' : ''}>Let others edit</span>
-                            </SheetRow>
-                        )}
-                        {polls && (
-                            <SheetRow disabled={files.length > 0 || editors.length > 0 || !!poll} onClick={startPoll}>
-                                <PollIcon />
-                                <span class={poll ? 'text-primary' : ''}>Poll</span>
-                            </SheetRow>
-                        )}
-                    </Sheet>
-                )}
                 <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {
                     onAddFiles(e.currentTarget.files);
                     e.currentTarget.value = '';
                 }} />
                 <div class="relative min-w-0 flex-1">
+                    {adding && !narrow && (
+                        <ul ref={addList} role="menu" aria-label="Add to this message" class={`${MENU} absolute bottom-full left-0 z-20 mb-1 w-56`} data-compose-menu
+                            onKeyDown={(e) => menuKeys(e, e.currentTarget, () => {
+                                setAdding(false);
+                                plus.current?.focus();
+                            }, () => setAdding(false))}>
+                            {adds.map((a) => (
+                                <li key={a.key} role="none">
+                                    <button type="button" role="menuitem" class={`pointer-coarse:min-h-11 ${a.on ? 'text-primary' : ''}`} disabled={a.disabled}
+                                        data-menu-item={a.key} onClick={a.run}>
+                                        <MenuIcon name={a.icon} />
+                                        {a.label}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    {adding && narrow && (
+                        <Sheet label="Add to this message" onClose={() => setAdding(false)}>
+                            {adds.map((a) => (
+                                <SheetRow key={a.key} item={a.key} disabled={a.disabled} onClick={a.run}>
+                                    <MenuIcon name={a.icon} />
+                                    <span class={a.on ? 'text-primary' : ''}>{a.label}</span>
+                                </SheetRow>
+                            ))}
+                        </Sheet>
+                    )}
                     {completing && (
                         <Completions items={completing.items} index={completing.index} tone={skinTone()} onPick={completeWith}
                             onIndex={(index) => setCompleting((c) => c && { ...c, index })} />
@@ -1948,7 +1979,7 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                     )}
                     <textarea
                         ref={box}
-                        class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pr-16"
+                        class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pl-11 pr-10"
                         rows={lines}
                         placeholder={poll ? 'Ask your question' : placeholder}
                         enterkeyhint={touch ? 'enter' : 'send'}
@@ -2004,21 +2035,27 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
                             }
                         }}
                     ></textarea>
-                    {/* The emoji picker and the guide to writing sit in the box's
-                        corner, by the last line. */}
+                    {/* The + and the emoji picker sit inside the box, by its last
+                        line, at either end. */}
+                    <button ref={plus} type="button" data-compose-menu
+                        class={`absolute bottom-3 left-3 flex h-6 w-6 items-center justify-center rounded-full hover:text-base-content touch-room ${adding ? 'text-base-content' : 'text-base-content/50'}`}
+                        aria-label="Add to this message" title="Add to this message" aria-haspopup="menu" aria-expanded={adding}
+                        onClick={() => setAdding(!adding)}
+                        onKeyDown={(e) => {
+                            if (e.key !== 'ArrowDown' || adding) return;
+                            e.preventDefault();
+                            setAdding(true);
+                        }}>
+                        <PlusIcon size="h-5 w-5" />
+                    </button>
                     <button type="button" data-emoji-button
-                        class={`absolute bottom-3 right-9 flex h-6 w-6 items-center justify-center rounded-full hover:text-base-content touch-room ${picking ? 'text-base-content' : 'text-base-content/50'}`}
+                        class={`absolute bottom-3 right-3 flex h-6 w-6 items-center justify-center rounded-full hover:text-base-content touch-room ${picking ? 'text-base-content' : 'text-base-content/50'}`}
                         aria-label="Emoji" title="Emoji" aria-haspopup="dialog" aria-expanded={picking}
                         onClick={() => {
                             setCompleting(null);
                             setPicking(!picking);
                         }}>
                         <SmileyIcon size="h-5 w-5" />
-                    </button>
-                    <button type="button"
-                        class="absolute bottom-3 right-2 flex h-6 w-6 items-center justify-center rounded-full text-base-content/50 hover:text-base-content touch-room"
-                        aria-label="How to write a message" title="How to write a message" onClick={() => setGuide(true)}>
-                        <span class="flex h-4 w-4 items-center justify-center rounded-full border border-current text-[10px] leading-none" aria-hidden="true">?</span>
                     </button>
                 </div>
                 {/* A touch screen's keyboard has no Shift, so ↵ starts a line
@@ -2036,34 +2073,6 @@ function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, fi
     );
 }
 
-function AttachIcon() {
-    return (
-        <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M13.5 7.5l-5.8 5.8a3.5 3.5 0 01-5-5l6-6a2.3 2.3 0 013.3 3.3l-6 6a1.2 1.2 0 01-1.7-1.7l5.5-5.5" />
-        </svg>
-    );
-}
-
-// PollIcon is three bars of a poll's choices, of different lengths.
-function PollIcon() {
-    return (
-        <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-            <path d="M2.5 4h7M2.5 8h11M2.5 12h4.5" />
-        </svg>
-    );
-}
-
-function EditorsIcon() {
-    return (
-        <svg viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <circle cx="6" cy="5" r="2.5" />
-            <path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5" />
-            <circle cx="11.5" cy="5.5" r="2" />
-            <path d="M11 9.6c2 .2 3.5 1.9 3.5 4" />
-        </svg>
-    );
-}
-
 // SendIcon is a paper plane, flying right.
 function SendIcon() {
     return (
@@ -2074,101 +2083,60 @@ function SendIcon() {
     );
 }
 
-// WritingGuide explains how a message is written: sending, the markdown
-// subset with each example rendered as the list shows it, mentions, links
-// and links to messages, task lines, editing together and files. A touch
-// screen gets its own words for sending, and for the menu its long press
-// opens (M13.2).
+// WritingGuide is what a member looks up while writing (M22.4): the
+// markdown subset, each example rendered as the list shows it, and the
+// keys, or on a touch screen how sending goes (M13.2). The rest of writing
+// a message is the guide's, linked at its foot.
 function WritingGuide({ touch, onClose }) {
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && onClose();
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     }, [onClose]);
-    const kbd = (k) => <kbd class="kbd kbd-xs">{k}</kbd>;
+    const kbd = (...keys) => keys.map((k, i) => <span key={k}>{i > 0 && '+'}<kbd class="kbd kbd-xs">{k}</kbd></span>);
     return (
-        <Dialog title="Writing a message" onClose={onClose}>
+        <Dialog title="Formatting help" onClose={onClose}>
             <div class="flex flex-col gap-4 text-sm">
-                <section class="flex flex-col gap-1">
-                    <h3 class="font-semibold">Sending</h3>
-                    {touch ? (
-                        <p>The button beside the box sends, once there's something to send, and ↵ on the keyboard starts a new line.</p>
-                    ) : (
-                        <>
-                            <p>
-                                {kbd('Enter')} sends. {kbd('Shift')}+{kbd('Enter')} starts a new line, as {kbd('Enter')} does inside a code block,
-                                and {kbd('Ctrl')}+{kbd('Enter')} sends from anywhere.
-                            </p>
-                            <p>In an empty box, {kbd('↑')} edits your last message, and {kbd('Esc')} drops a reply you started.</p>
-                        </>
-                    )}
-                    <p>A message holds up to 4,000 characters. One taller than about 16 lines shows folded, and readers open the rest.</p>
-                </section>
-                <section class="flex flex-col gap-1">
-                    <h3 class="font-semibold">Formatting</h3>
-                    <table class="table table-sm">
+                <table class="table table-sm" aria-label="Formatting">
+                    <tbody>
+                        {GUIDE_FORMATS.map(([source, note]) => (
+                            <tr key={source}>
+                                <td class="whitespace-pre-wrap font-mono text-xs">{source}</td>
+                                <td><Markdown text={source} />{note && <p class="text-xs text-base-content/60">{note}</p>}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {touch ? (
+                    <p>The button beside the box sends, and ↵ starts a new line.</p>
+                ) : (
+                    <table class="table table-sm" aria-label="Keys">
                         <tbody>
-                            {GUIDE_FORMATS.map(([source, note]) => (
-                                <tr key={source}>
-                                    <td class="whitespace-pre-wrap font-mono text-xs">{source}</td>
-                                    <td><Markdown text={source} />{note && <p class="text-xs text-base-content/60">{note}</p>}</td>
+                            {GUIDE_KEYS.map(([keys, what]) => (
+                                <tr key={what}>
+                                    <td class="whitespace-nowrap">{typeof keys === 'string' ? keys : kbd(...keys)}</td>
+                                    <td>{what}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                </section>
-                <section class="flex flex-col gap-1">
-                    <h3 class="font-semibold">Emoji</h3>
-                    <p>
-                        The smiley in the box's corner picks one, with the ones you use most first. The den's own emoji go in by name, as :name:,
-                        which everyone sees as the emoji, and as text inside code or a link.
-                    </p>
-                    <p>
-                        A colon and two letters, as :th, lists the emoji that match, and in a channel @ lists who can see it.{' '}
-                        {touch ? 'Tap one to put it in.' : <>{kbd('↑')} and {kbd('↓')} choose, {kbd('Enter')} or {kbd('Tab')} puts it in, and {kbd('Esc')} closes the list.</>}
-                    </p>
-                    <p>A message of nothing but emoji, ten at most, shows them large.</p>
-                </section>
-                <section class="flex flex-col gap-1">
-                    <h3 class="font-semibold">Mentions and links</h3>
-                    <p>@ and a username lets them know, if they can see the channel. Inside code or a link it's only text.</p>
-                    <p>
-                        Staff, the moderators and the owner, write @everyone to let everyone who can see the channel know. Anyone can turn
-                        those off in the settings, under Notifications, or mute the channel.
-                    </p>
-                    <p>
-                        A link shows where it goes, as you paste it; there's no way to give one a label. When it's sent, Dens takes its tracking
-                        out, and writes YouTube, Reddit, X and Amazon links in a short form.
-                    </p>
-                    <p>
-                        Copy link, in {touch ? 'the menu a long press on a message opens' : "a message's ⋯ menu"}, copies a link to that message.
-                        Pasted in a message, in this den or another, it shows the channel it's in, and opens the message for anyone who can see it.
-                    </p>
-                </section>
-                <section class="flex flex-col gap-1">
-                    <h3 class="font-semibold">Lists to tick</h3>
-                    <p>
-                        A line that starts with [ ] or [x] is a box to tick. Anyone who may edit the message can tick its boxes, and two people
-                        ticking at once both keep their ticks.
-                    </p>
-                </section>
-                <section class="flex flex-col gap-1">
-                    <h3 class="font-semibold">With the + button</h3>
-                    <p>
-                        Attach files: up to {MAX_ATTACHMENTS} to a message, also by pasting them or dropping them on the messages. Photos lose
-                        their location and camera details before they leave this device.
-                    </p>
-                    <p>Let others edit: up to {MAX_EDITORS} people who can see the channel can edit the message too, but not delete it.</p>
-                    <p>
-                        Poll, in a channel: the message is the question, with 2 to 10 choices. You pick how long it runs, whether anyone sees
-                        who voted for what, and whether the totals show as votes come in or only to those who voted, whose votes are then
-                        final. A poll can't be edited once it's sent, but you can end it early.
-                    </p>
-                </section>
+                )}
+                <p><DocsLink page="usage/#writing-messages" label="More on writing messages" /></p>
             </div>
         </Dialog>
     );
 }
+
+// GUIDE_KEYS are the composer's keys, as the writing guide lists them.
+const GUIDE_KEYS = [
+    [['Enter'], 'Send'],
+    [['Shift', 'Enter'], 'Start a new line'],
+    [['Ctrl', 'Enter'], 'Send from inside a code block'],
+    [['↑'], 'Edit your last message, in an empty box'],
+    [['Esc'], 'Drop the reply you started'],
+    [':th', 'Emoji that match, and @ members to mention'],
+    [['Tab'], 'Put in the emoji or member marked'],
+];
 
 const GUIDE_FORMATS = [
     ['**bold**', ''],

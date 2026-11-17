@@ -221,7 +221,7 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                 {e.badge && <EventBadge denID={denID} badge={e.badge} id={`event-badge-${e.id}`} />}
                 <p class="text-xs text-base-content/60">
                     By{' '}
-                    {maker ? <button type="button" class="link-hover" onClick={() => onProfile(maker)}>{maker.display_name}</button> : 'a former member'}
+                    {maker ? <button type="button" class="link-hover" onClick={(e) => onProfile(maker, e.currentTarget)}>{maker.display_name}</button> : 'a former member'}
                 </p>
                 <div class="flex flex-wrap items-center gap-2">
                     <InterestedButton mine={e.mine} disabled={mark.busy || gone} onMark={interested} />

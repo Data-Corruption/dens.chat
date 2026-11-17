@@ -1,17 +1,20 @@
 // The home page, a launcher (M8.3): the dens this install has joined, each
-// a row that opens it or its Manage dialog; sign-ins and approvals waiting
-// on this device above them; adding a den, from an invite or an address;
-// and setting up the den this install hosts, once hosting is on (M9.1),
-// while it has no owner (M10).
+// a row that opens it or its Manage dialog, under a header with Add a den
+// and the settings' cog; sign-ins and approvals waiting on this device
+// above them; adding a den, from an invite or an address; and setting up
+// the den this install hosts, once hosting is on (M9.1), while it has no
+// owner (M10). With no den, it's the mark and Add a den alone (M22.4).
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { onEvent } from './events.js';
 import {
-    ADDRESS, Actions, Button, DocsTip, ErrorText, Field, PLAIN, PasswordFields, StatusText, SubmitButton, TextInput, Tip, Waiting, checkPasswords, useAction,
+    ADDRESS, Actions, Button, DocsTip, ErrorText, Field, Lead, PLAIN, PasswordFields, StatusText, SubmitButton, TextInput, Tip, Waiting, buttonClass, checkPasswords,
+    useAction,
 } from './components.jsx';
 import { openManage, openSettings } from './dialogs.js';
 import { ownRowNote, setupNeeded } from './hosting.js';
+import { CogIcon } from './icons.jsx';
 import { readPasted } from './join.js';
 import { Dialog } from './manage.jsx';
 import { KeyNeeded, PendingSignIns, RecoveryCodes, SignInRequests, SignInSteps } from './private.jsx';
@@ -50,22 +53,25 @@ export function Home({ status, navigate }) {
 
     if (codes) {
         return (
-            <section class="card bg-base-200">
-                <div class="card-body">
-                    <RecoveryCodes denName={codes.name} codes={codes.codes} seal={codes.seal} sealNew={codes.sealNew} onDone={() => setCodes(null)} />
-                </div>
-            </section>
+            <Lead>
+                <section class="card bg-base-200">
+                    <div class="card-body">
+                        <RecoveryCodes den={codes.den} codes={codes.codes} seal={codes.seal} sealNew={codes.sealNew} onDone={() => setCodes(null)} />
+                    </div>
+                </section>
+            </Lead>
         );
     }
     const joined = (result) => {
         setAdding(null);
-        setCodes({ name: result.den.name, codes: result.recovery_codes, seal: result.seal, sealNew: result.seal_new });
+        setCodes({ den: result.den, codes: result.recovery_codes, seal: result.seal, sealNew: result.seal_new });
         refresh();
     };
     // A new key, from a reset, shows once like a join's.
-    const showKey = (name, seal) => setCodes({ name, codes: [], seal, sealNew: true });
+    const showKey = (den, seal) => setCodes({ den, codes: [], seal, sealNew: true });
     const recover = (p) => setAdding({ den: p.url, username: p.username, recover: true });
     const connected = view ? view.dens.filter((d) => d.state === 'connected') : [];
+    const offerHosting = !!view?.hosting.can_host && !view.hosting.enabled;
 
     return (
         <>
@@ -76,14 +82,18 @@ export function Home({ status, navigate }) {
                 <>
                     <PendingSignIns list={(view.sign_ins || []).filter((p) => p.id !== adding?.pending?.id)} onRecover={recover} />
                     {connected.map((d) => <SignInRequests key={d.den_id} den={d} />)}
-                    {connected.filter((d) => !d.seal).map((d) => <KeyNeeded key={d.den_id} den={d} onSeal={(seal) => showKey(d.name, seal)} />)}
+                    {connected.filter((d) => !d.seal).map((d) => <KeyNeeded key={d.den_id} den={d} onSeal={(seal) => showKey(d, seal)} />)}
                     {setupNeeded(view.hosting) && <HostDen hosting={view.hosting} onJoined={joined} />}
-                    <DenList dens={view.dens} hosting={view.hosting} navigate={navigate} onChanged={refresh} onAdd={() => setAdding({})}
-                        onSignIn={(den) => setAdding({ den: den.url, username: den.username })} />
+                    {view.dens.length === 0 && !setupNeeded(view.hosting) ? (
+                        <NoDens offerHosting={offerHosting} onAdd={() => setAdding({})} />
+                    ) : (
+                        <DenList dens={view.dens} hosting={view.hosting} navigate={navigate} onChanged={refresh} onAdd={() => setAdding({})}
+                            onSignIn={(den) => setAdding({ den: den.url, username: den.username })} />
+                    )}
                 </>
             )}
             {adding && view && (
-                <AddDen start={adding} signIns={view.sign_ins || []} offerHosting={!!view.hosting.can_host && !view.hosting.enabled} onJoined={joined}
+                <AddDen start={adding} signIns={view.sign_ins || []} offerHosting={offerHosting} onJoined={joined}
                     onClose={() => setAdding(null)}
                     onPending={(pending) => setAdding((a) => ({ ...a, pending }))} />
             )}
@@ -102,6 +112,40 @@ const STATES = {
 
 const ROLES = { owner: 'Owner', moderator: 'Moderator', member: 'Member' };
 
+// SettingsCog opens the settings from Home, where a den's page has the cog
+// beside the member's name: a link to where they were a page of their own,
+// which the page opens over Home.
+function SettingsCog() {
+    return (
+        <a href="/settings" class={`${buttonClass('quiet')} btn-square`} aria-label="Settings" title="Settings"
+            onClick={(e) => {
+                e.preventDefault();
+                openSettings();
+            }}>
+            <CogIcon />
+        </a>
+    );
+}
+
+// NoDens is Home with no den: the mark, a line and Add a den, with hosting
+// one under it where this install can, and the settings' cog.
+function NoDens({ offerHosting, onAdd }) {
+    return (
+        <Lead>
+            <section class="card relative bg-base-200" data-no-dens>
+                <div class="card-body items-center gap-4 text-center">
+                    <div class="absolute right-3 top-3"><SettingsCog /></div>
+                    <p class="text-lg">You're not in a den yet. An invite brings you into one.</p>
+                    <Button kind="primary" size="md" onClick={onAdd}>Add a den</Button>
+                    {offerHosting && (
+                        <button type="button" class="link link-primary min-h-6 text-sm" onClick={() => openSettings('system')}>Host one on this computer</button>
+                    )}
+                </div>
+            </section>
+        </Lead>
+    );
+}
+
 function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
     return (
         <section class="card bg-base-200">
@@ -109,6 +153,7 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
                 <div class="flex items-center gap-2">
                     <h2 class="card-title flex-1">Your dens</h2>
                     <Button kind="primary" onClick={onAdd}>Add a den</Button>
+                    <SettingsCog />
                 </div>
                 {dens.length === 0 ? (
                     <p>You haven't joined any dens yet. Add one with an invite.</p>

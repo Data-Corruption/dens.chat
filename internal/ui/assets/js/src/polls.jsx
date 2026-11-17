@@ -24,6 +24,11 @@ export function PollEditor({ draft, problem, onChange, onRemove }) {
     }, [draft.choices.length]);
     return (
         <div class="mb-2 flex flex-col gap-2 rounded border border-base-300 p-2" data-poll-editor>
+            {/* A poll reads question first, and the box below holds it. */}
+            <div class="flex items-center justify-between gap-2">
+                <p class="text-sm" data-poll-question><span class="font-semibold">Poll</span> · your message below is its question</p>
+                <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={onRemove}>Cancel</button>
+            </div>
             <ol ref={list} class="flex flex-col gap-1" aria-label="Choices">
                 {draft.choices.map((c, i) => (
                     <li key={i} class="flex items-center gap-1">
@@ -48,15 +53,14 @@ export function PollEditor({ draft, problem, onChange, onRemove }) {
                     </li>
                 ))}
             </ol>
-            <div class="flex items-center justify-between gap-2">
-                {draft.choices.length < MAX_CHOICES ? (
+            {draft.choices.length < MAX_CHOICES && (
+                <div>
                     <button type="button" class="btn btn-ghost btn-xs" onClick={() => {
                         added.current = true;
                         set({ choices: [...draft.choices, ''] });
                     }}>+ Add a choice</button>
-                ) : <span></span>}
-                <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={onRemove}>Cancel</button>
-            </div>
+                </div>
+            )}
             <label class="flex min-h-6 cursor-pointer items-center gap-2 self-start text-sm">
                 <input type="checkbox" class="checkbox checkbox-sm" checked={draft.multiple} onChange={(e) => set({ multiple: e.currentTarget.checked })} />
                 Members may pick more than one

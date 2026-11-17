@@ -10,7 +10,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { Slider, StatusText, useBackdrop } from './components.jsx';
-import { useLayer } from './nav.js';
+import { useLayer, useNarrow } from './nav.js';
 import { fitBox, formatSize, step } from './files.jsx';
 import { useCoarse } from './touch.js';
 import { fitted, isFitted, useZoom, zoomAt } from './zoom.js';
@@ -155,6 +155,9 @@ const HOLD = 250;
 // alone, and says why. files are the message's files with two versions,
 // and ← and → move between them; onSwitch sends the files given as the
 // version given.
+// ARROW is the width of ‹ and ›, a circle button's.
+const ARROW = 40;
+
 export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClose }) {
     const entry = files[index];
     const versions = entry.result.versions;
@@ -177,6 +180,7 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const at = useRef(index);
     const backdrop = useBackdrop(onClose);
     const touch = useCoarse();
+    const narrow = useNarrow();
     useLayer(onClose);
     at.current = index;
 
@@ -229,7 +233,9 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     }, [files, onClose, onIndex]);
 
     const full = versions.full;
-    const box = fitBox(full.width, full.height, Math.max(64, view.width), Math.max(64, view.height));
+    const several = files.length > 1;
+    // With several, the photo leaves room at its edges for ‹ and ›.
+    const box = fitBox(full.width, full.height, Math.max(64, view.width - (several ? 2 * (ARROW + 8) : 0)), Math.max(64, view.height));
     // At 100% each of the full size's pixels is one of the screen's.
     const real = actualSize(full, window.devicePixelRatio).width / box.width;
     const min = Math.min(1, real);
@@ -319,16 +325,23 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
     const to = other(versions.sent);
     const blocked = to === 'full' ? switchBlocked(versions, limits) : '';
     const others = othersToSwitch(files, entry.key, to);
-    const several = files.length > 1;
     const side = 'btn btn-circle btn-ghost absolute top-1/2 z-10 -translate-y-1/2 text-3xl text-white hover:bg-white/15';
+    const fit = fitted(box, view);
+    const edges = { left: Math.max(0, fit.x - ARROW - 4), right: Math.min(view.width - ARROW, fit.x + box.width + 4) };
     // A pressed choice is filled, which reads over the black on any theme.
     const toggle = (on) => `btn btn-sm join-item ${on ? 'btn-soft' : 'btn-ghost text-white'}`;
     const label = (which) => `${entry.result.name}, ${which === 'full' ? 'full size' : 'smaller copy'}`;
     const layer = (which) => `absolute inset-0 h-full w-full object-fill ${visible === which ? '' : 'opacity-0'}`;
     return (
         <div role="dialog" aria-modal="true" aria-label={`Compare the two versions of ${entry.result.name}`}
-            class="fixed inset-0 z-50 flex flex-col gap-3 bg-black/85 p-4" {...backdrop}>
-            <div ref={stage} class={`relative min-h-0 flex-1 touch-none overflow-hidden ${isFitted(zoom.view) ? '' : 'cursor-grab active:cursor-grabbing'}`}
+            class={`fixed inset-0 z-50 flex flex-col gap-3 p-4 max-md:pb-0 ${narrow ? 'bg-black' : 'bg-black/85'}`} {...backdrop}>
+            <div class="flex shrink-0 items-center gap-2 pt-[env(safe-area-inset-top)] text-sm text-white">
+                {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
+                <span class="min-w-0 flex-1 truncate" title={entry.result.name}>{entry.result.name}</span>
+                <button ref={close} type="button" class="btn btn-circle btn-ghost btn-sm shrink-0 text-lg text-white hover:bg-white/15" aria-label="Close"
+                    title="Close" onClick={onClose}>✕</button>
+            </div>
+            <div ref={stage} data-stage class={`relative min-h-0 flex-1 touch-none overflow-hidden ${isFitted(zoom.view) ? '' : 'cursor-grab active:cursor-grabbing'}`}
                 {...zoom.handlers} onContextMenu={(e) => touch && e.preventDefault()}>
                 <div key={entry.result.id} class={`absolute select-none overflow-hidden rounded ${isFitted(zoom.view) ? 'cursor-zoom-in' : ''}`}
                     style={{ left: `${shownAt.left}px`, top: `${shownAt.top}px`, width: `${shownAt.width}px`, height: `${shownAt.height}px` }}>
@@ -354,15 +367,18 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                     )}
                 </div>
                 {several && index > 0 && (
-                    <button type="button" class={`${side} left-0`} aria-label="Previous" onPointerDown={(e) => e.stopPropagation()}
+                    <button type="button" class={side} style={{ left: `${edges.left}px` }} aria-label="Previous" onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => onIndex(index - 1)}>‹</button>
                 )}
                 {several && index < files.length - 1 && (
-                    <button type="button" class={`${side} right-0`} aria-label="Next" onPointerDown={(e) => e.stopPropagation()}
+                    <button type="button" class={side} style={{ left: `${edges.right}px` }} aria-label="Next" onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => onIndex(index + 1)}>›</button>
                 )}
             </div>
-            <div class="flex flex-col items-center gap-2 text-sm text-white">
+            {/* The controls sit on a surface of their own, so nothing behind
+                shows through their words. */}
+            <div class="flex flex-col items-center gap-2 self-center rounded-box border border-white/10 bg-black p-3 text-sm text-white max-md:-mx-4 max-md:w-[calc(100%+2rem)] max-md:rounded-none max-md:border-x-0 max-md:border-b-0 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+                data-compare-bar>
                 {video && (
                     <div class="flex w-full max-w-xl items-center gap-2">
                         <button type="button" class="btn btn-ghost btn-sm btn-square text-white" onClick={togglePlay}
@@ -379,8 +395,6 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                     </div>
                 )}
                 <div class="flex max-w-full flex-wrap items-center justify-center gap-2">
-                    {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
-                    <span class="max-w-60 truncate" title={entry.result.name}>{entry.result.name}</span>
                     <div role="group" aria-label="Version shown" class="join max-md:join-vertical max-md:w-full">
                         {['smaller', 'full'].map((which) => (
                             <button key={which} type="button" class={`${toggle(visible === which)} max-md:justify-start`} aria-pressed={visible === which}
@@ -415,7 +429,6 @@ export function Compare({ denID, files, index, limits, onIndex, onSwitch, onClos
                             {othersLabel(others)}
                         </label>
                     )}
-                    <button ref={close} type="button" class="btn btn-ghost btn-sm text-white" onClick={onClose}>Close</button>
                 </div>
                 {(blocked || entry.switchError) && (
                     <StatusText kind="warning" role="alert">{entry.switchError || blocked}</StatusText>

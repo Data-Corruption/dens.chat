@@ -532,7 +532,7 @@ function CallMenu({ at, label, items, onClose, children }) {
     usePlaced(at, box);
     return (
         <div ref={box} data-call-menu
-            class={`absolute z-10 flex w-60 flex-col rounded-box bg-base-100 p-1 shadow ${at ? 'left-0 top-0' : 'right-0 top-full'}`}>
+            class={`absolute z-10 flex w-60 flex-col rounded-box border border-base-content/10 bg-base-200 p-1 shadow-lg ${at ? 'left-0 top-0' : 'right-0 top-full'}`}>
             {children}
             <ul ref={list} role="menu" aria-label={label} class="menu w-full flex-nowrap p-0"
                 onKeyDown={(e) => menuKeys(e, list.current, onClose, onClose)}>
@@ -745,7 +745,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                         <HoverRow as="li" key={m.id} class="group relative flex min-w-0 items-center gap-1 text-sm text-base-content/80 pointer-coarse:min-h-11"
                             data-call-member={m.id} {...drags} {...rightClicks}>
                             <button type="button" class="flex min-w-0 flex-1 items-center gap-1.5 self-stretch rounded pr-1 text-left hover:text-base-content disabled:cursor-default"
-                                disabled={!member} onClick={() => onProfile?.(member)}>
+                                disabled={!member} onClick={(e) => onProfile?.(member, e.currentTarget)}>
                                 {/* A block of the avatar's own size, so the ring is round. */}
                                 <span class={`inline-flex shrink-0 rounded-full ring-2 ring-offset-1 ring-offset-base-200 ${talking ? 'ring-success' : 'ring-transparent'}`}>
                                     <Avatar member={member || { id: m.id }} size="sm" />
@@ -779,6 +779,9 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                 <LiveMark denID={denID} call={call} member={m} name={name} mine={m.id === me?.id} inCall={inCall} label={label}
                                     watching={!!watched?.has(m.id)} members={members} previewing={previewing} />
                             )}
+                            {/* The member's own row keeps the ⋯'s room, so its marks
+                                line up with the others'. */}
+                            {!other && <span class="btn btn-ghost btn-xs invisible" aria-hidden="true">⋯</span>}
                             {other && (
                                 <button type="button" class="btn btn-ghost btn-xs relative opacity-0 touch-room focus:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100" data-call-menu
                                     aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={open}

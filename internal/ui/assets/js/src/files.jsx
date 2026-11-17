@@ -547,8 +547,12 @@ function ViewedImage({ denID, file, alt }) {
 // the picture its width, and a swipe sideways moves to the next or last,
 // and one down closes it (M13.3). Two fingers or a double tap zoom it, as
 // do the wheel and a double click, and a finger or the mouse pans it then
-// (zoom.js). Its name, size, Download and Close sit in a bar at its foot.
+// (zoom.js). Its name and size, Download and its ✕ sit in a bar at its
+// top, as a dialog's ✕ does (M22.4), and ‹ and › at the picture's edges.
 // onIndex hears where to move; Back closes it (M13.1).
+// ARROW is the width of the viewer's ‹ and ›, a circle button's.
+const ARROW = 40;
+
 export function Viewer({ denID, files, index, onIndex, onClose }) {
     useLayer(onClose);
     const narrow = useNarrow();
@@ -590,7 +594,7 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
     const several = files.length > 1;
     // A picture's box: the stage's width on the phone layout, and in a
     // wider window, room beside it for ‹ and ›.
-    const boxOf = (f) => fitBox(f.width, f.height, Math.max(64, stage.width - (!narrow && several ? 96 : 0)), Math.max(64, stage.height));
+    const boxOf = (f) => fitBox(f.width, f.height, Math.max(64, stage.width - (!narrow && several ? 2 * (ARROW + 8) : 0)), Math.max(64, stage.height));
     const box = boxOf(file);
     const motion = typeof matchMedia === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -649,6 +653,10 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
     const shade = slide.axis === 'y' ? Math.max(0.3, 1 - slide.y / Math.max(1, stage.height)) * dark : dark;
     const side = 'btn btn-circle btn-ghost absolute top-1/2 z-10 -translate-y-1/2 text-3xl text-white hover:bg-white/15 pointer-coarse:max-md:hidden';
     const keep = { onPointerDown: (e) => e.stopPropagation() };
+    // ‹ and › stand just past the picture's edges as it fits, in the room
+    // its box leaves them, and stay there while it's zoomed.
+    const fit = fitted(box, stage);
+    const edges = { left: Math.max(0, fit.x - ARROW - 4), right: Math.min(stage.width - ARROW, fit.x + box.width * fit.scale + 4) };
     // The picture shown, and those beside it, out of sight until a swipe.
     const picture = (d) => {
         const f = files[index + d];
@@ -665,6 +673,14 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
     return (
         <div role="dialog" aria-modal="true" aria-label={file.name} class="fixed inset-0 z-50 flex flex-col md:gap-3 md:p-4"
             style={{ backgroundColor: `rgb(0 0 0 / ${shade})` }} {...backdrop}>
+            <div class="flex shrink-0 items-center gap-2 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-sm text-white max-md:bg-black/60 md:gap-3 md:p-0" data-viewer-bar>
+                {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
+                <span class="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
+                <span class="shrink-0 cursor-default select-none text-white/60">{formatSize(file.size)}</span>
+                <a class={`${buttonClass('secondary')} shrink-0`} href={downloadURL(denID, file)} download={file.name}>Download</a>
+                <button ref={close} type="button" class="btn btn-circle btn-ghost btn-sm shrink-0 text-lg text-white hover:bg-white/15" aria-label="Close"
+                    title="Close" onClick={onClose}>✕</button>
+            </div>
             <div ref={stageRef} data-stage class={`relative min-h-0 w-full flex-1 touch-none select-none overflow-hidden ${isFitted(zoom.view) ? '' : 'cursor-grab active:cursor-grabbing'}`}
                 {...zoom.handlers}>
                 <div class="absolute inset-0" style={{ transform: slide.x || slide.y ? `translate(${slide.x}px, ${slide.y}px)` : undefined,
@@ -675,18 +691,11 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
                     {picture(1)}
                 </div>
                 {several && index > 0 && (
-                    <button type="button" class={`${side} left-0`} aria-label="Previous image" {...keep} onClick={() => onIndex(index - 1)}>‹</button>
+                    <button type="button" class={side} style={{ left: `${edges.left}px` }} aria-label="Previous image" {...keep} onClick={() => onIndex(index - 1)}>‹</button>
                 )}
                 {several && index < files.length - 1 && (
-                    <button type="button" class={`${side} right-0`} aria-label="Next image" {...keep} onClick={() => onIndex(index + 1)}>›</button>
+                    <button type="button" class={side} style={{ left: `${edges.right}px` }} aria-label="Next image" {...keep} onClick={() => onIndex(index + 1)}>›</button>
                 )}
-            </div>
-            <div class="flex shrink-0 items-center gap-2 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-sm text-white max-md:bg-black/60 md:max-w-full md:justify-center md:gap-3 md:self-center md:p-0">
-                {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
-                <span class="min-w-0 flex-1 truncate md:flex-initial" title={file.name}>{file.name}</span>
-                <span class="shrink-0 cursor-default select-none text-white/60">{formatSize(file.size)}</span>
-                <a class={`${buttonClass('secondary')} shrink-0`} href={downloadURL(denID, file)} download={file.name}>Download</a>
-                <button ref={close} type="button" class="btn btn-ghost btn-sm shrink-0 text-white" onClick={onClose}>Close</button>
             </div>
         </div>
     );

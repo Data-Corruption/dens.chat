@@ -12,7 +12,7 @@ import { EmojiContext, useDenEmoji } from './denemoji.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from './events.js';
 import { openManage, openSettings } from './dialogs.js';
 import { Actions, Button, ErrorText, Notice, StatusText, Tip, useNotifications } from './components.jsx';
-import { BellIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, PlusIcon, ShieldIcon, SpeakerIcon } from './icons.jsx';
+import { BellIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, MenuIcon, PlusIcon, ShieldIcon, SpeakerIcon } from './icons.jsx';
 import { MenuButton, RowMenu, ownsMenu, rightClick, underOf } from './menus.jsx';
 import { compareIds, unread } from './ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
@@ -218,6 +218,10 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const [view, setView] = useState(null);
     const [error, setError] = useState('');
     const [dialog, setDialog] = useState(null);
+    // openProfile opens a member's card beside from, what was clicked, or
+    // closes it on a second click there.
+    const openProfile = (m, from) => setDialog((d) => (d?.kind === 'profile' && from && d.from === from && d.member.id === m.id
+        ? null : { kind: 'profile', member: m, from }));
     const narrow = useNarrow();
     // In a wider window the member list starts open where it fits beside
     // the channel, until the member closes it (M8.3); on the phone layout
@@ -654,7 +658,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     online={dm && online.has(dm.id)} membersOpen={!at && membersOpen}
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
                                     onChannels={() => toPane('list')} onMembers={toggleMembers}
-                                    onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                                    onProfile={openProfile} />
                                 {callTop}
                                 <MessagePane
                                     key={`${denID}:${channel.id}`}
@@ -680,7 +684,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     retention={view.retention}
                                     offline={showsOffline(live, view.state)}
                                     spoilers={!!view.spoilers}
-                                    onProfile={(m) => setDialog({ kind: 'profile', member: m })}
+                                    onProfile={openProfile}
                                     onTyping={notes ? () => {} : () => sendTyping(denID, channel.id)}
                                 />
                             </>
@@ -695,7 +699,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                             <>
                                 {callTop}
                                 <EventsPane denID={denID} view={view} members={members} onList={() => toPane('list')}
-                                    onProfile={(m) => setDialog({ kind: 'profile', member: m })} />
+                                    onProfile={openProfile} />
                             </>
                         ) : (
                             <>
@@ -724,11 +728,11 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     expiry={view.disappearing && !dm.left_at && !gone ? channel : null} />
                             ) : group ? (
                                 <GroupPanel key={channel.id} denID={denID} view={view} channel={channel} group={group} title={title(channel)} members={members}
-                                    online={online} onCompare={(m) => setDialog({ kind: 'codes', member: m })} onProfile={(m) => setDialog({ kind: 'profile', member: m })}
+                                    online={online} onCompare={(m) => setDialog({ kind: 'codes', member: m })} onProfile={openProfile}
                                     onAdd={() => setDialog({ kind: 'add-to-group' })} onRename={() => setDialog({ kind: 'rename-group' })}
                                     expiry={view.disappearing && !gone ? channel : null} />
                             ) : (
-                                <MemberList denID={denID} members={view.members} online={online} onProfile={(m) => setDialog({ kind: 'profile', member: m })}
+                                <MemberList denID={denID} members={view.members} online={online} onProfile={openProfile}
                                     card={{
                                         me: view.me,
                                         role: gone ? 'member' : view.role,
@@ -748,8 +752,10 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                 {dialog?.kind === 'group' && <GroupDialog denID={denID} view={view} group={dialog.group} onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'profile' && (
                     <ProfileCard
+                        key={dialog.member.id}
                         denID={denID}
                         member={members.get(dialog.member.id) || dialog.member}
+                        from={dialog.from}
                         me={view.me}
                         role={gone ? 'member' : view.role}
                         online={online.has(dialog.member.id)}
@@ -891,11 +897,15 @@ function UserPanel({ me, online, onEdit }) {
 }
 
 // snapLeft is where the phone layout's row scrolls to show a pane: a side
-// pane at its edge, the channel whole.
+// pane at its edge, the channel whole. It's the pane's place to the
+// fraction of a pixel, as a side pane's 85% often falls: a slide that ends
+// off its snap point leaves Firefox the next swipe to spend on snapping.
 function snapLeft(row, pane) {
     const el = row.querySelector(`:scope > [data-pane="${pane}"]`);
     if (!el) return 0;
-    return pane === 'side' ? el.offsetLeft + el.offsetWidth - row.clientWidth : el.offsetLeft;
+    const box = el.getBoundingClientRect();
+    const left = box.left - row.getBoundingClientRect().left - row.clientLeft + row.scrollLeft;
+    return pane === 'side' ? left + box.width - row.clientWidth : left;
 }
 
 // usePaneRow keeps the phone layout's row of panes at the pane at, which
@@ -928,10 +938,22 @@ function usePaneRow(at, ready, onSwipe) {
         const r = row.current;
         if (!r || !at) return undefined;
         // Midway, as when a swipe lets go between panes, isn't settled.
+        let snapping = false;
         const settle = () => {
             const near = ['list', 'chan', 'side'].find((p) => r.querySelector(`:scope > [data-pane="${p}"]`) && Math.abs(r.scrollLeft - snapLeft(r, p)) < 2);
             if (heading.current) {
-                if (near === heading.current) heading.current = '';
+                if (near !== heading.current) return;
+                // Firefox ends a slide on a whole pixel, short of a snap
+                // point between two, and then spends the member's next
+                // swipe on snapping; an instant scroll snaps it at once.
+                const left = snapLeft(r, near);
+                if (!snapping && Math.abs(r.scrollLeft - left) > 0.1) {
+                    snapping = true;
+                    r.scrollTo({ left, behavior: 'instant' });
+                    return;
+                }
+                snapping = false;
+                heading.current = '';
             } else if (near) {
                 swiped.current(near);
             }
@@ -1286,7 +1308,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 </div>
                 {voice && (
                     <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
-                        sounding={inCall ? sounding : ''} deafened={inCall && !!call?.deafened} volumes={volumes} onProfile={(m) => onDialog({ kind: 'profile', member: m })} inCall={inCall} label={label}
+                        sounding={inCall ? sounding : ''} deafened={inCall && !!call?.deafened} volumes={volumes} onProfile={(m, from) => onDialog({ kind: 'profile', member: m, from })} inCall={inCall} label={label}
                         watched={watching} previewing={!!share?.preview} identities={view.keeps_identities ? view.identities : null} since={call?.since}
                         moving={moves ? {
                             targets: (member) => moveTargets(view, member, c.id),
@@ -1471,7 +1493,7 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                         {/* The member and their verified mark are one row, which
                             the mark shows on hover over (M16.4). */}
                         <HoverRow as="span" class="flex min-w-0 items-center gap-1">
-                            <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={() => dm && onProfile(dm)}>
+                            <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={(e) => dm && onProfile(dm, e.currentTarget)}>
                                 <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
                                 <Name member={dm} class="truncate font-semibold" />
                                 {dm && <span class="hidden truncate text-sm text-base-content/60 sm:inline">@{dm.username}</span>}
@@ -1555,7 +1577,8 @@ function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verifi
                         <button type="button" class={`btn btn-ghost btn-sm btn-square ${membersOpen ? 'btn-active' : ''}`} onClick={onMembers}
                             aria-label={channel.kind === 'dm' ? 'Profile' : channel.kind === 'group_dm' ? "The group's members" : 'Members'} aria-pressed={membersOpen}
                             title={channel.kind === 'dm' ? 'Profile' : 'Members'}>
-                            <PeopleIcon />
+                            {/* One person for a DM's profile, people for a list of them. */}
+                            {channel.kind === 'dm' ? <MenuIcon name="profile" /> : <PeopleIcon />}
                         </button>
                     )}
                 </div>

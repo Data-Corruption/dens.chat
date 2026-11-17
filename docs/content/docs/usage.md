@@ -24,8 +24,9 @@ code starting with `dens1:`.
 2. Paste the invite, and choose **Join as someone new**.
 3. Pick a username, a display name and a password for this den. The username
    can't change.
-4. Save your recovery codes and your DM recovery key somewhere safe, such as a
-   password manager.
+4. Save your recovery codes and your DM recovery key somewhere safe:
+   **Save as a file** keeps them in one file named for the den, and **Copy**
+   puts them in a password manager.
 
 You have a separate profile in each den, and no den can link it to your
 others. Each den has a **Den ID**, which everyone in it sees the same:
@@ -193,6 +194,30 @@ soundboard work as you'd expect. What's different:
   as you set it, and **Hover** sets how much of it a message under your
   pointer covers. Your Dens keeps it, so each browser you open Dens in shows
   it, and nobody else sees it.
+
+## Writing messages
+
+The **+** in the message box attaches files, up to ten, lets others edit,
+and in a channel makes a poll; its **Formatting help** lists the formatting
+and the keys. What's different:
+
+- **Links** show as you paste them, with no way to give one a label. Dens
+  takes their tracking out as you send, and writes YouTube, Reddit, X and
+  Amazon links in a short form.
+- **Links to messages**: **Copy link**, in a message's **⋯**, copies one.
+  Pasted anywhere in Dens, it shows the channel the message is in, and
+  opens it for anyone who can see it.
+- **Mentions**: `@` and a username tells someone, if they can see the
+  channel; inside code or a link it's only text. Staff write `@everyone` to
+  tell everyone who can see the channel, which anyone turns off under
+  **Settings** → **Notifications**, or by muting the channel.
+- **Boxes to tick**: a line that starts with `[ ]` or `[x]` is a box that
+  anyone who may edit the message can tick, two people at once included.
+- **Let others edit** names up to 20 people who can see the channel to edit
+  your message with you, but not delete it. Change who from the message's
+  **⋯**.
+- A message holds up to 4,000 characters, and one taller than about 16 lines
+  shows folded until it's opened.
 
 ## Notifications
 
