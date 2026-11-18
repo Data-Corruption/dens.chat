@@ -433,7 +433,7 @@ function ShareButton({ call, share, den }) {
 // the buttons, for pages with room for it, Home's box, which holds the
 // lock and the soundboard (M14.3), where the den has one, in the row. They
 // show only what the browser can do: a share where it can share (M13.4).
-function CallControls({ denID, call, share, den, sounding, board, labeled }) {
+export function CallControls({ denID, call, share, den, sounding, board, labeled }) {
     const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
     const said = STATUS[call.status](where);
     const color = call.status === 'connected' ? 'text-success' : 'text-warning';

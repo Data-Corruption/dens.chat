@@ -1,49 +1,100 @@
-// A theme of the member's own: a name, Light or Dark, the corners, and ten
-// colors as #rrggbb. Three the member picks, the background, the text and
-// primary; seven come from the theme it started from: secondary and
-// accent, which the page draws little with, and neutral, info, success,
-// warning and error, which carry meaning. The rest derives from them
-// here: the two deeper backgrounds, and each color's own text.
+// A theme of the member's own: a name, Light or Dark, and DaisyUI's
+// variables, each in a field of its own (FIELDS). It always holds ten
+// colors, the background, the text, primary, secondary, accent, neutral
+// and the four statuses, and the three radii. The rest it holds where it
+// was given them, by a pasted block or the theme it started from: the two
+// deeper backgrounds, each color's text, the two sizes, the border, depth
+// and noise. What it leaves out derives here, the backgrounds and the
+// texts, or is Light's or Dark's, which it shows over.
 //
 // A theme reaches the page as DaisyUI's variables, variables(), and
-// another member as a code, themeCode(). A code is a member's message, so
-// readCode() takes one only as a pattern of hex digits: nothing but a
-// color it wrote out itself ever reaches a style.
+// another member as a block in the shape DaisyUI's theme generator
+// writes, themeCode(). A block is a member's message, so readCode() reads
+// each value it knows, a color as hex or oklch() and a number within the
+// generator's range, and writes it out again itself: nothing pasted ever
+// reaches a style as written. It reads v1.13.0's codes too.
 
 /** The most themes a browser keeps, and the longest name, in characters */
 export const MOST_THEMES = 20;
 export const NAME_MOST = 40;
 
-/** What a theme's code starts with, and its format's version */
+/** What a v1.13.0 code starts with */
 export const CODE = 'dens-theme:';
 const CODE_VERSION = '1';
+// The longest paste read: a block the generator writes is about 1,300
+// characters.
+const PASTE_MOST = 8000;
 
-/** The colors a theme holds, in a code's order: the member's three, then
-    the seven carried from the theme it started from */
-export const PICKED = ['base', 'text', 'primary'];
-export const CARRIED = ['secondary', 'accent', 'neutral', 'info', 'success', 'warning', 'error'];
-const COLORS = [...PICKED, ...CARRIED];
 // TINTS are the colors that carry text of their own.
-const TINTS = ['primary', ...CARRIED];
+const TINTS = ['primary', 'secondary', 'accent', 'neutral', 'info', 'success', 'warning', 'error'];
 
-// CORNERS are the corners by name, each with DaisyUI's three radii, for
-// selectors, fields and boxes, and its letter in a code: Rounded is
-// Light's own, and Round the roundest of DaisyUI's themes.
+/** COLORS are the ten colors every theme holds, in a v1.13.0 code's order */
+export const COLORS = ['base', 'text', ...TINTS];
+const RADII = ['radiusSelector', 'radiusField', 'radiusBox'];
+
+/** FIELDS are DaisyUI's variables a theme holds, by the field holding
+    each, in the order its generator writes them */
+export const FIELDS = {
+    base: '--color-base-100',
+    base200: '--color-base-200',
+    base300: '--color-base-300',
+    text: '--color-base-content',
+    ...Object.fromEntries(TINTS.flatMap((t) => [[t, `--color-${t}`], [`${t}Content`, `--color-${t}-content`]])),
+    radiusSelector: '--radius-selector',
+    radiusField: '--radius-field',
+    radiusBox: '--radius-box',
+    sizeSelector: '--size-selector',
+    sizeField: '--size-field',
+    border: '--border',
+    depth: '--depth',
+    noise: '--noise',
+};
+const BY_VARIABLE = Object.fromEntries(Object.entries(FIELDS).map(([field, v]) => [v, field]));
+
+/** VARIABLES are every variable a theme may set, each of which a page
+    leaving the theme takes back */
+export const VARIABLES = Object.values(FIELDS);
+
+// NUMBERS are the fields that hold a number: its unit, and the least and
+// most of it the generator gives.
+const NUMBERS = {
+    radiusSelector: ['rem', 0, 2],
+    radiusField: ['rem', 0, 2],
+    radiusBox: ['rem', 0, 2],
+    sizeSelector: ['rem', 0.1875, 0.3125],
+    sizeField: ['rem', 0.1875, 0.3125],
+    border: ['px', 0.5, 2],
+    depth: ['', 0, 1],
+    noise: ['', 0, 1],
+};
+
+/** SHOWN are the numbers Light and Dark give, which a theme that holds
+    none shows */
+export const SHOWN = { radiusSelector: 0.5, radiusField: 0.25, radiusBox: 0.5, sizeSelector: 0.25, sizeField: 0.25, border: 1, depth: 1, noise: 0 };
+
+/** DAISY are DaisyUI's Light's and Dark's colors, which a block leaving one
+    out takes, as DaisyUI would under it */
+export const DAISY = {
+    light: {
+        base: 'oklch(100% 0 0)', text: 'oklch(21% 0.006 285.885)', primary: 'oklch(45% 0.24 277.023)', secondary: 'oklch(65% 0.241 354.308)',
+        accent: 'oklch(77% 0.152 181.912)', neutral: 'oklch(14% 0.005 285.823)', info: 'oklch(74% 0.16 232.661)', success: 'oklch(76% 0.177 163.223)',
+        warning: 'oklch(82% 0.189 84.429)', error: 'oklch(71% 0.194 13.428)',
+    },
+    dark: {
+        base: 'oklch(25.33% 0.016 252.42)', text: 'oklch(97.807% 0.029 256.847)', primary: 'oklch(58% 0.233 277.117)', secondary: 'oklch(65% 0.241 354.308)',
+        accent: 'oklch(77% 0.152 181.912)', neutral: 'oklch(14% 0.005 285.823)', info: 'oklch(74% 0.16 232.661)', success: 'oklch(76% 0.177 163.223)',
+        warning: 'oklch(82% 0.189 84.429)', error: 'oklch(71% 0.194 13.428)',
+    },
+};
+
+// CORNERS are v1.13.0's corners by name, which a theme it kept names in
+// place of the three radii, with each one's letter in its code.
 const CORNERS = {
-    square: ['s', '0rem', '0rem', '0rem'],
-    rounded: ['r', '0.5rem', '0.25rem', '0.5rem'],
-    round: ['o', '1rem', '2rem', '1rem'],
-};
-export const CORNER_NAMES = Object.keys(CORNERS);
-
-/** LIGHT are DaisyUI's Light's colors, for a color the page can't read
-    from the theme a new one starts from */
-export const LIGHT = {
-    base: '#ffffff', text: '#18181b', primary: '#422ad5', secondary: '#f43098', accent: '#00d3bb',
-    neutral: '#09090b', info: '#00bafe', success: '#00d390', warning: '#fcb700', error: '#ff637d',
+    square: ['s', { radiusSelector: 0, radiusField: 0, radiusBox: 0 }],
+    rounded: ['r', { radiusSelector: 0.5, radiusField: 0.25, radiusBox: 0.5 }],
+    round: ['o', { radiusSelector: 1, radiusField: 2, radiusBox: 1 }],
 };
 
-const HEX = /^#[0-9a-f]{6}$/;
 // A name is text for a label: no control characters, line breaks or
 // overrides of its direction.
 const UNNAMEABLE = /[\p{Cc}\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
@@ -57,6 +108,62 @@ export function hexColor(text) {
     return '';
 }
 
+const NUM = String.raw`(\d+(?:\.\d*)?|\.\d+)`;
+const OKLCH = new RegExp(String.raw`^oklch\(\s*${NUM}(%?)\s+${NUM}(%?)\s+(-?)${NUM}(deg)?\s*\)$`);
+
+// number writes a number with at most places decimals, as a variable's
+// value is written.
+const number = (n, places = 3) => String(+n.toFixed(places));
+
+/** readColor is a color as a theme holds it, #rrggbb or oklch(L% C H), from
+    what a block or a member gave: #rrggbb, #rgb or oklch() with its
+    lightness as a percentage or from 0 to 1; '' for anything else, a
+    color with its alpha among them */
+export function readColor(text) {
+    if (typeof text !== 'string') return '';
+    const t = text.trim().toLowerCase();
+    if (t.startsWith('#')) return t.length === 4 || t.length === 7 ? hexColor(t) : '';
+    const m = OKLCH.exec(t);
+    if (!m) return '';
+    const l = m[2] ? +m[1] : +m[1] * 100;
+    // Chroma's percentage is of 0.4, as CSS has it.
+    const c = m[4] ? (+m[3] * 0.4) / 100 : +m[3];
+    const h = ((((m[5] ? -1 : 1) * +m[6]) % 360) + 360) % 360;
+    if (!(l <= 100 && c <= 0.5)) return '';
+    return `oklch(${number(l)}% ${number(c)} ${number(h)})`;
+}
+
+/** hexOf is a color a theme holds as #rrggbb, for what measures it: an
+    oklch() color sRGB can't show loses chroma until it can */
+export function hexOf(color) {
+    if (color.startsWith('#')) return color;
+    const [l, c, h] = color.slice(6, -1).split(' ').map(parseFloat);
+    return fromOklch(l / 100, c, (h * Math.PI) / 180);
+}
+
+// readNumber is a number field's value from what a block gave, within the
+// generator's range and in its unit, a bare 0 among them; null for
+// anything else.
+function readNumber(field, text) {
+    const [unit, least, most] = NUMBERS[field];
+    const m = /^(\d+(?:\.\d*)?|\.\d+)([a-z]*)$/.exec(String(text).trim().toLowerCase());
+    if (!m || (m[2] !== unit && !(m[2] === '' && +m[1] === 0))) return null;
+    const n = +(+m[1]).toFixed(5);
+    return n >= least && n <= most ? n : null;
+}
+
+/** readValue is a field's value as a theme holds it, from a variable's
+    text as a block or the page's style has it, or undefined */
+export function readValue(field, text) {
+    if (NUMBERS[field]) return readNumber(field, text) ?? undefined;
+    return readColor(text) || undefined;
+}
+
+/** written is a field's value as its variable takes it */
+function written(field, value) {
+    return NUMBERS[field] ? `${value}${NUMBERS[field][0]}` : value;
+}
+
 /** cleanName is a theme's name as kept, trimmed, or '' for one that's
     empty, too long or not plain text */
 export function cleanName(name) {
@@ -65,18 +172,42 @@ export function cleanName(name) {
     return n && [...n].length <= NAME_MOST && !UNNAMEABLE.test(n) ? n : '';
 }
 
-/** cleanTheme is a theme with only the fields a theme has, each checked,
-    or null: what the browser kept and what a code said both pass it */
+/** cleanTheme is a theme with only the fields a theme has, each as the page
+    writes it, or null: what the browser kept, what the editor made and
+    what a code said all pass it. A theme v1.13.0 kept names its corners,
+    which give it its radii. */
 export function cleanTheme(raw) {
     if (!raw || typeof raw !== 'object') return null;
     const name = cleanName(raw.name);
-    if (!name || typeof raw.dark !== 'boolean' || !Object.hasOwn(CORNERS, raw.corners)) return null;
-    const theme = { name, dark: raw.dark, corners: raw.corners };
-    for (const color of COLORS) {
-        if (typeof raw[color] !== 'string' || !HEX.test(raw[color])) return null;
-        theme[color] = raw[color];
+    if (!name || typeof raw.dark !== 'boolean') return null;
+    const corners = Object.hasOwn(CORNERS, raw.corners) ? CORNERS[raw.corners][1] : {};
+    const theme = { name, dark: raw.dark };
+    for (const field of Object.keys(FIELDS)) {
+        const value = raw[field] ?? corners[field];
+        if (value === undefined) {
+            if (COLORS.includes(field) || RADII.includes(field)) return null;
+            continue;
+        }
+        const ok = NUMBERS[field] ? typeof value === 'number' && readNumber(field, written(field, value)) === value : !!value && readColor(value) === value;
+        if (!ok) return null;
+        theme[field] = value;
     }
     return theme;
+}
+
+/** editTheme is a theme with changes made in the editor: a background
+    changed takes the deeper two it held away, and a color changed its
+    text, so they derive from the new one */
+export function editTheme(theme, changes) {
+    const next = { ...theme, ...changes };
+    if ('base' in changes && changes.base !== theme.base) {
+        delete next.base200;
+        delete next.base300;
+    }
+    for (const t of TINTS) {
+        if (t in changes && changes[t] !== theme[t]) delete next[`${t}Content`];
+    }
+    return next;
 }
 
 // Colors ------------------------------------------------------------------
@@ -156,64 +287,166 @@ export function textOn(color) {
     return contrast(light, color) >= contrast(dark, color) ? light : dark;
 }
 
+// ON_BACKGROUND are the colors whose words the page draws on the
+// background, as a link's or a mention's are primary's. A status is an
+// icon and an edge beside words in the text's color, so a pale one costs
+// nothing to read.
+const ON_BACKGROUND = ['text', 'primary'];
+
+/** lowContrast is how the text or primary reads on a theme's background
+    where that's poorly, under 4.5 to 1 for the text and 3 to 1 for
+    primary, or 0 where it reads well, or for any other color */
+export function lowContrast(theme, field) {
+    if (!ON_BACKGROUND.includes(field)) return 0;
+    const ratio = contrast(hexOf(theme[field]), hexOf(theme.base));
+    return ratio < (field === 'text' ? 4.5 : 3) ? ratio : 0;
+}
+
 // Variables ---------------------------------------------------------------
 
-/** VARIABLES are DaisyUI's variables a theme sets, each of which a page
-    leaving the theme takes back */
-export const VARIABLES = [
-    '--color-base-100', '--color-base-200', '--color-base-300', '--color-base-content',
-    ...TINTS.flatMap((name) => [`--color-${name}`, `--color-${name}-content`]),
-    '--radius-selector', '--radius-field', '--radius-box',
-];
-
-/** variables are DaisyUI's variables as a theme sets them, by name: its
-    colors and those derived from them, and its corners. What it leaves,
-    DaisyUI's Light or Dark gives. */
+/** variables are DaisyUI's variables as a theme sets them, by name: what it
+    holds, and the deeper backgrounds and each color's text where it holds
+    none. What else it leaves, DaisyUI's Light or Dark gives. */
 export function variables(theme) {
-    const [base200, base300] = deeper(theme.base);
-    const [, selector, field, box] = CORNERS[theme.corners];
-    const vars = {
-        '--color-base-100': theme.base,
-        '--color-base-200': base200,
-        '--color-base-300': base300,
-        '--color-base-content': theme.text,
-        '--radius-selector': selector,
-        '--radius-field': field,
-        '--radius-box': box,
-    };
-    for (const name of TINTS) {
-        vars[`--color-${name}`] = theme[name];
-        vars[`--color-${name}-content`] = textOn(theme[name]);
+    const [base200, base300] = deeper(hexOf(theme.base));
+    const derived = { base200, base300 };
+    const vars = {};
+    for (const [field, name] of Object.entries(FIELDS)) {
+        let value = theme[field];
+        if (value === undefined && field.endsWith('Content')) value = textOn(hexOf(theme[field.slice(0, -'Content'.length)]));
+        value ??= derived[field];
+        if (value !== undefined) vars[name] = written(field, value);
     }
     return vars;
 }
 
-/** cornersOf names the corners nearest a field's radius in rem, as a theme
-    being started from has it */
-export function cornersOf(rem) {
-    if (!(rem > 0.01)) return 'square';
-    return rem >= 1 ? 'round' : 'rounded';
+/** numberShown is a number field's value as a theme shows it: its own, or
+    Light's and Dark's */
+export function numberShown(theme, field) {
+    return theme[field] ?? SHOWN[field];
 }
 
 // Codes -------------------------------------------------------------------
 
-// A code is dens-theme:1.d.r.<colors>.<name>: its format's version, d for
-// Dark or l for Light, the corners' letter, the ten colors' hex digits end
-// to end, and the name's UTF-8 as hex digits, so no character of it means
-// anything to a message's markdown.
-const CODE_FORM = new RegExp(`^${CODE}${CODE_VERSION}\\.([dl])\\.([sro])\\.([0-9a-f]{${COLORS.length * 6}})\\.((?:[0-9a-f]{2}){1,${NAME_MOST * 4}})$`);
+// cssString writes a name as a CSS string.
+const cssString = (text) => `"${text.replace(/["\\]/g, (c) => `\\${c}`)}"`;
 
-/** themeCode is a theme as a code another member pastes */
+/** themeCode is a theme as a block another member pastes, in the shape
+    DaisyUI's theme generator writes, every variable in it */
 export function themeCode(theme) {
-    const name = [...new TextEncoder().encode(theme.name)].map((b) => b.toString(16).padStart(2, '0')).join('');
-    return `${CODE}${CODE_VERSION}.${theme.dark ? 'd' : 'l'}.${CORNERS[theme.corners][0]}.${COLORS.map((c) => theme[c].slice(1)).join('')}.${name}`;
+    const vars = variables(theme);
+    return [
+        '@plugin "daisyui/theme" {',
+        `  name: ${cssString(theme.name)};`,
+        '  default: false;',
+        '  prefersdark: false;',
+        `  color-scheme: "${theme.dark ? 'dark' : 'light'}";`,
+        ...Object.entries(FIELDS).map(([field, name]) => `  ${name}: ${vars[name] ?? written(field, SHOWN[field])};`),
+        '}',
+    ].join('\n');
 }
 
-/** readCode is the theme a code holds, or null for anything else: a field
-    more or fewer, a color that isn't hex digits, or a name that's too
-    long, isn't UTF-8 or isn't plain text */
-export function readCode(code) {
-    const m = CODE_FORM.exec(String(code).trim().toLowerCase());
+/** readCode is the theme a block holds, or a v1.13.0 code, or null for
+    anything else: a paste with nothing of a theme in it, or too long */
+export function readCode(text) {
+    const t = String(text ?? '').trim();
+    if (!t || t.length > PASTE_MOST) return null;
+    return t.toLowerCase().startsWith(CODE) ? readOldCode(t) : readBlock(t);
+}
+
+// declarations are a block's `key: value` pairs, from inside its braces, or
+// the whole paste where it has none, its comments left out: split at each
+// semicolon outside a quoted string, and ended by the closing brace.
+function declarations(text) {
+    const out = [];
+    let at = '';
+    let quote = '';
+    let opened = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (quote) {
+            at += c;
+            if (c === '\\' && i + 1 < text.length) at += text[++i];
+            else if (c === quote) quote = '';
+        } else if (c === '/' && text[i + 1] === '*') {
+            const end = text.indexOf('*/', i + 2);
+            if (end < 0) break;
+            i = end + 1;
+        } else if (c === '"' || c === "'") {
+            quote = c;
+            at += c;
+        } else if (c === '{' && !opened) {
+            // What stands before the brace names the block, as the
+            // generator's @plugin line does.
+            opened = true;
+            out.length = 0;
+            at = '';
+        } else if (c === '}' || c === '{') {
+            break;
+        } else if (c === ';') {
+            out.push(at);
+            at = '';
+        } else {
+            at += c;
+        }
+    }
+    out.push(at);
+    return out.map((d) => d.trim()).filter(Boolean);
+}
+
+// cssText is a declaration's text: a quoted string's, with its quotes and
+// backslashes as escapes, or a word as it is; '' for a string it can't
+// read.
+function cssText(value) {
+    const q = value[0];
+    if (q !== '"' && q !== "'") return value;
+    if (value.length < 2 || value.at(-1) !== q) return '';
+    let out = '';
+    for (let i = 1; i < value.length - 1; i++) {
+        let c = value[i];
+        if (c === '\\') {
+            c = value[++i];
+            if (i >= value.length - 1 || !['"', "'", '\\'].includes(c)) return '';
+        } else if (c === q) {
+            return '';
+        }
+        out += c;
+    }
+    return out;
+}
+
+// readBlock reads each value of a block it knows, leaving out one it can't
+// read; a color the block leaves out of the ten is Light's or Dark's, by
+// its color-scheme, or by its background where it names none.
+function readBlock(text) {
+    const read = {};
+    let name = '';
+    let scheme = '';
+    for (const d of declarations(text)) {
+        const colon = d.indexOf(':');
+        if (colon < 0) continue;
+        const key = d.slice(0, colon).trim().toLowerCase();
+        const value = d.slice(colon + 1).trim();
+        if (key === 'name') name = cssText(value);
+        else if (key === 'color-scheme') scheme = cssText(value).toLowerCase();
+        else if (Object.hasOwn(BY_VARIABLE, key)) {
+            const field = BY_VARIABLE[key];
+            const v = readValue(field, value);
+            if (v !== undefined) read[field] = v;
+        }
+    }
+    if (!Object.keys(read).length) return null;
+    const dark = scheme === 'dark' || (scheme !== 'light' && read.base !== undefined && oklch(hexOf(read.base))[0] < 0.5);
+    return cleanTheme({ ...DAISY[dark ? 'dark' : 'light'], ...CORNERS.rounded[1], ...read, name: cleanName(name) || 'Pasted theme', dark });
+}
+
+// A v1.13.0 code is dens-theme:1.d.r.<colors>.<name>: its format's
+// version, d for Dark or l for Light, the corners' letter, the ten colors'
+// hex digits end to end, and the name's UTF-8 as hex digits.
+const CODE_FORM = new RegExp(`^${CODE}${CODE_VERSION}\\.([dl])\\.([sro])\\.([0-9a-f]{${COLORS.length * 6}})\\.((?:[0-9a-f]{2}){1,${NAME_MOST * 4}})$`);
+
+function readOldCode(code) {
+    const m = CODE_FORM.exec(code.toLowerCase());
     if (!m) return null;
     let name;
     try {
@@ -221,7 +454,7 @@ export function readCode(code) {
     } catch {
         return null;
     }
-    const theme = { name, dark: m[1] === 'd', corners: CORNER_NAMES.find((c) => CORNERS[c][0] === m[2]) };
+    const theme = { name, dark: m[1] === 'd', corners: Object.keys(CORNERS).find((c) => CORNERS[c][0] === m[2]) };
     COLORS.forEach((color, i) => {
         theme[color] = `#${m[3].slice(i * 6, i * 6 + 6)}`;
     });

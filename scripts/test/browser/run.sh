@@ -161,16 +161,19 @@
 #                               the side, with the layout audit, every hint in them reading in a line; and
 #                               Appearance's sizes, a photo and a YouTube player each shown at the size
 #                               chosen, a large photo drawn itself over its preview; and a theme of the member's
-#                               own made in the editor, the page wearing it color for color, saved, edited,
-#                               its code copied and pasted into bob's browser, a stranger's codes refused; and
+#                               own made in the editor, saved, edited, its code copied and pasted into bob's
+#                               browser, a stranger's codes refused; and
 #                               a picture set behind general's messages, found there under its dim by the
 #                               screen's pixels, in a second browser too, and removed (M19.4); and Staff
 #                               marks, the message bar's hue on a green theme of her own, and the background's
 #                               Hover in both browsers (M21.1); and from M22.3 each section held to the one frame,
 #                               its groups cards, one toggle size, regular labels, every button one of the page's
 #                               kinds; Manage holding what staff manage; and her own sections of the den from the
-#                               cog on its page. PART is sections, preview, sizes, themes or background; all
-#                               unless given
+#                               cog on its page; and from M22.5 the theme editor's dialog, a color edited
+#                               against its den preview while the page keeps its own, the code a block, a
+#                               stranger's blocks read for what the page reads alone, DaisyUI's generator's
+#                               block pasted and every variable set as it gives it, and a v1.13.0 code read.
+#                               PART is sections, preview, sizes, themes or background; all unless given
 #   names BROWSER               M19.5: alice picking a font and a gradient in Edit profile, its fonts as
 #                               tiles in their own faces; bob's page showing her name in them in the member
 #                               list, a message, a reply's quote, a call, the DM list, a DM's header and her

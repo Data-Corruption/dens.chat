@@ -995,14 +995,20 @@ const MUTED = "Muted: its messages don't notify you.";
 // readStyle is how a row's name shows whether it waits to be read: bold at
 // full strength, while one read is a little fainter, unless it's open or
 // its call is the member's.
-function readStyle(unread, here) {
+export function readStyle(unread, here) {
     if (unread) return 'font-bold text-base-content';
     return here ? '' : 'text-base-content/85';
 }
 
+// ROW is a channel's row in the list, shaded while it's open or its call is
+// the member's, and ROW_BUTTON the button across it.
+export const ROW = 'group relative flex min-h-8 select-none items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11';
+export const rowShade = (here) => (here ? 'bg-base-300' : 'hover:bg-base-300/60');
+export const ROW_BUTTON = 'flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded';
+
 // UnreadPill marks a row with messages unread at its left edge, which tells
 // it from one read in any theme, at a glance on a phone too.
-function UnreadPill() {
+export function UnreadPill() {
     return <span class="pointer-events-none absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-base-content" data-unread aria-hidden="true"></span>;
 }
 
@@ -1283,11 +1289,11 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
             <li key={c.id}>
                 {/* The row's button reaches across it, under its marks, whose
                     tips say on a tap what they mean (M13.2). */}
-                <div class={`group relative flex min-h-8 select-none items-center gap-0.5 rounded pr-1 pointer-coarse:min-h-11 ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${c.id === open || inCall ? 'bg-base-300' : 'hover:bg-base-300/60'} ${dropMark(c.id)}`}
+                <div class={`${ROW} ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${rowShade(c.id === open || inCall)} ${dropMark(c.id)}`}
                     data-channel-row={c.id} {...presses(`channel:${c.id}`)} {...rowDrag(c)}>
                     <button
                         type="button"
-                        class="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded"
+                        class={ROW_BUTTON}
                         onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
                         title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
@@ -1468,7 +1474,7 @@ function PeopleIcon() {
 // description shows its first line, which opens the rest when there is
 // more than fits. Its bell mutes the channel's notifications, once the
 // member turned some on (M12.3): muted is null until then.
-function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
+export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
     const clipped = useClipped(line, channel.description);

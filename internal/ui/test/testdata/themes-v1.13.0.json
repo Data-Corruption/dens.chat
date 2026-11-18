@@ -1,0 +1,92 @@
+{
+  "stored": "[{\"id\":\"dusk0001\",\"name\":\"Dusk\",\"dark\":true,\"corners\":\"rounded\",\"base\":\"#1d232a\",\"text\":\"#a6adbb\",\"primary\":\"#605dff\",\"secondary\":\"#f43098\",\"accent\":\"#00d3bb\",\"neutral\":\"#09090b\",\"info\":\"#00bafe\",\"success\":\"#00d390\",\"warning\":\"#fcb700\",\"error\":\"#ff627d\"},{\"id\":\"dawn0002\",\"name\":\"Été 🌆 \\\"at\\\" the lake\",\"dark\":false,\"corners\":\"round\",\"base\":\"#f4efe6\",\"text\":\"#2a2118\",\"primary\":\"#c2410c\",\"secondary\":\"#ff79c6\",\"accent\":\"#8be9fd\",\"neutral\":\"#414558\",\"info\":\"#8be9fd\",\"success\":\"#50fa7b\",\"warning\":\"#f1fa8c\",\"error\":\"#ff5555\"},{\"id\":\"black003\",\"name\":\"Night\",\"dark\":true,\"corners\":\"square\",\"base\":\"#000000\",\"text\":\"#e2efe6\",\"primary\":\"#fcb700\",\"secondary\":\"#f43098\",\"accent\":\"#00d3bb\",\"neutral\":\"#09090b\",\"info\":\"#00bafe\",\"success\":\"#00d390\",\"warning\":\"#fcb700\",\"error\":\"#ff627d\"}]",
+  "themes": [
+    {
+      "id": "dusk0001",
+      "code": "dens-theme:1.d.r.1d232aa6adbb605dfff4309800d3bb09090b00bafe00d390fcb700ff627d.4475736b",
+      "variables": {
+        "--color-base-100": "#1d232a",
+        "--color-base-200": "#181e25",
+        "--color-base-300": "#13181f",
+        "--color-base-content": "#a6adbb",
+        "--radius-selector": "0.5rem",
+        "--radius-field": "0.25rem",
+        "--radius-box": "0.5rem",
+        "--color-primary": "#605dff",
+        "--color-primary-content": "#f7f8ff",
+        "--color-secondary": "#f43098",
+        "--color-secondary-content": "#240e17",
+        "--color-accent": "#00d3bb",
+        "--color-accent-content": "#001b17",
+        "--color-neutral": "#09090b",
+        "--color-neutral-content": "#f8f8fb",
+        "--color-info": "#00bafe",
+        "--color-info-content": "#011925",
+        "--color-success": "#00d390",
+        "--color-success-content": "#021b10",
+        "--color-warning": "#fcb700",
+        "--color-warning-content": "#1f1401",
+        "--color-error": "#ff627d",
+        "--color-error-content": "#250e11"
+      }
+    },
+    {
+      "id": "dawn0002",
+      "code": "dens-theme:1.l.o.f4efe62a2118c2410cff79c68be9fd4145588be9fd50fa7bf1fa8cff5555.c38974c3a920f09f8c86202261742220746865206c616b65",
+      "variables": {
+        "--color-base-100": "#f4efe6",
+        "--color-base-200": "#ede8df",
+        "--color-base-300": "#e5e0d7",
+        "--color-base-content": "#2a2118",
+        "--radius-selector": "1rem",
+        "--radius-field": "2rem",
+        "--radius-box": "1rem",
+        "--color-primary": "#c2410c",
+        "--color-primary-content": "#fff6f4",
+        "--color-secondary": "#ff79c6",
+        "--color-secondary-content": "#230e1a",
+        "--color-accent": "#8be9fd",
+        "--color-accent-content": "#001a20",
+        "--color-neutral": "#414558",
+        "--color-neutral-content": "#f6f8ff",
+        "--color-info": "#8be9fd",
+        "--color-info-content": "#001a20",
+        "--color-success": "#50fa7b",
+        "--color-success-content": "#081b0b",
+        "--color-warning": "#f1fa8c",
+        "--color-warning-content": "#161802",
+        "--color-error": "#ff5555",
+        "--color-error-content": "#250e0d"
+      }
+    },
+    {
+      "id": "black003",
+      "code": "dens-theme:1.d.s.000000e2efe6fcb700f4309800d3bb09090b00bafe00d390fcb700ff627d.4e69676874",
+      "variables": {
+        "--color-base-100": "#000000",
+        "--color-base-200": "#141414",
+        "--color-base-300": "#1b1b1b",
+        "--color-base-content": "#e2efe6",
+        "--radius-selector": "0rem",
+        "--radius-field": "0rem",
+        "--radius-box": "0rem",
+        "--color-primary": "#fcb700",
+        "--color-primary-content": "#1f1401",
+        "--color-secondary": "#f43098",
+        "--color-secondary-content": "#240e17",
+        "--color-accent": "#00d3bb",
+        "--color-accent-content": "#001b17",
+        "--color-neutral": "#09090b",
+        "--color-neutral-content": "#f8f8fb",
+        "--color-info": "#00bafe",
+        "--color-info-content": "#011925",
+        "--color-success": "#00d390",
+        "--color-success-content": "#021b10",
+        "--color-warning": "#fcb700",
+        "--color-warning-content": "#1f1401",
+        "--color-error": "#ff627d",
+        "--color-error-content": "#250e11"
+      }
+    }
+  ]
+}

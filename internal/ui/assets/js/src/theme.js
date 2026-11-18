@@ -8,7 +8,7 @@
 // app's bars (M13.3).
 
 import { setBars } from './events.js';
-import { CARRIED, LIGHT, MOST_THEMES, PICKED, VARIABLES, cleanTheme, cornersOf, newID, readThemes, variables } from './themes.js';
+import { COLORS, DAISY, FIELDS, MOST_THEMES, SHOWN, VARIABLES, cleanTheme, newID, readThemes, readValue, variables } from './themes.js';
 
 const LIGHT_THEME = 'light';
 const DARK_THEME = 'dark';
@@ -85,9 +85,6 @@ function show(root, name, own) {
     }
 }
 
-// previewed is a theme the editor shows while the member makes it.
-let previewed = null;
-
 // watchers hear of each change of the theme, and colors are the ones the
 // page read from it since the last, undefined until it reads them.
 const watchers = new Set();
@@ -95,7 +92,7 @@ let colors;
 
 function apply() {
     const choice = themeChoice();
-    const own = previewed || (choice.startsWith(OWN) && ownThemes().find((t) => ownChoice(t.id) === choice)) || null;
+    const own = (choice.startsWith(OWN) && ownThemes().find((t) => ownChoice(t.id) === choice)) || null;
     show(document.documentElement, choice === 'system' ? (dark()?.matches ? DARK_THEME : LIGHT_THEME) : choice, own);
     colors = undefined;
     watchers.forEach((fn) => fn());
@@ -124,14 +121,6 @@ export function themeColors() {
         }
     }
     return colors;
-}
-
-/** Shows a theme the member is making, without keeping it, or with null
-    the theme they chose again */
-export function previewTheme(theme) {
-    // Its name may still be unwritten, which changes nothing it shows.
-    previewed = theme && cleanTheme({ ...theme, name: 'preview' });
-    apply();
 }
 
 /** Gives another window's document the page's theme, as a share's has */
@@ -172,20 +161,19 @@ export function forgetTheme(id) {
 }
 
 /** The theme the page shows, as one of the member's own would hold it,
-    for a new one to start from: its colors read from DaisyUI's variables,
-    whether it's dark, and its corners */
+    for a new one to start from: each of DaisyUI's variables it reads, and
+    whether it's dark */
 export function shownTheme(name) {
     const style = getComputedStyle(document.documentElement);
-    // A field's radius, which buttons share, says most of a theme's
-    // corners. DaisyUI writes it in rem; one in pixels is as many
-    // sixteenths.
-    const radius = style.getPropertyValue('--radius-field').trim();
-    const rem = parseFloat(radius) / (radius.endsWith('px') ? parseFloat(style.fontSize) || 16 : 1);
-    const theme = { name, dark: style.colorScheme.includes('dark'), corners: cornersOf(rem) };
-    const from = { base: '--color-base-100', text: '--color-base-content' };
-    for (const color of [...PICKED, ...CARRIED]) {
-        // A color the canvas can't read is Light's.
-        theme[color] = hex(style.getPropertyValue(from[color] || `--color-${color}`)) || LIGHT[color];
+    const dark = style.colorScheme.includes('dark');
+    const theme = { name, dark };
+    for (const [field, variable] of Object.entries(FIELDS)) {
+        const value = style.getPropertyValue(variable).trim();
+        // A color written some other way reads through the canvas, and what
+        // a theme always holds that still won't read is Light's or Dark's.
+        let read = readValue(field, value) ?? (variable.startsWith('--color-') ? hex(value) || undefined : undefined);
+        if (read === undefined && (COLORS.includes(field) || field.startsWith('radius'))) read = DAISY[dark ? 'dark' : 'light'][field] ?? SHOWN[field];
+        if (read !== undefined) theme[field] = read;
     }
     return cleanTheme(theme);
 }

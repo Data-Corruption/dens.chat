@@ -181,9 +181,12 @@ soundboard work as you'd expect. What's different:
   emoji and GIFs in messages play always, or only while your pointer is over
   them.
 - **Themes**: **Settings** → **Appearance** has a few dozen, and **New
-  theme** makes one of your own from three colors. **Copy code** turns yours
-  into a line of text to send someone, who adds it with **Paste a code**.
-  Your themes stay in the browser you made them in.
+  theme** makes one of your own: its colors, corners, border, depth and
+  noise, beside a small den that shows it as you go. **Copy code** turns
+  yours into a block of text to send someone, who adds it with **Paste a
+  code**. A theme from [daisyUI's theme generator](https://daisyui.com/theme-generator/)
+  pastes in the same way: copy its CSS there. Your themes stay in the
+  browser you made them in.
 - **Steam games** you link show as cards, with the price, reviews and who's
   playing, once you turn on **Show Steam games as cards** in **Settings** →
   **Chat**. Steam then sees your IP address as each card loads.

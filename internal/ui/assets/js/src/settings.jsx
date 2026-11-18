@@ -12,7 +12,7 @@
 // System hosting a den, the cache, updates, backups, the local
 // password, the logs, signing this browser out, and the version.
 
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
 import { api } from './api.js';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
@@ -40,15 +40,18 @@ import { MenuButton } from './menus.jsx';
 import { YOUR_SECTIONS, YourDen, useYourDen, yourSections } from './yourden.jsx';
 import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, listen, setBufferChoice, stopListening } from './relay.js';
 import { useRelay } from './relay.jsx';
-import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
-import { CORNER_NAMES, MOST_THEMES, NAME_MOST, PICKED, cleanName, readCode, themeCode, variables } from './themes.js';
+import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
+import {
+    MOST_THEMES, NAME_MOST, cleanName, cleanTheme, editTheme, hexColor, hexOf, lowContrast, numberShown, readCode, readColor, themeCode, variables,
+} from './themes.js';
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
 import { setStaffMarks, useStaffMarks } from './staffmarks.js';
 import { setCallTimer, useCallTimer } from './calltimer.js';
 import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
-import { AppearancePreview } from './preview.jsx';
+import { AppearancePreview, DenPreview } from './preview.jsx';
+import { Dialog } from './manage.jsx';
 import {
     RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
     inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise,
@@ -112,8 +115,8 @@ export function SettingsDialog({ section, denID, onSection, onClose, instance, v
 // or Dark, one of the others, or one of the member's own, each shown in
 // its colors. It takes hold at once, and this browser keeps it. Under
 // them the member makes a theme, edits or deletes the one chosen, copies
-// its code for another member, and pastes one; and last, the picture
-// behind the chat.
+// its code for another member, and pastes one, a block from DaisyUI's
+// theme generator among them; and last, the picture behind the chat.
 function ThemePicker() {
     const [choice, setChoice] = useState(themeChoice);
     const [own, setOwn] = useState(ownThemes);
@@ -199,14 +202,14 @@ function ThemePicker() {
                         ))}
                     </div>
                 )}
-                {editing ? (
-                    <ThemeEditor start={editing.start} onSave={(theme) => kept(theme, editing.id)} onCancel={reread} />
-                ) : pasting ? (
-                    <form class="flex flex-wrap gap-2" onSubmit={paste}>
-                        <input class="input input-sm min-w-40 flex-1 font-mono" aria-label="A theme's code" placeholder="dens-theme:…" value={code}
-                            onInput={(e) => setCode(e.currentTarget.value)} required autofocus {...PLAIN} />
-                        <SubmitButton>Add</SubmitButton>
-                        <Button kind="quiet" onClick={reread}>Cancel</Button>
+                {pasting ? (
+                    <form class="flex flex-col gap-2" onSubmit={paste}>
+                        <textarea class="textarea w-full font-mono text-xs" rows="4" aria-label="A theme's code" placeholder={'@plugin "daisyui/theme" { … }'}
+                            value={code} onInput={(e) => setCode(e.currentTarget.value)} required autofocus {...PLAIN}></textarea>
+                        <Actions>
+                            <SubmitButton>Add</SubmitButton>
+                            <Button kind="quiet" onClick={reread}>Cancel</Button>
+                        </Actions>
                     </form>
                 ) : (
                     <>
@@ -228,6 +231,10 @@ function ThemePicker() {
                         </div>
                     </>
                 )}
+                {editing && (
+                    <ThemeEditor title={editing.id ? 'Edit theme' : 'New theme'} start={editing.start} onSave={(theme) => kept(theme, editing.id)}
+                        onCancel={reread} />
+                )}
                 {full && !editing && <p class="text-sm text-base-content/70">You have {MOST_THEMES} themes. Delete one to add another.</p>}
                 <ErrorText message={error} />
             </div>
@@ -236,54 +243,116 @@ function ThemePicker() {
     );
 }
 
-// COLOR_NAMES are what the editor calls the colors a member picks.
-const COLOR_NAMES = { base: 'Background', text: 'Text', primary: 'Primary' };
-const CORNER_LABELS = { square: 'Square', rounded: 'Rounded', round: 'Round' };
+// EDITED are the colors the editor shows, by what it calls them: those the
+// page draws with. A theme holds secondary and accent, which it draws next
+// to nothing with, each color's text, the deeper backgrounds and the sizes
+// without a control of their own.
+const EDITED = [
+    ['base', 'Background'], ['text', 'Text'], ['primary', 'Primary'], ['neutral', 'Neutral'],
+    ['info', 'Info'], ['success', 'Success'], ['warning', 'Warning'], ['error', 'Error'],
+];
+// RADII are the corners by what each rounds, and ROUNDINGS the radii the
+// editor offers for each, in rem, as the generator does.
+const RADII = [['radiusBox', 'Cards'], ['radiusField', 'Buttons'], ['radiusSelector', 'Toggles']];
+const ROUNDINGS = [[0, 'Square'], [0.25, 'Slight'], [0.5, 'Rounded'], [1, 'Round'], [2, 'Full']];
+// BORDERS are the borders' widths the editor offers, in pixels.
+const BORDERS = [0.5, 1, 1.5, 2];
 
-// ThemeEditor makes or changes a theme of the member's own: its name,
-// whether it stands on Light or Dark, its three colors and its corners. The
-// page wears the theme as it's made, and takes the chosen one back when
-// the editor goes, saved or not.
-function ThemeEditor({ start, onSave, onCancel }) {
+// readTyped reads a color typed in the editor: oklch(), or hex with or
+// without its #.
+const readTyped = (text) => readColor(text) || hexColor(text);
+
+// ThemeEditor makes or changes a theme of the member's own, in a dialog:
+// its controls, and beside them, or atop them on the phone layout, a den
+// in the theme as it's made, which alone wears it until it's saved. The
+// controls are its name, whether it stands on Light or Dark, the colors
+// the page draws with, each of which says where it reads poorly on the
+// background, the corners, the border, depth and noise.
+function ThemeEditor({ title, start, onSave, onCancel }) {
     const [draft, setDraft] = useState(start);
     const [error, setError] = useState('');
-    const form = useRef(null);
+    // Escape closes the editor alone, before the settings under it hear it.
+    const cancel = useRef(onCancel);
+    cancel.current = onCancel;
     useEffect(() => {
-        previewTheme(draft);
-    }, [draft]);
-    // It opens under the card's themes, so it's brought into view.
-    useEffect(() => {
-        form.current?.scrollIntoView?.({ block: 'nearest' });
-        return () => previewTheme(null);
+        const escape = (e) => {
+            if (e.key !== 'Escape') return;
+            e.stopPropagation();
+            cancel.current();
+        };
+        document.addEventListener('keydown', escape, true);
+        return () => document.removeEventListener('keydown', escape, true);
     }, []);
-    const change = (changes) => setDraft((d) => ({ ...d, ...changes }));
+    const change = (changes) => setDraft((d) => editTheme(d, changes));
+    // The preview shows the draft whatever its name, which may be unwritten.
+    const shown = useMemo(() => cleanTheme({ ...draft, name: 'preview' }), [draft]);
     function save(e) {
         e.preventDefault();
         const name = cleanName(draft.name);
         if (!name) return setError(`A theme's name is up to ${NAME_MOST} characters.`);
         onSave({ ...draft, name });
     }
+    // A number the editor doesn't offer, as a block may give, shows as
+    // itself among those it does.
+    const offered = (choices, value, unit) => (choices.some(([v]) => v === value) ? choices : [...choices, [value, `${value} ${unit}`]].sort((a, b) => a[0] - b[0]));
     return (
-        <form ref={form} class="flex flex-col gap-3 rounded-box bg-base-100 p-3 max-md:bg-base-200" data-theme-editor onSubmit={save}>
-            <label class="flex flex-col gap-1">
-                <span class="text-sm">Name</span>
-                <TextInput value={draft.name} onInput={(name) => change({ name })} maxlength={NAME_MOST * 2} required />
-            </label>
-            <Choices label="Based on" name="theme-base" data="data-theme-base" choice={draft.dark ? 'dark' : 'light'} onPick={(v) => change({ dark: v === 'dark' })}
-                choices={[['light', 'Light'], ['dark', 'Dark']]} />
-            <div role="group" aria-label="Colors" class="flex flex-col gap-2">
-                {PICKED.map((color) => (
-                    <ColorField key={color} label={COLOR_NAMES[color]} value={draft[color]} onChange={(hex) => change({ [color]: hex })} />
-                ))}
-            </div>
-            <Choices label="Corners" name="theme-corners" data="data-theme-corners" choice={draft.corners} onPick={(corners) => change({ corners })}
-                choices={CORNER_NAMES.map((c) => [c, CORNER_LABELS[c]])} />
-            <ErrorText message={error} />
+        <Dialog title={title} wide="xl" onClose={onCancel} foot={
             <Actions>
-                <SubmitButton>Save</SubmitButton>
+                <SubmitButton form="theme-editor">Save</SubmitButton>
                 <Button kind="quiet" onClick={onCancel}>Cancel</Button>
             </Actions>
-        </form>
+        }>
+            <div class="grid gap-6 md:grid-cols-[20rem_minmax(0,1fr)]">
+                {/* On the phone layout it holds under the sheet's title, over
+                    the controls scrolling beneath. */}
+                <div class="sticky top-[52px] z-[5] -mx-1 self-start bg-base-100 px-1 pb-2 md:top-0 md:order-last md:mx-0 md:px-0 md:pb-0" data-preview-hold>
+                    {shown && <DenPreview theme={shown} />}
+                </div>
+                <form id="theme-editor" class="flex flex-col gap-4" data-theme-editor onSubmit={save}>
+                    <Field label="Name">
+                        <TextInput value={draft.name} onInput={(name) => change({ name })} maxlength={NAME_MOST * 2} required />
+                    </Field>
+                    <Choices label="Based on" name="theme-base" data="data-theme-base" choice={draft.dark ? 'dark' : 'light'}
+                        onPick={(v) => change({ dark: v === 'dark' })} choices={[['light', 'Light'], ['dark', 'Dark']]} />
+                    <div role="group" aria-label="Colors" class="flex flex-col gap-3">
+                        <h3 class="text-sm font-semibold">Colors</h3>
+                        {EDITED.map(([field, label]) => (
+                            <div key={field}>
+                                <ColorField long label={label} value={draft[field]} hex={hexOf(draft[field])} read={readTyped}
+                                    onChange={(color) => change({ [field]: color })} />
+                                {lowContrast(draft, field) > 0 && (
+                                    <StatusText kind="warning" size="xs" class="mt-1" data-low-contrast={label}>Hard to read on the background</StatusText>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    <div role="group" aria-label="Corners" class="flex flex-col gap-1" data-theme-corners>
+                        <h3 class="text-sm font-semibold">Corners</h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            {RADII.map(([field, label]) => (
+                                <Field key={field} label={label}>
+                                    <select class="select select-sm w-full" value={String(draft[field])} data-radius={field}
+                                        onChange={(e) => change({ [field]: Number(e.currentTarget.value) })}>
+                                        {offered(ROUNDINGS, draft[field], 'rem').map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
+                                    </select>
+                                </Field>
+                            ))}
+                        </div>
+                    </div>
+                    <Field label="Border">
+                        <select class="select select-sm w-full" value={String(numberShown(draft, 'border'))} data-border
+                            onChange={(e) => change({ border: Number(e.currentTarget.value) })}>
+                            {offered(BORDERS.map((v) => [v, `${v} px`]), numberShown(draft, 'border'), 'px').map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
+                        </select>
+                    </Field>
+                    <Toggle id="theme-depth" label="Depth" tip="Buttons and fields raised a little, with a shade." checked={numberShown(draft, 'depth') > 0}
+                        onChange={(on) => change({ depth: on ? 1 : 0 })} />
+                    <Toggle id="theme-noise" label="Noise" tip="A grain over buttons, toggles and menus' picks." checked={numberShown(draft, 'noise') > 0}
+                        onChange={(on) => change({ noise: on ? 1 : 0 })} />
+                    <ErrorText message={error} />
+                </form>
+            </div>
+        </Dialog>
     );
 }
 

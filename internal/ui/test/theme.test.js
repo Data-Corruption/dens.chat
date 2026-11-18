@@ -1,12 +1,11 @@
 // The page's theme, checked without a browser, on a stand-in for the
 // page's root: a theme of the member's own kept and chosen, its variables
-// set; the editor's theme shown and taken back; one of DaisyUI's taking
-// the variables off; a share's window dressed the same; and the most the
-// browser keeps.
+// set; one of DaisyUI's taking the variables off; a share's window dressed
+// the same; and the most the browser keeps.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { dressTheme, forgetTheme, keepTheme, ownChoice, ownThemes, previewTheme, setTheme, themeChoice } from '../assets/js/src/theme.js';
+import { dressTheme, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, themeChoice } from '../assets/js/src/theme.js';
 import { MOST_THEMES, VARIABLES, variables } from '../assets/js/src/themes.js';
 
 function root() {
@@ -30,10 +29,10 @@ globalThis.document = { documentElement: page };
 globalThis.window = { matchMedia: () => ({ matches: false }) };
 
 const DUSK = {
-    name: 'Dusk', dark: true, corners: 'rounded', base: '#1d232a', text: '#a6adbb', primary: '#605dff', secondary: '#f43098', accent: '#00d3bb',
-    neutral: '#09090b', info: '#00bafe', success: '#00d390', warning: '#fcb700', error: '#ff627d',
+    name: 'Dusk', dark: true, base: '#1d232a', text: '#a6adbb', primary: '#605dff', secondary: '#f43098', accent: '#00d3bb',
+    neutral: '#09090b', info: '#00bafe', success: '#00d390', warning: '#fcb700', error: '#ff627d', radiusSelector: 0.5, radiusField: 0.25, radiusBox: 0.5,
 };
-const DAWN = { ...DUSK, name: 'Dawn', dark: false, corners: 'round', base: '#fff8ee', text: '#2a2118' };
+const DAWN = { ...DUSK, name: 'Dawn', dark: false, base: 'oklch(98% 0.012 80)', text: '#2a2118', radiusField: 2, border: 2, depth: 0 };
 const shows = (theme) => assert.deepEqual(Object.fromEntries(page.props), variables(theme));
 
 test("a theme of the member's own is kept, chosen, and set on the root as variables over Light or Dark", () => {
@@ -48,20 +47,18 @@ test("a theme of the member's own is kept, chosen, and set on the root as variab
     shows(DUSK);
 });
 
-test('the editor shows its theme as the member makes it, and Cancel puts the one before back', () => {
-    previewTheme({ ...DAWN, name: '' });
+test("one of DaisyUI's takes a theme's variables off the root, every one it set", () => {
+    const id = keepTheme(DAWN);
+    setTheme(ownChoice(id));
     assert.equal(page.attributes['data-theme'], 'light');
     shows(DAWN);
-    previewTheme(null);
-    assert.equal(page.attributes['data-theme'], 'dark');
-    shows(DUSK);
-    // Over one of DaisyUI's, Cancel leaves no variable behind.
+    assert.equal(page.props.get('--border'), '2px');
     setTheme('dracula');
-    previewTheme(DAWN);
-    shows(DAWN);
-    previewTheme(null);
     assert.equal(page.attributes['data-theme'], 'dracula');
     assert.equal(page.props.size, 0);
+    forgetTheme(id);
+    setTheme(ownChoice(ownThemes()[0].id));
+    shows(DUSK);
 });
 
 test("an edit replaces the theme in place, and a share's window is dressed as the page is", () => {
@@ -74,7 +71,8 @@ test("an edit replaces the theme in place, and a share's window is dressed as th
     dressTheme({ documentElement: other });
     assert.equal(other.attributes['data-theme'], 'dark');
     assert.deepEqual(Object.fromEntries(other.props), Object.fromEntries(page.props));
-    assert.equal(other.props.size, VARIABLES.length);
+    assert.equal(other.props.size, Object.keys(variables(ownThemes()[0])).length);
+    assert.ok([...other.props.keys()].every((v) => VARIABLES.includes(v)));
 });
 
 test("deleting the chosen theme follows the system again, and a theme that isn't one is never kept", () => {

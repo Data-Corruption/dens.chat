@@ -1667,7 +1667,7 @@ function EditorList({ candidates, selected, onChange }) {
 // the members a mention may name, none in a DM, and with everyone, staff's
 // @everyone first (M15.4). With polls, the + makes the message a poll,
 // whose question is its text (M15.4).
-function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, shares = true, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
+export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, shares = true, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
     // poll is the poll being written, which goes without files or other
     // editors, and problem what kept it from going.
