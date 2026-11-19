@@ -34,7 +34,7 @@ Each milestone ends usable on its own and is tested on Linux and Windows, in Chr
 
 **M22, polish.** No new mechanism but the scanner: M22 reviews the page as a whole, builds what the review finds and what members asked for since M21, and makes signing in on a phone a matter of two scans. Left in loose-ideas.md: the shared YouTube player, which wants a milestone and a decision on reading a player's state; X's and Reddit's cards, which have no source that needs no key; the Android asks, search and bookmarks.
 
-**M22 steps.** Six pull requests, tested by the automated checks; the manual test and v1.14.0 wait for M22's end:
+**M22 steps.** Eight pull requests, tested by the automated checks. A manual test ran at M22.6's end, and what it found is M22.7 and M22.8; a second, of those two, and v1.14.0 wait for M22's end:
 
 | Step | Scope | Done when |
 | --- | --- | --- |
@@ -43,7 +43,9 @@ Each milestone ends usable on its own and is tested on Linux and Windows, in Chr
 | M22.3 One look | The review's picks that run across the page: four kinds of button, one place for a dialog's actions, one slider, one frame for the settings and Manage with each member's own sections under the cog, and the settings' and Manage's sections tidied | The `settings` and `phone` checks' audits hold, and the review's shots, taken again, show each pick |
 | M22.4 The screens | The review's picks screen by screen: the first run and Home, a message's hover bar, the composer, editing, polls, the viewer, the writing guide, menus' edges, the profile card beside its click, a group's members | Each holds in its check, in Chromium and Firefox, and the phone check's audits hold |
 | M22.5 Themes | A theme holds the rest of DaisyUI's variables; its code is a block, and DaisyUI's generator's pastes in; the editor is a dialog with its controls beside a preview of a den | A block from DaisyUI's generator pastes in and shows as it does there, a theme from v1.13.0 looks as it did, and the `settings` check edits one against the preview |
-| M22.6 Scanning in | Add device and its code; the digits' code; Add a den made over, with Scan; a device's approval as a dialog; then M22's manual test and v1.14.0 | A phone scans a den's code on a computer, then the digits' code once that computer approves, and is signed in; a computer with no camera signs in as now; and v1.14.0 ships |
+| M22.6 Scanning in | Add device and its code; the digits' code; Add a den made over, with Scan; a device's approval as a dialog; then M22's manual test | A phone scans a den's code on a computer, then the digits' code once that computer approves, and is signed in; and a computer with no camera signs in as now |
+| M22.7 The test's findings | Reactions' corners from the theme; file names on hover as a setting; link previews asked about at the first run; the message box growing with its text, under one border; Home's call and Relay blocks joined; Copy message link | Each holds in its check, in Chromium and Firefox, and the phone check's audits hold |
+| M22.8 Appearance | Appearance as a page of its own, in the shape of DaisyUI's generator: the themes listed, the chosen one's controls, and a preview of a den, with Messages and Calls beside the theme's controls; then the second manual test and v1.14.0 | A member looks at and edits a theme while the page wears another, wears it with one press, and finds every Appearance setting in the one preview, at a desktop's width and a phone's; and v1.14.0 ships |
 
 M22.1:
 
@@ -101,6 +103,23 @@ M22.6:
 - *Add a den.* Three ways, an "or" between them: Scan, where the page can; the den's address, with or without `https://`; an invite. Each field has its Continue to its right. A caption under Scan says where the code is. Every step is titled with the den's name, its address small beneath, and says nothing of what the den proved (B5).
 - *Approving (C1).* A device's request opens as a dialog over whatever is on screen, a sheet on a phone: who asks, It's mine or Refuse, then the digits and their code. It closes once the new device connects. That a new device signed in is one notice, gone in a minute, and a mark on its row in Devices. Options for how the approving device hears the new one connected, which nothing told it: (a) the den publishes `device.connected` as a device it let in by approval first connects; (b) the new device sends a box through Relay's channel; (c) none, closing on Done. Pick (a): the den is what sees the socket open, and a den before v1.14 leaves the dialog to Done.
 
+M22.7, what the manual test found (2026-11-18):
+
+- *Reactions.* Their chips take the theme's selector radius, as badges do, in place of a pill's.
+- *File names.* A photo's or a video's name shows as the pointer rests on it, the browser's tooltip. Appearance's Messages gains File names on hover, on as now.
+- *Link previews.* YouTube's players and Steam's cards start off, since each shows its site the member's IP address. Options: (a) as now; (b) the first run asks. Pick (b): the screen that sets the local password gains Link previews, one toggle, on, with a line saying what YouTube and Steam see; turned off, it opens into a toggle for each. The settings are a browser's, so a browser paired later is asked on its pairing screen, and a browser that has opened Dens before keeps what it has.
+- *The message box.* It grows with its text, wrapped lines too, to half its pane's height, then scrolls. Options for its border: (a) the box keeps its own inside the bar's; (b) the bar is the box, its edge taking the focus. Pick (b): the bar's shade already sets it off from the messages.
+- *Home.* The call's box and Relay's bar join as one block, as they do under a den's channel list.
+- *Copy link.* A message's menu says Copy message link.
+
+M22.8, Appearance:
+
+- *Where.* Options: (a) the editor stays a dialog over Appearance; (b) Appearance is a page: chosen in the settings, it takes the whole window, the settings' list folding to a back arrow, as a section's does on a phone. Pick (b): every Appearance setting shows in one preview, so the preview pinned atop Appearance goes. Back returns to the section open before; × closes the settings.
+- *Its columns.* As DaisyUI's generator lays them out. At the left, the themes: New theme and Paste a code, My themes, then the built-in ones, System, Light and Dark first. In the middle, the chosen theme: its name, its controls, Copy code, and Save and Remove for one of the member's own; a built-in one shows its colors and Customize, which copies it into My themes. At the right, the den that M22.5's editor previews. Under a large window the editor and the preview stay side by side and the themes become a tab; on a phone each column is a tab, Themes, Editor and Preview, along the foot.
+- *Wearing a theme.* Options: (a) choosing a theme in the list wears it, as the generator's page does; (b) choosing one shows it in the editor and the preview alone, and Use wears it, the list marking the one worn. Pick (b): a member makes a theme without losing theirs, and what's a control and what's the page stays plain. The preview sets a theme's variables on itself alone, as M22.5's does, and `data-theme` for a built-in one.
+- *Messages and Calls.* Options: (a) they stay cards in a section of the settings, the themes' page opened from it; (b) the middle column has three tabs, Theme, Messages and Calls; (c) one scroll under the theme's controls. Pick (b): they show in the same preview, and apply as they're changed, where a theme waits for Save. The chat's background, which no theme holds, moves to Messages; the preview's chat already shows it.
+- *The controls.* Those M22.5 picked, in the generator's shapes: a color as a tile, its text's color an A on the tile beside it, shown and not set; corners as five tiles; the border's width a slider with its ticks; depth and noise as toggles; dark or light as a toggle.
+
 Each step's docs land with it, and the changelog carries v1.14.0.
 
 **M22 testing.**
@@ -109,6 +128,8 @@ Each step's docs land with it, and the changelog carries v1.14.0.
 - *Page tests:* the menus' rows for staff and for members, on a touch screen too; Mute and Unmute keeping the volume; the tab's icon across unread DMs and mentions in two dens; a theme's block read and written, the generator's own among the cases, and refused values dropped; the address field with and without its scheme; Scan shown only with a camera; the page's reader against the codes the service makes, drawn turned, tilted, blurred and noisy.
 - *Browser checks:* `drag` and `phone` make a channel and a group from each menu; `calls` mutes a member, unmutes, and opens Move to; `settings` finds the preview following a theme, a name style and Density; `notify` reads the tab's icon; a `steam` check against a stand-in for Steam; `signin` scans both codes in Chromium, its camera fed a video of them, and signs in by typing in Firefox. M22.3: `settings` and `phone` audit the one frame, a member's own sections reached from the cog inside a den, and each button's kind by its classes; `review` takes its pictures again, read against the picks. M22.4: `messages` replies and edits from the hover bar; `fixes` opens a profile card beside its click; `groups` reads a member's row; `phone`'s before part saves the recovery codes as a file. M22.5: `settings` pastes a generator's block, edits a color against the preview, and saves. M22.6: `signin` approves in the dialog, which closes by itself.
 - *The Android e2e* signs in by typing as now: the emulator's camera sees no code.
-- *The manual test*, at M22's end on v1.14.0's build: in Chromium and Firefox on Windows and Fedora KDE, M22.2's asks and the review's picks; on the S24 Ultra, both scans from a computer's screen, and the phone layout of everything else.
+- *M22.7:* page tests for the box's height from its text and the first run's toggles; `fixes` reads a chip's radius on a theme with square corners, and the hover's name on and off; `phone`'s before part answers Link previews, and finds a Steam link as a card after it.
+- *M22.8:* page tests for a theme chosen and not worn, Use, and Customize's copy; `settings` chooses a built-in theme and reads the preview's colors against the page's, wears it, edits one of its own, saves, and pastes a block, at a desktop's width, the middle one and a phone's; `phone` audits each tab; `review` takes its pictures again.
+- *The manual test* ran on M22.6's build on 2026-11-18, in Chromium and Firefox on Windows and Fedora KDE and on the S24 Ultra, both scans among it, and passed. A second, on v1.14.0's build, covers M22.7 and M22.8.
 
 M23 gets its plan as it begins.
