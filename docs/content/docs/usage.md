@@ -109,7 +109,7 @@ arrow beside a call's buttons shows yours, and everyone in the call, to
 compare with right there. A comparison holds wherever you meet them after, in
 DMs, groups and calls.
 Whether the check shows beside people in lists is yours to choose, under
-**Settings** → **Appearance** → **Verified mark**.
+**Settings** → **Appearance** → **Messages** → **Verified mark**.
 
 If someone's keys change, as when they reset their DM recovery key, the DM says
 so where it happened, and their check goes. If you'd compared codes with
@@ -180,23 +180,26 @@ soundboard work as you'd expect. What's different:
 - **Name style**, in your profile: a font, a color or a gradient for your
   name, which everyone in the den sees. A color may show lighter or darker
   on someone else's theme, so it stays readable there. To see names plain,
-  or in their colors alone, set **Settings** → **Appearance** → **Name
-  styles**.
-- **Appearance** shows a preview of the chat at its top, which changes as you
-  pick a theme, a name style or **Compact**.
+  or in their colors alone, set **Settings** → **Appearance** → **Messages**
+  → **Name styles**.
+- **Appearance** takes the whole window: the themes at the left, the one you
+  chose in the middle, with **Messages** and **Calls** beside it, and a small
+  den at the right that shows each change as you make it. Choosing a theme
+  only shows it there; **Use** puts it on.
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
   → **Messages**. On a computer, the sizes of photos and videos and of
   YouTube players are there too, up to **Largest**.
-- **Animations**, under **Settings** → **Appearance**: animated pictures,
-  emoji and GIFs in messages play always, or only while your pointer is over
-  them.
-- **Themes**: **Settings** → **Appearance** has a few dozen, and **New
-  theme** makes one of your own: its colors, corners, border, depth and
-  noise, beside a small den that shows it as you go. **Copy code** turns
-  yours into a block of text to send someone, who adds it with **Paste a
-  code**. A theme from [daisyUI's theme generator](https://daisyui.com/theme-generator/)
-  pastes in the same way: copy its CSS there. Your themes stay in the
-  browser you made them in.
+- **Animations**, under **Settings** → **Appearance** → **Messages**:
+  animated pictures, emoji and GIFs in messages play always, or only while
+  your pointer is over them.
+- **Themes**: **Settings** → **Appearance** has a few dozen. **Customize**
+  copies one into your own, and **New theme** copies the one you're wearing:
+  then change its colors, corners, border, depth and noise. Changes wait for
+  **Save**. **Copy code** turns yours into a block of text to send someone,
+  who adds it with **Paste a code**. A theme from
+  [daisyUI's theme generator](https://daisyui.com/theme-generator/) pastes in
+  the same way: copy its CSS there. Your themes stay in the browser you made
+  them in.
 - **Link previews**: YouTube videos play where they're linked, and Steam
   games show as cards, with the price, reviews and who's playing. A browser
   opening Dens for the first time asks whether to show them, and **Settings**
