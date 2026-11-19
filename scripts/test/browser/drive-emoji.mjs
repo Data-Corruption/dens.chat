@@ -8,14 +8,14 @@
 // alice does one of Unicode's; both pages show each, large where alone,
 // and alice's mention highlighted. Bob's picker then leads with what he
 // used, in the skin tone he picks; his page plays the animated emoji
-// under On hover only while the pointer is over its message. Alice
+// under Hover only while the pointer is over its message. Alice
 // renames one, and the messages that wrote its old name show it as text;
 // lowers the den's count to what it holds, which takes the Add form away
 // and refuses another; and deletes the animated one.
 //
 //   run.sh emoji chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, SETTINGS, checks, launch, manageFromName, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, checks, closeSettings, launch, manageFromName, openAppearance, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, DM: dm, ALICE_MSG: aliceMsg } = process.env;
@@ -142,10 +142,9 @@ async function completes(s, text, item) {
 const composer = (s) => s.b.eval(`${COMPOSER}.value`);
 
 async function setAnimations(s, value) {
-    await openSettings(s.b, 'Appearance');
+    await openAppearance(s.b, 'Messages');
     await s.b.eval(`document.querySelector('input[name=animations][value=${value}]').click(), true`);
-    await escape(s);
-    await waitFor(async () => !(await s.b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    await closeSettings(s.b);
 }
 
 try {
@@ -275,7 +274,7 @@ try {
     await B.b.eval(`document.querySelector('[data-emoji-picker] [data-tone="0"]').click(), true`);
     await escape(B);
 
-    step("bob's page plays the animated emoji under On hover only over its message");
+    step("bob's page plays the animated emoji under Hover only over its message");
     await setAnimations(B, 'hover');
     const dancing = (x) => x.emoji.find((e) => e.name === 'dance');
     await B.b.move(5, 5);
@@ -287,7 +286,7 @@ try {
     await B.b.move(5, 5);
     const again = await showsOn(B, fromPicker.id, ':dance: still again', (x) => dancing(x)?.what === 'still');
     report(dancing(still)?.what === 'still' && dancing(playing)?.what === 'still+file' && dancing(again)?.what === 'still',
-        `On hover: still, playing under the pointer, still again: ${q([dancing(still), dancing(playing), dancing(again)])}`);
+        `Hover: still, playing under the pointer, still again: ${q([dancing(still), dancing(playing), dancing(again)])}`);
     await setAnimations(B, 'always');
     const always = await showsOn(B, fromPicker.id, ':dance: always', (x) => dancing(x)?.what === 'file');
     report(dancing(always)?.what === 'file', `Always plays it without the pointer: ${q(dancing(always))}`);

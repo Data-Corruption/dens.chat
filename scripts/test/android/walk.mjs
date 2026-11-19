@@ -200,9 +200,10 @@ const OWN_THEME = 'dens-theme:1.d.r.2b1d3aeae0f5c084fc7dd3fcfbbf2409090b00bafe00
 const hex = (rgb) => `#${[...rgb].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 
 // bars checks the status and navigation bars take the page's background,
-// with the theme the system's, then Dark, then Light, each picked on the
-// settings' Appearance page, then a theme of the member's own, pasted as
-// its code (M19.4), then the system's again (M13.3).
+// with the theme the system's, then Dark, then Light, each chosen on the
+// settings' Appearance page and worn by Use, its editor a tab along the
+// page's foot (M22.8), then a theme of the member's own, pasted as its
+// code (M19.4), then the system's again (M13.3).
 async function bars(h, d) {
     const background = () => h.ev(`(() => { const c = document.createElement('canvas').getContext('2d');
         c.fillStyle = getComputedStyle(document.body).backgroundColor; c.fillRect(0, 0, 1, 1);
@@ -216,9 +217,19 @@ async function bars(h, d) {
         }, `the bars in ${want}`, 6000).catch(() => d.bars());
         report(near(got.top, want) && near(got.bottom, want), `with the ${theme} theme, the bars take the page's background, ${want}: ${JSON.stringify(got)}`);
     };
-    const pick = async (theme) => {
-        await d.tap(`document.querySelector('[role=dialog] input[name=theme][value=${theme}]').closest('label')`);
+    // use wears the theme the editor shows, but one already worn, which
+    // says In use in Use's place.
+    const USE = `[...document.querySelectorAll('[data-theme-editor] button')].find((b) => b.textContent.trim() === 'Use')`;
+    const use = async () => {
+        await d.tap(`document.querySelector('[data-foot-tab=editor]')`);
+        await waitFor(() => h.has(`${USE} || document.querySelector('[data-worn-mark]')`), 'Use or In use');
+        if (await h.has(USE)) await d.tap(USE);
         await sleep(800);
+    };
+    const pick = async (theme) => {
+        await d.tap(`document.querySelector('[data-foot-tab=themes]')`);
+        await d.tap(`document.querySelector('[data-theme-row=${theme}]')`);
+        await use();
     };
     await h.go('/');
     await h.wait(`[...document.querySelectorAll('h2')].find((e) => e.textContent.trim() === 'Your dens')`, 'Home');
@@ -231,16 +242,18 @@ async function bars(h, d) {
     }
     // A theme of the member's own (M19.4), pasted as its code: the WebView
     // wears it, and the bars its background.
-    await h.click(h.byText('[data-own-themes] button', 'Paste a code'));
-    await h.ev(`(() => { const el = document.querySelector('[data-own-themes] form textarea');
+    await d.tap(`document.querySelector('[data-foot-tab=themes]')`);
+    await h.click(h.byText('[data-themes] button', 'Paste a code'));
+    await h.ev(`(() => { const el = document.querySelector('[data-themes] form textarea');
         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(el, ${JSON.stringify(OWN_THEME)});
         el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
-    await h.click(h.byText('[data-own-themes] button', 'Add'));
-    await waitFor(() => h.has(`document.querySelector('[role=radiogroup][aria-label="Your themes"] input:checked')`), 'the pasted theme chosen');
+    await h.click(h.byText('[data-themes] button', 'Add'));
+    await waitFor(() => h.has(`document.querySelector('[data-theme-editor] input[data-theme-name]')`), 'the pasted theme shown');
+    await use();
     const wears = hex(await background());
     report(wears === '#2b1d3a', `the page wears a theme pasted as its code, its background ${wears}`);
     await painted("member's own");
-    await h.click(h.byText('[data-own-themes] button', 'Delete'));
+    await h.click(h.byText('[data-theme-editor] button', 'Remove'));
     await pick('system');
     await d.back();
     await d.back();
@@ -357,10 +370,10 @@ async function callWalk(h, d, c) {
         await h.click(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`, 'the settings');
         await d.tap(`document.querySelector('[role=dialog] [data-section=voice]')`);
         const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
-        const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => l.textContent.trim() + (l.querySelector('input').checked ? ' (chosen)' : ''))`);
+        const roles = await h.ev(`[...(${group}?.querySelectorAll('input') || [])].map((i) => i.getAttribute('aria-label') + (i.checked ? ' (chosen)' : ''))`);
         const sending = await h.has(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"]')`);
         report(roles.join(', ') === 'Toggle mute (chosen), Push to mute, Push to talk' && !sending, `the button's role takes Sending your voice's place: ${roles.join(', ')}`);
-        await d.tap(`[...${group}.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Push to talk')`);
+        await d.tap(`${group}.querySelector('input[aria-label="Push to talk"]')`);
         await h.snap('call-role');
         await d.back();
         await d.back();

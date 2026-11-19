@@ -40,10 +40,44 @@ export async function waitFor(fn, what, ms = 20000) {
 export const SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
 export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="Settings"] nav button')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
 export async function openSettings(b, tab) {
+    if (tab === 'Appearance') return openAppearance(b);
     if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="Settings"], a[aria-label="Settings"]').click(), true`);
+    // Appearance takes the window, its list folded to ← (M22.8).
+    if (await b.eval(`!!${APPEARANCE}`)) await b.eval(`${SETTINGS}.querySelector('[data-back]').click(), true`);
     await waitFor(() => b.eval(`!!${settingsTab(tab)}`), 'the settings');
     await b.eval(`${settingsTab(tab)}.click(), true`);
     await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-current') === 'page'`), `the settings' ${tab} section`);
+}
+
+// Appearance (M22.8), a page of the settings that takes the window:
+// openAppearance opens it at a tab of its middle column, Theme, Messages
+// or Calls, which the phone layout shows under the foot's Editor.
+export const APPEARANCE = `document.querySelector('[role=dialog][aria-label="Settings"] [data-appearance]')`;
+export const paneTab = (pane) => `document.querySelector('[data-pane-tab=${pane.toLowerCase()}]')`;
+export async function openAppearance(b, pane = 'Theme') {
+    if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="Settings"], a[aria-label="Settings"]').click(), true`);
+    if (!(await b.eval(`!!${APPEARANCE}`))) {
+        const row = `${SETTINGS}?.querySelector('[data-section=appearance]')`;
+        // A phone shows another section's page over the list.
+        if (!(await b.eval(`!!${row}`)) && (await b.eval(`!!${SETTINGS}?.querySelector('[data-back]')`))) await b.eval(`${SETTINGS}.querySelector('[data-back]').click(), true`);
+        await waitFor(() => b.eval(`!!${row}`), 'Appearance in the settings');
+        await b.eval(`${row}.click(), true`);
+        await waitFor(() => b.eval(`!!${APPEARANCE}`), 'Appearance');
+    }
+    if (!(await b.eval(`!!${paneTab(pane)}`))) await b.eval(`document.querySelector('[data-foot-tab=editor]')?.click(), true`);
+    await waitFor(() => b.eval(`!!${paneTab(pane)}`), "Appearance's tabs");
+    await b.eval(`${paneTab(pane)}.click(), true`);
+    await waitFor(() => b.eval(`${paneTab(pane)}.getAttribute('aria-selected') === 'true'`), `Appearance's ${pane}`);
+}
+
+// closeSettings closes the settings by Escape, which goes from Appearance
+// to the section open before it, and from there closes them.
+export async function closeSettings(b) {
+    for (let i = 0; i < 3 && (await b.eval(`!!${SETTINGS}`)); i++) {
+        await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+        await sleep(300);
+    }
+    await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
 }
 
 // picture is a screenshot's pixels, a PNG of 8 bits a channel as the

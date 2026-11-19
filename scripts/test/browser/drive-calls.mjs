@@ -20,7 +20,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
-import { HOME, checks, launch, lib, paired, token, waitFor } from './browsers.mjs';
+import { HOME, checks, launch, lib, openAppearance, paired, token, waitFor } from './browsers.mjs';
 
 const PRELOAD = `() => {
     const Orig = window.RTCPeerConnection;
@@ -210,7 +210,7 @@ try {
         `both pages show the call's length a second apart at most, in the rainbow past its record, with fireworks as it passed: alice ${JSON.stringify(a1)} then ${a2?.text}, bob ${JSON.stringify(b1)}, fireworks ${fireworks} (${beaten})`);
     const TIMER_SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
     const flipTimer = async () => {
-        await B.b.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
+        await openAppearance(B.b, 'Calls');
         await waitFor(() => B.b.eval(`!!document.getElementById('call-timer')`), `${B.browser} Call timer`);
         const was = await B.b.eval(`document.getElementById('call-timer').checked`);
         await B.b.eval(`document.getElementById('call-timer').click(), true`);
@@ -511,7 +511,7 @@ try {
     await setLevel(-100);
     await sleep(500);
     const open = await B.b.eval(RATE);
-    await B.b.eval(`${inSection('Sending your voice', "//label[contains(., 'Push to talk')]//input")}.click(), true`);
+    await B.b.eval(`${inSection('Sending your voice', "//input[@aria-label='Push to talk']")}.click(), true`);
     await sleep(200);
     const warned = await B.b.eval(`document.body.innerText.includes('Push to talk has no key')`);
     await B.b.eval(`${inSection('Keyboard shortcuts', "//div[span[text()='Push to talk']]//button")}.click(), true`);
@@ -538,7 +538,7 @@ try {
         `${B.browser} sends: automatic ${auto} kbps, level shut ${shut}, level open ${open}, push to talk up ${up}, held ${held}, let go ${letGo}, after losing focus ${blurred} (warned ${warned}, bound ${bound}, closed by a click outside ${outside})`);
     // Back to automatic voice activity, for what follows.
     await openVoice(B);
-    await B.b.eval(`${inSection('Sending your voice', "//label[contains(., 'Voice activity')]//input")}.click(), true`);
+    await B.b.eval(`${inSection('Sending your voice', "//input[@aria-label='Voice activity']")}.click(), true`);
     await sleep(200);
     await B.b.eval(`document.getElementById('auto-sensitivity').click(), true`);
     await closeSettings(B, 'close');
@@ -709,14 +709,14 @@ try {
     }
     const general = await waitFor(() => channelNamed(B, 'general'), `${B.browser} sees the text channel`, 10000);
     await B.b.go(`http://127.0.0.1:${B.port}/den/${den}/${general}`);
-    // The member's panel lines up with the message bar beside it, and keeps
+    // The member's panel stands level with the message box beside it, and keeps
     // its large picture in a call, whose controls sit in a row of their own
     // above it, in the bar's shade, a little lighter than the page.
     const LINE_UP = `(() => {
         const profile = document.querySelector('button[aria-label="Edit your profile"]');
         const panel = profile.parentElement.getBoundingClientRect();
-        const bar = document.querySelector('textarea').closest('.border-t').getBoundingClientRect();
-        return JSON.stringify({ panel: Math.round(panel.top) + '+' + Math.round(panel.height), bar: Math.round(bar.top) + '+' + Math.round(bar.height),
+        const bar = document.querySelector('textarea').closest('.message-island').getBoundingClientRect();
+        return JSON.stringify({ panel: Math.round(panel.top + panel.height / 2), bar: Math.round(bar.top + bar.height / 2),
             avatar: Math.round(profile.firstElementChild.getBoundingClientRect().width) });
     })()`;
     await waitFor(() => B.b.eval(`!!document.querySelector('textarea')`), `${B.browser} message box`);
@@ -732,7 +732,7 @@ try {
         const block = ${BLOCK};
         const buttons = [...block.querySelectorAll('button')].filter((x) => !x.closest('.tooltip'));
         const panel = document.querySelector('button[aria-label="Edit your profile"]').parentElement;
-        const composer = document.querySelector('textarea').closest('.border-t');
+        const composer = document.querySelector('textarea').closest('.message-island');
         const bg = (e) => getComputedStyle(e).backgroundColor;
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
         const light = (c) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data; return r + g + b; };
@@ -783,35 +783,37 @@ try {
     report(outOfCall.panel === outOfCall.bar && inCall.panel === inCall.bar && inCall.avatar === outOfCall.avatar && outOfCall.avatar >= 32
         && row.labels === "More|Share your screen|Mute|Deafen|Voice settings|Leave the call" && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
         && row.status === lounge && row.said && !row.line && row.shade && row.standsOut >= 15
-        && speaker.state === 'connected' && speaker.green && speaker.label === `${loungeName}, connected` && edit === true && cog === 'Appearance'
+        && speaker.state === 'connected' && speaker.green && speaker.label === `${loungeName}, connected` && edit === true && cog === 'Chat'
         && head.home && !head.dot && !head.header,
-        `${B.browser} panel and bar line up: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, the channel's speaker ${JSON.stringify(speaker)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
+        `${B.browser} panel and message box stand level: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, the channel's speaker ${JSON.stringify(speaker)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
 
-    // Every theme, with its colors, in the settings' Appearance: System,
-    // Light and Dark, and the rest under More themes; a pick takes hold at
-    // once, and System follows the device again.
-    const PICKER = `${SETTINGS}?.querySelector('[data-panel]')`;
-    const MORE = `${SETTINGS}?.querySelector('[role=radiogroup][aria-label="More themes"]')`;
+    // Every theme, with its colors, in Appearance's list (M22.8): System,
+    // Light and Dark first; a theme chosen shows in the editor, Use wears
+    // it at once, and System follows the device again. Under a large
+    // window the list is a tab beside the editor.
+    const LIST = `${SETTINGS}?.querySelector('[data-themes]')`;
+    const USE = `[...${SETTINGS}.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Use')`;
     const openGeneral = async () => {
         if (!(await B.b.eval(`!!${SETTINGS}`))) await B.b.eval(`(document.querySelector('button[aria-label="Settings"]').click(), true)`);
         await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
-        await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'Appearance').click(), true)`);
-        await waitFor(() => B.b.eval(`!!${SETTINGS}?.querySelector('[role=radiogroup][aria-label=Theme]')`), `${B.browser} theme picker`);
-        if (!(await B.b.eval(`!!${MORE}`))) {
-            await B.b.eval(`([...${SETTINGS}.querySelectorAll('button')].find((b) => b.textContent.startsWith('More themes')).click(), true)`);
+        if (!(await B.b.eval(`!!${LIST}`))) {
+            await B.b.eval(`((${SETTINGS}.querySelector('[data-foot-tab=themes]') || ${SETTINGS}.querySelector('[data-section=appearance]')).click(), true)`);
         }
-        await waitFor(() => B.b.eval(`!!${MORE}`), `${B.browser} more themes`);
+        await waitFor(() => B.b.eval(`!!${LIST}`), `${B.browser} themes`);
     };
     const pickTheme = async (name) => {
         await openGeneral();
-        await B.b.eval(`([...${PICKER}.querySelectorAll('[role=radiogroup] label')].find((l) => l.textContent.trim() === '${name}').querySelector('input').click(), true)`);
+        await B.b.eval(`([...${LIST}.querySelectorAll('[data-theme-row]')].find((l) => l.querySelector('.truncate').textContent.trim() === '${name}').querySelector('input').click(), true)`);
+        await sleep(300);
+        if (!(await B.b.eval(`!!${USE} || !!${SETTINGS}.querySelector('[data-worn-mark]')`))) await B.b.eval(`(${SETTINGS}.querySelector('[data-foot-tab=editor]').click(), true)`);
+        await waitFor(() => B.b.eval(`!!${USE} || !!${SETTINGS}.querySelector('[data-worn-mark]')`), `${B.browser} ${name}'s Use`);
+        if (await B.b.eval(`!!${USE}`)) await B.b.eval(`(${USE}.click(), true)`);
         await sleep(300);
     };
     await openGeneral();
     const menu = JSON.parse(await B.b.eval(`(() => {
-        const menu = ${PICKER};
-        // The themes' groups, not Appearance's others, as Animations (M15.1).
-        const items = [...menu.querySelectorAll('[role=radiogroup][aria-label=Theme] label, [role=radiogroup][aria-label="More themes"] label')];
+        const menu = ${LIST};
+        const items = [...menu.querySelectorAll('[data-theme-row]')];
         const primaries = new Set(items.slice(1).map((i) => getComputedStyle(i.querySelector('[data-theme] > :nth-child(2)')).backgroundColor));
         // Role marks (M17.6), in their color, in every theme, against WCAG's
         // 3:1 for a graphic, on the member list and on a card.
@@ -843,8 +845,10 @@ try {
             host.remove();
         }
         marks.sort((a, b) => a.c - b.c);
-        return JSON.stringify({ count: items.length, first: items[0].textContent.trim(),
-            checked: items.filter((i) => i.querySelector('input').checked).map((i) => i.textContent.trim()).join('|'),
+        const name = (i) => i.querySelector('.truncate').textContent.trim();
+        return JSON.stringify({ count: items.length, first: name(items[0]),
+            checked: items.filter((i) => i.querySelector('input').checked).map(name).join('|'),
+            worn: items.filter((i) => 'worn' in i.dataset).map(name).join('|'),
             primaries: primaries.size, marks: marks.length, worstMark: marks[0].at + ' ' + marks[0].c.toFixed(2) });
     })()`));
     await pickTheme('Dracula');
@@ -860,7 +864,7 @@ try {
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
         const light = (e) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = getComputedStyle(e).backgroundColor; ctx.fillRect(0, 0, 1, 1); const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data; return r + g + b; };
         const block = document.querySelector('button[aria-label="Leave the call"]').closest('.bg-bar');
-        return JSON.stringify({ bar: light(document.querySelector('textarea').closest('.border-t')) - light(document.documentElement), block: light(block) - light(block.closest('aside')) });
+        return JSON.stringify({ bar: light(document.querySelector('textarea').closest('.message-island')) - light(document.documentElement), block: light(block) - light(block.closest('aside')) });
     })()`;
     const dark = JSON.parse(await B.b.eval(SHADES));
     // On a white page there's no lighter: the bar is as light, and the
@@ -888,7 +892,7 @@ try {
     await closeSettings(B, 'close');
     await B.b.eval(`(${MEMBERS}.click(), true)`);
     await sleep(300);
-    report(menu.count === 36 && menu.first === 'System' && menu.checked === 'System' && menu.primaries >= 25
+    report(menu.count === 36 && menu.first === 'System' && menu.checked === 'System' && menu.worn === 'System' && menu.primaries >= 25
         && menu.marks === 70 && parseFloat(menu.worstMark.split(' ')[1]) >= 3
         && dracula.theme === 'dracula' && dracula.kept === 'dracula' && dracula.open && dark.bar >= 15 && dark.block >= 15 && white.bar === 0 && white.block >= 15
         && system.theme === (system.dark ? 'dark' : 'light') && system.kept == null,
@@ -982,7 +986,7 @@ try {
     const typing = await waitFor(() => B.b.eval(`(() => {
         const line = [...document.querySelectorAll('[aria-live=polite]')].find((e) => e.textContent.includes('typing'));
         if (!line) return false;
-        const composer = document.querySelector('textarea').closest('.border-t').getBoundingClientRect();
+        const composer = document.querySelector('textarea').closest('[data-composer]').getBoundingClientRect();
         return line.getBoundingClientRect().bottom <= composer.top + 1 ? line.textContent : false;
     })()`), `${B.browser} sees Alice typing`, 10000).catch((e) => e.message);
     const top1 = await boxTop();

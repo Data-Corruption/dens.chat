@@ -7,42 +7,41 @@
 // Appearance's sizes: a photo at Medium until she chooses, at Large and
 // Largest the photo itself drawn over the den's preview, and at Small its
 // preview again; a YouTube player at Small, then Large with the larger
-// cover; neither moving the other, nor running past the pane. From M19.4,
-// a theme of her own: the editor starting from the
-// theme the page shows, Cancel keeping nothing, the theme saved, chosen and
-// kept across a reload, edited, its code copied and pasted into bob's
-// browser, which then wears the same, a stranger's codes refused there
-// with nothing reaching a style, and the theme deleted; and a picture
-// behind the chat: a PNG set, found behind general's list under the dim,
-// by the screen's own pixels, in a second browser paired with her Dens
-// too, dimmed further, a GIF refused, and removed from both. From M21.1
-// Staff marks, off until she turns them on, the crown then on her
-// messages and always in the member list; the bars on a green theme of her
-// own, their hue the page's; and Hover, how far a message under the
-// pointer covers the picture, in both browsers. From M22.2 Appearance's
-// preview: Light and Dark, a name style turned off and on, and Compact,
-// each showing in it as it's chosen, and the preview holding its place
-// while the settings under it scroll. From M22.3, each section held to the
-// one frame the settings and Manage share: its groups cards, one toggle
-// size and regular labels, every button one of the page's kinds by the
-// layout audit; Manage holding what staff manage, the owner's Events among
-// it; and her own sections of the den, from the cog on its page, as its
-// group above the app's. From M22.5 the theme editor as a dialog beside a
-// den in the theme being made, which alone wears it until it's saved: a
-// color edited against the preview, one too near the background said so,
-// the corners and border in its buttons, Escape closing the editor alone;
+// cover; neither moving the other, nor running past the pane. From M19.4
+// a theme's code copied and pasted into bob's browser, which then wears
+// the same, a stranger's codes refused there with nothing reaching a
+// style; and a picture behind the chat: a PNG set, found behind
+// general's list under the dim, by the screen's own pixels, in a second
+// browser paired with her Dens too, dimmed further, a GIF refused, and
+// removed from both. From M21.1 Staff marks, off until she turns them on,
+// the crown then on her messages and always in the member list; the bars
+// on a green theme of her own, their hue the page's; and Hover, how far a
+// message under the pointer covers the picture, in both browsers. From
+// M22.3, each section held to the one frame the settings and Manage
+// share: its groups cards, one toggle size and regular labels, every
+// button one of the page's kinds by the layout audit; Manage holding what
+// staff manage, the owner's Events among it; and her own sections of the
+// den, from the cog on its page, as its group above the app's. From M22.5
 // the code a block in the generator's shape; a stranger's blocks read for
-// what the page reads alone; a block from DaisyUI's generator pasted,
-// the page setting every variable as it gives it; and a v1.13.0 code read
-// as it was.
+// what the page reads alone; and a v1.13.0 code read as it was. From
+// M22.8 Appearance as a page that takes the window, Back going to the
+// section open before; its preview following a theme chosen, a name
+// style, Density, the call timer, the sizes and file names on hover, and
+// holding its place as the middle column scrolls; and at a desktop's
+// width, the middle one and a phone's: a built-in theme chosen, the
+// preview in its colors while the page keeps its own, worn by Use and
+// marked in the list, copied by Customize, edited against the preview, a
+// color too near the background marked, the edits waiting for Save, then
+// worn; and DaisyUI's generator's block pasted, the preview setting every
+// variable as it gives it, then the page.
 //
 //   run.sh settings chromium|firefox [PART...]
 //
-// PART is sections, preview, sizes, themes or background; all unless given.
+// PART is sections, preview, sizes, themes, codes or background; all unless given.
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import zlib from 'node:zlib';
-import { ALICE, BOB, HOME, MANAGE, SETTINGS, checks, launch, lib, openManage, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, APPEARANCE, BOB, HOME, MANAGE, SETTINGS, checks, closeSettings, launch, lib, openAppearance, openManage, openSettings, pair, paneTab, waitFor } from './browsers.mjs';
 import { audits, helpers } from './screens.mjs';
 
 const [, , which, ...parts] = process.argv;
@@ -64,7 +63,7 @@ const PANEL = `document.querySelector('[role=dialog] [data-panel]')`;
 const WRAPPED = `(() => {
     const out = [];
     for (const p of document.querySelectorAll('[role=dialog] [data-panel] p')) {
-        if (p.closest('[role=tooltip]')) continue;
+        if (p.closest('[role=tooltip], [inert]')) continue;
         const s = getComputedStyle(p);
         if (s.display === 'none' || !p.getClientRects().length) continue;
         const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.5;
@@ -80,7 +79,7 @@ const FRAME = `JSON.stringify((() => {
     const seen = (e) => e.getClientRects().length > 0;
     return {
         nav: !!document.querySelector('[role=dialog] nav[aria-label=Sections]'),
-        loose: [...panel.children].filter((e) => !e.classList.contains('card') && !e.matches('[data-appearance-preview], [data-notice], .loading'))
+        loose: [...panel.children].filter((e) => !e.classList.contains('card') && !e.matches('[data-notice], .loading'))
             .map((e) => e.localName + '.' + [...e.classList].slice(0, 3).join('.')),
         toggles: [...new Set([...panel.querySelectorAll('input.toggle')].filter(seen).map((t) => Math.round(t.getBoundingClientRect().height)))],
         labels: [...new Set([...panel.querySelectorAll('legend')].filter(seen).map((l) => getComputedStyle(l).fontWeight))],
@@ -166,12 +165,15 @@ const WEARS = `JSON.stringify((() => {
         set: document.documentElement.style.length, styled: document.documentElement.getAttribute('style') || '' };
 })())`;
 const wears = async (on) => JSON.parse(await on.eval(WEARS));
-// The theme editor's dialog, its preview, and what the preview wears: its
-// box's background and text, its variables, its channel list's
-// background, and its primary button's color, corners and border.
+// Appearance's columns (M22.8): the list of themes, the editor of the one
+// shown, the bar of its unsaved edits, the middle column's panel, and the
+// preview; and what the preview wears: its box's background and text, its
+// variables, its channel list's background, and its primary button's
+// color, corners and border.
+const LIST = `document.querySelector('[data-themes]')`;
 const EDITOR = `document.querySelector('[data-theme-editor]')`;
-const DIALOG = `${EDITOR}.closest('[role=dialog]')`;
-const FOOT = `${DIALOG}.querySelector('[data-dialog-foot]')`;
+const BAR = `document.querySelector('[data-theme-bar]')`;
+const TABPANEL = `document.querySelector('[role=dialog] [role=tabpanel]')`;
 const PREVIEW = `document.querySelector('[data-theme-preview]')`;
 const PREVIEW_WEARS = `JSON.stringify((() => {
     const hex = ${HEX};
@@ -190,7 +192,7 @@ const previewWears = async (on) => JSON.parse(await on.eval(PREVIEW_WEARS));
 // DaisyUI's variables alone, each a color or a number the page wrote.
 const STYLED = /^(--[a-z0-9-]+: (#[0-9a-f]{6}|oklch\([0-9.]+% [0-9.]+ [0-9.]+\)|[0-9.]+(rem|px)?);\s?)+$/;
 // PASTE is the field a theme's code is pasted into.
-const PASTE = '[data-own-themes] form textarea';
+const PASTE = '[data-themes] form textarea';
 // GENERATOR is a block as DaisyUI's theme generator copies it, its line
 // before it among it, and OLD_CODE a v1.13.0 code, Plum, on Dark.
 const GENERATOR = `
@@ -249,21 +251,215 @@ const set = (on, selector, value, events = ['input']) => on.eval(`(() => {
     for (const e of ${q(events)}) el.dispatchEvent(new Event(e, { bubbles: true }));
     return true;
 })()`);
-const OWN = `document.querySelector('[data-own-themes]')`;
-const button = (text, within = OWN) => `[...${within}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)})`;
+const button = (text, within = 'document') => `[...${within}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(text)})`;
 const press = async (on, text, within) => {
     await waitFor(() => on.eval(`!!${button(text, within)} && !${button(text, within)}.disabled`), `the ${text} button`);
     await on.eval(`${button(text, within)}.click(), true`);
     await sleep(250);
 };
-const choose = (on, group, text) => on.eval(`[...document.querySelectorAll('[${group}] label')].find((l) => l.textContent.trim() === ${q(text)}).querySelector('input').click(), true`);
-const field = (label, kind) => `[data-color="${label}"] input[type=${kind}]`;
-const ownNames = (on) => on.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Your themes"] label')].map((l) => l.textContent.trim() + (l.querySelector('input').checked ? '*' : '')).join('|')`);
-const closeSettings = async (on) => {
-    await on.key('Escape');
-    await waitFor(async () => !(await on.eval(`!!${SETTINGS}`)), 'the settings closing');
+const choose = (on, group, text) => on.eval(`document.querySelector('[${group}] input[aria-label=${q(text)}]').click(), true`);
+// toList and toEditor show the list or the editor, which share a column
+// under a large window, and the screen on a phone.
+const toList = async (on) => {
+    await on.eval(`(document.querySelector('[data-foot-tab=themes]')?.click(), true)`);
+    await waitFor(() => on.eval(`!!${LIST}`), 'the themes');
 };
+const toEditor = async (on) => {
+    await on.eval(`(document.querySelector('[data-foot-tab=editor]')?.click(), true)`);
+    if (!(await on.eval(`!!${EDITOR}`))) await on.eval(`(${paneTab('Theme')}?.click(), true)`);
+    await waitFor(() => on.eval(`!!${EDITOR}`), 'the editor');
+};
+// listed reads the list: its rows by their values, the one checked, the
+// one worn, and the member's own by name, * checked, + worn.
+const listed = async (on) => {
+    await toList(on);
+    return JSON.parse(await on.eval(`JSON.stringify((() => {
+        const rows = [...document.querySelectorAll('[data-theme-row]')];
+        const name = (r) => r.querySelector('.truncate').textContent.trim();
+        return { picked: rows.filter((r) => r.querySelector('input').checked).map((r) => r.dataset.themeRow).join(), worn: rows.filter((r) => 'worn' in r.dataset).map((r) => r.dataset.themeRow).join(),
+            own: [...document.querySelectorAll('[role=radiogroup][aria-label="My themes"] [data-theme-row]')].map((r) => name(r) + (r.querySelector('input').checked ? '*' : '') + ('worn' in r.dataset ? '+' : '')).join('|') };
+    })())`));
+};
+const ownNames = async (on) => (await listed(on)).own;
+// pick chooses a theme in the list by its row's value, and shows the
+// editor.
+const pick = async (on, value) => {
+    await toList(on);
+    await on.eval(`document.querySelector('[data-theme-row=${q(value)}] input').click(), true`);
+    await toEditor(on);
+    await sleep(250);
+};
+// color sets one of the theme's colors as a member types it: its tile
+// chosen, then the field under the tiles.
+const color = async (on, field, label, value) => {
+    await on.eval(`document.querySelector('[data-color-tile=${field}]').click(), true`);
+    await waitFor(() => on.eval(`!!document.querySelector('[data-color="${label}"]')`), `${label}'s field`);
+    await set(on, `[data-color="${label}"] input[type=text]`, value);
+};
+// PROBE reads a built-in theme's colors from a box wearing it.
+const PROBE = (theme) => `JSON.stringify((() => { const hex = ${HEX}; const box = document.createElement('div'); box.dataset.theme = ${q(theme)}; document.body.append(box);
+    const s = getComputedStyle(box); const of = (v) => hex(s.getPropertyValue(v));
+    const out = { base: of('--color-base-100'), text: of('--color-base-content'), primary: of('--color-primary'), secondary: of('--color-secondary'), error: of('--color-error') };
+    box.remove(); return out; })())`;
+// pickNamed chooses one of the member's own themes by its name.
+const pickNamed = async (on, name) => {
+    await toList(on);
+    await on.eval(`[...document.querySelectorAll('[data-theme-row]')].find((r) => r.querySelector('.truncate').textContent.trim() === ${q(name)}).querySelector('input').click(), true`);
+    await toEditor(on);
+    await sleep(250);
+};
+// seePreview shows the preview, a tab of its own on a phone.
+const seePreview = async (on) => {
+    await on.eval(`(document.querySelector('[data-foot-tab=preview]')?.click(), true)`);
+    await waitFor(() => on.eval(`!!${PREVIEW}`), 'the preview');
+    await sleep(200);
+};
+const holds = (got, want) => Object.entries(want).every(([k, v]) => got[k] === v);
+// resize gives the page a desktop's width, the middle one, or a phone's,
+// as a phone's screen in Chromium.
+async function resize(on, [w, hgt], phone = false) {
+    if (which === 'chromium') {
+        await on.cdp('Emulation.setDeviceMetricsOverride', { width: w, height: hgt, deviceScaleFactor: phone ? 2 : 1, mobile: phone });
+        await on.touch(phone);
+    } else {
+        await on.bidi('browsingContext.setViewport', { context: on.context, viewport: { width: w, height: hgt } });
+    }
+    await sleep(600);
+}
 let b2 = null;
+
+// themesAt walks a theme from the list to the page at a width, which
+// gives Appearance its layout: Dracula chosen, the preview in its colors
+// while the page keeps its own, worn by Use and marked in the list;
+// copied by Customize, edited against the preview, a color too near the
+// background marked, the edits waiting for Save, then saved and worn;
+// DaisyUI's generator's block pasted, the preview, then the page, setting
+// each variable as it gives them; and both removed, the page following
+// the system again.
+async function themesAt(width, layout) {
+    const at = (what) => `${width}: ${what}`;
+    const name = slug(width);
+    step(at('a built-in theme chosen, and worn'));
+    await openAppearance(b, 'Theme');
+    const shape = await b.eval(`${APPEARANCE}.dataset.appearance`);
+    const before = await wears(b);
+    await pick(b, 'dracula');
+    const dracula = JSON.parse(await b.eval(PROBE('dracula')));
+    const chosen = JSON.parse(await b.eval(`JSON.stringify({ name: ${EDITOR}.querySelector('[data-theme-name]')?.textContent.trim(),
+        builtIn: ${EDITOR}.hasAttribute('data-built-in'), use: !!${button('Use', EDITOR)} })`));
+    await h.snap(`themes-${name}-chosen`);
+    await seePreview(b);
+    const shown = await previewWears(b);
+    const page = await wears(b);
+    c.report(shape === layout && chosen.name === 'Dracula' && chosen.builtIn && chosen.use && shown.theme === 'dracula' && shown.page === dracula.base
+        && shown.text === dracula.text && shown.primary === dracula.primary && page.theme === before.theme && page.page === before.page && page.page !== shown.page && page.set === 0,
+    at(`Appearance laid out as ${shape}; Dracula, chosen, shows in the editor with Use (${q(chosen)}) and in the preview in its colors (${q(shown)}), the page keeping its own (${q(page)})`));
+    let list = await listed(b);
+    c.report(list.picked === 'dracula' && list.worn === 'system', at(`the list checks Dracula and marks System worn: ${q(list)}`));
+    await toEditor(b);
+    await press(b, 'Use', EDITOR);
+    const worn = await wears(b);
+    const mark = await b.eval(`!!${EDITOR}.querySelector('[data-worn-mark]') && !${button('Use', EDITOR)}`);
+    list = await listed(b);
+    c.report(worn.theme === 'dracula' && worn.page === dracula.base && worn.set === 0 && mark && list.worn === 'dracula'
+        && (await b.eval(`localStorage.getItem('DENS_THEME')`)) === 'dracula', at(`Use wears it, which the editor and the list mark: ${q(worn)}, ${q(list)}`));
+
+    step(at('copied by Customize, and edited against the preview'));
+    await toEditor(b);
+    await press(b, 'Customize', EDITOR);
+    await waitFor(() => b.eval(`!!${EDITOR} && !${EDITOR}.hasAttribute('data-built-in')`), "Dracula's copy");
+    const copy = JSON.parse(await b.eval(`JSON.stringify({ name: ${EDITOR}.querySelector('input[data-theme-name]').value, use: !!${button('Use', EDITOR)},
+        tiles: [...document.querySelectorAll('button[data-color-tile]')].map((t) => t.dataset.colorTile).join() })`));
+    list = await listed(b);
+    c.report(copy.name === 'Dracula' && copy.use && copy.tiles === 'base,text,primary,neutral,info,success,warning,error' && list.own === 'Dracula*' && list.worn === 'dracula',
+        at(`Customize copies it into My themes, shown and not worn, its colors' tiles in the generator's rows: ${q(copy)}, ${q(list)}`));
+    await toEditor(b);
+    await set(b, '[data-theme-editor] input[data-theme-name]', 'Check theme');
+    await b.eval(`document.getElementById('theme-dark').click(), true`);
+    await color(b, 'base', 'Background', '#f4efe6');
+    await color(b, 'text', 'Text', '2a2118');
+    await color(b, 'primary', 'Primary', '#f0e6da');
+    await sleep(250);
+    const low = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
+    await set(b, '[data-color="Primary"] input[type=text]', '#c41');
+    await set(b, '[data-color="Primary"] input[type=color]', '#c2410c');
+    await b.eval(`document.querySelector('[data-radius=radiusField] input[value="0"]').click(), true`);
+    await set(b, '[data-border]', '2');
+    await sleep(300);
+    const lowAfter = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
+    c.report(low === 'Primary' && lowAfter === '', at(`a primary too near the background is marked, alone, until it reads: ${q(low)}, then ${q(lowAfter)}`));
+    const bar = await b.eval(`${BAR}?.textContent.trim() || ''`);
+    const waits = !(await b.eval(`!!${button('Use', EDITOR)}`));
+    await h.snap(`themes-${name}-made`, { scroll: TABPANEL, max: 3 });
+    await seePreview(b);
+    const made = await previewWears(b);
+    const kept = await wears(b);
+    c.report(holds(made, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', button: '#c2410c', radius: '0px', borderWidth: '2px' })
+        && made.error === dracula.error && made.secondary === dracula.secondary,
+    at(`the preview wears each edit as it's made, its buttons' corners and border, the rest Dracula's: ${q(made)}`));
+    c.report(kept.theme === 'dracula' && kept.set === 0 && bar.startsWith('You have unsaved changes.') && waits,
+        at(`the page keeps Dracula until Save, which the bar offers, Use waiting for it: ${q(bar)}`));
+    if (layout === 'three') {
+        await b.key('Escape');
+        const asked = await waitFor(() => b.eval(`(${BAR}?.textContent || '').startsWith('Discard your unsaved changes?')`), 'the ask', 4000).catch(() => false);
+        const stayed = await b.eval(`!!${APPEARANCE}`);
+        await press(b, 'Keep editing', BAR);
+        c.report(asked && stayed, at('Escape with edits unsaved asks first, and Appearance stays'));
+    }
+    await press(b, 'Save', BAR);
+    await waitFor(() => b.eval(`!${BAR}`), 'the edits saved');
+    const unworn = await wears(b);
+    list = await listed(b);
+    c.report(unworn.theme === 'dracula' && unworn.set === 0 && list.own === 'Check theme*' && JSON.parse(await b.eval(`localStorage.getItem('DENS_THEMES')`))[0].name === 'Check theme',
+        at(`Save keeps it, renamed, not yet worn: ${q(list)}`));
+    await toEditor(b);
+    await press(b, 'Use', EDITOR);
+    const saved = await wears(b);
+    const stored = await b.eval(`localStorage.getItem('DENS_THEME')`);
+    list = await listed(b);
+    c.report(holds(saved, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', radiusField: '0rem', border: '2px' }) && STYLED.test(saved.styled)
+        && list.own === 'Check theme*+' && /^custom:[a-z0-9]{8}$/.test(stored),
+    at(`Use wears it, the root's style DaisyUI's variables alone, each a value the page wrote: ${q(saved)}`));
+    const swatch = await b.eval(`(() => { const hex = ${HEX}; const s = document.querySelector('[role=radiogroup][aria-label="My themes"] [data-theme]');
+        return [hex(getComputedStyle(s).backgroundColor), ...[...s.children].map((d) => hex(getComputedStyle(d).backgroundColor))].join(' '); })()`);
+    c.report(swatch === '#f4efe6 #2a2118 #c2410c', at(`its swatch shows its text and primary: ${swatch}`));
+    await h.snap(`themes-${name}-own`, { scroll: LIST, max: 2 });
+
+    step(at("DaisyUI's generator's block, pasted, shows as it does there"));
+    await press(b, 'Paste a code', LIST);
+    await set(b, PASTE, GENERATOR);
+    await press(b, 'Add', LIST);
+    await waitFor(async () => (await ownNames(b)) === 'Check theme+|mytheme*', "the generator's theme shown");
+    const given = Object.fromEntries(GENERATOR.split('\n').filter((l) => l.trim().startsWith('--')).map((l) => l.trim().slice(0, -1).split(': ')));
+    const read = (box) => b.eval(`JSON.stringify(Object.fromEntries(${q(Object.keys(given))}.map((v) => [v, ${box}.style.getPropertyValue(v)])))`).then(JSON.parse);
+    await seePreview(b);
+    const inPreview = await read(PREVIEW);
+    const previewDiffer = Object.keys(given).filter((v) => inPreview[v] !== given[v]);
+    const still = await wears(b);
+    c.report(previewDiffer.length === 0 && (await b.eval(`${PREVIEW}.dataset.theme`)) === 'light' && still.page === '#f4efe6',
+        at(`the preview sets each of its ${Object.keys(given).length} variables as the block gives it, the page keeping hers${previewDiffer.length ? `; differ: ${previewDiffer.join(', ')}` : ''}`));
+    await toEditor(b);
+    await press(b, 'Use', EDITOR);
+    const onRoot = await read('document.documentElement');
+    const differ = Object.keys(given).filter((v) => onRoot[v] !== given[v]);
+    const generated = await wears(b);
+    const drawn = await b.eval(`(() => { const hex = ${HEX}; return [hex(${q(given['--color-base-100'])}), hex(${q(given['--color-base-content'])})].join(' '); })()`);
+    c.report(differ.length === 0 && generated.theme === 'light' && `${generated.page} ${generated.text}` === drawn,
+        at(`worn, the page sets each as the block gives it, and draws them${differ.length ? `; differ: ${differ.map((v) => `${v} ${onRoot[v]}`).join(', ')}` : ''}: ${q(generated)}`));
+    await b.shot(`${HOME}/shot-settings-${which}-${name}-generator.png`);
+
+    step(at('both removed, the page following the system'));
+    await toEditor(b);
+    await press(b, 'Remove', EDITOR);
+    await pickNamed(b, 'Check theme');
+    await press(b, 'Remove', EDITOR);
+    const after = await wears(b);
+    list = await listed(b);
+    c.report(list.own === '' && list.worn === 'system' && list.picked === 'system' && after.set === 0 && ['light', 'dark'].includes(after.theme)
+        && (await b.eval(`localStorage.getItem('DENS_THEME')`)) === null && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null,
+    at(`removed, the page follows the system again, nothing left on the root: ${q(after)}, ${q(list)}`));
+    await closeSettings(b);
+}
 
 try {
     await pair(b, ALICE);
@@ -271,18 +467,18 @@ try {
 
     if (runs('sections')) {
         step('every section of the settings, from the list down the side');
-        await openSettings(b, 'Appearance');
-        c.report((await sections('[role=dialog][aria-label="Settings"]')) === 'Appearance*|Chat|Notifications|Voice|Relay|System',
-            `the settings list their sections down the side, open at Appearance: ${await sections('[role=dialog][aria-label="Settings"]')}`);
+        await b.eval(`document.querySelector('button[aria-label="Settings"], a[aria-label="Settings"]').click(), true`);
+        await waitFor(() => b.eval(`!!${SETTINGS}?.querySelector('nav [aria-current=page]')`), 'the settings');
+        c.report((await sections('[role=dialog][aria-label="Settings"]')) === 'Appearance|Chat*|Notifications|Voice|Relay|System',
+            `the settings list their sections down the side, open at Chat, Appearance taking the window: ${await sections('[role=dialog][aria-label="Settings"]')}`);
         const ready = {
-            Appearance: `document.querySelector('[data-media-size]')`,
             Chat: `document.getElementById('compress')`,
             Notifications: `document.getElementById('notify-dms') && document.querySelector('[data-sound]')`,
             Voice: `document.getElementById('noise') && document.querySelector('select')`,
             Relay: `document.getElementById('relay-keys') && document.getElementById('relay-sound') && document.querySelector('[data-docs-link]')`,
             System: `document.querySelector('a[href="/api/logs"]') && document.getElementById('hosting')`,
         };
-        for (const name of ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']) {
+        for (const name of ['Chat', 'Notifications', 'Voice', 'Relay', 'System']) {
             await openSettings(b, name);
             await waitFor(() => b.eval(`!!(${ready[name]})`), `${name}'s cards`);
             await sleep(400);
@@ -294,15 +490,42 @@ try {
         // Push to talk shows its release delay in Voice, which the audit and
         // the hints' measure take too.
         await openSettings(b, 'Voice');
-        await b.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Sending your voice"] label')].find((l) => l.textContent.trim() === 'Push to talk').querySelector('input').click(), true`);
+        await b.eval(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"] input[aria-label="Push to talk"]').click(), true`);
         await waitFor(() => b.eval(`!!document.querySelector('input[aria-label="Release delay"]')`), 'the release delay');
         await sleep(300);
         await h.snap('settings-voice-ptt', { scroll: PANEL, max: 6 });
         const pttWrapped = await b.eval(WRAPPED);
         c.report(pttWrapped.length === 0, `Voice with push to talk: every hint reads in a line${pttWrapped.length ? `; wrapped: ${pttWrapped.join('; ')}` : ''}`);
-        await b.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Sending your voice"] label')].find((l) => l.textContent.trim() === 'Voice activity').querySelector('input').click(), true`);
+        await b.eval(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"] input[aria-label="Voice activity"]').click(), true`);
+
+        step('Appearance, a page that takes the window, from Voice and back (M22.8)');
+        await b.eval(`${SETTINGS}.querySelector('[data-section=appearance]').click(), true`);
+        await waitFor(() => b.eval(`!!${APPEARANCE}`), 'Appearance');
+        const page = JSON.parse(await b.eval(`JSON.stringify((() => { const d = ${SETTINGS}; const r = d.getBoundingClientRect(); return {
+            nav: !!d.querySelector('nav[aria-label=Sections]'), title: d.querySelector('h2').textContent.trim(), back: !!d.querySelector('[data-back]'),
+            close: !!d.querySelector('button[aria-label=Close]'), layout: d.querySelector('[data-appearance]').dataset.appearance,
+            size: [Math.round(r.width), Math.round(r.height)], window: [innerWidth, innerHeight],
+            tabs: [...d.querySelectorAll('[data-pane-tab]')].map((t) => t.textContent.trim() + (t.getAttribute('aria-selected') === 'true' ? '*' : '')).join('|') }; })())`));
+        c.report(!page.nav && page.title === 'Appearance' && page.back && page.close && page.layout === 'three' && q(page.size) === q(page.window) && page.tabs === 'Theme*|Messages|Calls',
+            `Appearance takes the window, its list folded to ← back, with ✕, the themes, the editor's Theme, Messages and Calls, and the preview side by side: ${q(page)}`);
+        for (const pane of ['Theme', 'Messages', 'Calls']) {
+            await openAppearance(b, pane);
+            await sleep(400);
+            await h.snap(`appearance-${slug(pane)}`, { scroll: TABPANEL, max: 3 });
+            const wrapped = await b.eval(WRAPPED);
+            c.report(wrapped.length === 0, `Appearance's ${pane}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
+        }
+        await b.eval(`${SETTINGS}.querySelector('[data-back]').click(), true`);
+        await waitFor(() => b.eval(`!${APPEARANCE}`), 'back from Appearance');
+        c.report((await sections('[role=dialog][aria-label="Settings"]')) === 'Appearance|Chat|Notifications|Voice*|Relay|System', `← goes back to Voice, open before it: ${await sections('[role=dialog][aria-label="Settings"]')}`);
+        await b.eval(`${SETTINGS}.querySelector('[data-section=appearance]').click(), true`);
+        await waitFor(() => b.eval(`!!${APPEARANCE}`), 'Appearance again');
+        await b.key('Escape');
+        await waitFor(() => b.eval(`!${APPEARANCE} && !!${SETTINGS}`), 'Escape back from Appearance');
+        const escaped = await sections('[role=dialog][aria-label="Settings"]');
         await b.key('Escape');
         await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closing');
+        c.report(escaped === 'Appearance|Chat|Notifications|Voice*|Relay|System', `Escape goes back to Voice too, and again closes the settings: ${escaped}`);
 
         step("every section of Manage, the owner's");
         await openManage(b, 'General');
@@ -326,10 +549,10 @@ try {
         await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Settings"]')`), "the den's cog");
         await b.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);
         await waitFor(() => b.eval(`!!${SETTINGS}?.querySelector('nav [data-section=devices]')`), "the den's group");
-        const listed = await b.eval(`[...document.querySelectorAll('[role=dialog][aria-label="Settings"] nav > *')]
+        const listedSections = await b.eval(`[...document.querySelectorAll('[role=dialog][aria-label="Settings"] nav > *')]
             .map((x) => (x.localName === 'p' ? '[' + x.textContent.trim() + ']' : x.textContent.trim())).join('|')`);
-        c.report(/^\[[^\]]+\]\|Devices\|Password and recovery\|Your code\|Your files\|\[App\]\|Appearance\|Chat\|Notifications\|Voice\|Relay\|System$/.test(listed),
-            `on the den's page the settings list her own sections of it first, under its name, then the app's; the den she hosts has no Leave den: ${listed}`);
+        c.report(/^\[[^\]]+\]\|Devices\|Password and recovery\|Your code\|Your files\|\[App\]\|Appearance\|Chat\|Notifications\|Voice\|Relay\|System$/.test(listedSections),
+            `on the den's page the settings list her own sections of it first, under its name, then the app's; the den she hosts has no Leave den: ${listedSections}`);
         for (const name of ['Devices', 'Password and recovery', 'Your code', 'Your files']) {
             await openSettings(b, name);
             await sleep(900);
@@ -350,73 +573,90 @@ try {
         await waitFor(() => b.eval(`!!document.querySelector('nav[aria-label=Members] [data-role-mark=owner]')`), 'the member list');
         const marks = () => b.eval(`document.querySelectorAll('[data-scroller] [data-role-mark=owner]').length`);
         c.report((await marks()) === 0, 'until she turns them on, no crown on her messages, while the member list shows hers');
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await waitFor(() => b.eval(`!!document.getElementById('staff-marks')`), 'Staff marks');
         c.report(!(await b.eval(`document.getElementById('staff-marks').checked`)), 'Staff marks starts off');
         await b.eval(`document.getElementById('staff-marks').click(), true`);
         await closeSettings(b);
         const shown = await waitFor(async () => ((await marks()) > 0 ? marks() : null), 'the crowns on her messages').catch(marks);
         c.report(shown > 0 && (await b.eval(`localStorage.getItem('DENS_STAFF_MARKS')`)) === 'on', `turned on, her messages show the crown, ${shown} of them, which the browser keeps`);
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await b.eval(`document.getElementById('staff-marks').click(), true`);
         await closeSettings(b);
         c.report(await waitFor(async () => (await marks()) === 0, 'the crowns gone').then(() => true, () => false), 'turned off, they go again');
     }
 
     if (runs('preview')) {
-        step("Appearance's preview: a theme, a name style and Density, as each is chosen");
-        await openSettings(b, 'Appearance');
-        const PREVIEW = `document.querySelector('[data-appearance-preview]')`;
+        step("Appearance's preview: a theme, a name style, Density, the call timer, the sizes and file names, as each is chosen");
+        await openAppearance(b, 'Theme');
         await waitFor(() => b.eval(`!!${PREVIEW}?.querySelector('[data-id="preview-1"] [data-name]')`), 'the preview');
         const look = async () => JSON.parse(await b.eval(`JSON.stringify((() => {
-            const p = ${PREVIEW}, box = p.querySelector('[role=group]'), name = p.querySelector('[data-id="preview-1"] [data-name]');
+            const p = ${PREVIEW}, name = p.querySelector('[data-id="preview-1"] [data-name]');
             const s = getComputedStyle(name);
-            return { page: getComputedStyle(box).backgroundColor, font: s.fontFamily.split(',')[0].replace(/["']/g, '').trim(), painted: s.backgroundImage !== 'none' || s.color !== getComputedStyle(box).color,
-                lines: p.querySelectorAll('[data-line]').length, crown: p.querySelectorAll('[data-role-mark=owner]').length, timer: !!p.querySelector('[data-call-length]') };
+            const box = (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+            const photo = p.querySelector('[data-preview-photo]');
+            return { theme: p.dataset.theme, page: getComputedStyle(p).backgroundColor, font: s.fontFamily.split(',')[0].replace(/["']/g, '').trim(),
+                painted: s.backgroundImage !== 'none' || s.color !== getComputedStyle(p).color, lines: p.querySelectorAll('[data-line]').length,
+                timer: !!p.querySelector('[data-call-length]'), photo: box(photo), player: box(p.querySelector('[data-preview-player]')), title: photo.getAttribute('title') || null };
         })())`));
-        const pick = (name, value) => b.eval(`document.querySelector('input[name=${name}][value=${value}]').click(), true`);
-        await pick('theme', 'light');
-        await sleep(300);
+        const radio = (name, value) => b.eval(`document.querySelector('input[name=${name}][value=${value}]').click(), true`);
+        // A size's slider goes to a stop, as a drag leaves it.
+        const slide = (group, size) => b.eval(`(() => { const s = document.querySelector('input[type=range][data-${group}]');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(s, ${['small', 'medium', 'large', 'largest'].indexOf(size)});
+            s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+        await pick(b, 'light');
         const light = await look();
-        await pick('theme', 'dark');
-        await sleep(300);
+        await pick(b, 'dark');
         const dark = await look();
-        c.report(light.page !== dark.page, `the preview wears Light, then Dark: ${light.page}, ${dark.page}`);
-        await pick('name-styles', 'off');
+        c.report(light.theme === 'light' && dark.theme === 'dark' && light.page !== dark.page, `the preview wears Light, then Dark, chosen in the list: ${light.page}, ${dark.page}`);
+        await openAppearance(b, 'Messages');
+        await radio('name-styles', 'off');
         await sleep(300);
         const plain = await look();
-        await pick('name-styles', 'all');
+        await radio('name-styles', 'all');
         await sleep(600);
         const styled = await look();
         c.report(/fredoka/i.test(styled.font) && styled.painted && !/fredoka/i.test(plain.font) && !plain.painted,
-            `Alice's name in the preview, in her font and colors, then plain with name styles off: ${JSON.stringify(styled)}, ${JSON.stringify(plain)}`);
-        await pick('density', 'compact');
+            `Alice's name in the preview, in her font and colors, then plain with name styles off: ${q(styled)}, ${q(plain)}`);
+        await radio('density', 'compact');
         await sleep(300);
         const compact = await look();
-        await pick('density', 'default');
+        await radio('density', 'default');
         await sleep(300);
         const roomy = await look();
         c.report(compact.lines === 3 && roomy.lines === 0, `Compact makes the preview's messages a line each (${compact.lines} of 3), Default gives them back (${roomy.lines})`);
+        await slide('media-size', 'large');
+        await slide('player-size', 'largest');
+        await sleep(300);
+        const large = await look();
+        await slide('media-size', 'medium');
+        await slide('player-size', 'small');
+        await b.eval(`document.getElementById('file-names').click(), true`);
+        await sleep(300);
+        const unnamed = await look();
+        await b.eval(`document.getElementById('file-names').click(), true`);
+        c.report(q(roomy.photo) === q([107, 80]) && q(roomy.player) === q([67, 38]) && q(large.photo) === q([160, 120]) && q(large.player) === q([213, 120])
+            && roomy.title === 'lake.jpg' && unnamed.title === null,
+        `the preview's photo and player at a sixth of their sizes, Medium and Small (${q(roomy.photo)}, ${q(roomy.player)}), Large and Largest (${q(large.photo)}, ${q(large.player)}); the photo's name on hover, and none with File names off`);
+        await openAppearance(b, 'Calls');
         await b.eval(`document.getElementById('call-timer').click(), true`);
         await sleep(300);
         const untimed = await look();
         await b.eval(`document.getElementById('call-timer').click(), true`);
-        await sleep(300);
         c.report(roomy.timer && !untimed.timer, `the preview's call shows its length, and none with the call timer off`);
-        // Held: the panel scrolls under it.
+        // The preview is a column of its own: the list scrolls beside it.
         const held = JSON.parse(await b.eval(`(async () => {
-            const panel = ${PANEL}, p = ${PREVIEW};
-            const top = () => Math.round(p.getBoundingClientRect().top - panel.getBoundingClientRect().top);
-            const before = top();
+            const panel = ${LIST}, p = ${PREVIEW};
+            const before = Math.round(p.getBoundingClientRect().top);
             panel.scrollTop = panel.scrollHeight;
             await new Promise((r) => setTimeout(r, 300));
-            const after = top();
-            const scrolled = panel.scrollTop;
+            const out = { before, after: Math.round(p.getBoundingClientRect().top), scrolled: panel.scrollTop };
             panel.scrollTop = 0;
-            return JSON.stringify({ before, after, scrolled });
+            return JSON.stringify(out);
         })()`));
-        c.report(held.scrolled > 200 && held.after === held.before, `the preview holds its place while Appearance scrolls under it: ${JSON.stringify(held)}`);
+        c.report(held.scrolled > 100 && held.after === held.before, `the preview holds its place while the list scrolls beside it: ${q(held)}`);
         await h.snap('appearance-preview');
+        c.report((await b.eval(`localStorage.getItem('DENS_THEME')`)) === null, 'choosing themes for the preview wore none');
         await closeSettings(b);
     }
 
@@ -438,13 +678,15 @@ try {
                 picture: (player.querySelector('img')?.getAttribute('src') || '').split('/').pop(), pane: box(document.querySelector('[data-pane=chan]'))[0],
                 header: box(document.querySelector('[data-pane=chan] header').firstElementChild)[0] };
         })())`).then(JSON.parse);
-        const pick = async (group, choice) => {
-            await openSettings(b, 'Appearance');
+        const sized = async (group, choice) => {
+            await openAppearance(b, 'Messages');
             await waitFor(() => b.eval(`!!document.querySelector('[${group}]')`), 'the sizes');
-            await b.eval(`[...document.querySelectorAll('[${group}] label')].find((l) => l.textContent.trim() === ${JSON.stringify(choice)}).querySelector('input').click(), true`);
+            // The slider goes to the stop, as a drag leaves it.
+            await b.eval(`(() => { const s = document.querySelector('input[type=range][${group}]');
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(s, ${['Small', 'Medium', 'Large', 'Largest'].indexOf(choice)});
+                s.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
             await sleep(200);
-            await b.key('Escape');
-            await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closing');
+            await closeSettings(b);
             await b.eval(`document.querySelector('[data-id="${photo}"]').scrollIntoView({ block: 'center' }), true`);
             await sleep(400);
             return measure();
@@ -454,24 +696,26 @@ try {
         // The photo is a phone's, portrait, so each box holds it by its height.
         c.report(q(first.tile) === q([360, 480]) && first.sharp === 'none' && q(first.player) === q([400, 225]) && first.picture === 'thumb',
             `until she chooses, a photo shows at Medium, 480 high, as its preview, and a player at Small: ${q(first)}`);
-        await openSettings(b, 'Appearance');
-        const choices = JSON.parse(await b.eval(`JSON.stringify(['data-media-size', 'data-player-size'].map((g) =>
-            [...document.querySelectorAll('[' + g + '] label')].map((l) => l.textContent.trim() + (l.querySelector('input').checked ? '*' : '')).join('|')))`));
+        await openAppearance(b, 'Messages');
+        // Each size is a slider of four stops, the one chosen named beside it.
+        const choices = JSON.parse(await b.eval(`JSON.stringify(['data-media-size', 'data-player-size'].map((g) => {
+            const s = document.querySelector('input[type=range][' + g + ']');
+            return [s.min, s.max, s.step, s.getAttribute(g), s.getAttribute('aria-valuetext')].join(' ');
+        }))`));
         const width = await b.eval(`!!document.querySelector('[data-width]')`);
-        await b.key('Escape');
-        await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closing');
-        c.report(choices[0] === 'Small|Medium*|Large|Largest' && choices[1] === 'Small*|Medium|Large|Largest' && !width,
-            `Messages offers each four sizes, and no Width: ${q(choices)}`);
-        const large = await pick('data-media-size', 'Large');
+        await closeSettings(b);
+        c.report(choices[0] === '0 3 1 medium Medium' && choices[1] === '0 3 1 small Small' && !width,
+            `Messages offers each four sizes on a slider, and no Width: ${q(choices)}`);
+        const large = await sized('data-media-size', 'Large');
         const drawn = await waitFor(async () => { const m = await measure(); return typeof m.sharp === 'number' && m; }, 'the photo itself over its preview');
         c.report(q(large.tile) === q([540, 720]) && drawn.sharp > 640 && q(large.player) === q(first.player),
             `Large shows the photo 720 high, the photo itself drawn over the den's preview, and leaves the player: ${q(drawn)}`);
         await b.shot(`${HOME}/shot-settings-${which}-large.png`);
-        const largest = await pick('data-media-size', 'Largest');
+        const largest = await sized('data-media-size', 'Largest');
         c.report(q(largest.tile) === q([720, 960]), `Largest shows it 960 high: ${q(largest.tile)}`);
-        const small = await pick('data-media-size', 'Small');
+        const small = await sized('data-media-size', 'Small');
         c.report(q(small.tile) === q([225, 300]) && small.sharp === 'none', `Small shows it 300 high, as its preview: ${q(small)}`);
-        const player = await pick('data-player-size', 'Large');
+        const player = await sized('data-player-size', 'Large');
         c.report(q(player.player) === q([960, 540]) && player.picture === 'large' && q(player.tile) === q(small.tile),
             `a Large player is 960 by 540, its cover the larger picture, and the photo stays: ${q(player)}`);
         const kept = await b.eval(`[localStorage.getItem('DENS_MEDIA_SIZE'), localStorage.getItem('DENS_PLAYER_SIZE')].join(' ')`);
@@ -486,123 +730,35 @@ try {
     }
 
     if (runs('themes')) {
-        step('a theme of her own: the editor beside its preview, and Cancel');
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
         await waitFor(() => b.eval(`document.querySelectorAll('[data-scroller] [data-id]').length >= 5`), "general's messages");
-        await openSettings(b, 'Appearance');
-        await waitFor(() => b.eval(`!!${OWN}`), 'Your themes');
-        // Dracula, so the editor has colors other than Light's or Dark's to
-        // start from.
-        const DRACULA = `document.querySelector('[role=radiogroup][aria-label="More themes"] input[value=dracula]')`;
-        if (!(await b.eval(`!!${DRACULA}`))) await press(b, 'More themes', SETTINGS);
-        await waitFor(() => b.eval(`!!${DRACULA}`), 'the other themes');
-        await b.eval(`${DRACULA}.click(), true`);
-        await sleep(300);
-        const dracula = await wears(b);
-        c.report(dracula.theme === 'dracula' && dracula.set === 0, `Dracula sets nothing on the root: ${q(dracula.styled)}`);
-        await press(b, 'New theme');
-        await waitFor(() => b.eval(`!!${EDITOR} && !!${PREVIEW}`), 'the editor and its preview');
-        const started = JSON.parse(await b.eval(`JSON.stringify((() => { const hex = ${HEX}; return {
-            title: ${DIALOG}.getAttribute('aria-label'), name: ${EDITOR}.querySelector('input[type=text]').value,
-            colors: [...${EDITOR}.querySelectorAll('[data-color]')].map((r) => [r.dataset.color, r.querySelector('input[type=color]').value, hex(r.querySelector('input[type=text]').value)]),
-            base: ${EDITOR}.querySelector('[data-theme-base] input:checked').value,
-            radii: [...${EDITOR}.querySelectorAll('[data-radius]')].map((s) => s.value), border: ${EDITOR}.querySelector('[data-border]').value,
-            depth: document.getElementById('theme-depth').checked, noise: document.getElementById('theme-noise').checked }; })())`));
-        const starts = Object.fromEntries(started.colors.map(([label, , typed]) => [label, typed]));
-        c.report(started.title === 'New theme' && started.colors.map(([label]) => label).join('|') === 'Background|Text|Primary|Neutral|Info|Success|Warning|Error',
-            `the editor is a dialog asking for the colors the page draws with: ${q(started.colors)}`);
-        c.report(starts.Background === dracula.base && starts.Text === dracula.text && starts.Primary === dracula.primary && starts.Error === dracula.error
-            && started.base === 'dark' && started.radii.join() === '1,0.5,1' && started.border === '1' && started.depth === false && started.noise === false,
-        `it starts from the theme the page shows, Dracula, its corners, border and effects among it: ${q(started)} of ${q(dracula)}`);
-        const before = await wears(b);
-        const inPreview = await previewWears(b);
-        c.report(before.page === dracula.page && before.theme === 'dracula' && before.set === 0,
-            `opened, the page keeps Dracula: ${q(before)}`);
-        c.report(inPreview.theme === 'dark' && inPreview.page === dracula.page && inPreview.primary === dracula.primary && inPreview.secondary === dracula.secondary,
-            `the preview wears the theme being made, on Dark: ${q(inPreview)}`);
-        await set(b, field('Background', 'text'), '#102030');
-        await sleep(250);
-        const typed = await previewWears(b);
-        const page = await wears(b);
-        c.report(typed.page === '#102030' && typed.base200 !== '#102030' && typed.base300 !== typed.base200 && typed.list === typed.base200
-            && (await b.eval(`document.querySelector(${q(field('Background', 'color'))}).value`)) === '#102030',
-        `a background typed as hex is the preview's at once, the deeper two derived, its channel list among them, the picker following: ${q(typed)}`);
-        c.report(page.page === dracula.page && page.set === 0, `and the page keeps its own until it's saved: ${q(page)}`);
-        await h.snap('theme-editor', { scroll: `${FOOT}.previousElementSibling`, max: 3 });
-        await press(b, 'Cancel', FOOT);
-        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
-        const canceled = await wears(b);
-        c.report(canceled.theme === 'dracula' && canceled.page === dracula.page && canceled.set === 0 && (await ownNames(b)) === ''
-            && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null && (await b.eval(`!!${SETTINGS}`)),
-        `Cancel keeps nothing, and leaves the settings open: ${q(canceled)}`);
-        await press(b, 'New theme');
-        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        await b.key('Escape');
-        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
-        c.report(await b.eval(`!!${SETTINGS}`), 'Escape closes the editor alone');
+        for (const [width, size, layout] of [['a desktop', [1900, 1000], 'three'], ['the middle width', [1100, 900], 'two'], ['a phone', [390, 844], 'phone']]) {
+            await resize(b, size, layout === 'phone');
+            await themesAt(width, layout);
+        }
+        await resize(b, [1900, 1000]);
+    }
 
-        step('the theme made against the preview, saved and chosen');
-        await press(b, 'New theme');
-        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        await set(b, '[data-theme-editor] fieldset input[type=text]', 'Check theme');
-        await choose(b, 'data-theme-base', 'Light');
-        await set(b, field('Background', 'text'), '#f4efe6');
-        await set(b, field('Text', 'text'), '2a2118');
-        await set(b, field('Primary', 'text'), '#f0e6da');
-        await sleep(250);
-        const low = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
-        await set(b, field('Primary', 'text'), '#c41');
-        await set(b, field('Primary', 'color'), '#c2410c');
-        await set(b, '[data-radius=radiusField]', '0', ['change']);
-        await set(b, '[data-border]', '2', ['change']);
-        await sleep(300);
-        const lowAfter = await b.eval(`[...document.querySelectorAll('[data-low-contrast]')].map((e) => e.dataset.lowContrast).join('|')`);
-        c.report(low === 'Primary' && lowAfter === '',
-            `a primary too near the background says so beside it, alone, and stops once it reads: ${q(low)}, then ${q(lowAfter)}`);
-        const made = await previewWears(b);
-        const wanted = { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', button: '#c2410c', radius: '0px', borderWidth: '2px' };
-        const holds = (got, want) => Object.entries(want).every(([k, v]) => got[k] === v);
-        c.report(holds(made, wanted) && made.error === dracula.error && made.secondary === dracula.secondary && made.accent === dracula.accent,
-            `the preview wears each color as it's made, its buttons' corners and border, the rest Dracula's: ${q(made)}`);
-        c.report((await wears(b)).page === dracula.page, 'the page still its own');
-        await b.shot(`${HOME}/shot-settings-${which}-editor.png`);
-        await h.snap('theme-made', { scroll: `${FOOT}.previousElementSibling`, max: 3 });
-        await press(b, 'Save', FOOT);
-        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
-        const saved = await wears(b);
-        const stored = await b.eval(`localStorage.getItem('DENS_THEME')`);
-        c.report(holds(saved, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', radiusField: '0rem', border: '2px' })
-            && (await ownNames(b)) === 'Check theme*' && /^custom:[a-z0-9]{8}$/.test(stored),
-        `saved, the page wears it, chosen among Your themes, which the browser keeps: ${await ownNames(b)}, ${stored}, ${q(saved)}`);
-        c.report(STYLED.test(saved.styled), `the root's style holds variables alone, each a value the page wrote: ${q(saved.styled)}`);
-        const swatch = await b.eval(`(() => { const hex = ${HEX}; const s = document.querySelector('[role=radiogroup][aria-label="Your themes"] [data-theme]');
-            return [hex(getComputedStyle(s).backgroundColor), ...[...s.children].map((d) => hex(getComputedStyle(d).backgroundColor))].join(' '); })()`);
-        c.report(swatch === '#f4efe6 #2a2118 #c2410c', `its swatch shows its text and primary: ${swatch}`);
-        await h.snap('theme-own', { scroll: PANEL, max: 3 });
-        await closeSettings(b);
-        await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
-        await waitFor(() => b.eval(`document.querySelectorAll('[data-scroller] [data-id]').length >= 5`), "general's messages");
-        const reloaded = await wears(b);
-        c.report(holds(reloaded, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', border: '2px' }), `a reload wears it from the start: ${q(reloaded)}`);
-        await b.shot(`${HOME}/shot-settings-${which}-theme.png`);
-
-        step('edited, and its code copied as a block');
-        await openSettings(b, 'Appearance');
-        await waitFor(() => b.eval(`!!${OWN}`), 'Your themes');
-        await press(b, 'Edit');
-        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        c.report((await b.eval(`${DIALOG}.getAttribute('aria-label')`)) === 'Edit theme' && (await b.eval(`${EDITOR}.querySelector('input[type=text]').value`)) === 'Check theme'
-            && (await b.eval(`document.querySelector(${q(field('Primary', 'text'))}).value`)) === '#c2410c', 'Edit opens the editor at the theme');
-        await set(b, field('Primary', 'text'), '#7c3aed');
-        await set(b, '[data-radius=radiusBox]', '1', ['change']);
-        await b.eval(`document.getElementById('theme-depth').click(), true`);
-        await press(b, 'Save', FOOT);
-        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
+    if (runs('codes')) {
+        step('a theme of her own, its code copied as a block');
+        await b.go(`http://localhost:${ALICE.port}/`);
+        await openAppearance(b, 'Theme');
+        await pick(b, 'light');
+        await press(b, 'Customize', EDITOR);
+        await waitFor(() => b.eval(`!!${EDITOR} && !${EDITOR}.hasAttribute('data-built-in')`), "Light's copy");
+        await set(b, '[data-theme-editor] input[data-theme-name]', 'Check theme');
+        await color(b, 'base', 'Background', '#f4efe6');
+        await color(b, 'text', 'Text', '#2a2118');
+        await color(b, 'primary', 'Primary', '#7c3aed');
+        await b.eval(`document.querySelector('[data-radius=radiusBox] input[value="1"]').click(), true`);
+        await b.eval(`document.querySelector('[data-radius=radiusField] input[value="0"]').click(), true`);
+        await set(b, '[data-border]', '2');
+        if (!(await b.eval(`document.getElementById('theme-depth').checked`))) await b.eval(`document.getElementById('theme-depth').click(), true`);
+        await press(b, 'Save', BAR);
+        await press(b, 'Use', EDITOR);
         const edited = await wears(b);
-        c.report(edited.primary === '#7c3aed' && edited.page === '#f4efe6' && edited.depth === '1' && (await ownNames(b)) === 'Check theme*',
-            `the edit took the theme's place: ${q(edited)}`);
         await b.eval(`(() => { window.copied = []; navigator.clipboard.writeText = async (t) => { window.copied.push(t); }; return true; })()`);
-        await press(b, 'Copy code');
+        await press(b, 'Copy code', EDITOR);
         const code = await waitFor(async () => JSON.parse(await b.eval('JSON.stringify(window.copied || [])'))[0], 'the copied code');
         const lines = code.split('\n');
         c.report(lines[0] === '@plugin "daisyui/theme" {' && lines.at(-1) === '}' && lines.length === 34 && lines.includes('  name: "Check theme";')
@@ -614,10 +770,9 @@ try {
         step("pasted into bob's browser, and a stranger's blocks read for their colors alone");
         b2 = await launch(which, which === 'chromium' ? 9573 : 9574, { size: [1400, 900], hover: true });
         await pair(b2, BOB);
-        await openSettings(b2, 'Appearance');
-        await waitFor(() => b2.eval(`!!${OWN}`), "bob's themes");
+        await openAppearance(b2, 'Theme');
         const plain = await wears(b2);
-        const block = (...lines) => `@plugin "daisyui/theme" {\n${lines.map((l) => `  ${l};`).join('\n')}\n}`;
+        const block = (...ls) => `@plugin "daisyui/theme" {\n${ls.map((l) => `  ${l};`).join('\n')}\n}`;
         const hostile = [
             ['a url where a color goes', block('name: "x"', '--color-base-100: url(https://evil.example/x.png)')],
             ['a color in words', block('--color-primary: red')],
@@ -627,12 +782,12 @@ try {
             ['a v1.13.0 code with a url where a color goes', 'dens-theme:1.l.o.url(https://evil.example/x.png).78'],
             ['JSON', '{"name":"x","base":"url(https://evil.example/x.png)"}'],
         ];
-        await press(b2, 'Paste a code');
+        await press(b2, 'Paste a code', LIST);
         const refused = [];
         for (const [what, bad] of hostile) {
             await set(b2, PASTE, bad);
-            await press(b2, 'Add');
-            const said = await b2.eval(`${OWN}.querySelector('[role=alert], .text-error')?.textContent.trim() || ''`);
+            await press(b2, 'Add', LIST);
+            const said = await b2.eval(`${LIST}.querySelector('[role=alert]')?.textContent.trim() || ''`);
             const after = await wears(b2);
             if (said !== "That isn't a theme's code." || after.set !== 0 || after.page !== plain.page || (await ownNames(b2)) !== '') refused.push(`${what}: ${q(said)}, ${q(after.styled)}`);
         }
@@ -642,71 +797,60 @@ try {
         const mixed = code.replace('  --color-base-200:', '  --color-accent: url(https://evil.example/x.png);\n  background: url(https://evil.example/y.png);\n  --color-base-200:')
             .replace('  --noise: 0;', '  --noise: 0 ; --border: 9px;');
         await set(b2, PASTE, mixed);
-        await press(b2, 'Add');
-        await waitFor(async () => (await ownNames(b2)) === 'Check theme*', 'the mixed block kept');
+        await press(b2, 'Add', LIST);
+        await waitFor(async () => (await ownNames(b2)) === 'Check theme*', 'the mixed block kept, shown and not worn');
+        await press(b2, 'Use', EDITOR);
         const fromMixed = await wears(b2);
         c.report(STYLED.test(fromMixed.styled) && !/url|evil|9px/.test(fromMixed.styled) && fromMixed.accent === edited.accent && fromMixed.border === '2px',
             `a block with hostile lines keeps its own values, and nothing hostile reaches the root: ${q(fromMixed.styled)}`);
         await b2.shot(`${HOME}/shot-settings-${which}-refused.png`);
-        await press(b2, 'Delete');
+        await press(b2, 'Remove', EDITOR);
         await waitFor(async () => (await ownNames(b2)) === '', 'the mixed theme leaving');
-        await press(b2, 'Paste a code');
+        await press(b2, 'Paste a code', LIST);
         await set(b2, PASTE, `  ${code}\n`);
-        await press(b2, 'Add');
+        await press(b2, 'Add', LIST);
         await waitFor(async () => (await ownNames(b2)) === 'Check theme*', "the pasted theme among bob's");
+        await press(b2, 'Use', EDITOR);
         const pasted = await wears(b2);
         c.report(holds(pasted, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#7c3aed', secondary: edited.secondary, accent: edited.accent,
             error: edited.error, base200: edited.base200, base300: edited.base300, radiusField: '0rem', border: '2px', depth: '1' }),
         `bob's page wears alice's theme, variable for variable: ${q(pasted)}`);
         await b2.shot(`${HOME}/shot-settings-${which}-pasted.png`);
 
-        step("DaisyUI's generator's block, pasted, shows as it does there");
-        await press(b2, 'Paste a code');
-        await set(b2, PASTE, GENERATOR);
-        await press(b2, 'Add');
-        await waitFor(async () => (await ownNames(b2)) === 'Check theme|mytheme*', 'the generator\'s theme');
-        const given = Object.fromEntries(GENERATOR.split('\n').filter((l) => l.trim().startsWith('--')).map((l) => l.trim().slice(0, -1).split(': ')));
-        const set$ = JSON.parse(await b2.eval(`JSON.stringify(Object.fromEntries(${q(Object.keys(given))}.map((v) => [v, document.documentElement.style.getPropertyValue(v)])))`));
-        const differ = Object.keys(given).filter((v) => set$[v] !== given[v]);
-        const generated = await wears(b2);
-        const drawn = await b2.eval(`(() => { const hex = ${HEX}; return [hex(${q(given['--color-base-100'])}), hex(${q(given['--color-base-content'])})].join(' '); })()`);
-        c.report(differ.length === 0 && generated.theme === 'light' && `${generated.page} ${generated.text}` === drawn,
-            `the page sets each of its ${Object.keys(given).length} variables as the block gives it, and draws them${differ.length ? `; differ: ${differ.map((v) => `${v} ${set$[v]}`).join(', ')}` : ''}: ${q(generated)}`);
-        await helpers(b2, `http://localhost:${BOB.port}`, out, 'bob-').snap('theme-generator', { scroll: PANEL, max: 2 });
-        await b2.shot(`${HOME}/shot-settings-${which}-generator.png`);
-
         step("a v1.13.0 code reads as it did");
-        await press(b2, 'Paste a code');
+        await press(b2, 'Paste a code', LIST);
         await set(b2, PASTE, OLD_CODE);
-        await press(b2, 'Add');
-        await waitFor(async () => (await ownNames(b2)) === 'Check theme|mytheme|Plum*', 'the old code\'s theme');
+        await press(b2, 'Add', LIST);
+        await waitFor(async () => (await ownNames(b2)) === 'Check theme+|Plum*', 'the old code\'s theme');
+        await press(b2, 'Use', EDITOR);
         const old = await wears(b2);
         c.report(holds(old, { theme: 'dark', page: '#2b1d3a', text: '#eae0f5', primary: '#c084fc', radiusField: '0.25rem' }) && old.set === 23,
             `a v1.13.0 code's theme sets what it set then: ${q(old)}`);
         await closeSettings(b2);
 
-        step('deleted');
-        await openSettings(b, 'Appearance');
-        await waitFor(() => b.eval(`!!${OWN}`), 'Your themes');
-        await press(b, 'Delete');
+        step('removed while worn');
+        await openAppearance(b, 'Theme');
+        c.report((await ownNames(b)) === 'Check theme*+', `her theme, worn, shown when Appearance opens: ${await ownNames(b)}`);
+        await toEditor(b);
+        await press(b, 'Remove', EDITOR);
         await waitFor(async () => (await ownNames(b)) === '', 'the theme leaving the list');
         const deleted = await wears(b);
         c.report(['light', 'dark'].includes(deleted.theme) && deleted.set === 0 && (await b.eval(`localStorage.getItem('DENS_THEME')`)) === null
-            && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null,
-        `deleted, the page follows the system again, with nothing left on the root: ${q(deleted)}`);
+            && (await b.eval(`localStorage.getItem('DENS_THEMES')`)) === null && (await listed(b)).worn === 'system',
+        `removed, the page follows the system again, with nothing left on the root, System marked worn: ${q(deleted)}`);
         await closeSettings(b);
 
         step('the bars on a green theme of her own');
-        await openSettings(b, 'Appearance');
-        await press(b, 'New theme');
-        await waitFor(() => b.eval(`!!${EDITOR}`), 'the editor');
-        await set(b, '[data-theme-editor] fieldset input[type=text]', 'Green');
-        await choose(b, 'data-theme-base', 'Dark');
-        await set(b, field('Background', 'text'), '#14321f');
-        await set(b, field('Text', 'text'), '#e2efe6');
-        await set(b, field('Primary', 'text'), '#3fae6a');
-        await press(b, 'Save', FOOT);
-        await waitFor(async () => !(await b.eval(`!!${EDITOR}`)), 'the editor closing');
+        await openAppearance(b, 'Theme');
+        await press(b, 'New theme', LIST);
+        await waitFor(() => b.eval(`!!${EDITOR} && !${EDITOR}.hasAttribute('data-built-in')`), 'the new theme');
+        await set(b, '[data-theme-editor] input[data-theme-name]', 'Green');
+        if (!(await b.eval(`document.getElementById('theme-dark').checked`))) await b.eval(`document.getElementById('theme-dark').click(), true`);
+        await color(b, 'base', 'Background', '#14321f');
+        await color(b, 'text', 'Text', '#e2efe6');
+        await color(b, 'primary', 'Primary', '#3fae6a');
+        await press(b, 'Save', BAR);
+        await press(b, 'Use', EDITOR);
         await closeSettings(b);
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
         await waitFor(() => b.eval(`!!document.querySelector('textarea[placeholder^="Message "]')`), "general's message bar");
@@ -716,9 +860,8 @@ try {
         c.report(bars.page === '#14321f' && bars.bar !== bars.page && apart(hue(bars.bar), hue(bars.page)) <= 5,
             `the message bar keeps the theme's green, a shade lighter: ${bars.bar} (${bars.css}) at ${Math.round(hue(bars.bar))}° on ${bars.page} at ${Math.round(hue(bars.page))}°`);
         await b.shot(`${HOME}/shot-settings-${which}-green.png`);
-        await openSettings(b, 'Appearance');
-        await waitFor(() => b.eval(`!!${OWN}`), 'Your themes');
-        await press(b, 'Delete');
+        await openAppearance(b, 'Theme');
+        await press(b, 'Remove', EDITOR);
         await waitFor(async () => (await ownNames(b)) === '', 'the green theme leaving the list');
         await closeSettings(b);
     }
@@ -728,8 +871,9 @@ try {
         b2 ||= await launch(which, which === 'chromium' ? 9573 : 9574, { size: [1400, 900], hover: true });
         const general$ = `http://localhost:${ALICE.port}/den/${den}/${general}`;
         const light = async (on) => {
-            await openSettings(on, 'Appearance');
-            await on.eval(`document.querySelector('[role=radiogroup][aria-label=Theme] input[value=light]').click(), true`);
+            await openAppearance(on, 'Theme');
+            await pick(on, 'light');
+            if (await on.eval(`!!${button('Use', EDITOR)}`)) await press(on, 'Use', EDITOR);
             await closeSettings(on);
         };
         await b.go(general$);
@@ -752,7 +896,7 @@ try {
         };
         const none = await behind(b, 'background-none');
         c.report(none.image === 'none' && none.pixel.join() === '255,255,255', `with no background the list is the theme's: ${q(none)}`);
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         const CARD = `document.querySelector('[data-chat-background]')`;
         await waitFor(() => b.eval(`!!${CARD}`), 'the Chat background card');
         await b.eval(`${CARD}.querySelector('input[type=file]').dataset.check = 'background', true`);
@@ -763,7 +907,7 @@ try {
         c.report((await behind(b, 'background-gif')).image === 'none', 'a GIF is refused, and nothing shows');
         await b.attach('input[data-check=background]', [png(`${HOME}/background.png`, 64, 64, [255, 0, 0])]);
         await waitFor(() => b.eval(`!!${CARD}.querySelector('[data-background-preview] img')?.naturalWidth`), 'the picture in the card');
-        await h.snap('background-card', { scroll: PANEL, max: 3 });
+        await h.snap('background-card', { scroll: TABPANEL, max: 3 });
         const cardWrapped = await b.eval(WRAPPED);
         c.report(cardWrapped.length === 0, `Chat background: every hint reads in a line${cardWrapped.length ? `; wrapped: ${cardWrapped.join('; ')}` : ''}`);
         c.report((await b.eval(`${CARD}.querySelector('input[type=range]').value`)) === '70' && (await b.eval(`[...${CARD}.querySelectorAll('button')].filter((x) => !x.closest('.tooltip')).map((x) => x.textContent.trim()).join('|')`)) === 'Change image|Remove',
@@ -781,14 +925,14 @@ try {
             `a second browser paired with her Dens shows the same: ${q(second.pixel)}`);
 
         step('dimmed, and removed');
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await waitFor(() => b.eval(`!!${CARD}?.querySelector('input[type=range]')`), 'the Dim slider');
         await b.eval(`(() => { const r = ${CARD}.querySelector('input[type=range]'); r.dataset.check = 'dim'; return true; })()`);
         await set(b, 'input[data-check=dim]', '0', ['input', 'change']);
         await closeSettings(b);
         const clear = await waitFor(async () => { const s = await behind(b, 'background-0'); return s.pixel.join() === '255,0,0' && s; }, 'the picture undimmed');
         c.report(clear.pixel.join() === '255,0,0', `at 0% the picture shows as it is: ${q(clear.pixel)}`);
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await waitFor(() => b.eval(`!!${CARD}?.querySelector('input[type=range]')`), 'the Dim slider');
         await b.eval(`(() => { const r = ${CARD}.querySelector('input[type=range]'); r.dataset.check = 'dim'; return true; })()`);
         await set(b, 'input[data-check=dim]', '90', ['input', 'change']);
@@ -814,7 +958,7 @@ try {
                 return parseFloat(alpha); })()`);
         };
         c.report(Math.abs((await cover(b)) - 1) < 0.01, 'until she sets it, a message under the pointer covers the picture');
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await waitFor(() => b.eval(`!!${CARD}?.querySelector('[data-background-hover]')`), 'the Hover slider');
         c.report((await b.eval(`${CARD}.querySelector('[data-background-hover]').value`)) === '100', 'Hover, under Dim, starts at 100%');
         await b.eval(`${CARD}.querySelector('[data-background-hover]').dataset.check = 'hover', true`);
@@ -826,7 +970,7 @@ try {
         c.report(Math.abs(covered - 0.4) < 0.02 && Math.abs(covered2 - 0.4) < 0.02 && keptHover === 40,
             `at 40% a message under the pointer covers that much of it, in both browsers, the service keeping it: ${covered}, ${covered2}, ${keptHover}`);
         await b.shot(`${HOME}/shot-settings-${which}-hover.png`);
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await waitFor(() => b.eval(`!!${CARD}`), 'the Chat background card');
         await press(b, 'Remove', CARD);
         await waitFor(() => b.eval(`!${CARD}.querySelector('[data-background-preview]') && ${button('Choose image', CARD)} && true`), 'the card without a picture');

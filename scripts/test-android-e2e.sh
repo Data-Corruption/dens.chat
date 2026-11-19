@@ -868,6 +868,13 @@ update_from_fixtures() {
     tap 10 'Done' || fail "the recovery codes have no Done"
     tap 30 'Open' || fail "Home lists no den to open"
     in_den() { shows_text 'Dens v99\.0\.2-e2e is ready to install\.' && shows_text 'Dismiss'; }
+    # Home's own notice can land between finding Open and the tap, which
+    # moves Open from under it: while Home still shows, it's tapped again.
+    for _ in 1 2 3; do
+      sleep 3
+      in_den && break
+      if shows_text 'Your dens'; then tap 5 'Open' || :; fi
+    done
     waitfor 30 "the update's notice in the den" in_den
     tap 10 'Dismiss' || fail "the den's notice has no Dismiss"
     sleep 2

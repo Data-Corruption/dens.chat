@@ -124,7 +124,8 @@
 #                               its row's right, its lock behind the call's block's arrow (M21.2); and the den's
 #                               own sections from the cog on its page, Manage's pages headed by their names, and
 #                               every button one of the page's kinds, a dialog leading with one primary (M22.3);
-#                               and before's first run asking about Link previews, and a Steam link's card (M22.7).
+#                               and before's first run asking about Link previews, and a Steam link's card (M22.7);
+#                               and Appearance as a page, each tab along its foot and each of its editor's (M22.8).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -172,11 +173,13 @@
 #                               Hover in both browsers (M21.1); and from M22.3 each section held to the one frame,
 #                               its groups cards, one toggle size, regular labels, every button one of the page's
 #                               kinds; Manage holding what staff manage; and her own sections of the den from the
-#                               cog on its page; and from M22.5 the theme editor's dialog, a color edited
-#                               against its den preview while the page keeps its own, the code a block, a
-#                               stranger's blocks read for what the page reads alone, DaisyUI's generator's
-#                               block pasted and every variable set as it gives it, and a v1.13.0 code read.
-#                               PART is sections, preview, sizes, themes or background; all unless given
+#                               cog on its page; and from M22.5 the code a block, a stranger's blocks read for
+#                               what the page reads alone, and a v1.13.0 code read; and from M22.8 Appearance
+#                               as a page, Back to the section before, its preview following each setting, and
+#                               at 1900, 1100 and 390 pixels a built-in theme chosen against the page's, worn
+#                               by Use, copied by Customize, edited against the preview until Save, and
+#                               DaisyUI's generator's block pasted, every variable set as it gives it.
+#                               PART is sections, preview, sizes, themes, codes or background; all unless given
 #   names BROWSER               M19.5: alice picking a font and a gradient in Edit profile, its fonts as
 #                               tiles in their own faces; bob's page showing her name in them in the member
 #                               list, a message, a reply's quote, a call, the DM list, a DM's header and her

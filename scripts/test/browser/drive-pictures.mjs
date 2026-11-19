@@ -1,10 +1,10 @@
 // The M15.1 check of animated pictures: alice, who owns the den, in
 // Chromium, and bob in the browser named, whose system asks for less
-// motion. Bob's Animations starts at On hover and alice's at Always. Each
+// motion. Bob's Animations starts at Hover and alice's at Always. Each
 // crops an animated GIF and an animated WebP, made here, into a picture and
 // a banner, bob the GIF as his picture and alice the WebP; the crop dialog
 // says each moves, and the den keeps animated GIFs of the parts framed.
-// With both in Lounge's call, alice's page, set to On hover, shows bob's
+// With both in Lounge's call, alice's page, set to Hover, shows bob's
 // picture still in his message's row, his member's, his DM's and his
 // call's, plays it in each while the pointer is over it alone, and in his
 // profile while it's open, and a finger's tap plays nothing; bob's page
@@ -16,7 +16,7 @@
 //   run.sh pictures chromium|firefox
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, SETTINGS, checks, launch, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, checks, closeSettings, launch, openAppearance, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, ALICE_MSG: aliceMsg, BOB_MSG: bobMsg } = process.env;
@@ -162,7 +162,6 @@ function webp(file) {
 const state = async (s) => JSON.parse(await s.b.eval(`(async () => JSON.stringify(await (await fetch('/api/dens/${den}/state')).json()))()`));
 const meIn = async (s) => (await state(s)).me;
 const dialog = (title) => `document.querySelector('[role=dialog][aria-label=${q(title)}]')`;
-const escape = (s) => s.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
 const close = async (s, title) => {
     await s.b.eval(`${dialog(title)}.querySelector('button[aria-label=Close]').click(), true`);
     await waitFor(async () => !(await s.b.eval(`!!${dialog(title)}`)), `${s.name}'s ${title} closed`);
@@ -192,10 +191,9 @@ async function crop(s, shape, file) {
 }
 
 async function setAnimations(s, value) {
-    await openSettings(s.b, 'Appearance');
+    await openAppearance(s.b, 'Messages');
     await s.b.eval(`document.querySelector('input[name=animations][value=${value}]').click(), true`);
-    await escape(s);
-    await waitFor(async () => !(await s.b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    await closeSettings(s.b);
 }
 
 // The rows a page shows another member in, as expressions for its element.
@@ -254,7 +252,7 @@ async function playsOnHover(s, name, msg) {
             const v = await shows(s, row);
             return v.what === 'still' ? v : null;
         }, `${name}'s ${kind} row still again`, 5000).catch(() => null);
-        report(before && over && after, `${s.name}'s page, On hover: ${name}'s ${kind} row still, playing under the pointer, its preview hidden, still again: ` +
+        report(before && over && after, `${s.name}'s page, Hover: ${name}'s ${kind} row still, playing under the pointer, its preview hidden, still again: ` +
             JSON.stringify({ before, over, after }));
         if (kind === 'dm') await back(s);
     }
@@ -277,11 +275,10 @@ try {
 
     step("each page's Animations to start");
     for (const [s, want] of [[A, 'always'], [B, 'hover']]) {
-        await openSettings(s.b, 'Appearance');
+        await openAppearance(s.b, 'Messages');
         const checked = await s.b.eval(`document.querySelector('input[name=animations]:checked')?.value || ''`);
         report(checked === want, `${s.name}'s Animations starts at ${want}${s === B ? ', the system asking for less motion' : ''}: ${checked}`);
-        await escape(s);
-        await waitFor(async () => !(await s.b.eval(`!!${SETTINGS}`)), 'the settings closed');
+        await closeSettings(s.b);
     }
 
     step('each crops an animated GIF and an animated WebP');
@@ -311,7 +308,7 @@ try {
         }
     }
 
-    step("alice's page, On hover, shows bob's rows");
+    step("alice's page, Hover, shows bob's rows");
     await setAnimations(A, 'hover');
     await playsOnHover(A, 'Bob', bobMsg);
     // A profile, opened, plays its pictures.
@@ -324,7 +321,9 @@ try {
     }, "bob's profile playing", 5000).catch(() => null);
     await A.b.shot(`${HOME}/shot-pictures-profile.png`);
     report(profile, `alice's page plays bob's picture and banner in his profile, open: ${JSON.stringify(profile)}`);
-    await close(A, 'Profile');
+    // Beside its click, the card has no ✕, and Escape closes it (M22.4).
+    await A.b.eval(CLOSE_CARD);
+    await waitFor(async () => !(await A.b.eval(`!!${dialog('Profile')}`)), "bob's profile closed");
     // A finger's tap is no hover.
     await A.b.touch(true);
     await sleep(500);
@@ -336,7 +335,7 @@ try {
     report(tapped.what === 'still', `a tap on bob's message plays nothing: ${JSON.stringify(tapped)}`);
     await A.b.touch(false);
 
-    step("bob's page, On hover, shows alice's rows, then Always");
+    step("bob's page, Hover, shows alice's rows, then Always");
     await playsOnHover(B, 'Alice', aliceMsg);
     await setAnimations(B, 'always');
     for (const [kind, r] of Object.entries(rows('Alice', aliceMsg))) {

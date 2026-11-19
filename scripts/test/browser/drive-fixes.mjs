@@ -16,14 +16,14 @@
 // link's the browser's own; and from M19.5, the den's name with no arrow
 // beside it, under a pointing hand; and from M22.4 the composer's + inside
 // its box, and a profile card opening beside the name clicked, with
-// nothing dimmed; and from M22.7 the message bar as the box, its edge
+// nothing dimmed; and from M22.7 the message box as an island, its edge
 // taking the focus, the box growing with wrapped lines to half its pane,
 // a reaction's chip in the theme's corners, square on a square theme, and
 // a photo's and a video's name on hover, on and off.
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, CLOSE_CARD, DEN_NAME, HOME, SETTINGS, checks, fromMenu, launch, lib, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
+import { ALICE, CLOSE_CARD, DEN_NAME, HOME, SETTINGS, checks, closeSettings, fromMenu, launch, lib, openAppearance, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, CLIPS: clips, DM: dm } = process.env;
@@ -165,30 +165,32 @@ try {
     })()`), 'the New divider between messages 4 and 5', 5000));
     c.report(none && placed, `a message arriving in the open channel got no divider (${none}), and opening it with two unread put one before them (${placed})`);
 
-    step("the composer's + sits inside its box, with no box of its own, and the bar is the box");
+    step("the composer's + sits inside its box, an island at the pane's foot");
     await b.eval(`document.activeElement?.blur(), true`);
-    const BAR = `${BOX}.closest('.border-t')`;
+    const ISLAND = `${BOX}.closest('.message-island')`;
     const plus = JSON.parse(await b.eval(`(() => {
         const p = document.querySelector('button[aria-label="Add to this message"]'), r = p.getBoundingClientRect(), t = ${BOX}.getBoundingClientRect();
-        const box = getComputedStyle(${BOX});
+        const island = ${ISLAND}.getBoundingClientRect(), foot = ${BOX}.closest('[data-composer]'), list = document.querySelector('[data-scroller]').getBoundingClientRect();
+        const panel = document.querySelector('button[aria-label="Edit your profile"]').parentElement.getBoundingClientRect();
         return JSON.stringify({ inside: r.left > t.left && r.right < t.left + t.width / 2 && r.top >= t.top && r.bottom <= t.bottom, border: getComputedStyle(p).borderTopWidth,
-            boxBorder: [box.borderTopWidth, box.borderLeftWidth], bar: Math.round(${BAR}.getBoundingClientRect().height) });
+            height: Math.round(island.height), under: Math.round(list.bottom - island.top), sides: [Math.round(island.left - list.left), Math.round(innerHeight - island.bottom)],
+            level: Math.abs((island.top + island.bottom) / 2 - (panel.top + panel.bottom) / 2), bare: getComputedStyle(foot).backgroundColor });
     })()`));
-    c.report(plus.inside && plus.border === '0px' && plus.boxBorder.every((w) => w === '0px') && plus.bar === 73,
-        `the + sits inside the box at its left, unbordered, the box has no border of its own, and a line's bar is 73 pixels: ${JSON.stringify(plus)}`);
+    // The messages end at the island's top edge, on the page's own
+    // background, and the island stands level with the member's panel.
+    c.report(plus.inside && plus.border === '0px' && plus.height === 48 && plus.under === 0 && plus.sides[0] === 16 && plus.sides[1] === 12 && plus.level <= 1
+        && plus.bare === 'rgba(0, 0, 0, 0)',
+    `the + sits inside the box at its left, unbordered; a line's island is 48 pixels, the list ending at its top edge, level with the member's panel: ${JSON.stringify(plus)}`);
 
     step('Enter in a code block');
-    const edge = () => b.eval(`getComputedStyle(${BAR}).borderTopColor`);
+    const edge = () => b.eval(`getComputedStyle(${ISLAND}).boxShadow`);
     const idle = await edge();
-    // A press on the bar's edge goes to the box.
-    const barAt = JSON.parse(await b.eval(`(() => { const r = ${BAR}.getBoundingClientRect(); return JSON.stringify([r.right - 6, r.top + 6]); })()`));
-    await b.click(barAt[0], barAt[1]);
-    const fromBar = await may(waitFor(() => b.eval(`document.activeElement === ${BOX}`), 'the box focused from the bar', 3000));
+    await b.eval(`${BOX}.focus(), true`);
     const ring = await b.eval(`getComputedStyle(${BOX}).outlineStyle`);
     const focused = await edge();
     await shot('focus');
-    c.report(fromBar && ring === 'none' && focused !== idle,
-        `a press on the bar's edge focused the box (${fromBar}), which has no ring around it (${ring}), and the bar's top edge darkens (${idle} to ${focused})`);
+    c.report(ring === 'none' && idle !== 'none' && focused !== idle,
+        `the focused box has no ring around it (${ring}), and its island's edge darkens (${idle} to ${focused})`);
     before = await rows();
     await b.type('```');
     await b.key('Enter');
@@ -483,18 +485,16 @@ try {
         document.querySelector('video[aria-label="clip.mp4"]')?.getAttribute('title') || null])`).then(JSON.parse);
     await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Open photo.jpg"]') && !!document.querySelector('video[aria-label="clip.mp4"]')`), "clips' photo and clip", 15000);
     const named = await names();
-    await openSettings(b, 'Appearance');
+    await openAppearance(b, 'Messages');
     const TOGGLE = `document.getElementById('file-names')`;
     await waitFor(() => b.eval(`${TOGGLE}?.checked === true`), 'File names on hover, on');
     await b.eval(`${TOGGLE}.click(), true`);
-    await b.key('Escape');
-    await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    await closeSettings(b);
     const unnamed = await names();
     const keptOff = await b.eval(`localStorage.getItem('DENS_FILE_NAMES')`);
-    await openSettings(b, 'Appearance');
+    await openAppearance(b, 'Messages');
     await b.eval(`${TOGGLE}.click(), true`);
-    await b.key('Escape');
-    await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    await closeSettings(b);
     const renamed = await names();
     c.report(JSON.stringify(named) === '["photo.jpg","clip.mp4"]' && JSON.stringify(unnamed) === '[null,null]' && keptOff === 'off' && JSON.stringify(renamed) === JSON.stringify(named),
         `the names showed on hover (${JSON.stringify(named)}), none once turned off (${JSON.stringify(unnamed)}, kept as ${keptOff}), and again once on (${JSON.stringify(renamed)})`);
