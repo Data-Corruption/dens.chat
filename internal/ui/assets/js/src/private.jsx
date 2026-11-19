@@ -1,12 +1,14 @@
 // Private DMs and device approval (M1.7) on the page: comparing codes
-// with a member (M16.1), approving a new device, and the DM seal, which the
-// page calls the DM recovery key (M8.3). The keys stay in the local
+// with a member (M16.1), approving a new device, as a dialog with a code
+// to scan (M22.6), and the DM seal, which the page calls the DM recovery
+// key (M8.3). The keys stay in the local
 // service; the page only shows digits, and passes on what the member types.
 
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { onEvent } from './events.js';
 import {
-    Actions, Button, CopyButton, DocsLink, DocsTip, ErrorText, Field, Notice, PLAIN, StatusText, SubmitButton, TextInput, Tip, clock, day, useAction,
+    Actions, Button, CopyButton, DocsLink, DocsTip, ErrorText, Field, Notice, PLAIN, StatusText, SubmitButton, TextInput, Tip, Waiting, clock, day, useAction,
 } from './components.jsx';
 import { useOver } from './animations.js';
 import { MARKS_HOVER, MARKS_NEVER, useVerifiedMarks } from './verified.js';
@@ -15,6 +17,8 @@ import { Dialog } from './manage.jsx';
 import { canSaveFile } from './platform.js';
 import { recoveryFileName, recoveryText, sameDigits } from './private.js';
 import { copyText } from './clipboard.js';
+import { QRCode, Scanner, useCamera } from './scan.jsx';
+import { readSignInCode } from './signincode.js';
 
 // Digits shows the digits a screen reads out, large and in groups, a size
 // smaller on a phone, where a code's five groups would wrap.
@@ -181,113 +185,205 @@ export function DMGate({ denID, gate, dm, notes = false, onCompare }) {
     return <div class="border-t border-base-300 px-4 py-3 text-sm">{body}</div>;
 }
 
-// SignInRequests shows sign-ins on new devices that wait for this member's
-// approval on a den, and approves them from here: this device answers, the
-// member types the new device's digits here and this device's there, and
-// only then does this device hand over the member's DM recovery key.
-export function SignInRequests({ den }) {
-    const [digits, setDigits] = useState({});
-    const [refused, setRefused] = useState(false);
-    const act = useAction();
-    const requests = den.requests || [];
-    if (requests.length === 0) {
-        return refused ? (
-            <Notice kind="warning">
-                <span>You refused a sign-in. Whoever asked has your den password, so change it: that signs out every other device.</span>
-                <Actions>
-                    <Button onClick={() => openSettings('password', den.den_id)}>Change password</Button>
-                    <Button kind="quiet" onClick={() => setRefused(false)}>Dismiss</Button>
-                </Actions>
-            </Notice>
-        ) : null;
-    }
-    const base = `/api/dens/${den.den_id}/requests`;
-    return (
-        <div class="flex flex-col gap-2">
-            {requests.map((r) => r.approved ? (
-                // Approved here first, the new device may still be waiting
-                // for its member to type this device's digits.
-                <Notice key={r.id} kind="success">
-                    <p>
-                        You approved <span class="font-medium">{r.label}</span>. If it still asks for this device's digits, type these into
-                        it:
-                    </p>
-                    <Digits value={r.half} />
-                    <Actions>
-                        <Button busy={act.busy} onClick={() => act.run(() => api.del(`${base}/${r.id}`))}>Done</Button>
-                    </Actions>
-                </Notice>
-            ) : (
-                <ApprovalAsk key={r.id} den={den} r={r} base={base} act={act} digits={digits[r.id] || ''}
-                    onDigits={(v) => setDigits({ ...digits, [r.id]: v })} onRefused={() => setRefused(true)} />
-            ))}
-        </div>
-    );
+// Requests the member closed before approving them, by ID, which wait in
+// a line above Home and their den's channel to open again (M22.6).
+const hidden = new Set();
+const hiddenWatchers = new Set();
+
+function setHidden(id, on) {
+    if (on) hidden.add(id);
+    else hidden.delete(id);
+    for (const f of hiddenWatchers) f();
 }
 
-// ApprovalAsk is one new device's request to sign in, waiting for this
-// member: where it stands, and It's mine or Approve beside Refuse, in one
-// row.
-function ApprovalAsk({ den, r, base, act, digits, onDigits, onRefused }) {
-    const typing = !r.elsewhere && !r.lost && r.here && !!r.half;
+function useHidden() {
+    const [, bump] = useState(0);
+    useEffect(() => {
+        const f = () => bump((n) => n + 1);
+        hiddenWatchers.add(f);
+        return () => hiddenWatchers.delete(f);
+    }, []);
+    return hidden;
+}
+
+// useDensView is the dens' status on this computer, the newest of the
+// list fetched and the stream's.
+function useDensView() {
+    const [view, setView] = useState(null);
+    useEffect(() => {
+        let live = true;
+        const show = (v) => setView((cur) => (!cur || v.epoch !== cur.epoch || v.version >= cur.version ? v : cur));
+        api.get('/api/dens').then((v) => live && show(v), () => {});
+        const stop = onEvent((m) => m.t === 'dens' && show(m.d));
+        return () => {
+            live = false;
+            stop();
+        };
+    }, []);
+    return view;
+}
+
+/** Approvals opens each sign-in on a new device that waits for this
+    member's approval, in any den, as a dialog over whatever is on screen,
+    a sheet on a phone (M22.6), one at a time, oldest first. One closed
+    before it's approved waits in a line above Home and its den's channel,
+    HiddenRequests, to open again; one approved closes as its new device
+    connects, or as the member closes it, which ends its digits. */
+export function Approvals() {
+    const view = useDensView();
+    const shut = useHidden();
+    const [refused, setRefused] = useState(null);
+    if (refused) return <RefusedDialog den={refused} onClose={() => setRefused(null)} />;
+    const waiting = [];
+    for (const den of view?.dens || []) {
+        if (den.state !== 'connected') continue;
+        for (const r of den.requests || []) if (!shut.has(r.id)) waiting.push({ den, r });
+    }
+    waiting.sort((a, b) => a.r.requested_at - b.r.requested_at);
+    const first = waiting[0];
+    if (!first) return null;
+    return <ApprovalDialog key={first.r.id} den={first.den} r={first.r} onRefused={() => setRefused(first.den)} />;
+}
+
+/** HiddenRequests is a line above Home and a den's channel for each
+    sign-in waiting on this member there whose dialog they closed, which
+    opens it again (M22.6). */
+export function HiddenRequests({ den }) {
+    const shut = useHidden();
+    return (den.requests || []).filter((r) => shut.has(r.id)).map((r) => (
+        <Notice key={r.id} kind="info" data-request-hidden>
+            <span>A new device asks to sign in to {den.name} as you: <span class="font-medium">{r.label}</span>.</span>
+            <Actions><Button onClick={() => setHidden(r.id, false)}>Show</Button></Actions>
+        </Notice>
+    ));
+}
+
+// ApprovalDialog is one new device's request to sign in as this member:
+// who asks, It's mine or Refuse, then the digits each device scans or
+// types from the other, this one's under their code. This device answers,
+// the member types the new device's digits here, and only then does this
+// device hand over the member's DM recovery key.
+function ApprovalDialog({ den, r, onRefused }) {
+    const [digits, setDigits] = useState('');
+    const act = useAction();
+    const base = `/api/dens/${den.den_id}/requests`;
+    const close = () => (r.approved ? act.run(() => api.del(`${base}/${r.id}`)) : setHidden(r.id, true));
     const refuse = (
-        <Button kind="quiet" disabled={act.busy} onClick={() => act.run(async () => {
+        <Button kind="danger" disabled={act.busy} onClick={() => act.run(async () => {
             await api.post(`${base}/${r.id}/refuse`);
             onRefused();
         })}>
             Refuse
         </Button>
     );
-    return (
-        <Notice kind="info">
-            <p>
-                A new device asks to sign in to {den.name} as you: <span class="font-medium">{r.label}</span>. If it isn't yours,
-                refuse it and change your den password.{' '}
-                <DocsTip id={`docs-approve-${r.id}`} page="usage/#signing-in-from-another-computer">
-                    Why your devices approve each other, and what to do about one that isn't yours.</DocsTip>
-            </p>
-            {r.elsewhere ? (
+    let step;
+    if (r.approved) {
+        step = (
+            <>
+                <StatusText kind="success">Approved.</StatusText>
+                <p>If the new device still asks for this one's digits, scan this code or type them there.</p>
+                <DigitsShown den={den} r={r} />
+                <ErrorText message={act.error} />
+                <Actions><Button kind="primary" busy={act.busy} onClick={close}>Done</Button></Actions>
+            </>
+        );
+    } else if (r.elsewhere) {
+        step = (
+            <>
                 <p>Another of your devices is approving it.</p>
-            ) : r.lost ? (
+                <ErrorText message={act.error} />
+                <Actions>{refuse}</Actions>
+            </>
+        );
+    } else if (r.lost) {
+        step = (
+            <>
+                <p>Dens on this device restarted while you were approving it, which lost its part of the check. Refuse it, and sign in again on the new device.</p>
+                <ErrorText message={act.error} />
+                <Actions>{refuse}</Actions>
+            </>
+        );
+    } else if (!r.here) {
+        step = (
+            <>
+                <p>If it isn't yours, refuse it and change your den password.</p>
+                <ErrorText message={act.error} />
+                <Actions>
+                    <Button kind="primary" busy={act.busy} onClick={() => act.run(() => api.post(`${base}/${r.id}/answer`))}>It's mine</Button>
+                    {refuse}
+                </Actions>
+            </>
+        );
+    } else if (!r.half) {
+        step = <Waiting label="Waiting for the new device…" />;
+    } else {
+        step = (
+            <form class="flex flex-col gap-3" onSubmit={(e) => {
+                e.preventDefault();
+                act.run(async () => {
+                    await api.post(`${base}/${r.id}/approve`, { digits });
+                    setDigits('');
+                });
+            }}>
+                <p>On the new device, scan this code or type these digits.</p>
+                <DigitsShown den={den} r={r} />
+                <DigitsInput value={digits} onInput={setDigits} label="Then type the digits the new device shows" />
+                <ErrorText message={act.error} />
+                <Actions>
+                    <SubmitButton busy={act.busy}>Approve</SubmitButton>
+                    {refuse}
+                </Actions>
+            </form>
+        );
+    }
+    return (
+        <Dialog title="Sign-in request" onClose={close}>
+            <div class="flex flex-col gap-3" data-approval>
                 <p>
-                    Dens on this device restarted while you were approving it, which lost its part of the check. Refuse it, and
-                    sign in again on the new device.
+                    A new device asks to sign in to {den.name} as you: <span class="font-medium" data-request-label>{r.label}</span>.{' '}
+                    <DocsTip id={`docs-approve-${r.id}`} page="usage/#signing-in-from-another-computer">
+                        Why your devices approve each other, and what to do about one that isn't yours.</DocsTip>
                 </p>
-            ) : !r.here ? (
-                <p>Is it yours? Then check it's the device in front of you: both screens show digits to compare.</p>
-            ) : !r.half ? (
-                <p>Waiting for the new device…</p>
-            ) : (
-                <form class="flex flex-col gap-2 self-stretch" onSubmit={(e) => {
-                    e.preventDefault();
-                    act.run(async () => {
-                        await api.post(`${base}/${r.id}/approve`, { digits });
-                        onDigits('');
-                    });
-                }}>
-                    <p>Type these digits into the new device. They stay here after you approve, until you click Done.</p>
-                    <Digits value={r.half} />
-                    <DigitsInput value={digits} onInput={onDigits} label="Then type the digits the new device shows" />
-                    <ErrorText message={act.error} />
-                    <Actions>
-                        <SubmitButton busy={act.busy}>Approve</SubmitButton>
-                        {refuse}
-                    </Actions>
-                </form>
-            )}
-            {!typing && (
-                <>
-                    <ErrorText message={act.error} />
-                    <Actions>
-                        {!r.here && !r.elsewhere && !r.lost && (
-                            <Button kind="primary" disabled={act.busy} onClick={() => act.run(() => api.post(`${base}/${r.id}/answer`))}>It's mine</Button>
-                        )}
-                        {refuse}
-                    </Actions>
-                </>
-            )}
-            <p class="text-xs text-base-content/60">It waits until {clock(r.expires_at)}.</p>
-        </Notice>
+                {step}
+                <p class="text-xs text-base-content/60">It waits until {clock(r.expires_at)}.</p>
+            </div>
+        </Dialog>
+    );
+}
+
+// DigitsShown is the digits this device shows for a sign-in it answered,
+// under their code, for the new device to scan (M22.6).
+function DigitsShown({ den, r }) {
+    const [code, setCode] = useState(null);
+    useEffect(() => {
+        let live = true;
+        api.get(`/api/dens/${den.den_id}/requests/${r.id}/code`).then((c) => live && setCode(c), () => {});
+        return () => {
+            live = false;
+        };
+    }, [den.den_id, r.id, r.half]);
+    return (
+        <div class="flex flex-col items-center gap-2" data-digits-shown>
+            {code && <QRCode code={code} label="These digits as a code, for the new device to scan" />}
+            <Digits value={r.half} />
+        </div>
+    );
+}
+
+// RefusedDialog follows a refused sign-in: whoever asked has the member's
+// den password.
+function RefusedDialog({ den, onClose }) {
+    return (
+        <Dialog title="Sign-in refused" onClose={onClose}>
+            <p>Whoever asked has your den password, so change it: that signs out every other device.</p>
+            <Actions>
+                <Button kind="primary" onClick={() => {
+                    onClose();
+                    openSettings('password', den.den_id);
+                }}>Change password</Button>
+                <Button kind="quiet" onClick={onClose}>Not now</Button>
+            </Actions>
+        </Dialog>
     );
 }
 
@@ -297,13 +393,18 @@ const SIGN_IN_ENDED = {
     expired: 'None of your other devices approved this sign-in in time. Try again when one of them is at hand.',
 };
 
-// SignInSteps shows a sign-in on this device, as one screen for the step
-// it's at (M8.3): waiting for another device to approve it, comparing
-// digits with it, then signed in, or why it ended. The service holds the
-// sign-in, so a reload comes back to its step. onRecover gives up waiting
-// for another device, to sign in with a recovery code instead.
-export function SignInSteps({ p, onRecover, onDone }) {
+// SignInSteps shows a sign-in on this device at the step it's at (M8.3):
+// waiting for another device to approve it, comparing digits with it,
+// each scanning or typing the other's (M22.6), then signed in, or why it
+// ended. The service holds the sign-in, so a reload comes back to its
+// step. title heads it where nothing else does: in Add a den, the
+// dialog's title is the den's. onRecover gives up waiting for another
+// device, to sign in with a recovery code instead.
+export function SignInSteps({ p, title, onRecover, onDone }) {
     const [digits, setDigits] = useState('');
+    const [scanning, setScanning] = useState(false);
+    const [scanNote, setScanNote] = useState('');
+    const camera = useCamera();
     const act = useAction();
     const dismiss = () => act.run(async () => {
         await api.del(`/api/dens/signin/${p.id}`);
@@ -312,27 +413,38 @@ export function SignInSteps({ p, onRecover, onDone }) {
     const going = p.stage === 'waiting' || p.stage === 'check' || p.stage === 'approved';
     // Check and Cancel share a row, as a dialog's actions do.
     const checking = (p.stage === 'check' || p.stage === 'approved') && !p.checked;
+    const check = (typed) => act.run(async () => {
+        await api.post(`/api/dens/signin/${p.id}/check`, { digits: typed });
+        setDigits('');
+    });
+    // scanned checks the digits a code holds, or says what it is and goes
+    // on scanning.
+    const scanned = (text) => {
+        const code = readSignInCode(text);
+        if (code.kind !== 'digits') {
+            setScanNote(code.kind === 'device' ? "That's Add device's code. Scan the one beside your other device's digits." : "That code isn't one from Dens.");
+            return false;
+        }
+        setScanNote('');
+        setScanning(false);
+        check(code.digits);
+        return true;
+    };
     const cancel = (
-        <Button kind={going ? 'quiet' : 'primary'} disabled={act.busy} onClick={dismiss}>
-            {going ? 'Cancel' : 'OK'}
-        </Button>
+        <Button kind="quiet" disabled={act.busy} onClick={dismiss}>Cancel</Button>
     );
-    let title = `Signing in to ${p.url} as @${p.username}`;
-    if (p.stage === 'waiting') title = 'Approve this on another device';
-    else if (p.stage === 'check' || p.stage === 'approved') title = 'Compare digits with your other device';
-    else if (p.stage === 'done') title = 'Signed in';
+    const docs = going && (
+        <DocsTip id={`docs-signin-${p.id}`} page="usage/#signing-in-from-another-computer">Why a new device needs one of your others to let it in.</DocsTip>
+    );
     return (
-        <div class="flex flex-col gap-3">
-            <h3 class="text-lg font-semibold">
-                {title}
-                {going && <> <DocsTip id={`docs-signin-${p.id}`} page="usage/#signing-in-from-another-computer">
-                    Why a new device needs one of your others to let it in.</DocsTip></>}
-            </h3>
+        <div class="flex flex-col gap-3" data-signin-steps>
+            {title && <h3 class="text-lg font-semibold">{title}</h3>}
             {p.stage === 'waiting' && (
                 <>
                     <p role="status" class="flex items-center gap-2 font-medium">
                         <span class="loading loading-spinner loading-sm"></span>
                         Waiting for your other device
+                        {docs}
                     </p>
                     <p>
                         Open Dens on one of your other devices in this den, as @{p.username}: it asks whether this one is yours. It waits until{' '}
@@ -351,42 +463,60 @@ export function SignInSteps({ p, onRecover, onDone }) {
                 </>
             )}
             {(p.stage === 'check' || p.stage === 'approved') && (
-                <form class="flex flex-col gap-2" onSubmit={(e) => {
+                <form class="flex flex-col gap-3" onSubmit={(e) => {
                     e.preventDefault();
-                    act.run(async () => {
-                        await api.post(`/api/dens/signin/${p.id}/check`, { digits });
-                        setDigits('');
-                    });
+                    check(digits);
                 }}>
-                    {p.checked ? (
-                        <p>You typed your other device's digits. Now type this device's digits into it:</p>
-                    ) : (
-                        <p>Type these digits into your other device. They stay here until you're signed in.</p>
-                    )}
+                    <p>
+                        {p.checked ? "You checked your other device's digits. Now type this device's digits into it:" : "Type these digits into your other device. They stay here until you're signed in."}
+                        {' '}{docs}
+                    </p>
                     <Digits value={p.half} />
                     {checking && (
+                        scanning ? (
+                            <>
+                                <Scanner onCode={scanned} />
+                                <p class="text-center text-sm">Point the camera at the code above your other device's digits.</p>
+                                {scanNote && <StatusText kind="warning" role="status">{scanNote}</StatusText>}
+                            </>
+                        ) : (
+                            <>
+                                {camera && (
+                                    <div>
+                                        <Button size="md" onClick={() => {
+                                            act.setError('');
+                                            setScanning(true);
+                                        }} data-scan>Scan its code</Button>
+                                    </div>
+                                )}
+                                <DigitsInput value={digits} onInput={setDigits} label={camera ? 'Or type the digits your other device shows' : 'Then type the digits your other device shows'} />
+                            </>
+                        )
+                    )}
+                    {p.stage === 'approved' && !p.checked && (
+                        <p class="text-sm text-base-content/70">Your other device approved; its digits here finish signing in.</p>
+                    )}
+                    <p class="text-xs text-base-content/60">The digits only match between your two devices if nobody is in between.</p>
+                    {checking && (
                         <>
-                            <DigitsInput value={digits} onInput={setDigits} label="Then type the digits your other device shows" />
                             <ErrorText message={act.error} />
                             <Actions>
-                                <SubmitButton busy={act.busy}>Check</SubmitButton>
+                                {scanning
+                                    ? <Button onClick={() => setScanning(false)}>Type them instead</Button>
+                                    : <SubmitButton busy={act.busy}>Check</SubmitButton>}
                                 {cancel}
                             </Actions>
                         </>
                     )}
-                    {p.stage === 'approved' && !p.checked && (
-                        <p class="text-sm text-base-content/70">Your other device approved; typing its digits here finishes signing in.</p>
-                    )}
-                    <p class="text-xs text-base-content/60">The digits only match between your two devices if nobody is in between.</p>
                 </form>
             )}
-            {p.stage === 'done' && <StatusText kind="success">You're signed in to {p.url}, and your DMs are readable here too.</StatusText>}
+            {p.stage === 'done' && <StatusText kind="success">You're signed in, and your DMs are readable here too.</StatusText>}
             {SIGN_IN_ENDED[p.stage] && <p>{SIGN_IN_ENDED[p.stage]}</p>}
             {p.stage === 'failed' && <ErrorText message={p.error || 'Signing in failed.'} />}
             {!checking && (
                 <>
                     <ErrorText message={act.error} />
-                    <Actions>{cancel}</Actions>
+                    <Actions>{going ? cancel : <Button kind="primary" disabled={act.busy} onClick={dismiss}>OK</Button>}</Actions>
                 </>
             )}
         </div>
@@ -394,13 +524,14 @@ export function SignInSteps({ p, onRecover, onDone }) {
 }
 
 // PendingSignIns shows the sign-ins on this device that the Add a den
-// dialog isn't showing, as after a reload, each at its step.
+// dialog isn't showing, as after a reload, each at its step, under its
+// den's address.
 export function PendingSignIns({ list, onRecover }) {
     if (!list?.length) return null;
     return list.map((p) => (
         <section key={p.id} class="card bg-base-200">
             <div class="card-body">
-                <SignInSteps p={p} onRecover={onRecover} />
+                <SignInSteps p={p} title={p.url.replace(/^https?:\/\//, '')} onRecover={onRecover} />
             </div>
         </section>
     ));

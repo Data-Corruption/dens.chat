@@ -266,6 +266,26 @@ test('a move from under a dialog closes it first, and one dialog in place of ano
     assert.equal(nav.trail.at(-1).k, 'layer');
 });
 
+test('a dialog the page closes under another leaves that one open, its entry kept', async () => {
+    const win = fakeWindow('/');
+    const nav = createNav(win);
+    nav.start();
+    let closed = 0;
+    const under = nav.openLayer(() => closed++);
+    const over = nav.openLayer(() => closed++);
+    await settle();
+    assert.equal(win.at, 2);
+    nav.closeLayer(under);
+    await settle();
+    assert.equal(closed, 0, 'neither closed by Back');
+    assert.deepEqual(nav.trail.map((s) => s.id ?? s.k), ['home', over]);
+    assert.equal(win.at, 1);
+    win.back();
+    await settle();
+    assert.equal(closed, 1, 'Back closes the one left');
+    assert.deepEqual(nav.trail, [HOME]);
+});
+
 test('a reload keeps the trail, and drops the dialogs whose entries it finds', async () => {
     const trail = [HOME, list('a'), chan('a', '1'), side('a', '1'), { k: 'layer', id: 3 }];
     const win = fakeWindow('/den/a/1', { state: { trail } });
