@@ -14,6 +14,7 @@ import { Card, DocsTip, ErrorText, Field, Lead, Notice, PasswordFields, SubmitBu
 import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
 import { ManageDialog } from './manageden.jsx';
+import { Approvals } from './private.jsx';
 import { RelayBar } from './relay.jsx';
 import { SettingsDialog, onOpenSettings } from './settings.jsx';
 import { Chat } from './chat.jsx';
@@ -236,6 +237,9 @@ export function App({ instance, version, pair, pairLink }) {
                 <ManageDialog key={manage.denID} denID={manage.denID} section={manage.section}
                     onSection={(section) => setManage((m) => ({ ...m, section }))} onClose={() => setManage(null)} />
             )}
+            {/* A sign-in waiting for this member's approval opens over all
+                of it (M22.6). */}
+            {open && <Approvals />}
         </div>
     );
 }

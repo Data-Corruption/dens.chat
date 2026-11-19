@@ -14,10 +14,8 @@
 // the font draws, by how far the browser measures each one's ink reaching.
 //
 //   run.sh names chromium|firefox
-import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import zlib from 'node:zlib';
-import { ALICE, BOB, CLOSE_CARD, HOME, SETTINGS, checks, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, SETTINGS, checks, launch, lib, openSettings, pair, picture, waitFor } from './browsers.mjs';
 
 const [, , which = 'chromium'] = process.argv;
 const { DEN: den, GENERAL: general, LOUNGE: lounge, DM: dm, FIRST: first, SECOND: second, REPLY: reply } = process.env;
@@ -49,40 +47,6 @@ const hueOf = ([r, g, b]) => {
     return (h * 60 + 360) % 360;
 };
 const apart = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
-
-// picture is a screenshot's pixels, a PNG of 8 bits a channel as the
-// browsers take them: at(x, y) is one, as [r, g, b].
-function picture(file) {
-    const data = fs.readFileSync(file);
-    const w = data.readUInt32BE(16), h = data.readUInt32BE(20);
-    const n = { 2: 3, 6: 4 }[data[25]];
-    if (data[24] !== 8 || !n || data[28] !== 0) throw new Error(`a screenshot of another kind: ${data[24]} bits, color type ${data[25]}`);
-    const idat = [];
-    for (let at = 8; at < data.length;) {
-        const len = data.readUInt32BE(at);
-        if (data.toString('latin1', at + 4, at + 8) === 'IDAT') idat.push(data.subarray(at + 8, at + 8 + len));
-        at += 12 + len;
-    }
-    const raw = zlib.inflateSync(Buffer.concat(idat));
-    const stride = w * n;
-    const rows = [];
-    let prev = Buffer.alloc(stride);
-    for (let row = 0; row < h; row++) {
-        const filter = raw[row * (stride + 1)];
-        const line = Buffer.from(raw.subarray(row * (stride + 1) + 1, (row + 1) * (stride + 1)));
-        for (let i = 0; i < stride; i++) {
-            const a = i >= n ? line[i - n] : 0;
-            const up = prev[i];
-            const cc = i >= n ? prev[i - n] : 0;
-            const p = a + up - cc;
-            const paeth = Math.abs(p - a) <= Math.abs(p - up) && Math.abs(p - a) <= Math.abs(p - cc) ? a : Math.abs(p - up) <= Math.abs(p - cc) ? up : cc;
-            line[i] = (line[i] + [0, a, up, (a + up) >> 1, paeth][filter]) & 255;
-        }
-        rows.push(line);
-        prev = line;
-    }
-    return { w, h, at: (x, y) => [...rows[y].subarray(x * n, x * n + 3)] };
-}
 
 // vivid is the most colorful pixel of a box of a picture, which a name's
 // glyphs hold where it's colored.

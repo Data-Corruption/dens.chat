@@ -157,9 +157,9 @@ for (const pass of passes.length ? passes : ['desk-dark', 'desk-light', 'phone-d
             await h.step('join', async () => {
                 await h.click(h.byText('button', 'Add a den'));
                 await h.snap('add-empty');
-                await h.ev(setAll('[role=dialog] input', invite));
+                await h.ev(setAll('[role=dialog] [data-way=invite] input', invite));
                 await h.snap('add-pasted');
-                await h.click(h.byText('[role=dialog] button', 'Continue'));
+                await h.click(h.byText('[role=dialog] [data-way=invite] button', 'Continue'));
                 await h.wait(h.byText('[role=dialog] button', 'Join as someone new'), 'the den', 15000);
                 await h.snap('add-choose');
                 await h.click(h.byText('[role=dialog] button', 'Join as someone new'));
@@ -201,7 +201,7 @@ for (const pass of passes.length ? passes : ['desk-dark', 'desk-light', 'phone-d
         const B = await browser(pass, port++);
         const L = await browser(pass, port++);
         const DIALOG = `document.querySelector('[role=dialog]')`;
-        const REQUEST = `[...document.querySelectorAll('[role=status]')].find((x) => x.textContent.includes('A new device asks to sign in'))`;
+        const REQUEST = `document.querySelector('[role=dialog] [data-approval]')`;
         const button = (scope, text) => `[...${scope}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(text)})`;
         const field = (scope, label) => `[...${scope}.querySelectorAll('fieldset')].find((f) => f.querySelector('legend')?.textContent.includes(${JSON.stringify(label)}))?.querySelector('input')`;
         const set = (f, v) => `(() => { const el = ${f}; Object.getOwnPropertyDescriptor(el.constructor.prototype, 'value').set.call(el, ${JSON.stringify(v)});
@@ -210,17 +210,21 @@ for (const pass of passes.length ? passes : ['desk-dark', 'desk-light', 'phone-d
             await pair(B, BOB);
             const hb = helpers(B, `http://localhost:${BOB.port}`, out, 'signin-bob-');
             const hl = helpers(L, `http://localhost:${LAPTOP.port}`, out, 'signin-laptop-');
-            await hb.go(`/den/${den}/${general}`);
+            await hb.go('/');
+            await hb.wait(button('document', 'Add device'), 'Add device');
+            await hb.click(button('document', 'Add device'), 'Add device');
+            await hb.wait(`document.querySelector('[role=dialog] [data-qr]')`, "Add device's code");
+            await hb.snap('add-device');
             await hl.step('signin', async () => {
                 await L.go(`http://localhost:${LAPTOP.port}/#token=${token('m2e')}`);
                 await hl.wait(`document.querySelector('input[type=password]')`, 'the local password');
                 await hl.ev(setAll('input[type=password]', 'local password'));
                 await hl.click(hl.byText('button', 'Set password'));
                 await hl.click(button('document', 'Add a den'), 'Add a den');
-                await hl.wait(`${DIALOG}?.querySelector('input')`, 'the dialog');
-                await hl.ev(set(`${DIALOG}.querySelector('input')`, denURL));
+                await hl.wait(`${DIALOG}?.querySelector('[data-way=address] input')`, 'the dialog');
+                await hl.ev(set(`${DIALOG}.querySelector('[data-way=address] input')`, denURL));
                 await hl.snap('add-address');
-                await hl.ev(`${DIALOG}.querySelector('form').requestSubmit(), true`);
+                await hl.ev(`${DIALOG}.querySelector('[data-way=address]').requestSubmit(), true`);
                 await hl.wait(field(DIALOG, 'Den password'), 'the sign-in form');
                 await hl.snap('form');
                 await hl.ev(set(field(DIALOG, 'Username'), 'bob'));
@@ -231,18 +235,19 @@ for (const pass of passes.length ? passes : ['desk-dark', 'desk-light', 'phone-d
                 await hb.wait(REQUEST, 'the request');
                 await hb.snap('request');
                 await hb.click(button(`(${REQUEST})`, "It's mine"), "It's mine");
-                const theirs = await waitFor(() => hl.ev(`${DIALOG}?.querySelector('.font-mono.text-2xl')?.textContent || ''`), "the laptop's digits");
-                const mine = await waitFor(() => hb.ev(`(${REQUEST})?.querySelector('.font-mono.text-2xl')?.textContent || ''`), "the first device's digits");
+                const theirs = await waitFor(() => hl.ev(`${DIALOG}?.querySelector('[data-signin-steps] .font-mono')?.textContent || ''`), "the laptop's digits");
+                const mine = await waitFor(() => hb.ev(`(${REQUEST})?.querySelector('[data-digits-shown] .font-mono')?.textContent || ''`), "the first device's digits");
                 await hl.snap('digits');
                 await hb.snap('digits');
                 await hb.ev(set(field(`(${REQUEST})`, 'Then type the digits the new device shows'), theirs));
                 await hb.snap('digits-typed');
                 await hb.click(button(`(${REQUEST})`, 'Approve'), 'Approve');
-                await hl.ev(set(field(DIALOG, 'Then type the digits your other device shows'), mine));
-                await hl.click(button(DIALOG, 'Check'), 'Check');
-                await hl.wait(`${DIALOG}?.innerText.includes("You're signed in to")`, 'signed in', 15000);
-                await hl.snap('done');
+                await hb.wait(`(${REQUEST})?.innerText.includes('Approved.')`, 'approved');
                 await hb.snap('approved');
+                await hl.ev(set(field(DIALOG, 'digits your other device shows'), mine));
+                await hl.click(button(DIALOG, 'Check'), 'Check');
+                await hl.wait(`${DIALOG}?.innerText.includes("You're signed in")`, 'signed in', 15000);
+                await hl.snap('done');
             });
             log.push(...hb.log, ...hl.log);
         } catch (e) {

@@ -21,7 +21,7 @@ computer run by one of them. You need an **invite** from someone there, a long
 code starting with `dens1:`.
 
 1. Open Dens and choose **Add a den**.
-2. Paste the invite, and choose **Join as someone new**.
+2. Paste the invite under **Invite**, and choose **Join as someone new**.
 3. Pick a username, a display name and a password for this den. The username
    can't change.
 4. Save your recovery codes and your DM recovery key somewhere safe:
@@ -49,15 +49,25 @@ On a den's page, the cog beside your name opens **Settings**, which list
 that den's sections first: the last three are under **Password and recovery**.
 The local password is in **System**.
 
-## Signing in from another computer
+## Signing in on another device {#signing-in-from-another-computer}
 
-Every computer runs its own Dens. On the second one, choose **Add a den**,
-paste an invite to the den, even a used one, or the den's address, and choose
-**Sign in to my account there**. Enter your username and den password, then
-approve the sign-in from a device that's already in, where it shows on Home
-and in that den: type the digits each screen shows into the other. That proves
-the new device is the one in front of you, and hands it what it needs to read
-your DMs.
+Every device runs its own Dens. To add one, a phone say, start on a device
+that's already in the den: on its Home, choose **Add device** beside the den.
+Then, on the new device:
+
+1. Choose **Add a den**, then **Scan a code**, and point the camera at the
+   code. With no camera, type the den's address and your username, which Add
+   device shows under the code.
+2. Enter your den password.
+3. The device that's in asks whether the new one is yours: choose **It's
+   mine**. It shows a code above its digits: scan it from the new device, or
+   type the digits there. Then type the new device's digits into the device
+   that's in, and choose **Approve**.
+
+The digits prove the new device is the one in front of you, and it gets what
+it needs to read your DMs. An invite to the den, even a used one, works in
+place of the code: paste it under **Invite**, and choose **Sign in to my
+account there**.
 
 No other device at hand? Use a recovery code instead, then enter your DM
 recovery key to read your DMs. Forgot your den password? Choose **Forgot your

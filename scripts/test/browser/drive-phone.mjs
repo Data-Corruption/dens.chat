@@ -361,10 +361,10 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             });
             await h.step('join', async () => {
                 await h.click(h.byText('button', 'Add a den'));
-                await h.ev(`(() => { const t = document.querySelector('[role=dialog] input'); const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                await h.ev(`(() => { const t = document.querySelector('[role=dialog] [data-way=invite] input'); const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
                     s.call(t, ${JSON.stringify(invite)}); t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
                 await h.snap('add-pasted');
-                await h.click(h.byText('[role=dialog] button', 'Continue'));
+                await h.click(h.byText('[role=dialog] [data-way=invite] button', 'Continue'));
                 await h.wait(h.byText('[role=dialog] button', 'Join as someone new'), 'the den', 15000);
                 await h.snap('add-choose');
                 await h.click(h.byText('[role=dialog] button', 'Join as someone new'));

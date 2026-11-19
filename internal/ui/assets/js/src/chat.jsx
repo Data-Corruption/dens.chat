@@ -26,7 +26,7 @@ import { ChannelDialog, GroupDialog } from './manage.jsx';
 import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from './people.jsx';
 import { NO_CALLS, canCall } from './platform.js';
 import { dmGate, groupGate, groupTitle, isNotes, isPrivate, notesGate, ownNotes, partnerOf } from './private.js';
-import { CodesDialog, SignInRequests, VerifiedMark } from './private.jsx';
+import { CodesDialog, HiddenRequests, VerifiedMark } from './private.jsx';
 import { GroupIcon, GroupPanel, MAX_MEMBERS, PickPeople, RenameGroup } from './groups.jsx';
 import { ExpiryBadge } from './disappearing.jsx';
 import { NotesIcon, NotesRow } from './notes.jsx';
@@ -59,6 +59,9 @@ const STATE_WORDS = { connecting: 'Connecting', offline: 'Offline', revoked: 'Si
 // A typing notice shows this long unless another arrives; senders repeat
 // theirs while they type.
 const TYPING_SHOWN = 6000;
+// The notice of a device just signed in to this member's account shows a
+// minute (M22.6).
+const NEW_DEVICE_SHOWN = 60000;
 // Changes to these reload the den's state rather than being applied here,
 // the den's emoji among them (M15.2).
 const STRUCTURAL = new Set([
@@ -243,8 +246,14 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const notifications = useNotifications();
     const muted = mutedIn(notifications, denID);
     const bells = notifying(notifications);
-    // newDevice is a device that just signed in to this member's account.
+    // newDevice is a device that just signed in to this member's account,
+    // whose notice goes after a minute (M22.6); Devices marks it longer.
     const [newDevice, setNewDevice] = useState(null);
+    useEffect(() => {
+        if (!newDevice) return undefined;
+        const timer = setTimeout(() => setNewDevice(null), NEW_DEVICE_SHOWN);
+        return () => clearTimeout(timer);
+    }, [newDevice]);
     // status is the den's status on this computer: its sign-ins waiting
     // for approval, and whether this device holds the DM seal. dens are
     // every den's, which links to messages find theirs among (M11).
@@ -539,11 +548,12 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     );
     // What waits on this device shows above the channel, and on the phone
     // layout above whichever pane is open: an update's notice, and
-    // sign-ins waiting for this member's approval.
+    // sign-ins waiting for this member's approval whose dialog they closed
+    // (M22.6).
     const notices = (
         <div class="flex flex-col gap-2 p-2 empty:hidden" data-den-notices>
             <UpdateNotice status={service} dismissible />
-            {status && !gone && <SignInRequests den={status} />}
+            {status && !gone && <HiddenRequests den={status} />}
         </div>
     );
     // What waits in the other dens, for the list's Home button.

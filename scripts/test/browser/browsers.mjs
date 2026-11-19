@@ -7,6 +7,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
 import net from 'node:net';
+import zlib from 'node:zlib';
 
 // HOME is the tester's home in the container: the binaries, the media the
 // checks send, and the screenshots they take are there.
@@ -43,6 +44,40 @@ export async function openSettings(b, tab) {
     await waitFor(() => b.eval(`!!${settingsTab(tab)}`), 'the settings');
     await b.eval(`${settingsTab(tab)}.click(), true`);
     await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-current') === 'page'`), `the settings' ${tab} section`);
+}
+
+// picture is a screenshot's pixels, a PNG of 8 bits a channel as the
+// browsers take them: at(x, y) is one, as [r, g, b].
+export function picture(file) {
+    const data = fs.readFileSync(file);
+    const w = data.readUInt32BE(16), h = data.readUInt32BE(20);
+    const n = { 2: 3, 6: 4 }[data[25]];
+    if (data[24] !== 8 || !n || data[28] !== 0) throw new Error(`a screenshot of another kind: ${data[24]} bits, color type ${data[25]}`);
+    const idat = [];
+    for (let at = 8; at < data.length;) {
+        const len = data.readUInt32BE(at);
+        if (data.toString('latin1', at + 4, at + 8) === 'IDAT') idat.push(data.subarray(at + 8, at + 8 + len));
+        at += 12 + len;
+    }
+    const raw = zlib.inflateSync(Buffer.concat(idat));
+    const stride = w * n;
+    const rows = [];
+    let prev = Buffer.alloc(stride);
+    for (let row = 0; row < h; row++) {
+        const filter = raw[row * (stride + 1)];
+        const line = Buffer.from(raw.subarray(row * (stride + 1) + 1, (row + 1) * (stride + 1)));
+        for (let i = 0; i < stride; i++) {
+            const a = i >= n ? line[i - n] : 0;
+            const up = prev[i];
+            const cc = i >= n ? prev[i - n] : 0;
+            const p = a + up - cc;
+            const paeth = Math.abs(p - a) <= Math.abs(p - up) && Math.abs(p - a) <= Math.abs(p - cc) ? a : Math.abs(p - up) <= Math.abs(p - cc) ? up : cc;
+            line[i] = (line[i] + [0, a, up, (a + up) >> 1, paeth][filter]) & 255;
+        }
+        rows.push(line);
+        prev = line;
+    }
+    return { w, h, at: (x, y) => [...rows[y].subarray(x * n, x * n + 3)] };
 }
 
 // CLOSE_CARD closes a profile card, as an expression for a page's eval:
@@ -196,6 +231,8 @@ class Socket {
 //   hover: a pointer that hovers, as a desktop's mouse. Headless, both
 //     browsers say they have no pointer, so what shows on hover never
 //     shows (M11). Chromium's touch emulation forgets it.
+//   camera: a Y4M file Chromium's camera plays, again and again, read
+//     each time the page opens the camera (M22.6).
 // A launched browser's windows, windowEval, closeWindow and windowShot reach
 // the windows its page opens, as a share's own (M11): how many there are,
 // and the newest.
@@ -219,7 +256,7 @@ const CHROMIUM_KEYS = {
     v: ['KeyV', 86, 'v'],
 };
 
-async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900], downloads, hover }) {
+async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900], downloads, hover, camera }) {
     const profile = `/tmp/browsers-chromium-${port}`;
     fs.rmSync(profile, { recursive: true, force: true });
     const args = ['--headless=new', '--no-sandbox', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
@@ -228,6 +265,7 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
     if (media || screen) args.push('--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream');
     if (media) args.push(`--use-file-for-fake-audio-capture=${HOME}/speech.wav`);
     if (screen) args.push('--auto-select-desktop-capture-source=Entire screen');
+    if (camera) args.push('--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', `--use-file-for-fake-video-capture=${camera}`);
     if (hover) args.push('--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2');
     spawn('/usr/bin/chromium', [...args, 'about:blank'], { stdio: 'ignore', detached: true }).unref();
     const target = await waitFor(async () => (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === 'page'), 'chromium');

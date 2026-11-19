@@ -38,9 +38,10 @@ func securityHeaders(next http.Handler, scriptSrc, frameSrc string) http.Handler
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		// The page takes the microphone for calls, and the screen to share
-		// in them (M4.2), and nothing else may.
-		h.Set("Permissions-Policy", "camera=(), display-capture=(self), geolocation=(), microphone=(self), payment=(), usb=()")
+		// The page takes the microphone for calls, the screen to share in
+		// them (M4.2) and the camera to scan a sign-in's code (M22.6), and
+		// nothing else may, a frame least of all.
+		h.Set("Permissions-Policy", "camera=(self), display-capture=(self), geolocation=(), microphone=(self), payment=(), usb=()")
 		next.ServeHTTP(w, r)
 	})
 }

@@ -59,6 +59,9 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 	}
 	ctx := context.Background()
 	request := waitRequest(t, approver, denID, func(r denclient.RequestView) bool { return !r.Approved })
+	if _, err := approver.DigitsCode(denID, request.ID); !isInput(err) {
+		t.Fatalf("a code before the approving device has digits: %v", err)
+	}
 	if err := approver.AnswerSignIn(ctx, denID, request.ID); err != nil {
 		t.Fatalf("answer: %v", err)
 	}
@@ -76,16 +79,18 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 		if approved.Half != request.Half {
 			t.Fatalf("the approving device's digits once it approved: %+v", approved)
 		}
+		// Its digits' code goes on showing them (M22.6).
+		if code, err := approver.DigitsCode(denID, request.ID); err != nil || code.Size != 25 || len(code.Rows) != 25 {
+			t.Fatalf("the approving device's code: %+v %v", code, err)
+		}
 		if err := m.CheckSignIn(ctx, fresh.ID, approved.Half); err != nil {
 			t.Fatalf("the new device's check: %v", err)
 		}
-		if err := approver.DismissApproved(denID, request.ID); err != nil {
-			t.Fatal(err)
-		}
-		for _, s := range approver.Statuses() {
-			if s.DenID == denID && len(s.Requests) != 0 {
-				t.Fatalf("a dismissed approval still shows: %+v", s.Requests)
-			}
+		// The new device connects, which ends the approving device's
+		// digits by itself (M22.6).
+		waitNoRequests(t, approver, denID)
+		if _, err := approver.DigitsCode(denID, request.ID); !isInput(err) {
+			t.Fatalf("a code for digits no longer shown: %v", err)
 		}
 	} else {
 		if err := m.CheckSignIn(ctx, fresh.ID, request.Half); err != nil {
@@ -94,10 +99,12 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 		if err := approver.ApproveSignIn(ctx, denID, request.ID, fresh.Half); err != nil {
 			t.Fatalf("approve: %v", err)
 		}
-		waitRequest(t, approver, denID, func(r denclient.RequestView) bool { return r.ID == request.ID && r.Approved })
+		// Closed by hand, as a den older than M22.6 leaves it, or by the
+		// new device connecting, whichever comes first.
 		if err := approver.DismissApproved(denID, request.ID); err != nil {
 			t.Fatal(err)
 		}
+		waitNoRequests(t, approver, denID)
 	}
 	done := waitSignIn(t, m, fresh.ID, func(v denclient.SignInView) bool {
 		return v.Stage != denclient.SignInWaiting && v.Stage != denclient.SignInCheck
@@ -121,6 +128,26 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 func isInput(err error) bool {
 	var input *denclient.InputError
 	return errors.As(err, &input)
+}
+
+// waitNoRequests waits for a den to list no sign-in for this device's
+// approval.
+func waitNoRequests(t *testing.T, m *denclient.Manager, denID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		left := false
+		for _, s := range m.Statuses() {
+			left = left || s.DenID == denID && len(s.Requests) != 0
+		}
+		if !left {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the approving device still shows a sign-in")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // waitRequest waits for a den to list a sign-in waiting for approval that
@@ -206,6 +233,11 @@ func TestRecoverOnAFreshMachineAndRevokeTheOldKey(t *testing.T) {
 		t.Fatalf("signing the old machine out took %v", took)
 	}
 	waitFor(t, fresh, "the fresh machine connected", connected)
+	// Add device's code names the den's address and the member's username
+	// there (M22.6).
+	if view, err := fresh.DeviceCode(denID); err != nil || view.URL != "https://example.com" || view.Username != "erin" || view.Code.Size < 21 {
+		t.Fatalf("Add device's code: %+v %v", view, err)
+	}
 	// A recovery code brings no DM seal; the member types the one they
 	// saved, which only then lets this machine approve others.
 	if err := fresh.TypeSeal(ctx, denID, denproto.FormatSeal(denproto.NewSeal())); !isInput(err) {

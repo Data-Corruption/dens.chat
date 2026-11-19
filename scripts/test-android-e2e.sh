@@ -159,6 +159,11 @@ waitfor() {
     "$@" >/dev/null 2>&1 && return 0
     sleep 1
   done
+  # What the screen showed, for the logs.
+  if [[ -n "${serial:-}" ]]; then
+    adb exec-out uiautomator dump /dev/tty >"$RUN_LOG_DIR/screen-$serial.xml" 2>/dev/null || :
+    adb exec-out screencap -p >"$RUN_LOG_DIR/screen-$serial.png" 2>/dev/null || :
+  fi
   fail "waited $tries s for $what"
 }
 
@@ -788,14 +793,17 @@ update_from_fixtures() {
   if [[ ${1:-} == check-now ]]; then
     shows_text() { adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -qE "(text|content-desc)=\"($1)\""; }
     waitfor 60 "the page's form for a local password" shows_text 'Set password'
-    fields=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE '<node [^>]*password="true"[^>]*>' |
-      grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
-    [[ $(grep -c . <<<"$fields") -ge 2 ]] || fail "the page's form for a local password shows no two fields"
+    # The form sits in the window's middle (M22.4), so the keyboard moves
+    # it up as it opens: each field is found as it's typed in.
     for n in 1 2; do
+      fields=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE '<node [^>]*password="true"[^>]*>' |
+        grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]' | tr -c '0-9\n' ' ' || :)
+      [[ $(grep -c . <<<"$fields") -ge 2 ]] || fail "the page's form for a local password shows no two fields"
       read -r x1 y1 x2 y2 <<<"$(sed -n "${n}p" <<<"$fields")"
       adb shell input tap $(((x1 + x2) / 2)) $(((y1 + y2) / 2))
       sleep 1
       adb shell input text 'local-password'
+      sleep 1
     done
     adb shell input keyevent KEYCODE_ENTER
     tap 30 'Settings' || fail "Home shows no Settings"
@@ -819,30 +827,44 @@ update_from_fixtures() {
 
     # A member with one den may never open Home, so the den shows the
     # notice too, until they dismiss it there; Home shows it still.
-    # The settings close from their list of sections, which System's Back
-    # leads to.
-    for _ in 1 2 3; do
-      shows_text 'Add a den' && break
-      tap 1 'Close' || adb shell input keyevent KEYCODE_BACK
+    # Back goes from System to the settings' list, then closes them, whose
+    # title is the only text "Settings" (Home's cog has it as its name).
+    for _ in 1 2 3 4; do
+      adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -q 'text="Settings"' || break
+      adb shell input keyevent KEYCODE_BACK
       sleep 1
     done
+    shows_text 'Add a den' || fail "the settings didn't close to Home"
     loop_den up
     adb reverse "tcp:$LOOP_DEN_PORT" "tcp:$LOOP_DEN_PORT" >/dev/null
     tap 20 'Add a den' || fail "Home offers no Add a den"
-    type_field 1 "$(loop_den invite)" || fail "Add a den has no field for the invite"
+    # The den's address comes first, then the invite (M22.6).
+    type_field 2 "$(loop_den invite)" || fail "Add a den has no field for the invite"
     adb shell input keyevent KEYCODE_ENTER
     tap 30 'Join as someone new' || fail "the invite showed no den to join"
-    for n in 1 2 3 4; do
-      type_field "$n" "$(sed -n "${n}p" <<<$'release\nRelease\nrelease den password\nrelease den password')" || fail "joining has no field $n"
+    # Each field after the first is a Tab away, since the keyboard covers
+    # the last ones' places on the screen.
+    type_field 1 release || fail "joining has no field for a username"
+    for value in Release 'release den password' 'release den password'; do
+      adb shell input keyevent KEYCODE_TAB
+      sleep 1
+      adb shell input text "${value// /%s}"
     done
     adb shell input keyevent KEYCODE_ENTER
-    waitfor 30 "the recovery codes" shows_text 'Copy codes'
-    # They run past the screen, their box and Done below them.
+    waitfor 30 "the recovery codes" shows_text 'Copy'
+    # They run past the screen, Copy and Done below them; a copy lets Done
+    # through (M22.4).
     for _ in 1 2 3; do
       adb shell input swipe 540 1700 540 600 300
       sleep 1
     done
-    tap 10 'I[^"]*ve stored my[^"]*' || fail "the recovery codes have no box to tick"
+    tap 10 'Copy' || fail "the recovery codes have no Copy"
+    # Android 13 and later show what was copied in the screen's corner for
+    # a few seconds, over Done, which a tap would open instead; a touch
+    # anywhere else takes it away, here over the codes, which take no taps.
+    sleep 1
+    adb shell input tap 540 400
+    sleep 1
     tap 10 'Done' || fail "the recovery codes have no Done"
     tap 30 'Open' || fail "Home lists no den to open"
     in_den() { shows_text 'Dens v99\.0\.2-e2e is ready to install\.' && shows_text 'Dismiss'; }

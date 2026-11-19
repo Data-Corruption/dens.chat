@@ -118,10 +118,12 @@ async function first(h, d, c) {
     await step('join', async () => {
         await h.snap('home-empty');
         await d.tap(button('Add a den'));
-        await h.wait(`document.querySelector('[role=dialog] input')`, 'Add a den');
+        await h.wait(`document.querySelector('[role=dialog] [data-way=invite] input')`, 'Add a den');
         await h.snap('add-den');
-        await fill(`document.querySelector('[role=dialog] input')`, c.invite);
-        await d.tap(`[...document.querySelectorAll('[role=dialog] button')].find((e) => e.textContent.trim() === 'Continue')`);
+        // The emulator has no camera, so Add a den offers no Scan (M22.6).
+        report(!(await h.ev(`!!document.querySelector('[role=dialog] [data-scan]')`)), 'with no camera, Add a den offers no Scan');
+        await fill(`document.querySelector('[role=dialog] [data-way=invite] input')`, c.invite);
+        await d.tap(`[...document.querySelectorAll('[role=dialog] [data-way=invite] button')].find((e) => e.textContent.trim() === 'Continue')`);
         if (!(await reached(button('Join as someone new'), 'the den the invite names'))) throw new Error("the invite didn't show its den");
         await h.ev('document.activeElement?.blur(), true');
         await h.snap('add-den-choose');
@@ -148,25 +150,40 @@ async function first(h, d, c) {
         report(saves.includes('Copy') && !saves.includes('Save as a file'), `the recovery codes copy, with no file to save in the app: ${JSON.stringify(saves)}`);
         await d.tap(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Copy')`);
         await h.wait(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Done' && !e.disabled)`, 'Done let through');
+        // Android 13 and later show what was copied in the screen's corner
+        // for a few seconds, over Done, which a tap would open instead; a
+        // touch anywhere else takes it away, here over the codes, which
+        // take no taps.
+        await sleep(1000);
+        adb('shell', 'input', 'tap', '540', '400');
+        await sleep(1000);
         await d.tap(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Done')`);
         const joined = await reached(`[...document.querySelectorAll('main li')].find((e) => [...e.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Open'))`, 'the den on Home');
         report(joined, "the den, joined through the page's forms, is on Home");
         await h.snap('home-joined');
     });
     await step('devices', async () => {
-        await d.tap(button('Manage'));
+        // A member's own sections of a den are under the cog on its page,
+        // its list's on the phone layout (M22.3).
+        await d.tap(button('Open'));
+        const cog = `document.querySelector('[data-pane=list] button[aria-label="Settings"]')`;
+        await h.wait(cog, "the den's cog");
+        await d.tap(cog);
         await d.tap(`document.querySelector('[role=dialog] [data-section=devices]')`);
         const device = await waitFor(() => h.ev(`(() => {
             const li = [...document.querySelectorAll('[role=dialog] [data-panel] li')].find((l) => l.textContent.includes('This device'));
             if (!li) return null;
             const under = [...li.querySelectorAll('span.block')].map((e) => e.textContent.trim()).filter((t) => !t.startsWith('Added'));
             return { name: li.querySelector('.font-medium')?.textContent.trim(), under };
-        })()`), 'this device in Manage', 10000).catch(() => null);
+        })()`), 'this device in Devices', 10000).catch(() => null);
         report(device?.name === c.device && device.under.length === 1 && device.under[0] === c.model,
             `the den lists this phone by its name, with its model under it: ${JSON.stringify(device)}`);
-        await h.snap('manage-devices');
+        await h.snap('devices');
+        // Back to the settings' list, out of them, and out of the den.
         await d.back();
         await d.back();
+        await d.back();
+        await h.wait(button('Add a den'), 'Home again');
     });
 }
 

@@ -212,7 +212,7 @@ device = {"key_id", "label", "created_at", "last_seen_at", "current"?}
 
 - `last_seen_at` is the key's last sign-in. `current` marks the device making the request.
 - Revoking a key ends its sessions and closes its sockets at once, with 4003 `key revoked`. Revoking the current device signs it out. A key that isn't the member's gets `404 not_found`.
-- The member's own sessions get `device.removed {"key_id"}`, for a revoked key and for each one a new password, or starting over, signs out. The `device.*` events are durable, and go to nobody else.
+- The member's own sessions get `device.removed {"key_id"}`, for a revoked key and for each one a new password, or starting over, signs out. `device.added` and `device.removed` are durable, `device.connected` isn't (see Approving new devices), and none goes to anybody else.
 
 ## The WebSocket
 
@@ -820,6 +820,7 @@ device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer"
 4. Each device shows its half of the check code, the new device, as the starter, the first 16 digits, and the member types each into the other.
 5. The approving device, once its member typed the new device's digits, sends `handover`: the seal, sealed with XChaCha20-Poly1305 under `HKDF-SHA-256(exchange key, info = "dens-seal-handover-v1")` and bound to `ctx`, 72 bytes. The den registers the new device, starts its session, tells the member's sessions with `device.added`, and answers the new device with `approved`, `session` (as a recovery returns it) and `handover`.
 6. The new device opens the handover only once its member typed the approving device's digits, and keeps the seal only if it matches the session's `seal_check`.
+7. As the new device's first socket opens, while its request lasts, the member's sessions get `device.connected {"key_id"}` (M22.6), unnumbered and kept for no replay, on which the approving device stops showing its digits. A den before M22.6 sends none, and the approving device's member closes them.
 
 - Refusing, from any of the member's devices, keeps the device out. A new password, starting over, or the member leaving cancels what's waiting. Each way, the member's sessions get `device.request_ended {"id", "outcome": "approved" | "refused" | "cancelled"}`. A request that lapses just goes.
 - The den enforces approval, but a DM's privacy doesn't rest on it: a device the den lets in on its own has no seal, so it opens no DM, and the identity it publishes isn't the member's, which others see as a change, and in a comparison of codes (M16.1).

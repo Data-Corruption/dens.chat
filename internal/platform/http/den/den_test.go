@@ -577,8 +577,12 @@ func TestSigningOutClosesThatDevicesSockets(t *testing.T) {
 				}
 				break
 			}
-			// The desktop hears that the laptop is gone, and stays connected.
+			// The desktop hears that the laptop is gone, and stays connected,
+			// once it heard that the laptop connected (M22.6).
 			events := read(t, desktop)
+			if len(events) == 1 && events[0].T == denproto.EventDeviceConnected {
+				events = read(t, desktop)
+			}
 			if len(events) != 1 || events[0].T != denproto.EventDeviceRemoved {
 				t.Fatalf("the desktop got %+v", events)
 			}

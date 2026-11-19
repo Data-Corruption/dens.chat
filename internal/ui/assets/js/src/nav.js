@@ -270,12 +270,14 @@ export function createNav(win) {
             move((c) => [...c, { k: 'layer', id }]);
             return id;
         },
-        // closeLayer takes back the entry of a dialog the page closed.
+        // closeLayer takes back the entry of a dialog the page closed,
+        // leaving a dialog over it open, as a sign-in's request opening
+        // as Add device closes for it (M22.6).
         closeLayer(id) {
             layers.delete(id);
             move((c) => {
                 const at = c.findIndex((s) => s.k === 'layer' && s.id === id);
-                return at < 0 ? null : c.slice(0, at);
+                return at < 0 ? null : [...c.slice(0, at), ...c.slice(at + 1)];
             });
         },
     };

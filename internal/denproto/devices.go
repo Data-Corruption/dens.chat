@@ -6,9 +6,13 @@ import (
 )
 
 // Events about a member's own devices, which only their sessions get.
+// device.connected is a device the den let in by approval opening its
+// first socket (M22.6), which the device that approved it stops showing
+// its digits on.
 const (
-	EventDeviceAdded   = "device.added"
-	EventDeviceRemoved = "device.removed"
+	EventDeviceAdded     = "device.added"
+	EventDeviceRemoved   = "device.removed"
+	EventDeviceConnected = "device.connected"
 )
 
 // PasswordLoginRequest signs in on a new device with the den password: the
@@ -91,6 +95,10 @@ type DeviceList struct {
 }
 
 type DeviceRemoved struct {
+	KeyID Bytes `json:"key_id"`
+}
+
+type DeviceConnected struct {
 	KeyID Bytes `json:"key_id"`
 }
 

@@ -58,6 +58,7 @@ class PageActivity : Activity() {
         const val MIC = 2
         const val NOTIFY_ASK = 3
         const val LOCAL_ASK = 4
+        const val CAMERA_ASK = 5
     }
 
     private lateinit var root: FrameLayout
@@ -65,6 +66,9 @@ class PageActivity : Activity() {
     // The page's request for the microphone, while Android asks the member
     // for it.
     private var micAsk: PermissionRequest? = null
+    // cameraAsk is the page's ask for the camera, to scan a sign-in's code
+    // (M22.6), while Android asks the member.
+    private var cameraAsk: PermissionRequest? = null
     // asking is whether Android is asking the member for a permission the
     // activity asked for, which takes one request at a time.
     private var asking = false
@@ -303,7 +307,7 @@ class PageActivity : Activity() {
     // (M12.2): a member who refused then finds where to allow them in the
     // settings.
     private fun askToNotify() {
-        if (Build.VERSION.SDK_INT < 33 || !started || !DensService.notifying || micAsk != null || asking) return
+        if (Build.VERSION.SDK_INT < 33 || !started || !DensService.notifying || micAsk != null || cameraAsk != null || asking) return
         val prefs = DensService.prefs(this)
         if (prefs.getBoolean("askedToNotify", false) || checkSelfPermission(NOTIFY) == PackageManager.PERMISSION_GRANTED) return
         prefs.edit().putBoolean("askedToNotify", true).apply()
@@ -316,7 +320,7 @@ class PageActivity : Activity() {
     // member first wants Relay, which Dens says (M20.3), once: a member
     // who refused finds where to allow it in the Relay settings.
     private fun askForLocal() {
-        if (!Local.asks() || !started || !DensService.relaying || micAsk != null || asking || Local.allowed(this) || Local.asked(this)) return
+        if (!Local.asks() || !started || !DensService.relaying || micAsk != null || cameraAsk != null || asking || Local.allowed(this) || Local.asked(this)) return
         Local.markAsked(this)
         Dens.log(this, "page: asking Android for ACCESS_LOCAL_NETWORK")
         asking = true
@@ -384,13 +388,22 @@ class PageActivity : Activity() {
         }
         w.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
-                // The page asks for the microphone in a call, which it gets
+                // The page asks for the microphone in a call, and the camera
+                // to scan a sign-in's code (M22.6), each of which it gets
                 // once Android lets the app have it; anything else is
                 // refused.
-                val mic = request.resources.toList() == listOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
-                if (!mic || !onPage(request.origin)) {
+                val resources = request.resources.toList()
+                val mic = resources == listOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                val camera = resources == listOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                if (!(mic || camera) || !onPage(request.origin)) {
                     Dens.log(this@PageActivity, "page: refused it ${request.resources.joinToString { it.substringAfterLast('.') }}")
                     request.deny()
+                    return
+                }
+                if (camera) {
+                    cameraAsk?.deny()
+                    cameraAsk = request
+                    askForCamera()
                     return
                 }
                 micAsk?.deny()
@@ -400,6 +413,7 @@ class PageActivity : Activity() {
 
             override fun onPermissionRequestCanceled(request: PermissionRequest) {
                 if (micAsk == request) micAsk = null
+                if (cameraAsk == request) cameraAsk = null
             }
 
             override fun onShowFileChooser(view: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams): Boolean {
@@ -505,14 +519,39 @@ class PageActivity : Activity() {
         Dens.log(this, "page: granted it the microphone")
     }
 
+    // askForCamera asks Android for the camera where the app hasn't it yet,
+    // then answers the page. Unlike the microphone, it holds nothing past
+    // the page being shown.
+    private fun askForCamera() {
+        if (asking) return
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) return answerCamera()
+        Dens.log(this, "page: asking Android for CAMERA")
+        asking = true
+        requestPermissions(arrayOf(Manifest.permission.CAMERA), CAMERA_ASK)
+    }
+
+    private fun answerCamera() {
+        val request = cameraAsk ?: return
+        cameraAsk = null
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            Dens.log(this, "page: Android refused the app the camera")
+            request.deny()
+            return
+        }
+        request.grant(arrayOf(PermissionRequest.RESOURCE_VIDEO_CAPTURE))
+        Dens.log(this, "page: granted it the camera")
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
         asking = false
         if (requestCode == MIC) answerMic()
+        if (requestCode == CAMERA_ASK) answerCamera()
         if (requestCode == LOCAL_ASK) Dens.log(this, "page: Android ${if (Local.allowed(this)) "lets" else "doesn't let"} the app reach its network")
         DensService.tellAllowed(this)
         DensService.tellLocal(this)
         // What waited for this one's answer, the page's microphone first.
         if (micAsk != null) return askForMic()
+        if (cameraAsk != null) return askForCamera()
         askToNotify()
         askForLocal()
     }

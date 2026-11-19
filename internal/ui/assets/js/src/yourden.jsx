@@ -89,9 +89,12 @@ export function labelParts(label) {
     return m ? { name: m[1], detail: m[2] } : { name: label || '', detail: '' };
 }
 
+// A device added in the last day shows as new (M22.6).
+const NEW_FOR = 24 * 60 * 60 * 1000;
+
 // Devices lists this member's devices in the den, each by its name with
-// what it is under it, and signs any of them out, after saying what that
-// does.
+// what it is under it, those just added marked, and signs any of them
+// out, after saying what that does.
 function Devices({ den }) {
     const [list, setList] = useState(null);
     const [confirm, setConfirm] = useState('');
@@ -125,6 +128,7 @@ function Devices({ den }) {
                                     <span class="min-w-0 flex-1">
                                         <span class="font-medium">{name}</span>
                                         {d.current && <span class="badge badge-soft badge-success badge-sm ml-2">This device</span>}
+                                        {!d.current && Date.now() - d.created_at < NEW_FOR && <span class="badge badge-soft badge-info badge-sm ml-2" data-new-device>New</span>}
                                         {detail && <span class="block text-base-content/70">{detail}</span>}
                                         <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
                                     </span>

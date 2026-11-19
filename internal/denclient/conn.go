@@ -758,6 +758,13 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.relayBox(b)
 		return e, false, nil
+	case denproto.EventDeviceConnected:
+		var d denproto.DeviceConnected
+		if err := json.Unmarshal(e.D, &d); err != nil || len(d.KeyID) != denproto.IDSize {
+			return e, false, errors.New("malformed device.connected")
+		}
+		c.deviceConnected(d.KeyID)
+		return e, false, nil
 	case denproto.EventGroupChange:
 		// A change to a group, checked against the group as this Dens knew
 		// it, the pages hearing of the group as it now stands (M16.3).
