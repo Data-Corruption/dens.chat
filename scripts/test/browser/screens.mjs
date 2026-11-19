@@ -1282,7 +1282,7 @@ export async function touching(h, ctx, d, report) {
     const dots = await h.ev(`[...document.querySelectorAll('[data-scroller] button[aria-label="Message actions"]')].filter((b) => b.getClientRects().length > 0).length`);
     did(d.touch ? dots === 0 : dots > 0, d.touch ? 'no message shows a ⋯' : 'each message has its ⋯');
     let s = await open();
-    did(s?.label === 'Message actions' && s.rows.includes('Reply') && s.rows.includes('Copy link') && s.title && s.layers === 1,
+    did(s?.label === 'Message actions' && s.rows.includes('Reply') && s.rows.includes('Copy message link') && s.title && s.layers === 1,
         `${d.touch ? 'a long press' : 'the ⋯'} opens the message's actions as a sheet, headed by its author and time: ${JSON.stringify(s)}`);
     await h.snap('touch-sheet');
     if (s) {

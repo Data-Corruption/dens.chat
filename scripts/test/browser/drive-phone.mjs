@@ -42,7 +42,9 @@
 // tap, Interested marked and taken back by taps, the header's way back to
 // the list, and the owner's pane, its form as a sheet and Cancel's dialog;
 // and the call timer (M21.2): Appearance's Call timer, and a call's length
-// at its row's right, the call's lock behind its block's arrow.
+// at its row's right, the call's lock behind its block's arrow; and before
+// (M22.4), a new install's first run, its Link previews answered on
+// (M22.7), and a Steam link shown as a card after it.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
@@ -353,6 +355,17 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
                 await b.go(`${origin}/#token=${token('m2d')}`);
                 await h.wait(`document.querySelector('input[type=password]')`, 'the local password');
                 await h.snap('set-password');
+                // A browser new to Dens is asked about link previews with
+                // the password: one switch, on, opening into one each.
+                const SWITCH = (id) => `document.getElementById(${JSON.stringify(id)})`;
+                const on = await h.ev(`${SWITCH('link-previews')}?.checked === true && !${SWITCH('link-previews-steam')}`);
+                await h.click(SWITCH('link-previews'));
+                await h.wait(SWITCH('link-previews-steam'), 'a switch for each');
+                await h.snap('set-password-previews');
+                const each = await h.ev(`!${SWITCH('link-previews-youtube')}.checked && !${SWITCH('link-previews-steam')}.checked`);
+                await h.click(SWITCH('link-previews'));
+                const one = await h.ev(`${SWITCH('link-previews')}.checked && !${SWITCH('link-previews-steam')}`);
+                report(on && each && one, `${mode}: Link previews started on (${on}), off opened a switch for each, both off (${each}), and on again closed them (${one})`);
                 await h.ev(`(() => { const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
                     for (const i of document.querySelectorAll('input[type=password]')) { s.call(i, 'local password'); i.dispatchEvent(new Event('input', { bubbles: true })); }
                     return true; })()`);
@@ -396,6 +409,25 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
                 await h.click(done);
                 await h.wait(h.byText('button', 'Open'), "the den on Home", 15000);
                 await h.snap('after-codes');
+            });
+            await h.step('steam-card', async () => {
+                // Link previews, left on at the first run, show a Steam
+                // link as a card, which a stand-in for Steam answers.
+                const card = { name: 'Counter-Strike 2', kind: 'game', developer: 'Valve', description: 'The next chapter in the CS story.', tags: ['FPS'], platforms: { windows: true, mac: false, linux: true },
+                    reviews: { score: 6, percent: 86, count: 8400000 }, players: 1204331, released: Math.floor(Date.now() / 1000) - 4000 * 86400, free: true };
+                await b.answer('/api/steam/730', 200, JSON.stringify(card));
+                await b.answer('/api/steam/730/header', 200, fs.readFileSync(`${HOME}/photo.jpg`), 'image/jpeg');
+                const sent = lib('send', 'alice', general, `play https://store.steampowered.com/app/730/ ${mode}`);
+                await h.go(`/den/${den}/${general}`);
+                const CARD = `[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes(${JSON.stringify(`730/ ${mode}`)}))?.querySelector('[data-steam="730"]')`;
+                const shown = await waitFor(() => h.has(`${CARD}?.textContent.includes('Counter-Strike 2')`), "the Steam link's card", 15000).then(() => true, () => false);
+                await h.ev(`${CARD}?.scrollIntoView({ block: 'center' }), true`);
+                await h.snap('steam-card');
+                const kept = await h.ev(`JSON.stringify([localStorage.getItem('DENS_YOUTUBE'), localStorage.getItem('DENS_STEAM')])`);
+                // The next mode's parts read general's newest message as
+                // it was.
+                lib('api', 'alice', 'DELETE', `/api/dens/${den}/messages/${sent}`);
+                report(shown && kept === '["1","1"]', `${mode}: a Steam link showed as a card (${shown}), the first run's answer kept as ${kept}`);
             });
             log.push(...h.log);
         } catch (e) {

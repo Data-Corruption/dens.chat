@@ -11,9 +11,10 @@
 // CTX is a JSON file of the den's IDs: den, general and random, a text
 // channel besides; for first, the invite, the member's username and
 // display name, the passwords, and the phone's name and model. PART is
-// first, the page's first screens (M13.3): the local password set and the
-// den joined through the page's forms, by Android's taps and keyboard, to
-// the recovery codes and Home, where Manage lists the phone among the
+// first, the page's first screens (M13.3): the local password set, with
+// Link previews on (M22.7), and the den joined through the page's forms,
+// by Android's taps and keyboard, to the recovery codes and Home, where
+// Manage lists the phone among the
 // member's devices by its name, with its model under it; around, getting around from Home as M13.1's done-when has it;
 // touch, M13.2's: a long press, a sheet's swipe down and Back, three
 // lines sent by the send button with the keyboard up, and a tip's tap;
@@ -109,6 +110,10 @@ async function first(h, d, c) {
         if (!(await reached(button('Set password'), "the local password's form", 30000))) throw new Error('no form to set the local password');
         await h.ev('document.activeElement?.blur(), true');
         await h.snap('set-password');
+        // A new phone is asked about link previews with the password
+        // (M22.7): one switch, on, which the member leaves.
+        report(await h.ev(`document.getElementById('link-previews')?.checked === true && !document.getElementById('link-previews-steam')`),
+            'the first run asks about link previews, one switch, on');
         await fill(field('input[type=password]', 0), c.local);
         await fill(field('input[type=password]', 1), c.local);
         await h.snap('set-password-typed');

@@ -136,11 +136,11 @@ let page;
 let close;
 let quiet = null;
 if (side === 'desk') {
-    const { launch, token, waitFor } = await import('./browsers.mjs');
+    const { launch, paired, token } = await import('./browsers.mjs');
     page = await launch('chromium', 9445, { media: true });
     close = () => page.close();
     await page.go(`http://127.0.0.1:18584/#token=${token('sden')}`);
-    await waitFor(() => page.eval(`!!document.querySelector('a[href="/settings"]')`), 'desk paired');
+    await paired(page, 'desk paired');
     if (rest[0] === 'quiet') quiet = { from: Number(rest[1]), to: Number(rest[2]) };
 } else if (side === 'phone' || side === 'watch') {
     const { webview } = await import('./drive.mjs');

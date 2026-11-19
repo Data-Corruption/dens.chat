@@ -18,7 +18,7 @@
 // itself after SECONDS, 600 unless given.
 import http from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { launch, token, waitFor } from './browsers.mjs';
+import { launch, paired, token, waitFor } from './browsers.mjs';
 
 const [, , portArg, secondsArg] = process.argv;
 const port = Number(portArg);
@@ -42,7 +42,7 @@ setTimeout(() => quit(0), Number(secondsArg || 600) * 1000).unref();
 
 try {
     await page.go(`http://127.0.0.1:18584/#token=${token('sden')}`);
-    await waitFor(() => page.eval(`!!document.querySelector('a[href="/settings"]')`), 'desk paired');
+    await paired(page, 'desk paired');
     await page.eval(`(async () => {
         const den = (await (await fetch('/api/dens')).json()).dens[0].den_id;
         history.pushState(null, '', '/den/' + den);

@@ -37,7 +37,9 @@
 #                               the New divider, the message box, folding groups, a late-sound video,
 #                               and a thin video's full screen button (M14.3); and the crown and the
 #                               shield at one height, a long name scrolling under the pointer, and
-#                               right clicks on a message, a link and a member (M19.2)
+#                               right clicks on a message, a link and a member (M19.2); and the message
+#                               bar as its box, the box growing with wrapped lines to half its pane, a
+#                               reaction's chip square on a square theme, and file names on hover (M22.7)
 #   messages BROWSER            M11.2: each message's ⋯ menu by keyboard, and by touch through a long
 #                               press (M13.2), its delete dialog, and links to messages, in a den and
 #                               from another; a link underlined only on hover and focus (M14.1)
@@ -121,7 +123,8 @@
 #                               and the background's Hover (M21.1); and Call timer, and a call's length at
 #                               its row's right, its lock behind the call's block's arrow (M21.2); and the den's
 #                               own sections from the cog on its page, Manage's pages headed by their names, and
-#                               every button one of the page's kinds, a dialog leading with one primary (M22.3).
+#                               every button one of the page's kinds, a dialog leading with one primary (M22.3);
+#                               and before's first run asking about Link previews, and a Steam link's card (M22.7).
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -192,7 +195,8 @@
 #                               on both ends; a second page taking over, the first told; the laptop's Stop; and
 #                               no address in the den's database or his installs' logs; and from M20.3 the
 #                               laptop's page, as a phone's, holding the call's button for his call, under the
-#                               name of the device holding it, which rings him on alice's page while it's held
+#                               name of the device holding it, which rings him on alice's page while it's held;
+#                               and from M22.7 his Home holding his bar and his call in one box
 #   signin BROWSER              M21.1: bob's laptop signing in from its page, saying at once that it waits for
 #                               his other device; his first device, at a phone's width, showing the request on
 #                               each pane; the digits typed both ways, and the laptop signed in

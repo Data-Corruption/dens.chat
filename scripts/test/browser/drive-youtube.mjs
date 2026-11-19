@@ -8,7 +8,7 @@
 //   run.sh youtube chromium|firefox chromium|firefox   (alice's, then bob's)
 import { setTimeout as sleep } from 'node:timers/promises';
 import crypto from 'node:crypto';
-import { HOME, SETTINGS, checks, launch, openSettings, token, waitFor } from './browsers.mjs';
+import { HOME, SETTINGS, checks, launch, openSettings, paired, token, waitFor } from './browsers.mjs';
 
 const [, , aName, bName] = process.argv;
 const { DEN: den, GENERAL: general, OTHER: other, DM: dm } = process.env;
@@ -112,6 +112,7 @@ try {
         opened.push(s.b);
         // An old link at 127.0.0.1 ends at localhost, paired by its token.
         await s.b.go(`http://127.0.0.1:${s.port}/#token=${token(s.instance)}`);
+        await paired(s.b, `${s.browser} paired`);
         const where = await waitFor(async () => {
             const origin = await s.b.eval('location.origin');
             return origin === `http://localhost:${s.port}` && (await s.b.eval(`!!document.querySelector('a[href="/settings"]')`)) && origin;
