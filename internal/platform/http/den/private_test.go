@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	dens "github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -275,5 +276,66 @@ func TestFramesFitWhatClientsRead(t *testing.T) {
 	publish()
 	for got < 40 {
 		got += len(read(t, c))
+	}
+}
+
+// A device the den let in by approval says so to the member's sessions as
+// its first socket opens, once, and to nobody else (M22.6).
+func TestApprovedDeviceConnects(t *testing.T) {
+	f := newFixture(t)
+	code, err := f.d.Create(t.Context(), "Den", "https://den.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := f.d.Info()
+	verifier := denproto.Verifier("password", info.ID, "alice")
+	_, desktopKey, _ := ed25519.GenerateKey(nil)
+	resp, err := f.d.Challenge(denproto.Random(denproto.NonceSize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined, err := f.d.Join(t.Context(), denproto.JoinRequest{Invite: code, Username: "alice", DisplayName: "Alice", Verifier: verifier,
+		PublicKey: denproto.Bytes(desktopKey.Public().(ed25519.PublicKey)), DeviceLabel: "desktop", Nonce: resp.Nonce,
+		Proof: denproto.Prove(desktopKey, info.ID, resp.Nonce), SealCheck: denproto.Random(denproto.SealCheckSize)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	desktop := f.voiceSocket(joined.Token, nil)
+	bob := f.voiceSocket(f.member(joined.Token, "bob"), nil)
+	_, laptopKey, _ := ed25519.GenerateKey(nil)
+	laptopID := denproto.ID(laptopKey.Public().(ed25519.PublicKey))
+	laptopToken := f.approve(joined.Token, "alice", verifier, laptopKey)
+	connected := func(e denproto.Event) bool {
+		var c denproto.DeviceConnected
+		return e.T == denproto.EventDeviceConnected && json.Unmarshal(e.D, &c) == nil && denproto.Equal(c.KeyID, laptopID)
+	}
+	first, _ := f.dial(laptopToken, "")
+	desktop.wait("the laptop's first socket", connected)
+	first.CloseNow()
+
+	// A dial returns once the socket's snapshot came, after the den said
+	// whatever it would of the socket, so the fence follows that.
+	again, _ := f.dial(laptopToken, "")
+	defer again.CloseNow()
+	const fence = "test.fence"
+	if err := f.d.Hub.Ephemeral(fence, nil, func(*dens.Sub) bool { return true }); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []*voiceSocket{desktop, bob} {
+		timeout := time.After(10 * time.Second)
+	read:
+		for {
+			select {
+			case e := <-s.events:
+				if e.T == denproto.EventDeviceConnected {
+					t.Fatalf("%s heard of a device connecting again, or another member's: %s", s.me, e.D)
+				}
+				if e.T == fence {
+					break read
+				}
+			case <-timeout:
+				t.Fatal("timed out waiting for the fence")
+			}
+		}
 	}
 }

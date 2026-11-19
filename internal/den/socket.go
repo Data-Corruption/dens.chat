@@ -283,6 +283,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), s.Version, epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 	d.sockets.subscribed(sock, sub)
+	d.deviceConnected(s.MemberID, s.KeyID)
 
 	write := func(events ...denproto.Event) bool {
 		frame, err := denproto.EncodeFrame(events...)

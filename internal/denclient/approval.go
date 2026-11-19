@@ -39,6 +39,9 @@ type RequestView struct {
 	Lost        bool   `json:"lost,omitempty"`
 	Half        string `json:"half,omitempty"`
 	Approved    bool   `json:"approved,omitempty"`
+	// KeyID is the new device's, whose first connection ends an approved
+	// one (M22.6).
+	KeyID denproto.Bytes `json:"-"`
 }
 
 // approval is a sign-in this device answered: its side of the exchange,
@@ -72,7 +75,7 @@ func (c *conn) requestsLocked() []RequestView {
 		if now >= r.ExpiresAt {
 			continue
 		}
-		v := RequestView{ID: id, Label: r.Label, RequestedAt: r.RequestedAt, ExpiresAt: r.ExpiresAt}
+		v := RequestView{ID: id, Label: r.Label, RequestedAt: r.RequestedAt, ExpiresAt: r.ExpiresAt, KeyID: r.KeyID}
 		if r.AnsweredBy != nil {
 			a := c.approvals[id]
 			mine := denproto.Equal(r.AnsweredBy, keyID)
@@ -108,7 +111,8 @@ func (c *conn) requestChanged(e denproto.Event) {
 		if !ok {
 			if ended.Outcome == denproto.PendingApproved && ended.ID.String() == id && a.result != nil {
 				c.approved[id] = RequestView{ID: id, Label: a.request.Label, RequestedAt: a.request.RequestedAt,
-					ExpiresAt: a.request.ExpiresAt, Half: denproto.FormatCheckHalf(denproto.CheckHalf(a.result.Check, false)), Approved: true}
+					ExpiresAt: a.request.ExpiresAt, Half: denproto.FormatCheckHalf(denproto.CheckHalf(a.result.Check, false)), Approved: true,
+					KeyID: a.request.KeyID}
 			}
 			a.clear()
 			delete(c.approvals, id)
@@ -124,6 +128,23 @@ func (c *conn) requestChanged(e denproto.Event) {
 	}
 	c.mu.Unlock()
 	c.m.notify()
+}
+
+// deviceConnected stops showing the digits of a sign-in this device
+// approved once its new device connects, which needs them no more.
+func (c *conn) deviceConnected(keyID denproto.Bytes) {
+	c.mu.Lock()
+	found := false
+	for id, v := range c.approved {
+		if denproto.Equal(v.KeyID, keyID) {
+			delete(c.approved, id)
+			found = true
+		}
+	}
+	c.mu.Unlock()
+	if found {
+		c.m.notify()
+	}
 }
 
 // AnswerSignIn starts approving a sign-in from this device by answering

@@ -21,6 +21,8 @@ func (rt *router) mountDevices(r chi.Router) {
 	r.Post("/api/dens/{den}/requests/{id}/approve", rt.handleApproveSignIn)
 	r.Post("/api/dens/{den}/requests/{id}/refuse", rt.handleRefuseSignIn)
 	r.Delete("/api/dens/{den}/requests/{id}", rt.handleDismissApproved)
+	r.Get("/api/dens/{den}/device-code", rt.handleDeviceCode)
+	r.Get("/api/dens/{den}/requests/{id}/code", rt.handleDigitsCode)
 	r.Post("/api/dens/{den}/seal", rt.handleTypeSeal)
 	r.Post("/api/dens/{den}/seal/start-over", rt.handleStartOver)
 	r.Post("/api/dens/{den}/seal/show", rt.handleShowSeal)
@@ -224,4 +226,25 @@ func (rt *router) handleShowSeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"seal": seal})
+}
+
+// handleDeviceCode is Add device's code for a den (M22.6).
+func (rt *router) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
+	view, err := rt.a.Dens.DeviceCode(chi.URLParam(r, "den"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, view)
+}
+
+// handleDigitsCode is the code of the digits this device shows for a
+// sign-in it answered (M22.6).
+func (rt *router) handleDigitsCode(w http.ResponseWriter, r *http.Request) {
+	code, err := rt.a.Dens.DigitsCode(chi.URLParam(r, "den"), chi.URLParam(r, "id"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, code)
 }

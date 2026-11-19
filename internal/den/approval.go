@@ -52,6 +52,7 @@ type deviceRequest struct {
 	changed   chan struct{} // closed at each change, for the new device waiting on it
 	session   *denproto.SignInResponse
 	handover  denproto.Bytes
+	connected bool // its device, once approved, opened a socket
 }
 
 // waiting reports whether the member can still act on a request.
@@ -321,6 +322,29 @@ func (d *Den) ApproveRequest(ctx context.Context, s *Session, id []byte, req den
 		d.Hub.Publish(denproto.EventDeviceAdded, dev, OnlyMember(r.member)),
 		d.Hub.Publish(denproto.EventDeviceRequestEnded, denproto.DeviceRequestEnded{ID: r.view.ID, Outcome: denproto.PendingApproved}, OnlyMember(r.member)),
 	)
+}
+
+// deviceConnected tells the member's sessions that a device the den let
+// in by approval opened its first socket, while its request lasts: the
+// device that approved it shows its digits until then (M22.6).
+func (d *Den) deviceConnected(member int64, keyID []byte) {
+	d.requests.mu.Lock()
+	found := false
+	for _, r := range d.requests.byID {
+		if r.member == member && r.status == denproto.PendingApproved && !r.connected && denproto.Equal(r.view.KeyID, keyID) {
+			r.connected, found = true, true
+			break
+		}
+	}
+	d.requests.mu.Unlock()
+	if !found {
+		return
+	}
+	if err := d.Hub.Ephemeral(denproto.EventDeviceConnected, denproto.DeviceConnected{KeyID: keyID}, func(sub *Sub) bool {
+		return sub.member == member
+	}); err != nil {
+		d.log.Errorf("tell member %d a device connected: %v", member, err)
+	}
 }
 
 // RefuseRequest keeps a new device out, from any of the member's devices.
