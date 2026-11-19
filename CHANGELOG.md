@@ -1,5 +1,40 @@
 # Changelog
 
+## [v1.14.0] - 2026-11-19
+
+### Added
+
+- Sign in on a new device by scanning. Add device, beside a den on Home, shows a code; on the new device, Add a den's Scan reads it with the camera. Approve it on the first device, and a second code carries the digits. Typing still works, and is all there is where there's no camera. A den that hasn't been updated yet leaves the approval open until you press Done.
+- Steam links show as cards: the game's picture and first screenshots, its reviews, who's playing now, the systems it runs on with Steam Deck's rating, and its price where you are, with a sale's cut and end.
+- A browser opening Dens for the first time asks about link previews, YouTube's players and Steam's cards, since each shows its site your IP address. A browser that already uses Dens keeps its settings, where Steam's cards start off: turn them on under Chat in the settings.
+- Mute, in the menu of someone in a call, silences them for you alone, and Unmute brings them back at the volume they had.
+- Dens's tab shows a red dot on its icon while a DM or a mention is unread, in any den.
+- A theme of your own holds everything a daisyUI theme does: the status colors, corners for cards, buttons and toggles, the border, depth and noise. Its code is a block of text, and one copied from daisyUI's theme generator pastes in. Codes from before still paste.
+- File names on hover, under Appearance's Messages: turn it off to stop a photo's or a video's name showing under the pointer.
+- Recovery codes save as a file named for the den, with your DM recovery key in it.
+- Formatting help, at the end of the message box's +, lists the formatting and the keys.
+
+### Changed
+
+- Appearance is a page of its own that takes the window: the themes at the left, the one you chose in the middle, with Messages and Calls beside it, and a small den at the right that shows every change as you make it. Choosing a theme only shows it there, and Use puts it on. Customize copies a built-in theme into yours, and a theme's edits wait for Save.
+- One look across the page: four kinds of button, a dialog's actions at its foot with the main one first, one slider, a choice of a few as one row of buttons, and the settings and Manage in one frame. The sizes of photos and players are sliders.
+- Inside a den, the settings hold your own sections of it: Devices, Password and recovery, Your code and Your files, with Leave den. Manage keeps what staff manage, and opens from the den's name.
+- Staff make channels and groups from menus: the den's name, a right click on the channel list, a group's menu, and the + at the end of the tabs. Move up and Move down are in a channel's and a group's menu.
+- Menus show an icon on each row, and Move to, for someone in a call, opens the voice channels beside it.
+- A message under the pointer shows react, Reply and, on your own, Edit beside its ⋯. Who else can edit a message is in its ⋯.
+- The message box grows with what you write, wrapped lines too, up to half the pane, and holds its + and emoji button inside it. Messages end at its top edge.
+- A sign-in waiting for your approval opens as a dialog over whatever you're doing, and closes by itself once the new device connects.
+- Add a den offers three ways in: Scan, the den's address, with or without https://, or an invite.
+- A profile opens as a card beside the name you clicked, without dimming the page. A phone keeps its sheet.
+- Reactions take the theme's corners, as its badges do.
+- Home with no den yet is a welcome with Add a den, and a call and Relay's bar share one box there.
+- A message's menu says Copy message link.
+
+### Fixed
+
+- Since v1.9.0, a DM's first message could show as sent under changed keys when it arrived a moment before its key. Dens fetches the key first.
+- Since v1.5.0, on a Linux desktop whose notification service didn't answer, the voice keys in other programs, and later Relay's sound, waited on it for up to two minutes. They no longer wait.
+
 ## [v1.13.0] - 2026-11-15
 
 ### Added
