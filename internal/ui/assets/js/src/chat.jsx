@@ -883,10 +883,9 @@ export function groupMenu(view, group) {
     ];
 }
 
-// UserPanel is the member's own corner at the foot of the channel list, as
-// tall as the message bar beside it, which it lines up with: their picture
-// and name, which open their profile to edit, and the cog for the
-// settings. It keeps the list's color, so the call's lighter block above it
+// UserPanel is the member's own corner at the foot of the channel list,
+// its middle level with the message box's beside it: their picture and
+// name, which open their profile to edit, and the cog for the settings. It keeps the list's color, so the call's lighter block above it
 // shows at a glance.
 function UserPanel({ me, online, onEdit }) {
     return (

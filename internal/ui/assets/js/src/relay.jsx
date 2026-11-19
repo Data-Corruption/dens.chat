@@ -36,7 +36,8 @@ const LOOKS = {
 export function RelayBar({ look = 'block' }) {
     const s = useRelay(true);
     if (!s || (!s.listening && !s.sharing && !s.notice)) return null;
-    const row = look === 'bar' ? 'min-h-10' : 'min-h-8';
+    // In the box, its rows start where the call's row under them does.
+    const row = look === 'bar' ? 'min-h-10' : look === 'box' ? 'min-h-8 px-1.5' : 'min-h-8';
     return (
         <div class={LOOKS[look]} data-relay-bar>
             {s.listening && (

@@ -195,6 +195,12 @@ export function cleanTheme(raw) {
     return theme;
 }
 
+/** sameTheme says whether two themes hold the same: their names, Light or
+    Dark, and every variable */
+export function sameTheme(one, other) {
+    return one.name === other.name && one.dark === other.dark && Object.keys(FIELDS).every((f) => (one[f] ?? null) === (other[f] ?? null));
+}
+
 /** editTheme is a theme with changes made in the editor: a background
     changed takes the deeper two it held away, and a color changed its
     text, so they derive from the new one */

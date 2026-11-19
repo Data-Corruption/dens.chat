@@ -171,7 +171,7 @@ function notices(call, notice, denID, staffMuted, shareNotice, holds) {
 }
 
 // CallBlock holds the page's call at the foot of a den's channel list,
-// above the member's panel and in the message bar's shade: its notices,
+// above the member's panel and in the message box's shade: its notices,
 // then, while the member shares their screen, the share's row (M4.2), then
 // its controls in a row. On the phone layout it keeps clear of the call's
 // button in the screen's corner, as roomy says (M13.4).
@@ -221,7 +221,7 @@ export function CallBox() {
     if (!call && !lines.length) return null;
     return (
         <div class="flex flex-col gap-2 p-2">
-            {lines.length > 0 && <div class="flex flex-col gap-1 text-xs">{lines}</div>}
+            {lines.length > 0 && <div class="flex flex-col gap-1 px-1.5 text-xs">{lines}</div>}
             {call && share && <ShareRow call={call} share={share} den={den} />}
             {call && <CallControls call={call} share={share} den={den} sounding={sounding} board={board} labeled />}
         </div>
@@ -462,8 +462,8 @@ export function CallControls({ denID, call, share, den, sounding, board, labeled
         return (
             <div class="flex items-center justify-between gap-1">
                 <span class={`flex min-w-0 items-center gap-2 px-1.5 ${color}`}>
-                    <SpeakerIcon />
-                    <span role="status" class="truncate text-xs text-base-content/80">{said}</span>
+                    <SpeakerIcon size="h-4 w-4" />
+                    <span role="status" class="truncate text-sm text-base-content">{said}</span>
                     <CallLock call={call} den={den} />
                 </span>
                 <span class="flex shrink-0 items-center gap-1">{buttons}</span>

@@ -1,6 +1,7 @@
 // The settings' frame (M19.1), checked without a browser: the sections'
-// list and names, openSettings reaching each, and the dialog listing them
-// down its side with the one shown marked.
+// list and names, openSettings reaching each, the dialog listing them
+// down its side with the one shown marked, and Appearance taking the
+// window (M22.8).
 
 import './dom.js';
 import assert from 'node:assert/strict';
@@ -139,7 +140,7 @@ test("on the phone, the Relay section's keys are the call's button, it shares no
     }
 });
 
-test('the dialog lists the sections down its side, the one shown marked, and opens at Appearance', () => {
+test('the dialog lists the sections down its side, the one shown marked, and opens at Chat', () => {
     const root = document.createElement('div');
     const picked = [];
     mount(h(SettingsDialog, { section: '', onSection: (s) => picked.push(s), onClose() {}, instance: 'main', version: 'v0', pair: '' }), root);
@@ -148,12 +149,41 @@ test('the dialog lists the sections down its side, the one shown marked, and ope
         assert.ok(nav, 'a list of the sections');
         const items = all(nav, (n) => n.localName === 'button');
         assert.deepEqual(items.map((b) => b.textContent.trim()), ['Appearance', 'Chat', 'Notifications', 'Voice', 'Relay', 'System']);
-        assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['page', '', '', '', '', '']);
+        assert.deepEqual(items.map((b) => b.attributes['aria-current'] || ''), ['', 'page', '', '', '', ''], 'Appearance takes the window, so Chat is first open');
         const titles = all(root, (n) => n.localName === 'h2' && /\bcard-title\b/.test(n.attributes.class || '')).map((t) => t.textContent.trim());
-        assert.deepEqual(titles, ['Settings', 'Theme', 'Messages', 'Calls'], 'Theme first, with the chat\'s background, then messages, and calls last');
-        assert.equal(all(root, (n) => 'data-appearance-preview' in n.attributes).length, 1, 'over them, the preview');
+        assert.deepEqual(titles, ['Settings', 'Photos and videos', 'Links']);
         items[3].dispatch('click');
         assert.deepEqual(picked, ['voice']);
+    } finally {
+        mount(null, root);
+    }
+});
+
+// What a theme's box computes to, here none of DaisyUI's variables, so a
+// built-in theme reads as Light's or Dark's own.
+globalThis.getComputedStyle = () => ({ colorScheme: 'light', getPropertyValue: () => '' });
+
+test('Appearance takes the window, its list folded to ← back, which goes to the section open before, and ✕ closes', async () => {
+    document.body = document.createElement('body');
+    document.addEventListener ||= () => {};
+    document.removeEventListener ||= () => {};
+    const root = document.createElement('div');
+    const picked = [];
+    let closed = 0;
+    const show = (section) => mount(h(SettingsDialog, { section, onSection: (s) => picked.push(s), onClose: () => closed++, instance: 'main', version: 'v0', pair: '' }), root);
+    show('voice');
+    try {
+        all(root, (n) => n.localName === 'button' && n.attributes['data-section'] === 'appearance')[0].dispatch('click');
+        assert.deepEqual(picked, ['appearance']);
+        show('appearance');
+        assert.equal(all(root, (n) => n.localName === 'nav' && n.attributes['aria-label'] === 'Sections').length, 0, 'no list beside it');
+        assert.equal(all(root, (n) => n.localName === 'h2')[0].textContent.trim(), 'Appearance');
+        assert.ok(all(root, (n) => 'data-themes' in n.attributes).length && all(root, (n) => 'data-theme-preview' in n.attributes).length,
+            'the themes, and the preview');
+        all(root, (n) => n.localName === 'button' && 'data-back' in n.attributes)[0].dispatch('click');
+        assert.deepEqual(picked, ['appearance', 'voice'], 'back to Voice');
+        all(root, (n) => n.localName === 'button' && n.attributes['aria-label'] === 'Close')[0].dispatch('click');
+        assert.equal(closed, 1);
     } finally {
         mount(null, root);
     }
@@ -194,7 +224,7 @@ test("on a den's page, the member's own sections of it are a group above the app
     }
 });
 
-test("a theme of the member's own is listed under Your themes in its colors, with its buttons once chosen", () => {
+test("a theme of the member's own is listed under My themes in its colors, and wearing it sets its variables", () => {
     document.documentElement = document.createElement('html');
     const dusk = {
         name: 'Dusk', dark: true, corners: 'rounded', base: '#1d232a', text: '#a6adbb', primary: '#605dff', secondary: '#f43098', accent: '#00d3bb',
@@ -202,26 +232,24 @@ test("a theme of the member's own is listed under Your themes in its colors, wit
     };
     const render = () => {
         const root = document.createElement('div');
-        mount(h(SettingsDialog, { section: '', onSection() {}, onClose() {}, instance: 'main', version: 'v0', pair: '' }), root);
-        const own = all(root, (n) => 'data-own-themes' in n.attributes)[0];
-        const found = {
+        mount(h(SettingsDialog, { section: 'appearance', onSection() {}, onClose() {}, instance: 'main', version: 'v0', pair: '' }), root);
+        const own = all(root, (n) => n.localName === 'div' && n.attributes['aria-label'] === 'My themes')[0];
+        const found = own && {
             names: all(own, (n) => n.localName === 'label').map((l) => l.textContent.trim()),
-            checked: all(own, (n) => n.localName === 'input' && n.attributes.type === 'radio').map((i) => 'checked' in i.attributes),
+            worn: all(own, (n) => 'data-worn' in n.attributes).length,
             swatch: all(own, (n) => 'data-theme' in n.attributes)[0],
-            buttons: all(own, (n) => n.localName === 'button').map((b) => b.textContent.trim()),
         };
         mount(null, root);
         return found;
     };
-    assert.deepEqual(render().buttons, ['New theme', 'Paste a code'], 'with none, a member makes one or pastes one');
+    assert.equal(render(), undefined, 'with none, no My themes');
     const id = keepTheme(dusk);
     const kept = render();
-    assert.deepEqual([kept.names, kept.checked, kept.buttons], [['Dusk'], [false], ['New theme', 'Paste a code']], 'kept, not chosen');
+    assert.deepEqual([kept.names, kept.worn], [['Dusk'], 0], 'kept, not worn');
     assert.equal(kept.swatch.attributes['data-theme'], 'dark');
     assert.deepEqual({ ...kept.swatch.style }, variables(cleanTheme(dusk)), 'its swatch wears its variables');
     setTheme(ownChoice(id));
-    const chosen = render();
-    assert.deepEqual([chosen.checked, chosen.buttons], [[true], ['Edit', 'Copy code', 'Delete', 'New theme', 'Paste a code']]);
+    assert.deepEqual([render().names, render().worn], [['DuskIn use'], 1], 'worn, marked so');
     assert.deepEqual({ ...document.documentElement.style }, variables(cleanTheme(dusk)), 'and the page wears it');
     setTheme('system');
 });

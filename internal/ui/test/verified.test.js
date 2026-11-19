@@ -38,7 +38,7 @@ test('verified marks show on hover with a mouse, and not on a touch screen, unti
     setVerifiedMarks(MARKS_ALWAYS);
     assert.equal(verifiedMarks(false), MARKS_ALWAYS);
     assert.equal(verifiedMarks(true), MARKS_ALWAYS);
-    // On hover can't show a thing without hover.
+    // Hover can't show a thing without hover.
     setVerifiedMarks(MARKS_HOVER);
     assert.equal(verifiedMarks(true), MARKS_NEVER);
     setVerifiedMarks(MARKS_NEVER);

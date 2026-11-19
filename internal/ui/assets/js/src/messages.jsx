@@ -1661,9 +1661,9 @@ function EditorList({ candidates, selected, onChange }) {
     );
 }
 
-// The message box is a line tall at least, which with the bar around it
-// lines up with the member's panel beside it, at the foot of the channel
-// list, at 73px.
+// The message box is a line tall at least, 48 pixels, which with the room
+// under its island stands level with the member's panel beside it, at the
+// foot of the channel list.
 const BOX_LEAST = 48;
 // The box's padding, leaving room for the + and the emoji button, and its
 // text, which the copy it's measured by shares.
@@ -1912,13 +1912,9 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
     ].filter(Boolean);
     const typers = typingLine(typing.map((m) => m.display_name));
     return (
-        // The bar is the box: a press on its edges goes to the box, and its
-        // top edge shows the box's focus.
-        <div ref={bar} class="focus-edge relative border-t border-base-300 bg-bar px-4 py-3" onMouseDown={(e) => {
-            if (e.target !== e.currentTarget) return;
-            e.preventDefault();
-            box.current?.focus();
-        }}>
+        // The box is an island at the pane's foot, on the page's own
+        // background, so the messages end at its top edge.
+        <div ref={bar} class="relative px-4 pb-3" data-composer>
             {/* Who's typing, how the files are doing and the length float just
                 above the composer, so it never jumps as they come and go. The
                 line is always here, empty or not, for screen readers. */}
@@ -1937,52 +1933,53 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
                 )}
                 {length > MAX_TEXT - 500 && <span class={`rounded bg-base-100 px-1 ${length > MAX_TEXT ? 'text-error' : ''}`}>{length} / {MAX_TEXT}</span>}
             </div>
-            {/* What stands above the box scrolls within a cap on a touch
-                screen, so its keyboard leaves the list room. */}
-            <div class="pointer-coarse:max-h-[30vh] pointer-coarse:overflow-y-auto">
-                {replyTo && (
-                    <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
-                        <span class="min-w-0 truncate">
-                            Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} locked={replyTo.locked} />
-                        </span>
-                        <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={onCancelReply} aria-label="Cancel reply">✕</button>
-                    </div>
-                )}
-                {files.length > 0 && (
-                    <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
-                        {files.map((f) => (
-                            <FileChip key={f.key} denID={denID} f={f} limits={limits} canSpoil={canSpoil} onSpoiler={(on) => onSpoiler(f.key, on)}
-                                onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
-                        ))}
-                    </ul>
-                )}
-                {poll && (
-                    <PollEditor draft={poll} problem={problem} onRemove={() => setPoll(null)} onChange={(d) => {
-                        setPoll(d);
-                        setProblem('');
-                    }} />
-                )}
-                {sharing ? (
-                    <div class="mb-2 flex flex-col gap-1 rounded border border-base-300 p-2">
-                        <div class="flex items-center justify-between gap-2 text-xs text-base-content/70">
-                            <span>Who else can edit this message? They can also tick its boxes: lines that start with [ ].</span>
-                            <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={() => setSharing(false)}>Done</button>
-                        </div>
-                        <EditorList candidates={candidates} selected={editors} onChange={onEditors} />
-                    </div>
-                ) : editors.length > 0 && (
-                    <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
-                        <span class="min-w-0 truncate">{joinNames(editors.map((id) => name(candidates.find((c) => c.id === id))))} can edit this too</span>
-                        <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={() => setSharing(true)}>Change</button>
-                    </div>
-                )}
-            </div>
             <div class="flex items-end gap-2">
                 <input ref={picker} type="file" multiple class="hidden" onChange={(e) => {
                     onAddFiles(e.currentTarget.files);
                     e.currentTarget.value = '';
                 }} />
-                <div class="relative min-w-0 flex-1">
+                <div class="message-island relative min-w-0 flex-1 rounded-field bg-bar">
+                    {/* What stands above the text, in the island with it, scrolls
+                        within a cap on a touch screen, so its keyboard leaves the
+                        list room. */}
+                    <div class="pointer-coarse:max-h-[30vh] pointer-coarse:overflow-y-auto [&:not(:empty)]:px-3 [&:not(:empty)]:pt-2">
+                        {replyTo && (
+                            <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
+                                <span class="min-w-0 truncate">
+                                    Replying to <span class="font-medium">{name(replyAuthor)}</span>: <Quoted text={replyTo.text} locked={replyTo.locked} />
+                                </span>
+                                <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={onCancelReply} aria-label="Cancel reply">✕</button>
+                            </div>
+                        )}
+                        {files.length > 0 && (
+                            <ul class="mb-2 flex flex-wrap gap-2" aria-label="Files to send">
+                                {files.map((f) => (
+                                    <FileChip key={f.key} denID={denID} f={f} limits={limits} canSpoil={canSpoil} onSpoiler={(on) => onSpoiler(f.key, on)}
+                                        onRemove={() => onRemoveFile(f.key)} onCompare={() => onCompare(f.key)} />
+                                ))}
+                            </ul>
+                        )}
+                        {poll && (
+                            <PollEditor draft={poll} problem={problem} onRemove={() => setPoll(null)} onChange={(d) => {
+                                setPoll(d);
+                                setProblem('');
+                            }} />
+                        )}
+                        {sharing ? (
+                            <div class="mb-2 flex flex-col gap-1 rounded border border-base-300 p-2">
+                                <div class="flex items-center justify-between gap-2 text-xs text-base-content/70">
+                                    <span>Who else can edit this message? They can also tick its boxes: lines that start with [ ].</span>
+                                    <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={() => setSharing(false)}>Done</button>
+                                </div>
+                                <EditorList candidates={candidates} selected={editors} onChange={onEditors} />
+                            </div>
+                        ) : editors.length > 0 && (
+                            <div class="mb-1 flex cursor-default select-none items-center gap-2 text-xs text-base-content/70">
+                                <span class="min-w-0 truncate">{joinNames(editors.map((id) => name(candidates.find((c) => c.id === id))))} can edit this too</span>
+                                <button type="button" class="btn btn-ghost btn-xs relative touch-room" onClick={() => setSharing(true)}>Change</button>
+                            </div>
+                        )}
+                    </div>
                     {adding && !narrow && (
                         <ul ref={addList} role="menu" aria-label="Add to this message" class={`${MENU} absolute bottom-full left-0 z-20 mb-1 w-56`} data-compose-menu
                             onKeyDown={(e) => menuKeys(e, e.currentTarget, () => {

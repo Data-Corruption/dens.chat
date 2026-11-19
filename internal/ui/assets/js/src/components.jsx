@@ -235,23 +235,63 @@ export function HoverTip({ side = 'bottom', label, tip: content, children }) {
     );
 }
 
-// Choices is a setting of a few, in a row under its label, and tip, if
-// given, says more beside the label.
+// SEGMENT is one choice of Choices: a button of DaisyUI's join, which the
+// radio itself is, its words its label; quiet until chosen, then filled in
+// the primary color, and taller for a finger.
+const SEGMENT = 'btn btn-sm join-item whitespace-nowrap not-checked:btn-soft pointer-coarse:h-10';
+
+/** Choices is a choice of a few, one always made: its label, with a tip
+    if it needs one, over its choices as one row of joined buttons, the
+    one chosen filled. choices are [value, words], and a third, true,
+    holds one out. Without a label, as under a card's title, name says
+    what it chooses. */
 export function Choices({ label, name, data, choice, choices, onPick, tip }) {
+    const group = (
+        <div role="radiogroup" aria-label={label || name} class="join max-w-full" {...(data ? { [data]: true } : {})}>
+            {choices.map(([value, text, disabled]) => (
+                <input key={value} type="radio" class={SEGMENT} name={name} value={value} aria-label={text} checked={choice === value} disabled={!!disabled}
+                    onChange={() => onPick(value)} />
+            ))}
+        </div>
+    );
+    if (!label) return group;
     return (
-        <div class="flex flex-col gap-1">
+        <div class="flex flex-col gap-1.5">
             <span class="flex items-center text-sm">
                 {label}
                 {tip && <Tip id={`${name}-tip`} label={`About ${label}`} wrap="-my-1 inline-flex">{tip}</Tip>}
             </span>
-            <div role="radiogroup" aria-label={label} class="flex flex-wrap gap-x-6 gap-y-2" {...{ [data]: true }}>
-                {choices.map(([value, text]) => (
-                    <label key={value} class="flex min-h-6 cursor-pointer items-center gap-2">
-                        <input type="radio" class="radio radio-sm" name={name} value={value} checked={choice === value} onChange={() => onPick(value)} />
-                        <span>{text}</span>
-                    </label>
-                ))}
-            </div>
+            {group}
+        </div>
+    );
+}
+
+/** Ticks mark a slider's stops under it, count of them, from its thumb's
+    middle at one end to its middle at the other. */
+export function Ticks({ count }) {
+    return (
+        <span class="relative -mt-2 block h-1.5" aria-hidden="true">
+            {Array.from({ length: count }, (_, i) => (
+                <span key={i} class="absolute top-0 h-1.5 w-px bg-base-content/40" style={{ left: `calc(0.5rem + (100% - 1rem) * ${i / (count - 1)})` }}></span>
+            ))}
+        </span>
+    );
+}
+
+/** Steps is a choice of a few in an order, as sizes are, on a slider with
+    a stop for each: its label, the one chosen named at its right. */
+export function Steps({ label, data, choice, choices, onPick }) {
+    const at = Math.max(0, choices.findIndex(([value]) => value === choice));
+    const said = choices[at][1];
+    return (
+        <div class="flex flex-col gap-1">
+            <span class="flex items-center justify-between text-sm">
+                <span>{label}</span>
+                <span class="text-base-content/70">{said}</span>
+            </span>
+            <Slider class="w-full" min={0} max={choices.length - 1} step={1} value={at} aria-label={label} aria-valuetext={said} {...{ [data]: choices[at][0] }}
+                onInput={(e) => onPick(choices[Number(e.currentTarget.value)][0])} />
+            <Ticks count={choices.length} />
         </div>
     );
 }

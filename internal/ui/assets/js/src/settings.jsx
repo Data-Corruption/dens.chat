@@ -1,10 +1,8 @@
 // The app's settings: a dialog over whatever the page shows, so a den and
 // a call stay in view, its sections listed down the side as Manage's are,
-// or on the phone layout a list of them, each a page. Appearance holds a
-// preview of the chat, then the theme, the member's own among them, and
-// the picture behind the chat; how messages, styled names and the verified
-// mark show; and the call timer; Chat compressing photos
-// and videos and what happens to links; Notifications what notifies the
+// or on the phone layout a list of them, each a page. Appearance is a page
+// of its own (see appearance.jsx); Chat holds compressing photos and
+// videos and what happens to links; Notifications what notifies the
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
 // screen share; Relay this install's links with the member's other devices
@@ -12,23 +10,19 @@
 // System hosting a den, the cache, updates, backups, the local
 // password, the logs, signing this browser out, and the version.
 
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-import { ALWAYS, ON_HOVER, setAnimations, useAnimations } from './animations.js';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
+import { AppearancePage } from './appearance.jsx';
 import { sendSmaller, setSendSmaller } from './compare.jsx';
 import {
-    DIM_MOST, DIM_STEP, HOVER_MOST, KINDS, backgroundURL, checkBackground, removeBackground, setBackground, setDim, setHover, slideDim, slideHover,
-} from './background.js';
-import {
-    Actions, Button, Card, Choices, ColorField, CopyButton, DOCS, DocsLink, DocsTip, ErrorText, Field, Notice, PLAIN, PasswordFields, Slider, StatusText,
-    SubmitButton, TILE, TextInput, Tip, Toggle, buttonClass, checkPasswords, useAction, useBackground, useNotifications,
+    Actions, Button, Card, Choices, DOCS, DocsLink, DocsTip, ErrorText, Field, Notice, PasswordFields, Slider, StatusText,
+    SubmitButton, TextInput, Tip, Toggle, buttonClass, checkPasswords, useAction, useNotifications,
 } from './components.jsx';
 import { formatSize } from './files.jsx';
 import { rememberNote } from './flatpak.js';
 import { hostingAsk, hostingNote, hostingOnWarning, moving } from './hosting.js';
 import { oldReddit, setOldReddit, setSteamCards, setYouTubePlayers, steamCards, youTubePlayers } from './links.js';
 import { PlayIcon } from './icons.jsx';
-import { STYLES_ALL, STYLES_COLORS, STYLES_OFF, setNameStyles, useNameStyles } from './names.js';
 import { useLayer, useNarrow } from './nav.js';
 import { askToNotify, notifying, permission, tell, whereTheyShow } from './notify.js';
 import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './platform.js';
@@ -40,19 +34,7 @@ import { MenuButton } from './menus.jsx';
 import { YOUR_SECTIONS, YourDen, useYourDen, yourSections } from './yourden.jsx';
 import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, listen, setBufferChoice, stopListening } from './relay.js';
 import { useRelay } from './relay.jsx';
-import { THEMES, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, shownTheme, themeChoice, themeName } from './theme.js';
-import {
-    MOST_THEMES, NAME_MOST, cleanName, cleanTheme, editTheme, hexColor, hexOf, lowContrast, numberShown, readCode, readColor, themeCode, variables,
-} from './themes.js';
-import { useCoarse, useHoldsButton } from './touch.js';
-import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
-import { setStaffMarks, useStaffMarks } from './staffmarks.js';
-import { setFileNames, useFileNames } from './filenames.js';
-import { setCallTimer, useCallTimer } from './calltimer.js';
-import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
-import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
-import { AppearancePreview, DenPreview } from './preview.jsx';
-import { Dialog } from './manage.jsx';
+import { useHoldsButton } from './touch.js';
 import {
     RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
     inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise,
@@ -75,23 +57,52 @@ export const SECTIONS = [
 // SettingsDialog shows a section of the settings. It closes with its ✕,
 // Escape, a click outside it, or Back. On the phone layout it takes the
 // screen, its sections a list of pages, and Back and Escape go from a page
-// to the list. With denID, as on a den's page, it holds that den's
-// sections of the member's own as a group above the app's (M22.3).
+// to the list. Appearance takes the window at any width (M22.8), and Back
+// and Escape go from it to the section open before; on a wide window the
+// settings open at Chat, the first section that doesn't. With denID, as on
+// a den's page, it holds that den's sections of the member's own as a
+// group above the app's (M22.3).
 export function SettingsDialog({ section, denID, onSection, onClose, instance, version, pair, navigate }) {
-    useLayer(onClose);
     const narrow = useNarrow();
-    useSectionPage(narrow && !!section, () => onSection(''));
     const { den, view } = useYourDen(denID);
     const yours = den ? yourSections(den) : [];
-    useEffect(() => {
-        const escape = (e) => e.key === 'Escape' && (narrow && section ? onSection('') : onClose());
-        document.addEventListener('keydown', escape);
-        return () => document.removeEventListener('keydown', escape);
-    }, [onClose, narrow, section]);
     // A den's section waits for the den, which may not show it after all.
     const waiting = denID && YOUR_SECTIONS.includes(section) && !den;
-    let at = narrow ? '' : 'appearance';
+    let at = narrow ? '' : 'chat';
     if (SECTIONS.some(([id]) => id === section) || yours.some(([id]) => id === section) || waiting) at = section;
+    const full = at === 'appearance';
+    // before is the section Appearance was opened from, which Back goes
+    // to, and guard what asks before leaving Appearance with a theme's
+    // edits unsaved.
+    const before = useRef('');
+    const guard = useRef(null);
+    const asked = (action) => guard.current?.(action) || false;
+    const close = () => !asked(onClose) && onClose();
+    const back = () => onSection(full && !narrow ? before.current : '');
+    useLayer(() => {
+        if (!asked(onClose)) return onClose();
+        return false;
+    });
+    useSectionPage(narrow ? !!section : full, () => {
+        if (!asked(back)) return back();
+        return false;
+    });
+    // One listener reads what Escape does now, so a second press as the
+    // page leaves Appearance isn't taken by the first's.
+    const escape = useRef(null);
+    escape.current = () => {
+        if (full || (narrow && section)) !asked(back) && back();
+        else close();
+    };
+    useEffect(() => {
+        const listen = (e) => e.key === 'Escape' && escape.current();
+        document.addEventListener('keydown', listen);
+        return () => document.removeEventListener('keydown', listen);
+    }, []);
+    function pick(id) {
+        if (id === 'appearance' && at !== 'appearance') before.current = at;
+        onSection(id);
+    }
     let panel;
     if (waiting) panel = <span class="loading loading-spinner"></span>;
     else if (YOUR_SECTIONS.includes(at)) panel = <YourDen key={at} den={den} view={view} at={at} onClose={onClose} navigate={navigate} />;
@@ -100,433 +111,15 @@ export function SettingsDialog({ section, denID, onSection, onClose, instance, v
     else if (at === 'voice') panel = <VoiceSettings />;
     else if (at === 'relay') panel = <RelaySettings />;
     else if (at === 'system') panel = <SystemSettings instance={instance} version={version} pair={pair} />;
-    else panel = <><AppearancePreview /><ThemePicker /><MessagesPicker /><CallsPicker /></>;
+    else if (full) panel = <AppearancePage guard={guard} />;
     const groups = den
         ? [[den.name, yours.filter(([, , danger]) => !danger)], ['App', SECTIONS], ['', yours.filter(([, , danger]) => danger)]]
         : [['', SECTIONS]];
     return (
-        <SectionsFrame label="Settings" title="Settings" groups={groups} at={at} narrow={narrow} onPick={onSection} onList={() => onSection('')}
-            onClose={onClose}>
+        <SectionsFrame label="Settings" title="Settings" groups={groups} at={at} narrow={narrow} full={full} onPick={pick}
+            onList={() => !asked(back) && back()} onClose={close}>
             {panel}
         </SectionsFrame>
-    );
-}
-
-// ThemePicker chooses the page's theme: the device's light or dark, Light
-// or Dark, one of the others, or one of the member's own, each shown in
-// its colors. It takes hold at once, and this browser keeps it. Under
-// them the member makes a theme, edits or deletes the one chosen, copies
-// its code for another member, and pastes one, a block from DaisyUI's
-// theme generator among them; and last, the picture behind the chat.
-function ThemePicker() {
-    const [choice, setChoice] = useState(themeChoice);
-    const [own, setOwn] = useState(ownThemes);
-    const other = THEMES.includes(choice) && !['light', 'dark'].includes(choice);
-    const [more, setMore] = useState(other);
-    // editing is the theme in the editor while it's open, as it started,
-    // with its id, '' for a new one; pasting, the field for a code.
-    const [editing, setEditing] = useState(null);
-    const [pasting, setPasting] = useState(false);
-    const [code, setCode] = useState('');
-    const [error, setError] = useState('');
-    const chosen = own.find((t) => ownChoice(t.id) === choice);
-    const full = own.length >= MOST_THEMES;
-    function pick(theme) {
-        setTheme(theme);
-        setChoice(theme);
-    }
-    function reread() {
-        setOwn(ownThemes());
-        setChoice(themeChoice());
-        setEditing(null);
-        setPasting(false);
-        setError('');
-    }
-    // kept takes a theme the member made or pasted, and chooses it.
-    function kept(theme, id) {
-        const now = keepTheme(theme, id);
-        if (!now) return setError("That theme couldn't be kept.");
-        setTheme(ownChoice(now));
-        reread();
-    }
-    function paste(e) {
-        e.preventDefault();
-        const theme = readCode(code);
-        if (!theme) return setError("That isn't a theme's code.");
-        setCode('');
-        kept(theme);
-    }
-    const ring = 'has-[:checked]:ring-2 has-[:checked]:ring-primary has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary';
-    const tile = `flex cursor-pointer items-center gap-2 rounded-field px-2 py-1.5 text-sm hover:bg-base-300 has-[:checked]:bg-base-100 has-[:checked]:font-medium max-md:has-[:checked]:bg-base-200 ${ring}`;
-    return (
-        <Card title="Theme">
-            <div role="radiogroup" aria-label="Theme" class="grid grid-cols-3 gap-2">
-                {[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(([theme, name]) => (
-                    <label key={theme} class={TILE}>
-                        <input type="radio" name="theme" class="sr-only" value={theme} checked={choice === theme} onChange={() => pick(theme)} />
-                        {theme === 'system' ? <SystemSwatch large /> : <Swatch theme={theme} large />}
-                        <span class="text-sm font-medium">{name}</span>
-                    </label>
-                ))}
-            </div>
-            <div>
-                <button type="button" class={buttonClass('quiet')} aria-expanded={more} onClick={() => setMore(!more)}>
-                    {other ? `More themes: ${themeName(choice)}` : 'More themes'}
-                    <svg viewBox="0 0 16 16" class={`h-3 w-3 transition-transform ${more ? 'rotate-180' : ''}`} fill="none" stroke="currentColor"
-                        stroke-width="2" aria-hidden="true">
-                        <path d="M4 6l4 4 4-4" />
-                    </svg>
-                </button>
-            </div>
-            {more && (
-                <div role="radiogroup" aria-label="More themes" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1">
-                    {THEMES.filter((t) => t !== 'light' && t !== 'dark').map((theme) => (
-                        <label key={theme} class={tile}>
-                            <input type="radio" name="theme" class="sr-only" value={theme} checked={choice === theme} onChange={() => pick(theme)} />
-                            <Swatch theme={theme} />
-                            <span class="truncate">{themeName(theme)}</span>
-                        </label>
-                    ))}
-                </div>
-            )}
-            <div class="flex flex-col gap-3" data-own-themes>
-                <h3 class="text-sm font-semibold">Your themes</h3>
-                {own.length > 0 && (
-                    <div role="radiogroup" aria-label="Your themes" class="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-1">
-                        {own.map((theme) => (
-                            <label key={theme.id} class={tile}>
-                                <input type="radio" name="theme" class="sr-only" value={ownChoice(theme.id)} checked={choice === ownChoice(theme.id)}
-                                    onChange={() => pick(ownChoice(theme.id))} />
-                                <Swatch own={theme} />
-                                <span class="truncate">{theme.name}</span>
-                            </label>
-                        ))}
-                    </div>
-                )}
-                {pasting ? (
-                    <form class="flex flex-col gap-2" onSubmit={paste}>
-                        <textarea class="textarea w-full font-mono text-xs" rows="4" aria-label="A theme's code" placeholder={'@plugin "daisyui/theme" { … }'}
-                            value={code} onInput={(e) => setCode(e.currentTarget.value)} required autofocus {...PLAIN}></textarea>
-                        <Actions>
-                            <SubmitButton>Add</SubmitButton>
-                            <Button kind="quiet" onClick={reread}>Cancel</Button>
-                        </Actions>
-                    </form>
-                ) : (
-                    <>
-                        {chosen && (
-                            <div class="flex flex-wrap gap-2">
-                                <Button onClick={() => setEditing({ id: chosen.id, start: chosen })}>Edit</Button>
-                                <CopyButton text={themeCode(chosen)} label="Copy code" />
-                                <Button kind="danger" onClick={() => {
-                                    forgetTheme(chosen.id);
-                                    reread();
-                                }}>
-                                    Delete
-                                </Button>
-                            </div>
-                        )}
-                        <div class="flex flex-wrap gap-2">
-                            <Button disabled={full} onClick={() => setEditing({ id: '', start: shownTheme('My theme') })}>New theme</Button>
-                            <Button disabled={full} onClick={() => setPasting(true)}>Paste a code</Button>
-                        </div>
-                    </>
-                )}
-                {editing && (
-                    <ThemeEditor title={editing.id ? 'Edit theme' : 'New theme'} start={editing.start} onSave={(theme) => kept(theme, editing.id)}
-                        onCancel={reread} />
-                )}
-                {full && !editing && <p class="text-sm text-base-content/70">You have {MOST_THEMES} themes. Delete one to add another.</p>}
-                <ErrorText message={error} />
-            </div>
-            <ChatBackground />
-        </Card>
-    );
-}
-
-// EDITED are the colors the editor shows, by what it calls them: those the
-// page draws with. A theme holds secondary and accent, which it draws next
-// to nothing with, each color's text, the deeper backgrounds and the sizes
-// without a control of their own.
-const EDITED = [
-    ['base', 'Background'], ['text', 'Text'], ['primary', 'Primary'], ['neutral', 'Neutral'],
-    ['info', 'Info'], ['success', 'Success'], ['warning', 'Warning'], ['error', 'Error'],
-];
-// RADII are the corners by what each rounds, and ROUNDINGS the radii the
-// editor offers for each, in rem, as the generator does.
-const RADII = [['radiusBox', 'Cards'], ['radiusField', 'Buttons'], ['radiusSelector', 'Toggles']];
-const ROUNDINGS = [[0, 'Square'], [0.25, 'Slight'], [0.5, 'Rounded'], [1, 'Round'], [2, 'Full']];
-// BORDERS are the borders' widths the editor offers, in pixels.
-const BORDERS = [0.5, 1, 1.5, 2];
-
-// readTyped reads a color typed in the editor: oklch(), or hex with or
-// without its #.
-const readTyped = (text) => readColor(text) || hexColor(text);
-
-// ThemeEditor makes or changes a theme of the member's own, in a dialog:
-// its controls, and beside them, or atop them on the phone layout, a den
-// in the theme as it's made, which alone wears it until it's saved. The
-// controls are its name, whether it stands on Light or Dark, the colors
-// the page draws with, each of which says where it reads poorly on the
-// background, the corners, the border, depth and noise.
-function ThemeEditor({ title, start, onSave, onCancel }) {
-    const [draft, setDraft] = useState(start);
-    const [error, setError] = useState('');
-    // Escape closes the editor alone, before the settings under it hear it.
-    const cancel = useRef(onCancel);
-    cancel.current = onCancel;
-    useEffect(() => {
-        const escape = (e) => {
-            if (e.key !== 'Escape') return;
-            e.stopPropagation();
-            cancel.current();
-        };
-        document.addEventListener('keydown', escape, true);
-        return () => document.removeEventListener('keydown', escape, true);
-    }, []);
-    const change = (changes) => setDraft((d) => editTheme(d, changes));
-    // The preview shows the draft whatever its name, which may be unwritten.
-    const shown = useMemo(() => cleanTheme({ ...draft, name: 'preview' }), [draft]);
-    function save(e) {
-        e.preventDefault();
-        const name = cleanName(draft.name);
-        if (!name) return setError(`A theme's name is up to ${NAME_MOST} characters.`);
-        onSave({ ...draft, name });
-    }
-    // A number the editor doesn't offer, as a block may give, shows as
-    // itself among those it does.
-    const offered = (choices, value, unit) => (choices.some(([v]) => v === value) ? choices : [...choices, [value, `${value} ${unit}`]].sort((a, b) => a[0] - b[0]));
-    return (
-        <Dialog title={title} wide="xl" onClose={onCancel} foot={
-            <Actions>
-                <SubmitButton form="theme-editor">Save</SubmitButton>
-                <Button kind="quiet" onClick={onCancel}>Cancel</Button>
-            </Actions>
-        }>
-            <div class="grid gap-6 md:grid-cols-[20rem_minmax(0,1fr)]">
-                {/* On the phone layout it holds under the sheet's title, over
-                    the controls scrolling beneath. */}
-                <div class="sticky top-[52px] z-[5] -mx-1 self-start bg-base-100 px-1 pb-2 md:top-0 md:order-last md:mx-0 md:px-0 md:pb-0" data-preview-hold>
-                    {shown && <DenPreview theme={shown} />}
-                </div>
-                <form id="theme-editor" class="flex flex-col gap-4" data-theme-editor onSubmit={save}>
-                    <Field label="Name">
-                        <TextInput value={draft.name} onInput={(name) => change({ name })} maxlength={NAME_MOST * 2} required />
-                    </Field>
-                    <Choices label="Based on" name="theme-base" data="data-theme-base" choice={draft.dark ? 'dark' : 'light'}
-                        onPick={(v) => change({ dark: v === 'dark' })} choices={[['light', 'Light'], ['dark', 'Dark']]} />
-                    <div role="group" aria-label="Colors" class="flex flex-col gap-3">
-                        <h3 class="text-sm font-semibold">Colors</h3>
-                        {EDITED.map(([field, label]) => (
-                            <div key={field}>
-                                <ColorField long label={label} value={draft[field]} hex={hexOf(draft[field])} read={readTyped}
-                                    onChange={(color) => change({ [field]: color })} />
-                                {lowContrast(draft, field) > 0 && (
-                                    <StatusText kind="warning" size="xs" class="mt-1" data-low-contrast={label}>Hard to read on the background</StatusText>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                    <div role="group" aria-label="Corners" class="flex flex-col gap-1" data-theme-corners>
-                        <h3 class="text-sm font-semibold">Corners</h3>
-                        <div class="grid grid-cols-3 gap-2">
-                            {RADII.map(([field, label]) => (
-                                <Field key={field} label={label}>
-                                    <select class="select select-sm w-full" value={String(draft[field])} data-radius={field}
-                                        onChange={(e) => change({ [field]: Number(e.currentTarget.value) })}>
-                                        {offered(ROUNDINGS, draft[field], 'rem').map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
-                                    </select>
-                                </Field>
-                            ))}
-                        </div>
-                    </div>
-                    <Field label="Border">
-                        <select class="select select-sm w-full" value={String(numberShown(draft, 'border'))} data-border
-                            onChange={(e) => change({ border: Number(e.currentTarget.value) })}>
-                            {offered(BORDERS.map((v) => [v, `${v} px`]), numberShown(draft, 'border'), 'px').map(([v, name]) => <option key={v} value={String(v)}>{name}</option>)}
-                        </select>
-                    </Field>
-                    <Toggle id="theme-depth" label="Depth" tip="Buttons and fields raised a little, with a shade." checked={numberShown(draft, 'depth') > 0}
-                        onChange={(on) => change({ depth: on ? 1 : 0 })} />
-                    <Toggle id="theme-noise" label="Noise" tip="A grain over buttons, toggles and menus' picks." checked={numberShown(draft, 'noise') > 0}
-                        onChange={(on) => change({ noise: on ? 1 : 0 })} />
-                    <ErrorText message={error} />
-                </form>
-            </div>
-        </Dialog>
-    );
-}
-
-// ChatBackground sets the picture behind the member's messages: Choose
-// image, for a PNG, a JPEG or a WebP of theirs, Dim, how far the theme's
-// background covers it, Hover, how far a message under the pointer does,
-// and Remove. The service keeps them, so every browser paired with it
-// shows them.
-function ChatBackground() {
-    const background = useBackground();
-    const file = useRef(null);
-    const act = useAction();
-    function choose(picked) {
-        act.run(async () => {
-            const why = checkBackground(picked);
-            if (why) throw new Error(why);
-            await setBackground(picked);
-        });
-    }
-    return (
-        <div class="flex flex-col gap-3" data-chat-background>
-            <h3 class="flex items-center text-sm font-semibold">
-                Chat background
-                <Tip id="chat-background-tip" label="About Chat background" wrap="-my-1 inline-flex">A picture behind your messages. Only you see it.</Tip>
-            </h3>
-            {background && (
-                <div class="relative h-24 w-40 overflow-hidden rounded-box border border-base-content/10" data-background-preview aria-hidden="true">
-                    <img src={backgroundURL(background.version)} alt="" class="size-full object-cover" />
-                    <div class="absolute inset-0 bg-base-100" style={{ opacity: background.dim / 100 }}></div>
-                </div>
-            )}
-            <div class="flex flex-wrap gap-2">
-                <Button busy={act.busy} onClick={() => file.current?.click()}>{background ? 'Change image' : 'Choose image'}</Button>
-                {background && <Button kind="quiet" disabled={act.busy} onClick={() => act.run(removeBackground)}>Remove</Button>}
-                <input ref={file} type="file" accept={KINDS.join(',')} class="hidden" onChange={(e) => {
-                    const picked = e.currentTarget.files?.[0];
-                    e.currentTarget.value = '';
-                    if (picked) choose(picked);
-                }} />
-            </div>
-            {background && (
-                <label class="flex flex-col gap-1">
-                    <span class="text-sm">Dim</span>
-                    <span class="flex items-center gap-3">
-                        <Slider class="min-w-0 flex-1" min="0" max={DIM_MOST} step={DIM_STEP} value={background.dim}
-                            aria-label="Dim" aria-valuetext={`${background.dim}%`}
-                            onInput={(e) => slideDim(Number(e.currentTarget.value))}
-                            onChange={(e) => setDim(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
-                        <span class="w-10 text-right text-sm tabular-nums">{background.dim}%</span>
-                    </span>
-                </label>
-            )}
-            {background && (
-                <label class="flex flex-col gap-1">
-                    <span class="flex items-center text-sm">
-                        Hover
-                        <Tip id="background-hover-tip" label="About Hover" wrap="-my-1 inline-flex">How far a message under the pointer covers the picture.</Tip>
-                    </span>
-                    <span class="flex items-center gap-3">
-                        <Slider class="min-w-0 flex-1" min="0" max={HOVER_MOST} step={DIM_STEP} value={background.hover}
-                            aria-label="Hover" aria-valuetext={`${background.hover}%`} data-background-hover
-                            onInput={(e) => slideHover(Number(e.currentTarget.value))}
-                            onChange={(e) => setHover(Number(e.currentTarget.value)).catch((err) => act.setError(err.message))} />
-                        <span class="w-10 text-right text-sm tabular-nums">{background.hover}%</span>
-                    </span>
-                </label>
-            )}
-            <ErrorText message={act.error} />
-        </div>
-    );
-}
-
-// The sizes' names, as the settings show them.
-const SIZE_NAMES = { small: 'Small', medium: 'Medium', large: 'Large', largest: 'Largest' };
-
-// MessagesPicker chooses how messages show: their Density, Default or
-// Compact, a line each of the time, the name and the text; on a wide
-// window, how large their photos and videos show, and their YouTube
-// players; how the names members styled show, their colors and fonts,
-// their colors alone, or plain; when animated pictures and the den's
-// emoji play, always or while the pointer is over their row, which the
-// system's asking for less motion makes the default; whether staff's marks
-// show beside names; whether the check beside a member this member
-// compared codes with shows: always, on hover or never, and on a touch
-// screen, which has no hover, shown or not; and, but on a touch screen,
-// whether a photo's or a video's name shows on hover. This browser keeps
-// each, as it keeps the theme.
-function MessagesPicker() {
-    const density = useDensity();
-    const marks = useStaffMarks();
-    const media = useSize(MEDIA);
-    const players = useSize(PLAYERS);
-    const styles = useNameStyles();
-    const animations = useAnimations();
-    const verified = useVerifiedMarks();
-    const names = useFileNames();
-    const narrow = useNarrow();
-    const touch = useCoarse();
-    const sizes = SIZES.map((s) => [s, SIZE_NAMES[s]]);
-    return (
-        <Card title="Messages">
-            <Choices label="Density" name="density" data="data-density" choice={density} onPick={setDensity}
-                choices={[[DENSITY_DEFAULT, 'Default'], [DENSITY_COMPACT, 'Compact']]} />
-            {!narrow && (
-                <>
-                    <Choices label="Photos and videos" name="media-size" data="data-media-size" choice={media} onPick={(s) => setSize(MEDIA, s)} choices={sizes} />
-                    <Choices label="YouTube players" name="player-size" data="data-player-size" choice={players} onPick={(s) => setSize(PLAYERS, s)} choices={sizes} />
-                </>
-            )}
-            <Choices label="Name styles" name="name-styles" data="data-name-styles" choice={styles} onPick={setNameStyles}
-                tip="The colors and fonts members give their names."
-                choices={[[STYLES_ALL, 'Colors and fonts'], [STYLES_COLORS, 'Colors only'], [STYLES_OFF, 'Off']]} />
-            <Choices label="Animations" name="animations" data="data-animations" choice={animations} onPick={setAnimations}
-                tip="Animated pictures and emoji. On hover, they play while the pointer is over their message or member, and in a profile you open; on a touch screen, only in profiles."
-                choices={[[ALWAYS, 'Always'], [ON_HOVER, 'On hover']]} />
-            <Choices label="Verified mark" name="verified-marks" data="data-verified-marks" choice={verified} onPick={setVerifiedMarks}
-                tip="Beside people you've compared codes with."
-                choices={touch ? [[MARKS_ALWAYS, 'Yes'], [MARKS_NEVER, 'No']] : [[MARKS_ALWAYS, 'Always'], [MARKS_HOVER, 'On hover'], [MARKS_NEVER, 'No']]} />
-            <Toggle id="staff-marks" label="Staff marks" tip="A crown or a shield beside staff's names." checked={marks} onChange={setStaffMarks} />
-            {!touch && (
-                <Toggle id="file-names" label="File names on hover" tip="A photo's or a video's name, as the pointer rests on it." checked={names}
-                    onChange={setFileNames} />
-            )}
-        </Card>
-    );
-}
-
-// CallsPicker chooses whether each call's length shows beside its channel
-// (M21.2), on until the member turns it off. This browser keeps it, as it
-// keeps the theme.
-function CallsPicker() {
-    const on = useCallTimer();
-    return (
-        <Card title="Calls">
-            <Toggle id="call-timer" label="Call timer" tip="Each call's length beside its channel." checked={on} onChange={setCallTimer} />
-        </Card>
-    );
-}
-
-// Swatch shows a theme's colors on its background: DaisyUI's by its text,
-// primary, secondary and accent; one of the member's own by the text and
-// primary they picked, through its variables over Light or Dark.
-function Swatch({ theme, own, large }) {
-    const dot = `${large ? 'size-3' : 'size-1.5'} rounded-full`;
-    const bar = `${large ? 'h-7 w-3' : 'h-3.5 w-1.5'} rounded-full`;
-    return (
-        <span data-theme={own ? (own.dark ? 'dark' : 'light') : theme} style={own ? variables(own) : undefined} aria-hidden="true"
-            class={`grid shrink-0 grid-cols-2 rounded-md border border-base-content/10 bg-base-100 ${large ? 'gap-1 p-2' : 'gap-0.5 p-1'}`}>
-            {own ? (
-                <>
-                    <span class={`${bar} bg-base-content`} />
-                    <span class={`${bar} bg-primary`} />
-                </>
-            ) : (
-                <>
-                    <span class={`${dot} bg-base-content`} />
-                    <span class={`${dot} bg-primary`} />
-                    <span class={`${dot} bg-secondary`} />
-                    <span class={`${dot} bg-accent`} />
-                </>
-            )}
-        </span>
-    );
-}
-
-function SystemSwatch({ large }) {
-    return (
-        <span aria-hidden="true" class={`flex shrink-0 rounded-md border border-base-content/10 ${large ? 'p-2' : 'p-1'}`}>
-            <svg viewBox="0 0 16 16" class={large ? 'size-7' : 'size-3.5'}>
-                <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5" />
-                <path d="M8 1.5a6.5 6.5 0 0 1 0 13z" fill="currentColor" />
-            </svg>
-        </span>
     );
 }
 
@@ -883,26 +476,10 @@ function VoiceSettings() {
             </Card>
             <Card title={holds ? "The call's button" : 'Sending your voice'}>
                 {holds ? (
-                    <div role="radiogroup" aria-label="The call's button" class="flex flex-wrap gap-4">
-                        {ROLES.map(([role, title]) => (
-                            <label key={role} class="label gap-2">
-                                <input type="radio" class="radio radio-sm" name="button" value={role} checked={v.button === role}
-                                    onChange={() => change({ button: role })} />
-                                {title}
-                            </label>
-                        ))}
-                    </div>
+                    <Choices name="The call's button" data="data-call-button-role" choice={v.button} onPick={(button) => change({ button })} choices={ROLES} />
                 ) : (
-                    <div role="radiogroup" aria-label="Sending your voice" class="flex flex-wrap gap-4">
-                        <label class="label gap-2">
-                            <input type="radio" class="radio radio-sm" name="sending" checked={v.mode === 'voice'} onChange={() => change({ mode: 'voice' })} />
-                            Voice activity
-                        </label>
-                        <label class="label gap-2">
-                            <input type="radio" class="radio radio-sm" name="sending" checked={v.mode === 'ptt'} onChange={() => change({ mode: 'ptt' })} />
-                            Push to talk
-                        </label>
-                    </div>
+                    <Choices name="Sending your voice" data="data-sending" choice={v.mode} onPick={(mode) => change({ mode })}
+                        choices={[['voice', 'Voice activity'], ['ptt', 'Push to talk']]} />
                 )}
                 {v.mode === 'voice' ? (
                     <div class="flex flex-col gap-3 rounded-box bg-base-100 p-3 max-md:bg-base-200">
