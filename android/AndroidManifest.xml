@@ -33,6 +33,10 @@
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Scanning a sign-in's code (M22.6), which the page asks for while it
+         shows; a phone with no camera installs Dens all the same. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <!-- extractNativeLibs puts lib/<abi>/libdens.so in the native library
          directory, the only place an app may run a binary from. Backups
