@@ -16,7 +16,10 @@
 // link's the browser's own; and from M19.5, the den's name with no arrow
 // beside it, under a pointing hand; and from M22.4 the composer's + inside
 // its box, and a profile card opening beside the name clicked, with
-// nothing dimmed.
+// nothing dimmed; and from M22.7 the message bar as the box, its edge
+// taking the focus, the box growing with wrapped lines to half its pane,
+// a reaction's chip in the theme's corners, square on a square theme, and
+// a photo's and a video's name on hover, on and off.
 //
 //   run.sh fixes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -162,22 +165,30 @@ try {
     })()`), 'the New divider between messages 4 and 5', 5000));
     c.report(none && placed, `a message arriving in the open channel got no divider (${none}), and opening it with two unread put one before them (${placed})`);
 
-    step("the composer's + sits inside its box, with no box of its own");
+    step("the composer's + sits inside its box, with no box of its own, and the bar is the box");
     await b.eval(`document.activeElement?.blur(), true`);
+    const BAR = `${BOX}.closest('.border-t')`;
     const plus = JSON.parse(await b.eval(`(() => {
         const p = document.querySelector('button[aria-label="Add to this message"]'), r = p.getBoundingClientRect(), t = ${BOX}.getBoundingClientRect();
-        return JSON.stringify({ inside: r.left > t.left && r.right < t.left + t.width / 2 && r.top >= t.top && r.bottom <= t.bottom, border: getComputedStyle(p).borderTopWidth });
+        const box = getComputedStyle(${BOX});
+        return JSON.stringify({ inside: r.left > t.left && r.right < t.left + t.width / 2 && r.top >= t.top && r.bottom <= t.bottom, border: getComputedStyle(p).borderTopWidth,
+            boxBorder: [box.borderTopWidth, box.borderLeftWidth], bar: Math.round(${BAR}.getBoundingClientRect().height) });
     })()`));
-    c.report(plus.inside && plus.border === '0px', `the + sits inside the box at its left, unbordered: ${JSON.stringify(plus)}`);
+    c.report(plus.inside && plus.border === '0px' && plus.boxBorder.every((w) => w === '0px') && plus.bar === 73,
+        `the + sits inside the box at its left, unbordered, the box has no border of its own, and a line's bar is 73 pixels: ${JSON.stringify(plus)}`);
 
     step('Enter in a code block');
-    const border = () => b.eval(`getComputedStyle(${BOX}).borderTopColor`);
-    const idle = await border();
-    await b.eval(`${BOX}.focus(), true`);
+    const edge = () => b.eval(`getComputedStyle(${BAR}).borderTopColor`);
+    const idle = await edge();
+    // A press on the bar's edge goes to the box.
+    const barAt = JSON.parse(await b.eval(`(() => { const r = ${BAR}.getBoundingClientRect(); return JSON.stringify([r.right - 6, r.top + 6]); })()`));
+    await b.click(barAt[0], barAt[1]);
+    const fromBar = await may(waitFor(() => b.eval(`document.activeElement === ${BOX}`), 'the box focused from the bar', 3000));
     const ring = await b.eval(`getComputedStyle(${BOX}).outlineStyle`);
-    const focused = await border();
+    const focused = await edge();
     await shot('focus');
-    c.report(ring === 'none' && focused !== idle, `the focused box has no ring around it (${ring}), and its border darkens (${idle} to ${focused})`);
+    c.report(fromBar && ring === 'none' && focused !== idle,
+        `a press on the bar's edge focused the box (${fromBar}), which has no ring around it (${ring}), and the bar's top edge darkens (${idle} to ${focused})`);
     before = await rows();
     await b.type('```');
     await b.key('Enter');
@@ -198,6 +209,29 @@ try {
     const anywhere = await may(waitFor(async () => (await rows()) > before && !(await b.eval(`${BOX}.value`)), 'Ctrl+Enter sending from inside a block', 5000));
     c.report(unsent && held === '```\nx = 1\n' && block && anywhere,
         `Enter in a block started new lines (${JSON.stringify(held)}, nothing sent: ${unsent}), sent after the closing fence (${block}), and Ctrl+Enter sent from inside one (${anywhere})`);
+
+    step('the box grows with its text, wrapped lines too, to half its pane, then scrolls');
+    // The text goes in as a paste would, which the box hears as input.
+    const fill = (text) => b.eval(`(() => { const t = ${BOX}; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, ${JSON.stringify(text)});
+        t.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+    const sized = async () => {
+        await sleep(300);
+        // spill is how far anything around the box came to scroll, the
+        // page among it, which the box's text mustn't make.
+        return JSON.parse(await b.eval(`(() => { const t = ${BOX};
+            let spill = document.scrollingElement.scrollHeight - innerHeight;
+            for (let e = t.parentElement; e; e = e.parentElement) if (!e.matches('[data-scroller]')) spill = Math.max(spill, e.scrollHeight - e.clientHeight);
+            return JSON.stringify({ height: t.clientHeight, content: t.scrollHeight, half: Math.floor(document.querySelector('[data-message-pane]').clientHeight / 2), spill }); })()`));
+    };
+    const words = 'the box takes its height from its text, wrapped lines and all, '.repeat(12);
+    await fill(words);
+    const wrapped = await sized();
+    await fill('a line\n'.repeat(80));
+    const tall = await sized();
+    await fill('');
+    const empty = await sized();
+    c.report(wrapped.height > 48 && wrapped.content <= wrapped.height && tall.height === tall.half && tall.content > tall.height && tall.spill <= Math.max(0, empty.spill) && empty.height === 48,
+        `wrapped lines grew the box to show them all (${JSON.stringify(wrapped)}), eighty stopped it at half its pane, scrolling, nothing around it (${JSON.stringify(tall)}), and none brought it back (${JSON.stringify(empty)})`);
 
     step('folding a group');
     await clickOn(GROUP, 'the Games group');
@@ -424,6 +458,46 @@ try {
     c.report(near(onMessage, text) && onMessage.focused && onMessage.items.includes('Copy text') && !onLink && onMember && Math.abs(onMember.y - memberAt[1]) <= 2 &&
         onMember.focused && onMember.items[0] === 'Profile' && onMember.items.includes('Demote to member') && card && took === '[true,false,true]',
     `a right click at ${text.map(Math.round)} opened a message's menu there (${JSON.stringify(onMessage)}), left a link's to the browser (page's menu ${onLink}), and one at ${memberAt.map(Math.round)} opened a member's (${JSON.stringify(onMember)}), whose Profile opened their card (${card}); the page took them as ${took}`);
+
+    step("a reaction's chip takes the theme's corners for selectors, square on a square theme");
+    await open(general);
+    const CHIP = `document.querySelector('[data-reaction]')`;
+    await waitFor(() => b.eval(`!!${CHIP}`), "the reaction's chip");
+    const corners = () => b.eval(`(() => { const probe = document.createElement('div'); probe.style.borderRadius = 'var(--radius-selector)'; document.body.append(probe);
+        const want = getComputedStyle(probe).borderTopLeftRadius; probe.remove();
+        return JSON.stringify({ chip: getComputedStyle(${CHIP}).borderTopLeftRadius, selector: want }); })()`).then(JSON.parse);
+    const rounded = await corners();
+    const theme = await b.eval(`document.documentElement.dataset.theme || ''`);
+    await b.eval(`document.documentElement.dataset.theme = 'wireframe', true`);
+    const square = await corners();
+    await shot('square-chip');
+    if (theme) await b.eval(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}, true`);
+    else await b.eval(`delete document.documentElement.dataset.theme, true`);
+    c.report(rounded.chip === rounded.selector && rounded.chip !== '0px' && square.chip === '0px' && square.selector === '0px',
+        `the chip's corners are the theme's for selectors (${JSON.stringify(rounded)}), and square on Wireframe (${JSON.stringify(square)})`);
+
+    step("a photo's and a video's name show on hover, until File names on hover is off");
+    await open(clips);
+    // An empty title, as Preact leaves one taken away, shows no tooltip.
+    const names = () => b.eval(`JSON.stringify([document.querySelector('button[aria-label="Open photo.jpg"]')?.getAttribute('title') || null,
+        document.querySelector('video[aria-label="clip.mp4"]')?.getAttribute('title') || null])`).then(JSON.parse);
+    await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Open photo.jpg"]') && !!document.querySelector('video[aria-label="clip.mp4"]')`), "clips' photo and clip", 15000);
+    const named = await names();
+    await openSettings(b, 'Appearance');
+    const TOGGLE = `document.getElementById('file-names')`;
+    await waitFor(() => b.eval(`${TOGGLE}?.checked === true`), 'File names on hover, on');
+    await b.eval(`${TOGGLE}.click(), true`);
+    await b.key('Escape');
+    await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    const unnamed = await names();
+    const keptOff = await b.eval(`localStorage.getItem('DENS_FILE_NAMES')`);
+    await openSettings(b, 'Appearance');
+    await b.eval(`${TOGGLE}.click(), true`);
+    await b.key('Escape');
+    await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
+    const renamed = await names();
+    c.report(JSON.stringify(named) === '["photo.jpg","clip.mp4"]' && JSON.stringify(unnamed) === '[null,null]' && keptOff === 'off' && JSON.stringify(renamed) === JSON.stringify(named),
+        `the names showed on hover (${JSON.stringify(named)}), none once turned off (${JSON.stringify(unnamed)}, kept as ${keptOff}), and again once on (${JSON.stringify(renamed)})`);
     await shot('done');
 } catch (e) {
     c.fail(e);

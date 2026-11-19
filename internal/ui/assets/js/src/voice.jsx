@@ -211,15 +211,16 @@ function StatusLine({ denID, call }) {
     );
 }
 
-// CallBox is the call, and its notices, boxed on the pages other than a
-// den's, whose channel lists hold them at their foot.
+// CallBox is the call, and its notices, on the pages other than a den's,
+// in the box it shares with Relay's bar, as a den's channel list holds
+// them at its foot.
 export function CallBox() {
     const { call, notice, share, shareNotice, den, sounding, board } = useCall();
     const holds = useHoldsButton();
     const lines = notices(call, notice, undefined, false, shareNotice, holds);
     if (!call && !lines.length) return null;
     return (
-        <div class="flex flex-col gap-2 rounded-box bg-base-200 p-2">
+        <div class="flex flex-col gap-2 p-2">
             {lines.length > 0 && <div class="flex flex-col gap-1 text-xs">{lines}</div>}
             {call && share && <ShareRow call={call} share={share} den={den} />}
             {call && <CallControls call={call} share={share} den={den} sounding={sounding} board={board} labeled />}

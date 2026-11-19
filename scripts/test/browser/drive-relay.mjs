@@ -16,7 +16,7 @@
 // the container's addresses. From M20.3 the laptop's page, taken for a
 // phone's by touch, shows the call's button for bob's call under the name
 // of the device holding it, and held, rings bob for alice until it's let
-// go.
+// go. From M22.7 bob's Home holds his bar and his call in one box.
 //
 //   run.sh relay chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -246,6 +246,21 @@ try {
     const bar = (b) => b.eval(`[...document.querySelectorAll('[data-relay-bar] [data-relay]')].map((r) => r.dataset.relay + ': ' + r.textContent.trim()).join(' | ')`);
     const barB = await waitFor(async () => ((await bar(B.b)).includes('playing') ? bar(B.b) : ''), "bob's bar", 10000).catch(() => '');
     report(barB.includes('Listening to') && barB.includes('Stop'), `bob's bar says he listens, with Stop: ${barB}`);
+
+    // On Home the bar and the call are one box, the bar first, as under the
+    // channel list (M22.7). The page moves there without loading again,
+    // which would end its listening.
+    const goIn = (path) => B.b.eval(`(history.pushState(null, '', ${JSON.stringify(path)}), dispatchEvent(new PopStateEvent('popstate')), true)`);
+    await B.b.key('Escape');
+    await waitFor(async () => !(await B.b.eval(`!!${SETTINGS}`)), "bob's settings closed", 5000);
+    await goIn('/');
+    const joined = await waitFor(() => B.b.eval(`(() => { const box = document.querySelector('[data-home-call]');
+        if (!box || box.children.length !== 2) return '';
+        return JSON.stringify({ first: box.children[0].matches('[data-relay-bar]'), call: !!box.children[1].querySelector('button[aria-label="Leave the call"]') }); })()`),
+        "Home's box", 10000).then(JSON.parse, () => null);
+    await B.b.shot(`${HOME}/shot-relay-${which}-home.png`).catch(() => {});
+    await goIn(`/den/${den}`);
+    report(joined?.first && joined.call, `on Home, Relay's bar and the call are one box, the bar first: ${JSON.stringify(joined)}`);
 
     // Ten seconds in front, then as the tab goes behind another and ten
     // seconds there: what came, at the tone's level (a sine at half of full

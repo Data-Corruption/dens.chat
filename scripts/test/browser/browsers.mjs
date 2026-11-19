@@ -135,9 +135,22 @@ export const lib = (...args) =>
     execFileSync('bash', ['-c', 'source "$0" && "$@"', new URL('./lib.sh', import.meta.url).pathname, ...args]).toString().trim();
 
 // pair pairs a browser with a member's instance, at its page's home.
-export async function pair(b, who) {
+export async function pair(b, who, previews = false) {
     await b.go(`http://localhost:${who.port}/#token=${token(who.instance)}`);
-    await waitFor(() => b.eval(`!!document.querySelector('a[href="/settings"]')`), `${who.name} paired`);
+    await paired(b, `${who.name} paired`, previews);
+}
+
+// paired waits for a page just paired to reach its home, answering Link
+// previews as the page asks a browser new to Dens (M22.7): off, as they
+// were before it asked, unless previews.
+export const PREVIEWS = `document.querySelector('[data-link-previews]')`;
+export async function paired(b, what, previews = false) {
+    const home = `!!document.querySelector('a[href="/settings"]')`;
+    await waitFor(() => b.eval(`${home} || !!${PREVIEWS}`), what);
+    if (!(await b.eval(`!!${PREVIEWS}`))) return;
+    if (!previews) await b.eval(`document.getElementById('link-previews').click(), true`);
+    await b.eval(`[...document.querySelectorAll('button[type=submit]')].find((x) => x.textContent.trim() === 'Continue').click(), true`);
+    await waitFor(() => b.eval(home), what);
 }
 
 // helper stands in for the shortcut helper (dens shortcuts, M7) on an

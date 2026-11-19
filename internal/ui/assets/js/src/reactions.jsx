@@ -59,7 +59,7 @@ export function Reactions({ m, me, nameOf, canReact, onToggle, onAdd }) {
                 </Chip>
             ))}
             {canReact && (
-                <button type="button" class="inline-flex h-7 min-w-7 items-center justify-center rounded-full border border-base-300 px-1.5 text-base-content/60 hover:border-base-content/40 hover:text-base-content"
+                <button type="button" class="inline-flex h-7 min-w-7 items-center justify-center rounded-selector border border-base-300 px-1.5 text-base-content/60 hover:border-base-content/40 hover:text-base-content"
                     aria-label="Add a reaction" title="Add a reaction" data-add-reaction onClick={(e) => onAdd(e.currentTarget)}>
                     <SmileyIcon size="h-4 w-4" />
                     <span class="-ml-px text-xs leading-none" aria-hidden="true">+</span>
@@ -86,7 +86,7 @@ function Chip({ chip, label, who, canReact, onToggle, children }) {
             <span role="tooltip" class={TIP} {...tip.contentProps}>{said}</span>
             <button type="button" aria-pressed={chip.mine} aria-label={`${label}, ${chip.members.length}: ${said}`} aria-disabled={!canReact || undefined}
                 data-reaction={chip.key} data-count={chip.members.length}
-                class={`inline-flex h-7 min-w-7 select-none items-center gap-1 rounded-full border px-2 text-sm ${chip.mine ? 'border-primary bg-primary/15' : 'border-base-300 bg-base-200/60'} ${canReact ? 'hover:border-base-content/40' : 'cursor-default'}`}
+                class={`inline-flex h-7 min-w-7 select-none items-center gap-1 rounded-selector border px-2 text-sm ${chip.mine ? 'border-primary bg-primary/15' : 'border-base-300 bg-base-200/60'} ${canReact ? 'hover:border-base-content/40' : 'cursor-default'}`}
                 {...tip.triggerProps}
                 onPointerDown={(e) => {
                     // The chip's long press is its own, not its message's,
@@ -199,7 +199,7 @@ export function RemoveReactions({ denID, m, me, myRank, rankOf, nameOf, onClose 
                     const lower = c.members.filter((id) => rankOf(id) < myRank).length;
                     return (
                         <li key={c.key} class="flex items-center gap-2" data-remove-reaction={c.key}>
-                            <span class="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full border border-base-300 px-2 text-base">
+                            <span class="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-selector border border-base-300 px-2 text-base">
                                 {shownEmoji(c, ctx, all, 'h-5 w-5')}
                             </span>
                             <span class="min-w-0 flex-1 text-sm text-base-content/80">{whoReacted(c.members, me.id, nameOf)}</span>

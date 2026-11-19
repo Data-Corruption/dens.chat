@@ -20,7 +20,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
-import { HOME, checks, launch, lib, token, waitFor } from './browsers.mjs';
+import { HOME, checks, launch, lib, paired, token, waitFor } from './browsers.mjs';
 
 const PRELOAD = `() => {
     const Orig = window.RTCPeerConnection;
@@ -128,7 +128,7 @@ try {
         s.b = await launch(s.browser, s.debug, { media: s.browser === 'firefox' ? 'pulse' : true, preload: PRELOAD });
         opened.push(s.b);
         await s.b.go(`http://127.0.0.1:${s.port}/#token=${token(s.instance)}`);
-        await waitFor(() => s.b.eval(`!!document.querySelector('a[href="/settings"]')`), `${s.browser} paired`);
+        await paired(s.b, `${s.browser} paired`);
         await s.b.go(`http://127.0.0.1:${s.port}/den/${den}`);
         await waitFor(() => s.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), `${s.browser} voice channel`);
     }
@@ -897,7 +897,9 @@ try {
     await B.b.eval(`(document.querySelector('button[aria-label="Leave the call"]').click(), true)`);
     await B.b.eval(`(document.querySelector('button[aria-label="Settings"]').click(), true)`);
     await waitFor(() => B.b.eval(`!!${SETTINGS}`), `${B.browser} settings`);
-    const tabs = await B.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].map((t) => t.textContent.trim()).join('|')`);
+    // The den's own sections come once the page has asked for its dens.
+    const listed = () => B.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].map((t) => t.textContent.trim()).join('|')`);
+    const tabs = await waitFor(async () => ((await listed()).includes('Leave den') ? listed() : ''), `${B.browser} settings' sections of the den`, 5000).catch(listed);
     await closeSettings(B, 'close');
     // On a den's page they list the member's own sections of it first (M22.3).
     report(tabs === 'Devices|Password and recovery|Your code|Your files|Appearance|Chat|Notifications|Voice|Relay|System|Leave den',

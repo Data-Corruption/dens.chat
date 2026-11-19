@@ -47,6 +47,7 @@ import {
 import { useCoarse, useHoldsButton } from './touch.js';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
 import { setStaffMarks, useStaffMarks } from './staffmarks.js';
+import { setFileNames, useFileNames } from './filenames.js';
 import { setCallTimer, useCallTimer } from './calltimer.js';
 import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
 import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, useVerifiedMarks } from './verified.js';
@@ -435,10 +436,11 @@ const SIZE_NAMES = { small: 'Small', medium: 'Medium', large: 'Large', largest: 
 // their colors alone, or plain; when animated pictures and the den's
 // emoji play, always or while the pointer is over their row, which the
 // system's asking for less motion makes the default; whether staff's marks
-// show beside names; and whether the check beside a member this member
+// show beside names; whether the check beside a member this member
 // compared codes with shows: always, on hover or never, and on a touch
-// screen, which has no hover, shown or not. This browser keeps each, as it
-// keeps the theme.
+// screen, which has no hover, shown or not; and, but on a touch screen,
+// whether a photo's or a video's name shows on hover. This browser keeps
+// each, as it keeps the theme.
 function MessagesPicker() {
     const density = useDensity();
     const marks = useStaffMarks();
@@ -447,6 +449,7 @@ function MessagesPicker() {
     const styles = useNameStyles();
     const animations = useAnimations();
     const verified = useVerifiedMarks();
+    const names = useFileNames();
     const narrow = useNarrow();
     const touch = useCoarse();
     const sizes = SIZES.map((s) => [s, SIZE_NAMES[s]]);
@@ -470,6 +473,10 @@ function MessagesPicker() {
                 tip="Beside people you've compared codes with."
                 choices={touch ? [[MARKS_ALWAYS, 'Yes'], [MARKS_NEVER, 'No']] : [[MARKS_ALWAYS, 'Always'], [MARKS_HOVER, 'On hover'], [MARKS_NEVER, 'No']]} />
             <Toggle id="staff-marks" label="Staff marks" tip="A crown or a shield beside staff's names." checked={marks} onChange={setStaffMarks} />
+            {!touch && (
+                <Toggle id="file-names" label="File names on hover" tip="A photo's or a video's name, as the pointer rests on it." checked={names}
+                    onChange={setFileNames} />
+            )}
         </Card>
     );
 }

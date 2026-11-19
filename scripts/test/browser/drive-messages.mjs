@@ -1,6 +1,6 @@
 // The M11.2 check of each message's ⋯ menu and links to messages, as bob
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
-// keyboard, Reply, Copy text and Copy link, Edit, and Delete through its
+// keyboard, Reply, Copy text and Copy message link, Edit, and Delete through its
 // dialog; from M22.4 the hover bar's Reply and Edit, an edit's one row,
 // and who else edits from the ⋯; the menu by touch, through a long press, a touch screen having
 // no ⋯ (M13.2); a message's link in its color, underlined only on hover
@@ -89,11 +89,11 @@ try {
     const end = await focused();
     await press('Escape');
     const closed = !(await b.eval(`!!${MENU}`)) && (await focused()) === 'Message actions';
-    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy link', 'Delete']) &&
+    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy message link', 'Delete']) &&
         down === 'Add reaction' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
         `Enter opened ${JSON.stringify(all)} at Reply (${opened}); the arrows moved to ${down} and round to ${wrapped}, Home to ${home}, End to ${end}, and Escape closed it back to the ⋯ (${closed})`);
 
-    step('Reply, Copy text and Copy link');
+    step('Reply, Copy text and Copy message link');
     await press('ArrowDown');
     await menuWith('Reply');
     await press('Enter');
@@ -108,7 +108,7 @@ try {
     await menuWith('Reply');
     await press('End', 'ArrowUp', 'Enter');
     const linked = await may(waitFor(async () => (await copied())?.includes(link(general, bob1)) && (await has('Link copied')), 'the link copied', 5000));
-    c.report(replying && text && linked, `Reply started a reply in the composer (${replying}), Copy text copied the text (${text}), and Copy link ${link(general, bob1)} (${linked}): ${JSON.stringify(await copied())}`);
+    c.report(replying && text && linked, `Reply started a reply in the composer (${replying}), Copy text copied the text (${text}), and Copy message link ${link(general, bob1)} (${linked}): ${JSON.stringify(await copied())}`);
 
     step('Edit');
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
@@ -211,7 +211,7 @@ try {
     await menuWith('Reply');
     const inside = await b.eval(`${MENU}.getBoundingClientRect().bottom <= document.querySelector('[data-scroller]').getBoundingClientRect().bottom + 1`);
     await press('Escape');
-    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy link']) && inside,
+    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy message link']) && inside,
         `alice's message offers bob ${JSON.stringify(theirs)}, and the last message's menu stays inside the list (${inside})`);
 
     step("a message's link, underlined only on hover and keyboard focus");
@@ -292,7 +292,7 @@ try {
     await waitFor(() => b.eval(`!!${DIALOG}`), 'the dialog', 5000);
     const whose = await b.eval(`${DIALOG}.innerText`);
     await press('Escape');
-    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy link', 'Delete']) && whose.includes("This is Bob's message, @bob. It goes for everyone"),
+    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is Bob's message, @bob. It goes for everyone"),
         `bob's message offers alice ${JSON.stringify(hers)}, and its dialog says ${JSON.stringify(whose)}`);
 
     step('the menu by a long press');

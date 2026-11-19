@@ -197,9 +197,11 @@ soundboard work as you'd expect. What's different:
   code**. A theme from [daisyUI's theme generator](https://daisyui.com/theme-generator/)
   pastes in the same way: copy its CSS there. Your themes stay in the
   browser you made them in.
-- **Steam games** you link show as cards, with the price, reviews and who's
-  playing, once you turn on **Show Steam games as cards** in **Settings** →
-  **Chat**. Steam then sees your IP address as each card loads.
+- **Link previews**: YouTube videos play where they're linked, and Steam
+  games show as cards, with the price, reviews and who's playing. A browser
+  opening Dens for the first time asks whether to show them, and **Settings**
+  → **Chat** changes it for each. YouTube and Steam see your IP address as
+  each one loads.
 - **Staff** make channels and groups from the **+** at the end of the **Den**
   tab, from the den's name, or with a right click on the channel list, and
   move a channel from its **⋯** or by dragging it.
@@ -217,9 +219,9 @@ and the keys. What's different:
 - **Links** show as you paste them, with no way to give one a label. Dens
   takes their tracking out as you send, and writes YouTube, Reddit, X and
   Amazon links in a short form.
-- **Links to messages**: **Copy link**, in a message's **⋯**, copies one.
-  Pasted anywhere in Dens, it shows the channel the message is in, and
-  opens it for anyone who can see it.
+- **Links to messages**: **Copy message link**, in a message's **⋯**,
+  copies one. Pasted anywhere in Dens, it shows the channel the message is
+  in, and opens it for anyone who can see it.
 - **Mentions**: `@` and a username tells someone, if they can see the
   channel; inside code or a link it's only text. Staff write `@everyone` to
   tell everyone who can see the channel, which anyone turns off under

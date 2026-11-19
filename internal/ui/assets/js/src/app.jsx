@@ -1,9 +1,10 @@
 // The app: pairing, the first local password, unlocking the Flatpak
-// (M9.3), and the pages (home and a den's), chosen from what /api/status
-// says about this browser, with the app's settings and a den's Manage
-// dialog over them (M8.3). A den's page reaches home and the settings from
-// its channel list; home has a cog of its own for the settings. Which page
-// shows, and which of a den's panes, is the page's history's (M13.1).
+// (M9.3), link previews in a browser new to Dens (M22.7), and the pages
+// (home and a den's), chosen from what /api/status says about this
+// browser, with the app's settings and a den's Manage dialog over them
+// (M8.3). A den's page reaches home and the settings from its channel
+// list; home has a cog of its own for the settings. Which page shows, and
+// which of a den's panes, is the page's history's (M13.1).
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { watchTab } from './tabmark.js';
@@ -13,6 +14,8 @@ import { onConnection, onUnpaired } from './events.js';
 import { Card, DocsTip, ErrorText, Field, Lead, Notice, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './components.jsx';
 import { onOpenManage } from './dialogs.js';
 import { Home } from './home.jsx';
+import { asksLinkPreviews, setLinkPreviews } from './links.js';
+import { ALL_PREVIEWS, LinkPreviews, previewsKept } from './linkpreviews.jsx';
 import { ManageDialog } from './manageden.jsx';
 import { Approvals } from './private.jsx';
 import { RelayBar } from './relay.jsx';
@@ -70,6 +73,9 @@ export function App({ instance, version, pair, pairLink }) {
     const narrow = useNarrow();
     const [live, setLive] = useState(true);
     const [manage, setManage] = useState(null);
+    // asked says a browser new to Dens answered about link previews on the
+    // screen that asks, which then goes.
+    const [asked, setAsked] = useState(false);
     useEffect(() => onOpenSettings(setSettings), []);
     useEffect(() => onOpenManage(setManage), []);
     const closeSettings = useCallback(() => setSettings(null), []);
@@ -133,7 +139,10 @@ export function App({ instance, version, pair, pairLink }) {
     // first screens needs.
     const passwordSet = ready && state.status.passwordSet;
     const open = passwordSet && !locked;
-    const chat = open ? chatRoute(pathOf(trail)) : null;
+    // A browser new to Dens answers about link previews before any page,
+    // a den's too, as a notification's link may open one.
+    const asking = open && !asked && asksLinkPreviews();
+    const chat = open && !asking ? chatRoute(pathOf(trail)) : null;
     // The event stream needs a paired browser, so it starts only then, and
     // with it the chat's background and the notifications this page shows
     // (M12.3), whose click opens their message.
@@ -198,6 +207,8 @@ export function App({ instance, version, pair, pairLink }) {
         page = <Lead><SetPassword canRemember={'remember' in state.status} onDone={load} /></Lead>;
     } else if (locked) {
         page = <Lead><Unlock remembered={!!state.status.remember?.on} onDone={load} /></Lead>;
+    } else if (asking) {
+        page = <Lead><Paired browser={!!(pair || pairLink)} onDone={() => setAsked(true)} /></Lead>;
     } else {
         page = <Home status={state.status} navigate={navigate} />;
     }
@@ -214,8 +225,14 @@ export function App({ instance, version, pair, pairLink }) {
             ) : (
                 <main class="min-h-0 flex-1 overflow-y-auto">
                     <div class="mx-auto flex min-h-full max-w-2xl flex-col gap-4 p-6">
-                        {open && <CallBox />}
-                        {open && <RelayBar look="box" />}
+                        {/* Relay's bar and the call are one block, as under a
+                            den's channel list. */}
+                        {open && (
+                            <div class="flex flex-col divide-y divide-base-300 rounded-box bg-base-200 empty:hidden" data-home-call>
+                                <RelayBar look="box" />
+                                <CallBox />
+                            </div>
+                        )}
                         {/* The phone layout docks the shares the member
                             watches under the call's box (M13.4). */}
                         {open && narrow && <div class="overflow-hidden rounded-box empty:hidden"><DockedPlayer /></div>}
@@ -324,10 +341,37 @@ function Unlock({ remembered, onDone }) {
     );
 }
 
+// Paired asks a browser new to Dens about link previews, once it's paired
+// with a Dens whose local password is set.
+function Paired({ browser, onDone }) {
+    const [choice, setChoice] = useState(ALL_PREVIEWS);
+
+    function submit(e) {
+        e.preventDefault();
+        setLinkPreviews(previewsKept(choice));
+        onDone();
+    }
+
+    return (
+        <Card title={browser ? 'This browser is paired' : 'This page is paired'}>
+            <form class="flex flex-col gap-4" onSubmit={submit}>
+                <LinkPreviews choice={choice} onChange={setChoice} />
+                <SubmitButton size="md">Continue</SubmitButton>
+            </form>
+        </Card>
+    );
+}
+
+// SetPassword sets the first local password, and in a browser new to Dens
+// asks about link previews with it.
 function SetPassword({ canRemember, onDone }) {
+    // Read once, as the screen opens: keeping the answer ends the asking
+    // while the screen still shows.
+    const [asks] = useState(asksLinkPreviews);
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');
     const [remember, setRemember] = useState(false);
+    const [previews, setPreviews] = useState(ALL_PREVIEWS);
     const { busy, error, setError, run } = useAction();
 
     function submit(e) {
@@ -336,6 +380,7 @@ function SetPassword({ canRemember, onDone }) {
         if (problem) return setError(problem);
         run(async () => {
             await api.post('/api/password', { password, remember });
+            if (asks) setLinkPreviews(previewsKept(previews));
             await onDone();
         });
     }
@@ -347,6 +392,7 @@ function SetPassword({ canRemember, onDone }) {
             <form class="flex flex-col gap-2" onSubmit={submit}>
                 <PasswordFields password={password} setPassword={setPassword} confirm={confirm} setConfirm={setConfirm} />
                 {canRemember && <Remember checked={remember} onChange={setRemember} />}
+                {asks && <div class="py-2"><LinkPreviews choice={previews} onChange={setPreviews} /></div>}
                 <ErrorText message={error} />
                 <SubmitButton busy={busy} size="md">Set password</SubmitButton>
             </form>
