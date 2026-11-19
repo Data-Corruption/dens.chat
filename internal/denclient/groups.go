@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -635,6 +636,38 @@ func (c *conn) makeGroupKey(ctx context.Context, channel string) error {
 	return nil
 }
 
+// groupChannelWait is how long a change waits for the den's word of its
+// group's channel.
+const groupChannelWait = 5 * time.Second
+
+// awaitGroupChannel waits for a group's channel where this Dens checked
+// the group's changes and doesn't know the channel yet: the den's word of
+// it follows the group's first change by a moment, which a change made
+// straight after can beat.
+func (c *conn) awaitGroupChannel(ctx context.Context, channel string) {
+	known := func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.groups[channel] == nil || (c.den != nil && c.den.channels[channel].Kind == denproto.KindGroupDM)
+	}
+	if known() {
+		return
+	}
+	deadline := time.NewTimer(groupChannelWait)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for !known() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline.C:
+			return
+		case <-tick.C:
+		}
+	}
+}
+
 // changeGroup makes a change to a group, as build says from the group as
 // this Dens checked it: signed by this member's identity, with a key for
 // the members after it where it makes a membership. One the den finds made
@@ -648,6 +681,7 @@ func (c *conn) changeGroup(ctx context.Context, channel string, build func(g *gr
 		if _, _, err := c.syncGroup(ctx, channel); err != nil {
 			return denproto.GroupChange{}, err
 		}
+		c.awaitGroupChannel(ctx, channel)
 		c.mu.Lock()
 		g, err := c.groupLocked(channel)
 		me := c.meLocked()
