@@ -35,13 +35,55 @@ export function setOldReddit(on) {
     }
 }
 
+// YouTube's players and Steam's cards each show their site the member's
+// IP address. A browser new to Dens asks whether to show them as it opens
+// Dens (M22.7), and keeps the answer, '1' or '0', for each; one that had
+// opened Dens before keeps what it had, nothing being off.
 const PLAYERS = 'DENS_YOUTUBE';
+const STEAM = 'DENS_STEAM';
+
+// newToDens says whether a browser's storage holds nothing of Dens's: no
+// setting, and no channel last opened.
+export function newToDens(storage) {
+    for (let i = 0; i < storage.length; i++) {
+        if (storage.key(i)?.startsWith('DENS_')) return false;
+    }
+    return true;
+}
+
+// isNew is read as the page loads, before anything on it is kept.
+let isNew = false;
+try {
+    isNew = newToDens(localStorage);
+} catch {
+    // Storage can be unavailable; nothing would keep the answer.
+}
+let answered = false;
+
+// asksLinkPreviews says whether the page asks about link previews: in a
+// browser new to Dens, until it answers.
+export function asksLinkPreviews() {
+    if (!isNew || answered) return false;
+    try {
+        return localStorage.getItem(PLAYERS) === null && localStorage.getItem(STEAM) === null;
+    } catch {
+        return false;
+    }
+}
+
+// setLinkPreviews keeps the answer: whether YouTube's players and Steam's
+// cards show.
+export function setLinkPreviews({ youtube, steam: cards }) {
+    answered = true;
+    setYouTubePlayers(youtube);
+    setSteamCards(cards);
+}
+
 const playersListeners = new Set();
 let players = null;
 
 // youTubePlayers reports whether this browser plays YouTube videos where
-// they're linked (M4.1). It's off until the member turns it on, since it
-// means YouTube hears from them.
+// they're linked (M4.1).
 export function youTubePlayers() {
     if (players === null) {
         try {
@@ -57,8 +99,7 @@ export function youTubePlayers() {
 export function setYouTubePlayers(on) {
     players = on;
     try {
-        if (on) localStorage.setItem(PLAYERS, '1');
-        else localStorage.removeItem(PLAYERS);
+        localStorage.setItem(PLAYERS, on ? '1' : '0');
     } catch {
         // As above; the choice lasts until the page reloads.
     }
@@ -72,13 +113,11 @@ export function onYouTubePlayers(fn) {
     return () => playersListeners.delete(fn);
 }
 
-const STEAM = 'DENS_STEAM';
 const steamListeners = new Set();
 let steam = null;
 
 // steamCards reports whether this browser shows Steam's cards where games
-// are linked. It's off until the member turns it on, since it means Steam
-// hears from them.
+// are linked (M22.2).
 export function steamCards() {
     if (steam === null) {
         try {
@@ -94,8 +133,7 @@ export function steamCards() {
 export function setSteamCards(on) {
     steam = on;
     try {
-        if (on) localStorage.setItem(STEAM, '1');
-        else localStorage.removeItem(STEAM);
+        localStorage.setItem(STEAM, on ? '1' : '0');
     } catch {
         // As above; the choice lasts until the page reloads.
     }

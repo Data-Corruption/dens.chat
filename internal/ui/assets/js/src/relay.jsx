@@ -1,9 +1,9 @@
 // Relay's bar (M20.2), where the call's sits: in the block at the foot of
-// a den's channel list, boxed on the other pages, and across the top of
-// the channel's pane on the phone layout. It shows on both ends of a
-// computer's sound: on the page that listens to it, how its listening
-// stands, and on the computer whose sound it is, the device it goes to,
-// each with Stop; and why the page's last listening ended.
+// a den's channel list, boxed with the call on the other pages, and
+// across the top of the channel's pane on the phone layout. It shows on
+// both ends of a computer's sound: on the page that listens to it, how
+// its listening stands, and on the computer whose sound it is, the device
+// it goes to, each with Stop; and why the page's last listening ended.
 
 import { useEffect, useState } from 'preact/hooks';
 import { Button } from './components.jsx';
@@ -25,11 +25,11 @@ export function useRelay(sharing = false) {
     return state;
 }
 
-// LOOKS are the bar's, where it sits: in the list's block, boxed, or
-// across the channel's pane.
+// LOOKS are the bar's, where it sits: in the list's block, in the box it
+// shares with the call on the other pages, or across the channel's pane.
 const LOOKS = {
     block: 'flex flex-col gap-1 border-t border-base-300 bg-bar px-2 py-1.5',
-    box: 'flex flex-col gap-1 rounded-box bg-base-200 p-2',
+    box: 'flex flex-col gap-1 p-2',
     bar: 'flex flex-col border-b border-base-300 bg-bar px-2',
 };
 

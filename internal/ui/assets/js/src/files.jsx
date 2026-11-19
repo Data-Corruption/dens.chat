@@ -14,6 +14,7 @@ import { PlayIcon } from './icons.jsx';
 import { useLayer, useNarrow } from './nav.js';
 import { canCopy, followUpload } from './copier.js';
 import { dismisses } from './touch.js';
+import { useFileNames } from './filenames.js';
 import { MEDIA, mediaBox, useShownSize } from './sizes.js';
 import { fitted, isFitted, maxScale, useZoom } from './zoom.js';
 
@@ -250,6 +251,7 @@ function setVideoVolume(v) {
 // then the mute, the seek bar, and play, which a click on the video does.
 function VideoTile({ denID, file, box }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
+    const named = useFileNames();
     const frame = useRef(null);
     const video = useRef(null);
     const linger = useRef(0);
@@ -327,7 +329,7 @@ function VideoTile({ denID, file, box }) {
             class="@container group relative max-w-full overflow-hidden rounded bg-base-300 [&:fullscreen]:rounded-none [&:fullscreen]:bg-black"
             style={full ? undefined : { width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}>
             <video ref={video} src={fileURL(denID, file.id)} poster={file.thumb ? thumbURL(denID, file.id) : undefined} preload="none"
-                title={file.name} aria-label={file.name} class="h-full w-full object-contain" onClick={toggle}
+                title={named ? file.name : undefined} aria-label={file.name} class="h-full w-full object-contain" onClick={toggle}
                 onPlay={() => { setPaused(false); setStarted(true); }} onPause={() => setPaused(true)}
                 onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
                 onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
@@ -435,6 +437,7 @@ function ImageTile({ denID, file, box, onOpen }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
     const [failed, setFailed] = useState(false);
     const how = usePicture(!!file.animated);
+    const named = useFileNames();
     const sharp = !failed && !file.animated && DRAWN.includes(file.type) && Math.max(size.width, size.height) > PREVIEW_PIXELS;
     return (
         <button
@@ -443,7 +446,7 @@ function ImageTile({ denID, file, box, onOpen }) {
             style={{ width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}
             onClick={onOpen}
             aria-label={`Open ${file.name}`}
-            title={file.name}
+            title={named ? file.name : undefined}
         >
             {file.animated ? (
                 <Picture how={how} file={fileURL(denID, file.id)} preview={thumbURL(denID, file.id)} cls="h-full w-full object-cover" lazy under

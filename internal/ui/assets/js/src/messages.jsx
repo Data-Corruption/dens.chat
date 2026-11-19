@@ -836,6 +836,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     return (
         <div
             class="relative flex min-h-0 flex-1 flex-col"
+            data-message-pane
             onDragOver={(e) => {
                 if (!withFiles(e)) return;
                 e.preventDefault();
@@ -1009,13 +1010,13 @@ function Quoted({ text, locked, me }) {
 }
 
 // MessageRow is a message in the list, with its ⋯ menu of what the member
-// may do with it: link is the link to it, for Copy link (M11). A finger's
-// long press opens the menu in the ⋯'s place, which a touch screen has
-// none of, and on the phone layout, narrow, it's a sheet (M13.2); a mouse's
-// right click opens it at the pointer, menuAt. compact is a run's
-// later message, under its first's name; line is Compact's row, each a
-// line of its own (M17.2). children go under its files, as Appearance's
-// preview puts its photo.
+// may do with it: link is the link to it, for Copy message link (M11). A
+// finger's long press opens the menu in the ⋯'s place, which a touch
+// screen has none of, and on the phone layout, narrow, it's a sheet
+// (M13.2); a mouse's right click opens it at the pointer, menuAt. compact
+// is a run's later message, under its first's name; line is Compact's row,
+// each a line of its own (M17.2). children go under its files, as
+// Appearance's preview puts its photo.
 export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
@@ -1049,7 +1050,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         canEdit && { key: 'edit', label: 'Edit', icon: 'edit', run: onEdit },
         canShare && { key: 'editors', label: 'Let others edit', icon: 'people', run: onEditors },
         !m.locked && m.text.trim() && { key: 'copy', label: 'Copy text', icon: 'copy', run: () => copy(m.text, 'Text copied') },
-        link && { key: 'link', label: 'Copy link', icon: 'link', run: () => copy(link, 'Link copied') },
+        link && { key: 'link', label: 'Copy message link', icon: 'link', run: () => copy(link, 'Link copied') },
         canRemoveReactions && { key: 'unreact', label: 'Remove reactions', icon: 'unreact', run: onRemoveReactions },
         canDelete && { key: 'delete', label: 'Delete', icon: 'delete', run: onDelete, danger: true },
     ].filter(Boolean);
@@ -1660,6 +1661,20 @@ function EditorList({ candidates, selected, onChange }) {
     );
 }
 
+// The message box is a line tall at least, which with the bar around it
+// lines up with the member's panel beside it, at the foot of the channel
+// list, at 73px.
+const BOX_LEAST = 48;
+// The box's padding, leaving room for the + and the emoji button, and its
+// text, which the copy it's measured by shares.
+const BOX_TEXT = 'py-3 pl-11 pr-10 text-sm/[1.5]';
+
+/** boxHeight is the message box's height: its text's, from a line's up to
+    half of the room its pane has, past which it scrolls */
+export function boxHeight(text, room, least = BOX_LEAST) {
+    return Math.max(least, Math.min(Math.ceil(text), Math.floor(room / 2)));
+}
+
 // Composer writes a message: its text, its files, a reply and who else may
 // edit it. A smiley in the box's corner opens the emoji picker (M15.2),
 // and typing a colon and two characters, or in a channel an @, where a
@@ -1693,9 +1708,6 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
     // The + menu, and the guide to writing a message (M3.3).
     const [adding, setAdding] = useState(false);
     const [guide, setGuide] = useState(false);
-    // focused says the box has the focus, which on a touch screen brings
-    // its keyboard up.
-    const [focused, setFocused] = useState(false);
     useEffect(() => {
         if (!picking || narrow) return undefined;
         const away = (e) => {
@@ -1730,6 +1742,8 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
         };
     }, [adding, narrow]);
     const box = useRef(null);
+    const bar = useRef(null);
+    const mirror = useRef(null);
     const picker = useRef(null);
     const plus = useRef(null);
     const addList = useRef(null);
@@ -1741,6 +1755,31 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
     // the row of panes is sliding to the channel as it opens, which Firefox
     // stops short at a focus that scrolls.
     useEffect(() => box.current?.focus({ preventScroll: true }), [replyTo]);
+    // The box grows with its text up to half of its pane's room: the pane's
+    // height, or less of it where a phone's keyboard covers the rest.
+    useLayoutEffect(() => {
+        const el = box.current;
+        const copy = mirror.current;
+        if (!el || !copy) return undefined;
+        const pane = el.closest('[data-message-pane]') || bar.current?.parentElement;
+        const viewport = window.visualViewport;
+        const fit = () => {
+            const room = Math.min(pane?.clientHeight || Infinity, viewport?.height || window.innerHeight);
+            el.style.height = `${boxHeight(copy.offsetHeight, room)}px`;
+        };
+        fit();
+        if (typeof ResizeObserver === 'undefined') return undefined;
+        // The copy's height changes with the text and with the width it
+        // wraps in.
+        const watch = new ResizeObserver(fit);
+        watch.observe(copy);
+        if (pane) watch.observe(pane);
+        viewport?.addEventListener('resize', fit);
+        return () => {
+            watch.disconnect();
+            viewport?.removeEventListener('resize', fit);
+        };
+    }, []);
     // Files added however they came, dropped, pasted or picked, leave the
     // box ready for Enter.
     const fileCount = useRef(files.length);
@@ -1872,13 +1911,14 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
         { key: 'help', label: 'Formatting help', icon: 'info', run: help },
     ].filter(Boolean);
     const typers = typingLine(typing.map((m) => m.display_name));
-    // While a touch screen's keyboard is up, the box stops growing sooner,
-    // so the list keeps room above it.
-    const lines = Math.min(touch && focused ? 5 : 8, text.split('\n').length);
-    // At 73px, a single line's composer lines up with the member's panel
-    // beside it, at the foot of the channel list.
     return (
-        <div class="relative border-t border-base-300 bg-bar px-4 py-3">
+        // The bar is the box: a press on its edges goes to the box, and its
+        // top edge shows the box's focus.
+        <div ref={bar} class="focus-edge relative border-t border-base-300 bg-bar px-4 py-3" onMouseDown={(e) => {
+            if (e.target !== e.currentTarget) return;
+            e.preventDefault();
+            box.current?.focus();
+        }}>
             {/* Who's typing, how the files are doing and the length float just
                 above the composer, so it never jumps as they come and go. The
                 line is always here, empty or not, for screen readers. */}
@@ -1977,18 +2017,22 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
                     {picking && (
                         <EmojiPicker emoji={emoji} sheet={narrow} onPick={pickEmoji} onClose={() => setPicking(false)} />
                     )}
+                    {/* The text laid out as the box lays it out, wrapped lines
+                        and all, out of sight, which the box takes its height
+                        from without being measured itself; clipped, so a
+                        long text scrolls nothing around it. */}
+                    <div aria-hidden="true" class="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden">
+                        <div ref={mirror} class={`whitespace-pre-wrap break-words ${BOX_TEXT}`}>{text}{'\u200b'}</div>
+                    </div>
                     <textarea
                         ref={box}
-                        class="textarea focus-border h-auto min-h-12 w-full resize-none bg-transparent py-3 pl-11 pr-10"
-                        rows={lines}
+                        class={`block min-h-12 w-full resize-none bg-transparent outline-none ${BOX_TEXT}`}
+                        rows={1}
+                        data-message-box
                         placeholder={poll ? 'Ask your question' : placeholder}
                         enterkeyhint={touch ? 'enter' : 'send'}
                         value={text}
-                        onFocus={() => setFocused(true)}
-                        onBlur={() => {
-                            setFocused(false);
-                            setCompleting(null);
-                        }}
+                        onBlur={() => setCompleting(null)}
                         onClick={(e) => complete(e.currentTarget.value, e.currentTarget.selectionStart)}
                         onKeyUp={(e) => {
                             if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) complete(e.currentTarget.value, e.currentTarget.selectionStart);

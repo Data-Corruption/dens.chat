@@ -7,6 +7,7 @@ import { clampOffset, coverScale, sourceRect, zoomAt } from '../assets/js/src/cr
 import {
     Attachments, attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize, step,
 } from '../assets/js/src/files.jsx';
+import { setFileNames } from '../assets/js/src/filenames.js';
 
 test('sizes read as people write them', () => {
     assert.equal(formatSize(0), '0 B');
@@ -159,4 +160,37 @@ test("a message's GIF plays under Always, and under On hover while the pointer i
     mount(null, root);
     delete globalThis.localStorage;
     delete globalThis.window;
+});
+
+// File names on hover (M22.7): a photo's and a video's name as the
+// browser's tooltip, on until the member turns it off.
+test("a photo's and a video's name show on hover until File names on hover is off", async () => {
+    const kept = new Map();
+    globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v), removeItem: (k) => kept.delete(k) };
+    globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };
+    Object.assign(document, { addEventListener() {}, removeEventListener() {} });
+    const photo = { id: 'p1', name: 'beach.jpg', type: 'image/jpeg', size: 1000, width: 640, height: 480, thumb: true };
+    const video = { id: 'v1', name: 'clip.mp4', type: 'video/mp4', size: 1000, width: 640, height: 360, thumb: true, duration_ms: 2000 };
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+    const root = document.createElement('div');
+    mount(h(Attachments, { denID: 'D', files: [photo, video], onOpen() {} }), root);
+    const titles = () => [
+        root.find((n) => n.attributes['aria-label'] === 'Open beach.jpg').attributes.title,
+        root.find((n) => n.localName === 'video').attributes.title,
+    ];
+    await settle();
+    assert.deepEqual(titles(), ['beach.jpg', 'clip.mp4']);
+    setFileNames(false);
+    await settle();
+    assert.deepEqual(titles(), [undefined, undefined]);
+    assert.equal(kept.get('DENS_FILE_NAMES'), 'off', 'the browser keeps it');
+    setFileNames(true);
+    await settle();
+    assert.deepEqual(titles(), ['beach.jpg', 'clip.mp4']);
+    assert.equal(kept.has('DENS_FILE_NAMES'), false);
+    mount(null, root);
+    delete globalThis.localStorage;
+    delete globalThis.window;
+    delete document.addEventListener;
+    delete document.removeEventListener;
 });

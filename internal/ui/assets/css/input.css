@@ -29,14 +29,22 @@
     background-color: color-mix(in oklab, var(--color-base-200) var(--row-cover, 100%), transparent);
 }
 
-/* A field that shows its focus by its border alone, a little darker:
-   DaisyUI's ring a little outside it doubled the border, which looked
-   heavy on the message box, always on screen (M11). */
+/* A field that shows its focus by its border alone, a little darker, as
+   a message's edit box does: DaisyUI's ring a little outside it doubles
+   the border, which looks heavy (M11). */
 @utility focus-border {
     &:focus,
     &:focus-within {
         --input-color: color-mix(in oklab, var(--color-base-content) 45%, #0000);
         outline: none;
+    }
+}
+
+/* The message bar, which is its box: its top edge shows the box's focus,
+   darkened as focus-border darkens a field's. */
+@utility focus-edge {
+    &:has([data-message-box]:focus) {
+        border-top-color: color-mix(in oklab, var(--color-base-content) 45%, #0000);
     }
 }
 
