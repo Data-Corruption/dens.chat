@@ -209,8 +209,8 @@ dens den hosting on
 dens den create "My Den" https://den.example.com
 ```
 
-The last prints the den's **owner invite**. Paste it into **Add a den** on your
-own computer, and you join as the den's owner.
+The last prints the den's **owner invite**. Paste it under **Invite** in
+**Add a den** on your own computer, and you join as the den's owner.
 
 {{% details title="If your computer can't reach the den at home" closed="true" %}}
 
