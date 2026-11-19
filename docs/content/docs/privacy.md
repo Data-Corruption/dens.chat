@@ -48,10 +48,11 @@ it.
   under **System**. The Flatpak doesn't ask: Flatpak itself checks Dens's
   repository there for updates, every 30 minutes while Dens runs, and your
   software center does too, on its own schedule.
-- **To YouTube**, only if you turn on YouTube videos in the settings: your IP
-  address for each video whose cover shows, and which videos you play.
-- **To Steam**, only if you turn on Steam's cards in the settings: your IP
-  address for each game whose card shows.
+- **To YouTube**, only with YouTube's link previews on, which a browser asks
+  about the first time it opens Dens: your IP address for each video whose
+  cover shows, and which videos you play.
+- **To Steam**, only with Steam's link previews on: your IP address for each
+  game whose card shows.
 
 That's all. There's no analytics or telemetry.
 
