@@ -1,15 +1,10 @@
-// Appearance's preview: a sample of the chat atop Appearance, drawn by the
-// components the chat draws with, on the member's theme and chat
-// background, so each change shows as it's made: the theme and the
-// background, Density, styled names, staff's marks, the verified mark and
-// the call timer. Photos' and players' sizes stay out of it, since at
-// theirs a photo would fill it. It holds its place while the settings
-// under it scroll; on the phone layout it scrolls with them, since held
-// it would leave them a third of the screen.
-//
-// And the theme editor's: a small den in the theme being made, drawn by
-// the same components on a box that wears the theme's variables alone, so
-// the page keeps its own theme until the member saves it.
+// Appearance's preview (M22.5, M22.8): a small den in the theme shown,
+// drawn by the page's own components on a box that wears the theme alone,
+// so the page keeps its own until the member uses it. It shows every other
+// Appearance setting as it's chosen: the chat's background, Density,
+// styled names, staff's marks, the verified mark, the call timer, the
+// sizes of photos and players, at a sixth of theirs, and file names on
+// hover.
 
 import { useMemo, useState } from 'preact/hooks';
 import { HoverRow } from './animations.js';
@@ -19,12 +14,14 @@ import { CallLength } from './calltimer.jsx';
 import { ChannelHeader, ROW, ROW_BUTTON, UnreadPill, readStyle, rowShade } from './chat.jsx';
 import { Button, LongName, Notice, Slider, Toggle, useBackground } from './components.jsx';
 import { DENSITY_COMPACT, useDensity } from './density.js';
+import { useFileNames } from './filenames.js';
 import { HashIcon, SpeakerIcon } from './icons.jsx';
 import { Composer, MessageRow, continues } from './messages.jsx';
 import { ShownColors } from './names.jsx';
 import { useNarrow } from './nav.js';
 import { RoleMark } from './people.jsx';
 import { VerifiedMark } from './private.jsx';
+import { MEDIA, PLAYERS, mediaBox, useShownSize } from './sizes.js';
 import { useStaffMarks } from './staffmarks.js';
 import { hexOf, variables } from './themes.js';
 import { CallControls } from './voice.jsx';
@@ -65,14 +62,21 @@ const none = () => {};
 // sampleCall is the preview's call, on its Lounge, a while before at.
 const sampleCall = (at) => ({ channel_id: 'preview-lounge', started_at: at - 12 * MINUTE - 34 * 1000, record_ms: 3 * 60 * MINUTE });
 
-// ChatSample is the preview's messages, on the member's chat background,
-// or with few its first two. They take no pointer, so nothing in them acts.
-function ChatSample({ at, few = false }) {
+// SCALE is how much smaller than a message's the preview draws its photo
+// and its player.
+const SCALE = 6;
+
+// ChatSample is the preview's messages, on the member's chat background.
+// They take no pointer, so nothing in them acts.
+function ChatSample({ at }) {
     const narrow = useNarrow();
     const line = useDensity() === DENSITY_COMPACT;
     const marks = useStaffMarks();
     const background = useBackground();
-    const messages = sampleMessages(at).slice(0, few ? 2 : undefined);
+    const named = useFileNames();
+    const photo = mediaBox(useShownSize(MEDIA));
+    const player = mediaBox(useShownSize(PLAYERS));
+    const messages = sampleMessages(at);
     return (
         <div class="pointer-events-none select-none px-2 pb-2 pt-1" style={backgroundStyle(background)} inert>
             {messages.map((m, i) => (
@@ -83,8 +87,17 @@ function ChatSample({ at, few = false }) {
                     onEdit={none} onEditDone={none} onDelete={none} onJump={none} onView={none} onProfile={none} onToggle={none}
                     denID="" channelID="preview">
                     {m.photo && (
-                        <div class="mt-1 h-[72px] w-24 overflow-hidden rounded bg-base-300" data-preview-photo>
-                            <img src={PHOTO} alt="" class="size-full object-cover" />
+                        <div class="mt-1 flex flex-col items-start gap-1">
+                            <div class="overflow-hidden rounded bg-base-300" style={{ width: `${photo.w / SCALE}px`, height: `${photo.h / SCALE}px` }}
+                                title={named ? 'lake.jpg' : undefined} data-preview-photo>
+                                <img src={PHOTO} alt="" class="size-full object-cover" />
+                            </div>
+                            <div class="relative overflow-hidden rounded bg-black" style={{ width: `${player.w / SCALE}px`, height: `${(player.w * 9) / 16 / SCALE}px` }}
+                                data-preview-player>
+                                <span class="absolute left-1/2 top-1/2 flex h-2/5 w-1/3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-[#f00]">
+                                    <svg viewBox="0 0 24 24" class="size-2/3 fill-white" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                                </span>
+                            </div>
                         </div>
                     )}
                 </MessageRow>
@@ -115,26 +128,6 @@ function CallSample({ at }) {
     );
 }
 
-/** AppearancePreview is the sample of the chat atop Appearance */
-export function AppearancePreview() {
-    const narrow = useNarrow();
-    const line = useDensity() === DENSITY_COMPACT;
-    const [at] = useState(() => Date.now());
-    // Held, it covers the panel's padding above it, so the settings
-    // scroll out of sight under it.
-    const held = narrow ? '' : 'sticky top-0 z-10 -mx-4 -mt-4 bg-base-100 px-4 pb-1 pt-4';
-    return (
-        <div class={held} data-appearance-preview data-density={line ? 'compact' : 'default'}>
-            <div class="overflow-hidden rounded-box border border-base-300 bg-base-100" role="group" aria-label="Preview">
-                <ChatSample at={at} />
-                <div class="flex flex-col gap-1 border-t border-base-300 bg-base-200 px-2 py-1.5 text-sm">
-                    <CallSample at={at} />
-                </div>
-            </div>
-        </div>
-    );
-}
-
 // The den preview's channels: the one open, one unread, and one with
 // mentions.
 const CHANNELS = [
@@ -160,15 +153,15 @@ const channelRow = (c) => (
     </div>
 );
 
-/** DenPreview is a small den in theme, which the box it's drawn on wears
-    alone: its channel list, with an unread channel and a mention, the
-    page's call and its controls; the channel open, its header, Appearance's
-    sample of the chat and the composer; and under them a button of each
-    kind, a notice of each status, a toggle and a slider. Nothing in it
-    acts. On the phone layout, where it stays in view above the editor's
-    controls, it's cut to what they change: a channel's row on the list's
-    background, two messages, the buttons and the notices. */
-export function DenPreview({ theme }) {
+/** DenPreview is a small den in a theme, which the box it's drawn on
+    wears alone: one of the built-in ones by its name, builtIn, or one of
+    the member's own by its variables. It holds its channel list, with an
+    unread channel and a mention, the page's call and its controls; the
+    channel open, its header, the chat and the composer; and under them a
+    button of each kind, a notice of each status, a toggle and a slider.
+    Nothing in it acts. Narrower than a list beside a chat takes, the list
+    stands above the chat. */
+export function DenPreview({ theme, builtIn = '' }) {
     const vars = useMemo(() => variables(theme), [theme]);
     const colors = useMemo(() => ({
         backs: ['--color-base-100', '--color-base-200', '--color-base-300'].map((v) => hexOf(vars[v])),
@@ -177,17 +170,11 @@ export function DenPreview({ theme }) {
     const narrow = useNarrow();
     const [at] = useState(() => Date.now());
     return (
-        <div data-theme={theme.dark ? 'dark' : 'light'} style={vars} inert role="group" aria-label="Preview" data-theme-preview
+        <div data-theme={builtIn || (theme.dark ? 'dark' : 'light')} style={builtIn ? {} : vars} inert role="group" aria-label="Preview" data-theme-preview
             class="flex select-none flex-col overflow-hidden rounded-box border border-base-300 text-sm">
             <ShownColors.Provider value={colors}>
-                {narrow ? (
-                    <>
-                        <div class="bg-base-200 px-2 py-1" data-preview-list>{channelRow(CHANNELS[2])}</div>
-                        <ChatSample at={at} few />
-                    </>
-                ) : (
-                <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-                    <div class="flex min-h-0 flex-col bg-base-200" data-preview-list>
+                <div class="grid @xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+                    <div class="flex min-h-0 flex-col bg-base-200 @max-xl:border-b @max-xl:border-base-300" data-preview-list>
                         <div class="truncate border-b border-base-300 p-3 font-semibold">Den</div>
                         <ul class="flex flex-1 flex-col p-2">
                             {CHANNELS.map((c) => <li key={c.id}>{channelRow(c)}</li>)}
@@ -207,21 +194,20 @@ export function DenPreview({ theme }) {
                             onSpoiler={none} onCompare={none} onCancelReply={none} onSend={none} onEditLast={none} onTyping={none} narrow={narrow} touch={false} />
                     </div>
                 </div>
-                )}
-                <div class={`flex flex-col border-t border-base-300 ${narrow ? 'gap-2 p-2' : 'gap-3 p-3'}`} data-preview-controls>
+                <div class="flex flex-col gap-3 border-t border-base-300 p-3" data-preview-controls>
                     <div class="flex flex-wrap gap-2">
                         <Button kind="primary">Join</Button>
                         <Button>Invite</Button>
                         <Button kind="quiet">Later</Button>
                         <Button kind="danger">Leave</Button>
                     </div>
-                    <div class="grid grid-cols-2 gap-2">
+                    <div class="grid gap-2 @md:grid-cols-2">
                         <Notice kind="info">Update ready.</Notice>
                         <Notice kind="success">Saved.</Notice>
                         <Notice kind="warning">Reconnecting…</Notice>
                         <Notice kind="error">Couldn't send.</Notice>
                     </div>
-                    <div class={narrow ? 'hidden' : 'flex items-center gap-4'}>
+                    <div class="flex items-center gap-4">
                         <Toggle id="preview-toggle" label="On" checked onChange={none} />
                         <Slider value={60} aria-label="Volume" class="min-w-0 flex-1" onInput={none} />
                     </div>

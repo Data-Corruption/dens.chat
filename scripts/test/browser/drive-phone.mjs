@@ -44,7 +44,9 @@
 // and the call timer (M21.2): Appearance's Call timer, and a call's length
 // at its row's right, the call's lock behind its block's arrow; and before
 // (M22.4), a new install's first run, its Link previews answered on
-// (M22.7), and a Steam link shown as a card after it.
+// (M22.7), and a Steam link shown as a card after it; and Appearance as a
+// page, its Themes, Editor and Preview along its foot, the editor's Theme,
+// Messages and Calls, each shot and audited (M22.8).
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //

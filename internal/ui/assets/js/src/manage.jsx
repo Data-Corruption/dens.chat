@@ -10,7 +10,7 @@ import { Handle, useDragDown } from './sheet.jsx';
 
 // WIDTHS are a dialog's widest on a wide window, spelled out so Tailwind
 // keeps every class.
-const WIDTHS = { false: 'md:max-w-md', true: 'md:max-w-3xl', xl: 'md:max-w-5xl' };
+const WIDTHS = { false: 'md:max-w-md', true: 'md:max-w-3xl' };
 
 // Dialog frames a dialog over the page, which Back closes, as do its ✕ and
 // a click outside it (M13.1). On the phone layout it's a sheet from the
@@ -22,8 +22,7 @@ const WIDTHS = { false: 'md:max-w-md', true: 'md:max-w-3xl', xl: 'md:max-w-5xl' 
 // the handle over its top, both staying there as it scrolls; a swipe down
 // closes it from the handle, or from what it shows marked as its top. One
 // with a foot keeps it at its bottom as the rest scrolls, as Edit
-// profile's Save (M22.3); a wide one takes room for two columns, and a
-// wider, wide="xl", for controls beside a preview, as the theme editor's.
+// profile's Save (M22.3); a wide one takes room for two columns.
 export function Dialog({ title, onClose, bare = false, wide = false, foot, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);

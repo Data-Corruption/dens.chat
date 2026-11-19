@@ -12,9 +12,10 @@
         pastel, retro, silk, sunset, synthwave, valentine, winter, wireframe;
 }
 
-/* The message bar, and the call's block at the foot of the channel list: a
-   shade lighter than the page, by a step of perceived lightness that's
-   larger the darker it is, and as light where the page is already white.
+/* The message box's island, and the call's block at the foot of the
+   channel list: a shade lighter than the page, by a step of perceived
+   lightness that's larger the darker it is, and as light where the page
+   is already white.
    Either way the block stands out from the channel list, which is darker
    than the page. A mix has no hue of its own to lose, as a relative color
    lost the page's in a Chromium. */
@@ -40,11 +41,14 @@
     }
 }
 
-/* The message bar, which is its box: its top edge shows the box's focus,
-   darkened as focus-border darkens a field's. */
-@utility focus-edge {
+/* The message box's island: its edge is drawn inside it, the theme's
+   border wide, so a line's island is 48 pixels whatever that is; as
+   strong as a field's, and darker while the box has the focus, as
+   focus-border darkens one. */
+@utility message-island {
+    box-shadow: inset 0 0 0 var(--border) color-mix(in oklab, var(--color-base-content) 20%, #0000);
     &:has([data-message-box]:focus) {
-        border-top-color: color-mix(in oklab, var(--color-base-content) 45%, #0000);
+        box-shadow: inset 0 0 0 var(--border) color-mix(in oklab, var(--color-base-content) 45%, #0000);
     }
 }
 

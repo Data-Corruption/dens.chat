@@ -191,7 +191,7 @@ try {
     await expect(B, b, ['micOn'], 'hearing again opens it, Microphone on');
     await openSettings(B.b, 'Voice');
     b = await mark(B);
-    await B.b.eval(`[...document.querySelectorAll('[role=radiogroup][aria-label="Sending your voice"] label')].find((l) => l.textContent.trim() === 'Push to talk').click(), true`);
+    await B.b.eval(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"] input[aria-label="Push to talk"]').click(), true`);
     await expect(B, b, ['micOff'], 'push to talk closes it until held');
     await B.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
     await waitFor(async () => !(await B.b.eval(`!!${SETTINGS}`)), 'the settings closed');

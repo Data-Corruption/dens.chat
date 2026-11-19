@@ -52,7 +52,7 @@ test("Animations is Always until the system asks for less motion, and the member
     done();
 });
 
-test("On hover plays a row's pictures while a pointer that hovers is over the row, and a profile's while it shows", async () => {
+test("Hover plays a row's pictures while a pointer that hovers is over the row, and a profile's while it shows", async () => {
     system({ on: false });
     setAnimations(ON_HOVER);
     const seen = {};

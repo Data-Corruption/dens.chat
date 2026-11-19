@@ -8,14 +8,14 @@
 // with no row a pixel taller for it, and only her font fetched; on Light,
 // chosen while the page shows, the pale end darkened instead; carol's
 // Cyrillic name draws in the page's font, her font never fetched; bob's
-// Name styles at Colors only drops the fonts, and at Off shows every name
+// Name styles at Color drops the fonts, and at Off shows every name
 // plain, which a reload keeps; and alice clears her style. From M21.1 her
 // name in each font in turn, its box holding every Latin letter and digit
 // the font draws, by how far the browser measures each one's ink reaching.
 //
 //   run.sh names chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, CLOSE_CARD, HOME, SETTINGS, checks, launch, lib, openSettings, pair, picture, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, SETTINGS, checks, closeSettings, launch, lib, openAppearance, pair, picture, waitFor } from './browsers.mjs';
 
 const [, , which = 'chromium'] = process.argv;
 const { DEN: den, GENERAL: general, LOUNGE: lounge, DM: dm, FIRST: first, SECOND: second, REPLY: reply } = process.env;
@@ -238,9 +238,11 @@ try {
         && dark.backs.every((bk) => contrast(carol.color, bk) >= READS - 0.05) && !(await fetched(bob)).includes('bangers'),
     `her name takes her color and names her font, but runs as wide as in the page's own, the font never fetched: ${q(carol)}`);
 
-    step('on Light, chosen while the page shows');
-    await openSettings(bob, 'Appearance');
+    step('on Light, chosen and worn while the page shows');
+    await openAppearance(bob, 'Theme');
     await bob.eval(`${SETTINGS}.querySelector('input[name=theme][value=light]').click(), true`);
+    await waitFor(() => bob.eval(`[...${SETTINGS}.querySelectorAll('button')].some((x) => x.textContent.trim() === 'Use')`), "Light's Use");
+    await bob.eval(`[...${SETTINGS}.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Use').click(), true`);
     const lit = await waitFor(async () => { const l = await look(bob, LIST); return l.ends[0] === FROM && l; }, "alice's name on Light, without a reload");
     const light = JSON.parse(await bob.eval(THEME));
     c.report(lit.ends[0] === FROM && lit.ends[1] !== TO && lum(lit.ends[1]) < lum(TO) && light.backs.every((bk) => contrast(lit.ends[1], bk) >= READS - 0.05)
@@ -248,29 +250,30 @@ try {
     `on Light the blue shows as picked and the yellow darkened until it reads, still yellow: ${lit.ends[0]} and ${lit.ends[1]} (${light.backs.map((bk) => contrast(lit.ends[1], bk).toFixed(2))})`);
     await shot(bob, 'light');
 
-    step("bob's Name styles: Colors only, then Off");
+    step("bob's Name styles: Color, then Off");
+    await openAppearance(bob, 'Messages');
     const pick = (value) => bob.eval(`${SETTINGS}.querySelector('[data-name-styles] input[value=${value}]').click(), true`);
-    c.report(await bob.eval(`${SETTINGS}.querySelector('[data-name-styles] input[value=all]').checked`), 'Name styles starts at Colors and fonts');
+    c.report(await bob.eval(`${SETTINGS}.querySelector('[data-name-styles] input[value=all]').checked`), 'Name styles starts at Color & font');
     await pick('colors');
     const colors = await waitFor(async () => { const l = await look(bob, LIST); return !l.font.startsWith('Dens name') && l; }, 'the fonts going');
     const carolColors = await look(bob, named('nav[aria-label=Members]', 'Карина'));
     c.report(q(colors.ends) === q(lit.ends) && colors.clip === 'text' && Math.abs(colors.own - colors.plain) < 0.2 && !carolColors.font.startsWith('Dens name') && carolColors.color !== plainList.color,
-        `at Colors only her name keeps its gradient in the page's font, and carol's its color: ${q(colors)}`);
+        `at Color her name keeps its gradient in the page's font, and carol's its color: ${q(colors)}`);
     await pick('off');
     const plain = await waitFor(async () => { const l = await look(bob, LIST); return l.ends.length === 0 && l; }, 'the colors going');
     const bobsOwn = await look(bob, named('nav[aria-label=Members]', 'Bob'));
     const carolOff = await look(bob, named('nav[aria-label=Members]', 'Карина'));
     c.report(plain.color === bobsOwn.color && plain.color !== 'transparent' && !plain.font.startsWith('Dens name') && plain.clip !== 'text' && carolOff.color === bobsOwn.color,
         `at Off every name shows as bob's own does: ${q(plain)}`);
-    await bob.key('Escape');
+    await closeSettings(bob);
     await bob.go(`http://localhost:${BOB.port}/den/${den}/${general}`);
     const kept = await waitFor(() => look(bob, places['her message']), "general after a reload");
     c.report(kept.ends.length === 0 && !kept.font.startsWith('Dens name') && (await bob.eval(`localStorage.getItem('DENS_NAME_STYLES')`)) === 'off',
         `a reload keeps Off: ${q(kept)}`);
-    await openSettings(bob, 'Appearance');
+    await openAppearance(bob, 'Messages');
     await pick('all');
-    await waitFor(async () => worn(await look(bob, LIST)), 'the style back at Colors and fonts');
-    await bob.key('Escape');
+    await waitFor(async () => worn(await look(bob, LIST)), 'the style back at Color & font');
+    await closeSettings(bob);
 
     step("each font's letters inside a name's box");
     // ink is how far the farthest-reaching of a font's Latin letters and

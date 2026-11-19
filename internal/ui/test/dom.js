@@ -44,6 +44,10 @@ class Node {
         return this.insertBefore(node, null);
     }
 
+    remove() {
+        this.parentNode?.removeChild(this);
+    }
+
     removeChild(node) {
         this.childNodes.splice(this.childNodes.indexOf(node), 1);
         node.parentNode = null;
@@ -105,6 +109,14 @@ class Node {
     querySelectorAll() {
         return [];
     }
+
+    // The composer measures itself against the pane it's in, by its
+    // selector, which no element matches here, and takes the focus.
+    closest() {
+        return null;
+    }
+
+    focus() {}
 }
 
 // Preact names a listener as the element names the event's handler, so

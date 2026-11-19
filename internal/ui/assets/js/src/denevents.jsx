@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
 import { HoverRow } from './animations.js';
 import { copyText } from './clipboard.js';
-import { Actions, Button, ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useNotifications } from './components.jsx';
+import { Actions, Button, Choices, ErrorText, Field, SubmitButton, TextInput, Tip, useAction, useNotifications } from './components.jsx';
 import { CropDialog } from './crop.jsx';
 import { DateField, TimeField } from './datefield.jsx';
 import {
@@ -468,17 +468,8 @@ export function EventDialog({ denID, view, event, onClose }) {
                 </Field>
                 <fieldset class="fieldset">
                     <legend class="fieldset-legend text-sm font-normal">Where</legend>
-                    <div class="flex flex-wrap gap-x-4 gap-y-1">
-                        <label class="flex min-h-8 cursor-pointer items-center gap-2 pointer-coarse:min-h-11">
-                            <input type="radio" class="radio radio-sm" name="where" checked={form.where === 'channel'} disabled={voice.length === 0}
-                                onChange={() => set('where')('channel')} />
-                            A voice channel
-                        </label>
-                        <label class="flex min-h-8 cursor-pointer items-center gap-2 pointer-coarse:min-h-11">
-                            <input type="radio" class="radio radio-sm" name="where" checked={form.where === 'place'} onChange={() => set('where')('place')} />
-                            Somewhere else
-                        </label>
-                    </div>
+                    <Choices name="Where" data="data-event-where" choice={form.where} onPick={set('where')}
+                        choices={[['channel', 'A voice channel', voice.length === 0], ['place', 'Somewhere else']]} />
                     {form.where === 'channel' ? (
                         <select class="select w-full" value={form.channel} onChange={(e) => set('channel')(e.currentTarget.value)} aria-label="Voice channel"
                             data-event-channel>

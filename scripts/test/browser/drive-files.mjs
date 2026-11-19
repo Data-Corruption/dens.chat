@@ -5,12 +5,12 @@
 // covered until she clicks it, and alice one in their DM, which bob's does,
 // each page clicking the other's. From M21.1 a message's GIF, far up
 // #gifs: neither page fetches its file until it nears the screen, where
-// under Always it plays, and under On hover it plays while the pointer is
+// under Always it plays, and under Hover it plays while the pointer is
 // over its message.
 //
 //   run.sh files
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, SETTINGS, checks, launch, lib, openSettings, openYours, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, SETTINGS, checks, closeSettings, launch, lib, openAppearance, openYours, pair, waitFor } from './browsers.mjs';
 
 const { DEN: den, GENERAL: general, THREE: three, CLIP: clip, DM: dm, GIF: gif, GIFS: gifs } = process.env;
 const c = checks();
@@ -156,10 +156,9 @@ try {
         if (!gif) return imgs.length === 1 ? 'still' : 'none';
         return gif.complete && gif.naturalWidth > 0 && getComputedStyle(imgs[0]).opacity === '0' ? 'playing' : 'loading'; })()`);
     const animations = async (b, value) => {
-        await openSettings(b, 'Appearance');
+        await openAppearance(b, 'Messages');
         await b.eval(`document.querySelector('input[name=animations][value=${value}]').click(), true`);
-        await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
-        await waitFor(async () => !(await b.eval(`!!${SETTINGS}`)), 'the settings closed');
+        await closeSettings(b);
     };
     for (const [b, port] of [[alice, 18484], [bob, 18486]]) {
         await b.go(`http://localhost:${port}/den/${den}/${gifs}`);
@@ -190,7 +189,7 @@ try {
         await b.move(5, 5);
         const after = await waitFor(async () => ((await tileShows(b)) === 'still' ? 'still' : null), 'the GIF still again', 5000).catch(() => tileShows(b));
         c.report(still === 'still' && over === 'playing' && after === 'still',
-            `${b.name}'s page, On hover: still, playing while the pointer is over its message, still again: ${[still, over, after].join(', ')}`);
+            `${b.name}'s page, Hover: still, playing while the pointer is over its message, still again: ${[still, over, after].join(', ')}`);
         await animations(b, 'always');
     }
 } catch (e) {

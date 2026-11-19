@@ -90,10 +90,16 @@ function show(root, name, own) {
 const watchers = new Set();
 let colors;
 
+/** systemTheme is the theme System shows now: Light or Dark, as the
+    device is set */
+export function systemTheme() {
+    return dark()?.matches ? DARK_THEME : LIGHT_THEME;
+}
+
 function apply() {
     const choice = themeChoice();
     const own = (choice.startsWith(OWN) && ownThemes().find((t) => ownChoice(t.id) === choice)) || null;
-    show(document.documentElement, choice === 'system' ? (dark()?.matches ? DARK_THEME : LIGHT_THEME) : choice, own);
+    show(document.documentElement, choice === 'system' ? systemTheme() : choice, own);
     colors = undefined;
     watchers.forEach((fn) => fn());
     tellBars();
@@ -164,7 +170,26 @@ export function forgetTheme(id) {
     for a new one to start from: each of DaisyUI's variables it reads, and
     whether it's dark */
 export function shownTheme(name) {
-    const style = getComputedStyle(document.documentElement);
+    return themeIn(getComputedStyle(document.documentElement), name);
+}
+
+/** builtInTheme is one of DaisyUI's themes, by its name, as one of the
+    member's own would hold it, named name: read from a box out of sight
+    that wears it, so the page keeps its own */
+export function builtInTheme(theme, name = themeName(theme)) {
+    const box = document.createElement('span');
+    box.setAttribute('data-theme', theme);
+    box.hidden = true;
+    document.body.appendChild(box);
+    try {
+        return themeIn(getComputedStyle(box), name);
+    } finally {
+        box.remove();
+    }
+}
+
+// themeIn is the theme a computed style wears.
+function themeIn(style, name) {
     const dark = style.colorScheme.includes('dark');
     const theme = { name, dark };
     for (const [field, variable] of Object.entries(FIELDS)) {

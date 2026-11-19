@@ -116,8 +116,8 @@ test("a member's list of files says what uses each", () => {
 
 // A GIF in a message plays as Animations says, as every animated picture
 // does: under Always as it nears the screen, its file fetched no sooner,
-// and under On hover while the pointer is over its message.
-test("a message's GIF plays under Always, and under On hover while the pointer is over its message", async () => {
+// and under Hover while the pointer is over its message.
+test("a message's GIF plays under Always, and under Hover while the pointer is over its message", async () => {
     const kept = new Map();
     globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) };
     globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} };

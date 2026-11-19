@@ -84,21 +84,23 @@ export const PLAIN_CARDS = 'max-md:[&>.card]:rounded-none max-md:[&>.card]:bg-tr
     the screen: the list of sections as rows, under title, or a section's
     page under its own name, with ← to the list, onList. groups are
     [heading, [[id, name, danger]...]], a heading of '' showing none. The
-    section's groups are cards in both, which a phone shows plain. */
-export function SectionsFrame({ label, title, groups, at, narrow, onPick, onList, onClose, bar, children }) {
+    section's groups are cards in both, which a phone shows plain. A full
+    section, Appearance, takes the window at any width, its list folded to
+    ← back, onList, and lays out what it holds itself. */
+export function SectionsFrame({ label, title, groups, at, narrow, full = false, onPick, onList, onClose, bar, children }) {
     const backdrop = useBackdrop(onClose);
     const all = groups.flatMap(([, items]) => items);
-    const panel = (
+    const panel = full ? children : (
         <div data-panel class={`flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 ${narrow ? `pb-[max(1rem,env(safe-area-inset-bottom))] ${PLAIN_CARDS}` : ''}`}>
             {children}
         </div>
     );
-    if (narrow) {
+    if (narrow || (full && at)) {
         return (
             <div role="dialog" aria-modal="true" aria-label={label} class="fixed inset-0 z-50 flex flex-col bg-base-100">
                 {at ? (
                     <>
-                        <PageHeader title={all.find(([id]) => id === at)?.[1] || title} onBack={onList} />
+                        <PageHeader title={all.find(([id]) => id === at)?.[1] || title} onBack={onList} onClose={narrow ? undefined : onClose} />
                         {panel}
                     </>
                 ) : (

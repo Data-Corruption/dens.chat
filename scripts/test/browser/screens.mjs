@@ -180,6 +180,9 @@ export const AUDIT = `(() => {
     const kinds = [], leads = [], counted = new Map();
     for (const e of document.querySelectorAll('.btn')) {
         if (!shown(e) || e.closest('[aria-hidden=true], [inert]')) continue;
+        // A choice of a few is a radio drawn as a joined button, secondary
+        // until it's the one chosen (Choices).
+        if (e.matches('[role=radiogroup] > input[type=radio].join-item') && e.classList.contains('not-checked:btn-soft')) continue;
         const kind = KINDS.filter((k) => e.classList.contains(k));
         const other = LOOKS.filter((k) => e.classList.contains(k));
         if (kind.length !== 1 || other.length) kinds.push(desc(e) + ' ' + ([...kind, ...other].join(' ') || 'with no kind'));
@@ -312,6 +315,7 @@ const MANAGE_PANEL = `document.querySelector('[role=dialog][aria-label^="Manage 
 // window, or its button in the column or the list of them (M13.3).
 const section = (frame, name) => `[...document.querySelectorAll(${JSON.stringify(`${frame} [role=tab], ${frame} nav button`)})].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
 const SETTINGS_FRAME = '[role=dialog][aria-label="Settings"]';
+const APPEARANCE = `document.querySelector('[role=dialog][aria-label="Settings"] [data-appearance]')`;
 const MANAGE_FRAME = '[role=dialog][aria-label^="Manage "]';
 const SCROLLER = `document.querySelector('[data-scroller]')`;
 const COMPOSER = `document.querySelector('textarea[placeholder^="Message "]')`;
@@ -369,41 +373,51 @@ export async function memberScreens(h, ctx) {
         await h.go('/');
         await openSettings(h);
         if (await h.has(`document.querySelector('${SETTINGS_FRAME} [data-section]')`)) await h.snap('settings-list');
-        await settingsTab(h, 'Appearance');
-        await h.snap('settings-appearance', { scroll: PANEL });
-        // Staff marks, in Messages (M21.1), and Calls' Call timer (M21.2).
-        await h.ev(`document.getElementById('staff-marks').scrollIntoView({ block: 'center' }), true`);
-        await h.snap('settings-staff-marks');
-        await h.ev(`document.getElementById('call-timer').scrollIntoView({ block: 'center' }), true`);
-        await h.snap('settings-call-timer');
-        await h.ev(`${PANEL}.scrollTop = 0, true`);
-        await h.click(h.withText('[role=dialog] button', 'More themes'));
-        await h.snap('settings-themes', { scroll: PANEL, max: 2 });
-        // A theme of the member's own (M19.4): the editor, a dialog over
-        // the settings beside its preview (M22.5), which Cancel closes;
-        // and the chat's background, a picture the page draws and sends as
-        // the card would, for the card's Dim, and then removes.
-        await h.click(h.withText('[role=dialog] button', 'More themes'));
-        await h.click(h.byText('[data-own-themes] button', 'New theme'));
-        await h.wait(`document.querySelector('[data-theme-editor]')`, 'the theme editor');
-        await h.snap('settings-theme-editor', { scroll: `document.querySelector('[data-theme-editor]').closest('[role=dialog]').querySelector('[data-dialog-foot]').previousElementSibling`, max: 3 });
-        await h.click(h.byText('[role=dialog] [data-dialog-foot] button', 'Cancel'));
-        await h.ev(`new Promise((done) => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
-            x.fillStyle = '#335566'; x.fillRect(0, 0, 64, 64);
-            c.toBlob((blob) => fetch('/api/background', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob }).then((r) => done(r.ok)), 'image/png'); })`);
-        await h.wait(`document.querySelector('[data-background-preview] img')?.naturalWidth`, "the background's card with its picture");
-        await h.ev(`document.querySelector('[data-background-preview]').closest('section').scrollIntoView(), true`);
-        await h.snap('settings-background');
-        // Its Hover, under Dim (M21.1).
-        await h.ev(`document.querySelector('[data-background-hover]').scrollIntoView({ block: 'center' }), true`);
-        await h.snap('settings-background-hover');
-        await h.ev(`fetch('/api/background', { method: 'DELETE' }).then((r) => r.ok)`);
-        await h.wait(`!document.querySelector('[data-background-preview]')`, 'the background removed');
         for (const [tab, name] of [['Chat', 'chat'], ['Notifications', 'notifications'], ['Voice', 'voice'], ['Relay', 'relay'], ['System', 'system']]) {
             await settingsTab(h, tab);
             await sleep(600);
             await h.snap(`settings-${name}`, { scroll: PANEL, max: 6 });
         }
+    });
+    // Appearance, a page of its own (M22.8), each of its columns, or on a
+    // phone each tab along its foot: the themes; a built-in one chosen, and
+    // Customize's copy in the editor, a color chosen; Messages, with the
+    // chat's background, a picture the page draws and sends as its card
+    // would, for its Dim and Hover, then removed; Calls; and the preview.
+    await h.step('appearance', async () => {
+        await h.go('/');
+        await settingsTab(h, 'Appearance');
+        await h.wait(APPEARANCE, 'Appearance');
+        const foot = (tab) => h.ev(`(document.querySelector('[data-foot-tab=${tab}]')?.click(), true)`).then(() => sleep(450));
+        const pane = (p) => h.click(`document.querySelector('[data-pane-tab=${p}]')`);
+        const TABPANEL = `document.querySelector('${SETTINGS_FRAME} [role=tabpanel]')`;
+        await h.snap('appearance-themes', { scroll: `document.querySelector('[data-themes]')`, max: 2 });
+        await h.click(`document.querySelector('[data-theme-row=dracula] input')`);
+        await foot('editor');
+        await h.snap('appearance-built-in');
+        await h.click(h.byText('[data-theme-editor] button', 'Customize'));
+        await h.wait(`document.querySelector('[data-theme-editor]:not([data-built-in])')`, "Customize's copy");
+        await h.snap('appearance-editor', { scroll: TABPANEL, max: 3 });
+        await h.ev(`${TABPANEL}.scrollTop = 0, true`);
+        await h.click(`document.querySelector('[data-color-tile=primary]')`);
+        await h.snap('appearance-color');
+        await pane('messages');
+        await h.snap('appearance-messages', { scroll: TABPANEL, max: 3 });
+        await h.ev(`new Promise((done) => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+            x.fillStyle = '#335566'; x.fillRect(0, 0, 64, 64);
+            c.toBlob((blob) => fetch('/api/background', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob }).then((r) => done(r.ok)), 'image/png'); })`);
+        await h.wait(`document.querySelector('[data-background-preview] img')?.naturalWidth`, "the background's card with its picture");
+        await h.ev(`document.querySelector('[data-background-hover]').scrollIntoView({ block: 'center' }), true`);
+        await h.snap('appearance-background');
+        await pane('calls');
+        await h.snap('appearance-calls');
+        await foot('preview');
+        await h.snap('appearance-preview', { scroll: `document.querySelector('[data-preview-column]')`, max: 3 });
+        await h.ev(`fetch('/api/background', { method: 'DELETE' }).then((r) => r.ok)`);
+        await foot('editor');
+        await pane('theme');
+        await h.click(h.byText('[data-theme-editor] button', 'Remove'));
+        await h.wait(`!document.querySelector('[data-themes] [role=radiogroup][aria-label="My themes"]')`, 'the copy removed');
     });
     await h.step('manage', async () => {
         await h.go('/');
@@ -550,7 +564,7 @@ export async function memberScreens(h, ctx) {
         await h.click(h.label('Edit your profile'));
         // A font and a gradient picked (M19.5), so its two colors show.
         await h.click(`document.querySelector('[data-name-fonts] input[value=pacifico]').closest('label')`, 'the Pacifico tile');
-        await h.click(`document.querySelector('[data-name-color] input[value=gradient]').closest('label')`, 'Gradient');
+        await h.click(`document.querySelector('[data-name-color] input[value=gradient]')`, 'Gradient');
         await h.wait(`document.querySelector('[data-name-style] [data-color="To"]')`, "the gradient's two colors");
         await h.snap('edit-profile', { scroll: `document.querySelector('[role=dialog]')`, max: 4 });
         await h.escape();
@@ -795,7 +809,7 @@ export const CALL = `(() => {
         bar_text: document.querySelector('[data-call-bar] [role=status]')?.textContent || '',
         button: button && { ...box(button), role: button.dataset.callButton, label: button.getAttribute('aria-label'), pressed: button.getAttribute('aria-pressed'),
             talking: button.className.includes('bg-success'), struck: !!button.querySelector('path[d="M2 2l12 12"]') },
-        composer: box(document.querySelector('textarea[placeholder^="Message "]')?.closest('.border-t')),
+        composer: box(document.querySelector('textarea[placeholder^="Message "]')?.closest('[data-composer]')),
         docked: box(document.querySelector('section[data-docked]')),
         video: video && { w: video.videoWidth, h: video.videoHeight, playing: !video.paused },
         full: !!document.fullscreenElement,
@@ -979,11 +993,11 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
             await h.click(`document.querySelector('[data-pane=list] button[aria-label="Settings"]')`, 'the settings');
             await settingsTab(h, 'Voice');
             const group = `document.querySelector('[role=radiogroup][aria-label="The call\\'s button"]')`;
-            const roles = await h.ev(`[...(${group}?.querySelectorAll('label') || [])].map((l) => [l.textContent.trim(), l.querySelector('input').checked])`);
+            const roles = await h.ev(`[...(${group}?.querySelectorAll('input') || [])].map((i) => [i.getAttribute('aria-label'), i.checked])`);
             const sending = await h.has(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"]')`);
             did(JSON.stringify(roles) === JSON.stringify([['Toggle mute', true], ['Push to mute', false], ['Push to talk', false]]) && !sending,
                 `the button's role takes Sending your voice's place, Toggle mute by default: ${JSON.stringify(roles)}`);
-            await d.tap(`[...${group}.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Push to talk')`);
+            await d.tap(`${group}.querySelector('input[aria-label="Push to talk"]')`);
             await h.snap('call-button-role');
             await d.back();
             await d.back();
@@ -1711,7 +1725,7 @@ export async function polling(h, ctx, d, report) {
 }
 
 // compact walks Appearance's Density and spoilers (M17.2): Compact
-// picked by a tap, a channel's messages a line each, every one named and
+// picked by a tap, in Appearance's Messages (M22.8), a channel's messages a line each, every one named and
 // none with a picture, a long press opening a message's sheet there too;
 // then a photo bob sent as a spoiler in random, covered, and shown by a tap;
 // and Default picked again, for whatever comes after.
@@ -1721,7 +1735,9 @@ export async function compact(h, ctx, d, report) {
     const pick = async (choice) => {
         await h.go('/');
         await settingsTab(h, 'Appearance');
-        await d.tap(h.withText('[data-density] label', choice));
+        await h.ev(`(document.querySelector('[data-foot-tab=editor]')?.click(), true)`);
+        await d.tap(`document.querySelector('[data-pane-tab=messages]')`);
+        await d.tap(`document.querySelector('[data-density] input[aria-label=${JSON.stringify(choice)}]')`);
         return h.ev(`localStorage.getItem('DENS_DENSITY')`);
     };
     const picked = await pick('Compact');
