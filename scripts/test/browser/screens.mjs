@@ -357,6 +357,14 @@ export async function memberScreens(h, ctx) {
         await h.click(h.byText('button', 'Add a den'));
         await h.snap('home-add');
     });
+    // Add device's code, from a den's row (M22.6).
+    await h.step('home-add-device', async () => {
+        await h.go('/');
+        await h.wait(HOME, 'home');
+        await h.click(h.byText('button', 'Add device'));
+        await h.wait(`document.querySelector('[role=dialog] [data-qr] path')`, "Add device's code");
+        await h.snap('home-add-device', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
+    });
     await h.step('settings', async () => {
         await h.go('/');
         await openSettings(h);
