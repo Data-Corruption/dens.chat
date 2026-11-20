@@ -118,7 +118,8 @@ const ROLES = { owner: 'Owner', moderator: 'Moderator', member: 'Member' };
 
 // SettingsCog opens the settings from Home, where a den's page has the cog
 // beside the member's name: a link to where they were a page of their own,
-// which the page opens over Home.
+// which the page opens over Home. The browser checks and the Android walk
+// take it, by its href and its label, for the page paired and on Home.
 function SettingsCog() {
     return (
         <a href="/settings" class={`${buttonClass('quiet')} btn-square`} aria-label="Settings" title="Settings"
