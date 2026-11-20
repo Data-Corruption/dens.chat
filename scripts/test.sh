@@ -79,7 +79,10 @@ run_go_tests() {
 # of its package's directory holding the repository's testdata, which tests
 # read by relative paths. The cmd package checks the source tree and
 # scripts, which only exist on the Linux side, so it stays with the Linux
-# suite.
+# suite. The copies keep the Linux checkout's LF, so a test reading a text
+# file line by line meets CRLF only in CI's Windows checkout. They're in the
+# same place each run: Windows Firewall can ask about each program path
+# that listens beyond loopback, as the hosting tests' media ports do.
 run_windows_tests() {
   command -v powershell.exe >/dev/null 2>&1 || {
     printf "error: -windows needs WSL with Windows interop\n" >&2

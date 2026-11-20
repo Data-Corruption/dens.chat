@@ -27,5 +27,8 @@ bash "./$check-prep.sh" >"$out"
 while IFS='=' read -r name value; do
     [[ $name =~ ^[A-Z_]+$ && $value =~ ^[A-Za-z0-9_.:/-]*$ ]] || { echo "unexpected prep output: $name=$value" >&2; exit 1; }
     export "$name=$value"
+    # RANDOM, and some other names bash keeps for itself, read back as
+    # bash's value instead.
+    [[ ${!name} == "$value" ]] || { echo "prep output $name is a name bash keeps for itself" >&2; exit 1; }
 done <"$out"
 exec "$HOME/node" "./drive-$check.mjs" "$@"

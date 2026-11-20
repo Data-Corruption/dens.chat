@@ -15,7 +15,11 @@
 # place while it reached nobody (M18).
 #
 # Usage: scripts/test/browser/setup.sh [--no-build]
-#   --no-build  push the binaries already built instead of building them
+#   --no-build  push the binaries already built instead of building them,
+#               which fails once a build.sh has emptied out/ of them
+#
+# Building runs ./scripts/build.sh, which empties out/, the other
+# harnesses' logs in it too.
 #
 # Needs a local Incus daemon with access to the images: remote, as the
 # lifecycle e2e does. CONTAINER names the container (dens-browsers).

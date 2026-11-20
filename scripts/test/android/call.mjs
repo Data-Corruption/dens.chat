@@ -49,6 +49,8 @@ if (side === 'judge') {
     report(p.every((x) => x.autoplay === 'true' && x.playing?.length > 0 && x.playing.every((e) => e === 'muted') && x.contexts?.every((c) => c.startsWith('running'))),
         `the voices through the call's context, their elements muted and playing: ${[...new Set(p.map((x) => `${x.playing?.join('+')} ${x.contexts?.join('+')}`))].join(', ')}`);
     const spoke = d.find((x, i) => i > 0 && d[i - 1].muted && !x.muted);
+    // By the page's speaking mark: inbound audio's audioLevel reads 0 here,
+    // the voices' elements muted as they play through the call's context.
     const heard = spoke && within(phone, spoke.at, on).find((x) => x.speaking > 0);
     report(heard, `the phone heard the desk off screen once it spoke again${spoke ? `, ${Math.round((on - spoke.at) / 1000)} s before the screen came on` : ''}`);
     process.exit(ok ? 0 : 1);

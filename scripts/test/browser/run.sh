@@ -2,7 +2,11 @@
 # Runs a browser check in the container setup.sh made, with this
 # directory's scripts as they are now: CHECK's prep, then its driver, which
 # prints OK or BAD for each thing it checks and exits nonzero on any BAD.
-# Screenshots land in tester's home, named shot-<check>-*.png.
+# Screenshots land in tester's home, named shot-<check>-*.png. The page is
+# in the development binary setup.sh pushed, so a change to the page needs
+# setup.sh again, and instances already running serve the binary they
+# started with until a check's prep starts them afresh. The checks share
+# those instances: run one at a time.
 #
 # Usage: scripts/test/browser/run.sh CHECK [ARGS...]
 # The checks, by milestone, and the arguments their drivers take:

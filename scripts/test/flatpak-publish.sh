@@ -309,6 +309,8 @@ GNUPGHOME="$KEYS/dens" GPG_KEY=$dens TRUSTED_KEYS="$WORK/thief.gpg" \
   bash -c 'ARCH=x86_64 bash "$1/flatpak.sh" commit "$2" v6.6.6 "$3" && bash "$1/flatpak.sh" update "$3"' \
   sign "$SCRIPTS" "$WORK/dens-x86_64" "$HOST/flatpak/repo" >/dev/null
 GNUPGHOME="$KEYS/dens" gpgconf --kill gpg-agent
+# Its exit status doesn't say whether it refused the build: the version
+# installed does.
 as_alice flatpak --user update -y --noninteractive --no-related "$APP" >/dev/null 2>&1 || :
 [[ "$(installed)" == v1.2.7 ]] || fail "alice took the retired key's build: $(installed)"
 

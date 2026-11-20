@@ -106,7 +106,10 @@ boot() {
   echo "$1 started in $i s"
 }
 
+# halt PORT syncs the guest first: emu kill stops it at once, losing what
+# it hadn't written.
 halt() {
+  "$SDK/platform-tools/adb" -s "emulator-$1" shell sync >/dev/null 2>&1 || true
   "$SDK/platform-tools/adb" -s "emulator-$1" emu kill >/dev/null 2>&1 || true
 }
 
