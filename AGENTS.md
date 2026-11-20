@@ -71,7 +71,7 @@ holds.
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the docs' link check (`scripts/test/links/`), the browser checks (`scripts/test/browser/`), and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` and `bg.sh` also work a real phone |
 | `scripts/dev/` | Manual testing's helpers: a manual test's builds staged as a prerelease (`stage.sh`), a Flatpak made from this tree for a VM, and a development den filled with messages or files |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
-| `docs/dev/` | Internal docs: the design (`design.md` and `design/`, a part per area) and each deployment form's, the den protocol (`protocol.md` and `protocol/`), the milestones and loose ideas, the lifecycle and the release process |
+| `docs/dev/` | Internal docs: the design (`design.md` and `design/`, a part per area) and each deployment form's, the den protocol (`protocol.md` and `protocol/`), the milestones and loose ideas, a step's loop (`workflow.md`), running the harnesses (`testing.md`), the lifecycle and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra), with its own `README.md` and `DEPLOYMENT.md` |
 
 ## Documents of record
@@ -96,6 +96,8 @@ holds.
   and the plan for the one under way.
 - [docs/dev/loose-ideas.md](docs/dev/loose-ideas.md): ideas and fixes no
   milestone has taken up yet.
+- [docs/dev/workflow.md](docs/dev/workflow.md): a step's loop, from its branch
+  to its merge, and a milestone's manual test and release.
 - [docs/dev/testing.md](docs/dev/testing.md): running the harnesses: what each
   needs, takes, leaves behind and logs, and cleaning up after one.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
@@ -320,6 +322,18 @@ a binary a script builds refuses.
 
 Search with `git grep -I` or `rg`: both skip the media module's 24 MB of
 generated Go (`.gitattributes`, `.ignore`), which a bare `grep -r` reads.
+
+## Working on a step
+
+A step is a branch from main, named for it, and a pull request into main;
+[docs/dev/workflow.md](docs/dev/workflow.md) has the loop. Run what the step's
+testing section names, `-lint`, the race suite, and each check whose drivers
+use what changed. Commit by layer, Go, the page, the shell, the checks and the
+docs, each commit that changes Go passing alone; push, and open the pull
+request with `gh`, its text written for the reviewer. It merges with a merge
+commit. Read CI with `gh`: a failure from its job's log (`gh run view RUN
+--log-failed`), an e2e's logs from the run's artifacts (`gh run download RUN -n
+NAME`). After the merge, sync main and delete the branch, here and on GitHub.
 
 ## Where to add things
 
