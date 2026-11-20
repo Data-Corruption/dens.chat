@@ -1,0 +1,7 @@
+# What ripgrep, and the tools built on it, leave out of a search: the media
+# module's translation, 24 MB of generated Go, and the generated licenses
+# and emoji list, which define nothing. `rg -uu` searches them too.
+/internal/media/ffmpeg/module/module.go
+/internal/media/ffmpeg/module/module.dat
+/internal/build/notices.txt
+/internal/ui/assets/emoji.json

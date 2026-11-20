@@ -11,3 +11,14 @@ internal/denclient/testdata/qrcodes.json text eol=lf
 # Sigstore's trusted root as its TUF repository served it (M12.4).
 internal/platform/release/testdata/** -text
 internal/platform/release/trusted_root.json -text
+# Generated files, which their scripts write: GitHub folds them in a pull
+# request's diff. The media module's translation stays out of diffs and
+# git grep -I too.
+internal/media/ffmpeg/module/** linguist-generated
+internal/media/ffmpeg/module/module.go -diff
+internal/media/ffmpeg/module/module.dat -diff
+internal/denproto/emojilist.go linguist-generated
+internal/ui/assets/emoji.json linguist-generated
+internal/ui/assets/wasm/rnnoise.wasm linguist-generated
+internal/build/notices.txt linguist-generated
+cmd/*.syso linguist-generated
