@@ -68,7 +68,7 @@ holds.
 | `scripts/notices.sh`, `scripts/notices/` | Writes the third-party notices from the module cache and, for the pinned inputs that end up in the binary, the license copies kept in `scripts/notices/` |
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary and commits it to a repository with its deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
-| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the browser checks (`scripts/test/browser/`), and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` and `bg.sh` also work a real phone |
+| `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the docs' link check (`scripts/test/links/`), the browser checks (`scripts/test/browser/`), and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` and `bg.sh` also work a real phone |
 | `scripts/dev/` | Manual testing's helpers: a Flatpak made from this tree for a VM, and a development den filled with messages or files |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
 | `docs/dev/` | Internal docs: the design and each deployment form's, the milestones and loose ideas, the lifecycle, the den protocol and the release process |
@@ -249,7 +249,7 @@ with the notices written again; tests fail on one that lacks any of them.
 
 ```sh
 ./scripts/test.sh              # go test -race ./...; run constantly. 4 to 5 min, seconds for what's cached
-./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, and the pinned shellcheck over every tracked script; run before each commit. 25 s, 3 min the first time
+./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, the pinned shellcheck over every tracked script, and the docs' links; run before each commit. 25 s, 3 min the first time
 ./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts. 30 s
 ./scripts/test.sh -docs        # the site built as the Docs workflow builds it, failing on any warning, and its icon checked; run after touching the site. 2 s
 ./scripts/test.sh -release     # release state machine against a local rclone backend. 50 s
