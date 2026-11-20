@@ -45,7 +45,7 @@ A JPEG that isn't upright keeps its orientation as the smallest EXIF block that 
 
 ### Video and audio
 
-Clients strip video and audio before uploading, with the same media module dens run: it copies the file's video and audio streams into a new container and nothing else (see the design doc's ffmpeg section). A den can't check a container the way it checks an image, so it strips the file again and stores its own copy:
+Clients strip video and audio before uploading, with the same media module dens run: it copies the file's video and audio streams into a new container and nothing else (see the design's [ffmpeg](../design/media.md#ffmpeg)). A den can't check a container the way it checks an image, so it strips the file again and stores its own copy:
 
 - `type` is what the copy plays as, which its container decides:
   - MP4, QuickTime and AAC become MP4: `video/mp4`, or `audio/mp4` without video.

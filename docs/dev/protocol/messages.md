@@ -12,7 +12,7 @@ message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at
 
 A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's or a group's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)).
 
-`text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files, when it may be empty. It is the markdown subset from the design doc, which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links)).
+`text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files, when it may be empty. It is the markdown subset in the design's [Text and replies](../design/messages.md#text-and-replies), which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links)).
 
 `revision` starts at 1 and increases with every edit. `edited_by` is the member who made the latest edit, which differs from the author on shared messages.
 
@@ -125,7 +125,7 @@ POST  /api/messages/{id}/tasks/{n}   {"checked": true, "text": "milk"}    200 me
 
 ## Emoji
 
-Staff add emoji to the den, which members write by name in the markdown subset, as `:name:` (see the design doc's Emoji).
+Staff add emoji to the den, which members write by name in the markdown subset, as `:name:` (see the design's [Emoji](../design/messages.md#emoji)).
 
 ```
 emoji        = {"id", "name", "image": image, "added_by", "added_at"}
@@ -145,7 +145,7 @@ DELETE /api/emoji/{id}                         204              (staff only)
 
 ## Reactions
 
-A reaction is a member's emoji on a message: one of Unicode's, from the list (`denproto.IsEmoji`), or one of the den's (see the design doc's Reactions).
+A reaction is a member's emoji on a message: one of Unicode's, from the list (`denproto.IsEmoji`), or one of the den's (see the design's [Reactions](../design/messages.md#reactions)).
 
 ```
 reaction        = {"emoji"?: "<one of Unicode's>", "emoji_id"?: "<one of the den's>", "members": [member id, …]}
@@ -174,7 +174,7 @@ PUT  /api/messages/{id}/reactions/sealed   {"revision", "key_id", "sealed"}     
 
 ## Polls
 
-A channel's message may be a poll, whose question its text is (see the design doc's Polls). A poll as the den sends it is as the member it's sent to may see it, by its rules: in history, in what changed while away, in `message.created`, and in its events.
+A channel's message may be a poll, whose question its text is (see the design's [Polls](../design/messages.md#polls)). A poll as the den sends it is as the member it's sent to may see it, by its rules: in history, in what changed while away, in `message.created`, and in its events.
 
 ```
 poll         = {"choices": ["…", …], "multiple"?: true, "ends_at", "show_voters": "never" | "end" | "always",

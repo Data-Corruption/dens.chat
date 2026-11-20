@@ -71,14 +71,18 @@ holds.
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the docs' link check (`scripts/test/links/`), the browser checks (`scripts/test/browser/`), and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` and `bg.sh` also work a real phone |
 | `scripts/dev/` | Manual testing's helpers: a Flatpak made from this tree for a VM, and a development den filled with messages or files |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
-| `docs/dev/` | Internal docs: the design and each deployment form's, the milestones and loose ideas, the lifecycle, the den protocol and the release process |
+| `docs/dev/` | Internal docs: the design (`design.md` and `design/`, a part per area) and each deployment form's, the den protocol (`protocol.md` and `protocol/`), the milestones and loose ideas, the lifecycle and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra), with its own `README.md` and `DEPLOYMENT.md` |
 
 ## Documents of record
 
-- [docs/dev/design.md](docs/dev/design.md): processes, deployment forms and the
-  platform layer, identity and encryption, authentication, den features, media,
-  security checklist.
+- [docs/dev/design.md](docs/dev/design.md) and `docs/dev/design/`: the
+  overview first, with goals, the privacy model, processes and listeners,
+  pairing, networking, deployment forms, the platform layer and versions; then
+  a part per area: keys and sign-in, the page and the phone layout, members,
+  messages, sync, notifications, players and cards, files and the media
+  module, end-to-end encryption, calls and the SFU, the helper and Relay, and
+  the security checklist.
 - [docs/dev/installed.md](docs/dev/installed.md): the service under its own
   account on Linux and Windows: install, accounts and sandboxes, updates, paths
   and permissions, maintenance transactions and the installer scripts.
@@ -171,7 +175,8 @@ installed copies exist.
 
 **Protocol changes follow the versioning rules.** Adding fields or message
 types doesn't bump the client-den protocol version, and receivers ignore
-unknown message types. Only breaking changes bump it (see the design doc).
+unknown message types. Only breaking changes bump it (see
+[Versioning and compatibility](docs/dev/design.md#versioning-and-compatibility)).
 
 **OS seams live in two places.** Runtime seams go in
 `internal/platform/host` as function pairs in `_linux.go` and `_windows.go`;
@@ -355,7 +360,7 @@ held short. Every kind of text has one job:
   defines a term before relying on it, gives rationale only where that helps
   the reader decide or understand a constraint, and holds no history either.
 - **Text in the page** is a label, or one line of what to do. The guide
-  holds the rest, linked (design.md's *The page's words*).
+  holds the rest, linked ([The page's words](docs/dev/design/page.md#the-pages-words)).
 - **A changelog line** says what a member notices, in their words, and for a
   fix what went wrong and since when.
 - **A commit message** says what changed and why in a few lines; **PR text**

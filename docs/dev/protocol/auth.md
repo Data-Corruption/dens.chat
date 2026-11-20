@@ -170,7 +170,7 @@ device_request = {"id", "key_id", "label", "requested_at", "expires_at", "offer"
 
 ## Relay
 
-A member's installs link across their network, and the den only passes boxes between them (see the design doc's Relay).
+A member's installs link across their network, and the den only passes boxes between them (see the design's [Relay](../design/helper.md#relay)).
 
 ```json
 [{"t": "relay.signal", "d": {"to": "<key id>", "box": "<1,024 bytes>"}}]

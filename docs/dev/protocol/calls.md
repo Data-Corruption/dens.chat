@@ -4,7 +4,7 @@ Voice and screen share through the den, staff in calls, the limits for calls, se
 
 ## Voice
 
-A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design doc's Voice and screen share).
+A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design's [Calls](../design/calls.md)).
 
 ```
 call = {"channel_id", "members": [{"id", "muted"?, "deafened"?, "staff_muted"?,
@@ -87,7 +87,7 @@ A call's socket can close while its media still flows, or come back after its me
 
 ### Push to talk
 
-A member who sends by push to talk rings for everyone in their call while they hold its key, whatever their microphone hears (see the design doc's Voice controls).
+A member who sends by push to talk rings for everyone in their call while they hold its key, whatever their microphone hears (see the design's [Voice controls](../design/calls.md#voice-controls)).
 
 - `voice.talk` with `"on": true` says the member holds push to talk in the call this socket holds, and `"on": false` that they let go. A frame from a socket that holds no call is ignored.
 - `voice.talking` lists the members of the call who hold push to talk, in the order they joined, and goes to the sockets that hold the call's members' calls alone, as only their pages ring for speech. Each replaces the last. A socket gets it as its call starts and as it takes a held call back, and whenever the list changes.
@@ -108,7 +108,7 @@ POST /api/members/{id}/move        {"channel_id": "42"}  204
 
 ### Screen share
 
-A member in a call shares their screen, a window or a tab with the members of the call who choose to watch it (see the design doc's Screen share).
+A member in a call shares their screen, a window or a tab with the members of the call who choose to watch it (see the design's [Screen share](../design/sfu.md#screen-share)).
 
 - `voice.share` with `"on": true` starts a share in the call this socket holds, and `sound` says whether the client will send its sound. The den adds whichever of the screen and sound sections the member's offers don't have yet, and sends a new offer if it added one, then marks the member `sharing` in `voice.state`. The client sends its screen on the den's video section, and its sound on the den's second `recvonly` audio section. `"on": false` stops the share: the den forwards nothing more from it, and each viewer's next offer retires its sections. A frame from a socket that holds no call is ignored.
 - A share is refused with `voice.refused`, `"what": "share"`, and a reason: `off` when the den's `shares` is 0, `full` when that many members are sharing already, `staff_muted` while staff mute the member, or `rate_limited`.
@@ -132,7 +132,7 @@ call_limits = {"members", "callers", "shares", "share_viewers", "share_bitrate",
 
 ### Sealed calls
 
-A den seals every call end to end: each member's page seals its frames with SFrame (RFC 9605, AES_128_GCM_SHA256_128) under a key of the member's own for the call, which their Dens makes, seals to each other member's identity and sends as `voice.key` (see the design doc's End-to-end encryption, Calls). The den forwards frames it can't open.
+A den seals every call end to end: each member's page seals its frames with SFrame (RFC 9605, AES_128_GCM_SHA256_128) under a key of the member's own for the call, which their Dens makes, seals to each other member's identity and sends as `voice.key` (see the design's [Sealed calls](../design/e2ee.md#sealed-calls)). The den forwards frames it can't open.
 
 - The den's info, in `ready` and `den.updated`, says `"sealed_calls": true`; an older den says nothing, and its calls go unsealed. A den that seals calls refuses a `voice.join` without `"sealed": true` with `voice.ended` and `update_needed`: an older page would send in the clear, which every other page drops. A resume takes back only a call the den holds, every one of which was joined sealed. A page that joined while its den didn't seal, which ended the call as it updated, joins again sealed.
 - `voice.key` from a member's Dens carries their key for the call this socket holds, in `channel_id`: its random 16-byte ID (`kid`), a commitment to it (`commit`, SHA-256 of `"dens-call-key-commit-v1"`, the ID and the key), each member it was sealed to with the hash of the identity it was sealed to, in the order of their IDs and its maker not among them, its maker's identity as the hash of its X-Wing key and its Ed25519 key (`maker`), the maker's signature over `"dens-call-key-v1"` ‖ den ID ‖ channel ‖ kid ‖ commit ‖ maker ‖ how many members ‖ each member and identity hash, and a copy for each member named, 1,152 bytes of HPKE (X-Wing, HKDF-SHA-256, ChaCha20-Poly1305), bound to `"dens-call-key-copy-v1"`, the den's ID, the channel, the key's ID and the member. The den checks its shape alone, and that the socket holds a call in that channel: one that doesn't, or past the limit, goes nowhere.
@@ -142,7 +142,7 @@ A den seals every call end to end: each member's page seals its frames with SFra
 
 ### The soundboard
 
-Staff add sounds to the den's soundboard, and a member in a call plays one for everyone in it, on the call's soundboard track (see the design doc's The soundboard).
+Staff add sounds to the den's soundboard, and a member in a call plays one for everyone in it, on the call's soundboard track (see the design's [The soundboard](../design/sfu.md#the-soundboard)).
 
 ```
 sound        = {"id", "name", "file_id", "duration_ms", "added_by", "added_at"}

@@ -87,7 +87,7 @@ A member is online while they have an open socket. `ready` carries `online`, a l
 
 ## Events
 
-A den's events: each a name, a description, an optional banner, a start, an end and a place, which members mark Interested, and which the den starts and ends at their times (see the design doc's Events).
+A den's events: each a name, a description, an optional banner, a start, an end and a place, which members mark Interested, and which the den starts and ends at their times (see the design's [Events](../design/members.md#events)).
 
 ```
 event        = {"id", "name", "description"?, "banner"?: image, "starts_at", "ends_at", "channel_id"? | "place"?, "made_by",
