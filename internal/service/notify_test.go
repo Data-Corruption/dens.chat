@@ -63,7 +63,8 @@ func (p *pageStream) next(kind string) json.RawMessage {
 	}
 }
 
-// quiet fails on a message of kind within a moment.
+// quiet fails on a message of kind within a moment. coder/websocket closes
+// the connection as a read's context ends, so it's the stream's last read.
 func (p *pageStream) quiet(kind, why string) {
 	p.t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)

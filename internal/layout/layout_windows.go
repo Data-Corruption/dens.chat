@@ -48,6 +48,8 @@ func (l *Layout) resolve() error {
 		l.HostKey = filepath.Join(l.Control, "datakey.dev")
 		l.ControlEndpoint = fmt.Sprintf(`\\.\pipe\%s-dev-%s-control`, l.App, l.Instance)
 	default:
+		// So a test that makes the Android or the Flatpak form's layout is
+		// a _linux_test.go file: Windows CI runs every package's tests.
 		return fmt.Errorf("no layout for the %s", l.Form)
 	}
 	return nil

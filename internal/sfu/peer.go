@@ -556,7 +556,9 @@ func (p *Peer) unwatchLocked(sharer string) bool {
 // send has the peer send the member something from the peer from:
 // another member's voice, or a share's screen or sound, on a spare section
 // of its kind if there is one. Sending what's sent already changes
-// nothing. The caller holds the SFU's lock.
+// nothing. The caller holds the SFU's lock. It adds its sections itself:
+// Pion's AddTrack would take the member's receive-only microphone section
+// before they answer, and never reuses a retired one.
 func (p *Peer) send(key string, track *webrtc.TrackLocalStaticRTP, from *Peer) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

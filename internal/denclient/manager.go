@@ -367,7 +367,8 @@ func (m *Manager) startLocked(j *joined, token denproto.Bytes, expires time.Time
 	m.runLocked(c)
 }
 
-// newConn makes a connection to a joined den, which runLocked starts.
+// newConn makes a connection to a joined den, which runLocked starts. The
+// caller holds m.mu.
 func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *conn {
 	ids := j.identities
 	if ids == nil {
