@@ -120,9 +120,10 @@ jobs:
 
   # Native Windows coverage: runs the Go test suite with the windows build
   # tags (pure Go, no C toolchain needed), parses the PowerShell scripts with
-  # Windows PowerShell 5.1, which is what users run install.ps1 with, and
-  # runs the lifecycle e2e with the exact installer candidate. The runner is
-  # a throwaway machine, so the e2e installs the real service.
+  # Windows PowerShell 5.1, which is what users run install.ps1 with, runs
+  # the lifecycle e2e with the exact installer candidate, and then the den
+  # e2e behind Caddy. The runner is a throwaway machine, so the e2e installs
+  # the real service.
   windows-e2e:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
@@ -139,22 +140,12 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # Generated frontend outputs are intentionally gitignored. The release
-      # job builds the real assets; this job only needs embed inputs to compile
-      # and run the Go test suite natively.
-      - name: Create compile-only frontend placeholders
-        shell: pwsh
-        run: |
-          Set-Content internal/ui/assets/css/output.css ""
-          Set-Content internal/ui/assets/js/output.js ""
-          Set-Content internal/ui/assets/manifest.json '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","js/sframe.worker.js":"test","js/relay.worker.js":"test","js/relay.worklet.js":"test","wasm/rnnoise.wasm":"test","emoji.json":"test"}'
-
       - name: Test native Windows build
         shell: pwsh
         run: go test ./...
 
 
-      - name: Parse install.ps1 (Windows PowerShell 5.1)
+      - name: Parse the PowerShell scripts (Windows PowerShell 5.1)
         shell: powershell
         run: |
           foreach ($path in @("scripts/install.ps1", "scripts/test-lifecycle-e2e.ps1", "scripts/test-den-e2e.ps1")) {
@@ -198,9 +189,10 @@ jobs:
         run: scripts/test-den-e2e.ps1 -ReleaseDir out/windows-e2e -CaddyZip $env:CADDY_ZIP
 
 
-  # The Linux checks that need no containers: the Go suite, which the
-  # release job's build relies on rather than running it again, the
-  # third-party notices, the list of emoji, shell lint, the page's tests and
+  # The Linux checks that need no containers: lint, first, in a checkout
+  # nothing has written to, which also shows a clone builds as it comes; the
+  # Go suite, which the release job's build relies on rather than running it
+  # again; the third-party notices, the list of emoji, the page's tests and
   # the release state machine.
   linux-tests:
     needs: release-plan
@@ -217,6 +209,9 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
+
+      - name: Lint
+        run: ./scripts/test.sh -lint
 
       - name: Install pinned rclone
         run: |
@@ -237,9 +232,6 @@ jobs:
 
       - name: Check the list of emoji matches its inputs
         run: ./scripts/emoji.sh --check
-
-      - name: Lint shell scripts
-        run: ./scripts/test.sh -lint
 
       - name: Test the page's scripts
         run: ./scripts/test.sh -js
@@ -282,8 +274,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # A member joins a den through Caddy, chats, calls, and is banned, in two
-  # Incus containers.
+  # A member joins a den through Caddy, chats, calls, and is banned, in three
+  # Incus containers: the den's, the member's, and a server the den moves
+  # to.
   linux-den-e2e:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
@@ -362,7 +355,8 @@ jobs:
   # The media module: regenerates it from its pinned inputs and fails if the
   # committed translation differs, and has exiftool look for anything
   # personal left in stripped copies. A PR runs it only when it changes the
-  # module's inputs or CI's own files; a push, always.
+  # module's inputs or CI's own files; a push, whenever it runs every test
+  # job.
   media-module:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.media_required == 'true' }}

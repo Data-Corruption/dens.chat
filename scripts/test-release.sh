@@ -2,7 +2,9 @@
 
 # Fast local tests for the release state machine. Uses rclone's local backend
 # and a tiny checksum-backed cosign stand-in; no network, OIDC, or bucket
-# credentials are required.
+# credentials are required. Needs rclone on PATH (./scripts/vendor.sh rclone
+# fetches the pinned one, which CI puts there), gpg and git, and renders the
+# installers into out/release.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -373,7 +375,7 @@ EOF
   pr_plan true false CHANGELOG.md README.md
   for input in internal/media/strip.go internal/media/ffmpeg/driver/driver.c internal/media/ffmpeg/module/module.go \
     scripts/ffmpeg.sh scripts/rnnoise.sh internal/ui/rnnoise/build.c internal/ui/assets/wasm/rnnoise.wasm \
-    scripts/vendor.sh scripts/build/common.sh; do
+    scripts/vendor.sh scripts/build/common.sh scripts/build/go.sh; do
     pr_plan true true "$input"
     pr_plan true true docs/content/docs/join.md internal/den/den.go "$input"
   done

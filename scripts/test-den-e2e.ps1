@@ -19,31 +19,33 @@ member's side over TCP alone; this runs Pion under main's restricted service
 SID. The member's call must ride out Caddy restarting, and then second's
 service restarting, the den holding it while the member is away and the
 member taking it back on the same connection. A staff mute must silence the
-member, and a staff disconnect end their call. The member sends a phone
-photo with GPS data, which must reach the owner without it, a phone video,
-which must arrive stripped with its preview and play from any byte, and an
-iPhone HEIC, which must arrive as a JPEG. The owner's retention period must
-reach the member and outlive the restart. At their limit, the member swaps
-a file for a smaller one and deletes another. A HEIC sent smaller must
-arrive as a copy at 1920x2560, and another switched to full size, full
-size, and a video over a lowered limit as an AV1 copy that fits, with its
-preview. The owner and the member write in a DM at the same moment,
-neither typing a digit, and compare codes, which asks nothing of the den
-(M16.1); it carries text, a photo, a photo's and a video's smaller copies
-and a video the den stores only sealed. The
-owner shares a checklist with the member, and the two tick different boxes
-at the same moment, all of which must stay. Instance fresh stands in for
-the member's new machine: it signs in by the den's address with a recovery
-code, whose new password must sign second out at once, and reads the DM
-only once the member types their DM seal. The new password alone doesn't
-sign second in again: fresh approves it, the two comparing digits, and
-hands it the seal, with which it reads the DM. Signed out once more from
-fresh's device list, second signs in again the same way, with the digits
-typed into fresh first, which must go on showing its own. The owner then
-bans the member, whose connections must close at once and who can't join
-again under the same name. Last, main makes an owner invite with dens den
-owner-invite, and whoever redeems it, on instance second under a new name,
-must own the den, with the owner before them a moderator. The photo is
+member, and a staff disconnect end their call. The member shares their
+screen, which the owner watches, and a voice channel's new bitrate reaches
+the call in progress. The member sends a phone photo with GPS data, which
+must reach the owner without it, a phone video, which must arrive stripped
+with its preview and play from any byte, and an iPhone HEIC, which must
+arrive as a JPEG. The owner's retention period must reach the member and
+outlive the restart. At their limit, the member swaps a file for a smaller
+one and deletes another. A HEIC sent smaller must arrive as a copy at
+1920x2560, and another switched to full size, full size, and a video over a
+lowered limit as an AV1 copy that fits, with its preview. The member's cache
+keeps what they viewed across both restarts, and drops what went. The owner
+and the member write in a DM at the same moment, neither typing a digit, and
+compare codes, which asks nothing of the den (M16.1); it carries text, a
+photo, a photo's and a video's smaller copies and a video the den stores
+only sealed. The owner shares a checklist with the member, and the two tick
+different boxes at the same moment, all of which must stay. Instance fresh
+stands in for the member's new machine: it signs in by the den's address
+with a recovery code, whose new password must sign second out at once, and
+reads the DM only once the member types their DM seal. The new password
+alone doesn't sign second in again: fresh approves it, the two comparing
+digits, and hands it the seal, with which it reads the DM. Signed out once
+more from fresh's device list, second signs in again the same way, with the
+digits typed into fresh first, which must go on showing its own. The owner
+then bans the member, whose connections must close at once and who can't
+join again under the same name. Last, main makes an owner invite with dens
+den owner-invite, and whoever redeems it, on instance second under a new
+name, must own the den, with the owner before them a moderator. The photo is
 scripts\test\gps-photo.jpg, next to this script, and the video and HEIC are
 in internal\media\ffmpeg\testdata.
 
@@ -52,11 +54,12 @@ hosts file, and undoes all of it at the end. It refuses to run where Dens
 is installed. It builds the voice probe with the Go on PATH. From an
 elevated PowerShell:
   bash scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
-  bash scripts/vendor.sh caddy-windows
-  powershell -ExecutionPolicy Bypass -File scripts\test-den-e2e.ps1 -ReleaseDir out\windows-e2e -CaddyZip tools\caddy_2.11.4_windows_amd64.zip
+  bash scripts/vendor.sh caddy-windows    # prints caddy-windows=ZIP
+  powershell -ExecutionPolicy Bypass -File scripts\test-den-e2e.ps1 -ReleaseDir out\windows-e2e -CaddyZip ZIP
 
 -ClientPort, -SecondClientPort and -FreshClientPort move the instances'
-client ports off 8484, 18484 and 18486 where those are taken.
+client ports off 8484, 18484 and 18486 where those are taken, and
+-HttpsPort and -HttpPort move Caddy's off 18443 and 18080.
 -KeepOnFailure leaves a failed setup in place for inspection.
 #>
 [CmdletBinding()]

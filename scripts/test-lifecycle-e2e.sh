@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
 # Linux lifecycle e2e. Installs Dens through the rendered install.sh in fresh
-# Incus system containers and runs the M0 flows on each distro (the steps are
-# in scripts/test/lifecycle-guest.sh): host a den with Dens's first release
-# and update it to this one, which still hosts it (M9.1); then install as a
-# sudo user, pair a browser, set the password, turn hosting on and off with
-# dens den hosting, back up, refuse another local user, reboot, update, add
-# a second instance that hosts, restore, and uninstall. Each distro after
-# the first restores the backup the previous one made, which covers
-# restoring on another machine.
+# Incus system containers and runs the lifecycle's flows on each distro (the
+# steps are in scripts/test/lifecycle-guest.sh): host a den with Dens's first
+# release, with a DM between two of its members, and update it to this one,
+# which still hosts it and reads and sends the DM (M9.1); then refuse v1.0's
+# den option, install as a sudo user, pair a browser, set the password, turn
+# hosting on and off with dens den hosting, refuse another local user, back
+# up, reboot, update, add a second instance that hosts, restore, and
+# uninstall. Each distro after the first restores the backup the previous
+# one made, which covers restoring on another machine.
 #
 # Usage:
 #   ./scripts/test-lifecycle-e2e.sh                          # every distro
@@ -20,8 +21,9 @@
 #
 # Without --release-dir the harness builds two unsigned fixture releases, one
 # to install and a newer one to update to, and installs with --skip-verify;
-# signatures are covered by installing a real release. With both, it also
-# checks that the older one won't install over the newer. A --release-dir
+# signatures are covered by --installer-only's runs, which install a real
+# release, as the release pipeline's do. With both, it also checks that the
+# older one won't install over the newer. A --release-dir
 # snapshot (root version pointer, install.sh, releases/) has no newer
 # release, so those steps are skipped. Either way the first release comes
 # from scripts/vendor.sh's pin (scripts/test/first-release.sh).

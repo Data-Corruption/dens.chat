@@ -10,7 +10,8 @@
 # the installer (install.sh or install.ps1). Install with --skip-verify and
 # --release-url pointing at DEST (or DEST/next) (-SkipVerify and -ReleaseUrl
 # for install.ps1). The binaries carry no signing identity, as a release's
-# do, so dens update takes --skip-verify from them.
+# do, so dens update takes --skip-verify from them. They carry the page if
+# this tree's build wrote it, and internal/ui's placeholder page if not.
 #
 # Usage: scripts/test/fixture-releases.sh DEST TARGET   (DEST must not exist)
 
@@ -30,8 +31,8 @@ esac
 cd "$(dirname "$0")/../.."
 # shellcheck source=../build.sh
 source scripts/build.sh
-ensure_embed_placeholders
 DEV_MODE=false
+PAGE_REQUIRED=false
 CERT_IDENTITY=""
 # The installers always pass the release URL they came from, so the one
 # baked into the binaries is never used; it only has to be valid.

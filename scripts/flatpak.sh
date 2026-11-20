@@ -31,8 +31,8 @@ RUNTIME_BRANCH=26.08
 FILES=$(cd "$(dirname "$0")/flatpak" && pwd)
 # OSTree compares a binary with the one before by bsdiff, which makes an
 # update a fraction of the binary's size, only while the two are under its
-# limit together: 128 MB unless raised, which two of Dens's builds will soon
-# pass.
+# limit together, 128 MB unless raised: raised, so Dens's builds have room
+# to grow.
 MAX_BSDIFF_MB=512
 
 deps() {

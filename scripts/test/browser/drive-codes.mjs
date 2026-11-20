@@ -111,7 +111,7 @@ try {
     said = await compares(A, bobCode.replaceAll(' ', '-'), /The codes match/);
     report(/The codes match\./.test(said) && !said.includes('Bob'), 'alice types bob\'s code, with dashes, and it matches, the dialog naming nobody');
     const guide = await A.b.eval(`${CODES}.querySelector('a[data-docs-link]')?.href + ' ' + ${CODES}.querySelector('a[data-docs-link]')?.target`);
-    report(guide === 'https://dens.chat/docs/join/#comparing-codes _blank', `the dialog's i opens the guide in a new tab: ${guide}`);
+    report(guide === 'https://dens.chat/docs/usage/#comparing-codes _blank', `the dialog's i opens the guide in a new tab: ${guide}`);
     said = await compares(B, aliceCode, /The codes match/);
     report(/The codes match\./.test(said), "bob types alice's code, and it matches");
     for (const s of [A, B]) await close(s);

@@ -9,21 +9,23 @@
 # open that page in the VM's browser and click the link. A later VERSION,
 # published on top, is the update the VM's Dens finds.
 #
-# Usage: scripts/dev/flatpak-vm.sh VERSION     as v1.2.0-vm.1, then v1.2.0-vm.2
+# Usage: STAGE=DIR scripts/dev/flatpak-vm.sh VERSION
+#   VERSION past the Flatpak's first release, v1.2.0, as v1.15.0-vm.1, then
+#   v1.15.0-vm.2; the publisher skips an earlier one, and a prerelease of
+#   v1.2.0 sorts before it. STAGE is the shared folder's directory for it.
 #
-# The publishing runs in an Incus container, dens-flatpak-vm (Debian 13),
-# which keeps the release host between runs. The key lives in
+# The publishing runs in an Incus container that keeps the release host
+# between runs: dens-flatpak-vm unless CONTAINER names another, launched
+# from the local image alias dens-e2e/debian-13. The key lives in
 # out/flatpak-vm/keys too, so a container made again signs with it: a VM
-# keeps trusting only the key it installed with. STAGE is the shared
-# folder's directory for it.
+# keeps trusting only the key it installed with. Staging needs rsync.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-[[ $# -eq 1 && $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { sed -n '12p' "$0" >&2; exit 2; }
+[[ $# -eq 1 && $1 =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ && -n ${STAGE:-} ]] || { awk '/^# Usage:/ { on = 1 } on && !/^# / { exit } on' "$0" >&2; exit 2; }
 VERSION_ARG=$1
 OUT=$PWD/out/flatpak-vm
 CONTAINER=${CONTAINER:-dens-flatpak-vm}
-STAGE=${STAGE:-/mnt/c/Users/datac/dens-vm/flatpak}
 APP=chat.dens.Dens
 URL=http://localhost:8080/
 

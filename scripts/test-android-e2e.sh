@@ -2,75 +2,84 @@
 
 # Android e2e (M12.1): the Android app's development APK, built from this
 # tree, in Android's emulator, joining a den behind Caddy in the browser
-# checks' container, as a member's phone does. In Android 17's emulator,
-# its screen 390 CSS pixels wide (M13), the app installs, makes its data
-# key in the Keystore, starts Dens and pairs its page without a token; the
-# page takes a local password and joins the den through its forms, typed
-# into by Android's keyboard (M13.3), with a picture and an audit of each
-# screen, and the den lists the phone by the name the emulator has, with
-# its model under it; a message goes each way from the composer; a phone
-# photo goes as a
-# smaller copy, and saved from the viewer it reaches Downloads with no GPS
-# or camera left in it. A call with the den's owner goes on through two
-# and a half minutes off screen (M12.2), most of them silent, as the app
-# holds its page as shown, and lets the page and the microphone go once
-# the call ends. A DM from the den's owner while the app is behind the
-# others posts its notification (M12.3), whose tap opens the page at the
-# message, in place on the page that shows (M13.1), and reading it takes
-# the next back. The member's notes open at version 3 of the protocol, and
-# a note written there reads back, sealed on the den (M17.3). An event the
-# member marked Interested posts its notification as it starts, the
-# phone's screen off, whose tap opens the page's events at it, and its end
-# takes it back (M17.4). Dens killed
-# under the shell
-# starts again, and the
-# app force-stopped and opened again keeps its page's session; Back leaves
-# the page, and a link opens outside it. At 390 CSS pixels (M13.1), by
-# Android's own taps and swipes, the member gets around the phone layout's
-# panes, from Home to a channel, the list and the members, and Back walks
-# up them to Home, closing the settings on the way, and out of the app.
-# By touch (M13.2), a long press opens a message's actions in a sheet,
-# which a swipe down closes, and Back too; the keyboard comes up, shown
-# beside the emulator's own, leaving the composer and the newest message
-# in sight, and three lines go by the send button; and a tip opens on a
-# tap and closes on the next. Then every member's screen is walked for its
-# picture and the audit of its layout, which fails on a control under 24
-# pixels, a list's row under 44 or a control only a hover shows
-# (scripts/test/android/walk.mjs). The settings and Manage open as lists
-# of pages, which Back walks out of, and the phone's settings hold no
-# keyboard shortcuts or screen share; the viewer, on a message's two
-# photos, moves to the second by a swipe, zooms by a double tap, and Back
-# closes it; and a dialog, a sheet, closes by a swipe down (M13.3). In a
-# call with the den's owner, from a text channel and never back to the
-# list, the member finds the call's bar and its button, watches the
-# owner's share docked above the channel, full screen and back, mutes and
-# unmutes with the button, holds it to talk through Android's own touch,
-# ringing for the owner only while it's held, has it let go as the
-# notification shade comes down mid-press, and leaves from the bar
-# (M13.4); before leaving, it hears the owner leave and join again, the
-# page playing their sounds through the call's context (M14.2). Desk reacts
-# to the member's message, which the phone's page shows as a chip, and the
-# member reacts to desk's from the long press's quick row, which desk's
-# page shows (M15.3). Desk posts a poll, which the member votes on by taps,
-# and desk's den counts (M15.4). An install of the member's own beside
-# desk's signs in through the phone's approval and shares that computer's
-# sound, a tone; on the phone, by Android's own taps, Keybind relay goes
-# on, which has Android ask to let Dens reach its network, allowed on its
-# dialog, and Listen plays the install's sound across the link from the
-# emulator, as media, the page held as shown and Wi-Fi kept awake, moving
-# into a call's context as the phone joins one and back as it leaves,
-# until Stop lets them go (M20.3). Then the screens are walked again with
-# Android's font scale at 1.3, as a member with larger text has it. The
-# host package's tests, which hold Android's seams, run in the emulator as
-# the app. Then the app's
-# release, from the fixture releases (scripts/test/android/releases.sh),
-# updates itself (M12.4): its updater refuses a newer release whose
-# checksums another workflow signed, before downloading its APK, then, at
-# the member's Check now in the page's settings (M17.2), checks the release
-# signed as it should be; the app joins a den, which shows the update's
-# notice too, until the member dismisses it there, while Home keeps it
-# (M21.1); and the tap on its notification hands the APK to Android's
-# installer, which updates the app to it. Android 12's
+# checks' container, as a member's phone does.
+#
+# In Android 17's emulator, its screen 390 CSS pixels wide (M13), the app
+# installs, makes its data key in the Keystore, starts Dens and pairs its
+# page without a token; the page takes a local password and joins the den
+# through its forms, typed into by Android's keyboard (M13.3), with a
+# picture and an audit of each screen, and the den lists the phone by the
+# name the emulator has, with its model under it; a message goes each way
+# from the composer; a phone photo goes as a smaller copy, and saved from
+# the viewer it reaches Downloads with no GPS or camera left in it. A call
+# with the den's owner goes on through two and a half minutes off screen
+# (M12.2), most of them silent and sealed both ways, as the app holds its
+# page as shown, and lets the page and the microphone go once the call ends.
+#
+# The phone's DM with the den's owner opens at once, and the two compare
+# codes; the phone reads the owner's message in a group of three, its
+# changes, keys and signature checked; and the member's notes open at
+# version 3 of the protocol, and a note written there reads back, sealed on
+# the den (M17.3). A DM from the owner while the app is behind the others
+# posts its notification (M12.3), whose tap opens the page at the message,
+# in place on the page that shows (M13.1), and another, read on the den, has
+# its notification taken back. The DM's messages are set to go after a day,
+# for the walk to find. An event the member marked Interested posts its
+# notification as it starts, the phone's screen off, whose tap opens the
+# page's events at it, and its end takes it back (M17.4). Dens killed under
+# the shell starts again, and the app force-stopped and opened again keeps
+# its page's session; a link opens outside the page, and Back leaves it.
+#
+# At 390 CSS pixels (M13.1), by Android's own taps and swipes, the member
+# gets around the phone layout's panes, from Home to a channel, the list and
+# the members, and Back walks up them to Home, closing the settings on the
+# way, and out of the app. By touch (M13.2), a long press opens a message's
+# actions in a sheet, which a swipe down closes, and Back too; the keyboard
+# comes up, shown beside the emulator's own, leaving the composer and the
+# newest message in sight, and three lines go by the send button; and a tip
+# opens on a tap and closes on the next. With the owner's name in a font and
+# a color, the settings and Manage open as lists of pages, which Back walks
+# out of, and the phone's settings hold no keyboard shortcuts or screen
+# share; the viewer, on a message's two photos, moves to the second by a
+# swipe, zooms by a double tap, and Back closes it; and a dialog, a sheet,
+# closes by a swipe down (M13.3). The owner reacts to the member's message,
+# which the phone's page shows as a chip, and the member reacts to the
+# owner's from the long press's quick row (M15.3). The owner posts a poll,
+# which the member votes on by taps, and the den counts (M15.4).
+#
+# In a call with the owner, joined from the list, whose row shows the call's
+# length, and from a text channel never back to the list, the member finds
+# the call's bar and its button, watches the owner's share docked above the
+# channel, full screen and back, mutes and unmutes with the button, holds it
+# to talk through Android's own touch, ringing for the owner only while it's
+# held, has it let go as the notification shade comes down mid-press, plays
+# the soundboard's sound and hears the owner's, hears the owner leave and
+# join again, the page playing the sounds through the call's context
+# (M14.2), and leaves from the bar (M13.4).
+#
+# An install of the member's own beside the owner's signs in through the
+# phone's approval and shares that computer's sound, a tone; on the phone,
+# by Android's own taps, Keybind relay goes on, which has Android ask to let
+# Dens reach its network, allowed on its dialog, and Listen plays the
+# install's sound across the link from the emulator, as media, the page held
+# as shown and Wi-Fi kept awake, moving into a call's context as the phone
+# joins one and back as it leaves, until Stop lets them go (M20.3).
+#
+# Then every member's screen is walked for its picture and the audit of its
+# layout, which fails on a control under 24 pixels, a list's row under 44 or
+# a control only a hover shows (scripts/test/android/walk.mjs), and walked
+# again with Android's font scale at 1.3, as a member with larger text has
+# it. The host package's tests, which hold Android's seams, run in the
+# emulator as the app.
+#
+# Then the app's release, from the fixture releases
+# (scripts/test/android/releases.sh), updates itself (M12.4): its updater
+# refuses a newer release whose checksums another workflow signed, before
+# downloading its APK, then, at the member's Check now in the page's
+# settings (M17.2), checks the release signed as it should be; the app joins
+# a den, which shows the update's notice too, until the member dismisses it
+# there, while Home keeps it (M21.1); and the tap on its notification hands
+# the APK to Android's installer, which updates the app to it. Android 12's
 # emulator, whose WebView is older than the page needs, runs Dens and says
 # to update the WebView, and the release's app updates itself there too,
 # checking again as Dens starts again.
@@ -89,6 +98,8 @@
 set -euo pipefail
 exec </dev/null
 cd "$(dirname "$0")/.."
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 
 build=true
 case ${1:-} in

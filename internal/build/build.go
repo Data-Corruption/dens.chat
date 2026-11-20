@@ -41,7 +41,13 @@ var (
 	// Sigstore's public one (M12). Releases never set it.
 	sigstoreRoot string
 	devMode      string
+	pageRequired string
 )
+
+// PageRequired reports whether this binary refuses to start without the
+// page the build writes. Every binary a script builds does, except the
+// harnesses' fixtures; a bare go build or go test serves a placeholder page.
+func PageRequired() bool { return pageRequired == "true" }
 
 type BuildInfo struct {
 	Name            string `json:"name"`

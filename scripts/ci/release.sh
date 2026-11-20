@@ -53,8 +53,7 @@ resolve_version() {
     printf "error: no release heading found in CHANGELOG.md\n" >&2
     printf "  The publisher reads its version from the first heading shaped like:\n" >&2
     printf "    ## [vX.Y.Z] - YYYY-MM-DD\n" >&2
-    printf "  Add one for the release you intend to publish; the commented-out\n" >&2
-    printf "  example near the top of CHANGELOG.md shows the expected form.\n" >&2
+    printf "  Add one for the release you intend to publish.\n" >&2
     printf "  Once a heading exists it stays, and later pushes that do not change\n" >&2
     printf "  it re-verify the promoted release and finish without republishing.\n" >&2
     exit 1

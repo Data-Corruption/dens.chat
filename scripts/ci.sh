@@ -24,10 +24,11 @@
 #     Publish the promoted release's Flatpak to its repository on the release
 #     host, or finish an interrupted publication (scripts/ci/flatpak.sh). The
 #     workflow runs this after --execute, in the flatpak environment, whose
-#     FLATPAK_GPG_KEY signs it, where flatpak and ostree are.
+#     FLATPAK_GPG_KEY signs it. Needs flatpak, ostree, gpg, gpgconf,
+#     appstreamcli, base64 and gzip.
 #
-# Otherwise every command but --plan-pr needs GITHUB_REPOSITORY, the R2
-# credentials, and rclone on PATH.
+# Every command but --plan-pr, and --plan before the first release, needs
+# GITHUB_REPOSITORY, the R2 credentials, and rclone on PATH.
 # Execution also needs the build toolchain and GitHub's signing/tag permissions.
 # Run from the repository root. Project settings stay in scripts/build.sh.
 
@@ -143,7 +144,7 @@ plan_pr_jobs() {
     case "$path" in
       .github/* | scripts/ci.sh | scripts/ci/* | \
         internal/media/* | scripts/ffmpeg.sh | scripts/rnnoise.sh | internal/ui/rnnoise/* | \
-        internal/ui/assets/wasm/rnnoise.wasm | scripts/vendor.sh | scripts/build/common.sh)
+        internal/ui/assets/wasm/rnnoise.wasm | scripts/vendor.sh | scripts/build/common.sh | scripts/build/go.sh)
         $media || why="$path is one of the media module's inputs or CI's own files"
         e2e=true media=true
         ;;

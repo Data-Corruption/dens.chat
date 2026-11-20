@@ -7,13 +7,13 @@
 # for a member and run in a Debian 13 container with no desktop: the
 # member's session bus is her systemd user manager's, and Flatpak's portal
 # checks for updates every few seconds, which the app may install by
-# itself. Two launches at once
-# start one service; the Flatpak has PulseAudio's socket, through which
-# Dens's capture, run in its sandbox as a test probe, reads a tone from the
-# member's own PulseAudio (M20.2); the page's API pairs and sets the local password, and
-# a restarted service starts locked, until the password opens it; Remember,
-# with no keyring there to take it, keeps the key in a file, and the next
-# start is unlocked. The Flatpak joins a den behind Caddy in a second
+# itself. Two launches at once start one service; the Flatpak has
+# PulseAudio's socket, through which Dens's capture, run in its sandbox as
+# a test probe, reads a tone from the member's own PulseAudio (M20.2); the
+# page's API pairs and sets the local password, and a restarted service
+# starts locked, until the password opens it; Remember, with no keyring
+# there to take it, keeps the key in a file, and the next start is
+# unlocked. The Flatpak joins a den behind Caddy in a second
 # container, as the den e2e's is hosted, trusting its certificate
 # authority. Flatpak's update monitor then finds the fixture's next version,
 # once it's published, which the page installs, restarting into it, which
@@ -31,6 +31,10 @@
 # Usage:
 #   ./scripts/test-flatpak-e2e.sh
 #   KEEP_FAILED=true ./scripts/test-flatpak-e2e.sh   # keep containers after a failure
+#   FRESH_IMAGE=true ./scripts/test-flatpak-e2e.sh   # make dens-e2e/flatpak again
+#
+# Needs Incus, Go, and an AppArmor that lets the Flatpak's sandbox make
+# user namespaces in its container.
 #
 # Logs go to out/flatpak-e2e-logs/<run>/.
 
@@ -45,6 +49,11 @@ case "${KEEP_FAILED:-false}" in
   false|"") KEEP_FAILED=false ;;
   *) echo "error: KEEP_FAILED must be true or false" >&2; exit 1 ;;
 esac
+case "${FRESH_IMAGE:-false}" in
+  true) FRESH_IMAGE=true ;;
+  false|"") FRESH_IMAGE=false ;;
+  *) echo "error: FRESH_IMAGE must be true or false" >&2; exit 1 ;;
+esac
 [[ $# -eq 0 ]] || { echo "usage: $0" >&2; exit 2; }
 # The Flatpak's sandbox makes user namespaces in its container, as the
 # member, which an AppArmor that restricts them, as Ubuntu 24.04's does,
@@ -57,6 +66,8 @@ fi
 
 # shellcheck source=test/incus.sh
 source scripts/test/incus.sh
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 incus_setup
 
 IMAGE=dens-e2e/flatpak
@@ -88,7 +99,7 @@ finish() {
   "${INCUS[@]}" exec "$FLATPAK" -- sh -c "journalctl --no-pager -o short-precise -n 500 _UID=\$(id -u alice); echo; ps -eo pid,etimes,args" \
     >"$RUN_LOG_DIR/flatpak-session.log" 2>&1 || :
   if ! $passed && $KEEP_FAILED; then
-    echo ">> Kept $PUBLISHER, $DEN and $FLATPAK for inspection: incus exec <name> -- bash"
+    echo ">> Kept $DEN and $FLATPAK, and $PUBLISHER unless it passed, for inspection: incus exec <name> -- bash"
   else
     # One at a time: one already gone, as the publisher's once it passed,
     # fails a delete of several, which then deletes none.
@@ -129,7 +140,7 @@ push_scripts() {
 # image makes the Flatpak's container image, once: Debian 13 with Flatpak,
 # the member and the runtime, which is downloaded from Flathub.
 image() {
-  if [[ "${FRESH_IMAGE:-false}" == true ]]; then
+  if $FRESH_IMAGE; then
     "${INCUS[@]}" image delete "$IMAGE" >/dev/null 2>&1 || :
   fi
   "${INCUS[@]}" image info "$IMAGE" >/dev/null 2>&1 && return

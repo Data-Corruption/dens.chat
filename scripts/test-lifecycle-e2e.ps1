@@ -2,12 +2,13 @@
 <#
 Windows lifecycle e2e. Installs Dens as a service through install.ps1 from
 fixture releases, once run as text, as the guide's line runs it, and
-otherwise as a file, as dens update runs it, and runs the flows the Linux
-harness runs: host a den with Dens's first release and update it to this
-one, which still hosts it (M9.1); then pair a browser, set the password,
-turn hosting on and off with dens den hosting, back up, refuse another
-account, restart the service, update, add a second instance that hosts a
-den, restore, and uninstall.
+otherwise as a file, as dens update runs it, and runs the Linux harness's
+flows but its DM from the first release and an older release's refusal:
+host a den with Dens's first release and update it to this one, which
+still hosts it (M9.1); then refuse v1.0's den option, pair a browser, set
+the password, turn hosting on and off with dens den hosting, refuse another
+account, back up, restart the service, update, add a second instance that
+hosts a den, restore, and uninstall.
 
 It installs the real service and paths, so it refuses to run where Dens is
 installed. From an elevated PowerShell:

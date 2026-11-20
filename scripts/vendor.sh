@@ -16,8 +16,7 @@
 #     tool supported on the current host is ensured.
 #
 # --refetch re-downloads even when a verified copy is cached and ignores a
-# candidate found on PATH. Go-installed tools are rebuilt on every run except
-# for a goimports on PATH whose embedded module version matches the pin.
+# tailwindcss found on PATH. Go-installed tools are rebuilt on every run.
 #
 # Cached downloads are re-verified against their pinned hash before every use,
 # so tools/ stays incidental scratch space rather than a trusted boundary.
@@ -440,7 +439,7 @@ vendor_esbuild() {
 vendor_tailwind() {
   # The standalone is dynamically linked (glibc, and the -musl variant against
   # musl's loader), so it cannot run on NixOS. Local builds prefer a
-  # tailwindcss from PATH, such as the one in the flake dev shell; CI always
+  # tailwindcss from PATH, such as nixpkgs' tailwindcss_4; CI always
   # downloads the pinned standalone so releases stay reproducible.
   if [[ "$VENDOR_REFETCH" != "true" && "${MODE:-local}" == "local" ]] &&
       command -v tailwindcss >/dev/null 2>&1; then
@@ -1069,6 +1068,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   export LC_ALL=C
   # shellcheck disable=SC1007 # empty CDPATH is deliberate so cd prints nothing
   cd "$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+  # shellcheck source=build/go.sh
+  source "scripts/build/go.sh"
   # shellcheck source=build/common.sh
   source "scripts/build/common.sh"
   vendor_main "$@"
