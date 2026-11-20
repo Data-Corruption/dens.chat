@@ -43,8 +43,11 @@
 # directly through incus-admin or through passwordless sudo, since some
 # distros need privileged containers. Images come from the images: remote. A
 # local alias dens-e2e/<distro> takes precedence, which saves downloads when
-# iterating:
+# iterating, and keeps its image until it's made again, as Arch's should be
+# before a pass is trusted:
 #   incus image copy images:debian/trixie local: --alias dens-e2e/debian-13
+#   incus image alias delete dens-e2e/arch
+#   incus image copy images:archlinux/current local: --alias dens-e2e/arch
 
 set -euo pipefail
 # incus init reads instance config from a non-terminal stdin.

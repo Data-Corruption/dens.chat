@@ -213,9 +213,18 @@ head -c 32 /dev/urandom | base64 | tr -d '\n' > dens-android.password
 3. Commit and push or merge to `main`, then watch the release workflow in the
    **Actions** tab.
 
-Check the result with `curl -fsSL https://releases.dens.chat/version`, install
-on a test machine, and after a second release, update an older installation
-with `dens update` and check that the new version starts.
+Then check the release:
+
+- the root `version` names it, and its tag exists;
+- `cosign verify-blob` of the release's `checksums.txt` with its bundle passes,
+  with `--certificate-identity
+  https://github.com/Data-Corruption/dens.chat/.github/workflows/release.yml@refs/heads/main`
+  and `--certificate-oidc-issuer https://token.actions.githubusercontent.com`;
+- the root `dens.apk` is the same file as the release's `android-arm64.apk`,
+  which `checksums.txt` lists;
+- the `flatpak` job passed, and `.state/flatpak` names the version;
+- it installs on a test machine, and after a second release, an older
+  installation updates with `dens update` and starts at the new version.
 
 ## How publication works
 
@@ -366,7 +375,13 @@ and `media-fuzz` (`media_required`). A list that can't be read, or holds
 nothing, runs every job. A push to `main` plans as before, every test job or
 none, since `release` needs every one to pass or every one skipped. The site
 is the Docs workflow's (`docs.yml`), which builds it on pull requests that
-change it and deploys it from `main`.
+change it and deploys it from `main` on each push that changes it, apart from
+the release: a guide page on a feature not released yet goes live at once, so
+it lands with the release's heading, and a guide changed beside an installer
+can meet the old installer until the release run publishes the new one. Its
+gate, the `DOCS_ENABLED` repository variable, skips its build and test with
+the deploy (`docs/DEPLOYMENT.md`). Only a
+pull request into `main` runs the jobs: one based on another branch runs none.
 
 A failed plan, failed test or cancellation blocks publication. Tests skipped at
 the plan's request let publication continue. A failed `flatpak` job leaves the

@@ -131,8 +131,9 @@ func (rt *router) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, archive); err != nil {
 		rt.a.Log.Warnf("The backup's download didn't finish: %v", err)
 		// Ending the response would leave what went looking whole in the
-		// browser's downloads; dropping the connection marks it failed
-		// (M10).
+		// browser's downloads; dropping the connection marks it failed. A
+		// service stopping lets a download under way finish, so what cuts
+		// one short is a file the archive can't read.
 		panic(http.ErrAbortHandler)
 	}
 }

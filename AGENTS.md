@@ -52,7 +52,7 @@ holds.
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
 | `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
 | `internal/platform/database` | SQLite open and pool, ordered migrations, focused accessors per table |
-| `internal/platform/http` | Listeners, client and den routers, guards, handlers |
+| `internal/platform/http` | Listeners, client and den routers, guards, handlers; `routetest`, which records a router's routes for the tests that fail on one given twice |
 | `internal/platform/release` | Reads the root `version` pointer from the release host, and checks a release's signed checksums where no cosign runs; `sigstoretest`, a Sigstore of the tests' own |
 | `internal/types` | Configuration shape |
 | `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, its workers and worklets, sounds, fonts and emoji |
@@ -69,9 +69,9 @@ holds.
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary and commits it to a repository with its deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the docs' link check (`scripts/test/links/`), the browser checks (`scripts/test/browser/`), and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` and `bg.sh` also work a real phone |
-| `scripts/dev/` | Manual testing's helpers: a Flatpak made from this tree for a VM, and a development den filled with messages or files |
+| `scripts/dev/` | Manual testing's helpers: a manual test's builds staged as a prerelease (`stage.sh`), a Flatpak made from this tree for a VM, and a development den filled with messages or files |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
-| `docs/dev/` | Internal docs: the design (`design.md` and `design/`, a part per area) and each deployment form's, the den protocol (`protocol.md` and `protocol/`), the milestones and loose ideas, the lifecycle and the release process |
+| `docs/dev/` | Internal docs: the design (`design.md` and `design/`, a part per area) and each deployment form's, the den protocol (`protocol.md` and `protocol/`), the milestones and loose ideas, a step's loop (`workflow.md`), running the harnesses (`testing.md`), the lifecycle and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra), with its own `README.md` and `DEPLOYMENT.md` |
 
 ## Documents of record
@@ -96,6 +96,10 @@ holds.
   and the plan for the one under way.
 - [docs/dev/loose-ideas.md](docs/dev/loose-ideas.md): ideas and fixes no
   milestone has taken up yet.
+- [docs/dev/workflow.md](docs/dev/workflow.md): a step's loop, from its branch
+  to its merge, and a milestone's manual test and release.
+- [docs/dev/testing.md](docs/dev/testing.md): running the harnesses: what each
+  needs, takes, leaves behind and logs, and cleaning up after one.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
   locks every form shares, development instances, and the lifecycle e2e
   harnesses.
@@ -165,8 +169,11 @@ table with them on deletes every row that refers to it.
 data every later version reads. Add migrations at the end and never change a
 released step. `instance.json` and `state.json` decode strictly: keep every
 field a release wrote readable, and give a new meaning a new field rather than
-an old one's name. A backup from any release restores. A change to one of these
-comes with a test that reads its released form.
+an old one's name. A backup from any release restores. A migration step a
+manual test's staged build ran on machines that matter is as frozen as a
+released one. What the page keeps in the browser, and its theme codes, are
+released formats too. A change to one of these comes with a test that reads its
+released form.
 
 **The release identity is frozen at the first release.** The cosign signing
 identity includes the path `.github/workflows/release.yml`; never rename or
@@ -201,7 +208,8 @@ WSL, `./scripts/test.sh -windows` runs the Go tests natively on the Windows
 host; CI runs them on a Windows runner. Android code likewise compiles only
 under `GOOS=android`: `-lint` vets it for arm64 (amd64 needs cgo even to
 vet), and `./scripts/test.sh -android-e2e` runs the host package's tests in
-the emulator, as the app.
+the emulator, as the app. A test closes what it opens before it ends: Windows
+can't remove an open file, so `t.TempDir`'s cleanup fails there.
 
 **SQLite uses a modest fixed pool (4) per process.** The Wasm driver gives each
 connection its own memory sandbox and SQLite serializes writers anyway.
@@ -228,8 +236,11 @@ notices don't name, and CI on notices that aren't current.
 `*_test_*.go` names and on `testing` reaching the shipped binary.
 
 **Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`, and for
-the notices the binary embeds, which a test reads line by line. Some
-PowerShell and a few other files are CRLF; do not "fix" them wholesale.
+each file a test reads line by line or byte for byte, the notices the binary
+embeds among them: Windows CI checks out the rest with CRLF, which `-windows`,
+copying from the Linux checkout, never meets. The PowerShell is ASCII with
+CRLF, which `-lint` checks as it parses it, and a few other files are CRLF; do
+not "fix" them wholesale.
 
 **Generated files are committed, and only their scripts write them.** Change
 a file's inputs, run its script, and commit what it writes beside the change;
@@ -251,13 +262,15 @@ The names' fonts are pinned, and never committed: the build copies them from
 their packages into `internal/ui/assets/fonts`. A font is its pin in
 `scripts/vendor.sh`'s `NAME_FONTS`, its name in `denproto.NameFonts` and in
 `names.js`'s `FONTS`, in one order, and its license in `scripts/notices/`,
-with the notices written again; tests fail on one that lacks any of them.
+with the notices written again; tests fail on one that lacks any of them. It's
+an Open Font License font with no Reserved Font Name, since the page serves a
+subset of it under its own name.
 
 ## Build and test
 
 ```sh
 ./scripts/test.sh              # go test -race ./...; run constantly. 4 to 5 min, seconds for what's cached
-./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, the pinned shellcheck over every tracked script, and the docs' links; run before each commit. 25 s, 3 min the first time
+./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, the pinned shellcheck over every tracked script, the PowerShell parsed, and the docs' links; run before each commit. 25 s, 3 min the first time
 ./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts. 30 s
 ./scripts/test.sh -docs        # the site built as the Docs workflow builds it, failing on any warning, and its icon checked; run after touching the site. 2 s
 ./scripts/test.sh -release     # release state machine against a local rclone backend. 50 s
@@ -295,7 +308,8 @@ The e2e harnesses' logs land under `out/`, the browser checks' stay in their
 container; `./scripts/build.sh` empties `out/` in every mode but `--android`,
 and with it the media module's build cache. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 `scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
-Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
+Windows machine without Dens. [docs/dev/testing.md](docs/dev/testing.md) says
+what each harness needs, leaves behind and logs, and how to clean up after one.
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
 cosign, rclone, shellcheck, Hugo, Node.js for the page's tests,
@@ -315,13 +329,27 @@ a binary a script builds refuses.
 Search with `git grep -I` or `rg`: both skip the media module's 24 MB of
 generated Go (`.gitattributes`, `.ignore`), which a bare `grep -r` reads.
 
+## Working on a step
+
+A step is a branch from main, named for it, and a pull request into main;
+[docs/dev/workflow.md](docs/dev/workflow.md) has the loop. Run what the step's
+testing section names, `-lint`, the race suite, and each check whose drivers
+use what changed. Commit by layer, Go, the page, the shell, the checks and the
+docs, each commit that changes Go passing alone; push, and open the pull
+request with `gh`, its text written for the reviewer. It merges with a merge
+commit. Read CI with `gh`: a failure from its job's log (`gh run view RUN
+--log-failed`), an e2e's logs from the run's artifacts (`gh run download RUN -n
+NAME`). After the merge, sync main and delete the branch, here and on GitHub.
+
 ## Where to add things
 
 - CLI command: constructor in `internal/app/commands`, registered in
   `commands.go`. A test scans the AST and fails if you forget to register it.
 - Durable state: a migration step, then accessors beside the owning subsystem.
 - HTTP route: a handler on the client router (`internal/platform/http/client`)
-  or the den router (`internal/platform/http/den`), never both.
+  or the den router (`internal/platform/http/den`), never both. Each router's
+  `TestNoRouteTwice` fails on a method and path given twice, which chi would
+  take silently.
 - OS-specific behavior: a seam in `internal/platform/host`, or a `System`
   method in `internal/install` for an install-time step.
 - Project values (name, release URL, contact, ports): the block at the top of

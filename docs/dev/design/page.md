@@ -26,6 +26,7 @@ The page explains itself where it can, so the docs needn't (see [What the site h
 - It uses the words people know, such as compress, cache, resolution and shortcuts, and no implementation names: noise suppression, not RNNoise; the DM recovery key, the name other encrypted apps taught people, for the DM seal.
 - It describes only what applies: the page knows its browser and system, and shows a figure, such as how much the cache holds, rather than a sentence about it.
 - A warning comes with the action it's about, in its confirmation, rather than ahead of it in a paragraph.
+- A change that reaches other members asks first: a DM's or a group's disappearing time in a dialog, staff's den settings through Manage's Save bar, retention's with a preview of what it deletes, and Delete channel and a call record's Reset by a confirmation in place.
 - A step that waits on something elsewhere says so as it starts, with a spinner, as a sign-in waiting for another device does.
 - What takes more than a line, such as where to compare codes and why, or what disappearing messages do, is the guide's: the page says what to do, minimally, and links to the guide, which opens in a new tab, rather than explaining in place.
 - Nothing says the den or its owner can see something, which members take as given in a place someone else hosts; the page marks what's end-to-end encrypted, and the docs say who can read what, once.

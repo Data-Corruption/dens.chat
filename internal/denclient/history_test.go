@@ -231,7 +231,8 @@ func TestRetentionReachesTheCache(t *testing.T) {
 
 // hangUp listens on loopback and closes every connection as it comes, and
 // returns its address: a den that can't be reached, without waiting out a
-// connection's time limit.
+// connection's time limit, as a closed port has under WSL's mirrored
+// networking, where a dial there times out instead of being refused.
 func hangUp(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

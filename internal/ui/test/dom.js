@@ -2,6 +2,15 @@
 // component with hooks, and render it again, without a browser: elements
 // and text, their attributes, and the listeners Preact adds, which
 // dispatch calls as the browser would.
+//
+// What it leaves out, a test makes up for. With no requestAnimationFrame,
+// Preact runs effects about 100 ms after a render, so a test waits for what
+// an effect does. A component that reaches for window, as useLayer and
+// nav() do, needs a globalThis.window of the test's. textContent holds
+// hidden text too, with no CSS to hide it. A test that leaves a socket or a
+// timer running never ends, and Node has a WebSocket of its own, through
+// which the page's event stream reconnects for ever, so a test that mounts
+// the page stubs WebSocket, location and history.
 
 class Node {
     constructor(nodeType, localName = null) {
@@ -120,7 +129,8 @@ class Node {
 }
 
 // Preact names a listener as the element names the event's handler, so
-// these make it name them in lower case, as it does in a browser.
+// these make it name them in lower case, as it does in a browser; one left
+// out is named as the component writes it, onSubmit's as Submit.
 for (const handler of ['onchange', 'onclick', 'oninput', 'onkeydown', 'onload', 'onpointerdown', 'onpointerup', 'onpointerenter', 'onpointerleave']) Node.prototype[handler] = null;
 
 globalThis.document = {

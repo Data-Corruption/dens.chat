@@ -52,7 +52,9 @@ wait_for_boot() {
 
 # launch_container DISTRO NAME starts a fresh container for a distro and
 # waits for it to boot. A local image alias dens-e2e/<distro> takes
-# precedence over the images: remote.
+# precedence over the images: remote, and keeps the image it was made from,
+# while CI takes the remote's newest: a rolling distro's, as Arch's, goes
+# stale.
 launch_container() {
   local requested=$1 name=$2 distro image privileged
   read -r distro image privileged < <(distro_spec "$requested") || return

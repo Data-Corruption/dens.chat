@@ -39,6 +39,10 @@ param(
     [switch]$KeepOnFailure
 )
 
+# Strict mode throws, where parsing finds nothing and CI is the first real
+# run, on a property a ConvertFrom-Json object lacks, as a Go field left out
+# while empty, on a property of $null, and on @()[0]: read an optional field
+# through .PSObject.Properties["name"], and check .Count before [0].
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"

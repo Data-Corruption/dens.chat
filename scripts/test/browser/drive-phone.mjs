@@ -52,6 +52,12 @@
 //
 // The parts are member, around, touch, pages, call, emoji, reactions,
 // polls, compact, notes, events, owner and before; all by default.
+//
+// The modes run one after another in one den, so what a mode leaves there,
+// a reaction, a poll or a message, is what the next finds, and running some
+// modes or parts alone changes what the rest reach. Firefox's modes can
+// stop after the polls or as the call starts, for a cause not found yet:
+// run that mode again alone.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';

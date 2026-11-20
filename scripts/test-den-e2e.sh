@@ -693,7 +693,8 @@ run() {
 
   echo ">> An event's start, through Caddy"
   local event
-  # Each install logs at info for it, which says what reached its service.
+  # Production builds log at warn: each install logs at info for it, which
+  # says what reached its service.
   member log-level info
   guest "$DEN" log-level info
   event=$(guest "$DEN" event "$den_id" "Game night" "$lounge" 20)

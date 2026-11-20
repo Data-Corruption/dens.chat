@@ -370,7 +370,10 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             await sleep(1500);
         },
         // eval runs an expression in the page and returns its value, which
-        // must be JSON's; gesture runs it as from a click.
+        // must be JSON's; gesture runs it as from a click. A template
+        // literal building the expression drops a regex's backslashes (\d
+        // becomes d), so write [0-9]; and text and selectors go in through
+        // JSON.stringify, which an apostrophe can't end.
         async eval(expression, gesture = false) {
             const r = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: gesture });
             if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description || ''));
@@ -649,6 +652,8 @@ async function firefox(port, { media, screen, preload, prefs = {}, size = [1400,
             const node = await evaluate(`document.querySelector(${JSON.stringify(selector)})`, context, { resultOwnership: 'root' });
             await bidi.send('input.setFiles', { context, element: { sharedId: node.sharedId }, files });
         },
+        // Headless Firefox never has its window's focus, so a check of
+        // focus runs in Chromium.
         async focus() {},
         async shot(file) {
             const r = await bidi.send('browsingContext.captureScreenshot', { context });

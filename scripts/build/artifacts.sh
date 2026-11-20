@@ -3,6 +3,8 @@
 # This file is sourced by ../build.sh. It owns frontend generation, Go builds,
 # build verification, deterministic installer rendering, and release packaging.
 
+# frontend_build runs after detect_host_arch, as a script sourcing build.sh
+# for its helpers must call it too: Tailwind's download is the host's.
 frontend_build() {
   # Versions, hashes, and the fetch itself all live in scripts/vendor.sh.
   # The daisyui modules are consumed by input.css, not invoked directly.
@@ -122,7 +124,8 @@ go_build() {
 
   # Pure Go (no cgo): every target cross-compiles with GOOS/GOARCH alone, and
   # Linux binaries are fully static by default - they must run on any distro,
-  # including NixOS which has no /lib64/ld-linux-*.so glibc loader.
+  # including NixOS which has no /lib64/ld-linux-*.so glibc loader. One at a
+  # time, since a cold compile of the media module takes about 8 GB.
   local target build_out goos goarch
   for target in "${targets[@]}"; do
     goos="${target%%-*}"

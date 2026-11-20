@@ -593,7 +593,9 @@ func (c *conn) saveKept() {
 // restoreKept gives the connection the den's state as the cache kept it,
 // for the page to show until the den sends a snapshot, or while it's
 // away, with the members and where their list stands. Something kept that
-// doesn't check goes from the cache with the rest of the den's.
+// doesn't check goes from the cache with the rest of the den's. newConn
+// calls it under the manager's lock, so it takes no m.mu, and neither
+// publishes nor notifies, which take it.
 func (c *conn) restoreKept() {
 	if !c.cached() {
 		return

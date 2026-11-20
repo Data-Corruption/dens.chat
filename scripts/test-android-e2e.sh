@@ -139,7 +139,9 @@ front() { [[ $(adb shell dumpsys activity activities) =~ topResumedActivity=[^$'
 # tap TRIES REGEX taps the first thing on screen whose text matches REGEX,
 # or its description, as Android's accessibility names a page's buttons in
 # a WebView, trying once a second, and keeps the screen's layout in the
-# logs if it never comes.
+# logs if it never comes, without a picture: a screen-SERIAL.png beside it
+# is an earlier wait's. A WebView's node below the screen can dump with no
+# height at its foot, where the tap does nothing: swipe it into view first.
 tap() {
   local tries=$1 re=$2 bounds
   for _ in $(seq "$tries"); do
@@ -752,6 +754,8 @@ incus exec "$CONTAINER" -- tar -C /root/walk -cf - . | tar -C "$RUN_LOG_DIR/walk
 adb shell wm density reset
 ok "with Android's font scale at 1.3, every member's screen at 390 pixels still fits, its picture and its audit in the logs"
 
+# As the app, as Dens runs there, with a short TMPDIR in its files: a
+# socket's path under the app's own would pass the 107 bytes Linux allows.
 incus file push -q "$RUN_LOG_DIR/host.test" "$CONTAINER/root/host.test"
 adb push /root/host.test /data/local/tmp/host.test >/dev/null 2>&1
 adb shell "run-as $APP sh -c 'mkdir -p files/e2e/t && cp /data/local/tmp/host.test files/e2e/ && cd files/e2e && TMPDIR=\$PWD/t ./host.test -test.v'" \

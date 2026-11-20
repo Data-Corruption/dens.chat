@@ -85,6 +85,12 @@ boot() {
     echo "$1 is up"
     return 0
   fi
+  # A killed emulator leaves its lock naming its PID, which another process
+  # can hold after the container restarts: the emulator then takes the
+  # device for in use, and refuses it. No emulator runs it, so it's stale.
+  if ! pgrep -f "qemu-system.* -avd $1( |\$)" >/dev/null; then
+    rm -f "/root/.android/avd/$1.avd/"*.lock
+  fi
   nohup "$SDK/emulator/emulator" -avd "$1" -no-window -audio none -no-snapshot -no-boot-anim \
     -gpu swiftshader_indirect -port "$2" >"/root/emulator-$1.log" 2>&1 &
   i=0
@@ -100,7 +106,10 @@ boot() {
   echo "$1 started in $i s"
 }
 
+# halt PORT syncs the guest first: emu kill stops it at once, losing what
+# it hadn't written.
 halt() {
+  "$SDK/platform-tools/adb" -s "emulator-$1" shell sync >/dev/null 2>&1 || true
   "$SDK/platform-tools/adb" -s "emulator-$1" emu kill >/dev/null 2>&1 || true
 }
 

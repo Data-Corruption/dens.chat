@@ -69,6 +69,9 @@ export async function webview(serial) {
         cdp,
         events: s.events,
         url: target.url,
+        // An evaluation awaiting across a click that has the WebView ask
+        // for a permission can die with "Promise was collected": click and
+        // wait in evaluations of their own.
         async eval(expression, gesture = false) {
             const r = await cdp('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: gesture });
             if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + (r.exceptionDetails.exception?.description || ''));

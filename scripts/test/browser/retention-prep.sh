@@ -20,4 +20,3 @@ PY
 start_den
 echo "DEN=$DEN"
 echo "GENERAL=$general"
-echo "RANDOM=$random"

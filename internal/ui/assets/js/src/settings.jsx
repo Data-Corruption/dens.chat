@@ -44,7 +44,8 @@ import {
 export { onOpenSettings, openSettings } from './dialogs.js';
 
 // SECTIONS are the settings' sections, by the id openSettings takes and
-// the name the list shows.
+// the name the list shows. The browser checks name them too, in
+// drive-settings.mjs, drive-calls.mjs and screens.mjs.
 export const SECTIONS = [
     ['appearance', 'Appearance'],
     ['chat', 'Chat'],

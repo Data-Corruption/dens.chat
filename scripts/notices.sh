@@ -103,6 +103,8 @@ generate() {
     "Dens takes it under the MIT license, one of the three it offers."
   section "musl, as wasi-libc includes it" "$TEXTS/musl.txt" "https://musl.libc.org"
   section "cloudlibc, as wasi-libc includes it" "$TEXTS/cloudlibc.txt" "https://github.com/NuxiNL/cloudlibc"
+  # Upstream states no license for the model's weights apart from the
+  # project's (xiph/rnnoise issue 284 asks for one), so its text covers both.
   section "RNNoise ${DEFAULT_RNNOISE_VERSION}, with its model ${DEFAULT_RNNOISE_MODEL_VERSION}, in the page" "$TEXTS/rnnoise.txt" \
     "https://gitlab.xiph.org/xiph/rnnoise" \
     "Its model comes from the same project, beside its code."
