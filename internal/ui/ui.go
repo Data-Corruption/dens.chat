@@ -4,9 +4,11 @@ package ui
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
+	"io/fs"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -17,14 +19,15 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+// The build writes the page's stylesheet, script and manifest into the
+// embedded directory. Read at start rather than embedded by name, so a
+// clone builds and tests before anything has written them.
+//
 //go:embed assets
 var assetsFS embed.FS
 
-// manifestData lists, by relative path, the assets the page loads, with a
-// hash of each; the build writes it, leaving out the sources.
-//
-//go:embed assets/manifest.json
-var manifestData []byte
+// unbuilt stands for every asset's hash on the placeholder page.
+const unbuilt = "unbuilt"
 
 // Asset represents an embedded static asset with cache busting.
 type Asset struct {
@@ -79,12 +82,57 @@ func (ui *UI) PageData(title, version string) map[string]any {
 	}
 }
 
-// New parses all embedded templates and loads static assets from the manifest.
+// New parses all embedded templates and loads static assets from the
+// manifest the build wrote. Without one it serves a placeholder page, unless
+// the binary requires the page.
 func New() (*UI, error) {
-	// Load manifest
+	manifest, err := assetsFS.ReadFile("assets/manifest.json")
+	if errors.Is(err, fs.ErrNotExist) {
+		manifest = nil
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to read asset manifest: %w", err)
+	}
+	return load(manifest, build.PageRequired())
+}
+
+// placeholder lists what the build's manifest would, every embedded asset
+// but the page's sources, with the stylesheet and script that the build
+// writes listed whether or not they're there.
+func placeholder() (map[string]string, error) {
+	manifest := map[string]string{"css/output.css": unbuilt, "js/output.js": unbuilt}
+	err := fs.WalkDir(assetsFS, "assets", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel := strings.TrimPrefix(path, "assets/")
+		if rel != "css/input.css" && !strings.HasPrefix(rel, "js/src/") {
+			manifest[rel] = unbuilt
+		}
+		return nil
+	})
+	return manifest, err
+}
+
+// load makes the UI from manifestData, which lists by relative path the
+// assets the page loads, with a hash of each; nil is the placeholder page,
+// whose missing stylesheet and script are empty.
+func load(manifestData []byte, pageRequired bool) (*UI, error) {
 	var manifest map[string]string // relPath -> hash
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+	if manifestData == nil {
+		if pageRequired {
+			return nil, errors.New("the page isn't built: build with ./scripts/build.sh")
+		}
+		var err error
+		if manifest, err = placeholder(); err != nil {
+			return nil, fmt.Errorf("failed to list the placeholder page's assets: %w", err)
+		}
+	} else if err := json.Unmarshal(manifestData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to parse asset manifest: %w", err)
+	}
+	for _, required := range []string{"css/output.css", "js/output.js"} {
+		if _, ok := manifest[required]; !ok {
+			return nil, fmt.Errorf("asset manifest is missing required asset %q", required)
+		}
 	}
 
 	// Build asset map
@@ -94,6 +142,9 @@ func New() (*UI, error) {
 	for relPath, hash := range manifest {
 		// Read file data
 		data, err := assetsFS.ReadFile("assets/" + relPath)
+		if manifestData == nil && errors.Is(err, fs.ErrNotExist) {
+			data, err = nil, nil
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to read asset %s: %w", relPath, err)
 		}
@@ -114,15 +165,6 @@ func New() (*UI, error) {
 		routeMap[urlPath] = asset
 	}
 
-	css := assets["css/output.css"]
-	if css == nil {
-		return nil, fmt.Errorf("asset manifest is missing required asset %q", "css/output.css")
-	}
-	js := assets["js/output.js"]
-	if js == nil {
-		return nil, fmt.Errorf("asset manifest is missing required asset %q", "js/output.js")
-	}
-
 	// assetPath gives a template an asset's cache-busted path. Assets are
 	// served only there, so one the manifest lacks fails the page.
 	assetPath := func(relPath string) (string, error) {
@@ -141,8 +183,8 @@ func New() (*UI, error) {
 		templates: t,
 		Assets:    assets,
 		routeMap:  routeMap,
-		CSS:       css,
-		JS:        js,
+		CSS:       assets["css/output.css"],
+		JS:        assets["js/output.js"],
 	}, nil
 }
 

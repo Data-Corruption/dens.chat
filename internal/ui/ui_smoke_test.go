@@ -70,10 +70,7 @@ func TestTemplatesNeedNoInlineCode(t *testing.T) {
 	}
 }
 
-func TestNewRequiresPageAssets(t *testing.T) {
-	original := manifestData
-	t.Cleanup(func() { manifestData = original })
-
+func TestLoadRequiresPageAssets(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		manifest string
@@ -84,15 +81,41 @@ func TestNewRequiresPageAssets(t *testing.T) {
 		{name: "missing JavaScript", manifest: `{"css/output.css":"test"}`, missing: "js/output.js"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			manifestData = []byte(test.manifest)
-			_, err := New()
+			_, err := load([]byte(test.manifest), false)
 			if err == nil {
-				t.Fatalf("New succeeded without required asset %q", test.missing)
+				t.Fatalf("load succeeded without required asset %q", test.missing)
 			}
 			if !strings.Contains(err.Error(), test.missing) {
-				t.Fatalf("New error = %q, want missing asset %q", err, test.missing)
+				t.Fatalf("load error = %q, want missing asset %q", err, test.missing)
 			}
 		})
+	}
+}
+
+// TestPlaceholderPage keeps a clone building and testing before the page is
+// built, and a binary that requires the page from starting without it.
+func TestPlaceholderPage(t *testing.T) {
+	if _, err := load(nil, true); err == nil || !strings.Contains(err.Error(), "isn't built") {
+		t.Fatalf("load without a manifest, the page required: %v, want a refusal", err)
+	}
+	u, err := load(nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	data := u.PageData("Dens", "v0.0.0-dev")
+	if err := u.Execute(&buf, "app.html", data); err != nil {
+		t.Fatalf("the placeholder lacks an asset the page names: %v", err)
+	}
+	for _, rel := range []string{"css/output.css", "js/output.js", "sounds/joined.ogg"} {
+		if u.Assets[rel] == nil {
+			t.Errorf("the placeholder lacks %s", rel)
+		}
+	}
+	for rel := range u.Assets {
+		if rel == "css/input.css" || strings.HasPrefix(rel, "js/src/") {
+			t.Errorf("the placeholder serves the source %s", rel)
+		}
 	}
 }
 
